@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Clio.Common;
 using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
@@ -207,7 +208,7 @@ public sealed class MobilePageConversionGuideTool {
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
 		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
 		// containers, which the mobile template already provides. Best-effort — never blocks the guide.
-		IReadOnlySet<string> templateComponentNames = LoadTemplateComponentNames(
+		WebTemplateBaseline webTemplateBaseline = LoadWebTemplateBaseline(
 			effectiveTemplate, pageResponse.Page?.SchemaName, args);
 
 		string targetName = string.IsNullOrWhiteSpace(args.TargetSchemaName)
@@ -238,13 +239,15 @@ public sealed class MobilePageConversionGuideTool {
 				containerNameMap: containerNameMap,
 				sectionRegistration: sectionRegistration,
 				pageBusinessRulesProbe: pageBusinessRules,
-				templateComponentNames: templateComponentNames,
+				templateComponentNames: webTemplateBaseline.Names,
 				componentNameMap: componentNameMap,
 				positionalPlacements: positionalPlacements,
 				mobileContainerParents: mobileContainerParents,
 				mobileTemplateViewModelConfig: mobileTemplateProbe.ViewModelConfig,
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
-				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable);
+				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
+				mobileTemplateTypesByName: mobileTemplateProbe.TypesByName,
+				webTemplateBaselineNodes: webTemplateBaseline.Nodes);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -293,8 +296,20 @@ public sealed class MobilePageConversionGuideTool {
 	/// parent name is missing or the read fails — the guide is then produced without template
 	/// subtraction (current behavior). Never throws.
 	/// </summary>
-	private IReadOnlySet<string> LoadTemplateComponentNames(string parentSchemaName, string ownSchemaName, MobilePageConversionGuideArgs args) {
-		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+	/// <summary>
+	/// The web template baseline: the set of component NAMES it provides (inherited chrome subtracted at read
+	/// time) plus a name → node map of the same components. The node map is the DELTA baseline — a same-component
+	/// twin carries only the properties the page changed from it, so an untouched inherited property leaves the
+	/// mobile template's own default in place.
+	/// </summary>
+	private sealed record WebTemplateBaseline(
+		IReadOnlySet<string> Names,
+		IReadOnlyDictionary<string, JObject> Nodes);
+
+	private WebTemplateBaseline LoadWebTemplateBaseline(string parentSchemaName, string ownSchemaName, MobilePageConversionGuideArgs args) {
+		var empty = new WebTemplateBaseline(
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase));
 		if (string.IsNullOrWhiteSpace(parentSchemaName)) {
 			return empty;
 		}
@@ -322,7 +337,9 @@ public sealed class MobilePageConversionGuideTool {
 				}
 			}
 			if (templateResponse?.Success == true && templateResponse.Bundle?.ViewConfig is { } viewConfig) {
-				return WebToMobileAnalysisService.CollectComponentNames(viewConfig);
+				return new WebTemplateBaseline(
+					WebToMobileAnalysisService.CollectComponentNames(viewConfig),
+					WebToMobileAnalysisService.CollectComponentNodesByName(viewConfig));
 			}
 		} catch (Exception) {
 			// Best-effort: a failed template read falls back to no subtraction.
@@ -465,7 +482,8 @@ public sealed class MobilePageConversionGuideTool {
 		IReadOnlyDictionary<string, string> ContainerParents,
 		JsonNode ViewModelConfig,
 		JsonNode ModelConfig,
-		bool Unavailable);
+		bool Unavailable,
+		IReadOnlyDictionary<string, string> TypesByName);
 
 	/// <summary>
 	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle: maps each mobile
@@ -479,8 +497,9 @@ public sealed class MobilePageConversionGuideTool {
 	/// </summary>
 	private MobileTemplateProbe LoadMobileTemplateProbe(string mobileSchemaName, MobilePageConversionGuideArgs args) {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var emptyTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
-			return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: false);
+			return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: false, TypesByName: emptyTypes);
 		}
 		try {
 			PageGetOptions options = new() {
@@ -500,15 +519,18 @@ public sealed class MobilePageConversionGuideTool {
 				}
 			}
 			if (templateResponse?.Success == true && templateResponse.Bundle is { } bundle) {
-				IReadOnlyDictionary<string, string> parents = bundle.ViewConfig is { } viewConfig
-					? WebToMobileAnalysisService.CollectParentByName(viewConfig)
-					: emptyParents;
-				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig, Unavailable: false);
+				IReadOnlyDictionary<string, string> parents = emptyParents;
+				IReadOnlyDictionary<string, string> types = emptyTypes;
+				if (bundle.ViewConfig is { } viewConfig) {
+					parents = WebToMobileAnalysisService.CollectParentByName(viewConfig);
+					types = WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig);
+				}
+				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig, Unavailable: false, TypesByName: types);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.
 		}
-		return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: true);
+		return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: true, TypesByName: emptyTypes);
 	}
 
 	/// <summary>

@@ -7,6 +7,7 @@ using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
@@ -18,7 +19,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions", "crt.QuickFilter", "crt.FileList"
+			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions", "crt.QuickFilter", "crt.FileList", "crt.Feed"
 		};
 
 	private static readonly IReadOnlySet<string> WebTypes =
@@ -83,7 +84,9 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null,
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
-		bool mobileTemplateUnavailable = false) =>
+		bool mobileTemplateUnavailable = false,
+		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
+		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -95,7 +98,23 @@ public sealed class WebToMobileConversionServiceTests {
 			componentNameMap: componentNameMap,
 			mobileTemplateViewModelConfig: mobileTemplateViewModelConfig,
 			mobileTemplateModelConfig: mobileTemplateModelConfig,
-			mobileTemplateUnavailable: mobileTemplateUnavailable);
+			mobileTemplateUnavailable: mobileTemplateUnavailable,
+			mobileTemplateTypesByName: mobileTemplateTypesByName,
+			webTemplateBaselineNodes: webTemplateBaselineNodes);
+
+	/// <summary>name → type map for a mobile template (drives the AUTOMATIC same-component twin).</summary>
+	private static IReadOnlyDictionary<string, string> MobileTypesByName(params (string name, string type)[] entries) {
+		var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string name, string type) in entries) {
+			d[name] = type;
+		}
+		return d;
+	}
+
+	/// <summary>Web-template baseline nodes (name → node) built from a template viewConfig JSON, via the
+	/// production collector — a same-component twin carries only the page's delta over these.</summary>
+	private static IReadOnlyDictionary<string, JObject> BaselineNodes(string viewConfigJson) =>
+		WebToMobileAnalysisService.CollectComponentNodesByName(JsonNode.Parse(viewConfigJson)!.AsArray());
 
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
@@ -1779,6 +1798,122 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
 		twin.Operation.Should().Be("merge", because: "still a merge-by-name onto the template-provided element");
 		twin.MobileValues!.AsObject().ContainsKey("recordColumnName").Should().BeFalse(because: "an absent web recordColumnName must not override the mobile template's default RecordId");
+	}
+
+	[Test]
+	[Description("AUTOMATIC same-component twin: the mobile template provides an element with the SAME name and type (Feed -> Feed, both crt.Feed) with NO `components` rule. The converter keeps the web Feed and carries the page's DELTA over the web-template baseline onto the mobile Feed by merge-by-name; a property still equal to the baseline is omitted so the mobile template's default stands.")]
+	public void Analyze_AutoComponentTwin_SameName_CarriesPageDelta() {
+		// Arrange - web Feed inherited from the tabbed template; the page CHANGED dataSourceName from the
+		// template default but left entitySchemaName at the baseline. No components entry for Feed (names match).
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS", "entitySchemaName": "Lead" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("FeedContainer", "crt.TabContainer"), ("Feed", "crt.Feed"));
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS", "entitySchemaName": "Lead" } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames,
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		twin.Operation.Should().Be("merge", because: "the mobile template already provides a Feed element - merge-by-name, not insert");
+		twin.MobileName.Should().Be("Feed", because: "same name on both templates");
+		twin.MobileType.Should().Be("crt.Feed");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the page changed dataSourceName from the web-template baseline - the change carries");
+		vals.ContainsKey("entitySchemaName").Should().BeFalse(because: "entitySchemaName equals the web-template baseline - an unchanged property is omitted so the mobile template's default stands");
+		vals.ContainsKey("type").Should().BeFalse(because: "a merge targets an element the template already owns - no type is re-declared");
+		twin.Reason.Should().Contain("provided by the mobile template under the same name", because: "the reason tells the caller this is an auto merge-by-name twin");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed" && e.Operation == "insert", because: "an auto twin merges onto the template element, never inserts a duplicate");
+	}
+
+	[Test]
+	[Description("An automatic same-component twin the page did NOT change from the web-template baseline produces NO element-map entry - the mobile template already provides the element correctly and nothing is merged onto it.")]
+	public void Analyze_AutoComponentTwin_Unchanged_ProducesNoEntry() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS", "entitySchemaName": "Lead" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS", "entitySchemaName": "Lead" } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames,
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed", because: "unchanged from the web-template baseline => empty delta => no merge entry; the mobile template already provides Feed");
+	}
+
+	[Test]
+	[Description("A web element whose name matches a mobile-template element but whose TYPE differs is NOT an automatic twin: it stays inherited template chrome and is pruned, never merged onto the differently-typed mobile element.")]
+	public void Analyze_AutoComponentTwin_TypeMismatch_IsNotTwin() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.SomethingElse", "dataSourceName": "LeadDS" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.SomethingElse", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
+		// The mobile Feed element is crt.Feed; the web element named "Feed" is a DIFFERENT type.
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, mobileTemplateTypesByName: mobileTypes);
+
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed", because: "name matches but type differs - it stays inherited chrome and is pruned, not merged onto the differently-typed mobile Feed");
+	}
+
+	[Test]
+	[Description("The explicit name-mapped twin (AttachmentList -> AttachmentFileList) carries the page DELTA over the web-template baseline too: a property equal to the baseline is omitted, only a changed/added one carries.")]
+	public void Analyze_TemplateComponentTwin_NameMapped_CarriesOnlyDelta() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead", "viewType": "gallery" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.FileList", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentsTabContainer"] = "AttachmentsContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+		IReadOnlySet<string> templateNames = Names("AttachmentsTabContainer", "AttachmentList");
+		// Baseline: recordColumnName absent (so the page ADDS it), viewType == "gallery" (page left it unchanged).
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "AttachmentList", "type": "crt.FileList", "viewType": "gallery" } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap,
+			webTemplateBaselineNodes: baseline);
+
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["recordColumnName"]!.GetValue<string>().Should().Be("Lead", because: "the page added recordColumnName over the baseline - it carries");
+		vals.ContainsKey("viewType").Should().BeFalse(because: "viewType equals the web-template baseline - an unchanged property is omitted so the mobile default stands");
 	}
 
 	#endregion
