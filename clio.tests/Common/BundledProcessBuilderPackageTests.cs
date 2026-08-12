@@ -72,8 +72,8 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>92dd893</c>, branch
-	/// <c>feature/eng-91845-connections-reviewed</c>) following that repository's
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>48ac924</c>, branch
+	/// <c>feature/eng-91845-rebundle-restamp</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
 	/// </summary>
@@ -109,7 +109,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"396E1FACC0B8B261923E6F13C2ADF43177CC581A04DCD4A227F0A9909D2C97E3";
+		"5FACA4FD3D262CC8D02BA1E1ECD8270B435DEDBC0ACFED28D6F0E7FD2FFD4385";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -160,7 +160,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786550179000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786550573000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
