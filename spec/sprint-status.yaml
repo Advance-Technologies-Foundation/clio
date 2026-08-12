@@ -2501,6 +2501,107 @@ stories:
       - story-sync-schemas-verify-resume-2
     blocks: []
 
+  # --- deliver-process-builder-package stories (ENG-94385) - added 2026-08-05 ---
+  # SPEC route (< 5 stories, see the AGENTS.md routing table), so there are no per-story files:
+  # spec/prd/spec-deliver-process-builder-package.md carries the FRs/ACs, the ADR carries the decision,
+  # and spec/deliver-process-builder-package/deliver-process-builder-package-plan.md carries the
+  # experiment log, cost ledger and the four dead hypotheses. Same shape as story-mcp-resident-tool-flag-1.
+  # Status review as of 2026-08-06: the pre-PR review gate ran a full 3-lens fan-out over the complete
+  # diff against master (no Blocker; 3 High, all in the MCP wrapper, all fixed in e1681a38), the full unit
+  # suite is green, and both PRs are open — clio on feature/ENG-94385-bundle-process-builder-package and the
+  # package side at https://creatio.ghe.com/engineering/cli-process-builder/pull/18. The clio PR pins the
+  # archive produced from that branch by SHA-256, so the two land together.
+  # Test plan: spec/test-plans/tp-deliver-process-builder-package.md (written after implementation — it maps
+  # the delivered coverage and states the gaps rather than forecasting).
+  # Status review as of 2026-08-10 (SUPERSEDED by the line below, kept for the record): still `review`. Reviewer findings on the open PR drove four further
+  # commits, and TWO of them fixed defects introduced by the fix before them — the bundled-version suffix
+  # rule was placed wrongly twice (first in the reader, which blinded the downgrade guard; then in the
+  # install command alone, which let convergence dead-end every gated tool). Both wrong placements passed
+  # their own tests and a full 3-lens round, so a second review round was run explicitly and is what caught
+  # them. See the 2026-08-10 diary entry for the generalisation. Full unit suite green (8715).
+  # NOT done and deliberately out of scope, recorded so they are not mistaken for oversights: the
+  # install-application path installs any .gz with no version comparison at all (pre-existing, but it hands
+  # an agent an unguarded equivalent of the override install-process-builder withholds); the two DLLs in the
+  # archive have no per-file content pin, and the whole-archive SHA is refreshed by the rebundle script
+  # itself; and untrusted version text is sanitised at each consumer rather than at the RequiredPackageChecker
+  # boundary where it enters.
+  # MERGED 2026-08-10: clio#1012 -> master as cc14f635, and the package side cli-process-builder#18 -> main
+  # thirteen seconds apart, so the archive and the commit its SHA pin names landed together. The four rows
+  # below therefore read `done` per the AGENTS.md rule; the narrative above predates the merge.
+  # A FOLLOW-UP is in flight on feature/ENG-94385-post-merge-review-followup: the pre-merge three-lens gate
+  # produced findings that were not applied before merging, and it applies them on top of master — an
+  # allowlist pinning what the bundled archive may contain (nothing that EXECUTES on install), both refusals
+  # no longer handing an agent the --force literal, help/docs no longer presenting five MCP-only tools as CLI
+  # commands, a guard against reintroducing the deleted version constant, and a ceiling so a stuck
+  # configuration-build reservation cannot wedge a tenant for the life of the MCP server process. The stories
+  # stay `done` — their scope shipped — but do not read `done` as "nothing outstanding here".
+
+  - id: story-deliver-process-builder-package-1
+    title: "Bundle the source-only CrtProcessBuilder archive into the clio distribution"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: M
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-01, FR-02]
+    ac: [AC-02]
+    status_note: "BundledPackages.cs as the single source of truth; CrtProcessBuilder.gz (190,195 bytes) committed with a csproj Content glob and *.gz marked binary. guard tests pin the archive SHA-256, the descriptor identity (UId/name/version/ModifiedOnUtc side by side, so a hand edit that moves the version without the date fails here) with the version read through the production BundledPackageCatalog, the compile-marker SCHEMA descriptor's own ModifiedOnUtc (the one field that has actually shipped wrong - local time in a UTC-labelled field - and set-pkg-version does not touch it), the load-bearing compile-marker schema, the absence of any compiled assembly, the sources, the Ping operation and its wire envelope (PingResult / Name=\"success\" / BodyStyle - the whole install verdict rests on these two tokens), an EXACT [OperationContract] count plus an explicit ungated allowlist (a gate-count floor cannot see a new ungated endpoint arriving), the authorization gate inside the shipped code (operation AND connection-type halves), and the friend-assembly condition. Package version reset to 1.0.0.0 for its first release. Package renamed clioprocessbuilder -> CrtProcessBuilder in the ProcessBuilder repo with the UId preserved. Rebundling goes through rebundle-process-builder.ps1, which also verifies the archive INVENTORY (both compile references present, own assembly absent, exactly two dlls) - the one property the byte-level pins here structurally cannot check, because filenames are UTF-16 in the container."
+    depends_on: []
+    blocks:
+      - story-deliver-process-builder-package-2
+
+  - id: story-deliver-process-builder-package-2
+    title: "install-process-builder command and MCP tool, verifying the outcome not the install call"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: M
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-03, FR-04, FR-05, FR-06, FR-07, FR-09, FR-10, FR-11]
+    ac: [AC-03, AC-04]
+    status_note: "The check is LIVENESS, not identity: the command calls the package's ungated Ping and fails unless it answers. A version-reporting operation was built, shipped for a day and DROPPED - every carrier was eliminated by measurement (the platform stamps its own assembly version over the csproj's; descriptor.json is absent from the target's build directory; a before/after delta reports failure on a normal re-install). So a failed UPGRADE, where the previously built assembly still answers, is NOT caught - an accepted limit disclosed on every caller-facing surface. Verified live on a .NET Framework stand against the current archive: install exit 0, list-packages records 1.0.0.0, Ping returns success, and the pre-rename GetApiVersion route 404s. The earlier two-runtime verification predates the rename and several repacks and is NOT re-proven. No duration is quoted anywhere: elapsed time belongs to the target, and a range on the MCP surface was read out and repeated to a user as a promise. The restart comes from a different place on each runtime and outlives the install call, so IServerReadinessWaiter sits between installing and probing. command tests covering every exit path, including the downgrade guard added later (refuse, --force, same-version repair, and the three fail-open branches) + 11 verifier tests + 8 tool tests, including the post-deadline stderr report, which is the sole failure signal once the caller has been answered."
+    depends_on:
+      - story-deliver-process-builder-package-1
+    blocks:
+      - story-deliver-process-builder-package-3
+
+  - id: story-deliver-process-builder-package-3
+    title: "Detect the missing-or-stale package and name the remediation on both surfaces"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: S
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-08, FR-12]
+    ac: [AC-01, AC-05, AC-06]
+    status_note: "5 presence-only [RequiresPackage] sites with a Hint naming both the CLI verb and the MCP tool, plus a separate IBundledPackageConvergence rule that refuses an environment behind the shipped archive (adr-bundled-package-version-source-of-truth); BaseTool now returns FromValidationError (exit 1) for PackageRequirementException instead of FromError (-1); process-modeling guidance carries the ORDER OF CHECKS rule so an agent never proposes an install before establishing the buildable slice; clio info reports the bundled version, and both info doc surfaces now show that line - command output is a mandatory doc-review trigger and it had been missed."
+    depends_on:
+      - story-deliver-process-builder-package-2
+    blocks:
+      - story-deliver-process-builder-package-4
+
+  - id: story-deliver-process-builder-package-4
+    title: "Docs, MCP contract and stand-free MCP E2E coverage"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: S
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-11]
+    ac: [AC-05]
+    status_note: "help/en + docs/commands + Commands.md + WikiAnchors + McpCapabilityMap hand-written because clio __generate-help-artifacts is broken (it rewrote ~130 files, deleted 7, and mangles verb aliases - chip filed). 3 stand-free E2E tests; a real-install fixture was deliberately NOT shipped, see SPEC section 7. The reachability test now also pins WHICH path applies (the tool is deliberately non-resident, so it is reached through the curated contract index rather than tools/list) - asserting only that the name is reachable was satisfied by the index union and would have stayed green if the tool were feature-gated. The curated contract's flow note had reasserted the removed version comparison past two guards that banned a PHRASE rather than a CLAIM; both guards now ban the capability verb AND require the limit to be stated."
+    depends_on:
+      - story-deliver-process-builder-package-3
+    blocks: []
+
   - id: story-process-executor-stream-drain-timeout-1
     title: "Bound redirected stream draining by the process operation timeout"
     feature: "process-executor-stream-drain-timeout"

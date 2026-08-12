@@ -51,6 +51,11 @@ public sealed class BuildThemeTool(
 
 	internal const string ToolName = "build-theme";
 
+	/// <summary>The argument roster returned when a caller sends an unrecognised field name.</summary>
+	internal static readonly string ValidArgumentNames =
+		"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
+		"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.";
+
 	private static readonly Regex PackageNamePattern = new(@"^[A-Za-z0-9_]+\z", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
@@ -80,7 +85,8 @@ public sealed class BuildThemeTool(
 	/// <returns>A structured result carrying the built CSS (compute mode) or the written path (workspace-write mode), or a failure message.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
-		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme's css-content. " +
+		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — use it when you need the CSS itself. " +
+		"To create a theme on an environment from brand inputs, prefer create-theme's brand mode: it builds the same CSS server-side in one call instead of routing it through the agent. " +
 		"With workspace-directory+package-name (workspace/dev flow): writes theme.css + theme.json into <workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
 		"Custom font families are checked against Google Fonts over the network (a short bounded probe): a family the catalog does not publish gets NO @import (it renders only where installed locally) plus a warning, and an unverifiable probe keeps the import plus a warning — so the css can vary with probe outcomes, which the warnings always disclose. " +
 		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical (given the same probe outcomes). " +
@@ -90,9 +96,7 @@ public sealed class BuildThemeTool(
 			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name (all optional).")]
 		[Required] BuildThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
-			"Valid: primary, css-class-name, caption, id, secondary, accent, success, error, " +
-			"heading-font, body-font, font-weights, version, environment-name, workspace-directory, package-name.");
+			args.ExtensionData, LegacyAliases, ".", ValidArgumentNames);
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return BuildThemeResult.Failure(aliasError);
 		}
@@ -161,10 +165,10 @@ public sealed class BuildThemeTool(
 		}
 		catch (EnvironmentResolutionException) {
 			if (!string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-				fallbackWarning =
+				fallbackWarning = SensitiveErrorTextRedactor.Redact(
 					$"build-theme: could not resolve environment '{args.EnvironmentName}' — built against the "
 					+ "newest supported version instead. Pass version to target a specific template, or omit "
-					+ "environment-name to use the credential-passthrough tenant's version.";
+					+ "environment-name to use the credential-passthrough tenant's version.");
 			}
 			return null;
 		}
@@ -228,34 +232,6 @@ public sealed record BuildThemeArgs(
 	[property: Description("Theme id for theme.json; an auto-generated UUID when omitted.")]
 	string? Id = null,
 
-	[property: JsonPropertyName("secondary")]
-	[property: Description("Secondary colour; derived from the primary when omitted.")]
-	string? Secondary = null,
-
-	[property: JsonPropertyName("accent")]
-	[property: Description("Accent colour; chosen from the primary when omitted.")]
-	string? Accent = null,
-
-	[property: JsonPropertyName("success")]
-	[property: Description("Success colour; the platform default when omitted.")]
-	string? Success = null,
-
-	[property: JsonPropertyName("error")]
-	[property: Description("Error colour; the platform default when omitted.")]
-	string? Error = null,
-
-	[property: JsonPropertyName("heading-font")]
-	[property: Description("Heading font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
-	string? HeadingFont = null,
-
-	[property: JsonPropertyName("body-font")]
-	[property: Description("Body font family; Montserrat when omitted. A malformed name fails the build with INVALID_FONT_FAMILY; read get-guidance theming for the name contract.")]
-	string? BodyFont = null,
-
-	[property: JsonPropertyName("font-weights")]
-	[property: Description("Font weights to load (e.g. [400,500,600]); ignored without a custom heading/body font; defaults to 400,500,600.")]
-	int[]? FontWeights = null,
-
 	[property: JsonPropertyName("version")]
 	[property: Description("Creatio version the theme targets (e.g. 10.0); the newest supported version is used when omitted; mutually exclusive with environment-name.")]
 	string? Version = null,
@@ -274,7 +250,7 @@ public sealed record BuildThemeArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Package inside the workspace to write theme.css + theme.json into, under Files/themes/<css-class-name>/; provide together with workspace-directory.")]
 	string? PackageName = null
-) {
+) : ThemeBrandArgs {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }

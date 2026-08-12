@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -2029,6 +2030,97 @@ public sealed class ToolContractGetToolTests {
 				RestoreWorkspaceTool.RestoreWorkspaceToolName
 			},
 			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical install-process-builder contract, whose flow stops at itself and whose rationale must not claim the tool can tell which build is serving.")]
+	public void ToolContractGet_Should_Return_InstallProcessBuilder_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			InstallProcessBuilderTool.InstallProcessBuilderToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the five process-designer tools are feature-gated and may be absent, so their remediation "
+				+ "tool must be discoverable through get-tool-contract to be reachable at all");
+		ToolContractDefinition contract = result.Tools!.Single();
+		// The CURATED string, which is what an agent actually reads: install-process-builder is deliberately
+		// non-resident, so it is never in tools/list and this contract is its only description. The tool's
+		// [Description] attribute is NOT merged in - a change made there alone ships invisible, which is what
+		// happened when the downgrade refusal was added and this contract kept saying the tool always installs.
+		// The E2E pins the same claims, but E2E is advisory and cannot fail a merge.
+		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		curatedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
+			because: "a case where the tool does NOT install must be discoverable, or an agent meets the refusal "
+				+ "as a surprise. There are TWO — an environment already ahead, and a malformed bundled version "
+				+ "— and this regex covers the first; the second is pinned below. Do not reword either into a "
+				+ "claim that exactly one exists: the contract said that after the second refusal shipped");
+		curatedDescription.Should().MatchRegex(@"(?i)update clio",
+			because: "stating the refusal without the remedy just produces a retry loop");
+		curatedDescription.Should().NotMatchRegex(@"(?i)no skip|always installs|never refuses",
+			because: "the contradicting claim is the regression that actually shipped; a positive-match-only "
+				+ "guard stays green while the same description asserts both halves");
+		curatedDescription.Should().NotMatchRegex(@"(?i)\b(one|1) (case|exception)\b|but one\b",
+			because: "there are TWO refusals now. The 'exactly one' framing survived the first refusal being "
+				+ "added and had to be caught in review twice, so it is banned rather than trusted to whoever "
+				+ "edits this string next");
+		curatedDescription.Should().MatchRegex(@"(?i)pre-release suffix",
+			because: "the second refusal is reachable from MCP — the tool builds its own options and Force "
+				+ "defaults to false — so an agent that meets it must find it in the only description it gets");
+		curatedDescription.Should().NotMatchRegex(@"(?i)--force",
+			because: "the contract must not hand an agent the literal bypass invocation right after telling it "
+				+ "not to work around the refusal");
+		// The no-duration guard has to live on THIS surface too, and the same reasoning as above applies with
+		// more force: the tool is non-resident, so the curated contract is the only description an agent ever
+		// receives, and a figure quoted here reaches the user as a promise about a duration that is a property
+		// of the target, not of clio. The patterns are shared with InstallProcessBuilderToolTests rather than
+		// restated, because two copies of a ban drift and the [Description] copy already proved that a claim
+		// can walk past a guard phrased slightly differently.
+		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationRangePattern,
+			because: "an agent once read '~15-75 s' out of a description and repeated it to a user as a "
+				+ "promise; elapsed time depends on the target's configuration size, host and load");
+		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationFigurePattern,
+			because: "a single figure is the same promise as a range, only harder to spot");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(
+			InstallProcessBuilderToolTests.DurationRangePattern,
+			because: "the flow notes are read alongside the description and carry the same weight, so a "
+				+ "duration banned from one must not be reachable through the other");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(
+			InstallProcessBuilderToolTests.DurationFigurePattern,
+			because: "same surface, same promise — a figure here is what an agent quotes when the description "
+				+ "declines to give one");
+		contract.Name.Should().Be(InstallProcessBuilderTool.InstallProcessBuilderToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",
+			because: "the package ships inside clio, so the target environment is the only thing to supply");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] { InstallProcessBuilderTool.InstallProcessBuilderToolName },
+			because: "the flow must stop at this tool: naming a process-designer tool as the follow-up would "
+				+ "point at one this server may not expose while the feature is off");
+		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
+		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
+		// back to "the NEW build is serving: it compares the version the serving build reports against the
+		// one it installed", so this test and its E2E mirror both passed green over the one claim they exist
+		// to block. Widening the ban to "which build" is WRONG too: a correct note has to be able to say
+		// "does not prove WHICH build is serving", and a regex cannot tell an assertion from its negation.
+		// So ban only the verb no correct phrasing needs — both false versions claimed a COMPARISON — and
+		// separately require the limit to be stated, which catches the other failure mode: silence.
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)compar",
+			because: "the tool compares nothing: the probe is the package's ungated Ping, which proves an "
+				+ "assembly exists and answers, not which sources it was built from. A version-reporting "
+				+ "operation was built for that and DROPPED — for a source-only package the reported version "
+				+ "could only come from a hand-maintained duplicate in the shipped sources, since the assembly "
+				+ "version belongs to the platform and descriptor.json never reaches the target's build "
+				+ "directory (both measured on a stand)");
+		contract.PreferredFlow.Notes.Should().MatchRegex(@"(?i)does not prove|stale|only once the functionality",
+			because: "banning the false claim is not sufficient — the note must positively carry the LIMIT, or "
+				+ "the next rewrite satisfies the ban by saying nothing at all and an agent is left assuming "
+				+ "the strong reading again");
 	}
 	[Test]
 	[Category("Unit")]

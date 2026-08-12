@@ -38,12 +38,19 @@ public interface ICreatioVersionChecker
 	/// Thrown when a non-<c>bool</c> property carries <see cref="RequiresCreatioVersionAttribute"/>; only
 	/// <c>bool</c> properties are supported as conditional triggers.
 	/// </exception>
+	/// <returns>
+	/// The version resolution the check was performed against — always a resolved version, including the
+	/// dev-build bypass (<c>0.0.0</c> / <c>0.0.0.0</c>) — so a caller that must know the environment's
+	/// version afterwards (for example to select a version-matched artifact) can reuse the gate's probe
+	/// instead of paying a second one; or <c>null</c> when no requirement was triggered and no version was
+	/// resolved.
+	/// </returns>
 	/// <remarks>
 	/// When no class-level attribute is present and no property-level attribute is triggered (its
-	/// <c>bool</c> value is <c>false</c>), the method returns without resolving the environment version,
-	/// so commands without an active requirement incur no cost.
+	/// <c>bool</c> value is <c>false</c>), the method returns <c>null</c> without resolving the environment
+	/// version, so commands without an active requirement incur no cost.
 	/// </remarks>
-	void EnsureRequirements(object optionsInstance);
+	CreatioVersionResolution EnsureRequirements(object optionsInstance);
 
 	/// <summary>
 	/// Determines whether the target environment's core version satisfies the specified minimum version,

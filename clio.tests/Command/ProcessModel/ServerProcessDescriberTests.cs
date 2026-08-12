@@ -85,7 +85,7 @@ public sealed class ServerProcessDescriberTests {
 	[Test]
 	[Description("Leaves direction/isResult unset (null) when an older server omits them, so the absent fields serialize away cleanly.")]
 	public void Describe_ShouldLeaveDirectionAndIsResultNull_WhenServerOmitsThem() {
-		// Arrange — an older clioprocessbuilder that does not report direction/isResult on parameters
+		// Arrange — an older CrtProcessBuilder that does not report direction/isResult on parameters
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","

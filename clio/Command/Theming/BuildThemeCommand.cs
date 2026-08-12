@@ -300,12 +300,9 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 
 	/// <summary>
 	/// Like <see cref="TryBuildTheme(BuildThemeOptions, out string, out string, out IReadOnlyList{string}, out string)"/>
-	/// but resolves the platform version from a caller-supplied <paramref name="resolvedSettings"/> instead of
-	/// resolving <c>--environment-name</c> by name against the settings repository. Used only by the
-	/// <c>build-theme</c> MCP tool, which resolves settings itself via
-	/// <see cref="Clio.Command.McpServer.Tools.IToolCommandResolver"/> so the version probe reaches the correct
-	/// (possibly header-derived, credential-passthrough) tenant; the CLI never calls this overload and its
-	/// by-name <see cref="ResolveVersion(BuildThemeOptions)"/> path stays unchanged.
+	/// but takes the platform version from a caller-supplied <paramref name="resolvedSettings"/> instead of
+	/// resolving <c>--environment-name</c> by name against the settings repository, so a caller that has already
+	/// resolved its target tenant does not get a second, name-based lookup.
 	/// </summary>
 	/// <param name="options">The brand inputs and template-version selectors.</param>
 	/// <param name="resolvedSettings">

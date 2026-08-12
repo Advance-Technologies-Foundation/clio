@@ -642,6 +642,7 @@ internal static class ToolContractCatalog {
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
 			[InstallGateTool.InstallGateToolName] = BuildInstallGate(),
+			[InstallProcessBuilderTool.InstallProcessBuilderToolName] = BuildInstallProcessBuilder(),
 			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
@@ -5225,6 +5226,40 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"A gate-dependent tool reported \"you need to install the cliogate package version ... or higher\", or this is a freshly deployed instance that has not yet had cliogate installed."
+			]);
+	}
+
+	private static ToolContractDefinition BuildInstallProcessBuilder() {
+		return new ToolContractDefinition(
+			InstallProcessBuilderTool.InstallProcessBuilderToolName,
+			"Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio environment, making ProcessDesignService reachable there. The package ships as source and the TARGET compiles it during installation, so the call is substantially slower than a plain package install - how much depends entirely on the target environment, so do not quote a duration to the user. A restart does happen (the platform recycles itself on .NET Framework, the installer issues it on .NET) but you never trigger it yourself - the tool waits for the instance to answer its health check before judging the result. It checks the outcome rather than the install call: it asks the package's own service whether it is serving (Ping, ungated) and fails unless it answers. So it reports \"installed but never compiled\" instead of looking like success - which list-packages cannot distinguish, because the recorded version moves when the archive is accepted whether or not anything compiled. The check is liveness, not identity: on an UPGRADE a stale assembly that still answers will pass. It installs in every case but two, and re-running is otherwise safe (one configuration build on the target). Both exceptions exist to stop an environment moving BACKWARDS, both report exit code 1, and neither is retryable. The override is the same for both and is deliberately NOT available to you - it is a command-line flag a human runs after deciding the rollback is what they want, so do not reach for a shell to get around either one. (1) It REFUSES when the environment already carries a NEWER version than this clio ships, because installing would move that environment's recorded version backwards for everyone using it; say the fix is to update clio. (2) It REFUSES when this clio's OWN bundled version carries a pre-release suffix, which would make such a move undetectable - nothing about the target environment is wrong, so say the fix is to reinstall or update clio. Reinstalling the SAME version is not a downgrade and is allowed - that is the repair path when a package installed but never compiled. Take the gated tool's refusal as the signal to call this rather than comparing versions yourself: the gate checks the version the environment recorded against the version clio bundles.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install the process-builder package after a process-designer tool refused",
+					new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					})
+			],
+			Flow(
+				[
+					InstallProcessBuilderTool.InstallProcessBuilderToolName
+				],
+				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one would point at a tool this server may not expose. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app).",
+				"A process-designer tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) are feature-gated and may be absent from this server's tool list; this one never is, so it stays reachable as the remedy.",
+				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
 			]);
 	}
 

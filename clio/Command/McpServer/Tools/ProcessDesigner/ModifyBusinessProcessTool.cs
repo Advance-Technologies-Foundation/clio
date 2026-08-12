@@ -65,7 +65,7 @@ public class ModifyBusinessProcessTool(
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
 		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling "
-		 + "first. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
+		 + "first. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {

@@ -1,5 +1,17 @@
 # ADR: Backend command-driven process designer (clioprocessbuilder)
 
+> **Renamed since this ADR was written.** The package is now **`CrtProcessBuilder`** (ENG-94385), and it
+> is **bundled into clio and installed with `clio install-process-builder`** — the "package delivery /
+> install wiring" this ADR lists as an open trade-off is now closed. The descriptor `UId` and the REST
+> service class `ProcessDesignService` were deliberately preserved, so every architectural statement
+> below still holds; only the package name changed. One design point *did* change: the package now ships
+> as **source only** and the target environment compiles it, so there is no per-framework assembly.
+> The delivery decision now has its own ADR — [adr-deliver-process-builder-package.md](adr-deliver-process-builder-package.md),
+> which supersedes this ADR's delivery section — with the requirements in
+> [spec-deliver-process-builder-package.md](../prd/spec-deliver-process-builder-package.md) and the
+> experiment log in [deliver-process-builder-package-plan.md](../deliver-process-builder-package/deliver-process-builder-package-plan.md).
+> The name `clioprocessbuilder` is left in place below as the historical record.
+
 **Jira**: [ENG-90883](https://creatio.atlassian.net/browse/ENG-90883) (Approach 1 of [ENG-91447](https://creatio.atlassian.net/browse/ENG-91447); follow-ups [ENG-91842](https://creatio.atlassian.net/browse/ENG-91842))
 
 **Confluence**:

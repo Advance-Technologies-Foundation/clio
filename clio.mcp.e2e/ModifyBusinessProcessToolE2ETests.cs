@@ -224,7 +224,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: setFilter with a date-only `equal` on a DateTime column (Contact.CreatedOn), then describe reads the value back as the BARE date (2026-05-01), not a full ISO midnight. Proves the whole-day-trim round-trip fix end-to-end. Self-diagnosing: a full-ISO (…T00:00:00) read-back means an older clioprocessbuilder package is deployed on the stand.")]
+	[Description("Over the real MCP path: setFilter with a date-only `equal` on a DateTime column (Contact.CreatedOn), then describe reads the value back as the BARE date (2026-05-01), not a full ISO midnight. Proves the whole-day-trim round-trip fix end-to-end. Self-diagnosing: a full-ISO (…T00:00:00) read-back means an older CrtProcessBuilder package is deployed on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process setFilter date-only equal round-trips as a bare date")]
 	public async Task ModifyBusinessProcess_Should_RoundTripDateOnlyFilterAsBareDate() {
@@ -254,7 +254,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		afterSet.Should().Contain("2026-05-01",
 			because: "the date-only filter value round-trips through describe");
 		afterSet.Should().NotContain("2026-05-01T00:00:00",
-			because: "a whole-day-trimmed date-only equal reads back as the BARE date (2026-05-01), NOT a full ISO midnight — proving today's reader round-trip fix is on the stand; a full-ISO read-back means an older clioprocessbuilder package is deployed");
+			because: "a whole-day-trimmed date-only equal reads back as the BARE date (2026-05-01), NOT a full ISO midnight — proving today's reader round-trip fix is on the stand; a full-ISO read-back means an older CrtProcessBuilder package is deployed");
 	}
 
 	[Test]

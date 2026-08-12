@@ -15,6 +15,12 @@ namespace Clio.Common;
 /// <remarks>
 /// This generalizes the cliogate-specific <see cref="IClioGateway"/> check to arbitrary packages,
 /// looked up by name (with a configurable alias map for packages that ship under several names).
+/// <para>
+/// <see cref="EnsureRequirements"/> additionally applies <see cref="IBundledPackageConvergence"/> to every
+/// requirement it finds SATISFIED. That is a second and different rule — a delivery policy that no attribute
+/// declares — and it is enforced here only because this is where the environment's package list is already
+/// in hand. See that interface for why the two are kept apart.
+/// </para>
 /// </remarks>
 public interface IRequiredPackageChecker
 {
@@ -61,7 +67,9 @@ public interface IRequiredPackageChecker
 	/// decorated <c>bool</c> property.
 	/// </param>
 	/// <exception cref="PackageRequirementException">
-	/// Thrown when any triggered requirement is not satisfied (missing package or incompatible version).
+	/// Thrown when any triggered requirement is not satisfied (missing package or incompatible version),
+	/// or when a satisfied requirement names a package clio itself ships in a NEWER version than the
+	/// environment carries — see <see cref="IBundledPackageConvergence"/> for why that is a separate rule.
 	/// </exception>
 	/// <exception cref="InvalidOperationException">
 	/// Thrown when a non-<c>bool</c> property carries <see cref="RequiresPackageAttribute"/>; only
@@ -70,7 +78,8 @@ public interface IRequiredPackageChecker
 	/// <remarks>
 	/// When no class-level attribute is present and no property-level attribute is triggered (its
 	/// <c>bool</c> value is <c>false</c>), the method returns without fetching the installed package
-	/// list, so commands without an active requirement incur no cost.
+	/// list, so commands without an active requirement incur no cost. The convergence rule rides on the
+	/// same trigger and so inherits that guarantee.
 	/// </remarks>
 	void EnsureRequirements(object instance);
 }
@@ -90,6 +99,7 @@ public class RequiredPackageChecker : IRequiredPackageChecker
 		};
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+	private readonly IBundledPackageConvergence _bundledPackageConvergence;
 
 	// Cached for the lifetime of the service instance so multiple requirements on one command cause
 	// a single fetch.
@@ -99,8 +109,13 @@ public class RequiredPackageChecker : IRequiredPackageChecker
 
 	#region Constructors: Public
 
-	public RequiredPackageChecker(IApplicationPackageListProvider applicationPackageListProvider) {
+	public RequiredPackageChecker(
+		IApplicationPackageListProvider applicationPackageListProvider,
+		IBundledPackageConvergence bundledPackageConvergence) {
+		applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
+		bundledPackageConvergence.CheckArgumentNull(nameof(bundledPackageConvergence));
 		_applicationPackageListProvider = applicationPackageListProvider;
+		_bundledPackageConvergence = bundledPackageConvergence;
 	}
 
 	#endregion
@@ -194,25 +209,34 @@ public class RequiredPackageChecker : IRequiredPackageChecker
 		}
 
 		foreach (RequiresPackageAttribute requirement in triggered) {
+			PackageVersion installedVersion = GetInstalledVersion(requirement.Name);
 			bool presenceOnly = string.IsNullOrEmpty(requirement.Version);
 			if (presenceOnly) {
-				if (!IsInstalled(requirement.Name)) {
+				if (installedVersion is null) {
 					throw new PackageRequirementException(
 						AppendHint(
 							$"To use this command, you need to install the {requirement.Name} package. " +
 							"Install the package in the target environment and retry.",
 							requirement.Hint));
 				}
-				continue;
 			}
-
-			if (!IsCompatible(requirement.Name, requirement.Version)) {
+			else if (!IsCompatible(requirement.Name, requirement.Version)) {
 				throw new PackageRequirementException(
 					AppendHint(
 						$"To use this command, you need to install the {requirement.Name} package " +
 						$"version {requirement.Version} or higher. " +
 						"Install or update the package in the target environment and retry.",
 						requirement.Hint));
+			}
+
+			// The requirement is satisfied — the code CAN work here. Convergence is the separate question of
+			// whether it SHOULD run against an older package than the one this clio ships, and it is asked
+			// only for packages clio actually ships (the catalog decides that, so nothing declares it). The
+			// hint is appended here, exactly as above, so the checker stays package-agnostic and both
+			// refusals name the same remedy in the same words.
+			if (_bundledPackageConvergence.TryGetConvergenceRefusal(
+					requirement.Name, installedVersion, out string convergenceMessage)) {
+				throw new PackageRequirementException(AppendHint(convergenceMessage, requirement.Hint));
 			}
 		}
 	}
