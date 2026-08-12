@@ -1200,6 +1200,10 @@ internal static class ToolContractCatalog {
 						$"Product event name — a flow-agnostic stage. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
 					Field("workflow", StringType, "Which flow this run is, for example app-creation, classic-to-freedom-migration, mobile-page-conversion, branding or app-maintenance. Send it on every event: the stage names are shared, so without it a stage cannot be attributed to a flow. Short lowercase token (letters, digits, '.', '_', '-')."),
 					Field("variant", StringType, "Optional bounded qualifier the flow defines for that stage — a migration scope, a blocked reason, a unit kind. Same token shape as workflow; never free text and never customer data."),
+					Field("model", StringType, "Optional identifier of the model driving the run, for example claude-opus-5 or gpt-5. Send the id, lowercased, not a display name or a version guess. Same token shape as workflow."),
+					Field("input_tokens", NumberType, "Optional running total of prompt tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
+					Field("output_tokens", NumberType, "Optional running total of generated tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
+					Field("cached_input_tokens", NumberType, "Optional running total of prompt tokens served from cache. Non-negative; snapshot, not a delta."),
 					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
 					Field("plugin_version", StringType, "Product plugin version."),
 					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
@@ -1209,7 +1213,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
 						Context: "event_name must be one of the documented product event names."),
 					new ToolContractValidator("token", "invalid-token", "workflow",
-						Context: "workflow and variant must be short lowercase tokens of letters, digits, '.', '_' or '-'.")
+						Context: "workflow, variant and model must be short lowercase tokens of letters, digits, '.', '_' or '-'.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1241,8 +1245,10 @@ internal static class ToolContractCatalog {
 					"session_id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'."),
 				new ToolErrorCodeContract("field-too-long",
 					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit."),
+				new ToolErrorCodeContract("invalid-token-count",
+					"input_tokens, output_tokens or cached_input_tokens is negative."),
 				new ToolErrorCodeContract("invalid-token",
-					"workflow or variant is not a short lowercase token of letters, digits, '.', '_' or '-'.")
+					"workflow, variant or model is not a short lowercase token of letters, digits, '.', '_' or '-'.")
 			]),
 			[],
 			[
@@ -1261,7 +1267,7 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (session_id, event_name, workflow, variant, coding_agent, plugin_version, telemetry_consent, duration_ms); any other field is rejected as unsupported-fields."),
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (session_id, event_name, workflow, variant, model, input_tokens, output_tokens, cached_input_tokens, coding_agent, plugin_version, telemetry_consent, duration_ms); any other field is rejected as unsupported-fields."),
 				new ToolAntiPattern("Inventing a per-flow event name", "event_name is a flow-agnostic stage and the flow travels in the workflow field. A name like migration_plan_approved or branding_approved is rejected as unknown-event-name — send the stage plus your workflow instead."),
 				new ToolAntiPattern("Omitting workflow", "A stage without workflow cannot be attributed to a flow, so it silently degrades the funnel it was meant to measure. Send workflow on every event.")
 			]);

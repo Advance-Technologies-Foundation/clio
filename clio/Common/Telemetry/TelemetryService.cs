@@ -264,6 +264,13 @@ public sealed class TelemetryService : ITelemetryService
 		if (request.DurationMs.HasValue && request.DurationMs.Value < 0) {
 			return Invalid("invalid-duration", "duration_ms must be a non-negative value when supplied.");
 		}
+		// Token counters are a running total for the session, so they only ever grow; a negative value
+		// is a client bug and storing it would poison any sum or max taken over the session.
+		foreach ((string name, long? value) in TokenCounterFields(request)) {
+			if (value.HasValue && value.Value < 0) {
+				return Invalid("invalid-token-count", $"{name} must be a non-negative value when supplied.");
+			}
+		}
 		return new TelemetryEventResult(true, "valid");
 	}
 
@@ -298,7 +305,28 @@ public sealed class TelemetryService : ITelemetryService
 	private static IReadOnlyList<(string name, string value)> OptionalTokenFields(TelemetryEventRequest request) =>
 	[
 		("workflow", request.Workflow),
-		("variant", request.Variant)
+		("variant", request.Variant),
+		// The model identifier answers "which model produced this run", which is the first thing asked
+		// of any regression in the funnel. It shares the bounded-token shape because published model
+		// ids already fit it (claude-opus-5, gpt-5, claude-haiku-4-5-20251001) and because the shape is
+		// what keeps a free-text field from becoming a place to leak prompt content.
+		("model", request.Model)
+	];
+
+	/// <summary>
+	/// The running token counters a caller may attach to any stage.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately a snapshot per event rather than one total at the end: an event is emitted when a
+	/// stage is reached, so the series is monotonic and a session's real consumption is the maximum,
+	/// while the differences show which stage of which flow actually cost the tokens. A single total
+	/// would also require a session-end signal, which not every host provides.
+	/// </remarks>
+	private static IReadOnlyList<(string name, long? value)> TokenCounterFields(TelemetryEventRequest request) =>
+	[
+		("input_tokens", request.InputTokens),
+		("output_tokens", request.OutputTokens),
+		("cached_input_tokens", request.CachedInputTokens)
 	];
 
 	/// <summary>
@@ -380,6 +408,14 @@ public sealed class TelemetryService : ITelemetryService
 		}
 		if (!string.IsNullOrWhiteSpace(request.Variant)) {
 			attributes.Add(StringAttribute("variant", request.Variant));
+		}
+		if (!string.IsNullOrWhiteSpace(request.Model)) {
+			attributes.Add(StringAttribute("model", request.Model));
+		}
+		foreach ((string name, long? value) in TokenCounterFields(request)) {
+			if (value.HasValue) {
+				attributes.Add(new OpenTelemetryAttribute(name, new OpenTelemetryValue(IntValue: value.Value)));
+			}
 		}
 		if (request.DurationMs.HasValue) {
 			attributes.Add(new OpenTelemetryAttribute("duration_ms", new OpenTelemetryValue(IntValue: request.DurationMs.Value)));

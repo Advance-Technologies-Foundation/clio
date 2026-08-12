@@ -320,6 +320,52 @@ public sealed class WorkflowTelemetryVocabularyTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Stores the model driving the run, so a change in funnel behaviour can be attributed to the model that produced it.")]
+	public void TelemetryService_Should_Persist_The_Model()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act
+		TelemetryEventResult accepted = service.Send(CreateRequest("plan_presented") with {
+			Workflow = "branding",
+			Model = "claude-opus-5",
+			InputTokens = 12_345,
+			OutputTokens = 678,
+			CachedInputTokens = 90_123
+		});
+		TelemetryEventResult badModel = service.Send(CreateRequest("plan_presented") with {
+			Workflow = "branding", Model = "Claude Opus 5 (preview)"
+		});
+		TelemetryEventResult negativeCount = service.Send(CreateRequest("plan_presented") with {
+			Workflow = "branding", OutputTokens = -1
+		});
+
+		// Assert
+		accepted.Success.Should().BeTrue();
+		JsonElement stored = ReadNewestStoredEvent();
+		ReadStringAttribute(stored, "model").Should().Be("claude-opus-5",
+			because: "the model id has to survive to the stored event, or it cannot be grouped by");
+		foreach ((string name, long expected) in new[] {
+			("input_tokens", 12_345L), ("output_tokens", 678L), ("cached_input_tokens", 90_123L)
+		}) {
+			ReadIntAttribute(stored, name).Should().Be(expected,
+				because: "a counter that does not reach the stored event cannot be summed or maxed");
+		}
+		// A display name is the shape that arrives when someone types it from memory, and the same
+		// looseness is what would let prompt text ride along in this field.
+		badModel.Success.Should().BeFalse();
+		badModel.Error!.Code.Should().Be("invalid-token");
+		// The counters are a running total, so they only grow; a negative one is a client bug that
+		// would poison any sum or max taken over the session.
+		negativeCount.Success.Should().BeFalse();
+		negativeCount.Error!.Code.Should().Be("invalid-token-count");
+	}
+
+
+	[Test]
+	[Category("Unit")]
 	[Description("Keeps the advertised tool contract in step with the fields the service accepts, so the authoritative schema cannot forbid a supported field.")]
 	public void SendTelemetryContract_Should_Advertise_The_Flow_Fields_It_Accepts()
 	{

@@ -15,7 +15,11 @@ public sealed record TelemetryEventRequest(
 	[property: JsonPropertyName("duration_ms")] long? DurationMs = null,
 	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent = null,
 	[property: JsonPropertyName("workflow")] string Workflow = null,
-	[property: JsonPropertyName("variant")] string Variant = null
+	[property: JsonPropertyName("variant")] string Variant = null,
+	[property: JsonPropertyName("model")] string Model = null,
+	[property: JsonPropertyName("input_tokens")] long? InputTokens = null,
+	[property: JsonPropertyName("output_tokens")] long? OutputTokens = null,
+	[property: JsonPropertyName("cached_input_tokens")] long? CachedInputTokens = null
 ) {
 	[JsonExtensionData]
 	public Dictionary<string, System.Text.Json.JsonElement> ExtensionData { get; init; }
