@@ -179,14 +179,17 @@ cliogate (a privileged endpoint with `CheckCanManageSolution` first) or a thin c
 the guidance this ADR fed, and both are properties of the platform rather than of this feature:
 
 1. **The column goes in the package that owns the REFERENCED entity, and `add-package-dependency` drops out of
-   the recipe entirely.** `Custom` is depended UPON, so placing the column there forces a `Custom` →
-   entity-package dependency, after which saving a process that lives in the entity's own package is refused
-   with `Cyclic dependencies detected` naming `EntityColumnValues.Column.<name>`. Placed in the referenced
-   entity's own package it needs no new dependency at all — which is also what the environment's existing
-   custom sections do, each carrying its own replacing `Activity` layer. The dependency that genuinely blocks
-   is on the REFERENCED entity's package (`update-entity-schema` refuses `Reference schema 'X' was not found`),
-   never the `Activity` side. This narrows D6's own rationale sentence about "a declared package dependency the
-   auto-applier cannot supply": the dependency is real, but naming `CrtCoreBase` as its target was wrong.
+   the recipe entirely.** `Custom` is the LAST package — measured: it depends on `CrtCore`, the app package and
+   `CrtOpportunity`, and nothing depends on it. So a schema in the entity's own package cannot reference a
+   column placed in `Custom` without adding the REVERSE edge, which inverts an edge that already exists: the
+   save is then refused with `Cyclic dependencies detected` naming `EntityColumnValues.Column.<name>`. The cycle
+   is guaranteed by that placement, not incidental to it. Placed in the referenced entity's own package the
+   column needs no new dependency at all — which is also what the environment's existing custom sections do,
+   each carrying its own replacing `Activity` layer. And the dependency that actually blocked was on the
+   REFERENCED entity's package (`update-entity-schema` refuses `Reference schema 'X' was not found`), so D6's
+   rationale sentence about "a declared package dependency the auto-applier cannot supply" is right about the
+   need and incomplete about the target: `CrtCoreBase` may still be required for the `Activity` side, but it is
+   not what refuses first.
 2. **Whether a column exists cannot be settled by inspection**, so the recipe must lean on the refusals instead.
    Measured for one column on one environment: the physical `Activity` table carried `OpportunityId`,
    `get-entity-schema-properties` listed it, the object designer did not show it, and a process wrote the value
