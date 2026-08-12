@@ -175,6 +175,31 @@ story 5:** the runtime write channel matches parameters to columns by UId-then-n
 cross-package name pre-check instead. Its home is
 cliogate (a privileged endpoint with `CheckCanManageSolution` first) or a thin clio tool.
 
+*Two corrections from running the recipe, not reading it (2026-08-12, two environments).* Both were wrong in
+the guidance this ADR fed, and both are properties of the platform rather than of this feature:
+
+1. **The column goes in the package that owns the REFERENCED entity, and `add-package-dependency` drops out of
+   the recipe entirely.** `Custom` is depended UPON, so placing the column there forces a `Custom` →
+   entity-package dependency, after which saving a process that lives in the entity's own package is refused
+   with `Cyclic dependencies detected` naming `EntityColumnValues.Column.<name>`. Placed in the referenced
+   entity's own package it needs no new dependency at all — which is also what the environment's existing
+   custom sections do, each carrying its own replacing `Activity` layer. The dependency that genuinely blocks
+   is on the REFERENCED entity's package (`update-entity-schema` refuses `Reference schema 'X' was not found`),
+   never the `Activity` side. This narrows D6's own rationale sentence about "a declared package dependency the
+   auto-applier cannot supply": the dependency is real, but naming `CrtCoreBase` as its target was wrong.
+2. **Whether a column exists cannot be settled by inspection**, so the recipe must lean on the refusals instead.
+   Measured for one column on one environment: the physical `Activity` table carried `OpportunityId`,
+   `get-entity-schema-properties` listed it, the object designer did not show it, and a process wrote the value
+   successfully. In the other direction, `Case`, `Order`, `Document`, `Invoice`, `Project` and `Contract` were
+   physical columns ABSENT from the schema. `setConnections`' three refusals already separate "no column",
+   "column present but neither registered nor declared" and "nothing to add", and they are the only oracle that
+   agreed with the runtime.
+
+Also measured, and it sharpens what registration is FOR: an `Opportunity` connection bound by a process wrote
+its value and was displayed by a Next Steps component on an environment whose registry carried 17 rows. The
+binder resolves a column through the registry OR through a parameter the user task already declares, so
+registration buys availability to EVERY element and visibility to registry-reading surfaces — not the write.
+
 ### D7 — One authorization gate
 
 `CanManageProcessDesign` only, unconditional. A direct consequence of D6: the package never mutates the
