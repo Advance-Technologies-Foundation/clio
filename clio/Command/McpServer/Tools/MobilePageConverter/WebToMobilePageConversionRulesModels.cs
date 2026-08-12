@@ -408,4 +408,21 @@ public sealed class RowLayoutRule {
 	/// <summary>Suffix appended to the mobile element name to name the row element (e.g. <c>"_ListItem"</c>).</summary>
 	[JsonPropertyName("nameSuffix")]
 	public string NameSuffix { get; init; }
+
+	/// <summary>
+	/// Property of a source entry holding its value type (e.g. a column's <c>"dataValueType"</c>). Read together
+	/// with <see cref="TitleValueTypes"/> to choose which entry may be the title.
+	/// </summary>
+	[JsonPropertyName("valueTypeFrom")]
+	public string ValueTypeFrom { get; init; }
+
+	/// <summary>
+	/// Value types the TITLE may bind. The mobile designer offers only TEXT columns for a list row's title — a
+	/// lookup binds to nothing and renders an empty Title column while the body rows still look correct — so the
+	/// title is the first entry whose value type is listed here, NOT simply the first entry. Every other entry,
+	/// including one skipped over, becomes a body row in source order. When no entry qualifies the row is built
+	/// with no title rather than with an unsupported one. Empty or absent keeps the plain first-entry behaviour.
+	/// </summary>
+	[JsonPropertyName("titleValueTypes")]
+	public IReadOnlyList<int> TitleValueTypes { get; init; }
 }
