@@ -247,7 +247,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
 				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
 				mobileTemplateTypesByName: mobileTemplateProbe.TypesByName,
-				webTemplateBaselineNodes: webTemplateBaseline.Nodes);
+				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
+				webTemplateUnavailable: webTemplateBaseline.Unavailable);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -289,35 +290,39 @@ public sealed class MobilePageConversionGuideTool {
 	}
 
 	/// <summary>
-	/// Best-effort read of the source page's web template (its parent schema, e.g.
-	/// PageWithTabsFreedomTemplate) so its inherited chrome can be filtered out of the conversion.
-	/// Loads the template's merged bundle the same way the source page is loaded and collects every
-	/// component name in it (the template + its own base templates). Returns an empty set when the
-	/// parent name is missing or the read fails — the guide is then produced without template
-	/// subtraction (current behavior). Never throws.
-	/// </summary>
-	/// <summary>
-	/// The web template baseline: the set of component NAMES it provides (inherited chrome subtracted at read
-	/// time) plus a name → node map of the same components. The node map is the DELTA baseline — a same-component
-	/// twin carries only the properties the page changed from it, so an untouched inherited property leaves the
-	/// mobile template's own default in place.
+	/// The web template baseline: a name → node map of every component the source page's web template
+	/// provides (inherited chrome), with <see cref="Names"/> derived from its keys for chrome subtraction. The
+	/// node map is the DELTA baseline — a same-component twin carries only the properties the page changed from
+	/// it, so an untouched inherited property leaves the mobile template's own default in place.
+	/// <see cref="Unavailable"/> is true ONLY when a template name was known but its bundle could not be read
+	/// (no active environment, read failure) — distinct from "the page has no web template" (both parents
+	/// empty); the caller surfaces it so a same-component twin's fallback to carrying the whole node is not
+	/// silent.
 	/// </summary>
 	private sealed record WebTemplateBaseline(
 		IReadOnlySet<string> Names,
-		IReadOnlyDictionary<string, JObject> Nodes);
+		IReadOnlyDictionary<string, JObject> Nodes,
+		bool Unavailable);
 
+	/// <summary>
+	/// Best-effort read of the source page's web template (its parent schema, e.g. PageWithTabsFreedomTemplate)
+	/// so its inherited chrome can be filtered out of the conversion and used as the same-component-twin delta
+	/// baseline. Loads the template's merged bundle the same way the source page is loaded. Returns an empty
+	/// baseline (Unavailable=false) when there is no parent template; Unavailable=true when a template was
+	/// known but the read failed. Never throws.
+	/// </summary>
 	private WebTemplateBaseline LoadWebTemplateBaseline(string parentSchemaName, string ownSchemaName, MobilePageConversionGuideArgs args) {
-		var empty = new WebTemplateBaseline(
-			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-			new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase));
+		var emptyNodes = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
+		var absent = new WebTemplateBaseline(
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase), emptyNodes, Unavailable: false);
 		if (string.IsNullOrWhiteSpace(parentSchemaName)) {
-			return empty;
+			return absent;
 		}
 		// Never load the source page as its own template baseline: for a replacing schema layered over a
 		// same-named base, the parent name equals the page's own name. Subtracting the page against itself
 		// would empty the whole layout. Belt-and-suspenders behind ResolveEffectiveTemplateName.
 		if (string.Equals(parentSchemaName, ownSchemaName, StringComparison.OrdinalIgnoreCase)) {
-			return empty;
+			return absent;
 		}
 		try {
 			PageGetOptions options = new() {
@@ -337,14 +342,19 @@ public sealed class MobilePageConversionGuideTool {
 				}
 			}
 			if (templateResponse?.Success == true && templateResponse.Bundle?.ViewConfig is { } viewConfig) {
+				// One traversal: derive Names from the node map's keys rather than walking the tree twice.
+				IReadOnlyDictionary<string, JObject> nodes =
+					WebToMobileAnalysisService.CollectComponentNodesByName(viewConfig);
 				return new WebTemplateBaseline(
-					WebToMobileAnalysisService.CollectComponentNames(viewConfig),
-					WebToMobileAnalysisService.CollectComponentNodesByName(viewConfig));
+					new HashSet<string>(nodes.Keys, StringComparer.OrdinalIgnoreCase), nodes, Unavailable: false);
 			}
 		} catch (Exception) {
-			// Best-effort: a failed template read falls back to no subtraction.
+			// Best-effort: fall through to Unavailable below.
 		}
-		return empty;
+		// A template name was known but the bundle could not be read — flag it so the caller does not treat the
+		// missing baseline as "the page changed everything" without a signal.
+		return new WebTemplateBaseline(
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase), emptyNodes, Unavailable: true);
 	}
 
 	/// <summary>
@@ -491,7 +501,7 @@ public sealed class MobilePageConversionGuideTool {
 	/// and carries the template's OWN merged <c>viewModelConfig</c> and <c>modelConfig</c> so the converted
 	/// page's configs can be diffed recursively against that base (a shared subtree emits only the real delta;
 	/// an array the base already carries is augmented via insert rather than replaced by the mobile diff
-	/// engine's array-replace merge). Mirrors <see cref="LoadTemplateComponentNames"/>: loads the template's
+	/// engine's array-replace merge). Mirrors <see cref="LoadWebTemplateBaseline"/>: loads the template's
 	/// merged bundle and never throws. Returns a null base (and <c>Unavailable = false</c>) when no template
 	/// name is known; <c>Unavailable = true</c> when a name was known but the read failed.
 	/// </summary>

@@ -155,9 +155,10 @@ public sealed class ComponentMappingRule {
 	/// e.g. <c>["sourceSchemaName", "rootSchemaName"]</c> for the folder tree, whose app-authored binding is
 	/// the only thing the mobile template does not itself supply. Leave it EMPTY (the default) for a twin of
 	/// the SAME component on both sides (e.g. <c>AttachmentList → AttachmentFileList</c>, both
-	/// <c>crt.FileList</c>): the element is just renamed between the web and mobile templates, so its WHOLE
-	/// property set is carried automatically (no <c>type</c> is emitted — a merge targets an element the
-	/// template already owns). A twin whose web type has no mobile equivalent (a structural conversion, e.g.
+	/// <c>crt.FileList</c>): the element is just renamed between the web and mobile templates, so the page's
+	/// DELTA over the web-template baseline is carried automatically — a property the page left at the
+	/// template default is omitted so the mobile element keeps its own default (no <c>type</c> is emitted — a
+	/// merge targets an element the template already owns). A twin whose web type has no mobile equivalent (a structural conversion, e.g.
 	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries nothing and stays an advisory merge, with
 	/// the grid→row how-to left to the caller per <c>componentSuggestions</c>. Without a twin the web node
 	/// (inherited template chrome) is pruned and its values are lost.

@@ -14,7 +14,7 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]
-[Property("Module", "Command")]
+[Property("Module", "McpServer")]
 public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
@@ -1861,6 +1861,34 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
 		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed", because: "unchanged from the web-template baseline => empty delta => no merge entry; the mobile template already provides Feed");
+		// The absence above must be "kept as an unchanged twin", NOT "pruned as chrome": the auto-twin mechanism
+		// keeps Feed in the tree (it survives pruning), so it is still surfaced in sourceStructure. Without the
+		// mechanism Feed would be pruned and this would fail — so the test cannot pass with the mechanism deleted.
+		guide.SourceStructure.Should().Contain(s => s.Name == "Feed",
+			because: "an unchanged auto-twin is kept (surfaced in sourceStructure), not pruned away");
+	}
+
+	[Test]
+	[Description("A PAGE-AUTHORED leaf (NOT inherited from the web template) that merely shares a name and type with a mobile-template element must NOT be reclassified as an auto twin: it stays an insert with its ParentName, so it is not silently stripped of placement / caption / event bindings.")]
+	public void Analyze_AutoComponentTwin_PageAuthoredLeafNotInBaseline_IsInsertedNotMerged() {
+		// Arrange - "Feed" is NOT in the web-template baseline (page-authored), though the mobile template has a
+		// same-named crt.Feed. Empty baseline nodes + empty templateNames => it is not inherited chrome. The
+		// wrapper is a mobile-supported container so it inserts (and owns Feed's parent) rather than relocating.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Wrapper", "type": "crt.GridContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS" } ] } ]
+			""");
+		var web = Reg(("crt.GridContainer", true), ("crt.Feed", false));
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
+
+		// Act - no templateComponentNames / webTemplateBaselineNodes: Feed is page content, not template chrome.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, mobileTemplateTypesByName: mobileTypes);
+
+		// Assert - inserted (with its parent), NOT merged as a twin.
+		ElementMapEntry feed = guide.ElementMap.Single(e => e.WebName == "Feed");
+		feed.Operation.Should().Be("insert", because: "a page-authored leaf is inserted, not merged onto a same-named mobile-template element it does not inherit from");
+		feed.ParentName.Should().Be("Wrapper", because: "an insert keeps its placement - the auto-twin path would have dropped it");
 	}
 
 	[Test]
@@ -1914,6 +1942,73 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject vals = twin.MobileValues!.AsObject();
 		vals["recordColumnName"]!.GetValue<string>().Should().Be("Lead", because: "the page added recordColumnName over the baseline - it carries");
 		vals.ContainsKey("viewType").Should().BeFalse(because: "viewType equals the web-template baseline - an unchanged property is omitted so the mobile default stands");
+	}
+
+	[Test]
+	[Description("End-to-end with a DEEPLY NESTED, production-shaped tree (Tabs > FeedTabContainer > Feed): both the mobile name->type collection and the web baseline are nested too, so prune, the walk, and both collectors' recursion are all exercised — the auto twin still carries only the page's delta.")]
+	public void Analyze_AutoComponentTwin_DeeplyNested_CarriesDelta() {
+		// Arrange - Feed is two containers deep, as on a real tabbed record page.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.Tabs", "items": [
+				{ "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+					{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS", "entitySchemaName": "Lead" } ] } ] } ]
+			""");
+		var web = Reg(("crt.Tabs", true), ("crt.TabContainer", true), ("crt.Feed", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["Tabs"] = "Tabs", ["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("Tabs", "FeedTabContainer", "Feed");
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Tabs", "crt.Tabs"), ("FeedContainer", "crt.TabContainer"), ("Feed", "crt.Feed"));
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "Tabs", "type": "crt.Tabs", "items": [
+				{ "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+					{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS", "entitySchemaName": "Lead" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames,
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+
+		// Assert - the deeply nested Feed is found, merged, and carries only the changed dataSourceName.
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		twin.Operation.Should().Be("merge");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "recursion reaches the nested Feed and carries the page's change");
+		vals.ContainsKey("entitySchemaName").Should().BeFalse(because: "entitySchemaName equals the nested baseline - omitted");
+	}
+
+	[Test]
+	[Description("CollectComponentTypesByName recurses into nested items and maps each named component to its type (first occurrence wins).")]
+	public void CollectComponentTypesByName_RecursesNestedTree() {
+		JsonArray viewConfig = JsonNode.Parse("""
+			[ { "name": "Outer", "type": "crt.FlexContainer", "items": [
+				{ "name": "Inner", "type": "crt.TabContainer", "items": [
+					{ "name": "Feed", "type": "crt.Feed" } ] } ] } ]
+			""")!.AsArray();
+
+		Dictionary<string, string> typesByName = WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig);
+
+		typesByName.Should().Contain("Outer", "crt.FlexContainer");
+		typesByName.Should().Contain("Inner", "crt.TabContainer");
+		typesByName.Should().Contain("Feed", "crt.Feed", because: "the deepest node is only reached by the items recursion");
+	}
+
+	[Test]
+	[Description("CollectComponentNodesByName recurses into nested items and captures each named node (with its properties) as the delta baseline.")]
+	public void CollectComponentNodesByName_RecursesNestedTree() {
+		JsonArray viewConfig = JsonNode.Parse("""
+			[ { "name": "Outer", "type": "crt.FlexContainer", "items": [
+				{ "name": "Inner", "type": "crt.TabContainer", "items": [
+					{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS" } ] } ] } ]
+			""")!.AsArray();
+
+		var nodesByName = WebToMobileAnalysisService.CollectComponentNodesByName(viewConfig);
+
+		nodesByName.Keys.Should().Contain(new[] { "Outer", "Inner", "Feed" });
+		nodesByName["Feed"]["dataSourceName"]!.ToString().Should().Be("LeadDS",
+			because: "the nested node's own properties are captured for the delta comparison");
 	}
 
 	#endregion

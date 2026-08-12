@@ -171,9 +171,11 @@ public sealed class ElementMapEntry {
 	/// component's <c>values</c> WITHOUT dropping anything, then add ONLY the value binding (e.g.
 	/// <c>control</c>, or <c>value</c> for lookups), which is type-specific and intentionally left out. For a
 	/// <c>merge</c> twin it carries the page's parameters onto the template-provided element with no
-	/// <c>type</c> — the whitelisted keys when the rule declares <c>carryProperties</c>, otherwise the whole
-	/// node for a same-component twin (e.g. crt.FileList → crt.FileList); merge them by name. Null when there
-	/// is nothing prebuilt (a structural/advisory merge, or an operation that carries no values).
+	/// <c>type</c> — the whitelisted keys when the rule declares <c>carryProperties</c>, otherwise the page's
+	/// DELTA over the web-template baseline for a same-component twin (e.g. crt.FileList → crt.FileList): only
+	/// what the page changed, so a property left at the template default is omitted and the mobile element
+	/// keeps its own default; merge them by name. Null when there is nothing prebuilt (a structural/advisory
+	/// merge, an unchanged same-component twin, or an operation that carries no values).
 	/// </summary>
 	[JsonPropertyName("mobileValues")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
