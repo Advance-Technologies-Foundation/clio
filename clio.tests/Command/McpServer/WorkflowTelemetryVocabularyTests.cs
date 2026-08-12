@@ -249,6 +249,75 @@ public sealed class WorkflowTelemetryVocabularyTests
 		}
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Separates the two unconsented outcomes: an undecided install is asked, a denied one is silent.")]
+	public void TelemetryService_Should_Distinguish_The_Two_Unconsented_Outcomes()
+	{
+		// Arrange — a fresh telemetry home, so consent reads unknown.
+		TelemetryService service = CreateService();
+
+		// Act — no telemetry_consent field while the decision is still unmade.
+		TelemetryEventResult undecided = service.Send(CreateRequest("workflow_started") with {
+			Workflow = "branding"
+		});
+
+		// Assert — rejected with an ACTIONABLE code, not dropped. An agent cannot ask the developer
+		// for a decision it was never told is missing, and a silent drop is indistinguishable from a
+		// successful send, so the whole first run would report nothing and nobody would know why.
+		undecided.Success.Should().BeFalse();
+		undecided.Status.Should().Be("rejected");
+		undecided.Error!.Code.Should().Be("telemetry-consent-required");
+		StoredEventCount().Should().Be(0, because: "an unconsented event must never reach the outbox");
+
+		// Act — the developer declines, and the decision is persisted by the same call.
+		TelemetryEventResult declined = service.Send(CreateRequest("workflow_started") with {
+			Workflow = "branding", TelemetryConsent = "denied"
+		});
+		TelemetryEventResult afterDenial = service.Send(CreateRequest("plan_approved") with {
+			Workflow = "branding"
+		});
+
+		// Assert — once denied, every later send reports SUCCESS and stores nothing. Success is the
+		// right answer here: a decision the developer already made is not an error the agent should
+		// retry, surface, or treat as a failed step.
+		declined.Success.Should().BeTrue();
+		declined.Status.Should().Be("consent-denied");
+		afterDenial.Success.Should().BeTrue();
+		afterDenial.Status.Should().Be("consent-denied");
+		StoredEventCount().Should().Be(0,
+			because: "a denied installation stores nothing at all, not even the stage that carried the decision");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the unconsented behaviour described accurately, so an agent knows an undecided send is answerable.")]
+	public void TelemetryGuidance_Should_Not_Claim_Unconsented_Events_Are_Silently_Dropped()
+	{
+		// Arrange
+		string[] descriptions = [
+			ReadToolDescription(typeof(Clio.Command.McpServer.Tools.SendTelemetryTool),
+				nameof(Clio.Command.McpServer.Tools.SendTelemetryTool.SendTelemetry)),
+			ReadToolDescription(typeof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool),
+				nameof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool.GetTelemetryConsent))
+		];
+
+		// Assert — the shipped wording promised a silent drop while the code answers with
+		// telemetry-consent-required. An agent that believes the drop is silent has no reason to ask
+		// the developer, which is exactly how a first run ends up reporting nothing.
+		foreach (string description in descriptions) {
+			description.Should().NotContain("silently dropped",
+				because: "an undecided send is rejected with an actionable code, so the drop is not silent");
+			description.Should().Contain("telemetry-consent-required",
+				because: "the agent has to recognise the code it will actually receive");
+		}
+	}
+
+	private int StoredEventCount() {
+		string events = Path.Combine(_telemetryHome, "events");
+		return Directory.Exists(events) ? Directory.GetFiles(events).Length : 0;
+	}
+
 	private static string ReadToolDescription(Type toolType, string methodName) =>
 		toolType.GetMethod(methodName)!
 			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)

@@ -47,8 +47,11 @@ public sealed class SendTelemetryTool
 				 carries a bounded per-stage qualifier the flow defines (a migration scope, a blocked reason) - both
 				 fields are short lowercase tokens, never free text and never customer data. The legacy
 				 app-creation-specific names still work but are deprecated. Call get-telemetry-consent before using it. Use telemetry_consent only on first run after
-				 asking the developer, so Clio can store the local consent decision. Until consent is granted, nothing
-				 is stored, so events sent before consent is established are silently dropped. Which events to send, and
+				 asking the developer, so Clio can store the local consent decision. Nothing is stored until consent is
+				 granted, and the two unconsented outcomes differ: while consent reads unknown a call WITHOUT
+				 telemetry_consent is rejected with code telemetry-consent-required (ask the developer, then retry with
+				 the decision), whereas once the decision is denied a call returns success with status consent-denied
+				 and stores nothing. Neither is a task failure. Which events to send, and
 				 when, is defined by the consuming skill/contract, not by this tool. Delivery is non-blocking and
 				 fire-and-forget: never wait on, retry, or surface this call.
 				 """)]
