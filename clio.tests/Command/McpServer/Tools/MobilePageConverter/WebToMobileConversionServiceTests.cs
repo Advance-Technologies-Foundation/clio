@@ -3593,6 +3593,37 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A column whose code is not a usable binding identifier is skipped rather than repaired: the page body comes from a customer environment, and stripping the offending characters would yield a plausible token that resolves to nothing.")]
+	public void Analyze_MobileValues_ColumnCodeThatIsNotABindingIdentifier_IsSkipped() {
+		// Arrange — a leading '$', a dotted path, a space, and a Cyrillic homoglyph of "Price" are each
+		// unusable as a $Token; only the two ASCII identifiers may reach the row.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Mixed", "type": "crt.DataGrid", "items": "$Mixed",
+				  "columns": [
+					{ "id": "c1", "code": "$AlreadyBound" },
+					{ "id": "c2", "code": "MixedDS_Name" },
+					{ "id": "c3", "code": "MixedDS.Dotted" },
+					{ "id": "c4", "code": "Has Space" },
+					{ "id": "c5", "code": "MixedDS_Ргісе" },
+					{ "id": "c6", "code": "MixedDS_Amount" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "Mixed").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$MixedDS_Name",
+			because: "the first column's code already starts with '$' and is not an identifier, so the first "
+				+ "USABLE column becomes the title instead");
+		row["body"].AsArray().Select(x => x["value"]?.GetValue<string>()).Should().Equal(
+			new[] { "$MixedDS_Amount" },
+			because: "a dotted path, a code with a space and a Cyrillic homoglyph are all unusable as bindings "
+				+ "and must be dropped, not stripped into something that looks valid");
+	}
+
+	[Test]
 	[Description("A web node that already carries the target property keeps its own — authored content is never replaced by the synthesized row.")]
 	public void Analyze_MobileValues_GridWithOwnItemLayout_IsNotOverwritten() {
 		// Arrange
