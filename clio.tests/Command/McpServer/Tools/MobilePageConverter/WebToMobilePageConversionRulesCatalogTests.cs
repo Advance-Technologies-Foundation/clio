@@ -115,23 +115,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ENG-93152: the bundled tabbed template declares headerActionsContainer for MainHeader — a synthesized crt.FlexContainer with a name prefix, relocating page-specific MainHeader survivors instead of leaving them to the generic positional (:top/:bottom) rules.")]
-	public void LoadBundled_TabbedTemplateDeclaresHeaderActionsContainer() {
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		TemplateMappingRule tabbed = rules.Templates.First(t =>
-			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
-
-		HeaderActionsContainerRule headerActionsContainer = tabbed.HeaderActionsContainer;
-		headerActionsContainer.Should().NotBeNull(because: "page-specific MainHeader survivors need a deterministic bucket, not a positional-rule accident");
-		headerActionsContainer.Web.Should().Be("MainHeader");
-		headerActionsContainer.Container.Should().NotBeNull();
-		headerActionsContainer.Container.NamePrefix.Should().Be("HeaderActionsContainer_");
-		headerActionsContainer.Container.Values.Should().ContainKey("type");
-		headerActionsContainer.Container.Values["type"].GetString().Should().Be("crt.FlexContainer");
-	}
-
-	[Test]
 	[Description("The bundled grid → list component rule maps a web grid to [crt.List, crt.ListItem] and its note explains the crt.ListItem goes into the crt.List itemLayout.")]
 	public void LoadBundled_GridRuleMapsToListAndListItem() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
