@@ -271,7 +271,8 @@ internal sealed class ClassicListColumnResolver(
 			throw new ArgumentException(PageSchemaMetadataHelper.SchemaNameFormatError, nameof(sectionSchemaName));
 		}
 
-		IReadOnlyList<PageDesignerHierarchySchema> hierarchy = ResolveHierarchy(normalizedName);
+		var notes = new List<string>();
+		IReadOnlyList<PageDesignerHierarchySchema> hierarchy = ResolveHierarchy(normalizedName, notes);
 		string[] bodies = hierarchy
 			.Reverse()
 			.Select(schema => schema.Body)
@@ -287,18 +288,19 @@ internal sealed class ClassicListColumnResolver(
 		IReadOnlyList<string> schemaColumns = parser.ParseColumns(bodies);
 		if (schemaColumns.Count > 0) {
 			return Success(normalizedName, entity, SchemaDefaultSource,
-				BuildColumnInfo(schemaColumns, properties.Columns), []);
+				BuildColumnInfo(schemaColumns, properties.Columns), notes);
 		}
 		if (!string.IsNullOrWhiteSpace(properties.PrimaryDisplayColumnName)) {
+			notes.Add("The section schema does not define static list columns; using the entity primary display column.");
 			return Success(normalizedName, entity, EntityDefaultSource,
-				BuildColumnInfo([properties.PrimaryDisplayColumnName], properties.Columns),
-				["The section schema does not define static list columns; using the entity primary display column."]);
+				BuildColumnInfo([properties.PrimaryDisplayColumnName], properties.Columns), notes);
 		}
-		return Success(normalizedName, entity, NoneSource, [],
-			["The section schema does not define static list columns and the entity has no primary display column."]);
+		notes.Add(
+			"The section schema does not define static list columns and the entity has no primary display column.");
+		return Success(normalizedName, entity, NoneSource, [], notes);
 	}
 
-	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchy(string schemaName) {
+	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchy(string schemaName, List<string> notes) {
 		(JToken metadata, string metadataError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 			applicationClient, serviceUrlBuilder, schemaName,
 			("UId", "UId"), ("PackageUId", "SysPackage.UId"));
@@ -314,10 +316,14 @@ internal sealed class ClassicListColumnResolver(
 		try {
 			designPackageUId = hierarchyClient.GetDesignPackageUId(schemaUId);
 		}
-		catch (Exception) {
+		catch (Exception exception) {
 			// Best-effort, mirroring GetClassicPageSourcesCommand.ResolveHierarchyBaseToTop: the designer call
 			// parses its response as JSON, so an expired session (HTML error page) surfaces as a parser/transport
-			// exception rather than InvalidOperationException. The schema's own package is a valid anchor.
+			// exception rather than InvalidOperationException. The schema's own package is a valid anchor. The
+			// sibling logs the degradation at debug; this resolver has no logger, so it surfaces through notes —
+			// the MCP tool redacts them, so an inner message carrying a host or URI stays safe on both paths.
+			notes.Add($"GetDesignPackageUId failed for '{schemaName}' ({exception.Message}); " +
+				"anchoring on the schema's own package.");
 			designPackageUId = packageUId;
 		}
 		IReadOnlyList<PageDesignerHierarchySchema> initial =

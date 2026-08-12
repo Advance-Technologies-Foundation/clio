@@ -313,6 +313,8 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 			response.Error);
 		response.Source.Should().Be("entity-default", because: "the hierarchy still resolves through the fallback anchor");
 		_hierarchyClient.Received(1).GetParentSchemas(SchemaUId, PackageUId);
+		response.Notes.Should().Contain(note => note.Contains("anchoring on the schema's own package"),
+			because: "a silent fallback is undiagnosable; the resolver has no logger, so notes carry the degradation");
 	}
 
 	[Test]
