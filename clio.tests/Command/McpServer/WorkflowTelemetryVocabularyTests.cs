@@ -318,6 +318,38 @@ public sealed class WorkflowTelemetryVocabularyTests
 		return Directory.Exists(events) ? Directory.GetFiles(events).Length : 0;
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the advertised tool contract in step with the fields the service accepts, so the authoritative schema cannot forbid a supported field.")]
+	public void SendTelemetryContract_Should_Advertise_The_Flow_Fields_It_Accepts()
+	{
+		// Arrange — the contract an agent is told to read BEFORE its first call, and which the
+		// telemetry guidance names as authoritative over any prose.
+		string contract = SerializeContract(Clio.Command.McpServer.Tools.SendTelemetryTool.ToolName);
+
+		// Assert — measured failure: the service accepted workflow and variant while the contract
+		// declared neither and asserted that any undocumented field is rejected. An agent that
+		// believed it dropped the flow dimension entirely, which is the one field the whole
+		// stage-plus-field design depends on.
+		contract.Should().Contain("\"workflow\"",
+			because: "the field carrying the flow dimension has to appear in the schema an agent reads first");
+		contract.Should().Contain("\"variant\"",
+			because: "a bounded qualifier an agent cannot see is a qualifier it will never send");
+		foreach (string stage in StageEvents) {
+			contract.Should().Contain(stage,
+				because: "the advertised allow-list must match the one the service enforces");
+		}
+		contract.Should().NotContain("If no such skill is active",
+			because: "the contract is a third surface that carried the skill gate after the tool descriptions dropped it");
+		contract.Should().NotContain("silently dropped",
+			because: "an undecided send is rejected with telemetry-consent-required, not dropped");
+	}
+
+	// Serialized through the same catalog entry point the MCP tool calls, so the assertions read the
+	// bytes an agent actually receives rather than a hand-picked projection of the definition.
+	private static string SerializeContract(string toolName) =>
+		JsonSerializer.Serialize(Clio.Command.McpServer.Tools.ToolContractCatalog.GetContracts([toolName]));
+
 	private static string ReadToolDescription(Type toolType, string methodName) =>
 		toolType.GetMethod(methodName)!
 			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
