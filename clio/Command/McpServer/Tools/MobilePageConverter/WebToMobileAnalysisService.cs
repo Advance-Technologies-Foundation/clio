@@ -1872,7 +1872,16 @@ public static class WebToMobileAnalysisService {
 		// declares how to build it. Doing it here makes the row deterministic: it used to be prose the caller
 		// had to act on, and the same page converted three different ways — no row at all, a correct one, and
 		// one whose title was an object instead of the declared string (ENG-95046).
+		// Only when the element is ACTUALLY being converted through this rule's mapping: a rule is found by the
+		// WEB type, but the same web type can survive as itself once the mobile registry gains it, and then its
+		// own properties must be left alone. Requiring the resolved mobile type to be one the rule maps to keeps
+		// the transform tied to the mapping rather than to the web type.
 		ComponentEquivalenceRule mappingRule = FindRule(ctx.Rules, node["type"]?.ToString());
+		bool convertedByRule = mappingRule?.Mobile is not null
+			&& mappingRule.Mobile.Any(m => string.Equals(m, mobileType, StringComparison.OrdinalIgnoreCase));
+		if (!convertedByRule) {
+			mappingRule = null;
+		}
 		ApplyRowLayout(mappingRule?.RowLayout, node, values, mobileName);
 		// Web properties the mapped mobile type has no equivalent for. Deliberately rule-driven, NOT pruned
 		// against the registry — see the copy rule above (ENG-91859). Runs AFTER the row so the source array

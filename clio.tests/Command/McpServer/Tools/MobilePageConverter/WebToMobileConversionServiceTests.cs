@@ -3551,6 +3551,67 @@ public sealed class WebToMobileConversionServiceTests {
 		values["type"]?.GetValue<string>().Should().Be("crt.List", because: "the element is still the mobile list");
 	}
 
+	[Test]
+	[Description("A single-column grid yields a row with a title and an EMPTY body — the display column is the title, and there is nothing left to show underneath.")]
+	public void Analyze_MobileValues_SingleColumnGrid_YieldsTitleAndEmptyBody() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OneCol", "type": "crt.DataGrid", "items": "$OneCol",
+				  "columns": [ { "id": "c1", "code": "OneColDS_Name" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "one column is still enough to render a row");
+		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name");
+		row["body"].Should().NotBeNull(because: "the body collection is always present, so the shape is predictable");
+		row["body"].AsArray().Should().BeEmpty(because: "the only column became the title");
+	}
+
+	[Test]
+	[Description("A grid carrying no columns gets NO synthesized row — there is nothing to build one from, and inventing an empty row would hide the fact that the source had no columns.")]
+	public void Analyze_MobileValues_GridWithoutColumns_GetsNoRow() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "NoCols", "type": "crt.DataGrid", "items": "$NoCols" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "NoCols");
+		grid.Operation.Should().Be("insert", because: "a column-less grid still converts — only its row is unknown");
+		grid.MobileValues["itemLayout"].Should().BeNull(
+			because: "the row is synthesized FROM the columns; with none there is nothing to synthesize");
+	}
+
+	[Test]
+	[Description("A web node that already carries the target property keeps its own — authored content is never replaced by the synthesized row.")]
+	public void Analyze_MobileValues_GridWithOwnItemLayout_IsNotOverwritten() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Authored", "type": "crt.DataGrid", "items": "$Authored",
+				  "itemLayout": { "type": "crt.ListItem", "title": "$Hand_Written" },
+				  "columns": [ { "id": "c1", "code": "AuthoredDS_Ignored" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "Authored").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$Hand_Written",
+			because: "synthesis fills a gap; it must not clobber a row the source page actually authored");
+	}
+
 	#endregion
 
 	#region Empty container removal
