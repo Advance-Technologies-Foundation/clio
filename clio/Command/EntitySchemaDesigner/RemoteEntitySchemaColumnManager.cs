@@ -1068,7 +1068,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// exactly there, and refusing them would break a supported workflow while blaming a package that is not
 	/// involved. Only a runtime hit the pristine layer never had can be a foreign contribution.</para>
 	/// </remarks>
-	private void EnsureNameIsFreeAcrossPackages(PackageInfo package, string name,
+	// Static: every input arrives as a parameter, deliberately. The runtime read this used to perform itself now
+	// sits behind the context's Lazy, so the check reaches no instance state — and keeping it static is what makes
+	// that visible at the signature rather than only by reading the body.
+	private static void EnsureNameIsFreeAcrossPackages(PackageInfo package, string name,
 		CrossPackageNameContext crossPackageNames) {
 		if (string.IsNullOrWhiteSpace(name) || crossPackageNames.PristineLayerNames.Contains(name)) {
 			return;
