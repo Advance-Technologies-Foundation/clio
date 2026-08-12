@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Package;
 using Clio.UserEnvironment;
 using static Clio.Package.SelectQueryHelper;
 
@@ -275,12 +276,12 @@ public sealed class ApplicationInfoService(
 		IServiceUrlBuilder serviceUrlBuilder,
 		string applicationId)
 	{
-		string responseJson = client.ExecutePostRequest(
-			serviceUrlBuilder.Build("ServiceModel/ApplicationPackagesService.svc/GetApplicationPackages"),
-			JsonSerializer.Serialize(applicationId));
+		string url = serviceUrlBuilder.Build("ServiceModel/ApplicationPackagesService.svc/GetApplicationPackages");
+		string responseJson = client.ExecutePostRequest(url, JsonSerializer.Serialize(applicationId));
 		ApplicationPackagesResponseDto response = Deserialize<ApplicationPackagesResponseDto>(
 			responseJson,
-			"Application packages response was empty.");
+			"GetApplicationPackages",
+			url);
 		if (!response.Success)
 		{
 			throw new InvalidOperationException(
@@ -339,12 +340,14 @@ public sealed class ApplicationInfoService(
 		string? canonicalMainEntityCaptionFallback,
 		ApplicationEntityRecordDto entityRow)
 	{
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
 		string responseJson = client.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest),
+			url,
 			JsonSerializer.Serialize(new { uId = entityRow.UId }));
 		RuntimeSchemaResponseDto response = Deserialize<RuntimeSchemaResponseDto>(
 			responseJson,
-			$"Runtime entity schema '{entityRow.UId}' was not returned.");
+			$"Runtime entity schema request '{entityRow.UId}'",
+			url);
 		if (!response.Success || response.Schema is null)
 		{
 			throw new InvalidOperationException(
@@ -611,12 +614,9 @@ public sealed class ApplicationInfoService(
 		object query)
 		where T : SelectQueryResponseBaseDto
 	{
-		string responseJson = client.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
-			JsonSerializer.Serialize(query));
-		T response = Deserialize<T>(
-			responseJson,
-			"Select query response was empty.");
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
+		string responseJson = client.ExecutePostRequest(url, JsonSerializer.Serialize(query));
+		T response = Deserialize<T>(responseJson, "SelectQuery", url);
 		if (!response.Success)
 		{
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "Select query failed.");
@@ -625,16 +625,10 @@ public sealed class ApplicationInfoService(
 		return response;
 	}
 
-	private static T Deserialize<T>(string responseJson, string emptyMessage)
-	{
-		if (string.IsNullOrWhiteSpace(responseJson))
-		{
-			throw new InvalidOperationException(emptyMessage);
-		}
-
-		return JsonSerializer.Deserialize<T>(responseJson, JsonOptions)
-			?? throw new InvalidOperationException(emptyMessage);
-	}
+	// ENG-93365: routed through the shared guard so an HTML error/login page or a truncated body surfaces
+	// as a typed error naming the endpoint, never as a raw System.Text.Json parser message.
+	private static T Deserialize<T>(string responseJson, string operationName, string url) =>
+		ServiceResponseJsonGuard.Deserialize<T>(operationName, url, responseJson, JsonOptions);
 
 	private static object BuildInstalledApplicationsQuery(string? appId, string? appCode)
 	{

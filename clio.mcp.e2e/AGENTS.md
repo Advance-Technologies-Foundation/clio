@@ -16,6 +16,17 @@ Creatio (`NoEnvironment`, a fast deterministic gate) or needs a stood-up sandbox
 It is not a fourth pyramid tier and does not violate that rule. See
 `spec/mcp-e2e-tiering/` for the classification signals and the `Skipped == 0` acceptance gate.
 
+### Developer-local destructive sub-tier (`LocalOnly` + `[Explicit]`)
+
+A few Sandbox fixtures run a **real destructive lifecycle** (a full uninstall, or deploy+uninstall) that
+would tear down the shared stand mid-suite. They stay `McpE2E.Sandbox` (additive-only) but are marked
+developer-local so they never run automatically: `[Category("LocalOnly")]` + `[Explicit]` +
+`[Category("McpE2E.Manual")]` + a `TeamCityRunGuard.IsRunningUnderTeamCity()` `Assert.Ignore` guard.
+Members today: `UninstallCreatioWarningE2ETests`, `DbHubLifecycleWarningE2ETests`. Their deterministic
+contract is covered off-stand by unit tests (`CreatioUninstallerTestFixture`, `AppPoolProfileCleanerTests`);
+`McpFixturePolicyTests` enforces the attribute invariant and `TeamCityRunGuardTests` covers the guard's
+runtime behavior. When adding another destructive lifecycle fixture, follow the same marking.
+
 ## Default rule
 
 - Every new or updated MCP tool must add or update coverage in this project.

@@ -222,6 +222,36 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	[Test]
+	[Description("Bootstrap rewrites a Git entry that is not the canonical curated repository onto the signed release transport instead of treating it as a developer override.")]
+	public void Bootstrap_ShouldRestoreReleaseTransport_WhenGitSourceIsNotTheCanonicalRepository() {
+		// Arrange
+		// The override is deliberately narrow: only the canonical clone URL is honored, so a fork or a
+		// mirror left behind by an older Clio must still be migrated onto release delivery.
+		KnowledgeSourceConfiguration foreignGitSource = new() {
+			LibraryId = CuratedKnowledgeSourceDefaults.LibraryId,
+			Type = KnowledgeSourceType.Git,
+			Location = "https://github.com/some-fork/clio-knowledge.git",
+			Branch = "master",
+			Priority = CuratedKnowledgeSourceDefaults.Priority,
+			Participation = KnowledgeSourceParticipation.Authoritative
+		};
+		_settings.GetKnowledgeConfiguration().Returns(
+			Configuration((CuratedKnowledgeSourceDefaults.Alias, foreignGitSource)));
+
+		// Act
+		_service.Prepare();
+
+		// Assert
+		_settings.Received(1).EnsureKnowledgeSource(
+			CuratedKnowledgeSourceDefaults.Alias,
+			Arg.Is<KnowledgeSourceConfiguration>(source =>
+				source.Type == KnowledgeSourceType.GitHubRelease
+				&& source.Location == CuratedKnowledgeSourceDefaults.ResolveLocation()
+				&& source.AssetName == CuratedKnowledgeSourceDefaults.AssetName
+				&& string.IsNullOrWhiteSpace(source.Branch)));
+	}
+
+	[Test]
 	[Description("Bootstrap reports an installation failure without throwing so MCP can still start with other configured sources.")]
 	public void Bootstrap_ShouldReturnFailure_WhenCuratedInstallFails() {
 		// Arrange
