@@ -1128,12 +1128,12 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractDefinition BuildSendTelemetry() {
-		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted consent; until consent is granted nothing is stored, so events sent earlier are silently dropped. The set of events and their order is owned by the consuming skill/contract. Delivery is non-blocking and fire-and-forget.");
+		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at the stages of whatever Creatio workflow you are running, once consent is granted. While consent is unknown a send without telemetry_consent is rejected with telemetry-consent-required (ask the user, then retry carrying the decision); once denied, a send succeeds with status consent-denied and stores nothing. Which stages land where is owned by the consuming contract. Delivery is non-blocking and fire-and-forget.");
 	}
 
 	private static ToolContractDefinition BuildGetTelemetryConsent() {
 		return BuildGetTelemetryConsentContract(GetTelemetryConsentTool.ToolName,
-			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; until consent is granted, send-telemetry stores nothing, so events sent earlier are silently dropped.");
+			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; a send made before that is rejected with telemetry-consent-required rather than dropped, so ask the user and retry carrying the decision.");
 	}
 
 	private static ToolContractDefinition BuildWithdrawTelemetryConsent() {
@@ -1191,13 +1191,15 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Stores a single product telemetry event (about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract) as a local OpenTelemetry-shaped JSON file after user consent. If no such skill is active, do not call this tool. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
+			"Stores a single product telemetry event about AI-assisted Creatio work run through this MCP server as a local OpenTelemetry-shaped JSON file after user consent. It covers EVERY workflow, not only app creation, and an agent working on a developer's behalf is in scope even when no skill file is loaded. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
 			new ToolInputSchemaContract(
 				["session_id", EventNameFieldName, "coding_agent", "plugin_version"],
 				[
-					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
+					Field("session_id", StringType, "Opaque random identifier (generate a fresh GUID) reused for every event of one workflow run. Never derive it from user, account, host, file-path or email data, and never reuse another run's id."),
 					Field(EventNameFieldName, StringType,
-						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
+						$"Product event name — a flow-agnostic stage. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
+					Field("workflow", StringType, "Which flow this run is, for example app-creation, classic-to-freedom-migration, mobile-page-conversion, branding or app-maintenance. Send it on every event: the stage names are shared, so without it a stage cannot be attributed to a flow. Short lowercase token (letters, digits, '.', '_', '-')."),
+					Field("variant", StringType, "Optional bounded qualifier the flow defines for that stage — a migration scope, a blocked reason, a unit kind. Same token shape as workflow; never free text and never customer data."),
 					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
 					Field("plugin_version", StringType, "Product plugin version."),
 					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
@@ -1205,7 +1207,9 @@ internal static class ToolContractCatalog {
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
-						Context: "event_name must be one of the documented product event names.")
+						Context: "event_name must be one of the documented product event names."),
+					new ToolContractValidator("token", "invalid-token", "workflow",
+						Context: "workflow and variant must be short lowercase tokens of letters, digits, '.', '_' or '-'.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1236,16 +1240,19 @@ internal static class ToolContractCatalog {
 				new ToolErrorCodeContract("invalid-session-id",
 					"session_id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'."),
 				new ToolErrorCodeContract("field-too-long",
-					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit.")
+					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit."),
+				new ToolErrorCodeContract("invalid-token",
+					"workflow or variant is not a short lowercase token of letters, digits, '.', '_' or '-'.")
 			]),
 			[],
 			[
 				new ToolContractDefaultValue(TelemetryConsentFieldName, "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
 			],
 			[
-				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
+				Example("Store a plan-presented stage for a migration run", new Dictionary<string, object?> {
 					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
-					[EventNameFieldName] = "business_plan_generated",
+					[EventNameFieldName] = "plan_presented",
+					["workflow"] = "classic-to-freedom-migration",
 					["coding_agent"] = "Codex",
 					["plugin_version"] = "0.1.0"
 				})
@@ -1254,7 +1261,9 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (including the optional duration_ms); any other field is rejected as unsupported-fields.")
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (session_id, event_name, workflow, variant, coding_agent, plugin_version, telemetry_consent, duration_ms); any other field is rejected as unsupported-fields."),
+				new ToolAntiPattern("Inventing a per-flow event name", "event_name is a flow-agnostic stage and the flow travels in the workflow field. A name like migration_plan_approved or branding_approved is rejected as unknown-event-name — send the stage plus your workflow instead."),
+				new ToolAntiPattern("Omitting workflow", "A stage without workflow cannot be attributed to a flow, so it silently degrades the funnel it was meant to measure. Send workflow on every event.")
 			]);
 	}
 
