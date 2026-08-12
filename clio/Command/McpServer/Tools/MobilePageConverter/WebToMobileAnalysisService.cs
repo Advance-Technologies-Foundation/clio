@@ -1381,6 +1381,15 @@ public static class WebToMobileAnalysisService {
 		new(@"\$Resources\.Strings\.([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
+	/// The identifier a <c>$Token</c> binding may name — the SAME grammar the scanners in this file use to
+	/// recognize one (see <see cref="ExtractDollarRefs"/>). Written out as an explicit ASCII class rather than
+	/// a predicate like <c>char.IsLetterOrDigit</c>, which is Unicode-wide and would accept a Cyrillic
+	/// homoglyph that renders identically and resolves to nothing.
+	/// </summary>
+	private static readonly Regex BindingIdentifierPattern =
+		new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled, RegexTimeout);
+
+	/// <summary>
 	/// Every viewModelConfig attribute a node references — both plain <c>$Attr</c> bindings AND
 	/// <c>$Resources.Strings.&lt;attr&gt;</c> label/caption references (the platform auto-provides that
 	/// resource from the attribute's bound column, so referencing it USES the attribute). Used to decide
@@ -2231,10 +2240,15 @@ public static class WebToMobileAnalysisService {
 		if (values[rule.TargetProperty] is not null || node[rule.SourceProperty] is not JArray source) {
 			return;
 		}
+		// A source entry contributes only when its value is a usable binding IDENTIFIER. The page body comes
+		// from a customer environment, so the value is not assumed well-formed: it is REJECTED rather than
+		// repaired, because stripping the offending characters would produce a plausible-looking token that
+		// silently resolves to nothing. An entry that fails is skipped exactly like one carrying no value at
+		// all — including the first, in which case the next usable column becomes the title.
 		List<string> bindings = source
 			.OfType<JObject>()
 			.Select(entry => entry[rule.BindingFrom]?.ToString())
-			.Where(binding => !string.IsNullOrWhiteSpace(binding))
+			.Where(binding => !string.IsNullOrWhiteSpace(binding) && BindingIdentifierPattern.IsMatch(binding))
 			.Select(binding => "$" + binding)
 			.ToList();
 		if (bindings.Count == 0) {
