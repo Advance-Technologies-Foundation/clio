@@ -105,7 +105,10 @@ public class ModifyBusinessProcessTool(
 		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling "
 		 + "first. If an environment rejects type:\"sendEmail\" (\"Element type 'sendEmail' is not supported yet\"), "
 		 + "its deployed CrtProcessBuilder predates that element type: fall back to a generic userTask named "
-		 + "EmailTemplateUserTask, which older packages do build. "
+		 + "EmailTemplateUserTask, which older packages do build. On that fallback DROP the email block and tell "
+		 + "the user the element is unconfigured: a package that predates sendEmail has no email member and does "
+		 + "not implement IExtensibleDataObject, so it SILENTLY IGNORES an email block and still answers "
+		 + "success:true — keeping it would report a configured element that is in fact empty. "
 		 + "Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
