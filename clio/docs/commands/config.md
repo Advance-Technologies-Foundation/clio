@@ -14,6 +14,7 @@ config - View and set clio configuration defaults
 config
 config --show
 config --deploy-db-server-name <name> [--deploy-redis-server-name <name>] [--deploy-site-name <name>] [--deploy-site-port <port>] [--deploy-deployment <auto|iis|dotnet>]
+config --knowledge-feedback-mode <ask|auto|off> [--knowledge-feedback-destination <repository-url>] [--knowledge-feedback-reporting-scope <full|sanitized>]
 config --reset
 ```
 
@@ -22,7 +23,8 @@ config --reset
 Views and sets clio-wide defaults that are applied when a command is run without
 the matching option, and persists them to clio's `appsettings.json`.
 
-Currently the command manages the **deploy-creatio defaults** — the fallback
+The command manages **deploy-creatio defaults** and the **knowledge-feedback
+policy** used by coding agents. Deploy defaults are the fallback
 values used by `deploy-creatio` when an option is not supplied on the command
 line. Their main purpose is to make the Windows Explorer context-menu action
 ("clio: deploy Creatio"), which runs `clio deploy-creatio --zip-file "%1"` with
@@ -33,6 +35,15 @@ Options passed on the `deploy-creatio` command line always take precedence over
 these defaults. When no default site name is configured and none is passed on
 the command line, interactive deployment asks the user to enter a site name.
 This includes the Windows Explorer right-click action.
+
+The knowledge-feedback policy tells an agent what to do when observed behavior
+contradicts guidance. `ask` asks for each discrepancy, `auto` grants standing
+approval to file automatically, and `off` disables reporting. Standing approval
+is versioned only by the SHA-256 of the dedicated `knowledge-feedback` article.
+The repository URL and scope remain explicit configuration. An unrelated knowledge-library
+version, sequence, or article change does not invalidate it. If that reporting
+article changes, configured mode remains `auto` while effective mode becomes
+`ask` until `auto` is explicitly approved again.
 
 ## Options
 
@@ -49,6 +60,17 @@ This includes the Windows Explorer right-click action.
 --deploy-site-port <port>          Default site port for deploy-creatio.
 
 --deploy-deployment <method>       Default deployment method for deploy-creatio: auto|iis|dotnet.
+
+--knowledge-feedback-mode <mode>  Feedback mode: ask|auto|off. Supplying auto
+                                   approves the current reporting article for
+                                   the configured repository and scope.
+
+--knowledge-feedback-destination <url>
+                                   Exact credential-free HTTPS GitHub repository URL.
+
+--knowledge-feedback-reporting-scope <scope>
+                                   full for comprehensive internal reports;
+                                   sanitized for public-safe reports.
 
 --reset                            Clear the stored deploy-creatio defaults.
 
@@ -70,6 +92,15 @@ clio config --deploy-redis-server-name local-redis
 
 # Clear all deploy-creatio defaults
 clio config --reset
+
+# Grant standing approval for comprehensive reports in a private GHE repository
+clio config --knowledge-feedback-destination https://creatio.ghe.com/engineering/clio-feedback --knowledge-feedback-reporting-scope full --knowledge-feedback-mode auto
+
+# Grant standing approval for sanitized reports in the public Clio repository
+clio config --knowledge-feedback-destination https://github.com/Advance-Technologies-Foundation/clio --knowledge-feedback-reporting-scope sanitized --knowledge-feedback-mode auto
+
+# Revoke automatic reporting but keep asking about discrepancies
+clio config --knowledge-feedback-mode ask
 ```
 
 After configuring the defaults above, the "clio: deploy Creatio" Windows
@@ -80,16 +111,28 @@ the site name before deployment proceeds.
 ## Behavior
 
 - With no arguments (or with `--show`), prints the `appsettings.json` path and a
-  table of the current deploy-creatio defaults.
+  tables for deploy-creatio defaults and the configured/effective knowledge-feedback policy.
 - With one or more `--deploy-*` arguments, updates only the supplied values,
   persists them, and prints the resulting defaults.
 - With `--reset`, removes the stored deploy-creatio defaults entirely.
 - `--reset` takes precedence over any `--deploy-*` arguments in the same call.
+- Knowledge-feedback policy can also be inspected with the non-resident
+  `get-knowledge-feedback-policy` MCP tool and changed with
+  `configure-knowledge-feedback-policy`; invoke both through `clio-run`. The
+  configuration tool is classified high-impact/destructive so the MCP host can
+  gate changes that authorize future external reporting. For auto authorization
+  or retargeting, it requires `confirmed: true` plus the exact
+  `expected-policy-hash`, `expected-destination`, and `expected-reporting-scope`
+  values the agent showed to the user; a stale snapshot is refused.
+- Clio stores policy and approval only. The agent files the issue through its
+  existing GitHub capability and credentials; Clio never submits it.
 
 ## Exit Codes
 
     0   Displayed or updated the configuration successfully
-    1   Validation error (for example an invalid --deploy-deployment value)
+    1   Validation error (for example an invalid deployment, feedback mode,
+        repository URL, or reporting scope; auto also fails if the reporting
+        article is unavailable)
 
 ## See Also
 
