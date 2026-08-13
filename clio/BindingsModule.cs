@@ -636,7 +636,9 @@ public class BindingsModule {
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 1, 0),
 			new HashSet<string>(StringComparer.Ordinal) {
+				KnowledgeFeedbackPolicyTools.ConfigureToolName,
 				GuidanceGetTool.ToolName,
+				KnowledgeFeedbackPolicyTools.GetToolName,
 				KnowledgeManagementTools.ListKnowledgeExamplesToolName
 			}));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();

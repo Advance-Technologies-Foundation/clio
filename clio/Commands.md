@@ -234,6 +234,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update"></a>
 - [`update-cli`](docs/commands/update-cli.md) - Update clio, `update`
 
+<a id="config"></a>
+- [`config`](docs/commands/config.md) - View and set deploy defaults and agent knowledge-feedback approval
+
 ## Workspace
 
 <a id="add-data-binding-row"></a>

@@ -8609,3 +8609,10 @@ Decision: retain the PR's already-bumped `2.0.0.45`, run the canonical build, an
 Discovery: both extracted archives report `2.0.0.45`, retain their runtime-specific names and assemblies, and contain the new `Path.GetFullPath` traversal guard; the script cleaned transient `cliogate/Files/Bin` output.
 Files: cliogate/descriptor.json, clio/cliogate/cliogate.gz, clio/cliogate/cliogate_netcore.gz
 Impact: PR #1071 now ships the fixed prebuilt ClioGate assembly for both .NET Framework and .NET runtimes instead of only changing the source.
+
+## 2026-08-13 21:00 – Knowledge feedback approval is article-hash scoped and agent-submitted
+Context: agents need to report guidance discrepancies even when every MCP tool call succeeds, with public GitHub and private GitHub Enterprise destinations sharing one public Clio build.
+Decision: add ask/auto/off appsettings policy, project it on every get-guidance response, and expose non-resident get/configure policy tools through get-tool-contract and clio-run. Clio never submits issues or owns GitHub credentials. Standing approval is versioned only by the exact UTF-8 SHA-256 of the dedicated knowledge-feedback article; only an observed different hash downgrades auto to ask.
+Discovery: automatic-policy consent must be bound to the exact hash, destination, and scope shown to the user and rechecked inside the settings repository lock; a bare confirmed boolean permits stale-policy replay and concurrent retargeting. Malformed approval hashes never authorize auto, while temporary article unavailability preserves an existing valid approval and immutable disclosure exclusions ride every guidance response.
+Files: clio/Command/KnowledgeFeedbackPolicyService.cs, clio/Command/McpServer/Tools/KnowledgeFeedbackPolicyTools.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/Environment/ConfigurationOptions.cs, clio/Command/ConfigCommand.cs
+Impact: agents can inspect and administer standing feedback approval without consuming resident tool budget, and old runtimes are capability-gated from activating guidance they cannot follow.

@@ -344,6 +344,40 @@ namespace Clio
 			&& string.IsNullOrWhiteSpace(DeploymentMethod);
 	}
 
+	/// <summary>
+	/// Configures how agents reconcile observed behavior with Clio knowledge and report discrepancies.
+	/// </summary>
+	public sealed class KnowledgeFeedbackSettings {
+		/// <summary>Gets or sets the requested policy mode: <c>ask</c>, <c>auto</c>, or <c>off</c>.</summary>
+		[JsonProperty("mode")]
+		public string Mode { get; set; } = "ask";
+
+		/// <summary>Gets or sets the exact GitHub repository URL where an agent should file reports.</summary>
+		[JsonProperty("destination")]
+		public string Destination { get; set; } =
+			"https://github.com/Advance-Technologies-Foundation/clio";
+
+		/// <summary>Gets or sets the report detail policy: <c>full</c> or <c>sanitized</c>.</summary>
+		[JsonProperty("reporting-scope")]
+		public string ReportingScope { get; set; } = "sanitized";
+
+		/// <summary>
+		/// Gets or sets the standing approval that authorizes automatic reporting under one exact
+		/// reporting-policy article hash.
+		/// </summary>
+		[JsonProperty("standing-approval", NullValueHandling = NullValueHandling.Ignore)]
+		public KnowledgeFeedbackStandingApproval StandingApproval { get; set; }
+	}
+
+	/// <summary>
+	/// Records the exact reporting-policy guidance a user approved for automatic issue filing.
+	/// </summary>
+	public sealed class KnowledgeFeedbackStandingApproval {
+		/// <summary>Gets or sets the SHA-256 of the exact reporting-policy article that was approved.</summary>
+		[JsonProperty("policy-hash")]
+		public string PolicyHash { get; set; }
+	}
+
 	public class Settings
 	{
 		/// <summary>
@@ -358,6 +392,7 @@ namespace Clio
 			Environments = new Dictionary<string, EnvironmentSettings>();
 			Features = new Dictionary<string, bool>();
 			Knowledge = new KnowledgeConfiguration();
+			KnowledgeFeedback = new KnowledgeFeedbackSettings();
 		}
 
 		//TODO: This wont work for Mac and Linux
@@ -407,6 +442,10 @@ namespace Clio
 		/// </summary>
 		[JsonProperty("knowledge")]
 		public KnowledgeConfiguration Knowledge { get; set; }
+
+		/// <summary>Gets or sets agent feedback and standing-approval policy.</summary>
+		[JsonProperty("knowledge-feedback")]
+		public KnowledgeFeedbackSettings KnowledgeFeedback { get; set; }
 
 		/// <summary>
 		/// Gets or sets the legacy knowledge root used only for one-time migration.
@@ -818,6 +857,7 @@ namespace Clio
 			result.Environments ??= new Dictionary<string, EnvironmentSettings>();
 			result.Features ??= new Dictionary<string, bool>();
 			result.Knowledge ??= new KnowledgeConfiguration();
+			result.KnowledgeFeedback ??= new KnowledgeFeedbackSettings();
 			result.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
 				StringComparer.OrdinalIgnoreCase);
 			result.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
@@ -1555,6 +1595,43 @@ namespace Clio
 			UpdateSettings(settings =>
 				settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults);
 		}
+
+		public KnowledgeFeedbackSettings GetKnowledgeFeedbackSettings() {
+			return CloneKnowledgeFeedbackSettings(_settings.KnowledgeFeedback ?? new KnowledgeFeedbackSettings());
+		}
+
+		public void SetKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings) {
+			ArgumentNullException.ThrowIfNull(settings);
+			KnowledgeFeedbackSettings snapshot = CloneKnowledgeFeedbackSettings(settings);
+			UpdateSettings(current => current.KnowledgeFeedback = CloneKnowledgeFeedbackSettings(snapshot));
+		}
+
+		public KnowledgeFeedbackSettings UpdateKnowledgeFeedbackSettings(
+			Func<KnowledgeFeedbackSettings, KnowledgeFeedbackSettings> mutation) {
+			ArgumentNullException.ThrowIfNull(mutation);
+			KnowledgeFeedbackSettings persisted = null;
+			UpdateSettings(current => {
+				KnowledgeFeedbackSettings latest = CloneKnowledgeFeedbackSettings(
+					current.KnowledgeFeedback ?? new KnowledgeFeedbackSettings());
+				persisted = CloneKnowledgeFeedbackSettings(
+					mutation(latest) ?? throw new InvalidOperationException(
+						"Knowledge-feedback mutation returned no settings."));
+				current.KnowledgeFeedback = CloneKnowledgeFeedbackSettings(persisted);
+			});
+			return CloneKnowledgeFeedbackSettings(persisted);
+		}
+
+		private static KnowledgeFeedbackSettings CloneKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings) =>
+			new() {
+				Mode = settings.Mode,
+				Destination = settings.Destination,
+				ReportingScope = settings.ReportingScope,
+				StandingApproval = settings.StandingApproval is null
+					? null
+					: new KnowledgeFeedbackStandingApproval {
+						PolicyHash = settings.StandingApproval.PolicyHash
+					}
+			};
 
 		public string GetPinnedIisCertificateThumbprint() => _settings.IisCertificateThumbprint;
 
