@@ -109,16 +109,28 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					+ "the list arrived with no title and no body");
 			row!["type"]?.GetValue<string>().Should().Be("crt.ListItem",
 				because: $"'{list.WebName}' must carry the mobile row element the list renders each record with");
-			row["title"]!.GetValueKind().Should().Be(JsonValueKind.String,
-				because: $"the registry declares crt.ListItem.title as a string binding, and on '{list.WebName}' an "
-					+ "object wrapper would render an empty Title column while the body rows still looked correct");
+			// A title is present only when the grid HAS a column the mobile row accepts (text types); a grid of
+			// lookups and dates legitimately ships without one, and then the element's reason says so. So the
+			// shape is asserted only when a title exists — asserting unconditionally is what made this fail
+			// against a seeded page whose grid had no text column at all.
+			if (row["title"] is { } title) {
+				title.GetValueKind().Should().Be(JsonValueKind.String,
+					because: $"the registry declares crt.ListItem.title as a string binding, and on '{list.WebName}' "
+						+ "an object wrapper would render an empty Title column while the body rows still looked fine");
+			} else {
+				list.Reason.Should().Contain("no title",
+					because: $"'{list.WebName}' shipped without a title, and an empty Title column in the designer is "
+						+ "indistinguishable from a converter failure unless the guide says the source had nothing "
+						+ "to put there");
+			}
 			// Deliberately NOT asserted non-empty: a single-column grid legitimately yields a title and no body
 			// rows, and this runs against whichever page the sandbox happens to seed.
 			row["body"].Should().NotBeNull(
 				because: $"the row on '{list.WebName}' must carry the body collection, even when the grid had only "
 					+ "the one display column and it is therefore empty");
 			foreach (string gridOnly in new[] {
-				"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" }) {
+				"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent",
+				"activeRow", "bulkActions" }) {
 				list.MobileValues![gridOnly].Should().BeNull(
 					because: $"'{gridOnly}' is a web-grid property with no mobile crt.List equivalent, and pasting "
 						+ $"it onto '{list.WebName}' verbatim is what left the converted detail showing empty columns");
