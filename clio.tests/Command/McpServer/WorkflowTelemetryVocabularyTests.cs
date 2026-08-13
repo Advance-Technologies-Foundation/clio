@@ -478,6 +478,64 @@ public sealed class WorkflowTelemetryVocabularyTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("A second run of the same flow in one session does not inherit the first run's timings.")]
+	public void TelemetryService_Should_Not_Carry_A_Finished_Runs_Timings_Into_The_Next_Run()
+	{
+		// Arrange: the developer asks for one edit, then another. Both are app-maintenance, so both
+		// land in the same (session_id, workflow) pair.
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-13T17:22:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-maintenance" });
+		service.Send(CreateRequest("build_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromSeconds(40));
+		service.Send(CreateRequest("workflow_completed") with { Workflow = "app-maintenance" });
+
+		// The second run, eighteen minutes later.
+		time.Advance(TimeSpan.FromMinutes(18));
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromSeconds(4));
+
+		// Act
+		service.Send(CreateRequest("workflow_completed") with { Workflow = "app-maintenance" });
+
+		// Assert: four seconds, the length of the second run. Anchored on the finished run's
+		// `build_started` it reported eighteen minutes — a stale span reads as a genuinely slow run,
+		// which is worse than no measurement at all.
+		ReadIntAttribute(ReadNewestStoredEvent(), "duration_ms").Should().Be(4_000,
+			because: "a finished run's stage timestamps must not measure the next run");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A repeated session-start inside an OPEN run keeps the stages already recorded.")]
+	public void TelemetryService_Should_Keep_History_When_A_Run_Has_Not_Ended()
+	{
+		// Arrange: a stray second start — a hook handing over a session id mid-run, for instance —
+		// while the run is still open. Clearing here would erase stages that really happened.
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-13T17:22:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromSeconds(10));
+		service.Send(CreateRequest("build_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromSeconds(5));
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromSeconds(5));
+
+		// Act
+		service.Send(CreateRequest("workflow_completed") with { Workflow = "app-maintenance" });
+
+		// Assert: measured from `build_started`, which is still the narrowest known span — 10 s after
+		// it. If the repeated start had cleared state, this would fall back to the new start (5 s).
+		ReadIntAttribute(ReadNewestStoredEvent(), "duration_ms").Should().Be(10_000,
+			because: "only a run that already reported a terminal stage is finished");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Records one host as one cohort, whatever casing and separators the agent typed.")]
 	[TestCase("Claude Code", "claude-code")]
 	[TestCase("claude-code", "claude-code")]

@@ -216,7 +216,8 @@ public sealed class TelemetryService : ITelemetryService
 
 				string eventId = Guid.NewGuid().ToString("N");
 				DateTimeOffset eventTimestamp = _timeProvider.GetUtcNow();
-				TelemetrySessionState sessionState = ReadSessionState(request.SessionId, request.Workflow);
+				TelemetrySessionState sessionState =
+					StartOfANewRun(ReadSessionState(request.SessionId, request.Workflow), request);
 				long? inferredDurationMs = request.DurationMs ?? InferDurationMs(sessionState, request.EventName, eventTimestamp);
 				TelemetryEventRequest enrichedRequest = request with { DurationMs = inferredDurationMs };
 				long? durationSinceSessionStartMs = InferDurationSinceSessionStartMs(sessionState, request.EventName, eventTimestamp);
@@ -478,6 +479,39 @@ public sealed class TelemetryService : ITelemetryService
 
 	private static TelemetrySessionState NewSessionState(string sessionId, string workflow) =>
 		new(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal), workflow);
+
+	/// <summary>
+	/// Starts a clean state when a session-start arrives for a pair whose previous run already ended.
+	/// </summary>
+	/// <remarks>
+	/// One session legitimately runs the same flow twice — the developer asks for one edit, then
+	/// another. Both land in the same (session_id, workflow) pair, so without this the second run
+	/// inherits the first one's stage timestamps: a measured 4-second edit reported
+	/// <c>duration_ms</c> of 18 minutes, anchored on a <c>build_started</c> from the earlier run.
+	/// A stale span is worse than a missing one — it is indistinguishable from a genuinely slow run.
+	///
+	/// Only a TERMINATED previous run is cleared. A repeated session-start inside a run that is still
+	/// open keeps its history, so a stray second start cannot erase the stages already recorded.
+	/// </remarks>
+	private static TelemetrySessionState StartOfANewRun(TelemetrySessionState sessionState,
+		TelemetryEventRequest request)
+	{
+		if (!IsSessionStartEvent(request.EventName)) {
+			return sessionState;
+		}
+		bool previousRunEnded = sessionState.Events.Keys.Any(IsTerminalEvent);
+		return previousRunEnded
+			? NewSessionState(sessionState.SessionId, sessionState.Workflow)
+			: sessionState;
+	}
+
+	/// <summary>
+	/// True for a stage that ENDS a run, canonical or deprecated, after which a session-start belongs
+	/// to a new run rather than the finished one.
+	/// </summary>
+	private static bool IsTerminalEvent(string eventName) =>
+		eventName is "workflow_completed" or "workflow_failed"
+			or "implementation_completed" or "implementation_failed";
 
 	private static long? InferDurationMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
