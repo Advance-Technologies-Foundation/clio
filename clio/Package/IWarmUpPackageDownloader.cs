@@ -8,16 +8,17 @@ using System;
 /// </summary>
 /// <remarks>
 /// The implementation owns the whole temporary-file lifecycle: it downloads into an owner-private
-/// location, always removes it afterwards (surfacing cleanup failures rather than swallowing them),
-/// and keeps a best-effort exception boundary so a failure on the background thread cannot terminate
-/// the process. This exists as an injectable seam so the lifecycle can be regression-tested without
-/// touching the network.
+/// location established fail-closed, always removes it afterwards (surfacing cleanup failures rather
+/// than swallowing them), and keeps a best-effort exception boundary so a failure on the worker thread
+/// cannot terminate the process. This exists as an injectable seam so the lifecycle can be
+/// regression-tested without touching the network.
 /// </remarks>
 public interface IWarmUpPackageDownloader
 {
 
 	/// <summary>
-	/// Starts the warm-up download on a background thread.
+	/// Starts the warm-up download on a foreground thread, so the process stays alive until the temporary
+	/// directory has been cleaned up.
 	/// </summary>
 	/// <param name="downloadIntoFile">
 	/// Action that performs the actual download into the full temporary-file path it receives. The path

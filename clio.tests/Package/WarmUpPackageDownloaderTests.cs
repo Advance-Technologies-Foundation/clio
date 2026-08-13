@@ -1,13 +1,11 @@
 using System;
-using System.IO.Abstractions.TestingHelpers;
+using System.IO;
 using System.Threading;
 using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
-using IOException = System.IO.IOException;
 
 namespace Clio.Tests.Package;
 
@@ -24,10 +22,22 @@ public class WarmUpPackageDownloaderTests {
 
 	#region Fields: Private
 
-	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
-	private IFileSystem _fileSystem;
 	private ILogger _logger;
 	private WarmUpPackageDownloader _downloader;
+
+	#endregion
+
+	#region Nested type: Private
+
+	/// <summary>A downloader whose private-directory creation always fails, to drive the fail-closed path.</summary>
+	private sealed class FailingDirectoryWarmUpPackageDownloader : WarmUpPackageDownloader {
+
+		public FailingDirectoryWarmUpPackageDownloader(ILogger logger) : base(logger) { }
+
+		protected override string CreateOwnerPrivateDirectory() =>
+			throw new IOException("cannot establish a private directory");
+
+	}
 
 	#endregion
 
@@ -35,145 +45,154 @@ public class WarmUpPackageDownloaderTests {
 
 	[SetUp]
 	public void SetUp() {
-		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		_fileSystem = new MockFileSystem();
 		_logger = Substitute.For<ILogger>();
-		_downloader = new WarmUpPackageDownloader(_workingDirectoriesProvider, _fileSystem, _logger);
+		_downloader = new WarmUpPackageDownloader(_logger);
 	}
 
 	[TearDown]
 	public void TearDown() {
-		_workingDirectoriesProvider.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
-	[Description("A successful warm-up downloads into a file under the temp directory and removes that directory, "
-		+ "so no discarded payload is left behind.")]
-	public void RunWarmUpDownload_DownloadsIntoTempDirectory_AndRemovesIt_OnSuccess() {
+	[Description("A successful warm-up creates a real owner-private directory (0700 on Unix), downloads into a "
+		+ "file inside it, and removes the directory afterwards, so no discarded payload is left behind.")]
+	public void RunWarmUpDownload_CreatesOwnerPrivateDir_DownloadsIntoIt_AndRemovesIt() {
 		// Arrange
-		const string tempDirectory = "/clio-temp/dir-success";
-		_workingDirectoriesProvider.CreateTempDirectory().Returns(tempDirectory);
-		string receivedPath = null;
+		string capturedDirectory = null;
 
 		// Act
-		_downloader.RunWarmUpDownload(path => receivedPath = path);
+		_downloader.RunWarmUpDownload(path => {
+			capturedDirectory = Path.GetDirectoryName(path);
+			Path.GetFileName(path).Should().Be(WarmUpFileName,
+				because: "the download must target the warm-up file INSIDE the private directory");
+			File.WriteAllText(path, "discarded-payload");
+			if (!OperatingSystem.IsWindows()) {
+				(File.GetUnixFileMode(capturedDirectory) & (UnixFileMode.GroupRead | UnixFileMode.GroupWrite
+						| UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherWrite
+						| UnixFileMode.OtherExecute))
+					.Should().Be(UnixFileMode.None,
+						because: "on Unix the directory must be owner-only (0700) so another local user cannot "
+							+ "reach the archive the external downloader writes into it");
+			}
+		});
 
 		// Assert
-		receivedPath.Should().Be(_fileSystem.Path.Combine(tempDirectory, WarmUpFileName),
-			because: "the download must target a file INSIDE the owner-private temp directory, not the shared "
-				+ "temp root, so the discarded payload cannot be reached through a predictable path");
-		_workingDirectoriesProvider.Received(1).DeleteDirectoryIfExists(tempDirectory);
-		// NSubstitute's Received() takes no `because`; stated here: the whole point of owning the lifecycle is
-		// that every warm-up removes its own temp directory once the download returns.
+		capturedDirectory.Should().NotBeNull(because: "the download must have run");
+		Directory.Exists(capturedDirectory).Should().BeFalse(
+			because: "every warm-up removes its own private directory once the download returns");
 	}
 
 	[Test]
-	[Description("A throwing download does not escape the worker and its temp directory is still removed, "
-		+ "because the warm-up runs on a raw background thread where an unhandled exception would end the process.")]
-	public void RunWarmUpDownload_ContainsAndCleansUp_WhenDownloadThrows() {
+	[Description("A download that writes a partial artifact and then throws is still fully cleaned up and does "
+		+ "not escape the worker, because the warm-up runs on a thread where an unhandled exception is fatal.")]
+	public void RunWarmUpDownload_RemovesDirectory_WhenDownloadWritesThenThrows() {
 		// Arrange
-		const string tempDirectory = "/clio-temp/dir-throwing";
-		_workingDirectoriesProvider.CreateTempDirectory().Returns(tempDirectory);
+		string capturedDirectory = null;
 
 		// Act
-		Action act = () => _downloader.RunWarmUpDownload(_ => throw new InvalidOperationException("boom"));
+		Action act = () => _downloader.RunWarmUpDownload(path => {
+			capturedDirectory = Path.GetDirectoryName(path);
+			File.WriteAllText(path, "partial");
+			throw new InvalidOperationException("boom");
+		});
 
 		// Assert
 		act.Should().NotThrow(
-			because: "the warm-up is best-effort and runs on a raw background thread — a propagated exception "
-				+ "there would terminate the CLI process");
-		_workingDirectoriesProvider.Received(1).DeleteDirectoryIfExists(tempDirectory);
+			because: "the warm-up is best-effort and a propagated exception on its thread would end the CLI");
+		Directory.Exists(capturedDirectory).Should().BeFalse(
+			because: "a partially written archive must be removed together with its directory");
 		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("warm-up") && m.Contains("boom")));
-		// Received() takes no `because`; stated here: a failed download must be surfaced AND its temp cleaned.
+		// NSubstitute's Received() takes no `because`; stated here: the failure must be surfaced in the log.
 	}
 
 	[Test]
-	[Description("Overlapping warm-ups use distinct temp directories and each removes only its own, so a "
-		+ "concurrent warm-up cannot delete another's in-flight artifact.")]
-	public void RunWarmUpDownload_UsesDistinctPaths_AndCleansOnlyItsOwn_ForOverlappingRuns() {
+	[Description("When an owner-private directory cannot be established the download is skipped entirely "
+		+ "(fail-closed), so a payload is never written into an unprotected location.")]
+	public void RunWarmUpDownload_SkipsDownload_WhenPrivateDirectoryCannotBeCreated() {
 		// Arrange
-		const string firstDirectory = "/clio-temp/dir-1";
-		const string secondDirectory = "/clio-temp/dir-2";
-		_workingDirectoriesProvider.CreateTempDirectory().Returns(firstDirectory, secondDirectory);
-		string firstPath = null;
-		string secondPath = null;
-
-		// Act
-		_downloader.RunWarmUpDownload(path => firstPath = path);
-		_downloader.RunWarmUpDownload(path => secondPath = path);
-
-		// Assert
-		firstPath.Should().NotBe(secondPath,
-			because: "each warm-up acquires its own temp directory, so two overlapping runs must never share a "
-				+ "download path");
-		_workingDirectoriesProvider.Received(1).DeleteDirectoryIfExists(firstDirectory);
-		_workingDirectoriesProvider.Received(1).DeleteDirectoryIfExists(secondDirectory);
-		// Received() takes no `because`; stated here: each run cleans exactly its own directory, never the other's.
-	}
-
-	[Test]
-	[Description("A cleanup failure is logged rather than propagated, so a temporary directory that cannot be "
-		+ "removed does not crash the background worker.")]
-	public void RunWarmUpDownload_LogsCleanupFailure_WithoutThrowing() {
-		// Arrange
-		const string tempDirectory = "/clio-temp/dir-locked";
-		_workingDirectoriesProvider.CreateTempDirectory().Returns(tempDirectory);
-		_workingDirectoriesProvider.When(p => p.DeleteDirectoryIfExists(tempDirectory))
-			.Do(_ => throw new IOException("directory in use"));
-
-		// Act
-		Action act = () => _downloader.RunWarmUpDownload(_ => { });
-
-		// Assert
-		act.Should().NotThrow(
-			because: "a cleanup failure on the background worker must be surfaced through the log, not thrown");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("clean up") && m.Contains(tempDirectory)));
-		// Received() takes no `because`; stated here: the leaked directory must be visible in the log.
-	}
-
-	[Test]
-	[Description("A failure acquiring the temp directory is contained, because it happens before any file work "
-		+ "and must not escape the worker either.")]
-	public void RunWarmUpDownload_ContainsFailure_WhenTempDirectoryCannotBeCreated() {
-		// Arrange
-		_workingDirectoriesProvider.CreateTempDirectory().Returns(_ => throw new IOException("no temp"));
+		WarmUpPackageDownloader downloader = new FailingDirectoryWarmUpPackageDownloader(_logger);
 		bool downloadInvoked = false;
 
 		// Act
-		Action act = () => _downloader.RunWarmUpDownload(_ => downloadInvoked = true);
+		Action act = () => downloader.RunWarmUpDownload(_ => downloadInvoked = true);
 
 		// Assert
 		act.Should().NotThrow(
-			because: "temp-path acquisition is inside the exception boundary, so even its failure cannot end the "
-				+ "process");
+			because: "failing to create the private directory must be contained, not thrown from the worker");
 		downloadInvoked.Should().BeFalse(
-			because: "there is nowhere to download to when the temp directory could not be created");
-		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("warm-up")));
-		// Received() takes no `because`; the failure must still be surfaced.
+			because: "fail-closed: with no verified owner-private location there is nowhere safe to download to");
+		_logger.Received().WriteWarning(Arg.Is<string>(m => m.Contains("skipped") && m.Contains("private")));
+		// Received() takes no `because`; stated here: the skipped warm-up must still be surfaced.
 	}
 
 	[Test]
-	[Description("StartWarmUpDownload runs the supplied download on a background thread, which is how the warm-up "
-		+ "stays fire-and-forget while the caller proceeds to poll.")]
-	public void StartWarmUpDownload_InvokesDownload_OnBackgroundThread() {
+	[Description("Two overlapping warm-ups running concurrently use distinct directories that coexist while both "
+		+ "callbacks are live, and each directory is removed only after its own callback exits.")]
+	public void RunWarmUpDownload_OverlappingRuns_UseDistinctDirs_AndEachRemovedAfterItsOwnCallback() {
 		// Arrange
-		const string tempDirectory = "/clio-temp/dir-async";
-		_workingDirectoriesProvider.CreateTempDirectory().Returns(tempDirectory);
+		using CountdownEvent bothInside = new(2);
+		using ManualResetEventSlim release = new(false);
+		string firstDirectory = null;
+		string secondDirectory = null;
+
+		Action<string> makeCallback(Action<string> capture) => path => {
+			capture(path);
+			File.WriteAllText(path, "payload");
+			bothInside.Signal();   // announce this worker is live inside its callback
+			release.Wait(TimeSpan.FromSeconds(5)); // hold both callbacks live simultaneously
+		};
+
+		Thread first = new(() => _downloader.RunWarmUpDownload(makeCallback(p => firstDirectory = Path.GetDirectoryName(p))));
+		Thread second = new(() => _downloader.RunWarmUpDownload(makeCallback(p => secondDirectory = Path.GetDirectoryName(p))));
+
+		// Act
+		first.Start();
+		second.Start();
+		bothInside.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue(
+			because: "both warm-ups must reach their download callback so the two runs genuinely overlap");
+
+		// Assert — both live at once
+		firstDirectory.Should().NotBe(secondDirectory,
+			because: "each concurrent warm-up must acquire its own directory, never a shared path");
+		Directory.Exists(firstDirectory).Should().BeTrue(
+			because: "while its own callback is still live a worker's directory must exist");
+		Directory.Exists(secondDirectory).Should().BeTrue(
+			because: "the other concurrent worker must not have deleted this one's in-flight directory");
+
+		// Act — let both finish
+		release.Set();
+		first.Join(TimeSpan.FromSeconds(5)).Should().BeTrue(because: "the first worker must complete");
+		second.Join(TimeSpan.FromSeconds(5)).Should().BeTrue(because: "the second worker must complete");
+
+		// Assert — each cleaned only after its own callback exited
+		Directory.Exists(firstDirectory).Should().BeFalse(because: "the first worker removes its own directory");
+		Directory.Exists(secondDirectory).Should().BeFalse(because: "the second worker removes its own directory");
+	}
+
+	[Test]
+	[Description("StartWarmUpDownload runs the download on a foreground thread, so the process stays alive until "
+		+ "the temporary directory is cleaned up rather than exiting mid-warm-up and leaking it.")]
+	public void StartWarmUpDownload_RunsDownload_OnForegroundThread() {
+		// Arrange
 		using ManualResetEventSlim invoked = new(false);
-		string receivedPath = null;
+		bool? wasBackgroundThread = null;
+		string capturedPath = null;
 
 		// Act
 		_downloader.StartWarmUpDownload(path => {
-			receivedPath = path;
+			capturedPath = path;
+			wasBackgroundThread = Thread.CurrentThread.IsBackground;
 			invoked.Set();
 		});
 
 		// Assert
 		invoked.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue(
-			because: "the background worker must actually run the supplied download");
-		receivedPath.Should().Be(_fileSystem.Path.Combine(tempDirectory, WarmUpFileName),
-			because: "the background worker downloads into the same owner-private temp file as the synchronous core");
+			because: "the worker must actually run the supplied download");
+		wasBackgroundThread.Should().BeFalse(
+			because: "a foreground thread keeps the process alive so cleanup in finally is not skipped at exit");
+		Path.GetFileName(capturedPath).Should().Be(WarmUpFileName,
+			because: "the background worker downloads into the same warm-up file as the synchronous core");
 	}
 
 	[Test]
