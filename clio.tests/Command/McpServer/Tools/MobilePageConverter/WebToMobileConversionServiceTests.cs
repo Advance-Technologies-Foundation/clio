@@ -86,7 +86,8 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode mobileTemplateModelConfig = null,
 		bool mobileTemplateUnavailable = false,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
-		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null) =>
+		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
+		bool webTemplateUnavailable = false) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -100,7 +101,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateModelConfig: mobileTemplateModelConfig,
 			mobileTemplateUnavailable: mobileTemplateUnavailable,
 			mobileTemplateTypesByName: mobileTemplateTypesByName,
-			webTemplateBaselineNodes: webTemplateBaselineNodes);
+			webTemplateBaselineNodes: webTemplateBaselineNodes,
+			webTemplateUnavailable: webTemplateUnavailable);
 
 	/// <summary>name → type map for a mobile template (drives the AUTOMATIC same-component twin).</summary>
 	private static IReadOnlyDictionary<string, string> MobileTypesByName(params (string name, string type)[] entries) {
@@ -1340,6 +1342,22 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A page business rule targeting an UNCHANGED auto-twin element converts, not drops: the unchanged twin is emitted as an advisory merge entry (MobileName == WebName), so the element stays in the survivors map and the rule is not wrongly dropped as 'every referenced element is unsupported'. Regression for the advisory-entry fix.")]
+	public void ConvertPageBusinessRules_UnchangedAutoTwin_RuleConverts() {
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide feed", ElementAction("hide-element", "Feed")));
+		// An unchanged auto-twin ships as an advisory merge entry (null values, MobileName == WebName).
+		var elementMap = new List<ElementMapEntry> { El("Feed", "merge", "Feed") };
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.DroppedRules.Should().BeEmpty(because: "Feed exists on mobile as a merge twin, so a rule targeting it must convert");
+		result.ConvertedRules.Should().HaveCount(1);
+		result.ConvertedRules[0].Rule!["actions"]!.AsArray()[0]!["items"]!.AsArray()
+			.Select(n => n!.GetValue<string>()).Should().Equal("Feed");
+	}
+
+	[Test]
 	[Description("A rule whose condition mixes AND and OR across nested groups is dropped (the flat single-operator condition input cannot represent it), even when its actions would otherwise survive.")]
 	public void ConvertPageBusinessRules_MixedAndOrCondition_DropsRule() {
 		var rule = new SourcePageBusinessRule {
@@ -1733,10 +1751,9 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A same-component twin (AttachmentList→AttachmentFileList, both crt.FileList) declared name-only carries the WHOLE web node onto the template-provided mobile element by merge-by-name — recordColumnName and the rest of its parameters — WITHOUT re-declaring the component type. The reason tells the caller to paste the prebuilt mobileValues.")]
-	public void Analyze_TemplateComponentTwin_SameComponent_CarriesWholeNodeWithoutType() {
-		// Arrange — web AttachmentList (crt.FileList) inherited from the tabbed template baseline; the twin is
-		// declared name-only, so because both sides are crt.FileList the whole node is carried.
+	[Description("Fallback: when the WEB template baseline nodes are unavailable (failed read, or a page whose template does not declare the element), a name-mapped same-component twin CANNOT compute a delta, so it degrades to an ADVISORY merge (null mobileValues) — it does NOT carry the whole web node, which would paste web-only values like primaryColumnName onto the mobile element.")]
+	public void Analyze_TemplateComponentTwin_SameComponent_NoBaseline_IsAdvisoryMerge() {
+		// Arrange — AttachmentList present, mapped, and in the chrome name set, but NO webTemplateBaselineNodes.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
 				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead", "masterRecordColumnValue": "$Id", "primaryColumnName": "AttachmentListDS_Id", "viewType": "gallery" } ] } ]
@@ -1748,37 +1765,29 @@ public sealed class WebToMobileConversionServiceTests {
 		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
 			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
 		};
-		// AttachmentList is inherited from the web tabbed template (it is in the baseline). Without the components
-		// map it would be pruned as chrome and its page recordColumnName lost; the same-component twin keeps it
-		// and carries its whole parameter set (crt.FileList is a mobile type -> same component on both sides).
 		IReadOnlySet<string> templateNames = Names("AttachmentsTabContainer", "AttachmentList");
 
-		// Act
+		// Act — no webTemplateBaselineNodes: the baseline is unknown.
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: web, containerNameMap: containerNameMap,
 			templateComponentNames: templateNames, componentNameMap: componentNameMap);
 
-		// Assert — kept as a merge-by-name twin onto the mobile AttachmentFileList element.
+		// Assert — merge-by-name onto AttachmentFileList, but ADVISORY: no prebuilt payload, no web-only leakage.
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
-		twin.Operation.Should().Be("merge", because: "the mobile template already provides AttachmentFileList — it is configured by merge-by-name, not inserted as a duplicate");
-		twin.MobileName.Should().Be("AttachmentFileList", because: "the web AttachmentList maps to the mobile AttachmentFileList element");
-		JsonObject vals = twin.MobileValues!.AsObject();
-		vals["recordColumnName"]!.GetValue<string>().Should().Be("Lead", because: "the object-specific link column is the whole point — it must carry onto the mobile element");
-		vals["masterRecordColumnValue"]!.GetValue<string>().Should().Be("$Id", because: "a same-component twin carries the whole node, not a whitelist");
-		vals["primaryColumnName"]!.GetValue<string>().Should().Be("AttachmentListDS_Id", because: "a same-component twin carries the whole node");
-		vals.ContainsKey("viewType").Should().BeTrue(because: "AttachmentList and AttachmentFileList are the same component (crt.FileList) — every property is carried");
-		vals.ContainsKey("type").Should().BeFalse(because: "a merge targets an element the template already owns — it must not re-declare the component type");
-		twin.Reason.Should().Contain("merge the prebuilt mobileValues", because: "a payload was produced, so the caller is told to paste it, not hand-configure");
+		twin.Operation.Should().Be("merge", because: "the mobile template provides AttachmentFileList — configured by merge-by-name, not inserted");
+		twin.MobileName.Should().Be("AttachmentFileList");
+		twin.MobileValues.Should().BeNull(because: "without the web-template baseline the twin cannot tell the page's change from the template default, so it carries nothing rather than the whole web node (no primaryColumnName leakage)");
+		twin.Reason.Should().Contain("configure", because: "an advisory merge tells the caller to configure by merge-by-name per componentSuggestions, not to paste prebuilt values");
 		guide.ElementMap.Should().NotContain(e => e.WebName == "AttachmentList" && e.Operation == "insert", because: "the twin merges onto the template element rather than inserting a duplicate list");
 	}
 
 	[Test]
-	[Description("When the web attachments node has no recordColumnName, the same-component twin merge omits it — nothing overrides the mobile template's default RecordId link column.")]
-	public void Analyze_TemplateComponentTwin_SameComponent_OmitsAbsentRecordColumnName() {
-		// Arrange — no recordColumnName on the web node.
+	[Description("When the page did NOT change recordColumnName from the web-template baseline, the same-component twin merge OMITS it — only the changed property carries, so nothing overrides the mobile template's default RecordId link column.")]
+	public void Analyze_TemplateComponentTwin_SameComponent_OmitsUnchangedRecordColumnName() {
+		// Arrange — page's recordColumnName equals the baseline; only masterRecordColumnValue changed.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
-				{ "name": "AttachmentList", "type": "crt.FileList", "masterRecordColumnValue": "$Id" } ] } ]
+				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead", "masterRecordColumnValue": "$Other" } ] } ]
 			""");
 		var web = Reg(("crt.TabContainer", true), ("crt.FileList", false));
 		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
@@ -1788,16 +1797,22 @@ public sealed class WebToMobileConversionServiceTests {
 			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
 		};
 		IReadOnlySet<string> templateNames = Names("AttachmentsTabContainer", "AttachmentList");
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead", "masterRecordColumnValue": "$Id" } ]
+			""");
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: web, containerNameMap: containerNameMap,
-			templateComponentNames: templateNames, componentNameMap: componentNameMap);
+			templateComponentNames: templateNames, componentNameMap: componentNameMap,
+			webTemplateBaselineNodes: baseline);
 
 		// Assert
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
 		twin.Operation.Should().Be("merge", because: "still a merge-by-name onto the template-provided element");
-		twin.MobileValues!.AsObject().ContainsKey("recordColumnName").Should().BeFalse(because: "an absent web recordColumnName must not override the mobile template's default RecordId");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals.ContainsKey("recordColumnName").Should().BeFalse(because: "recordColumnName equals the baseline — unchanged, so it is omitted and the mobile default RecordId stands");
+		vals["masterRecordColumnValue"]!.GetValue<string>().Should().Be("$Other", because: "only the changed property carries");
 	}
 
 	[Test]
@@ -1839,8 +1854,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("An automatic same-component twin the page did NOT change from the web-template baseline produces NO element-map entry - the mobile template already provides the element correctly and nothing is merged onto it.")]
-	public void Analyze_AutoComponentTwin_Unchanged_ProducesNoEntry() {
+	[Description("An automatic same-component twin the page did NOT change from the web-template baseline emits an ADVISORY merge entry (null mobileValues), not nothing: the element exists on mobile, so it must be a valid target in the survivors map (a page business rule 'hide Feed' converts) — while nothing is actually merged onto it.")]
+	public void Analyze_AutoComponentTwin_Unchanged_EmitsAdvisoryMergeEntry() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
 				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS", "entitySchemaName": "Lead" } ] } ]
@@ -1860,10 +1875,12 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: templateNames,
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
-		guide.ElementMap.Should().NotContain(e => e.WebName == "Feed", because: "unchanged from the web-template baseline => empty delta => no merge entry; the mobile template already provides Feed");
-		// The absence above must be "kept as an unchanged twin", NOT "pruned as chrome": the auto-twin mechanism
-		// keeps Feed in the tree (it survives pruning), so it is still surfaced in sourceStructure. Without the
-		// mechanism Feed would be pruned and this would fail — so the test cannot pass with the mechanism deleted.
+		// An advisory merge entry (null values), NOT nothing and NOT an insert.
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		twin.Operation.Should().Be("merge", because: "the element is kept as a merge-by-name twin (a valid business-rule target), never inserted as a duplicate");
+		twin.MobileValues.Should().BeNull(because: "the page changed nothing over the baseline, so there is nothing to merge — the mobile template already provides Feed");
+		twin.Reason.Should().Contain("unchanged", because: "the reason states it is an unchanged advisory twin, nothing to merge");
+		// And it is KEPT (surfaced in sourceStructure), not pruned — the test cannot pass with the mechanism deleted.
 		guide.SourceStructure.Should().Contain(s => s.Name == "Feed",
 			because: "an unchanged auto-twin is kept (surfaced in sourceStructure), not pruned away");
 	}
@@ -2009,6 +2026,134 @@ public sealed class WebToMobileConversionServiceTests {
 		nodesByName.Keys.Should().Contain(new[] { "Outer", "Inner", "Feed" });
 		nodesByName["Feed"]["dataSourceName"]!.ToString().Should().Be("LeadDS",
 			because: "the nested node's own properties are captured for the delta comparison");
+	}
+
+	[Test]
+	[Description("A page-changed layoutConfig is NOT carried onto a twin merge — placement belongs to the mobile template's element and no merge pass normalizes it; only the data change (dataSourceName) carries.")]
+	public void Analyze_AutoComponentTwin_ExcludesPageChangedLayoutConfig() {
+		// Arrange — the page moved Feed in the web grid (layoutConfig) and changed its data source.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS", "layoutConfig": { "column": 3, "row": 5 } } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS" } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames,
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the changed data property carries");
+		vals.ContainsKey("layoutConfig").Should().BeFalse(because: "the mobile template positions the element it owns — a page-changed layoutConfig must not override it, and no merge pass would normalize it");
+	}
+
+	[Test]
+	[Description("A page-CHANGED event binding on a same-component twin IS carried onto the merge payload — the delta is by definition what the page changed, so a rebound handler is not silently dropped.")]
+	public void Analyze_AutoComponentTwin_CarriesPageChangedEventBinding() {
+		// Arrange — the baseline Feed has no clicked binding; the page adds one (a change).
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "clicked": { "request": "usr.CustomRequest" } } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "Feed", "type": "crt.Feed" } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames,
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		twin.MobileValues!.AsObject().ContainsKey("clicked").Should().BeTrue(
+			because: "the page changed (added) the handler — the delta must carry it, not silently drop it from a twin merge");
+	}
+
+	[Test]
+	[Description("An UNCHANGED inherited event binding is NOT carried onto a twin merge (it is the template element's own interaction) — with no other change the twin is advisory (null values).")]
+	public void Analyze_AutoComponentTwin_UnchangedEventBinding_NotCarried() {
+		// Arrange — the page's clicked binding equals the baseline; nothing else changed.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "clicked": { "request": "usr.CustomRequest" } } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "Feed", "type": "crt.Feed", "clicked": { "request": "usr.CustomRequest" } } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames,
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		twin.MobileValues.Should().BeNull(
+			because: "the binding is unchanged from the baseline and nothing else changed — the inherited interaction stays on the template element, so the twin is advisory");
+	}
+
+	[Test]
+	[Description("When the WEB template is unavailable AND the rules declare a name-mapped twin, the guide warns the twin degraded to an advisory merge (it cannot diff against the missing baseline).")]
+	public void Analyze_WebTemplateUnavailable_WithComponentTwin_EmitsAdvisoryConstraint() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.FileList", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentsTabContainer"] = "AttachmentsContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			componentNameMap: componentNameMap, webTemplateUnavailable: true);
+
+		guide.Constraints.Should().Contain(c => c.Contains("degrades to an ADVISORY merge"),
+			because: "a rule-declared same-component twin cannot diff against an unreadable web template");
+	}
+
+	[Test]
+	[Description("When the WEB template is unavailable but the rules declare NO name-mapped twin, the advisory-degradation constraint is NOT emitted — an automatic twin cannot fire without a baseline, so nothing degraded.")]
+	public void Analyze_WebTemplateUnavailable_NoComponentTwin_OmitsAdvisoryConstraint() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [ { "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Input", false));
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: web, webTemplateUnavailable: true);
+
+		guide.Constraints.Should().NotContain(c => c.Contains("degrades to an ADVISORY merge"),
+			because: "no name-mapped twin exists, so nothing degraded to advisory");
 	}
 
 	#endregion
