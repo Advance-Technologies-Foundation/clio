@@ -7,10 +7,44 @@ using Clio.Command.McpServer.Knowledge;
 namespace Clio.UserEnvironment
 {
 	/// <summary>
+	/// Outcome of an explicit <see cref="ISettingsRepository.Reload"/> call.
+	/// </summary>
+	/// <param name="Reloaded">
+	/// <c>true</c> when the in-memory settings were replaced with the file content;
+	/// <c>false</c> when the file could not be read and the previously loaded settings remain in use.
+	/// </param>
+	/// <param name="Report">
+	/// The bootstrap report produced while reading the file, or <c>null</c> when reading threw.
+	/// Callers that need a fresh report should use this value instead of asking
+	/// <see cref="ISettingsBootstrapService"/> again — that would read the file a second time.
+	/// </param>
+	/// <param name="Warning">
+	/// A human- and agent-readable explanation of why the reload was skipped, or <c>null</c> on success.
+	/// </param>
+	public sealed record SettingsReloadResult(bool Reloaded, SettingsBootstrapReport? Report, string? Warning);
+
+	/// <summary>
 	/// Provides access to persisted clio settings and registered environment definitions.
 	/// </summary>
 	public interface ISettingsRepository
 	{
+		/// <summary>
+		/// Re-reads <c>appsettings.json</c> and replaces the in-memory settings snapshot taken when this
+		/// repository was constructed.
+		/// </summary>
+		/// <remarks>
+		/// Reads on this repository are served from the snapshot, so a long-lived host (the MCP server)
+		/// otherwise answers with the environment list as it was at process start. Reloading is an
+		/// EXPLICIT step rather than a side effect of every read: each reload takes the cross-process
+		/// settings file lock and deserializes the whole file, which must not be charged to every
+		/// settings getter of every command. Call it where a stale environment list is observable —
+		/// the <c>list-environments</c> tool and the MCP environment-resolution path.
+		/// A corrupt, unreadable or missing file never throws here: the previously loaded settings stay
+		/// in use and the reason is returned as <see cref="SettingsReloadResult.Warning"/>.
+		/// </remarks>
+		/// <returns>The reload outcome, including a warning when the file could not be read.</returns>
+		SettingsReloadResult Reload();
+
 		/// <summary>
 		/// Gets the path to the clio appsettings file.
 		/// </summary>

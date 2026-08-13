@@ -84,7 +84,10 @@ DESCRIPTION
     it (viewConfigDiff dedupes by name, handlers by request). Append requires the
     diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
     markers, instead of the *_DIFF markers) cannot be merged and is rejected with
-    an actionable hint — use --mode replace for such a body.
+    an actionable hint — use --mode replace for such a body. The message names which
+    body is full-config: convert your own incoming body to the diff form, but if the
+    current page on the server is full-config (every create-app-section page is), append
+    is not supported against it — use --mode replace.
 
 SYNOPSIS
     clio update-page [options]

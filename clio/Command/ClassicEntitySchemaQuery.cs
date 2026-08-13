@@ -24,6 +24,13 @@ internal static class ClassicEntitySchemaQuery {
 	/// <summary>Row cap for the section (SysModuleEntity) lookup; reaching it signals a truncated result.</summary>
 	internal const int SectionRowCount = 100;
 
+	/// <summary>
+	/// Maximum values in a single <see cref="InFilter"/> list. Every value costs one query parameter, and MSSql caps a
+	/// statement at 2100 of them — so a value set that is page-driven rather than capped (ENG-94402) must be chunked or
+	/// the whole query throws. Kept well under the ceiling to leave room for the surrounding filters.
+	/// </summary>
+	internal const int InFilterChunkSize = 400;
+
 	// ESQ payload key, single-sourced so the DSL below cannot drift on the key name.
 	private const string ExpressionTypeKey = "expressionType";
 
@@ -39,6 +46,16 @@ internal static class ClassicEntitySchemaQuery {
 		new JObject { ["UId"] = Column("UId"), ["ExtendParent"] = Column("ExtendParent") },
 		Group(("byName", Eq("Name", entityName, 1)), ("byManager", Eq("ManagerName", "EntitySchemaManager", 1))),
 		EntityRowCount);
+
+	/// <summary>
+	/// Selects <c>UId</c> -&gt; <c>Name</c> for the given schema UIds. Shared by every caller that resolves a UId
+	/// reference (a section module, a detail's edit card) back to a schema name, so the column set and the
+	/// <c>In</c>-filter <c>dataValueType</c> cannot drift between them.
+	/// </summary>
+	internal static JObject BuildSelectSchemaNamesByUId(IReadOnlyCollection<string> uIds) => Query("SysSchema",
+		new JObject { ["UId"] = Column("UId"), ["Name"] = Column("Name") },
+		Group(("byUId", InFilter("UId", uIds, 0))),
+		uIds.Count);
 
 	/// <summary>
 	/// Picks the base row (<c>ExtendParent == false</c>) UId from entity SysSchema rows. The base row — not a

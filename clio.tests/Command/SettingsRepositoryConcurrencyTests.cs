@@ -214,6 +214,12 @@ public sealed class SettingsRepositoryConcurrencyTests {
 		public SettingsBootstrapReport GetReport() {
 			return GetResult().Report;
 		}
+
+		// This double models the read side only; the repair/no-repair distinction is irrelevant here, so
+		// the non-repairing read follows the same scripted sequence.
+		public SettingsBootstrapResult GetResultWithoutRepairs() {
+			return GetResult();
+		}
 	}
 
 }

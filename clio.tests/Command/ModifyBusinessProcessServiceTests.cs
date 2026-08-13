@@ -55,6 +55,45 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("Reads the server's warnings[] off a SUCCESSFUL edit — the channel that carries the two outcomes which apply but are not what a caller assumes, and which an undeclared member would drop in silence.")]
+	public void ModifyProcess_ShouldReadWarnings_WhenServerReportsThemOnASuccessfulEdit() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":true,\"schemaName\":\"UsrProc\",\"appliedOperations\":1,"
+			+ "\"warnings\":[\"Connection 'OmniChat' is not registered\"]}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		ModifyBusinessProcessResult result = service.ModifyProcess(Env,
+			new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		result.Warnings.Should().ContainSingle(because: "a warning the server reported must reach the caller, and an "
+			+ "undeclared member deserializes to null with nothing red anywhere");
+		result.Warnings[0].Should().Contain("OmniChat",
+			because: "the warning names WHICH connection is affected, which is the only actionable part of it");
+	}
+
+	[Test]
+	[Description("Leaves Warnings null when the server reports none, so the absent case cannot be mistaken for an empty-but-present list by a caller that enumerates it.")]
+	public void ModifyProcess_ShouldLeaveWarningsNull_WhenServerReportsNone() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":true,\"schemaName\":\"UsrProc\",\"appliedOperations\":1}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		ModifyBusinessProcessResult result = service.ModifyProcess(Env,
+			new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		result.Warnings.Should().BeNull(
+			because: "the server omits the member when there is nothing to say, and the command handles that with ?? []");
+	}
+
+	[Test]
 	[Description("Surfaces the server's errorMessage when the ModifyProcess result reports success=false (an aborted edit).")]
 	public void ModifyProcess_ShouldThrowWithServerMessage_WhenSuccessFalse() {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
