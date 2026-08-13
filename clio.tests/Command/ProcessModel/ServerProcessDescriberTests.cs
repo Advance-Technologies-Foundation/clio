@@ -404,6 +404,64 @@ public sealed class ServerProcessDescriberTests {
 		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 	}
 
+	[Test]
+	[Description("Deserializes an element's connections[] entry in full — column, registration state, raw macro and the decoded source — plus the element-level deprecated and writesConnectionsAtRuntime facts, because a member clio's DTO does not declare is dropped SILENTLY and the tool description promises all of them.")]
+	public void Describe_ShouldReadConnectionsAndCapabilityFacts_WhenServerReportsThem() {
+		// Arrange — one fixed-record connection on a registered column, and both element-level facts
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"connections\":[{\"column\":\"Account\",\"registered\":true,\"source\":\"Script\","
+			+ "\"value\":\"[#Lookup.c449d832-a4cc-4b01-b9d5-8a12c42a9f89.e308b781-3c5b-4ecb-89ef-5c1ed4da488e#]\","
+			+ "\"recordId\":\"e308b781-3c5b-4ecb-89ef-5c1ed4da488e\",\"referenceSchema\":\"Account\"}],"
+			+ "\"deprecated\":false,\"writesConnectionsAtRuntime\":true}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedElement element = result.Value.Elements[0];
+		element.Connections.Should().HaveCount(1,
+			because: "an undeclared collection member deserializes to null, which is how four promised fields were "
+				+ "dropped in silence once already");
+		DescribedConnection connection = element.Connections[0];
+		connection.Column.Should().Be("Account", because: "the column names the connection and is its identity");
+		connection.Registered.Should().BeTrue(
+			because: "registration is what tells a caller whether the connection is a full citizen or a half one");
+		connection.RecordId.Should().Be("e308b781-3c5b-4ecb-89ef-5c1ed4da488e",
+			because: "the decoded source is what makes the read-back re-appliable without translating a metapath");
+		connection.ReferenceSchema.Should().Be("Account", because: "the entity travels as a NAME the write side takes");
+		connection.Value.Should().StartWith("[#Lookup.",
+			because: "the raw persisted macro travels alongside the decoded form, which is the forward-compatibility guarantee");
+		element.WritesConnectionsAtRuntime.Should().BeTrue(
+			because: "this is the verdict a caller is told to read before trusting a binding, so it must reach them");
+		element.Deprecated.Should().BeFalse(because: "the retirement fact is reported per element and must not be dropped");
+	}
+
+	[Test]
+	[Description("Leaves connections/deprecated/writesConnectionsAtRuntime null when an older CrtProcessBuilder omits them, so a stale package degrades to 'not established' rather than to a wrong answer.")]
+	public void Describe_ShouldLeaveConnectionsAndCapabilityFactsNull_WhenServerOmitsThem() {
+		// Arrange — the pre-connections server shape
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedElement element = result.Value.Elements[0];
+		element.Connections.Should().BeNull(because: "absent is not empty: nothing was reported, so nothing is claimed");
+		element.WritesConnectionsAtRuntime.Should().BeNull(
+			because: "null means NOT ESTABLISHED, which is exactly what an older package can say about it");
+		element.Deprecated.Should().BeNull(because: "same reason — an omitted fact must not read as false");
+	}
+
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)["request"];
 }
