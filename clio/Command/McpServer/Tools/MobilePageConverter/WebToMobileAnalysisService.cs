@@ -1675,12 +1675,14 @@ public static class WebToMobileAnalysisService {
 				// Deterministic merge payload carried onto the template-provided element:
 				//  • an explicit carryProperties whitelist → just those keys (e.g. the folder tree binding);
 				//  • otherwise, when the twin is the SAME component on both sides (twinMobileType == web type,
-				//    e.g. crt.FileList → crt.FileList) → carry ALL its properties, because a name twin of one
-				//    component is just the same element renamed between the web and mobile templates;
-				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List) → no
-				//    payload; it stays an advisory merge and the how-to is left to componentSuggestions.
-				// The payload never carries the component `type` (a merge targets an element the template
-				// already owns) nor re-keys captions (the template owns the element's caption).
+				//    e.g. crt.FileList → crt.FileList) → carry the page's DELTA over the web-template baseline
+				//    (only what the page changed; an unchanged property is left to the mobile template's default);
+				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List), OR a
+				//    same-component twin with no baseline node → no payload; it stays an advisory merge and the
+				//    how-to is left to componentSuggestions.
+				// The payload never carries the component `type` (a merge targets an element the template already
+				// owns), nor placement/caption (layoutConfig + caption belong to the template element — see
+				// TwinMergeExcludedProps).
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
@@ -1888,13 +1890,22 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Properties EXCLUDED from a same-component twin merge on top of <see cref="ExcludedSourceProps"/>:
-	/// <c>layoutConfig</c> is the element's placement, which the MOBILE template owns for a template-provided
-	/// element — carrying the page's web grid coordinates would override it, and no merge pass normalizes it
-	/// (the adaptive / single-column / property-override passes all run on inserts only).
+	/// Properties EXCLUDED from a same-component twin merge on top of <see cref="ExcludedSourceProps"/>, because
+	/// they belong to the template-provided element the merge targets, not to the page's data delta:
+	/// <list type="bullet">
+	/// <item><c>layoutConfig</c> — the element's placement, which the MOBILE template owns; carrying the page's
+	/// web grid coordinates would override it, and no merge pass normalizes it (adaptive / single-column /
+	/// property-override all run on inserts only).</item>
+	/// <item><c>caption</c> — the element's localized label. The page carries it as a resource TOKEN
+	/// (<c>#ResourceString(&lt;key&gt;)#</c>); on an INSERT the builder re-keys it to a unique per-element key and
+	/// registers the value, but that trick cannot work for a merge onto a template-provided element (the re-keyed
+	/// name IS the template's own key, which <c>update-page</c> never overwrites). Rather than emit a caption that
+	/// silently loses to the template's, the twin leaves the caption to the template. Renaming an inherited
+	/// element's caption on mobile is a separate, live-verified concern.</item>
+	/// </list>
 	/// </summary>
 	private static readonly HashSet<string> TwinMergeExcludedProps = new(StringComparer.OrdinalIgnoreCase) {
-		"layoutConfig"
+		"layoutConfig", "caption"
 	};
 
 	/// <summary>

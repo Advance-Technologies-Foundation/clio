@@ -2060,6 +2060,37 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A page-changed caption is NOT carried onto a twin merge — the localized label belongs to the template-provided element (the insert path's re-key to a unique key cannot work for a merge onto a template element, so an emitted caption would silently lose to the template's). Only the data change carries.")]
+	public void Analyze_AutoComponentTwin_ExcludesPageChangedCaption() {
+		// Arrange — the page set a caption on the inherited Feed and changed its data source.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS", "caption": "#ResourceString(Feed_caption)#" } ] } ]
+			""");
+		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["FeedTabContainer"] = "FeedContainer"
+		};
+		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
+		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS" } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames,
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the changed data property carries");
+		vals.ContainsKey("caption").Should().BeFalse(because: "the caption belongs to the template-provided element; a merge cannot re-key it safely, so it is left to the template rather than emitted to lose silently");
+	}
+
+	[Test]
 	[Description("A page-CHANGED event binding on a same-component twin IS carried onto the merge payload — the delta is by definition what the page changed, so a rebound handler is not silently dropped.")]
 	public void Analyze_AutoComponentTwin_CarriesPageChangedEventBinding() {
 		// Arrange — the baseline Feed has no clicked binding; the page adds one (a change).
