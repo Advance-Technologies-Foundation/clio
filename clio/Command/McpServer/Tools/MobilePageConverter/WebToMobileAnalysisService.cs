@@ -1681,8 +1681,8 @@ public static class WebToMobileAnalysisService {
 				//    same-component twin with no baseline node → no payload; it stays an advisory merge and the
 				//    how-to is left to componentSuggestions.
 				// The payload never carries the component `type` (a merge targets an element the template already
-				// owns), nor placement/caption (layoutConfig + caption belong to the template element — see
-				// TwinMergeExcludedProps).
+				// owns) nor placement (layoutConfig — owned by the template). The page's caption IS carried (it
+				// overrides the template label; CollectResourceStrings adds its resource to the schema).
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
@@ -1842,8 +1842,11 @@ public static class WebToMobileAnalysisService {
 	/// property still equal to the web baseline is OMITTED so it cannot override the mobile template's own
 	/// default (an unchanged attachments <c>recordColumnName</c> leaves the mobile default <c>RecordId</c>). A
 	/// page-CHANGED event binding IS carried (converted + recorded via <see cref="ProcessOneEventBinding"/>), so
-	/// a rebound handler is not lost; an unchanged binding is the template element's own and is left alone. Emits
-	/// NO <c>type</c> (a merge targets an element the template already owns). Null when the page changed nothing,
+	/// a rebound handler is not lost; an unchanged binding is the template element's own and is left alone. The
+	/// <c>caption</c> is carried ALWAYS (not delta-gated) so the page's label overrides the template element's and
+	/// its resource is added to the mobile schema — a Freedom UI rename keeps the same token and only changes the
+	/// value, which a delta comparison would miss. Emits NO <c>type</c> (a merge targets an element the template
+	/// already owns). Null when the page changed nothing,
 	/// AND when no baseline node is known for <paramref name="webName"/> — without the baseline the page's change
 	/// cannot be told from the template's own value, so the twin degrades to an advisory merge (no prebuilt
 	/// values) rather than pasting the whole web node (including web-only values) onto the mobile element.
@@ -1866,6 +1869,16 @@ public static class WebToMobileAnalysisService {
 				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
 					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values);
 				}
+				continue;
+			}
+			// caption: the page's label OVERRIDES the template element's, so carry it ALWAYS (not delta-gated). A
+			// Freedom UI rename keeps the SAME #ResourceString token and only changes the resource value, so a delta
+			// comparison would miss it. Carrying the token verbatim points the mobile element at the page's caption
+			// key; CollectResourceStrings then registers that key from the page's strings, so update-page ADDS the
+			// page's caption text to the mobile schema. (NOT re-keyed: unlike an insert of a NEW element, a merge
+			// keeps the page's own key, which the mobile template does not own for a renamed element.)
+			if (string.Equals(prop.Name, "caption", StringComparison.OrdinalIgnoreCase)) {
+				values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
 				continue;
 			}
 			// Element identity, the value binding, and placement (layoutConfig — owned by the template) are excluded.
@@ -1891,21 +1904,14 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Properties EXCLUDED from a same-component twin merge on top of <see cref="ExcludedSourceProps"/>, because
-	/// they belong to the template-provided element the merge targets, not to the page's data delta:
-	/// <list type="bullet">
-	/// <item><c>layoutConfig</c> — the element's placement, which the MOBILE template owns; carrying the page's
-	/// web grid coordinates would override it, and no merge pass normalizes it (adaptive / single-column /
-	/// property-override all run on inserts only).</item>
-	/// <item><c>caption</c> — the element's localized label. The page carries it as a resource TOKEN
-	/// (<c>#ResourceString(&lt;key&gt;)#</c>); on an INSERT the builder re-keys it to a unique per-element key and
-	/// registers the value, but that trick cannot work for a merge onto a template-provided element (the re-keyed
-	/// name IS the template's own key, which <c>update-page</c> never overwrites). Rather than emit a caption that
-	/// silently loses to the template's, the twin leaves the caption to the template. Renaming an inherited
-	/// element's caption on mobile is a separate, live-verified concern.</item>
-	/// </list>
+	/// they belong to the template-provided element the merge targets, not to the page's data delta.
+	/// <c>layoutConfig</c> is the element's placement, which the MOBILE template owns; carrying the page's web grid
+	/// coordinates would override it, and no merge pass normalizes it (adaptive / single-column / property-override
+	/// all run on inserts only). NOTE: <c>caption</c> is deliberately NOT here — the page's label overrides the
+	/// template's and is carried always (see <see cref="BuildDeltaTwinMergeValues"/>).
 	/// </summary>
 	private static readonly HashSet<string> TwinMergeExcludedProps = new(StringComparer.OrdinalIgnoreCase) {
-		"layoutConfig", "caption"
+		"layoutConfig"
 	};
 
 	/// <summary>

@@ -2060,13 +2060,14 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A page-changed caption is NOT carried onto a twin merge — the localized label belongs to the template-provided element (the insert path's re-key to a unique key cannot work for a merge onto a template element, so an emitted caption would silently lose to the template's). Only the data change carries.")]
-	public void Analyze_AutoComponentTwin_ExcludesPageChangedCaption() {
-		// Arrange — the page set a caption on the inherited Feed and changed its data source.
+	[Description("A page caption OVERRIDES the template element's on a twin merge: it is carried verbatim (the page's own #ResourceString token, NOT re-keyed) and its resource key is registered in the guide's resourceStrings, so update-page adds the page's caption text to the mobile schema. Carried ALWAYS — a rename keeps the same token, which a delta comparison would miss.")]
+	public void Analyze_AutoComponentTwin_CarriesPageCaptionAndRegistersResource() {
+		// Arrange — the page renamed the inherited Feed's caption and changed its data source.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
 				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS", "caption": "#ResourceString(Feed_caption)#" } ] } ]
-			""");
+			""",
+			resourcesJson: """{ "Feed_caption": { "en-US": "Activities" } }""");
 		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
 		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["FeedTabContainer"] = "FeedContainer"
@@ -2083,11 +2084,14 @@ public sealed class WebToMobileConversionServiceTests {
 			templateComponentNames: templateNames,
 			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
 
-		// Assert
+		// Assert — caption carried verbatim onto the mobile element, and its resource added to the schema.
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
 		JsonObject vals = twin.MobileValues!.AsObject();
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the changed data property carries");
-		vals.ContainsKey("caption").Should().BeFalse(because: "the caption belongs to the template-provided element; a merge cannot re-key it safely, so it is left to the template rather than emitted to lose silently");
+		vals["caption"]!.GetValue<string>().Should().Be("#ResourceString(Feed_caption)#",
+			because: "the page's caption overrides the template label — carried verbatim so the mobile element points at the page's key");
+		guide.ResourceStrings.Should().ContainKey("Feed_caption").WhoseValue.Should().Be("Activities",
+			because: "the caption resource is registered so update-page adds the page's label text to the mobile schema");
 	}
 
 	[Test]
