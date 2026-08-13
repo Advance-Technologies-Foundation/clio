@@ -2709,7 +2709,7 @@ stories:
     feature: "process-element-connections"
     repo: "ProcessBuilder+clio"
     size: S
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-91845
     file: spec/stories/story-process-element-connections-6.md
     prd: spec/process-element-connections/process-element-connections-plan.md

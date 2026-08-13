@@ -3,8 +3,9 @@
 **Feature**: process-element-connections
 **Analysis**: [process-element-connections-plan.md](../process-element-connections/process-element-connections-plan.md)
 **ADR**: [adr-process-element-connections.md](../adr/adr-process-element-connections.md)
-**Decisions**: extends D3 (the value contract) — no new decision taken
-**Status**: ready-for-dev
+**Decisions**: extends D1's value-dialect type rules; narrows the residual recorded under D8 — for the
+`[#SysVariable...#]` family only, the `[#SysSettings...#]` half of it stands. No new decision taken.
+**Status**: in-progress
 **Size**: S
 **Repo**: `ProcessBuilder` — `packages/CrtProcessBuilder/Files/src/cs/Connections/`, then `clio`
 **Depends on**: story 3 (the write kernel this refuses inside)
