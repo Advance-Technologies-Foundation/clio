@@ -1,3 +1,4 @@
+using System;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -87,6 +88,30 @@ public class GetClassicListColumnsToolTests {
 			because: "the backend host is sensitive connection detail");
 		response.Notes.Should().ContainSingle().Which.Should().Contain("[redacted-uri]",
 			because: "notes are a second response channel and need the same redaction");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolve returns a typed failure instead of throwing when the environment-scoped command cannot be resolved.")]
+	public void Resolve_ShouldReturnTypedFailure_WhenCommandResolutionFails() {
+		// Arrange — an unknown or unregistered environment-name is the most common MCP caller mistake
+		FakeGetClassicListColumnsCommand defaultCommand = CreateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetClassicListColumnsCommand>(Arg.Any<GetClassicListColumnsOptions>())
+			.Returns(_ => throw new InvalidOperationException("Environment 'ghost' is not registered"));
+		GetClassicListColumnsTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		GetClassicListColumnsResponse response = tool.Resolve(new GetClassicListColumnsArgs("ContactSectionV2") {
+			EnvironmentName = "ghost"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a resolution failure must travel as a structured payload");
+		response.Error.Should().Contain("ghost",
+			because: "the caller needs to see which environment could not be resolved");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "an unresolvable environment must never silently fall back to the startup command");
 	}
 
 	private static FakeGetClassicListColumnsCommand CreateCommand(

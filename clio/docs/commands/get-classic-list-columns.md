@@ -21,6 +21,22 @@ read-only Creatio APIs. It returns JSON with the requested `sectionSchema`, reso
 The command intentionally does not read or write `SysProfileData`. It does not change packages, schemas,
 profile settings, or application data. Dynamic JavaScript expressions are not executed.
 
+### Column order when a section declares both methods
+
+`getGridDataColumns` and `initColumnsConfig` are merged in that fixed order, regardless of the order they
+appear in the section body, and a path declared by both is reported once at its first position. In Classic
+these two methods are not interchangeable — `initColumnsConfig` describes what the grid renders while
+`getGridDataColumns` declares what the section loads — so a section declaring both can report columns that
+are loaded but never rendered, ahead of the rendered ones. Consumers that need the strictly displayed set
+should treat this case as approximate.
+
+### Skipped schema layers
+
+A hierarchy layer whose body cannot be parsed as JavaScript is skipped rather than failing the command, and
+`notes` then carries a `… section schema layers could not be parsed …` entry. When that note is present the
+resolved `columns` may be incomplete — an unparseable most-derived layer lets an ancestor layer, or the
+entity fallback, supply the answer.
+
 ## Synopsis
 
 ```bash

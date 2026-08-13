@@ -79,7 +79,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		];
 
 		// Act
-		IReadOnlyList<string> result = _parser.ParseColumns(bodies);
+		IReadOnlyList<string> result = _parser.ParseColumns(bodies).Columns;
 
 		// Assert
 		result.Should().Equal(["Id", "Name", "Account.PrimaryContact.Name"],
@@ -99,7 +99,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 			""";
 
 		// Act
-		IReadOnlyList<string> result = _parser.ParseColumns([body]);
+		IReadOnlyList<string> result = _parser.ParseColumns([body]).Columns;
 
 		// Assert
 		result.Should().Equal(["Name"],
@@ -116,7 +116,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		];
 
 		// Act
-		IReadOnlyList<string> result = _parser.ParseColumns(bodies);
+		IReadOnlyList<string> result = _parser.ParseColumns(bodies).Columns;
 
 		// Assert
 		result.Should().Equal(["CreatedOn"],
@@ -133,7 +133,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		];
 
 		// Act
-		IReadOnlyList<string> result = _parser.ParseColumns(bodies);
+		IReadOnlyList<string> result = _parser.ParseColumns(bodies).Columns;
 
 		// Assert
 		result.Should().Equal(["Name", "CreatedOn"],
@@ -150,7 +150,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		];
 
 		// Act
-		IReadOnlyList<string> result = _parser.ParseColumns(bodies);
+		IReadOnlyList<string> result = _parser.ParseColumns(bodies).Columns;
 
 		// Assert
 		result.Should().Equal(["CreatedOn"],
@@ -166,7 +166,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 			""";
 
 		// Act
-		IReadOnlyList<string> result = _parser.ParseColumns([body]);
+		IReadOnlyList<string> result = _parser.ParseColumns([body]).Columns;
 
 		// Assert
 		result.Should().Equal(["Name"], because: "quoted JavaScript property keys are valid static declarations");
@@ -193,7 +193,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 
 		// Act
 		string entity = _parser.ParseEntityName([body]);
-		IReadOnlyList<string> columns = _parser.ParseColumns([body]);
+		IReadOnlyList<string> columns = _parser.ParseColumns([body]).Columns;
 
 		// Assert
 		entity.Should().Be("Contact", because: "comments, strings, and regex literals must not redirect metadata reads to another entity");
@@ -213,7 +213,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 
 		// Act
 		string entity = _parser.ParseEntityName([body]);
-		IReadOnlyList<string> columns = _parser.ParseColumns([body]);
+		IReadOnlyList<string> columns = _parser.ParseColumns([body]).Columns;
 
 		// Assert
 		entity.Should().Be("Contact", because: "only the AMD factory return defines the Classic section schema");
@@ -395,6 +395,181 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		response.Success.Should().BeFalse(because: "validation errors use the failure envelope");
 		response.Error.Should().Contain("schema-name is required", because: "the caller needs an actionable option error");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
+	[Test]
+	[Description("ParseColumns merges a single schema declaring both supported methods in the fixed getGridDataColumns-then-initColumnsConfig order.")]
+	public void ParseColumns_ShouldMergeGridDataColumnsFirst_WhenOneSchemaDeclaresBothMethods() {
+		// Arrange — one body declaring both methods; initColumnsConfig is written first on purpose so the
+		// assertion pins the merge rule rather than the source order inside the body.
+		string body = """
+			define([], function() { return {
+			  entitySchemaName: "Contact",
+			  initColumnsConfig: function() { return [{ path: "Name" }, { path: "CreatedOn" }]; },
+			  getGridDataColumns: function() { return { Id: { path: "Id" }, Name: { path: "Name" } }; }
+			}; });
+			""";
+
+		// Act
+		IReadOnlyList<string> result = _parser.ParseColumns([body]).Columns;
+
+		// Assert
+		result.Should().Equal(["Id", "Name", "CreatedOn"],
+			because: "ColumnMethodNames fixes the merge order as getGridDataColumns then initColumnsConfig, "
+				+ "with the shared seen set keeping the first occurrence of a repeated path");
+	}
+
+	[Test]
+	[Description("ParseColumns reports how many schema layers could not be parsed instead of dropping them silently.")]
+	public void ParseColumns_ShouldReportUnparsedLayers_WhenABodyIsNotValidJavaScript() {
+		// Arrange
+		string[] bodies = [
+			"getGridDataColumns: function() { return { Name: { path: 'Name' } }; }",
+			"getGridDataColumns: function() { return {"
+		];
+
+		// Act
+		ClassicListColumnParseResult result = _parser.ParseColumns(bodies);
+
+		// Assert
+		result.UnparsedLayerCount.Should().Be(1,
+			because: "a body that survives neither the direct parse nor the object re-wrap must be counted, "
+				+ "otherwise the caller cannot tell a complete answer from a partial one");
+		result.Columns.Should().Equal(["Name"], because: "the layers that did parse still contribute their columns");
+	}
+
+	[Test]
+	[Description("TryResolve notes the skipped layers when a section body cannot be parsed, so a degraded answer is not mistaken for a complete one.")]
+	public void TryResolve_ShouldNoteSkippedLayers_WhenASectionBodyCannotBeParsed() {
+		// Arrange — the most-derived layer is unparseable, so the answer silently comes from its ancestor
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", "entitySchemaName: 'Contact', getGridDataColumns: function() { return {"),
+			Schema("Base", """
+				entitySchemaName: "Contact",
+				getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+				""", BaseSchemaUId)
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("Contact", "Name", Column("Name", "Full name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "an unparseable layer degrades the answer but does not fail the command; error: {0}",
+			response.Error);
+		response.Source.Should().Be("schema-default", because: "the layers that did parse still declare static columns");
+		response.Notes.Should().Contain(note => note.Contains("could not be parsed"),
+			because: "the caller must be able to see that the resolved set may be incomplete");
+	}
+
+	[Test]
+	[Description("TryResolve returns a failure envelope when the requested schema name is syntactically invalid.")]
+	public void TryResolve_ShouldFail_WhenSchemaNameFormatIsInvalid() {
+		// Arrange
+		var options = new GetClassicListColumnsOptions { SchemaName = "1BadName-" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "an invalid schema name cannot address any Creatio metadata");
+		response.Error.Should().Contain("must start with a letter",
+			because: "the caller needs the canonical schema-name format error");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
+	[Test]
+	[Description("TryResolve returns a failure envelope carrying the lookup error when SysSchema has no row for the section.")]
+	public void TryResolve_ShouldFail_WhenSectionSchemaIsNotFound() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectUrl, Arg.Any<string>())
+			.Returns("""{ "success": true, "rows": [] }""");
+		var options = new GetClassicListColumnsOptions { SchemaName = "UsrMissingSection" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "there is no section to resolve columns for");
+		response.Success.Should().BeFalse(because: "a missing section is a failure envelope, not an empty success");
+		response.Error.Should().Contain("not found", because: "the caller needs to know the schema does not exist");
+		response.Error.Should().Contain("UsrMissingSection",
+			because: "the failure must identify the schema the caller requested");
+	}
+
+	[Test]
+	[Description("TryResolve returns a failure envelope when the SysSchema row is missing its UId or package UId.")]
+	public void TryResolve_ShouldFail_WhenSchemaMetadataIsIncomplete() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectUrl, Arg.Any<string>()).Returns(
+			$$$"""{ "success": true, "rows": [{ "UId": "{{{SchemaUId}}}", "PackageUId": "" }] }""");
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "the hierarchy call needs both identifiers");
+		response.Error.Should().Contain("metadata is incomplete",
+			because: "a blank UId or package UId is a distinct, diagnosable condition");
+		_hierarchyClient.DidNotReceiveWithAnyArgs().GetParentSchemas(default, default);
+	}
+
+	[Test]
+	[Description("TryResolve returns a failure envelope when the designer returns no hierarchy for the section.")]
+	public void TryResolve_ShouldFail_WhenHierarchyIsEmpty() {
+		// Arrange
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([]);
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "without a hierarchy there is no schema body to parse");
+		response.Error.Should().Contain("hierarchy is empty",
+			because: "an empty designer result must be distinguishable from a section with no columns");
+	}
+
+	[Test]
+	[Description("TryResolve returns a failure envelope when no layer of the hierarchy declares entitySchemaName.")]
+	public void TryResolve_ShouldFail_WhenNoLayerDeclaresEntitySchemaName() {
+		// Arrange
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", "diff: []")
+		]);
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "column captions and the entity fallback both need the bound entity");
+		response.Error.Should().Contain("does not declare entitySchemaName",
+			because: "the caller needs to know the section is not bound to an entity");
+		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
+	}
+
+	[Test]
+	[Description("TryResolve returns a failure envelope carrying the inner message when the entity metadata lookup throws.")]
+	public void TryResolve_ShouldFail_WhenEntityMetadataLookupThrows() {
+		// Arrange
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", "entitySchemaName: 'Contact', diff: []")
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(_ => throw new InvalidOperationException("entity metadata unavailable"));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "the entity fallback and the captions both depend on the entity metadata");
+		response.Error.Should().Contain("entity metadata unavailable",
+			because: "the envelope is the only channel the caller has for the underlying reason");
 	}
 
 	private static PageDesignerHierarchySchema Schema(string name, string body) => Schema(name, body, SchemaUId);

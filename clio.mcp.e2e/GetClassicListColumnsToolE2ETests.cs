@@ -80,6 +80,41 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Test]
+	[Description("Reports a nonexistent Classic section as a structured command-level failure rather than an MCP transport error.")]
+	[AllureTag(GetClassicListColumnsTool.ToolName)]
+	[AllureName("get-classic-list-columns reports a missing Classic section as a structured failure")]
+	[AllureDescription("Consumers key their error path off success:false, so a missing schema must arrive as a readable payload with callResult.IsError not true.")]
+	public async Task Resolve_ShouldReportFailure_WhenSectionSchemaIsMissing() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string missingSchema = $"UsrMissingClassicSection{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			GetClassicListColumnsTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = missingSchema,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicListColumnsResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicListColumnsResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a missing section is a command-level failure, not an MCP transport failure");
+		response.Success.Should().BeFalse(because: "the requested Classic section does not exist");
+		response.Error.Should().Contain(missingSchema,
+			because: "the failure should identify the schema the caller requested");
+		response.Error.Should().Contain("not found",
+			because: "the failure should explain that no section schema resolved");
+	}
+
 	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
