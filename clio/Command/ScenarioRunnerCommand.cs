@@ -39,18 +39,30 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions>{
                 if (step.CommandOption is EnvironmentOptions stepOptions and not RegAppOptions) {
                     if (!string.IsNullOrWhiteSpace(stepOptions.Environment)) {
                         EnvironmentSettings settings = _settingsRepository.FindEnvironment(stepOptions.Environment);
-                        IServiceProvider container = new BindingsModule().Register(settings);
+                        // Scenario steps are automation, never a human at the console: force a
+                        // non-interactive console into the step container so a compile step
+                        // (compile-configuration / compile-package) fails OPEN instead of blocking on the
+                        // heavy-operation prompt's Console.ReadKey on an attached TTY (ENG-93157, RC-15).
+                        IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
                         Program.Container = container;
                     }
                     else if (!string.IsNullOrWhiteSpace(options.Environment)) {
                         stepOptions.Environment = options.Environment;
                         EnvironmentSettings settings = _settingsRepository.FindEnvironment(options.Environment);
-                        IServiceProvider container = new BindingsModule().Register(settings);
+                        // Scenario steps are automation, never a human at the console: force a
+                        // non-interactive console into the step container so a compile step
+                        // (compile-configuration / compile-package) fails OPEN instead of blocking on the
+                        // heavy-operation prompt's Console.ReadKey on an attached TTY (ENG-93157, RC-15).
+                        IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
                         Program.Container = container;
                     }
                     else {
                         EnvironmentSettings settings = _settingsRepository.FindEnvironment(options.Environment);
-                        IServiceProvider container = new BindingsModule().Register(settings);
+                        // Scenario steps are automation, never a human at the console: force a
+                        // non-interactive console into the step container so a compile step
+                        // (compile-configuration / compile-package) fails OPEN instead of blocking on the
+                        // heavy-operation prompt's Console.ReadKey on an attached TTY (ENG-93157, RC-15).
+                        IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
                         Program.Container = container;
                     }
                 }

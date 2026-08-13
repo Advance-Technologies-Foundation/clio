@@ -72,8 +72,8 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>9813205</c>, branch
-	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>48ac924</c>, branch
+	/// <c>feature/eng-91845-rebundle-restamp</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
 	/// </summary>
@@ -95,9 +95,21 @@ public class BundledProcessBuilderPackageTests {
 	/// below must match the descriptor at the commit named above. Committing that restamp on the package side
 	/// is part of every rebundle; the runbook says so.
 	/// </para>
+	/// <para>
+	/// It has since been wrong a THIRD way, which no amount of checking the date would have caught: the bytes
+	/// did not correspond to ANY commit. Nine sources differed from a real checkout of the referenced commit by
+	/// LINE ENDINGS alone — the archive carried LF where a checkout produces CRLF — because it was cut from
+	/// freshly written files before they had round-tripped through git, and this host normalises on checkout
+	/// (<c>core.autocrlf=true</c>). Identical content, different bytes, unreproducible hash. So the reference
+	/// is only verifiable if the archive is packed from a CLEAN checkout: pack from a tree carrying
+	/// just-written files and the pin records bytes nobody can reproduce, which leaves this constant detecting
+	/// change while establishing nothing about provenance. The bytes pinned below were verified entry-by-entry
+	/// against a checkout of the commit named above — identical, the only file not in the archive being the
+	/// <c>.DotSettings</c> that <c>clioignore</c> excludes.
+	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"19B3C2FD666D3B74D44634F644DC728EF4183A65D3872906E4D59D77A8CC8911";
+		"5FACA4FD3D262CC8D02BA1E1ECD8270B435DEDBC0ACFED28D6F0E7FD2FFD4385";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -122,7 +134,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.0.0.0";
+	private const string ExpectedArchiveVersion = "1.1.0.0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -148,7 +160,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786345127000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786550573000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

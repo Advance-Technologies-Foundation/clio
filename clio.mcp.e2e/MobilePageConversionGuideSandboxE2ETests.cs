@@ -45,7 +45,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	private const string ApplicationCode = "AutoTestClioMcp";
 
 	[Test]
-	[Description("Converts a real seeded Freedom UI page through the real clio MCP server and verifies that the returned modelConfigDiff / viewModelConfigDiff are SPLIT into focused targeted merges (no path-[] root merge remains), which is the split/union behavior fed by the mobile template probe.")]
+	[Description("Converts a real seeded Freedom UI page through the real clio MCP server and verifies that the returned modelConfigDiff / viewModelConfigDiff are SPLIT into focused targeted merges (no path-[] root merge remains), which is the split/union behavior fed by the mobile template probe, and that no element is dropped for being bound to a non-primary page data source.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide returns split-shaped data-section diffs for a real page")]
 	[AllureDescription("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp and one of its pages, calls get-mobile-page-conversion-guide against a reachable environment, and asserts that every data-section diff is a set of targeted merges rather than a single path-[] root merge — exercising the LoadMobileTemplateProbe read and the SplitModelConfigRootMerge / SplitRootMergeIntoTargetedMerges wiring end to end.")]
@@ -81,6 +81,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "a successful conversion must carry the guide inline so the caller can paste its diffs");
 		AssertSplitShape(response.Guide!.ModelConfigDiff, "modelConfigDiff");
 		AssertSplitShape(response.Guide!.ViewModelConfigDiff, "viewModelConfigDiff");
+		response.Guide!.ElementMap.Should().NotContain(
+			e => e.Operation == "drop" && e.Reason != null && e.Reason.Contains("multi-data-source"),
+			because: "a mobile page carries the same multi-data-source structure as web, so an element bound to a "
+				+ "non-primary page data source must convert — the drop used to remove whole detail sections and, "
+				+ "because emptiness cascades, their wrapper containers with them");
 	}
 
 	[Test]

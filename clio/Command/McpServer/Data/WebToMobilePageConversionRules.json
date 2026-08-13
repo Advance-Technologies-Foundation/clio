@@ -36,7 +36,10 @@
         { "web": "CardContentWrapper:top", "mobile": "Tabs:top", "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)." },
         { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom", "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs." }
       ],
-      "nonConvertingContainers": [ "MainHeader" ]
+      "nonConvertingContainers": [ "MainHeader" ],
+      "components": [
+        { "web": "AttachmentList", "mobile": "AttachmentFileList", "note": "Attachments detail. Same component on both sides (crt.FileList) under a different template name, so the page's delta over the web-template baseline — the object-specific link column recordColumnName included — merges onto the template-provided AttachmentFileList; an unchanged property is omitted so the mobile default (e.g. RecordId) stands." }
+      ]
     },
     {
       "web": "BasePageFreedomTemplate",

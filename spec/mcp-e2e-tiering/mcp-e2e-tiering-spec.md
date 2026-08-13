@@ -62,6 +62,27 @@ environment name) — none of which needs a live Creatio.
 - Tags are **additive only** — no existing category, `[AllureXxx]`, `[Description]`, or other
   attribute was removed or renamed. The legacy/implicit "E2E" categorization is unaffected.
 
+### Developer-local destructive sub-tier (`LocalOnly` + `[Explicit]`)
+
+A few Sandbox-tier fixtures perform a **real destructive lifecycle** against the sandbox (a full
+uninstall, or a deploy+uninstall) rather than a read/query. Running them in the shared Sandbox step
+would tear down the very stand the rest of the Sandbox tier depends on. They stay **Sandbox-tier**
+(additive-only; their arrange path meets the Sandbox rule, so `McpE2E.Sandbox` is retained) but carry
+an extra developer-local marking so they never run automatically:
+
+- `[Category("LocalOnly")]` + `[Explicit]` — NUnit runs the fixture only when selected by name, never
+  in an ordinary automated pass.
+- `[Category("McpE2E.Manual")]` — excluded by the TeamCity run-step filter (`TestCategory!=McpE2E.Manual`).
+- a `TeamCityRunGuard.IsRunningUnderTeamCity()` `Assert.Ignore` at the top of the test — a final runtime
+  guard so an accidental selection under CI still skips.
+
+Current members: `UninstallCreatioWarningE2ETests`, `DbHubLifecycleWarningE2ETests`. The deterministic
+contract these fixtures assert is covered off-stand by unit tests (for example
+`CreatioUninstallerTestFixture`, `AppPoolProfileCleanerTests`); the `LocalOnly` fixture only adds the real
+native/destructive path, which is inherently manual/Windows-only. `clio.tests/McpFixturePolicyTests`
+enforces the invariant (every `LocalOnly` fixture is `[Explicit]` and retains `McpE2E.Sandbox` +
+`McpE2E.Manual`), and `clio.tests/TeamCityRunGuardTests` verifies the guard's runtime behavior.
+
 ### Measured tier counts
 
 Counts measured on branch `feature/ENG-92150_mcp-e2e-tiering` (`net10.0`):

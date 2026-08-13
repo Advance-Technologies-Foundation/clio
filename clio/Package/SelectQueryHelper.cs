@@ -31,16 +31,14 @@ internal static class SelectQueryHelper
 		int retryDelay = 1)
 		where T : SelectQueryResponseBaseDto
 	{
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 		string responseJson = client.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+			url,
 			JsonSerializer.Serialize(query),
 			requestTimeout, maxAttempts, retryDelay);
-		if (string.IsNullOrWhiteSpace(responseJson))
-		{
-			throw new InvalidOperationException("SelectQuery returned an empty response.");
-		}
-		T response = JsonSerializer.Deserialize<T>(responseJson, JsonOptions)
-			?? throw new InvalidOperationException("SelectQuery returned an empty response.");
+		// ENG-93365: an HTML error/login page or a truncated body must surface as a typed error naming the
+		// endpoint and the actual body, never as a raw System.Text.Json parser message.
+		T response = ServiceResponseJsonGuard.Deserialize<T>("SelectQuery", url, responseJson, JsonOptions);
 		if (!response.Success)
 		{
 			string detail = response.ErrorInfo?.Message ?? responseJson;
