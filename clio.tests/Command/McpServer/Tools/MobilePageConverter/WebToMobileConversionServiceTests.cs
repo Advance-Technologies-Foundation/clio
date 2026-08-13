@@ -3686,6 +3686,23 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The row is emitted INSIDE the list's own values and never as a separate element-map entry: crt.List is not a container and itemLayout is an input, so an insert addressing it as a child slot fails the client-side container check and breaks the build of the WHOLE schema, not just the list.")]
+	public void Analyze_ElementMap_RowIsNeverASeparateInsert() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.MobileType == "crt.ListItem",
+			because: "the row is a value on the list, not an element of its own — emitting it as an entry would "
+				+ "invite the caller to insert it with parentName/propertyName, which the client rejects");
+		guide.ElementMap.Should().NotContain(e => e.PropertyName == "itemLayout",
+			because: "itemLayout is an input property, not a child slot; addressing it as one is what raises "
+				+ "\"is not a container for other items\" at schema build time");
+		Element(guide, "ProductsList").MobileValues["itemLayout"].Should().NotBeNull(
+			because: "the row travels nested inside the list's values, which is the shape the client engine accepts");
+	}
+
+	[Test]
 	[Description("A web node that already carries the target property keeps its own — authored content is never replaced by the synthesized row.")]
 	public void Analyze_MobileValues_GridWithOwnItemLayout_IsNotOverwritten() {
 		// Arrange
