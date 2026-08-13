@@ -966,13 +966,17 @@ namespace cliogate.Files.cs
 		}
 
 		private void ExtractFilesWithOverwrite(string archivePath, string extractPath) {
+			string extractRoot = Path.GetFullPath(AppendDirectorySeparatorChar(extractPath));
 			using (ZipArchive archive = ZipFile.OpenRead(archivePath)) {
 				foreach (var entry in archive.Entries) {
 					if (string.IsNullOrEmpty(entry.Name)) {
 						continue;
 					}
 
-					string destinationPath = Path.Combine(extractPath, entry.FullName);
+					string destinationPath = Path.GetFullPath(Path.Combine(extractRoot, entry.FullName));
+					if (!destinationPath.StartsWith(extractRoot, StringComparison.Ordinal)) {
+						throw new IOException(string.Format("Blocked path-traversal archive entry: {0}", entry.FullName));
+					}
 					Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
 					using (var entryStream = entry.Open())
 					using (var destinationStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write)) {
