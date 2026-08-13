@@ -51,9 +51,15 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		grid.RowLayout.TargetType.Should().Be("crt.ListItem");
 		grid.RowLayout.BindingFrom.Should().Be("code",
 			because: "a column's code is its bound attribute name, which is what the $binding refers to");
+		grid.RowLayout.ValueTypeFrom.Should().Be("dataValueType");
+		grid.RowLayout.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 27, 28, 29, 30 },
+			because: "the designer offers only text columns for a row title, and these are the text value types "
+				+ "in the platform's own DataValueType numbering");
 		grid.DropProperties.Should().BeEquivalentTo(
-			new[] { "columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" },
-			because: "these are the web grid's own properties, and mobile crt.List has no equivalent for any of them");
+			new[] { "columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent",
+				"activeRow", "bulkActions" },
+			because: "these are the web grid's own properties, and mobile crt.List has no equivalent for any of "
+				+ "them — bulkActions is the web toolbar for selected rows and would arrive unusable");
 	}
 
 	[Test]
