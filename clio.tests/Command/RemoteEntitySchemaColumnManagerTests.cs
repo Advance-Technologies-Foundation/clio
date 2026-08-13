@@ -162,6 +162,203 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("REFUSES an add whose column name already exists on the COMPILED schema but not in this package's layer of it: another package contributes it, and a duplicate member breaks code generation for that schema across the whole environment rather than only for this package.")]
+	public void ModifyColumn_RefusesAdd_WhenAnotherPackageAlreadyContributesTheName() {
+		// Arrange — this package's design layer knows only Id; the merged runtime schema carries UsrColumn40
+		// from a sibling package, which is the collision the design-item read structurally cannot see.
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_runtimeEntitySchemaReader.GetByName("UsrVehicle").Returns(CreateMergedRuntimeSchema());
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrColumn40",
+			Type = "Text"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				because: "attempting it would break the schema for every package, which is far beyond what a caller "
+					+ "adding one column is choosing to risk")
+			.WithMessage("*UsrColumn40*")
+			.And.Message.Should().Contain("WHOLE environment",
+				because: "the refusal has to state the blast radius, or a reader will treat it as a naming nit and retry");
+		_designerClient.DidNotReceiveWithAnyArgs().SaveSchemaDbStructure(default, default);
+	}
+
+	[Test]
+	[Description("Still adds the column when the merged runtime schema cannot be read: an unreadable or absent runtime form is 'no cross-layer collision is knowable', and a guard against breaking the environment must not become the thing that blocks a legitimate first add.")]
+	public void ModifyColumn_AddsColumn_WhenTheMergedRuntimeSchemaCannotBeRead() {
+		// Arrange — the runtime read throws, as it does for a schema with no compiled form yet
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		// A BARE transport fault (the wrapped form is covered by the TestCase above): Creatio's client wraps most
+		// faults, but not every path does, and this one must warn rather than pass for the not-compiled reason.
+		_runtimeEntitySchemaReader.GetByName("UsrVehicle")
+			.Returns(_ => throw new System.Net.WebException("connection reset"));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrBrandNew",
+			Type = "Text"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "the add must still happen — the check degrades, it does not refuse");
+		_savedSchema.Columns.Should().ContainSingle(column => column.Name == "UsrBrandNew",
+			because: "a schema with no runtime form cannot have a column contributed by another layer");
+		_logger.Received().WriteWarning(Arg.Is<string>(text => text.Contains("cross-package column-name")));
+	}
+
+	[Test]
+	[Description("Adds the column when the merged runtime schema is readable and the name is free there — the guard's ALLOW path, which nothing exercised while the reader was left unstubbed and every add exited through the unknown-runtime branch.")]
+	public void ModifyColumn_AddsColumn_WhenTheNameIsFreeOnTheCompiledSchema() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrFreeName",
+			Type = "Text"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a free name must be added, not refused");
+		_savedSchema.Columns.Should().ContainSingle(column => column.Name == "UsrFreeName",
+			because: "the guard may only refuse a name the compiled schema already carries from another layer");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains("cross-package")));
+	}
+
+	[Test]
+	[Description("Adds a column whose name this package's own layer carried when the batch STARTED, even though the compiled schema still shows it: remove-then-re-add in one batch is a supported workflow, and the compiled view cannot yet know about the removal because nothing is saved until the batch ends.")]
+	public void ModifyColumns_ShouldNotRefuseReAdd_WhenTheCompiledSchemaStillCarriesThisPackagesOwnColumn() {
+		// Arrange — the column exists in this package's layer AND on the compiled schema, which is exactly the
+		// state a remove-then-re-add batch is in when the add runs.
+		const string columnName = "UsrExternalRecordId";
+		_loadedSchema = CreateSchema(columns: [
+			CreateGuidColumn("Id", IdColumnUId),
+			CreateGuidColumn(columnName, CodeColumnUId)
+		]);
+		SetupLoadedSchema();
+		ModifyEntitySchemaColumnOptions[] batch = [
+			new() { Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "remove", ColumnName = columnName },
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = columnName,
+				Type = "Guid", Title = "External record Id"
+			}
+		];
+
+		// Act
+		Action act = () => _manager.ModifyColumns(batch);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "the name belongs to this package, so the compiled hit is its own column mid-batch — refusing "
+				+ "here would break a supported workflow AND blame a package that is not involved");
+		_savedSchema.Columns.Should().ContainSingle(column => column.Name == columnName,
+			because: "the re-added column must survive to the save");
+	}
+
+	[Test]
+	[Description("Adds a column whose name a RENAME freed earlier in the same batch: the compiled schema still shows the old name, and it is still this package's own.")]
+	public void ModifyColumns_ShouldNotRefuseReAdd_WhenAnEarlierRenameFreedTheNameInTheSameBatch() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [
+			CreateGuidColumn("Id", IdColumnUId),
+			CreateGuidColumn("UsrFoo", CodeColumnUId)
+		]);
+		SetupLoadedSchema();
+		ModifyEntitySchemaColumnOptions[] batch = [
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "UsrFoo",
+				NewName = "UsrBar"
+			},
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "UsrFoo", Type = "Text"
+			}
+		];
+
+		// Act
+		Action act = () => _manager.ModifyColumns(batch);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a rename frees the old name inside the batch, and the name was this package's own to begin with");
+		_savedSchema.Columns.Select(column => column.Name).Should().Contain("UsrBar",
+			because: "the rename must have applied");
+		_savedSchema.Columns.Select(column => column.Name).Should().Contain("UsrFoo",
+			because: "and the re-added column must be there too");
+	}
+
+	[TestCase(typeof(System.Net.WebException))]
+	[TestCase(typeof(System.Net.Sockets.SocketException))]
+	[TestCase(typeof(System.IO.IOException))]
+	[Description("Skips the cross-package check and still adds the column when the runtime read fails with a TRANSPORT fault, wrapped or bare: Creatio's client runs via Task.Result, so a DNS, TLS or reset failure arrives as an AggregateException — a narrower catch would abort the whole command over a check that is allowed to be skipped.")]
+	public void ModifyColumn_AddsColumn_WhenTheRuntimeReadFailsWithATransportFault(Type faultType) {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		Exception inner = Activator.CreateInstance(faultType) as Exception;
+		inner.Should().NotBeNull(because: "the TestCase types must be constructible exception types, or the arrange proves nothing");
+		_runtimeEntitySchemaReader.GetByName("UsrVehicle")
+			.Returns(_ => throw new AggregateException(inner));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrAfterTransportFault",
+			Type = "Text"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Columns.Should().ContainSingle(column => column.Name == "UsrAfterTransportFault",
+			because: "a transport fault must skip the check, never fail the add — the guard exists to prevent an "
+				+ "environment-wide break, not to become one");
+		_logger.Received().WriteWarning(Arg.Is<string>(text => text.Contains("cross-package column-name")));
+	}
+
+	[Test]
+	[Description("Says NOTHING when the schema simply has no compiled form yet: that is an ordinary state for a schema created moments earlier, and one warning per add on an otherwise correct batch would train the reader to ignore the channel.")]
+	public void ModifyColumn_AddsColumnSilently_WhenTheSchemaHasNoRuntimeFormYet() {
+		// Arrange — InvalidOperationException is the reader's own "no runtime schema came back" signal
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_runtimeEntitySchemaReader.GetByName("UsrVehicle")
+			.Returns(_ => throw new InvalidOperationException("Runtime schema 'UsrVehicle' was not returned by Creatio."));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrOnFreshSchema",
+			Type = "Text"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Columns.Should().ContainSingle(column => column.Name == "UsrOnFreshSchema",
+			because: "a schema with no compiled form cannot host a cross-layer collision");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains("cross-package column-name")));
+	}
+
+	[Test]
 	[Description("Adds a Color column as data value type 18 and does not treat it as the primary display column (Color is not text-like).")]
 	public void ModifyColumn_AddsColorColumn_WhenTypeIsColor() {
 		// Arrange
@@ -1326,6 +1523,27 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private static readonly Guid MergedNameColumnUId = Guid.Parse("12121212-1212-1212-1212-121212121212");
 	private static readonly Guid MergedContractColumnUId = Guid.Parse("34343434-3434-3434-3434-343434343434");
 	private static readonly Guid MergedCreatedOnColumnUId = Guid.Parse("56565656-5656-5656-5656-565656565656");
+
+	/// <summary>
+	/// A merged runtime schema whose columns mirror the given design layer — the shape a real compiled schema
+	/// has before a batch runs: it carries this package's own columns and nothing foreign.
+	/// </summary>
+	private static Clio.Common.EntitySchema.RuntimeEntitySchemaResult CreateRuntimeSchemaMirroring(
+		EntityDesignSchemaDto schema) {
+		List<Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult> columns = (schema?.Columns ?? [])
+			.Concat(schema?.InheritedColumns ?? [])
+			.Where(column => !string.IsNullOrWhiteSpace(column.Name))
+			.Select(column => new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+				column.UId, column.Name, column.Name, null, column.DataValueType ?? 1, false, false, null))
+			.ToList();
+		return new Clio.Common.EntitySchema.RuntimeEntitySchemaResult(
+			UId: Guid.Parse("7b8f0c5e-1f42-4a1d-9f0e-6b7d2a3c4d5e"),
+			Name: schema?.Name ?? "UsrVehicle",
+			PrimaryColumnUId: IdColumnUId,
+			PrimaryDisplayColumnName: null,
+			PrimaryDisplayColumnUId: null,
+			Columns: columns);
+	}
 
 	private static Clio.Common.EntitySchema.RuntimeEntitySchemaResult CreateMergedRuntimeSchema() =>
 		new(
@@ -2645,6 +2863,13 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private void SetupLoadedSchema() {
 		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> MakeResponse() =>
 			new() { Success = true, Schema = _savedSchema ?? _loadedSchema };
+		// The merged runtime view MIRRORS the loaded design layer, which is what a real environment returns: the
+		// compiled schema contains at least this package's own columns. Leaving the reader unstubbed instead made
+		// every add exit the cross-package guard through its unknown-runtime branch, so the guard was inert in this
+		// whole fixture — including in the regression test for remove-then-re-add, which is exactly the workflow
+		// the guard can break. Evaluated lazily so it reflects the PRE-batch state each test arranges.
+		_runtimeEntitySchemaReader.GetByName(Arg.Any<string>())
+			.Returns(_ => CreateRuntimeSchemaMirroring(_loadedSchema));
 		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
 				Arg.Any<Clio.Command.RemoteCommandOptions>())
 			.Returns(_ => MakeResponse());
