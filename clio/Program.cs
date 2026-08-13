@@ -950,23 +950,12 @@ internal class Program {
 			}
 			else {
 				_creatioClientInstance.ExecutePostRequest(DeleteExistsPackagesZipUrl, string.Empty);
-				new Thread(() => {
-					// Unpredictable temp name (S5445): GetRandomFileName avoids the small, guessable
-					// GetTempFileName pool and its race/symlink surface. This download is a server-side
-					// warm-up whose payload is discarded, so the file is removed right after.
-					string warmUpTempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-					try {
-						_creatioClientInstance.DownloadFile(GetZipPackageUrl, warmUpTempPath, requestData,
-							2000);
-					}
-					catch { }
-					finally {
-						try {
-							File.Delete(warmUpTempPath);
-						}
-						catch { }
-					}
-				}).Start();
+				// The warm-up download's payload is discarded (the real download follows below), so its temp-file
+				// lifecycle - owner-private location, guaranteed cleanup, and the background-thread exception
+				// boundary - is owned by an injectable, regression-tested service instead of an inline thread.
+				CreatioClient warmUpClient = _creatioClientInstance;
+				Container.GetRequiredService<IWarmUpPackageDownloader>().StartWarmUpDownload(
+					tempFilePath => warmUpClient.DownloadFile(GetZipPackageUrl, tempFilePath, requestData, 2000));
 				bool again = false;
 				do {
 					Thread.Sleep(2000);
