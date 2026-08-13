@@ -2542,6 +2542,8 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "its declared parent (MainContainer) is not a non-converting container");
 		guide.ExcludedComponents.Should().BeNull(
 			because: "nothing resolved as excluded");
+		guide.Constraints.Should().NotContain(c => c.Contains("non-converting container("),
+			because: "the constraint must not claim components were dropped into excludedComponents when it stayed null");
 	}
 
 	[Test]

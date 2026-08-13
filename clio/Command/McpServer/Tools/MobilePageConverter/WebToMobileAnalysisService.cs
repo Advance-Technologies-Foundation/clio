@@ -206,7 +206,6 @@ public static class WebToMobileAnalysisService {
 		var excludedContainers = nonConvertingContainers is { Count: > 0 }
 			? new HashSet<string>(nonConvertingContainers, StringComparer.OrdinalIgnoreCase)
 			: null;
-		bool nonConvertingPruned = false;
 		var excludedComponents = new List<ExcludedComponent>();
 		if (excludedContainers is not null) {
 			// Capture the names under each non-converting container from the INTACT tree first, so a page-added
@@ -231,7 +230,6 @@ public static class WebToMobileAnalysisService {
 					tree = PruneOrphansByName(tree, orphanToContainer, excludedComponents);
 				}
 			}
-			nonConvertingPruned = true;
 		}
 
 		// 0b. Filter out the web template's own components at read time. The merged tree carries the
@@ -476,7 +474,7 @@ public static class WebToMobileAnalysisService {
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
 				normalization: componentPropertyOverrides,
-				nonConvertingContainers: nonConvertingPruned ? excludedContainers : null,
+				nonConvertingContainers: excludedComponents.Count > 0 ? excludedContainers : null,
 				hasFabConversion: hasFabEntries,
 				fabSkippedNoBaseline: fabSkippedNoBaseline,
 				fabNothingToApply: fabNothingToApply,
