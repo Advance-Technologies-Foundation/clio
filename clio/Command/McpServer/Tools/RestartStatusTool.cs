@@ -102,7 +102,7 @@ public sealed record RestartStatusResponse(
 	DateTime? FinishedUtc = null,
 
 	[property: JsonPropertyName("exit-code")]
-	[Description("0 once the instance answered its health-check (ready); non-zero when the readiness wait timed out; null while still running.")]
+	[Description("0 once the instance answered an authenticated application-layer round-trip (genuinely serving, not merely a liveness ping); non-zero when the readiness wait timed out; null while still running.")]
 	int? ExitCode = null,
 
 	[property: JsonPropertyName("note")]

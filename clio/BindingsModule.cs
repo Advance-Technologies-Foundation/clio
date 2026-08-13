@@ -463,6 +463,7 @@ public class BindingsModule {
 		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
+		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -1228,6 +1229,12 @@ public class BindingsModule {
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
 		foreach (Type type in types) {
 			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
+				continue;
+			}
+			// An exception is never a service. Registering one (they carry a marker interface such as
+			// IAuthoritativeErrorMessage) makes DI try to construct it, and its `string message` ctor cannot be
+			// resolved — ValidateOnBuild then fails and the whole host, mcp-server included, refuses to start.
+			if (typeof(Exception).IsAssignableFrom(type)) {
 				continue;
 			}
 			foreach (Type implementedInterface in type.GetInterfaces()) {

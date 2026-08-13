@@ -35,6 +35,9 @@ public sealed class RealInteractiveConsole : IInteractiveConsole {
 	}
 
 	/// <inheritdoc />
+	public bool IsInteractive => !_isInputRedirected();
+
+	/// <inheritdoc />
 	public bool Prompt(string message) {
 		if (_isInputRedirected()) {
 			// Non-interactive host (MCP stdio / CI pipe): we cannot ask and must not block — fail closed.

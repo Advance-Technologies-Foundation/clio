@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Collections.ObjectModel;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
+using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -116,8 +120,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation, allowDependencyResolution: true);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
 		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
+		// Captured BEFORE the mutation loop: the names this package's layer already had. The loop mutates the
+		// design schema in memory and nothing is saved until below, so after the first operation the layer no
+		// longer describes what the package contributes — which is the only thing that makes a runtime hit a
+		// CROSS-PACKAGE collision rather than this package's own column being removed and re-added.
+		CrossPackageNameContext crossPackageNames = CreateCrossPackageNameContext(schema);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
-			ApplyColumnMutation(schema, package, operation, effectiveCultureName);
+			ApplyColumnMutation(schema, package, operation, effectiveCultureName, crossPackageNames);
 		}
 
 		EntityDesignSchemaDto reloadedSchema = SaveAndReloadSchema(
@@ -448,10 +457,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	private void AddColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options,
-		string effectiveCultureName) {
+		string effectiveCultureName, CrossPackageNameContext crossPackageNames) {
 		EnsureNameIsUnique(schema, options.ColumnName, null);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
+		// AFTER the local validation on purpose: the cross-package check can cost a network read, and a bad
+		// --type must not pay for one to learn it is invalid.
+		EnsureNameIsFreeAcrossPackages(package, options.ColumnName, crossPackageNames);
 		TitleLocalizationNormalizationResult titleNormalization =
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				options.TitleLocalizations,
@@ -944,6 +956,138 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
+	/// <summary>
+	/// Names this package's layer already had when the batch started, plus a lazily-read view of the merged
+	/// runtime schema's names. Batch-scoped: built once, before any mutation.
+	/// </summary>
+	/// <remarks>
+	/// Two facts force this shape. The mutation loop edits the design schema IN MEMORY and saves nothing until it
+	/// finishes, so after the first operation the layer no longer describes what the package contributes — a
+	/// remove-then-re-add of one name would otherwise look exactly like a foreign column. And the runtime read is a
+	/// network round trip that every add in the batch would otherwise repeat, for a value that cannot change
+	/// mid-batch (nothing is published yet), so it is read at most once and only if an add actually asks.
+	/// </remarks>
+	private sealed record CrossPackageNameContext(
+		HashSet<string> PristineLayerNames,
+		Lazy<HashSet<string>?> RuntimeNames);
+
+	private CrossPackageNameContext CreateCrossPackageNameContext(EntityDesignSchemaDto schema) {
+		HashSet<string> pristine = new(
+			GetAllColumns(schema)
+				.Select(column => column.Name)
+				.Where(name => !string.IsNullOrWhiteSpace(name)),
+			StringComparer.OrdinalIgnoreCase);
+		string schemaName = schema.Name;
+		return new CrossPackageNameContext(pristine,
+			new Lazy<HashSet<string>?>(() => ReadRuntimeColumnNames(schemaName)));
+	}
+
+	/// <summary>
+	/// Reads the merged runtime schema's column names, or <c>null</c> when that view is not available.
+	/// </summary>
+	/// <remarks>
+	/// <c>null</c> means "unknown", never "empty", and every caller must treat it as a reason to SKIP the check
+	/// rather than to refuse: a schema with no runtime form yet cannot host a cross-layer collision, and a guard
+	/// against breaking an environment must not become the thing that blocks a legitimate first add.
+	/// <para>Two failure classes, deliberately reported differently. The reader signals "absent or unsuccessful" by
+	/// <see cref="InvalidOperationException"/>, which for a not-yet-compiled schema is expected and silent — a
+	/// warning there would print once per add on a perfectly correct batch. Transport faults are worth one warning.
+	/// The allow-list and the recursive <see cref="AggregateException"/> unwrap mirror
+	/// <c>EntitySchemaPublishHelper.IsExpectedODataBuildFault</c>, because Creatio's client runs via
+	/// <c>Task.Result</c> and wraps transport faults — a narrower catch let a DNS or TLS failure abort the whole
+	/// command instead of skipping one check.</para>
+	/// </remarks>
+	private HashSet<string>? ReadRuntimeColumnNames(string schemaName) {
+		try {
+			RuntimeEntitySchemaResult? runtimeSchema = _runtimeEntitySchemaReader.GetByName(schemaName);
+			if (runtimeSchema?.Columns == null) {
+				return null;
+			}
+			return new HashSet<string>(
+				runtimeSchema.Columns
+					.Select(column => column.Name)
+					.Where(name => !string.IsNullOrWhiteSpace(name)),
+				StringComparer.OrdinalIgnoreCase);
+		} catch (Exception exception) when (IsExpectedRuntimeReadFault(exception)) {
+			if (!IsSchemaNotAvailableFault(exception)) {
+				_logger.WriteWarning(
+					$"Could not read the merged runtime schema for '{schemaName}', so the cross-package column-name "
+					+ $"check was skipped: {exception.Message}");
+			}
+			return null;
+		}
+	}
+
+	// Mirrors EntitySchemaPublishHelper.IsExpectedODataBuildFault: an allow-list rather than a blanket catch, so a
+	// genuine programming error still surfaces, with the recursive unwrap Creatio's Task.Result client requires.
+	private static bool IsExpectedRuntimeReadFault(Exception exception) {
+		if (exception is AggregateException aggregate) {
+			ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
+			return inner.Count > 0 && inner.All(IsExpectedRuntimeReadFault);
+		}
+		return exception is InvalidOperationException
+			or HttpRequestException
+			or WebException
+			or SocketException
+			or IOException
+			or OperationCanceledException
+			or JsonException
+			or Newtonsoft.Json.JsonException
+			or EntitySchemaDesignerException;
+	}
+
+	// The reader raises InvalidOperationException for "no runtime schema came back" — an ordinary state for a schema
+	// that has never been compiled, so it must not be announced on every add of an otherwise correct batch.
+	//
+	// EXACT type, not `is`: System.Net.WebException DERIVES from InvalidOperationException, so an `is` test would
+	// classify a DNS, TLS or connection-reset failure as "this schema has no compiled form" and swallow the one
+	// warning that would have explained why the check was skipped. The reader throws the base type itself and never
+	// a subclass, so equality is both sufficient and the only safe discriminator here. (Found by the transport-fault
+	// test below, which is why it enumerates WebException explicitly.)
+	private static bool IsSchemaNotAvailableFault(Exception exception) {
+		if (exception is AggregateException aggregate) {
+			ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
+			return inner.Count > 0 && inner.All(IsSchemaNotAvailableFault);
+		}
+		return exception.GetType() == typeof(InvalidOperationException);
+	}
+
+	/// <summary>
+	/// Refuses a name that another PACKAGE already contributes to the same schema — the collision
+	/// <see cref="EnsureNameIsUnique"/> structurally cannot see.
+	/// </summary>
+	/// <remarks>
+	/// A base schema extended by several packages has one replacing schema per package, and the design item this
+	/// command edits is fetched for ONE package with <c>UseFullHierarchy = false</c>: it carries that package's own
+	/// columns plus the parent's inherited ones, and nothing from a SIBLING layer. So two packages can each add
+	/// <c>UsrFoo</c> to <c>Activity</c> and both look unique at design time. The result is not a scoped failure — the
+	/// duplicate member breaks code generation for that schema with a <c>ValidateException</c>, i.e. it breaks
+	/// <c>Activity</c> for the WHOLE environment, including every process and page that touches it.
+	/// <para>The PRISTINE layer names are what make this sound. A runtime hit on a name this package's layer already
+	/// carried is this package's own column — the ordinary remove-then-re-add and rename-then-re-add batches land
+	/// exactly there, and refusing them would break a supported workflow while blaming a package that is not
+	/// involved. Only a runtime hit the pristine layer never had can be a foreign contribution.</para>
+	/// </remarks>
+	// Static: every input arrives as a parameter, deliberately. The runtime read this used to perform itself now
+	// sits behind the context's Lazy, so the check reaches no instance state — and keeping it static is what makes
+	// that visible at the signature rather than only by reading the body.
+	private static void EnsureNameIsFreeAcrossPackages(PackageInfo package, string name,
+		CrossPackageNameContext crossPackageNames) {
+		if (string.IsNullOrWhiteSpace(name) || crossPackageNames.PristineLayerNames.Contains(name)) {
+			return;
+		}
+		HashSet<string>? runtimeNames = crossPackageNames.RuntimeNames.Value;
+		if (runtimeNames == null || !runtimeNames.Contains(name)) {
+			return;
+		}
+		throw new EntitySchemaDesignerException(
+			$"Column '{name}' already exists on the compiled schema but not in package "
+			+ $"'{package.Descriptor.Name}', so another package contributes it. Adding a second column of that name "
+			+ "would break code generation for this schema across the WHOLE environment (a duplicate member raises a "
+			+ "ValidateException), not just for this package. Choose a different name — the package prefix is "
+			+ "required, so prefix a distinguishing word rather than reusing this one.");
+	}
+
 	private EntityDesignSchemaDto LoadSchema(string schemaName, Guid packageUId, string packageName,
 		RemoteCommandOptions options, bool allowDependencyResolution) {
 		GetSchemaDesignItemRequestDto request = new() {
@@ -1072,11 +1216,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package,
-		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
+		ModifyEntitySchemaColumnOptions options, string effectiveCultureName,
+		CrossPackageNameContext crossPackageNames) {
 		EntitySchemaColumnAction action = NormalizeAction(options.Action);
 		switch (action) {
 			case EntitySchemaColumnAction.Add:
-				AddColumn(schema, package, options, effectiveCultureName);
+				AddColumn(schema, package, options, effectiveCultureName, crossPackageNames);
 				return;
 			case EntitySchemaColumnAction.Modify:
 				ModifyColumn(schema, package, options, effectiveCultureName);

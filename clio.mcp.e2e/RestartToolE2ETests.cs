@@ -75,6 +75,42 @@ public sealed class RestartToolE2ETests : McpContractFixtureBase
 	}
 
 	[Test]
+	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server and verifies the live restart-by-environment-name contract describes waitReady consistently at BOTH the tool level and the parameter level: an authenticated application-layer round-trip, not a bare liveness health-check ping (ENG-94417).")]
+	[AllureName("Restart by environment name contract describes readiness consistently")]
+	[Description("The live restart-by-environment-name contract describes waitReady as an authenticated readiness wait at both tool and parameter level.")]
+	public async Task RestartInstanceByName_Contract_Should_Describe_AuthenticatedReadiness_Consistently()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName, RestartTool.RestartByCredentialsToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse response = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the contract lookup for known tools must succeed");
+		response.Tools.Should().NotBeNull();
+		foreach (string toolName in new[] { ToolName, RestartTool.RestartByCredentialsToolName })
+		{
+			ToolContractDefinition contract = response.Tools!.Single(tool => tool.Name == toolName);
+			contract.Description.Should().Contain("authenticated",
+				because: $"{toolName} must advertise that waitReady waits for an authenticated round-trip, not a liveness ping");
+			ToolContractField waitReady = contract.InputSchema.Properties.Single(field => field.Name == "waitReady");
+			waitReady.Description.Should().Contain("authenticated",
+				because: $"the waitReady parameter description on {toolName} is the contract an agent reads and must not "
+					+ "contradict the tool-level description by promising a bare health-check wait");
+		}
+	}
+
+	[Test]
 	[AllureTag(RestartStatusTool.RestartStatusToolName)]
 	[AllureDescription("Starts the real clio MCP server and queries restart-status for an environment that never restarted, verifying a not-found (not an error) result.")]
 	[AllureName("Restart Status reports not-found for an untracked environment")]

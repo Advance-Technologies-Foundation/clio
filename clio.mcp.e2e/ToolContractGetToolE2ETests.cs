@@ -1048,6 +1048,35 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			because: "MCP argument binding should reject transport envelopes whose args payload cannot bind to ToolContractGetArgs");
 	}
 
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises the compile-creatio proceed/postpone confirmation precondition")]
+	[Description("ENG-93157: the real MCP server must serve the compile-creatio contract with a precondition requiring the user was warned and confirmed proceed-or-postpone before compiling (and that a repeated request is not standing consent), so the new consent invariant is verified end to end, not only in unit/guidance tests.")]
+	public async Task ToolContractGet_Should_Advertise_CompileCreatio_Confirmation_Precondition() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.Name.Should().Be(CompileCreatioTool.CompileCreatioToolName);
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the live contract must spell out when compilation is allowed");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("postpone", StringComparison.Ordinal)
+				&& precondition.Contains("standing consent", StringComparison.Ordinal),
+			because: "the real MCP server must advertise the ENG-93157 proceed/postpone confirmation invariant, including that a repeated request is not standing consent");
+	}
+
 	private static async Task<ToolContractGetResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

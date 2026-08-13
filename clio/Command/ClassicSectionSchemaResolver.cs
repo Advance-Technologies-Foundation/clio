@@ -80,7 +80,7 @@ public sealed class ClassicSectionSchemaResolver : IClassicSectionSchemaResolver
 				return new ClassicSectionLookup(Array.Empty<string>(), null);
 			}
 			JArray schemaRows = ClassicEntitySchemaQuery.Select(
-				_applicationClient, _serviceUrlBuilder, BuildSelectSchemaNamesByUId(sectionUIds));
+				_applicationClient, _serviceUrlBuilder, ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId(sectionUIds));
 			// Preserve the SysModule row order: the first module bound to the entity is the one a migration plan
 			// treats as "the" section, and a UId the SysSchema lookup did not return is simply dropped.
 			var nameByUId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -111,9 +111,4 @@ public sealed class ClassicSectionSchemaResolver : IClassicSectionSchemaResolver
 			("byEntity", ClassicEntitySchemaQuery.Eq("SysModuleEntity.SysEntitySchemaUId", entityUId, 0))),
 		SectionRowCount);
 
-	private static JObject BuildSelectSchemaNamesByUId(IReadOnlyCollection<string> uIds) =>
-		ClassicEntitySchemaQuery.Query("SysSchema",
-			new JObject { ["UId"] = ClassicEntitySchemaQuery.Column("UId"), ["Name"] = ClassicEntitySchemaQuery.Column("Name") },
-			ClassicEntitySchemaQuery.Group(("byUId", ClassicEntitySchemaQuery.InFilter("UId", uIds, 0))),
-			uIds.Count);
 }
