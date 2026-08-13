@@ -32,9 +32,8 @@ public sealed class DbHubLifecycleWarningE2ETests {
 		if (!OperatingSystem.IsWindows()) {
 			Assert.Ignore("The disposable IIS deployment lifecycle is Windows-only.");
 		}
-		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TEAMCITY_VERSION"))) {
-			Assert.Ignore("This archive-backed Creatio installation test is forbidden in TeamCity.");
-		}
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCity(
+			"This archive-backed Creatio installation test is forbidden in TeamCity.");
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests || !settings.Sandbox.RequireDbHubWarning) {
 			Assert.Ignore("Enable destructive MCP tests and Sandbox:RequireDbHubWarning for this disposable proof.");

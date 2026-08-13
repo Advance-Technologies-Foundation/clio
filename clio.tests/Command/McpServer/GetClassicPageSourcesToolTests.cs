@@ -137,6 +137,7 @@ public class GetClassicPageSourcesToolTests {
 				Substitute.For<IRemoteEntitySchemaColumnManager>(),
 				Substitute.For<IPageDesignerHierarchyClient>(),
 				Substitute.For<IClassicSectionSchemaResolver>(),
+				Substitute.For<IClassicDetailEditPageResolver>(),
 				Substitute.For<System.IO.Abstractions.IFileSystem>(),
 				ConsoleLogger.Instance) {
 		}

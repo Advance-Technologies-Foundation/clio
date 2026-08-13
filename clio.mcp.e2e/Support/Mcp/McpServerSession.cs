@@ -54,7 +54,8 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			WorkingDirectory = process.WorkingDirectory,
 			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
-			ShutdownTimeout = TimeSpan.FromSeconds(10)
+			// SDK waits the full window on dispose even after the child exits (~0.05s measured on CI); 40x margin.
+			ShutdownTimeout = TimeSpan.FromSeconds(2)
 		}, NullLoggerFactory.Instance);
 
 		McpClientOptions options = new() {

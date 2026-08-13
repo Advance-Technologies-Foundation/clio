@@ -37,10 +37,10 @@ public class RestartTool(
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
 	[McpServerTool(Name = RestartByEnvironmentNameToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) polls the instance's health-check endpoint after the restart request and returns only once it answers, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead.")]
+	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
 		[Description("Target Environment name to restart")] [Required] string environmentName,
-		[DefaultValue(true)] [Description("Poll the application after restart until it answers health-check; default true")] bool waitReady = true,
+		[DefaultValue(true)] [Description("Wait after the restart until the instance answers an authenticated application-layer round-trip (not merely the liveness health-check ping); default true")] bool waitReady = true,
 		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600, capped at 3600")] int waitTimeoutSeconds = 600,
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
@@ -72,13 +72,13 @@ public class RestartTool(
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-credentials MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) polls the instance's health-check endpoint after the restart request and returns only once it answers, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); re-check with healthcheck, or use restart-by-environment-name when you need a pollable restart.")]
+	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); re-check with healthcheck, or use restart-by-environment-name when you need a pollable restart.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
 		[Description("Creatio instance Password")] [Required] string password,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false,
-		[DefaultValue(true)] [Description("Poll the application after restart until it answers health-check; default true")] bool waitReady = true,
+		[DefaultValue(true)] [Description("Wait after the restart until the instance answers an authenticated application-layer round-trip (not merely the liveness health-check ping); default true")] bool waitReady = true,
 		[DefaultValue(600)] [Description("Max seconds to wait for readiness when waitReady is true; default 600, capped at 3600")] int waitTimeoutSeconds = 600,
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
@@ -236,9 +236,11 @@ public class RestartTool(
 	private static string BuildPollGuidance(string operationId, string environmentName) =>
 		string.IsNullOrWhiteSpace(environmentName)
 			? "This restart was started by credentials, not by environment name, so restart-status "
-			  + "(which is keyed by a registered environment name) cannot report it — re-check the "
-			  + "instance with the healthcheck tool, or use restart-by-environment-name for a "
-			  + "pollable restart."
+			  + "(which is keyed by a registered environment name) cannot report it. The healthcheck "
+			  + "tool only confirms liveness — it is not an authenticated readiness signal — so to "
+			  + "confirm the instance is genuinely serving, use restart-by-environment-name, which waits "
+			  + "for an authenticated application-layer round-trip and is pollable via restart-status."
 			: $"Poll restart-status with environment-name '{environmentName}' (or operation-id "
-			  + $"'{operationId}') — exit code 0 means the application is ready.";
+			  + $"'{operationId}') — exit code 0 means the application answered an authenticated "
+			  + "application-layer round-trip and is genuinely serving.";
 }

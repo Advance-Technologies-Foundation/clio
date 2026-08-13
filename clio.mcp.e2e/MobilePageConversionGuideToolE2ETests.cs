@@ -66,45 +66,12 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 			because: "get-mobile-page-conversion-guide must be advertised so MCP callers can discover the conversion-guide tool");
 	}
 
-	[Test]
-	[Description("Returns the freedom-page-web-to-mobile-conversion guidance article over the real MCP surface and verifies it carries the deterministic empty-container removal contract (already removed by the converter, arrives as a drop with reason \"empty container\", never re-create / re-parent / ask the user) plus the profile-island routing (SideAreaProfileContainer merges into AreaProfileContainer; other wrapper content fills GeneralTabContainer).")]
-	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance returns the conversion article with the deterministic empty-container removal contract")]
-	[AllureDescription("Starts the real clio MCP server with mobile-page-converter enabled and verifies get-guidance resolves the feature-gated freedom-page-web-to-mobile-conversion article carrying the empty-container removal wording end to end.")]
-	public async Task GuidanceGet_Should_Return_Conversion_Guide_With_EmptyContainerRemoval_Contract() {
-		// Arrange
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			GuidanceGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["name"] = "freedom-page-web-to-mobile-conversion"
-				}
-			},
-			context.CancellationTokenSource.Token);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "get-guidance should return a normal MCP tool result envelope for a registered guidance name");
-		GuidanceGetResponse response = EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
-		response.Success.Should().BeTrue(
-			because: "freedom-page-web-to-mobile-conversion is a registered guidance name while mobile-page-converter is enabled");
-		response.Article.Should().NotBeNull(
-			because: "successful guidance lookups should return the resolved article payload");
-		response.Article!.Uri.Should().Be("docs://mcp/guides/freedom-page-web-to-mobile-conversion",
-			because: "the canonical resource URI for the conversion guide should be stable");
-		response.Article.Text.Should().Contain("removed deterministically by the converter",
-			because: "the drop branch must state that empty converter-created containers are removed by the converter itself, not left for the user to delete");
-		response.Article.Text.Should().Contain("\"empty container\"",
-			because: "the article must name the exact drop reason the elementMap carries for a removed empty container so the caller can recognize it");
-		response.Article.Text.Should().Contain(
-			"Do NOT re-create such a container, do NOT re-parent anything into it, and do NOT ask the user",
-			because: "the article must forbid the caller from resurrecting a removed empty container or turning its removal into a question");
-		response.Article.Text.Should().Contain("SideAreaProfileContainer→AreaProfileContainer",
-			because: "only the profile island's children merge into the template's profile Area card, while the wrapper's other non-tab content fills the general tab's grid (CardContentWrapper→GeneralTabContainer)");
-	}
+	// The freedom-page-web-to-mobile-conversion article itself is no longer Clio-owned: since
+	// "Externalize guidance delivery mechanics" (#927) get-guidance serves only articles delivered by an
+	// installed, verified knowledge bundle, and the article now lives in the clio-knowledge repository.
+	// A hermetic NoEnvironment fixture installs no knowledge source, so asserting the article's wording
+	// here could only pass by contacting a real remote. The tool-surface contract stays covered by the
+	// discovery and invalid-environment tests below; the article's wording belongs to clio-knowledge.
 
 	[Test]
 	[Description("Returns a structured failure (not a protocol error) when the target environment is not registered, so the caller can read why the source page could not be read.")]

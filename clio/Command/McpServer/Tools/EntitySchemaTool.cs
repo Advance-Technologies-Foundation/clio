@@ -125,7 +125,10 @@ public sealed class CreateEntitySchemaTool(
 			Title = titleNormalization.EffectiveTitle
 				?? EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context),
 			TitleLocalizations = titleNormalization.Localizations ?? titleLocalizations,
-			ParentSchemaName = (!extendParent && string.IsNullOrWhiteSpace(parentSchemaName)) ? "BaseEntity" : parentSchemaName,
+			// Forward the parent unchanged. Defaulting an omitted parent to BaseEntity is applied in exactly one
+			// place — CreateEntitySchemaCommand.NormalizeParentSchema, which every execution path (CLI and MCP)
+			// runs — so the mapping layer must not re-implement the predicate and risk diverging from it.
+			ParentSchemaName = parentSchemaName,
 			ExtendParent = extendParent,
 			IsVirtual = isVirtual,
 			Columns = SerializeColumns(args.Columns, context),
@@ -710,7 +713,7 @@ public sealed record CreateEntitySchemaArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("parent-schema-name")]
-	[property: Description("Optional parent schema name")]
+	[property: Description("Optional parent schema name. Defaults to BaseEntity when omitted (not applied with extend-parent); a parentless schema is not reachable over OData.")]
 	string? ParentSchemaName = null,
 
 	[property: JsonPropertyName("extend-parent")]

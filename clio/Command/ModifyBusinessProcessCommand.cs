@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -96,7 +97,8 @@ public sealed class ModifyBusinessProcessService(
 			throw new InvalidOperationException(result.ErrorMessage ?? "ModifyProcess failed.");
 		}
 
-		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations);
+		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
+			result.Warnings);
 	}
 
 	private static JsonArray ParseOperations(string operationsJson) {
@@ -134,6 +136,14 @@ public sealed class ModifyBusinessProcessService(
 
 		[JsonPropertyName("errorMessage")]
 		public string? ErrorMessage { get; set; }
+
+		// Declared because an UNDECLARED member is dropped without a trace, and what travels here is precisely
+		// the class of outcome a caller cannot otherwise see: a connection written to a column with no registry
+		// row (invisible in the designer and to every registry-reading feature), and a cleared binding, which
+		// vanishes from the read-back so that "cleared" and "never bound" become indistinguishable afterwards.
+		// Absent on an older CrtProcessBuilder, which is why it stays nullable rather than defaulting to empty.
+		[JsonPropertyName("warnings")]
+		public List<string>? Warnings { get; set; }
 	}
 
 	#endregion
@@ -171,6 +181,12 @@ public class ModifyBusinessProcessCommand(
 				new ModifyBusinessProcessRequest(options.ProcessName, options.ProcessUid, options.OperationsJson));
 			logger.WriteInfo(
 				$"Process '{result.SchemaName}' edited ({result.AppliedOperations} operation(s) applied; UId: {result.SchemaUId}).");
+			// Written as WARNINGS on a SUCCESSFUL edit, deliberately. These are outcomes that applied and are not
+			// what a caller would assume, so folding them into the success line (or dropping them, which is what
+			// happened before) leaves the caller believing something that is not quite true.
+			foreach (string warning in result.Warnings ?? []) {
+				logger.WriteWarning(warning);
+			}
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -193,4 +209,10 @@ public sealed record ModifyBusinessProcessRequest(string ProcessName, string Pro
 /// <param name="SchemaName">Name (code) of the edited process schema.</param>
 /// <param name="SchemaUId">UId of the edited process schema.</param>
 /// <param name="AppliedOperations">Number of operations applied.</param>
-public sealed record ModifyBusinessProcessResult(string? SchemaName, string? SchemaUId, int AppliedOperations);
+/// <param name="Warnings">
+/// Notices the applied operations raised — outcomes that SUCCEEDED but the caller has to know about, so a
+/// successful edit is never silently different from what was asked for. <c>null</c> when there are none, or when
+/// the target environment carries a package that does not report them.
+/// </param>
+public sealed record ModifyBusinessProcessResult(string? SchemaName, string? SchemaUId, int AppliedOperations,
+	IReadOnlyList<string>? Warnings = null);
