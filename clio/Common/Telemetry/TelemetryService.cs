@@ -216,7 +216,7 @@ public sealed class TelemetryService : ITelemetryService
 
 				string eventId = Guid.NewGuid().ToString("N");
 				DateTimeOffset eventTimestamp = _timeProvider.GetUtcNow();
-				TelemetrySessionState sessionState = ReadSessionState(request.SessionId);
+				TelemetrySessionState sessionState = ReadSessionState(request.SessionId, request.Workflow);
 				long? inferredDurationMs = request.DurationMs ?? InferDurationMs(sessionState, request.EventName, eventTimestamp);
 				TelemetryEventRequest enrichedRequest = request with { DurationMs = inferredDurationMs };
 				long? durationSinceSessionStartMs = InferDurationSinceSessionStartMs(sessionState, request.EventName, eventTimestamp);
@@ -333,6 +333,37 @@ public sealed class TelemetryService : ITelemetryService
 	/// Validates a bounded lowercase identifier (a workflow or variant value). Linear scan rather than a
 	/// regex, matching <see cref="IsAllowedSessionId"/>: no ReDoS surface and O(length) on capped input.
 	/// </summary>
+	/// <summary>
+	/// Canonicalizes <c>coding_agent</c> to a lowercase slug so one host counts as one cohort.
+	/// </summary>
+	/// <remarks>
+	/// Unlike <c>workflow</c> / <c>variant</c> / <c>model</c>, this field is only length-checked, because
+	/// a host name is a proper noun rather than a bounded token the flow chooses. That let the same host
+	/// arrive spelled three different ways in a single measured session ("Claude Code", "claude-code",
+	/// "claude"), splitting one host across three cohorts — and instructing agents not to reshape the
+	/// value did not stop it. Slugging is deterministic and merges the spellings that differ only in case
+	/// and separators. Values that differ in WORDS (a truncated "claude") are deliberately left distinct:
+	/// mapping them onto a canonical host would be a guess recorded as data.
+	/// </remarks>
+	internal static string NormalizeCodingAgent(string value)
+	{
+		if (string.IsNullOrWhiteSpace(value)) {
+			return value;
+		}
+		StringBuilder slug = new(value.Length);
+		foreach (char character in value.Trim()) {
+			if (char.IsAsciiLetterOrDigit(character)) {
+				slug.Append(char.ToLowerInvariant(character));
+			} else if (character is '.' or '_' or '-' or ' ') {
+				// Collapse runs of separators so "GitHub  Copilot-CLI" and "github-copilot-cli" agree.
+				if (slug.Length > 0 && slug[^1] != '-') {
+					slug.Append('-');
+				}
+			}
+		}
+		return slug.ToString().TrimEnd('-');
+	}
+
 	internal static bool IsAllowedToken(string value) =>
 		!string.IsNullOrWhiteSpace(value)
 		&& value.Length <= MaxFieldLength
@@ -396,7 +427,7 @@ public sealed class TelemetryService : ITelemetryService
 			StringAttribute("event_timestamp", timestamp.ToString("O")),
 			StringAttribute("platform", GetPlatform()),
 			StringAttribute("clio_version", GetClioVersion()),
-			StringAttribute("coding_agent", request.CodingAgent),
+			StringAttribute("coding_agent", NormalizeCodingAgent(request.CodingAgent)),
 			StringAttribute("installation_id", GetOrCreateInstallationId()),
 			StringAttribute("plugin_version", request.PluginVersion),
 			StringAttribute("event_id", eventId)
@@ -431,19 +462,22 @@ public sealed class TelemetryService : ITelemetryService
 			EventName: request.EventName);
 	}
 
-	private TelemetrySessionState ReadSessionState(string sessionId)
+	private TelemetrySessionState ReadSessionState(string sessionId, string workflow)
 	{
-		string path = SessionStatePath(sessionId);
+		string path = SessionStatePath(sessionId, workflow);
 		if (!_fileSystem.File.Exists(path)) {
-			return new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+			return NewSessionState(sessionId, workflow);
 		}
 		try {
 			return JsonSerializer.Deserialize<TelemetrySessionState>(_fileSystem.File.ReadAllText(path, Encoding.UTF8), JsonOptions)
-				?? new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+				?? NewSessionState(sessionId, workflow);
 		} catch {
-			return new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+			return NewSessionState(sessionId, workflow);
 		}
 	}
+
+	private static TelemetrySessionState NewSessionState(string sessionId, string workflow) =>
+		new(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal), workflow);
 
 	private static long? InferDurationMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
@@ -475,9 +509,12 @@ public sealed class TelemetryService : ITelemetryService
 		return Math.Max(0, (long)(timestamp - startedAt).TotalMilliseconds);
 	}
 
-	// Anchored on whichever start event the session actually produced. Each flow has its own
-	// "<flow>_session_started", so anchoring only on the app-creation one would leave every migration,
-	// mobile-conversion and branding event with no elapsed-time measure at all.
+	// Anchored on whichever start event this (session_id, workflow) pair actually produced — the
+	// canonical `workflow_started` or the deprecated app-creation `session_started`, so anchoring only
+	// on the app-creation name would leave every migration, mobile-conversion and branding event with
+	// no elapsed-time measure at all. State is keyed per pair, so a flow never inherits the anchor of
+	// another flow in the same host session (notably the `unattributed` session-start floor): a stage
+	// with no start of its own reports no elapsed time rather than a span measured from a foreign run.
 	private static long? InferDurationSinceSessionStartMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		if (IsSessionStartEvent(eventName)) {
@@ -524,7 +561,7 @@ public sealed class TelemetryService : ITelemetryService
 	private void UpdateSessionState(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		sessionState.Events[eventName] = timestamp;
-		WriteJson(SessionStatePath(sessionState.SessionId), sessionState);
+		WriteJson(SessionStatePath(sessionState.SessionId, sessionState.Workflow), sessionState);
 	}
 
 	private static OpenTelemetryAttribute StringAttribute(string key, string value) =>
@@ -649,13 +686,17 @@ public sealed class TelemetryService : ITelemetryService
 	private string ConsentPath => Path.Combine(TelemetryRoot, "consent.json");
 	private string InstallationIdPath => Path.Combine(TelemetryRoot, "installation-id.txt");
 	private string SessionsDirectory => TelemetryStoragePaths.SessionsDirectory(TelemetryRoot);
-	private string SessionStatePath(string sessionId) =>
-		Path.Combine(SessionsDirectory, $"{SessionFileName(sessionId)}.json");
+	private string SessionStatePath(string sessionId, string workflow) =>
+		Path.Combine(SessionsDirectory, $"{SessionFileName(sessionId, workflow)}.json");
 
-	// Derive the session-state file name from a hash of the (validated) session id: collision-free
-	// (distinct ids can never share state, unlike a lossy character-replace) and traversal-safe.
-	private static string SessionFileName(string sessionId) =>
-		Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId))).ToLowerInvariant();
+	// Derive the session-state file name from a hash of the (validated) session id AND workflow: the
+	// funnel's unit of a run is that pair, so each flow in a session keeps its own start anchor and
+	// stage history. Hashing is collision-free (distinct pairs can never share state, unlike a lossy
+	// character-replace) and traversal-safe. The unit separator cannot occur in either validated
+	// value, so no ("ab", null) / ("a", "b") pair can collide.
+	private static string SessionFileName(string sessionId, string workflow) =>
+		Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{sessionId}\u001f{workflow ?? string.Empty}")))
+			.ToLowerInvariant();
 
 	private string EventsDirectory => TelemetryStoragePaths.EventsDirectory(TelemetryRoot);
 }
