@@ -31,6 +31,25 @@ internal static class ShowWebAppListResultParser
 		throw new InvalidOperationException("Could not parse show-webApp-list MCP result.");
 	}
 
+	/// <summary>
+	/// Returns the tool payload as raw JSON so a test can assert on wrapper fields
+	/// (<c>settingsFilePath</c>, <c>warnings</c>) that carry no environment data.
+	/// </summary>
+	public static string ExtractRawJson(CallToolResult callResult)
+	{
+		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent))
+		{
+			return structuredContent.GetRawText();
+		}
+
+		if (TrySerializeToJsonElement(callResult.Content, out JsonElement content))
+		{
+			return content.GetRawText();
+		}
+
+		throw new InvalidOperationException("Could not read the show-webApp-list MCP result payload.");
+	}
+
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
 	{
 		if (value is null)
@@ -50,6 +69,15 @@ internal static class ShowWebAppListResultParser
 			return true;
 		}
 
+		// list-environments returns {environments, settingsFilePath, warnings} (ENG-94529): the list is
+		// read from appsettings.json at call time and a read problem travels as a warning next to it.
+		if (element.ValueKind == JsonValueKind.Object &&
+			element.TryGetProperty("environments", out JsonElement wrapped) &&
+			TryDeserialize(wrapped, out environments))
+		{
+			return true;
+		}
+
 		if (element.ValueKind == JsonValueKind.Array)
 		{
 			foreach (JsonElement item in element.EnumerateArray())
@@ -65,7 +93,7 @@ internal static class ShowWebAppListResultParser
 				}
 
 				if (TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-					TryDeserialize(textPayloadElement, out environments))
+					TryExtract(textPayloadElement, out environments))
 				{
 					return true;
 				}
@@ -77,7 +105,7 @@ internal static class ShowWebAppListResultParser
 			string? textPayload = element.GetString();
 			if (!string.IsNullOrWhiteSpace(textPayload) &&
 				TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-				TryDeserialize(textPayloadElement, out environments))
+				TryExtract(textPayloadElement, out environments))
 			{
 				return true;
 			}
