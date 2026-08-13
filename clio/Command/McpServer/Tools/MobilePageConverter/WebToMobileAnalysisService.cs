@@ -1762,7 +1762,8 @@ public static class WebToMobileAnalysisService {
 				//    inserts into the mobile Tabs as a new tab; a positional sibling inserts into the mobile
 				//    anchor's parent (± index) instead of the walk parent.
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
-				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption);
+				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
+					out RowOutcome containerRow);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
 					ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
@@ -1775,7 +1776,7 @@ public static class WebToMobileAnalysisService {
 						// Defensive symmetry: reachable only for a rule that maps a web type to ITSELF and still
 						// declares a rowLayout, which no shipped rule does — a rowLayout exists precisely because
 						// the web type has no mobile counterpart.
-						+ RowWithoutTitleNote(ctx, node, type, containerValues)
+						+ RowNote(containerRow, ResolveMappingRule(ctx, node, type)?.RowLayout)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, name);
@@ -1796,7 +1797,8 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
-			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption);
+			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
+				out RowOutcome leafRow);
 			string leafReason = isPositional
 				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 				: "field/leaf; mobile-supported";
@@ -1806,7 +1808,7 @@ public static class WebToMobileAnalysisService {
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				Reason = leafReason + RowWithoutTitleNote(ctx, node, leafMobileType, leafValues)
+				Reason = leafReason + RowNote(leafRow, ResolveMappingRule(ctx, node, leafMobileType)?.RowLayout)
 			});
 		}
 	}
@@ -2154,7 +2156,9 @@ public static class WebToMobileAnalysisService {
 	/// (e.g. crt.List <c>itemLayout</c> array→object). <c>type</c> is set and, for field components,
 	/// <c>label</c> is synthesized. Returns null for an unknown mobile type.
 	/// </summary>
-	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName, string mobileType, CaptionResource caption) {
+	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName,
+		string mobileType, CaptionResource caption, out RowOutcome rowOutcome) {
+		rowOutcome = RowOutcome.NotSynthesized;
 		if (string.IsNullOrEmpty(mobileType)) {
 			return null;
 		}
@@ -2197,13 +2201,8 @@ public static class WebToMobileAnalysisService {
 		// WEB type, but the same web type can survive as itself once the mobile registry gains it, and then its
 		// own properties must be left alone. Requiring the resolved mobile type to be one the rule maps to keeps
 		// the transform tied to the mapping rather than to the web type.
-		ComponentEquivalenceRule mappingRule = FindRule(ctx.Rules, node["type"]?.ToString());
-		bool convertedByRule = mappingRule?.Mobile is not null
-			&& mappingRule.Mobile.Any(m => string.Equals(m, mobileType, StringComparison.OrdinalIgnoreCase));
-		if (!convertedByRule) {
-			mappingRule = null;
-		}
-		ApplyRowLayout(mappingRule?.RowLayout, node, values, mobileName);
+		ComponentEquivalenceRule mappingRule = ResolveMappingRule(ctx, node, mobileType);
+		rowOutcome = ApplyRowLayout(mappingRule?.RowLayout, node, values, mobileName);
 		// Web properties the mapped mobile type has no equivalent for. Deliberately rule-driven, NOT pruned
 		// against the registry — see the copy rule above (ENG-91859). Runs AFTER the row so the source array
 		// (e.g. the grid's columns) can feed the row and still not be carried.
@@ -2233,6 +2232,37 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// The components rule this element is ACTUALLY being converted through, or null. A rule is found by the
+	/// WEB type, but the same web type can survive as itself once the mobile registry gains it — then its own
+	/// properties must be left alone. Requiring the RESOLVED mobile type to be one the rule maps to keeps every
+	/// mapping-driven transform tied to the mapping instead of to the web type. ONE authority on purpose: a
+	/// second copy of this predicate is how the row note drifted from the row it describes once already.
+	/// </summary>
+	private static ComponentEquivalenceRule ResolveMappingRule(ElementMapContext ctx, JObject node, string mobileType) {
+		ComponentEquivalenceRule rule = FindRule(ctx.Rules, node["type"]?.ToString());
+		return rule?.Mobile is not null
+			&& rule.Mobile.Any(m => string.Equals(m, mobileType, StringComparison.OrdinalIgnoreCase))
+			? rule
+			: null;
+	}
+
+	/// <summary>What <see cref="ApplyRowLayout"/> did, so no caller has to re-infer it from the output.</summary>
+	private enum RowOutcome {
+
+		/// <summary>No rule declared a row here, or the node authored its own and kept it.</summary>
+		NotSynthesized,
+
+		/// <summary>A row was built and carries a title.</summary>
+		BuiltWithTitle,
+
+		/// <summary>A row was built, but no entry had a type the target accepts for a title.</summary>
+		BuiltWithoutTitle,
+
+		/// <summary>A row was declared for this mapping and could NOT be built: no usable source entry.</summary>
+		NotBuilt
+	}
+
+	/// <summary>
 	/// The note appended to a converted element's reason when the converter SYNTHESIZED its row and that row
 	/// could take no title: the source carries no entry of a type the target accepts for one (all lookups /
 	/// dates / numbers). Reported rather than left silent, because an empty Title column in the designer
@@ -2244,38 +2274,19 @@ public static class WebToMobileAnalysisService {
 	/// the author's choice, not a source that had nothing to offer. And the source array must be present at all.
 	/// </para>
 	/// </summary>
-	private static string RowWithoutTitleNote(
-		ElementMapContext ctx, JObject node, string mobileType, JsonNode values) {
-		ComponentEquivalenceRule mapping = FindRule(ctx.Rules, node["type"]?.ToString());
-		bool convertedByRule = mapping?.Mobile is not null
-			&& mapping.Mobile.Any(m => string.Equals(m, mobileType, StringComparison.OrdinalIgnoreCase));
-		RowLayoutRule rule = convertedByRule ? mapping.RowLayout : null;
-		if (rule is null || string.IsNullOrWhiteSpace(rule.TargetProperty)
-			|| string.IsNullOrWhiteSpace(rule.SourceProperty) || values is null) {
-			return string.Empty;
-		}
-		// authored by the source, not synthesized here — say nothing about it
-		if (node[rule.TargetProperty] is not null) {
-			return string.Empty;
-		}
-		// Indexing a JsonNode that is not an object THROWS, and the catch-all around the guide turns that into a
-		// failed conversion call — a misconfigured rule must degrade to "no row", never to "no guide".
-		if (values[rule.TargetProperty] is not JsonObject row) {
-			// The row was EXPECTED — this mapping declares one — and could not be built at all: no source array,
-			// none of its entries usable. That renders a blank list, which is worse than a missing title, so it
-			// gets the louder note rather than the silence it used to get.
-			return " — NO ROW could be built for this list: the source carries no usable "
-				+ rule.SourceProperty + " (each entry needs a " + rule.BindingFrom
-				+ " that is a valid binding identifier), so the list would render blank — tell the user and "
-				+ "configure the row in the designer";
-		}
-		if (row["title"] is not null) {
-			return string.Empty;
-		}
-		return " — the row carries no title: the source has no column of a type a row title accepts (a title "
+	private static string RowNote(RowOutcome outcome, RowLayoutRule rule) => outcome switch {
+		// Worse than a missing title: the list renders blank. Names WHAT was unusable so the reader looks at the
+		// right thing, without claiming to know which of the ways it was unusable.
+		RowOutcome.NotBuilt =>
+			" — NO ROW could be built for this list: the source carries no usable "
+			+ (string.IsNullOrWhiteSpace(rule?.SourceProperty) ? "row source" : rule.SourceProperty)
+			+ ", so the list would render blank — tell the user and configure the row in the designer",
+		RowOutcome.BuiltWithoutTitle =>
+			" — the row carries no title: the source has no column of a type a row title accepts (a title "
 			+ "accepts text columns only), so ask the user which value the row should lead with and set it in "
-			+ "the designer";
-	}
+			+ "the designer",
+		_ => string.Empty
+	};
 
 	/// <summary>
 	/// Reads a source entry's value type tolerantly. A page body is JSON from a customer environment, so the
@@ -2311,13 +2322,18 @@ public static class WebToMobileAnalysisService {
 	/// absent, the source property is not an array, no entry yields a binding, or the caller's node already
 	/// carries the target property (a web node that brought its own row wins — it is real authored content).
 	/// </summary>
-	private static void ApplyRowLayout(RowLayoutRule rule, JObject node, JObject values, string mobileName) {
+	private static RowOutcome ApplyRowLayout(RowLayoutRule rule, JObject node, JObject values, string mobileName) {
 		if (rule is null || string.IsNullOrWhiteSpace(rule.SourceProperty)
 			|| string.IsNullOrWhiteSpace(rule.TargetProperty) || string.IsNullOrWhiteSpace(rule.BindingFrom)) {
-			return;
+			return RowOutcome.NotSynthesized;
 		}
-		if (values[rule.TargetProperty] is not null || node[rule.SourceProperty] is not JArray source) {
-			return;
+		// The node authored its own target property: keep it, and report NOTHING was synthesized — a missing
+		// title there is the author's choice, not a source that had nothing acceptable to offer.
+		if (values[rule.TargetProperty] is not null) {
+			return RowOutcome.NotSynthesized;
+		}
+		if (node[rule.SourceProperty] is not JArray source) {
+			return RowOutcome.NotBuilt;
 		}
 		// A source entry contributes only when its value is a usable binding IDENTIFIER. The page body comes
 		// from a customer environment, so the value is not assumed well-formed: it is REJECTED rather than
@@ -2335,7 +2351,7 @@ public static class WebToMobileAnalysisService {
 			.Select(e => ("$" + e.Binding, e.ValueType))
 			.ToList();
 		if (entries.Count == 0) {
-			return;
+			return RowOutcome.NotBuilt;
 		}
 		// The title is the first entry the TARGET accepts, not simply the first entry: the mobile designer
 		// offers only text columns for a list row's title, so a lookup binds to nothing and leaves the Title
@@ -2364,6 +2380,7 @@ public static class WebToMobileAnalysisService {
 			.Where((_, index) => index != titleIndex)
 			.Select(e => new JObject { ["value"] = e.Binding }));
 		values[rule.TargetProperty] = row;
+		return titleIndex >= 0 ? RowOutcome.BuiltWithTitle : RowOutcome.BuiltWithoutTitle;
 	}
 
 	/// <summary>
