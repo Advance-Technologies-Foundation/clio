@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Common;
 using Newtonsoft.Json.Linq;
 using JsonNode = System.Text.Json.Nodes.JsonNode;
 using JsonArray = System.Text.Json.Nodes.JsonArray;
@@ -2621,8 +2622,13 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> CaptionSeeds);
 
 	/// <summary>One FAB menu-item candidate: a page-added header button itself, or — when the button
-	/// carries its own <c>menuItems</c> — one flattened menu entry (the button is then discarded).</summary>
-	private sealed record FabCandidate(JObject Node, string SourceButton, string SourceMenuItem);
+	/// carries its own <c>menuItems</c> — one flattened menu entry (the button is then discarded).
+	/// <paramref name="InheritedGates"/> carries the <c>visible</c> of every opener the entry hung under
+	/// (the button, then each nested submenu group, outermost first): flattening discards those nodes, but
+	/// not their visibility — a web menu routinely carries the gate for its whole content on the opener
+	/// while the entries carry none. Empty for a button that became the item itself.</summary>
+	private sealed record FabCandidate(
+		JObject Node, string SourceButton, string SourceMenuItem, IReadOnlyList<JToken> InheritedGates);
 
 	/// <summary>
 	/// The FAB source containers effective for this run: the rule's <c>sourceContainers</c> intersected with
@@ -2666,13 +2672,50 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// Filters a menu-items array down to PAGE-ADDED content, recursively: a leaf entry is kept only when its
+	/// name is absent from <paramref name="baseline"/> (an unnamed entry has no baseline name to match, so it
+	/// is kept — anonymous content is page content, same policy as everywhere else in this pass); a submenu
+	/// group (an entry carrying its own <c>items</c>) is kept, with its children filtered the same way, only
+	/// when at least one child survives — an entirely baseline group contributes nothing and is dropped
+	/// whole. Returns null when nothing survives (distinct from an empty array, so the caller can tell
+	/// "nothing page-added here" from "keep an empty array").
+	/// </summary>
+	private static JArray FilterPageAddedFabMenuEntries(JArray entries, IReadOnlySet<string> baseline) {
+		var kept = new JArray();
+		foreach (JToken token in entries) {
+			if (token is not JObject entry) {
+				continue;
+			}
+			if (entry["items"] is JArray nested && nested.Count > 0) {
+				JArray filteredNested = FilterPageAddedFabMenuEntries(nested, baseline);
+				if (filteredNested is not null) {
+					JObject group = (JObject)entry.DeepClone();
+					group["items"] = filteredNested;
+					kept.Add(group);
+				}
+				continue;
+			}
+			string entryName = entry["name"]?.ToString();
+			if (string.IsNullOrEmpty(entryName) || !baseline.Contains(entryName)) {
+				kept.Add(entry.DeepClone());
+			}
+		}
+		return kept.Count > 0 ? kept : null;
+	}
+
+	/// <summary>
 	/// Collects, from the INTACT subtree of a FAB source container, every PAGE-ADDED button node — strictly
 	/// <paramref name="buttonType"/>, at any depth. A mapped twin (container/component rule of its own) is
 	/// carved out with its whole subtree, mirroring the exclusion prune. A baseline (chrome) button —
-	/// Save/Cancel/Close — is never collected. Chrome layers, page-added non-button containers, and anonymous
-	/// wrappers are all transparent: the walk keeps looking underneath them. Collected nodes are deep-cloned
-	/// (the exclusion prune mutates the tree right after this pass); a button's own <c>menuItems</c> travel
-	/// inside the clone.
+	/// Save/Cancel/Close — is never collected AS ITSELF, but when it carries its own <c>menuItems</c> (a
+	/// "3 dots" button the web TEMPLATE itself provides), the entries the PAGE added on top of the template's
+	/// own menu — a page-level insert into that button's <c>menuItems</c>, present on the page but absent
+	/// from <paramref name="baseline"/> — are still page content and are collected: a clone of the chrome
+	/// button carrying only its page-added entries (attributing them to the chrome button as
+	/// <c>sourceButton</c> once flattened), never the button's own baseline entries. Chrome layers,
+	/// page-added non-button containers, and anonymous wrappers are all transparent: the walk keeps looking
+	/// underneath them. Collected nodes are deep-cloned (the exclusion prune mutates the tree right after
+	/// this pass); a button's own <c>menuItems</c> travel inside the clone.
 	/// </summary>
 	private static void CollectFabButtonNodes(
 		JArray nodes,
@@ -2692,9 +2735,19 @@ public static class WebToMobileAnalysisService {
 				continue; // converts under its own rule, out of scope for the FAB bucket
 			}
 			bool isChrome = !string.IsNullOrEmpty(name) && baseline.Contains(name);
-			if (!isChrome && string.Equals(node["type"]?.ToString(), buttonType, StringComparison.OrdinalIgnoreCase)) {
+			bool isButton = string.Equals(node["type"]?.ToString(), buttonType, StringComparison.OrdinalIgnoreCase);
+			if (!isChrome && isButton) {
 				collected.Add((JObject)node.DeepClone());
 				continue;
+			}
+			if (isChrome && isButton) {
+				if (node["menuItems"] is JArray menu && menu.Count > 0
+					&& FilterPageAddedFabMenuEntries(menu, baseline) is { } pageAdded) {
+					JObject clone = (JObject)node.DeepClone();
+					clone["menuItems"] = pageAdded;
+					collected.Add(clone);
+				}
+				continue; // a button has no "items" tree children distinct from its menuItems
 			}
 			if (node["items"] is JArray items) {
 				CollectFabButtonNodes(items, containerNameMap, componentMap, baseline, buttonType, collected);
@@ -2806,41 +2859,57 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// The opener chain extended with one node's <c>visible</c> — used while walking DOWN a menu, so a leaf
+	/// knows every gate it inherits. A missing <c>visible</c>, and a literal <c>true</c>, gate nothing and are
+	/// not carried (they would otherwise look like a condition the item must reproduce).
+	/// </summary>
+	private static IReadOnlyList<JToken> AppendFabGate(IReadOnlyList<JToken> gates, JToken visible) {
+		if (visible is null
+			|| visible.Type == JTokenType.Null
+			|| (visible.Type == JTokenType.Boolean && visible.Value<bool>())) {
+			return gates;
+		}
+		return [.. gates, visible.DeepClone()];
+	}
+
+	/// <summary>
 	/// Flattens a button's <c>menuItems</c> into flat FAB candidates, recursively: a nested submenu node
 	/// (an entry carrying its own <c>items</c>) is a group opener like the button itself — skipped, its
 	/// entries flattened in place — so no hierarchy survives; each leaf keeps its OWN caption (no parent
-	/// prefix). Document order is preserved.
+	/// prefix). Document order is preserved. A skipped opener's <c>visible</c> travels down to the leaves it
+	/// gated (see <see cref="FabCandidate"/>) — discarding the node must not discard its condition.
 	/// </summary>
-	private static void FlattenFabMenuEntries(JArray entries, string sourceButton, List<FabCandidate> candidates) {
+	private static void FlattenFabMenuEntries(
+		JArray entries, string sourceButton, IReadOnlyList<JToken> inheritedGates, List<FabCandidate> candidates) {
 		foreach (JToken token in entries) {
 			if (token is not JObject entry) {
 				continue;
 			}
 			if (entry["items"] is JArray nested && nested.Count > 0) {
-				FlattenFabMenuEntries(nested, sourceButton, candidates);
+				FlattenFabMenuEntries(
+					nested, sourceButton, AppendFabGate(inheritedGates, entry["visible"]), candidates);
 				continue;
 			}
-			candidates.Add(new FabCandidate(entry, sourceButton, entry["name"]?.ToString()));
+			candidates.Add(new FabCandidate(entry, sourceButton, entry["name"]?.ToString(), inheritedGates));
 		}
 	}
 
 	/// <summary>
-	/// Turns the extracted page-added header buttons into FAB menu items. The default emission is one
-	/// synthesized <c>insert</c> per converted item into the template FAB's <c>menuItems</c> (parentName =
-	/// the FAB's own name): the template's items (Copy/Delete), icon and visibility are inherited, never
-	/// re-emitted. A Scaffold merge carrying <c>floatAction</c> is NOT emitted when the template already
-	/// provides one — the platform diff applier silently drops a merged property that already exists on the
-	/// target as a named child, so such a merge never reaches the compiled page. The merge shape survives
-	/// only as the fallback for a template with no <c>floatAction</c> to insert into: the rules' default
-	/// skeleton plus the converted items, emitted as ONE Scaffold merge (a first definition, which the
-	/// applier accepts). When the template bundle could not be read at all, inserts are emitted against the
-	/// skeleton's standard FAB name (a generated item name always ends with <c>FabMenuItem</c>, so it
-	/// cannot collide with the standard <c>*MenuItem</c> names it cannot see). Each
-	/// candidate becomes one <c>crt.MenuItem</c> carrying ONLY its caption, its converted <c>clicked</c>
-	/// request (same remap/paramMap rules as every event binding), and its <c>visible</c> —
-	/// style/color/icon are ignored by design. A candidate with no caption, no <c>clicked</c>, or a request
-	/// the Creatio Mobile app does not support produces NO item (a dead menu item is not shipped) and is
-	/// reported in <c>droppedItems</c>. Returns null when there is nothing to report at all.
+	/// Turns the extracted page-added header buttons into FAB menu items. The emitted shape and the reason
+	/// it is shaped that way are stated once, on <see cref="MobilePageConversionGuide.FabConversion"/>: one
+	/// <c>insert</c> per item into the template FAB's <c>menuItems</c> by default, ONE Scaffold <c>merge</c>
+	/// only for a template positively known to have no targetable <c>floatAction</c> (the mode decision,
+	/// including the unknown-template case, is documented at the decision site below). A generated item name
+	/// always ends with <c>FabMenuItem</c>, so it cannot collide with the standard <c>*MenuItem</c> names an
+	/// unread template would have hidden. Each candidate becomes one <c>crt.MenuItem</c> carrying ONLY its
+	/// caption, its converted <c>clicked</c> request (same remap/paramMap rules as every event binding), and
+	/// the <c>visible</c> gate it is subject to — its own or the one inherited from the discarded opener that
+	/// carried it; style/color/icon are ignored by design. A candidate with no caption, no <c>clicked</c>, a
+	/// request the Creatio Mobile app does not support, or two visibility gates that cannot be composed into
+	/// one produces NO item (a dead or wrongly-visible menu item is not shipped) and is reported in
+	/// <c>droppedItems</c>, as is a converted item that reaches no
+	/// element-map entry — so every extracted button stays accounted for. Returns null when there is nothing
+	/// to report at all.
 	/// </summary>
 	private static FabConversionResult BuildFabConversion(
 		IReadOnlyList<JObject> buttonNodes,
@@ -2854,9 +2923,9 @@ public static class WebToMobileAnalysisService {
 		foreach (JObject button in buttonNodes) {
 			string buttonName = button["name"]?.ToString();
 			if (button["menuItems"] is JArray menu && menu.Count > 0) {
-				FlattenFabMenuEntries(menu, buttonName, candidates);
+				FlattenFabMenuEntries(menu, buttonName, AppendFabGate([], button["visible"]), candidates);
 			} else {
-				candidates.Add(new FabCandidate(button, buttonName, null));
+				candidates.Add(new FabCandidate(button, buttonName, null, []));
 			}
 		}
 		if (candidates.Count == 0) {
@@ -3014,9 +3083,14 @@ public static class WebToMobileAnalysisService {
 			note += " The mobile template's own FAB could not be resolved, so the inserts target the standard "
 				+ insertTargetName + " — verify at runtime.";
 		}
+		// Where the payload landed, structured: the caller decides what to apply (and whether the target was
+		// assumed) from these, never by parsing the note. Null/false when nothing was emitted at all.
+		bool hasPayload = entries.Count > 0;
 		var info = new FabConversionInfo {
 			Note = note,
-			ScaffoldName = rule.ScaffoldName,
+			Emission = hasPayload ? (insertMode ? "insert" : "merge") : null,
+			TargetName = hasPayload ? (insertMode ? insertTargetName : rule.ScaffoldName) : null,
+			TargetAssumed = hasPayload && assumedTarget,
 			Items = items,
 			DroppedItems = dropped.Count > 0 ? dropped : null
 		};
@@ -3038,7 +3112,9 @@ public static class WebToMobileAnalysisService {
 	/// or data binding is carried verbatim), the converted <c>clicked</c> (rules-file remap + paramMap first,
 	/// the offline supported set as the fallback — the same authority order every event binding uses; an
 	/// unsupported or unknown request drops the candidate, matching the walk's dead-button rule), and the
-	/// source <c>visible</c> verbatim.
+	/// <c>visible</c> gate verbatim — the candidate's own, or the one inherited from the button/submenu that
+	/// opened it; a candidate carrying two gates at once is dropped rather than shipped under half its web
+	/// condition.
 	/// </summary>
 	private static void BuildFabMenuItem(
 		FabCandidate candidate,
@@ -3068,7 +3144,7 @@ public static class WebToMobileAnalysisService {
 		string mobileRequest;
 		if (requestMap.TryGetValue(webRequest, out RequestMappingRule requestRule)) {
 			if (string.IsNullOrWhiteSpace(requestRule.Mobile)) {
-				Drop($"its request '{webRequest}' is not supported on the Creatio Mobile app — a dead menu item is not shipped");
+				Drop($"its request '{TextUtilities.SanitizeForDisplay(webRequest, 60)}' is not supported on the Creatio Mobile app — a dead menu item is not shipped");
 				return;
 			}
 			convertedClicked = (JObject)clicked.DeepClone();
@@ -3079,7 +3155,22 @@ public static class WebToMobileAnalysisService {
 			convertedClicked = (JObject)clicked.DeepClone();
 			mobileRequest = webRequest;
 		} else {
-			Drop($"its request '{webRequest}' is not supported on the Creatio Mobile app — a dead menu item is not shipped");
+			Drop($"its request '{TextUtilities.SanitizeForDisplay(webRequest, 60)}' is not supported on the Creatio Mobile app — a dead menu item is not shipped");
+			return;
+		}
+
+		// visible is the one state-bearing property carried besides the action; style/color/icon are ignored
+		// by design (the FAB menu renders plain captions). The gate can sit on the candidate itself OR on an
+		// opener flattening discarded — a web "3 dots" button typically carries the role/state condition for
+		// its whole menu while the entries carry none — so both are resolved here: exactly ONE gate is carried
+		// verbatim, whichever node declared it. TWO or more cannot be composed into a single declarative
+		// mobile visible, and shipping the item under only half of its web condition would expose an action
+		// the web page hides, so the candidate is dropped with the reason instead (the values themselves are
+		// deliberately not echoed — the developer reads them off the web page).
+		IReadOnlyList<JToken> gates = AppendFabGate(candidate.InheritedGates, candidate.Node["visible"]);
+		if (gates.Count > 1) {
+			Drop("its own visible condition and the one gating its source button/submenu cannot be composed "
+				+ "into a single mobile visible — recreate the action manually under the combined condition");
 			return;
 		}
 
@@ -3103,6 +3194,12 @@ public static class WebToMobileAnalysisService {
 			captionValue = "#ResourceString(" + key + ")#";
 			advisoryCaption = text;
 		}
+		// The applied captionValue is pasted into the page verbatim by design (the guide's paste-don't-rebuild
+		// contract) and is left untouched; advisoryCaption only feeds FabMenuItemInfo.Caption, which the FAB
+		// constraint mandates relaying into the agent's context/transcript — the same untrusted-echo channel
+		// TextUtilities.SanitizeForDisplay guards elsewhere in this repo (CR/LF or ANSI escapes in a
+		// page-authored caption could otherwise forge or overwrite lines around it).
+		advisoryCaption = TextUtilities.SanitizeForDisplay(advisoryCaption, 60);
 
 		var item = new JObject {
 			["name"] = itemName,
@@ -3110,10 +3207,8 @@ public static class WebToMobileAnalysisService {
 			["caption"] = captionValue,
 			["clicked"] = convertedClicked
 		};
-		// visible is the one state-bearing property carried besides the action; style/color/icon are
-		// ignored by design (the FAB menu renders plain captions).
-		if (candidate.Node["visible"] is { } visible) {
-			item["visible"] = visible.DeepClone();
+		if (gates.Count == 1) {
+			item["visible"] = gates[0];
 		}
 		menuItems.Add(item);
 		items.Add(new FabMenuItemInfo {

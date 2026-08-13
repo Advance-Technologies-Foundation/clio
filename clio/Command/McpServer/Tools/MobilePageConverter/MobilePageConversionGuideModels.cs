@@ -552,9 +552,13 @@ public sealed class MobilePageConversionGuide {
 	/// platform diff applier silently drops that merged property and the items never reach the compiled page.
 	/// The FAB lives in page METADATA only (<c>floatAction</c> is a Scaffold property, not an element), so it
 	/// is not visible in the Mobile Designer — expected, not an error. This section is the advisory summary:
-	/// which buttons became items (a button with its own <c>menuItems</c> is discarded and its entries are
-	/// flattened, recursively, with their own captions), and which candidates were dropped with the reason
-	/// (unsupported <c>clicked</c> request — a dead menu item is not shipped — no caption, or no action).
+	/// which shape was emitted and where it landed (<c>emission</c> / <c>targetName</c> / <c>targetAssumed</c>
+	/// — read those rather than parsing the note), which buttons became items (a button with its own
+	/// <c>menuItems</c> is discarded and its entries are flattened, recursively, with their own captions —
+	/// each carrying the discarded opener's <c>visible</c> gate, so a converted item is never visible where
+	/// the web menu was hidden), and which candidates were dropped with the reason (unsupported
+	/// <c>clicked</c> request — a dead menu item is not shipped — no caption, no action, or an own gate the
+	/// inherited one cannot be composed with).
 	/// Dropped candidates appear HERE, not in <see cref="ExcludedComponents"/>; the header's non-button
 	/// content stays reported there. When EVERY candidate was dropped this section carries no items and the
 	/// element map carries no FAB entry at all — there is then nothing to apply, and a constraint says so.
@@ -855,10 +859,11 @@ public sealed class TabAreaLayerGroup {
 }
 
 /// <summary>
-/// Advisory summary of the header-buttons → FAB-menu-items conversion (see
-/// <see cref="MobilePageConversionGuide.FabConversion"/>). The actionable payload is the synthesized
-/// <c>merge</c> entry on the mobile Scaffold in the element map; this section explains what happened so the
-/// caller can present it at the conversion gate and in the final report.
+/// Advisory summary of the header-buttons → FAB-menu-items conversion. The ACTIONABLE payload lives in the
+/// element map — <see cref="MobilePageConversionGuide.FabConversion"/> states that emission contract and why
+/// it is shaped the way it is; this section explains what happened, so the caller can present it at the
+/// conversion gate and in the final report, and says WHERE the payload was targeted
+/// (<see cref="Emission"/> / <see cref="TargetName"/> / <see cref="TargetAssumed"/>) without parsing prose.
 /// </summary>
 public sealed class FabConversionInfo {
 	/// <summary>Caller-facing summary of the pass outcome, composed from the actual counts.</summary>
@@ -866,9 +871,33 @@ public sealed class FabConversionInfo {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Note { get; init; }
 
-	/// <summary>The mobile element the FAB configuration merges onto (the element map entry's <c>mobileName</c>).</summary>
-	[JsonPropertyName("scaffoldName")]
-	public string ScaffoldName { get; init; }
+	/// <summary>
+	/// How the payload was emitted into the element map: <c>"insert"</c> — the default — is one entry per
+	/// converted item into <see cref="TargetName"/>'s <c>menuItems</c>; <c>"merge"</c> is the fallback for a
+	/// template with no targetable FAB, ONE entry carrying the complete <c>floatAction</c> onto the Scaffold.
+	/// Null when nothing was emitted (every candidate was dropped) — there is no payload to apply then.
+	/// </summary>
+	[JsonPropertyName("emission")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Emission { get; init; }
+
+	/// <summary>
+	/// The element the payload targets: the mobile template's own FAB for an <c>insert</c> emission (the
+	/// entries' <c>parentName</c>), the Scaffold for a <c>merge</c> one (its <c>mobileName</c>). Null when
+	/// nothing was emitted.
+	/// </summary>
+	[JsonPropertyName("targetName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string TargetName { get; init; }
+
+	/// <summary>
+	/// True when <see cref="TargetName"/> is the rules' STANDARD FAB name rather than one read off the
+	/// template — the template's own FAB could not be resolved, so the inserts assume it. They stay additive
+	/// (a wrong assumption can never erase the template's own items), but the result is worth verifying at
+	/// runtime. False whenever the target was actually read.
+	/// </summary>
+	[JsonPropertyName("targetAssumed")]
+	public bool TargetAssumed { get; init; }
 
 	/// <summary>The converted items, in the order they were appended after the template's own items.</summary>
 	[JsonPropertyName("items")]

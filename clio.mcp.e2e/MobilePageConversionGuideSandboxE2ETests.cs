@@ -275,7 +275,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			insert.ParentName.Should().Be(fabParentName,
 				because: "every converted item targets the same template FAB");
 		}
-		guide.FabConversion.Note.Should().NotContain("could not be resolved",
+		guide.FabConversion.Emission.Should().Be("insert",
+			because: "the emitted shape must be readable as a field, not inferred from the note prose");
+		guide.FabConversion.TargetName.Should().Be(fabParentName,
+			because: "targetName must name the same element the synthesized inserts actually target");
+		guide.FabConversion.TargetAssumed.Should().BeFalse(
 			because: "the mobile template was read from a reachable environment, so its own FAB must have been "
 				+ "resolved by the template probe rather than assumed — that probe seam is what this tier exists to cover");
 		guide.Constraints.Should().Contain(c => c.Contains("fabConversion is MANDATORY"),

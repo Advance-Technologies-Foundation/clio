@@ -357,7 +357,11 @@ public sealed class FabConversionRule {
 	[JsonPropertyName("menuItemType")]
 	public string MenuItemType { get; init; } = "crt.MenuItem";
 
-	/// <summary>Mobile template element the FAB configuration merges onto (the page root).</summary>
+	/// <summary>
+	/// Name of the mobile page root that owns the FAB configuration. Two roles: the template probe looks up
+	/// this node to read the template's own <see cref="FloatActionProperty"/>, and the fallback merge — for a
+	/// template positively known to carry none — targets it.
+	/// </summary>
 	[JsonPropertyName("scaffoldName")]
 	public string ScaffoldName { get; init; } = "Scaffold";
 
