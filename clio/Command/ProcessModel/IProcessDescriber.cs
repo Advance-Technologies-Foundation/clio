@@ -273,7 +273,8 @@ public sealed class DescribedElement {
 	/// answer that matters — it marks a process whose connections persist, compile and run green while writing
 	/// nothing — and it has TWO causes with different fixes: the user task's runtime never writes connections
 	/// (change the element kind), or this element's activity-creation gate is shut (set <c>CreateActivity</c> to a
-	/// constant true). <c>null</c> means NOT ESTABLISHED (not a user task, an unresolvable schema, or a user task
+	/// constant true — or, on a Send email element, switch it to manual send, which creates the activity
+	/// unconditionally and needs no <c>CreateActivity</c> write). <c>null</c> means NOT ESTABLISHED (not a user task, an unresolvable schema, or a user task
 	/// outside the supported set), so it is not a licence either. Both <c>false</c> and <c>null</c> mean
 	/// <c>setConnections</c> is refused on that element; only <c>true</c> means it is accepted.
 	/// </summary>
@@ -308,9 +309,12 @@ public sealed class DescribedEmail {
 	public string Subject { get; set; }
 
 	/// <summary>
-	/// True when the element carries a custom-message body (the body HTML itself is not echoed). Omitted (null)
-	/// when the server (an older <c>CrtProcessBuilder</c>) does not report it — which is NOT the same answer as
-	/// <c>false</c>, so a caller must not read an absent flag as "this element has no body".
+	/// True when the element carries a custom-message body (the body HTML itself is not echoed).
+	/// <para>Nullable defensively, NOT because a known server omits it: the flag is a non-nullable <c>bool</c>
+	/// DataMember introduced in the same server commit as the email block, so every build that reports the block
+	/// reports the flag too. <c>null</c> therefore means the flag was absent, which no shipped server produces —
+	/// treat it as unknown rather than <c>false</c> if it ever appears. The degradation that DOES occur is the whole
+	/// block arriving null, which is what an older package produces.</para>
 	/// </summary>
 	[JsonPropertyName("hasBody")]
 	public bool? HasBody { get; set; }
@@ -338,6 +342,15 @@ public sealed class DescribedEmail {
 	/// <summary>The manual-mode performer; null when the element carries no performer assignment.</summary>
 	[JsonPropertyName("performer")]
 	public DescribedEmailPerformer Performer { get; set; }
+
+	/// <summary>
+	/// Captures every other field the server reports inside the email block so the description round-trips
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a template
+	/// selection, a body format, an attachment list — reaches the command output verbatim instead of being
+	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>The manual-mode performer of a Send email element ("Who performs the task?").</summary>
@@ -373,9 +386,12 @@ public sealed class DescribedEmailPerformer {
 /// in the same shape <c>setConnections</c> accepts. A macro the server does not recognise arrives as
 /// <see cref="Expression"/> carrying the original text, so nothing is lost and a future platform macro degrades
 /// instead of breaking the read.
-/// <para>Every member is declared here on purpose. The server drops unknown JSON members silently, and so does
-/// this side: a field the server reports and this type does not declare is discarded without a trace, which is the
-/// same silent-loss failure the connections feature exists to remove.</para>
+/// <para>Every member is declared here on purpose, but that is NOT a substitute for an overflow bag: a field the
+/// server reports and this type does not declare is still discarded without a trace, which is the same silent-loss
+/// failure the connections feature exists to remove. Unlike <see cref="DescribeProcessResult"/>,
+/// <see cref="DescribedElement"/> and <see cref="DescribedEmail"/>, this type has no
+/// <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
+/// remarks endorse. Add one here when that ticket is next touched.</para>
 /// </remarks>
 public sealed class DescribedConnection {
 	/// <summary>The host-entity column the connection binds (for example <c>Account</c>).</summary>
