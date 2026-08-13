@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Threading;
 using CommandLine;
 
 namespace Clio.Command;
@@ -27,6 +26,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly RestartCommand _restartCommand;
 	private readonly ILogger _logger;
+	private readonly IRetryDelay _retryDelay;
 
 	#endregion
 
@@ -41,10 +41,13 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	/// <param name="applicationClient"></param>
 	/// <param name="environmentSettings">Environment settings configuration.</param>
 	/// <param name="restartCommand"></param>
+	/// <param name="logger">Command output logger.</param>
+	/// <param name="retryDelay">Delay used between application login attempts.</param>
 	public TurnFsmCommand(SetFsmConfigCommand setFsmConfigCommand,
 		LoadPackagesToFileSystemCommand loadPackagesToFileSystemCommand,
 		LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient,
-		EnvironmentSettings environmentSettings, RestartCommand restartCommand, ILogger logger) {
+		EnvironmentSettings environmentSettings, RestartCommand restartCommand, ILogger logger,
+		IRetryDelay retryDelay) {
 		_setFsmConfigCommand = setFsmConfigCommand;
 		_loadPackagesToFileSystemCommand = loadPackagesToFileSystemCommand;
 		_loadPackagesToDbCommand = loadPackagesToDbCommand;
@@ -52,6 +55,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 		_environmentSettings = environmentSettings;
 		_restartCommand = restartCommand;
 		_logger = logger;
+		_retryDelay = retryDelay;
 	}
 
 	#endregion
@@ -101,7 +105,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 		return 1;
 	}
 
-	private static bool TryLoginWithRetry(IApplicationClient applicationClient, ILogger logger, TimeSpan timeout, TimeSpan delay) {
+	private bool TryLoginWithRetry(IApplicationClient applicationClient, ILogger logger, TimeSpan timeout, TimeSpan delay) {
 		DateTime start = DateTime.UtcNow;
 		Exception lastException = null;
 		bool printedWaitingMessage = false;
@@ -116,7 +120,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 					logger.WriteLine("Waiting for application to start after restart...");
 					printedWaitingMessage = true;
 				}
-				Thread.Sleep(delay);
+				_retryDelay.Wait(delay);
 			}
 		}
 		if (lastException != null) {
