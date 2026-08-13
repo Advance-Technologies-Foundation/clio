@@ -45,6 +45,7 @@ jobs:
             analyzers:
               - 'Clio.Analyzers/**'
               - 'Clio.Analyzers.Tests/**'
+              - 'Directory.Packages.props'
             cliogate:
               - 'cliogate/**'
               - 'cliogate.tests/**'
