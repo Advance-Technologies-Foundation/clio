@@ -426,6 +426,95 @@ public sealed class WorkflowTelemetryVocabularyTests
 			because: "a documented stage that clio rejects would silently zero out every flow's telemetry");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A flow with no start of its own reports no elapsed time instead of borrowing another flow's anchor.")]
+	public void TelemetryService_Should_Not_Borrow_Another_Flows_Start_Anchor()
+	{
+		// Arrange: the exact shape a measured run produced. A deterministic session-start floor emitted
+		// under `unattributed`, then the agent — told not to emit a second workflow_started — reported
+		// its build directly under its own flow, with no start of its own.
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-13T08:00:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		service.Send(CreateRequest("workflow_started") with { Workflow = "unattributed" });
+		time.Advance(TimeSpan.FromMinutes(2));
+
+		// Act
+		service.Send(CreateRequest("build_started") with { Workflow = "app-maintenance" });
+
+		// Assert: no elapsed time, rather than 120 s measured from a run this stage was never part of.
+		// A missing measure is honest; one borrowed from a foreign flow silently reports time the run
+		// never spent, and there is nothing in the payload to tell the two apart downstream.
+		ReadIntAttribute(ReadNewestStoredEvent(), "duration_since_session_start_ms").Should().BeNull(
+			because: "elapsed time is only meaningful within one (session_id, workflow) pair");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A second workflow_started under a different workflow does not overwrite the first flow's anchor.")]
+	public void TelemetryService_Should_Not_Let_A_Second_Flow_Overwrite_The_First_Flows_Anchor()
+	{
+		// Arrange
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-13T08:00:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		service.Send(CreateRequest("workflow_started") with { Workflow = "branding" });
+		time.Advance(TimeSpan.FromMinutes(1));
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromMinutes(1));
+
+		// Act: the branding run reports a terminal stage after the other flow also started.
+		service.Send(CreateRequest("workflow_failed") with { Workflow = "branding" });
+
+		// Assert: still measured from branding's own start two minutes back. This is what makes the
+		// "never emit workflow_started twice in a session" instruction unnecessary — and that
+		// instruction is why a real run was recorded with a build and no start at all.
+		ReadIntAttribute(ReadNewestStoredEvent(), "duration_since_session_start_ms").Should().Be(120_000,
+			because: "another flow starting in the same session must not shift this flow's elapsed-time measures");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Records one host as one cohort, whatever casing and separators the agent typed.")]
+	[TestCase("Claude Code", "claude-code")]
+	[TestCase("claude-code", "claude-code")]
+	[TestCase("  Claude   Code  ", "claude-code")]
+	[TestCase("GitHub Copilot CLI", "github-copilot-cli")]
+	public void TelemetryService_Should_Canonicalize_CodingAgent(string sent, string expected)
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act
+		service.Send(CreateRequest("workflow_started") with { Workflow = "branding", CodingAgent = sent });
+
+		// Assert: one host must not split into several cohorts because two runs spelled it differently.
+		ReadStringAttribute(ReadNewestStoredEvent(), "coding_agent").Should().Be(expected,
+			because: "adoption per host is only readable if the host name is one value, not a free-text spelling");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves a genuinely different agent name distinct rather than guessing which host it is.")]
+	public void TelemetryService_Should_Not_Guess_A_Host_From_A_Different_Word()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act: a truncated name a run really did send. It could be Claude Code or Claude Desktop.
+		service.Send(CreateRequest("workflow_started") with { Workflow = "branding", CodingAgent = "claude" });
+
+		// Assert: kept as sent. Folding it into a canonical host would record a guess as measurement,
+		// which is the same failure as an invented plugin_version — worse than a value left odd.
+		ReadStringAttribute(ReadNewestStoredEvent(), "coding_agent").Should().Be("claude",
+			because: "normalization may merge spellings of one name, never decide which name was meant");
+	}
+
 	private TelemetryService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
 
 	private TelemetryService CreateService(TimeProvider timeProvider) =>

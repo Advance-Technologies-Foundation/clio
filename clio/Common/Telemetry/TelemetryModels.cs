@@ -70,7 +70,12 @@ internal sealed record ConsentState(
 
 internal sealed record TelemetrySessionState(
 	[property: JsonPropertyName("session_id")] string SessionId,
-	[property: JsonPropertyName("events")] Dictionary<string, DateTimeOffset> Events
+	[property: JsonPropertyName("events")] Dictionary<string, DateTimeOffset> Events,
+	// The unit of a run in the funnel is the PAIR (session_id, workflow), not the session alone: one
+	// host session legitimately carries several flows, and a deterministic session-start floor emits
+	// under `unattributed` before the agent knows which flow it is running. State is therefore keyed
+	// per pair, so each flow anchors its own elapsed time instead of the first flow to report winning.
+	[property: JsonPropertyName("workflow")] string Workflow = null
 );
 
 /// <summary>
