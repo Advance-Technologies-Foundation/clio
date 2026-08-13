@@ -48,6 +48,40 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards a descriptor that contains a sendEmail element with its full email block verbatim — the tool is an opaque pass-through, so the new element type and every email field (mode, sender, To/Cc recipients, subject, HTML body, importance, ignoreErrors, manual-mode performer) ride through to the command without modification.")]
+	[Category("Unit")]
+	public void CreateBusinessProcess_Should_Forward_SendEmail_Descriptor_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string sendEmailDescriptor =
+			"{\"name\":\"UsrSendEmailProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"SendEmail1\","
+			+ "\"type\":\"sendEmail\",\"email\":{\"mode\":\"manual\",\"sender\":\"sales@example.com\","
+			+ "\"subject\":\"Order update\",\"body\":\"<p>Hello</p>\",\"bodyFormat\":\"html\","
+			+ "\"to\":[{\"value\":\"to@example.com\"}],\"cc\":[{\"processParameter\":\"ManagerContact\"}],"
+			+ "\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"All employees\",\"showPage\":true}}}],\"flows\":[]}";
+		FakeCreateBusinessProcessCommand defaultCommand = new();
+		FakeCreateBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", sendEmailDescriptor, null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid sendEmail descriptor must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded sendEmail descriptor");
+		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(sendEmailDescriptor,
+			because: "the sendEmail element and its whole email block must pass through unchanged (opaque pass-through)");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a failed result without resolving any command when the environment name is empty.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Fail_When_Environment_Is_Empty() {
