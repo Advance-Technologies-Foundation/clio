@@ -384,7 +384,8 @@ public sealed class FsmModeToolTests
 				new EnvironmentSettings(),
 				new RestartCommand(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 					Substitute.For<IServerReadinessWaiter>()),
-				Substitute.For<ILogger>())
+				Substitute.For<ILogger>(),
+				Substitute.For<IRetryDelay>())
 		{
 		}
 

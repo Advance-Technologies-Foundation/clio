@@ -40,6 +40,12 @@ jobs:
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
       - name: Extract Version from Tag
         id: extract_version
         run: |
@@ -65,7 +71,7 @@ jobs:
             $ErrorActionPreference = 'Stop'
             $version = "${{ steps.extract_version.outputs.VERSION }}"
             echo "Testing clio with version: $version"
-            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+            dotnet test .\clio.tests\clio.tests.csproj --framework net10.0 -nowarn:none `
             /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
             /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml" `
             /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version;
