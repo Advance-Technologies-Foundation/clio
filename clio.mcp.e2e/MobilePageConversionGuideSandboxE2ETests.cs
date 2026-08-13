@@ -95,7 +95,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterFeatureOrIgnoreAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveSeededRecordPageCandidatesOrIgnoreAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates (form pages first) until one synthesizes tab layers. A candidate that
@@ -187,6 +187,108 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "the ordered steps must tell the caller to state the structure as fact, not ask for approval");
 	}
 
+	[Test]
+	[Description("Converts a real seeded RECORD page whose header carries a page-added button and verifies the mandatory fabConversion contract end to end — the guide carries fabConversion items; each one is a synthesized crt.MenuItem INSERT into the real mobile template's FAB menuItems (no webName, never a Scaffold floatAction merge, which the platform diff applier would silently drop); and the constraints/nextSteps carry the MANDATORY wording. This is the only tier that drives LoadMobileTemplateProbe -> TryExtractScaffoldFloatAction against a REAL mobile template bundle, the seam every unit test bypasses by injecting the floatAction directly.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide returns the mandatory fabConversion contract for a page with header buttons")]
+	[AllureDescription("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp, converts its record pages until one yields fabConversion, and asserts the serialized contract: one insert per converted item targeting the template FAB's menuItems with no webName, no Scaffold merge, and the MANDATORY constraint/next-step wording — exercising the bundled WebToMobilePageConversionRules.json fabConversion section, the real mobile-template FAB probe, and the BuildFabConversion pass through the real MCP surface.")]
+	public async Task MobilePageConversionGuideTool_Should_Return_Mandatory_FabConversion_For_Page_With_Header_Button() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededRecordPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates (record pages first) until one converts a header button into a FAB item.
+		// A candidate that fails to convert is a runtime regression, never a seed-data gap, so failures are
+		// collected and fail the test outright instead of degrading to Ignore.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			if (callResult.IsError == true) {
+				failedCandidates.Add($"'{schemaName}': transport-level error");
+				continue;
+			}
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			if (!response.Success) {
+				failedCandidates.Add($"'{schemaName}': {response.Error}");
+				continue;
+			}
+			if (response.Guide?.FabConversion?.Items is { Count: > 0 }) {
+				guide = response.Guide;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		if (guide is null) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converted successfully, but none produced fabConversion items: the seed application has no Freedom UI "
+				+ "record page whose header carries a PAGE-ADDED crt.Button with a mobile-supported clicked request. Add "
+				+ "one to the seed application to exercise the fabConversion surface.");
+		}
+
+		// Assert — every reported item is backed by a synthesized insert into the template FAB's menuItems.
+		// The merge shape is the failure this contract exists to prevent: when the mobile template already
+		// owns floatAction, the platform diff applier silently drops a merged property and the converted
+		// items never reach the compiled page.
+		guide!.ElementMap.Should().NotContain(e => CarriesFloatAction(e),
+			because: $"'{convertedSchemaName}' resolved a real mobile template, so its FAB must be reached by additive "
+				+ "inserts — a floatAction merge is the shape the diff applier silently drops");
+		string? fabParentName = null;
+		foreach (FabMenuItemInfo item in guide.FabConversion!.Items) {
+			ElementMapEntry insert = guide.ElementMap.Should().ContainSingle(
+				e => e.MobileName == item.Name && e.Operation == "insert",
+				because: $"the item '{item.Name}' reported for source button '{item.SourceButton}' must be backed by "
+					+ "exactly one synthesized element-map entry — the advisory section alone applies nothing").Which;
+			insert.WebName.Should().BeNull(
+				because: "a synthesized menu item has no web counterpart, so the serialized entry carries no webName");
+			insert.PropertyName.Should().Be("menuItems",
+				because: "converted items are inserted into the FAB's menuItems property, not into a container's items");
+			insert.ParentName.Should().NotBeNullOrWhiteSpace(
+				because: "an insert needs the template FAB's own name as its target");
+			insert.MobileValues.Should().NotBeNull(
+				because: "the caller pastes mobileValues verbatim — an insert that lost them applies nothing");
+			insert.MobileValues!.AsObject().Should().NotContainKey("name",
+				because: "the insert operation carries the name itself; a duplicate inside values is noise");
+			fabParentName ??= insert.ParentName;
+			insert.ParentName.Should().Be(fabParentName,
+				because: "every converted item targets the same template FAB");
+		}
+		guide.FabConversion.Note.Should().NotContain("could not be resolved",
+			because: "the mobile template was read from a reachable environment, so its own FAB must have been "
+				+ "resolved by the template probe rather than assumed — that probe seam is what this tier exists to cover");
+		guide.Constraints.Should().Contain(c => c.Contains("fabConversion is MANDATORY"),
+			because: "the guide must forbid the caller from treating the converted FAB items as a proposal");
+		guide.NextSteps.Should().Contain(s => s.Contains("guide.fabConversion") && s.Contains("MANDATORY"),
+			because: "the ordered steps must tell the caller to state the converted items as fact, not ask for approval");
+	}
+
+	/// <summary>True when an element-map entry is a merge whose values carry a <c>floatAction</c> — the shape
+	/// the platform diff applier silently drops once the mobile template owns that property itself.</summary>
+	private static bool CarriesFloatAction(ElementMapEntry entry) =>
+		entry.Operation == "merge" && entry.MobileValues is JsonObject values && values.ContainsKey("floatAction");
+
 	/// <summary>Position of an entry in the element map by its mobile name, -1 when absent.</summary>
 	private static int IndexOfMobile(MobilePageConversionGuide guide, string mobileName) {
 		for (int i = 0; i < guide.ElementMap.Count; i++) {
@@ -198,10 +300,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	/// <summary>
-	/// Seeded pages most likely to carry tabs first (form/record pages — tabs live on record pages, not
-	/// list pages), then the rest as a fallback; ignores the test when the seed has no pages at all.
+	/// Seeded pages most likely to carry record-page structure first — tabs and header action buttons live
+	/// on form/record pages, not on list pages — then the rest as a fallback; ignores the test when the seed
+	/// has no pages at all.
 	/// </summary>
-	private static async Task<IReadOnlyList<string>> ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+	private static async Task<IReadOnlyList<string>> ResolveSeededRecordPageCandidatesOrIgnoreAsync(
 		McpServerSession session, CancellationToken cancellationToken, string environmentName) {
 		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session, cancellationToken, environmentName, ApplicationCode);
@@ -228,7 +331,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			.ToList();
 		if (candidates.Count == 0) {
 			Assert.Ignore(
-				$"Seeded application '{installedApplication.Code}' has no Freedom UI pages on environment '{environmentName}'. Add at least one tabbed record page to the seed application.");
+				$"Seeded application '{installedApplication.Code}' has no Freedom UI pages on environment '{environmentName}'. Add at least one record page to the seed application.");
 		}
 		return candidates;
 	}
