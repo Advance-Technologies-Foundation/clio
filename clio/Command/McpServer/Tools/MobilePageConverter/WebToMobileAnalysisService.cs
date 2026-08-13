@@ -3463,8 +3463,10 @@ public static class WebToMobileAnalysisService {
 			: candidate.SourceMenuItem;
 		string baseName = (string.IsNullOrWhiteSpace(sourceName) ? "HeaderButton" : sourceName) + "FabMenuItem";
 		string itemName = baseName;
-		for (int i = 2; taken.Contains(itemName); i++) {
-			itemName = baseName + i.ToString(CultureInfo.InvariantCulture);
+		int suffix = 2;
+		while (taken.Contains(itemName)) {
+			itemName = baseName + suffix.ToString(CultureInfo.InvariantCulture);
+			suffix++;
 		}
 		taken.Add(itemName);
 
