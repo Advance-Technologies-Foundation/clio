@@ -49,7 +49,7 @@ public sealed class WebToMobileConversionServiceTests {
 					BindingFrom = "code", NameSuffix = "_ListItem",
 					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 27, 28, 29, 30]
 				},
-				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent"]
+				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent", "activeRow", "bulkActions"]
 			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
@@ -4041,6 +4041,9 @@ public sealed class WebToMobileConversionServiceTests {
 			  "selectionState": "$ProductsList_SelectionState",
 			  "_selectionOptions": { "attribute": "ProductsList_SelectionState" },
 			  "features": { "rows": { "selection": { "enable": true } } },
+			  "activeRow": "$ProductsList_ActiveRow",
+			  "bulkActions": [ { "clicked": { "request": "crt.DeleteRecordsRequest",
+				"params": { "filters": "$ProductsList | crt.ToCollectionFilters : 'ProductsList'" } } } ],
 			  "columns": [
 				{ "id": "c1", "code": "ProductsListDS_Product", "path": "Product", "caption": "#ResourceString(ProductsListDS_Product)#" },
 				{ "id": "c2", "code": "ProductsListDS_Price", "path": "Price", "caption": "#ResourceString(ProductsListDS_Price)#" },
@@ -4096,7 +4099,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		JsonNode values = Element(guide, "ProductsList").MobileValues;
 		foreach (string gridOnly in new[] {
-			"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" }) {
+			"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent",
+			"activeRow", "bulkActions" }) {
 			values[gridOnly].Should().BeNull(
 				because: $"'{gridOnly}' is a web-grid property with no mobile crt.List equivalent — pasting it "
 					+ "verbatim is what left the converted detail showing empty columns (ENG-95046)");
