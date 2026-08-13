@@ -1771,7 +1771,11 @@ public static class WebToMobileAnalysisService {
 					MobileValues = containerValues,
 					Reason = (isPositional
 						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-						: "container; mobile-supported") + RowWithoutTitleNote(ctx, node, type, containerValues)
+						: "container; mobile-supported")
+						// Defensive symmetry: reachable only for a rule that maps a web type to ITSELF and still
+						// declares a rowLayout, which no shipped rule does — a rowLayout exists precisely because
+						// the web type has no mobile counterpart.
+						+ RowWithoutTitleNote(ctx, node, type, containerValues)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, name);
@@ -2203,12 +2207,14 @@ public static class WebToMobileAnalysisService {
 		// Web properties the mapped mobile type has no equivalent for. Deliberately rule-driven, NOT pruned
 		// against the registry — see the copy rule above (ENG-91859). Runs AFTER the row so the source array
 		// (e.g. the grid's columns) can feed the row and still not be carried.
+		ProcessEventBindings(ctx, node, values, mobileName);
+		// AFTER the event pass on purpose: that pass writes values[name] for any event-shaped property, so
+		// dropping first would let it re-add a name this rule just removed.
 		foreach (string drop in mappingRule?.DropProperties ?? []) {
 			if (!string.IsNullOrWhiteSpace(drop)) {
 				values.Remove(drop);
 			}
 		}
-		ProcessEventBindings(ctx, node, values, mobileName);
 		// Synthesize a field label ONLY as a fallback — when the source did not carry one. Most fields carry
 		// their own web `label` verbatim above (e.g. "$Resources.Strings.<attribute>", which auto-resolves to
 		// the bound column's caption); overwriting it with a guessed column-code key breaks that resolution.
@@ -2249,16 +2255,26 @@ public static class WebToMobileAnalysisService {
 			return string.Empty;
 		}
 		// authored by the source, not synthesized here — say nothing about it
-		if (node[rule.TargetProperty] is not null || node[rule.SourceProperty] is not JArray) {
+		if (node[rule.TargetProperty] is not null) {
 			return string.Empty;
 		}
-		JsonNode row = values[rule.TargetProperty];
-		if (row is null || row["title"] is not null) {
+		// Indexing a JsonNode that is not an object THROWS, and the catch-all around the guide turns that into a
+		// failed conversion call — a misconfigured rule must degrade to "no row", never to "no guide".
+		if (values[rule.TargetProperty] is not JsonObject row) {
+			// The row was EXPECTED — this mapping declares one — and could not be built at all: no source array,
+			// none of its entries usable. That renders a blank list, which is worse than a missing title, so it
+			// gets the louder note rather than the silence it used to get.
+			return " — NO ROW could be built for this list: the source carries no usable "
+				+ rule.SourceProperty + " (each entry needs a " + rule.BindingFrom
+				+ " that is a valid binding identifier), so the list would render blank — tell the user and "
+				+ "configure the row in the designer";
+		}
+		if (row["title"] is not null) {
 			return string.Empty;
 		}
-		return " — the row carries no title: the source has no column of a type a mobile list row accepts for "
-			+ "one (it offers text columns only), so ask the user which value the row should lead with and set "
-			+ "it in the designer";
+		return " — the row carries no title: the source has no column of a type a row title accepts (a title "
+			+ "accepts text columns only), so ask the user which value the row should lead with and set it in "
+			+ "the designer";
 	}
 
 	/// <summary>
@@ -2277,7 +2293,7 @@ public static class WebToMobileAnalysisService {
 				return (int)l;
 			case int i:
 				return i;
-			case double d when Math.Abs(d % 1) < double.Epsilon && d is >= int.MinValue and <= int.MaxValue:
+			case double d when d % 1 == 0 && d is >= int.MinValue and <= int.MaxValue:
 				return (int)d;
 			case string s when int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed):
 				return parsed;
@@ -2325,12 +2341,12 @@ public static class WebToMobileAnalysisService {
 		// offers only text columns for a list row's title, so a lookup binds to nothing and leaves the Title
 		// column empty while the body still renders (ENG-95046). A skipped entry is not lost — it becomes a
 		// body row in its original position. With no types declared this degrades to "first entry".
-		// When NO entry declares a value type the rule has nothing to judge by (the source simply does not carry
-		// the property) — fall back to the first entry rather than shipping a row with no title on a page the
-		// types would probably have accepted.
-		bool anyValueTypeKnown = entries.Any(e => e.ValueType.HasValue);
-		int titleIndex = rule.TitleValueTypes is { Count: > 0 } && anyValueTypeKnown
-			? entries.FindIndex(e => e.ValueType.HasValue && rule.TitleValueTypes.Contains(e.ValueType.Value))
+		// An entry whose type the source does not declare is ELIGIBLE, not rejected. Requiring a declared type
+		// would make a PARTLY typed grid behave worse than a wholly untyped one: one typed sibling would be
+		// enough to disqualify the untyped display column, and the row would ship titleless while the note
+		// claimed the source had no acceptable column — which would be false, its type is merely unknown.
+		int titleIndex = rule.TitleValueTypes is { Count: > 0 }
+			? entries.FindIndex(e => !e.ValueType.HasValue || rule.TitleValueTypes.Contains(e.ValueType.Value))
 			: 0;
 		var row = new JObject();
 		if (!string.IsNullOrWhiteSpace(mobileName) && !string.IsNullOrWhiteSpace(rule.NameSuffix)) {

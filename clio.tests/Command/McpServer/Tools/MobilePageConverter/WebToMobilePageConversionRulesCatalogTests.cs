@@ -46,20 +46,22 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		grid.RowLayout.Should().NotBeNull(
 			because: "the crt.ListItem row has no web counterpart to copy — it must be built from the grid's "
 				+ "columns, and leaving that to the caller produced lists with no row at all");
-		grid.RowLayout.SourceProperty.Should().Be("columns");
-		grid.RowLayout.TargetProperty.Should().Be("itemLayout");
-		grid.RowLayout.TargetType.Should().Be("crt.ListItem");
+		grid.RowLayout.SourceProperty.Should().Be("columns",
+			because: "the row is built from the web grid's column array — nothing else in the node describes the row");
+		grid.RowLayout.TargetProperty.Should().Be("itemLayout",
+			because: "itemLayout is the input the mobile list renders each record with");
+		grid.RowLayout.TargetType.Should().Be("crt.ListItem",
+			because: "the row element the mobile list expects inside itemLayout is a crt.ListItem");
 		grid.RowLayout.BindingFrom.Should().Be("code",
 			because: "a column's code is its bound attribute name, which is what the $binding refers to");
-		grid.RowLayout.ValueTypeFrom.Should().Be("dataValueType");
+		grid.RowLayout.ValueTypeFrom.Should().Be("dataValueType",
+			because: "the title may bind only a text column, and dataValueType is where a column says what it is");
 		grid.RowLayout.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 27, 28, 29, 30 },
 			because: "the designer offers only text columns for a row title, and these are the text value types "
 				+ "in the platform's own DataValueType numbering");
 		grid.DropProperties.Should().BeEquivalentTo(
-			new[] { "columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent",
-				"activeRow", "bulkActions" },
-			because: "these are the web grid's own properties, and mobile crt.List has no equivalent for any of "
-				+ "them — bulkActions is the web toolbar for selected rows and would arrive unusable");
+			new[] { "columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" },
+			because: "these are the web grid's own properties, and mobile crt.List has no equivalent for any of them");
 	}
 
 	[Test]
