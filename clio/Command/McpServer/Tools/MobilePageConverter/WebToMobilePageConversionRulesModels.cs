@@ -422,11 +422,23 @@ public sealed class RowLayoutRule {
 	public string ValueTypeFrom { get; init; }
 
 	/// <summary>
-	/// Value types the TITLE may bind. The mobile designer offers only TEXT columns for a list row's title — a
-	/// lookup binds to nothing and renders an empty Title column while the body rows still look correct — so the
-	/// title is the first entry whose value type is listed here, NOT simply the first entry. Every other entry,
-	/// including one skipped over, becomes a body row in source order. When no entry qualifies the row is built
-	/// with no title rather than with an unsupported one. Empty or absent keeps the plain first-entry behaviour.
+	/// Creatio <c>DataValueType</c> ids the TITLE may bind (see <c>CreatioDataValueType</c> for the full map).
+	/// The mobile designer offers only TEXT columns for a list row's title — a lookup binds to nothing and
+	/// renders an empty Title column while the body rows still look correct — so the title is the first entry
+	/// whose value type is listed here, NOT simply the first entry. Every other entry, including one skipped
+	/// over, becomes a body row in source order.
+	/// <para>
+	/// The shipped list is the DISPLAY-text subset of <c>CreatioDataValueKind.Text</c>: 1 Text, 19
+	/// LocalizableString, 27 ShortText, 28 MediumText, 29 MaxSizeText, 30 LongText, 42 PhoneText, 44 WebText,
+	/// 45 EmailText. Deliberately excluded although that kind also covers them: 23 HashText and 24 SecureText
+	/// (surfacing a hash or a secret as the row's headline is wrong, not merely unhelpful), 18 Color and 36
+	/// MetadataText (not a value a reader reads), and 43 RichText (markup, not a single-line headline).
+	/// </para>
+	/// <para>
+	/// An entry whose type the source does not declare is ELIGIBLE — see the remarks on the title choice in
+	/// <c>ApplyRowLayout</c>. A title is omitted only when entries ARE typed and none of them qualifies; the
+	/// element's reason then says so. Empty or absent keeps the plain first-entry behaviour.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("titleValueTypes")]
 	public IReadOnlyList<int> TitleValueTypes { get; init; }
