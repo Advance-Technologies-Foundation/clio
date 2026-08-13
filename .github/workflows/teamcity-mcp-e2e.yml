@@ -31,6 +31,37 @@
 # TeamCity resolves the branch tip at build time. If a newer commit lands while a
 # build is queued, the status can post to the tip rather than the exact commit
 # that triggered this run. Acceptable for an advisory check.
+#
+# ENG-94529 - WHY THE QUEUE STEP IS RETRIED AND PREFLIGHTED.
+# `runs-on: self-hosted` matches EVERY runner in the Default group, and not all of
+# them sit inside the corporate network. On a runner without corporate DNS,
+# teamcity-rnd.bpmonline.com resolves through public DNS to the bpmonline.com web
+# tier (a CNAME chain ending at 52.31.26.85), whose nginx answers /app/rest/... with
+# a bare `404 Not Found`. Roughly a third of the runs died that way - always on the
+# same runner - and the failure read as a broken PR check rather than a broken
+# runner. Two things follow, both implemented below:
+#   * The token is NEVER sent before the target is proven to be TeamCity. The old
+#     single POST sent `Authorization: Bearer <TEAMCITY_TOKEN>` to whatever that
+#     hostname resolved to; on the out-of-network runner the corporate CI token went
+#     to a public web front end. The preflight is unauthenticated and requires the
+#     `TeamCity-Node-Id` response header, which only the real server sets.
+#   * The queue attempt is RETRIED as a chain of jobs. A runner with no route defers
+#     (`queued=false`, exit 0) instead of failing, and the next attempt is a separate
+#     job, so GitHub schedules it wherever a runner is free - which is how an
+#     in-network runner gets reached. The chain is SEQUENTIAL on purpose: the first
+#     version ran two attempts in parallel, both landed on healthy runners (the pool
+#     has more than one) and queued TWO ~45-min full-Creatio builds for the same
+#     branch. An attempt now runs only when no earlier attempt queued anything, so a
+#     duplicate build is impossible by construction rather than by a queue check.
+#     The gate job fails only when NO attempt got through, and names the runners it
+#     tried. This raises the odds rather than guaranteeing the outcome: if every
+#     attempt happens to land on the out-of-network runner, the gate reports exactly
+#     that.
+# THE PROPER FIX IS ONE LINE AND NEEDS A RUNNER ADMIN: label the in-network runners
+# (e.g. `teamcity-net`) and replace `runs-on: self-hosted` with
+# `runs-on: [self-hosted, teamcity-net]`. Once that label exists, delete attempts 2
+# and 3 and the gate - keep the preflight, which is a credential-safety control and
+# not a workaround.
 name: TeamCity MCP e2e
 
 # GITHUB_TOKEN is unused here; drop all scopes so an in-network runner never
@@ -73,8 +104,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  trigger-e2e:
-    name: Trigger TeamCity MCP e2e
+  attempt-1:
+    name: Queue TeamCity MCP e2e (attempt 1)
     runs-on: self-hosted
     # Never pin a shared self-hosted runner if TeamCity is unreachable/stalled.
     timeout-minutes: 10
@@ -87,8 +118,31 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      # Only the workflow's own scripts are needed; checkout must not leave a token
+      # behind on an in-network runner.
+      contents: read
+    outputs:
+      queued: ${{ steps.queue.outputs.queued }}
+      runner: ${{ steps.queue.outputs.runner }}
     steps:
+      # Only .github/scripts, and no credential left in the local git config: the
+      # trigger script is shared by every attempt and lives in the repository so
+      # there is exactly one copy of it.
+      # `path:` is NOT cosmetic. A self-hosted runner reuses one working directory per
+      # repository across every workflow, and a sparse checkout there left the tree
+      # without clio.tests for the next full checkout, which broke the unrelated Unit
+      # Tests job on that runner (run 31490134021). Checking out into a directory of
+      # our own keeps this workflow out of the tree the build workflows compile from.
+      - name: Check out the trigger script
+        uses: actions/checkout@v4
+        with:
+          path: .teamcity-trigger
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
       - name: Queue TeamCity build for the PR branch
+        id: queue
         shell: powershell
         env:
           TC_URL: https://teamcity-rnd.bpmonline.com
@@ -98,40 +152,143 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+          RUNNER_LABEL: ${{ runner.name }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrWhiteSpace($env:TC_TOKEN)) {
-            throw 'TEAMCITY_TOKEN secret is not set - cannot trigger TeamCity.'
-          }
+          . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
 
-          # The e2e config resolves its checkout from BranchNameClio
-          # (root branch = refs/heads/%BranchNameClio%). This works for same-repo
-          # PR heads (they exist as refs/heads/<head.ref>); fork PRs are filtered
-          # out by the job-level `if:` above, so BranchNameClio is always a branch
-          # that exists in the main repo.
-          $shaSuffix = if ([string]::IsNullOrWhiteSpace($env:HEAD_SHA)) { '' } else { " @ $env:HEAD_SHA" }
-          $body = @{
-            buildType  = @{ id = $env:BUILD_TYPE }
-            properties = @{ property = @(
-              @{ name = 'BranchNameClio';                        value = $env:HEAD_REF }
-              @{ name = 'DeployCreatioBuild';                    value = 'true' }
-              @{ name = 'env.McpE2E__AllowDestructiveMcpTests';  value = 'true' }
-              @{ name = 'ProductName';                           value = 'Studio' }
-            ) }
-            comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) - MCP e2e via GitHub Actions" }
-          } | ConvertTo-Json -Depth 6
+  attempt-2:
+    name: Queue TeamCity MCP e2e (attempt 2)
+    needs: attempt-1
+    # Runs only when attempt 1 found no route to TeamCity. `needs` also means this
+    # job is scheduled after attempt 1 released its runner, so it can land on a
+    # different one.
+    if: needs.attempt-1.outputs.queued != 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      # Only the workflow's own scripts are needed; checkout must not leave a token
+      # behind on an in-network runner.
+      contents: read
+    outputs:
+      queued: ${{ steps.queue.outputs.queued }}
+      runner: ${{ steps.queue.outputs.runner }}
+    steps:
+      # Only .github/scripts, and no credential left in the local git config: the
+      # trigger script is shared by every attempt and lives in the repository so
+      # there is exactly one copy of it.
+      # `path:` is NOT cosmetic. A self-hosted runner reuses one working directory per
+      # repository across every workflow, and a sparse checkout there left the tree
+      # without clio.tests for the next full checkout, which broke the unrelated Unit
+      # Tests job on that runner (run 31490134021). Checking out into a directory of
+      # our own keeps this workflow out of the tree the build workflows compile from.
+      - name: Check out the trigger script
+        uses: actions/checkout@v4
+        with:
+          path: .teamcity-trigger
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: Queue TeamCity build for the PR branch
+        id: queue
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: Team_Atf_ClioMcpE2eTests
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+          RUNNER_LABEL: ${{ runner.name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
 
-          # moveToTop: jump the queue so the advisory e2e starts promptly rather
-          # than waiting behind unrelated builds (needs "Reorder builds in queue").
-          $resp = Invoke-RestMethod -Method Post -Uri "$env:TC_URL/app/rest/buildQueue?moveToTop=true" `
-            -Headers @{ Authorization = "Bearer $env:TC_TOKEN"; Accept = 'application/json' } `
-            -ContentType 'application/json' -Body $body -TimeoutSec 60
+  attempt-3:
+    name: Queue TeamCity MCP e2e (attempt 3)
+    needs: [attempt-1, attempt-2]
+    # Third and last try. Two runners without a route in a row is unlikely but the
+    # pool is not fixed, and one more sub-second job is far cheaper than a red check
+    # that has nothing to do with the pull request. No always(): when an attempt
+    # fails for a REAL reason (bad token, rejected request) the chain must stop and
+    # surface it instead of retrying it twice more.
+    if: >-
+      needs.attempt-1.outputs.queued != 'true' &&
+      needs.attempt-2.outputs.queued != 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      # Only the workflow's own scripts are needed; checkout must not leave a token
+      # behind on an in-network runner.
+      contents: read
+    outputs:
+      queued: ${{ steps.queue.outputs.queued }}
+      runner: ${{ steps.queue.outputs.runner }}
+    steps:
+      # Only .github/scripts, and no credential left in the local git config: the
+      # trigger script is shared by every attempt and lives in the repository so
+      # there is exactly one copy of it.
+      # `path:` is NOT cosmetic. A self-hosted runner reuses one working directory per
+      # repository across every workflow, and a sparse checkout there left the tree
+      # without clio.tests for the next full checkout, which broke the unrelated Unit
+      # Tests job on that runner (run 31490134021). Checking out into a directory of
+      # our own keeps this workflow out of the tree the build workflows compile from.
+      - name: Check out the trigger script
+        uses: actions/checkout@v4
+        with:
+          path: .teamcity-trigger
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: Queue TeamCity build for the PR branch
+        id: queue
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: Team_Atf_ClioMcpE2eTests
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+          RUNNER_LABEL: ${{ runner.name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
 
-          # A 2xx with an unexpected body must not read as success - require a build id.
-          if (-not $resp.id) {
-            throw "TeamCity accepted the request but returned no build id - the trigger likely failed."
-          }
-
-          Write-Host "Queued TeamCity build #$($resp.id) on BranchNameClio=$env:HEAD_REF"
-          Write-Host "Build: $($resp.webUrl)"
-          Write-Host "TeamCity's Commit Status Publisher will post the result onto the PR head commit."
+  gate:
+    name: TeamCity MCP e2e trigger
+    needs: [attempt-1, attempt-2, attempt-3]
+    runs-on: ubuntu-latest
+    if: >-
+      always() && (github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      - name: Require that one attempt queued the build
+        shell: bash
+        env:
+          QUEUED_1: ${{ needs.attempt-1.outputs.queued }}
+          QUEUED_2: ${{ needs.attempt-2.outputs.queued }}
+          QUEUED_3: ${{ needs.attempt-3.outputs.queued }}
+          RUNNER_1: ${{ needs.attempt-1.outputs.runner }}
+          RUNNER_2: ${{ needs.attempt-2.outputs.runner }}
+          RUNNER_3: ${{ needs.attempt-3.outputs.runner }}
+          RESULT_1: ${{ needs.attempt-1.result }}
+          RESULT_2: ${{ needs.attempt-2.result }}
+          RESULT_3: ${{ needs.attempt-3.result }}
+        run: |
+          set -euo pipefail
+          echo "attempt-1: result=$RESULT_1 queued=${QUEUED_1:-unset} runner=${RUNNER_1:-unknown}"
+          echo "attempt-2: result=$RESULT_2 queued=${QUEUED_2:-unset} runner=${RUNNER_2:-unknown}"
+          echo "attempt-3: result=$RESULT_3 queued=${QUEUED_3:-unset} runner=${RUNNER_3:-unknown}"
+          if [ "${QUEUED_1:-}" = "true" ] || [ "${QUEUED_2:-}" = "true" ] || [ "${QUEUED_3:-}" = "true" ]; then
+            echo "A TeamCity MCP e2e build is queued. Its result is published onto the PR head commit"
+            echo "by TeamCity's Commit Status Publisher, as a separate commit status."
+            exit 0
+          fi
+          echo "::error::No attempt could reach TeamCity, so no MCP e2e build was queued."
+          echo "Runners tried: ${RUNNER_1:-unknown}, ${RUNNER_2:-unknown}, ${RUNNER_3:-unknown}."
+          echo "This is a runner/network problem, not a problem with the pull request:"
+          echo "teamcity-rnd.bpmonline.com only resolves to the TeamCity server from inside the"
+          echo "corporate network. Label the in-network runners and pin runs-on to that label"
+          echo "(see the comment at the top of this workflow), or bring an in-network runner online."
+          exit 1

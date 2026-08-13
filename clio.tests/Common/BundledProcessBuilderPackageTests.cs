@@ -56,9 +56,24 @@ public class BundledProcessBuilderPackageTests {
 	private const string CompileMarkerSchemaName = "CrtProcessBuilderCompileMarker";
 
 	/// <summary>
+	/// Every top-level entry the bundled archive may contain.
+	/// </summary>
+	/// <remarks>
+	/// Adding to this list is a decision about what runs on a customer's environment, so make it deliberately
+	/// and say why. <c>SqlScripts</c> and <c>Data</c> are the two that must never appear — Creatio executes
+	/// them at install time and the install passes no <c>PackageInstallOptions</c>, so the platform's own
+	/// defaults apply — but the list is an allowlist rather than a ban on those two names, because a denylist
+	/// would need extending for every install-time mechanism the platform grows and would be silently
+	/// incomplete until somebody noticed.
+	/// </remarks>
+	private static readonly string[] AllowedTopLevelEntries = [
+		"descriptor.json", "Files", "Schemas", "Resources"
+	];
+
+	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>9813205</c>, branch
-	/// <c>feature/ENG-94385-rename-crt-process-builder</c>) following that repository's
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>48ac924</c>, branch
+	/// <c>feature/eng-91845-rebundle-restamp</c>) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
 	/// </summary>
@@ -80,9 +95,21 @@ public class BundledProcessBuilderPackageTests {
 	/// below must match the descriptor at the commit named above. Committing that restamp on the package side
 	/// is part of every rebundle; the runbook says so.
 	/// </para>
+	/// <para>
+	/// It has since been wrong a THIRD way, which no amount of checking the date would have caught: the bytes
+	/// did not correspond to ANY commit. Nine sources differed from a real checkout of the referenced commit by
+	/// LINE ENDINGS alone — the archive carried LF where a checkout produces CRLF — because it was cut from
+	/// freshly written files before they had round-tripped through git, and this host normalises on checkout
+	/// (<c>core.autocrlf=true</c>). Identical content, different bytes, unreproducible hash. So the reference
+	/// is only verifiable if the archive is packed from a CLEAN checkout: pack from a tree carrying
+	/// just-written files and the pin records bytes nobody can reproduce, which leaves this constant detecting
+	/// change while establishing nothing about provenance. The bytes pinned below were verified entry-by-entry
+	/// against a checkout of the commit named above — identical, the only file not in the archive being the
+	/// <c>.DotSettings</c> that <c>clioignore</c> excludes.
+	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"19B3C2FD666D3B74D44634F644DC728EF4183A65D3872906E4D59D77A8CC8911";
+		"5FACA4FD3D262CC8D02BA1E1ECD8270B435DEDBC0ACFED28D6F0E7FD2FFD4385";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -107,7 +134,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.0.0.0";
+	private const string ExpectedArchiveVersion = "1.1.0.0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -133,7 +160,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786345127000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1786550573000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -675,8 +702,12 @@ public class BundledProcessBuilderPackageTests {
 		entries.Should().NotContain(
 			entry => entry.EndsWith($"{BundledPackages.ProcessBuilderPackageName}.pdb",
 				StringComparison.OrdinalIgnoreCase),
-			because: "symbols travel with a leaked build output and are the same accident by a different name; "
-				+ "neither runbook passes --skip-pdb - both delete Files/Bin instead, which is what removes the pdb along with the assembly - so this assertion is the check on THAT step, not on a flag");
+			because: "symbols travel with a leaked build output and are the same accident by a different name. "
+				+ "BOTH runbooks pass --skip-pdb, and both also delete Files/Bin, which is what actually removes "
+				+ "the pdb along with the assembly - so this assertion checks the OUTCOME rather than either "
+				+ "step. The earlier version of this sentence claimed neither runbook passed the flag, which was "
+				+ "false for the script and would have told the next reader not to look for it while the manual "
+				+ "path silently produced different bytes for the same archive");
 		entries.Should().NotContain(
 			entry => entry.StartsWith("Files/Bin/", StringComparison.OrdinalIgnoreCase),
 			because: "Files/Bin is the csproj's unconditional OutputPath and clioignore does not filter it, so "
@@ -703,6 +734,53 @@ public class BundledProcessBuilderPackageTests {
 			because: "ErrorOr and ATF.Repository are real compile references absent from the platform core, so "
 				+ "dropping either ships source the target cannot build; and any OTHER dll is a leaked build "
 				+ "output, which would survive a failed compile and answer from stale code");
+	}
+
+	[Test]
+	[Description("The archive may contain NOTHING that executes on install beyond the sources the target compiles. This is the only pin that constrains what else is in there: every other check in this fixture is a substring probe over the decompressed text or a descriptor field, and the DLL inventory above covers .dll entries alone. Creatio applies its own defaults for SQL scripts and bound data because the install passes no PackageInstallOptions, so a SqlScripts/ or Data/ folder arriving in this archive would run arbitrary SQL and write bound rows — role membership, granted operations, system settings — on every customer environment that installs it. The whole-archive SHA-256 does not compensate: the rebundle script refreshes it from the archive it just produced, so the clio-side diff for such an addition is one hash line, one date line and a binary blob.")]
+	public void BundledArchive_ShouldContainNothingThatExecutesOnInstall() {
+		// Arrange
+		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
+
+		// Act
+		List<string> unexpectedTopLevel = entries
+			.Select(entry => entry.Split('/')[0])
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.Where(top => !AllowedTopLevelEntries.Contains(top, StringComparer.OrdinalIgnoreCase))
+			.ToList();
+		List<string> schemaFolders = entries
+			.Where(entry => entry.StartsWith("Schemas/", StringComparison.OrdinalIgnoreCase))
+			.Select(entry => entry.Split('/')[1])
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		// Assert
+		// Every allowlisted name must actually BE in the archive, for the same reason the ungated-operation
+		// allowlist is presence-checked: a name left behind after the thing it named stopped shipping silently
+		// widens what this test tolerates, and nothing else would notice.
+		List<string> presentTopLevel = entries
+			.Select(entry => entry.Split('/')[0])
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		foreach (string allowed in AllowedTopLevelEntries) {
+			presentTopLevel.Should().Contain(
+				present => string.Equals(present, allowed, StringComparison.OrdinalIgnoreCase),
+				because: $"'{allowed}' is on the allowlist, so it must still be something the archive ships — an "
+					+ "entry left on the list after it stopped shipping widens the check below without saying so");
+		}
+		// An ALLOWLIST, not a ban on the two folder names that motivated it. A denylist would have to be
+		// extended for every install-time mechanism Creatio grows, and would be silently wrong until someone
+		// noticed the new one — which is the same shape of failure this whole fixture exists to prevent.
+		unexpectedTopLevel.Should().BeEmpty(
+			because: "a source-only package needs exactly the descriptor, the sources and their resources. "
+				+ $"Anything else is either inert (then say so and add it to {nameof(AllowedTopLevelEntries)} "
+				+ "deliberately) or it executes on the customer's environment at install time, which is a "
+				+ "decision nobody should be able to make by dropping a folder into the producing repository");
+		schemaFolders.Should().BeEquivalentTo([CompileMarkerSchemaName],
+			because: "the compile marker is the only schema this package ships, and it is empty on purpose. A "
+				+ "second schema is not inert: a ProcessSchema can carry a script task, and a client schema "
+				+ "reaches the UI — both would install and run under the package's own name, below the "
+				+ "CanManageProcessDesign gate that protects everything the service itself does");
 	}
 
 	[Test]

@@ -26,6 +26,10 @@ resolve to a commit, and an explicit commit remains immutable. When a Git source
 reference, only a successful update persists the discovered remote default branch. An
 already-running MCP server observes successful per-library activation changes without restarting.
 
+Human-readable output uses a short operation summary followed by one vertical block per source. This
+keeps each status and message readable in ordinary terminal widths instead of placing every source in
+a table. Use `--json` when the structured per-source result will be consumed by automation.
+
 ## Options
 
 ```bash

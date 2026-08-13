@@ -164,7 +164,7 @@ public sealed class InstallProcessBuilderTool(
 	private CommandExecutionResult RunInstall(
 		InstallProcessBuilderOptions options, StrongBox<bool> callerAlreadyAnswered) {
 		string tenantKey = ResolveTenantLockKey(options);
-		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey)) {
+		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation)) {
 			// Caller-actionable refusal (exit 1), not a clio failure: waiting fixes it. Deliberately fails
 			// fast — a second install would rebuild and restart an instance that is already being rebuilt.
 			return CommandExecutionResult.FromValidationError(
@@ -181,7 +181,7 @@ public sealed class InstallProcessBuilderTool(
 			return result;
 		}
 		finally {
-			McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey);
+			McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
 		}
 	}
 

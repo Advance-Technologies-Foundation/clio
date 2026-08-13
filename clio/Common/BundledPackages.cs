@@ -27,7 +27,7 @@ namespace Clio.Common;
 /// </description></item>
 /// <item><description>
 /// the ASSEMBLY version <c>1.1.1.2</c> — <c>cliogate/Properties/AssemblyInfo.cs</c> and
-/// <c>cliogate/version.txt</c>, both hand-maintained and NOT touched by <c>build.ps1</c>.
+/// <c>clio/cliogate/version.txt</c>, both hand-maintained and NOT touched by <c>build.ps1</c>.
 /// </description></item>
 /// <item><description>
 /// seven <c>[RequiresPackage("cliogate", …)]</c> sites, which are NOT copies of either. Four require only

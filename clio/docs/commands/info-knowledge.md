@@ -26,6 +26,11 @@ transports. An update check reports availability but does not install or activat
 default-branch discovery during an information request never changes source configuration. Output
 never includes transport credentials, tokens, authorization headers, or other secrets.
 
+Human-readable output uses a short knowledge-location block followed by one vertical block per source.
+This keeps paths, digests, diagnostics, and installation state readable in ordinary terminal widths
+instead of placing every field in one wide table. Empty optional values are omitted. Use `--json` when
+the complete structured result will be consumed by automation.
+
 ## Options
 
 ```bash

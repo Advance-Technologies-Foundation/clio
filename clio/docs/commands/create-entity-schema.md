@@ -17,6 +17,12 @@ The command saves the schema, applies the DB structure, and publishes the
 configuration, so the new schema is immediately visible to lookup pickers and
 sys-setting reference schema lists. No separate compile is required.
 
+When `--parent` is omitted the schema inherits `BaseEntity` by default. A parentless
+root schema gets a prefixed primary column (e.g. `UsrId` instead of `Id`) and is not
+reachable over OData in either direction, so `BaseEntity` is applied automatically to
+keep the entity usable. Pass `--parent` explicitly to inherit from a different schema;
+`--extend-parent` still requires an explicit `--parent`.
+
 Set `--is-virtual` when the schema must not have a physical database table.
 The option defaults to `false`, so existing calls continue to create persistent entities.
 
@@ -45,7 +51,7 @@ Schema name. Required.
 --title <VALUE>
 Schema title. Required.
 --parent <VALUE>
-Parent schema name
+Parent schema name. Defaults to `BaseEntity` when omitted (not applied with `--extend-parent`).
 --extend-parent
 Create replacement schema
 --is-virtual
@@ -129,8 +135,9 @@ cliogate must be installed on the target Creatio environment.
 ## Notes
 
 - `default-value-config` is recommended for non-constant sources.
-- A root schema uses its first Guid column as the primary column and adds a generated Guid column when none is supplied. A schema with a parent preserves the parent's primary column; custom Guid columns remain ordinary columns.
-- `--is-virtual` is independent of inheritance and replacement behavior; use it only for entities whose data comes from a custom provider rather than a Creatio table.
+- When `--parent` is omitted the schema defaults to `BaseEntity`; pass `--parent` explicitly to inherit from a different schema. A parentless root schema (reachable only when a parent is forced empty in a direct API call) uses its first Guid column as the primary column and adds a generated, prefixed Guid column when none is supplied, which makes it unusable over OData — hence the default.
+- A schema with a parent preserves the parent's primary column; custom Guid columns remain ordinary columns.
+- `--is-virtual` controls only whether a physical database table is created; it does not change parent defaulting. A virtual schema created without `--parent` still inherits `BaseEntity` and remains tableless, and `--is-virtual` combines with an explicit `--parent` or `--extend-parent`. Use it for entities whose data comes from a custom provider rather than a Creatio table.
 - For `default-value-config.source = SystemValue`, `value-source` can be Guid, alias, or caption; clio persists canonical Guid.
 - For `default-value-config.source = Settings`, `value-source` can be code, name, or id; clio persists canonical setting code.
 - For `default-value-config.source = Sequence` (text columns only), the static prefix comes from `sequence-prefix` (e.g. `LN-`) or from a `value` mask whose single `{0}` placeholder is at the end (e.g. `LN-{0}` produces `LN-00001`); setting both is rejected. Masks with static text after `{0}` (a suffix) are not supported and fail with a validation error instead of being silently dropped.

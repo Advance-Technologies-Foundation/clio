@@ -396,7 +396,41 @@ if ($dlls.Count -ne $expectedLibs.Count) {
 if (-not ($entries | Where-Object { $_.Name -like '*CrtProcessBuilderCompileMarker*' })) {
     Die 'The compile-marker schema is missing. Without it the package installs and is NEVER compiled, and no database read shows the difference.'
 }
-Ok "$($entries.Count) entries, $($dlls.Count) DLLs (both Files/Libs), compile marker present, no own assembly"
+
+# What else is in there. An ALLOWLIST of top-level entries, because the risk is not the two folder names we
+# happen to know about: Creatio executes SqlScripts/ and writes bound data from Data/ at install time, and this
+# install passes no PackageInstallOptions, so the platform's own defaults apply. A folder arriving here from a
+# stale branch or a bad merge in the producing repository would therefore run arbitrary SQL and write role
+# membership, granted operations or system settings on EVERY customer environment that installs the package -
+# with every other check in this script and in the clio guard fixture still green, because they look at DLLs,
+# the compile marker and text probes. Step 6 then rewrites the SHA pin from this very archive, so the
+# clio-side diff would be one hash line and a blob. Fail here, before any of that is committed.
+$allowedTopLevel = @('descriptor.json', 'Files', 'Schemas', 'Resources')
+# @() around every pipeline result, and .Count rather than truthiness. PowerShell unrolls a one-element
+# pipeline to a SCALAR and a zero-element one to $null, so an unwrapped result cannot be indexed or counted
+# safely - the schema check below shipped broken for exactly that reason. `.Trim('/')` matches
+# CompressionUtilities.NormalizeEntryPath, which the C# twin reads through; without it a leading separator
+# would yield '' as the top-level segment here and the real segment there.
+$unexpected = @($entries |
+    ForEach-Object { ((($_.Name -replace '\\', '/').Trim('/')) -split '/')[0] } |
+    Sort-Object -Unique |
+    Where-Object { $allowedTopLevel -notcontains $_ })
+if ($unexpected.Count -gt 0) {
+    Die ("The archive contains top-level entries that are not part of a source-only package: " +
+         "$($unexpected -join ', '). Allowed: $($allowedTopLevel -join ', '). SqlScripts/ and Data/ in " +
+         'particular EXECUTE on the target at install time. If one of these is genuinely inert, add it to ' +
+         '$allowedTopLevel here AND to AllowedTopLevelEntries in the clio guard fixture, deliberately.')
+}
+$schemaFolders = @($entries |
+    Where-Object { ($_.Name -replace '\\', '/').Trim('/') -like 'Schemas/*' } |
+    ForEach-Object { ((($_.Name -replace '\\', '/').Trim('/')) -split '/')[1] } |
+    Sort-Object -Unique)
+if ($schemaFolders.Count -ne 1 -or $schemaFolders[0] -ne 'CrtProcessBuilderCompileMarker') {
+    Die ("The archive must ship exactly one schema, the compile marker; found: $($schemaFolders -join ', '). " +
+         'A second schema is not inert - a ProcessSchema can carry a script task and a client schema reaches ' +
+         "the UI, both running under the package's own name.")
+}
+Ok "$($entries.Count) entries, $($dlls.Count) DLLs (both Files/Libs), compile marker present, no own assembly, nothing that executes on install"
 
 # ---------------------------------------------------------------- 6. pins, computed from the archive
 Step '6. Refresh the clio-side pins FROM the archive just produced'
