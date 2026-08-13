@@ -4244,6 +4244,55 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A value type is read whether the source encodes it as an integer, a float or a quoted string — reading only the integer form would silently score a typed column as untyped and drop it out of the running for the title in a grid where other columns ARE typed.")]
+	public void Analyze_MobileValues_ValueTypeEncodings_AreAllUnderstood() {
+		// Arrange — the text column is the one encoded as a STRING; the lookup ahead of it is a plain integer,
+		// so the grid is "partly typed" and the fallback to first-entry does not apply.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Mixed", "type": "crt.DataGrid", "items": "$Mixed",
+				  "columns": [
+					{ "id": "c1", "code": "MixedDS_Owner", "dataValueType": 10 },
+					{ "id": "c2", "code": "MixedDS_Name", "dataValueType": "30" },
+					{ "id": "c3", "code": "MixedDS_Note", "dataValueType": 28.0 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "Mixed").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$MixedDS_Name",
+			because: "the quoted \"30\" is LONG_TEXT just as much as the number 30 is, so that column qualifies "
+				+ "for the title even though a lookup precedes it");
+		row["body"].AsArray().Select(x => x["value"]?.GetValue<string>()).Should().Equal(
+			new[] { "$MixedDS_Owner", "$MixedDS_Note" },
+			because: "the lookup passed over keeps its position, and 28.0 is read as MEDIUM_TEXT for the body");
+	}
+
+	[Test]
+	[Description("A node that authored its OWN row without a title gets NO missing-title note: the absence is the author's choice, not a source that had nothing acceptable to offer.")]
+	public void Analyze_Reason_AuthoredRowWithoutTitle_GetsNoNote() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Authored", "type": "crt.DataGrid", "items": "$Authored",
+				  "itemLayout": { "type": "crt.ListItem", "body": [ { "value": "$AuthoredDS_Any" } ] },
+				  "columns": [ { "id": "c1", "code": "AuthoredDS_Any", "dataValueType": 10 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "Authored");
+		grid.MobileValues["itemLayout"]["title"].Should().BeNull(because: "the authored row carried no title");
+		grid.Reason.Should().NotContain("no title",
+			because: "the note explains that the SOURCE had no acceptable column; here the row was not "
+				+ "synthesized at all, so claiming that would be wrong");
+	}
+
+	[Test]
 	[Description("The row is emitted INSIDE the list's own values and never as a separate element-map entry: crt.List is not a container and itemLayout is an input, so an insert addressing it as a child slot fails the client-side container check and breaks the build of the WHOLE schema, not just the list.")]
 	public void Analyze_ElementMap_RowIsNeverASeparateInsert() {
 		// Arrange & Act

@@ -1762,15 +1762,16 @@ public static class WebToMobileAnalysisService {
 				//    inserts into the mobile Tabs as a new tab; a positional sibling inserts into the mobile
 				//    anchor's parent (± index) instead of the walk parent.
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
+				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
 					ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
 					Index = isPositional ? place.Index : null,
 					CaptionResource = containerCaption,
-					MobileValues = BuildMobileValues(ctx, node, name, type, containerCaption),
-					Reason = isPositional
+					MobileValues = containerValues,
+					Reason = (isPositional
 						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-						: "container; mobile-supported"
+						: "container; mobile-supported") + RowWithoutTitleNote(ctx, node, type, containerValues)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, name);
@@ -1801,7 +1802,7 @@ public static class WebToMobileAnalysisService {
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				Reason = leafReason + RowWithoutTitleNote(ctx, node, leafValues)
+				Reason = leafReason + RowWithoutTitleNote(ctx, node, leafMobileType, leafValues)
 			});
 		}
 	}
@@ -2226,24 +2227,63 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// The note appended to a converted list's reason when its row was built but could take NO title: the source
-	/// grid carries no column of a type the mobile row accepts (all lookups / dates / numbers). Reported rather
-	/// than left silent, because an empty Title column in the designer otherwise looks like a converter failure
-	/// and the caller has no way to tell it apart from one. Empty string whenever a title was set, the element is
-	/// not a synthesized row, or the row was not built at all.
+	/// The note appended to a converted element's reason when the converter SYNTHESIZED its row and that row
+	/// could take no title: the source carries no entry of a type the target accepts for one (all lookups /
+	/// dates / numbers). Reported rather than left silent, because an empty Title column in the designer
+	/// otherwise looks like a converter failure and the caller cannot tell it apart from one.
+	/// <para>
+	/// Three conditions keep it honest. The element must be converted THROUGH the mapping (same guard as
+	/// <see cref="BuildMobileValues"/>, so a web type that survives as itself is never annotated). The row must
+	/// have been SYNTHESIZED — a node that authored its OWN target property kept it, and its missing title is
+	/// the author's choice, not a source that had nothing to offer. And the source array must be present at all.
+	/// </para>
 	/// </summary>
-	private static string RowWithoutTitleNote(ElementMapContext ctx, JObject node, JsonNode values) {
-		RowLayoutRule rule = FindRule(ctx.Rules, node["type"]?.ToString())?.RowLayout;
-		if (rule is null || string.IsNullOrWhiteSpace(rule.TargetProperty) || values is null) {
+	private static string RowWithoutTitleNote(
+		ElementMapContext ctx, JObject node, string mobileType, JsonNode values) {
+		ComponentEquivalenceRule mapping = FindRule(ctx.Rules, node["type"]?.ToString());
+		bool convertedByRule = mapping?.Mobile is not null
+			&& mapping.Mobile.Any(m => string.Equals(m, mobileType, StringComparison.OrdinalIgnoreCase));
+		RowLayoutRule rule = convertedByRule ? mapping.RowLayout : null;
+		if (rule is null || string.IsNullOrWhiteSpace(rule.TargetProperty)
+			|| string.IsNullOrWhiteSpace(rule.SourceProperty) || values is null) {
+			return string.Empty;
+		}
+		// authored by the source, not synthesized here — say nothing about it
+		if (node[rule.TargetProperty] is not null || node[rule.SourceProperty] is not JArray) {
 			return string.Empty;
 		}
 		JsonNode row = values[rule.TargetProperty];
 		if (row is null || row["title"] is not null) {
 			return string.Empty;
 		}
-		return " — the row carries no title: the source grid has no column of a type a mobile list row accepts "
-			+ "for one (it offers text columns only), so ask the user which value the row should lead with and "
-			+ "set it in the designer";
+		return " — the row carries no title: the source has no column of a type a mobile list row accepts for "
+			+ "one (it offers text columns only), so ask the user which value the row should lead with and set "
+			+ "it in the designer";
+	}
+
+	/// <summary>
+	/// Reads a source entry's value type tolerantly. A page body is JSON from a customer environment, so the
+	/// same value can arrive as an integer, a float (<c>28.0</c>) or a quoted string (<c>"28"</c>). Reading only
+	/// the integer form would silently score a typed column as untyped, which — in a grid where OTHER columns
+	/// are typed — drops it out of the running for the title without any sign that it happened. Null when the
+	/// token is absent or is not a whole number in any of those encodings.
+	/// </summary>
+	private static int? ReadValueType(JToken token) {
+		if (token is not JValue { Value: not null } value) {
+			return null;
+		}
+		switch (value.Value) {
+			case long l when l is >= int.MinValue and <= int.MaxValue:
+				return (int)l;
+			case int i:
+				return i;
+			case double d when Math.Abs(d % 1) < double.Epsilon && d is >= int.MinValue and <= int.MaxValue:
+				return (int)d;
+			case string s when int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed):
+				return parsed;
+			default:
+				return null;
+		}
 	}
 
 	/// <summary>
@@ -2274,9 +2314,9 @@ public static class WebToMobileAnalysisService {
 				Binding: entry[rule.BindingFrom]?.ToString(),
 				ValueType: string.IsNullOrWhiteSpace(rule.ValueTypeFrom)
 					? null
-					: (entry[rule.ValueTypeFrom] as JValue)?.Value as long? ))
+					: ReadValueType(entry[rule.ValueTypeFrom])))
 			.Where(e => !string.IsNullOrWhiteSpace(e.Binding) && BindingIdentifierPattern.IsMatch(e.Binding))
-			.Select(e => ("$" + e.Binding, (int?)e.ValueType))
+			.Select(e => ("$" + e.Binding, e.ValueType))
 			.ToList();
 		if (entries.Count == 0) {
 			return;
