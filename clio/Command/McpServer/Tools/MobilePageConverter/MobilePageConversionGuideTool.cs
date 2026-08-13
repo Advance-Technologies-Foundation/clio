@@ -248,7 +248,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
 				mobileTemplateTypesByName: mobileTemplateProbe.TypesByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
-				webTemplateUnavailable: webTemplateBaseline.Unavailable);
+				webTemplateUnavailable: webTemplateBaseline.Unavailable,
+				webTemplateResources: webTemplateBaseline.Resources);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -302,7 +303,8 @@ public sealed class MobilePageConversionGuideTool {
 	private sealed record WebTemplateBaseline(
 		IReadOnlySet<string> Names,
 		IReadOnlyDictionary<string, JObject> Nodes,
-		bool Unavailable);
+		bool Unavailable,
+		JObject Resources);
 
 	/// <summary>
 	/// Best-effort read of the source page's web template (its parent schema, e.g. PageWithTabsFreedomTemplate)
@@ -314,7 +316,7 @@ public sealed class MobilePageConversionGuideTool {
 	private WebTemplateBaseline LoadWebTemplateBaseline(string parentSchemaName, string ownSchemaName, MobilePageConversionGuideArgs args) {
 		var emptyNodes = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
 		var absent = new WebTemplateBaseline(
-			new HashSet<string>(StringComparer.OrdinalIgnoreCase), emptyNodes, Unavailable: false);
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase), emptyNodes, Unavailable: false, Resources: null);
 		if (string.IsNullOrWhiteSpace(parentSchemaName)) {
 			return absent;
 		}
@@ -345,8 +347,13 @@ public sealed class MobilePageConversionGuideTool {
 				// One traversal: derive Names from the node map's keys rather than walking the tree twice.
 				IReadOnlyDictionary<string, JObject> nodes =
 					WebToMobileAnalysisService.CollectComponentNodesByName(viewConfig);
+				// The template's own resource strings — the delta baseline for a twin's caption VALUE (a rename
+				// keeps the same token, so the resolved text is what distinguishes it from the inherited label).
+				JObject resources = templateResponse.Bundle.Resources?.Strings is { } strings
+					? JObject.Parse(strings.ToJsonString())
+					: null;
 				return new WebTemplateBaseline(
-					new HashSet<string>(nodes.Keys, StringComparer.OrdinalIgnoreCase), nodes, Unavailable: false);
+					new HashSet<string>(nodes.Keys, StringComparer.OrdinalIgnoreCase), nodes, Unavailable: false, Resources: resources);
 			}
 		} catch (Exception) {
 			// Best-effort: fall through to Unavailable below.
@@ -354,7 +361,7 @@ public sealed class MobilePageConversionGuideTool {
 		// A template name was known but the bundle could not be read — flag it so the caller does not treat the
 		// missing baseline as "the page changed everything" without a signal.
 		return new WebTemplateBaseline(
-			new HashSet<string>(StringComparer.OrdinalIgnoreCase), emptyNodes, Unavailable: true);
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase), emptyNodes, Unavailable: true, Resources: null);
 	}
 
 	/// <summary>

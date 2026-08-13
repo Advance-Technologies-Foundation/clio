@@ -111,7 +111,8 @@ public static class WebToMobileAnalysisService {
 		bool mobileTemplateUnavailable = false,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
-		bool webTemplateUnavailable = false) {
+		bool webTemplateUnavailable = false,
+		JObject webTemplateResources = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -186,7 +187,7 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor,
-			mobileTypesByName, webBaselineNodes);
+			mobileTypesByName, webBaselineNodes, webTemplateResources);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -1567,7 +1568,8 @@ public static class WebToMobileAnalysisService {
 		Dictionary<string, int> GridContainerColumns,
 		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
 		IReadOnlyDictionary<string, string> MobileTypesByName,
-		IReadOnlyDictionary<string, JObject> WebBaselineNodes);
+		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
+		JObject WebBaselineResources);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -1591,7 +1593,8 @@ public static class WebToMobileAnalysisService {
 		Dictionary<string, int> gridContainerColumns,
 		IReadOnlyDictionary<string, string> positionalParentByAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
-		IReadOnlyDictionary<string, JObject> webBaselineNodes) {
+		IReadOnlyDictionary<string, JObject> webBaselineNodes,
+		JObject webBaselineResources) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -1600,7 +1603,8 @@ public static class WebToMobileAnalysisService {
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase));
+			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
+			webBaselineResources);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
@@ -1871,14 +1875,19 @@ public static class WebToMobileAnalysisService {
 				}
 				continue;
 			}
-			// caption: the page's label OVERRIDES the template element's, so carry it ALWAYS (not delta-gated). A
-			// Freedom UI rename keeps the SAME #ResourceString token and only changes the resource value, so a delta
-			// comparison would miss it. Carrying the token verbatim points the mobile element at the page's caption
-			// key; CollectResourceStrings then registers that key from the page's strings, so update-page ADDS the
-			// page's caption text to the mobile schema. (NOT re-keyed: unlike an insert of a NEW element, a merge
-			// keeps the page's own key, which the mobile template does not own for a renamed element.)
+			// caption: the page's label OVERRIDES the template element's, but ONLY when the page actually RENAMED
+			// it and the twin can carry that override. A Freedom UI rename keeps the SAME #ResourceString token and
+			// changes only the resolved VALUE, so compare the RESOLVED text (page strings vs the web template's),
+			// not the token — a "carry always" would push the inherited template caption onto every untouched twin.
+			// And SKIP an automatic same-name twin: same name => same resource key, which the mobile template owns,
+			// so update-page would never overwrite it (an inert instruction). A name-mapped twin keeps the page's
+			// own key, which the mobile element does not own, so the override lands and CollectResourceStrings
+			// registers the page's text into the mobile schema.
 			if (string.Equals(prop.Name, "caption", StringComparison.OrdinalIgnoreCase)) {
-				values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+				bool sameNameTwin = string.Equals(webName, mobileName, StringComparison.OrdinalIgnoreCase);
+				if (!sameNameTwin && CaptionValueChanged(ctx, prop.Value, baseline["caption"])) {
+					values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+				}
 				continue;
 			}
 			// Element identity, the value binding, and placement (layoutConfig — owned by the template) are excluded.
@@ -2011,6 +2020,33 @@ public static class WebToMobileAnalysisService {
 			return (cultures["en-US"] ?? cultures.Properties().FirstOrDefault()?.Value)?.ToString();
 		}
 		return value.ToString();
+	}
+
+	/// <summary>
+	/// True when the page RENAMED a same-component twin's caption — the page's resolved label text differs from
+	/// the web template's for the SAME element. A Freedom UI rename keeps the same <c>#ResourceString</c> token and
+	/// changes only the resolved VALUE, so a token comparison misses it and a "carry always" would push the
+	/// inherited template caption onto every untouched twin. A caption the template did NOT have, or a changed
+	/// TOKEN, is a change; for an identical token the resolved text is compared (page strings vs the web template's
+	/// via <see cref="ElementMapContext.WebBaselineResources"/>) — treated as UNCHANGED when either side cannot be
+	/// resolved, so the inherited caption is never over-carried.
+	/// </summary>
+	private static bool CaptionValueChanged(ElementMapContext ctx, JToken pageCaption, JToken baselineCaption) {
+		if (pageCaption is null) {
+			return false;
+		}
+		if (baselineCaption is null || !JToken.DeepEquals(baselineCaption, pageCaption)) {
+			return true; // the page added a caption the template lacked, or bound it to a different token
+		}
+		// Same token — a value-only rename. Compare the resolved label on both sides; a template value we cannot
+		// resolve counts as "not a rename" (never over-carry the inherited caption).
+		string key = ResourceStringHelper.ExtractKeys(pageCaption.ToString()).FirstOrDefault();
+		if (string.IsNullOrEmpty(key)) {
+			return false; // identical literal caption — unchanged
+		}
+		string pageText = ResolveResourceString(ctx.Resources, key);
+		string baseText = ResolveResourceString(ctx.WebBaselineResources, key);
+		return pageText is not null && baseText is not null && !string.Equals(pageText, baseText, StringComparison.Ordinal);
 	}
 
 	/// <summary>

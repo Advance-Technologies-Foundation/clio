@@ -87,7 +87,8 @@ public sealed class WebToMobileConversionServiceTests {
 		bool mobileTemplateUnavailable = false,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
-		bool webTemplateUnavailable = false) =>
+		bool webTemplateUnavailable = false,
+		JObject webTemplateResources = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -102,7 +103,12 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateUnavailable: mobileTemplateUnavailable,
 			mobileTemplateTypesByName: mobileTemplateTypesByName,
 			webTemplateBaselineNodes: webTemplateBaselineNodes,
-			webTemplateUnavailable: webTemplateUnavailable);
+			webTemplateUnavailable: webTemplateUnavailable,
+			webTemplateResources: webTemplateResources);
+
+	/// <summary>The web template's own resource strings (key → { culture: text }) — the delta baseline a
+	/// twin's caption VALUE is compared against.</summary>
+	private static JObject TemplateResources(string json) => JObject.Parse(json);
 
 	/// <summary>name → type map for a mobile template (drives the AUTOMATIC same-component twin).</summary>
 	private static IReadOnlyDictionary<string, string> MobileTypesByName(params (string name, string type)[] entries) {
@@ -2060,14 +2066,86 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A page caption OVERRIDES the template element's on a twin merge: it is carried verbatim (the page's own #ResourceString token, NOT re-keyed) and its resource key is registered in the guide's resourceStrings, so update-page adds the page's caption text to the mobile schema. Carried ALWAYS — a rename keeps the same token, which a delta comparison would miss.")]
-	public void Analyze_AutoComponentTwin_CarriesPageCaptionAndRegistersResource() {
-		// Arrange — the page renamed the inherited Feed's caption and changed its data source.
+	[Description("A page that RENAMED a name-mapped twin's caption (its resolved text differs from the web template's for the same key) OVERRIDES the template label: the caption is carried verbatim (the page's own key, which the mobile element does not own) and registered in resourceStrings, so update-page adds the page's text. Compared by RESOLVED value — a rename keeps the same token.")]
+	public void Analyze_TemplateComponentTwin_NameMapped_CarriesRenamedCaption() {
+		// Arrange — page renamed AttachmentList_caption to "Files"; the web template's own value is "Attachments".
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead", "caption": "#ResourceString(AttachmentList_caption)#" } ] } ]
+			""",
+			resourcesJson: """{ "AttachmentList_caption": { "en-US": "Files" } }""");
+		var web = Reg(("crt.TabContainer", true), ("crt.FileList", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentsTabContainer"] = "AttachmentsContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+		IReadOnlySet<string> templateNames = Names("AttachmentsTabContainer", "AttachmentList");
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "AttachmentList", "type": "crt.FileList", "caption": "#ResourceString(AttachmentList_caption)#" } ]
+			""");
+		JObject templateResources = TemplateResources("""{ "AttachmentList_caption": { "en-US": "Attachments" } }""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap,
+			webTemplateBaselineNodes: baseline, webTemplateResources: templateResources);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["caption"]!.GetValue<string>().Should().Be("#ResourceString(AttachmentList_caption)#",
+			because: "the page renamed the label — its caption overrides the template's, carried verbatim");
+		guide.ResourceStrings.Should().ContainKey("AttachmentList_caption").WhoseValue.Should().Be("Files",
+			because: "the page's renamed label is registered so update-page adds it to the mobile schema");
+	}
+
+	[Test]
+	[Description("A name-mapped twin whose caption the page did NOT rename (its resolved value equals the web template's) does NOT carry the caption — the inherited template label is never pushed onto the mobile element; only the real data change carries.")]
+	public void Analyze_TemplateComponentTwin_NameMapped_UnchangedCaption_NotCarried() {
+		// Arrange — the caption value is identical on both sides; only recordColumnName changed.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead", "caption": "#ResourceString(AttachmentList_caption)#" } ] } ]
+			""",
+			resourcesJson: """{ "AttachmentList_caption": { "en-US": "Attachments" } }""");
+		var web = Reg(("crt.TabContainer", true), ("crt.FileList", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentsTabContainer"] = "AttachmentsContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+		IReadOnlySet<string> templateNames = Names("AttachmentsTabContainer", "AttachmentList");
+		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
+			[ { "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Account", "caption": "#ResourceString(AttachmentList_caption)#" } ]
+			""");
+		JObject templateResources = TemplateResources("""{ "AttachmentList_caption": { "en-US": "Attachments" } }""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap,
+			webTemplateBaselineNodes: baseline, webTemplateResources: templateResources);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "AttachmentList");
+		JsonObject vals = twin.MobileValues!.AsObject();
+		vals["recordColumnName"]!.GetValue<string>().Should().Be("Lead", because: "the real data change carries");
+		vals.ContainsKey("caption").Should().BeFalse(because: "the caption's resolved value equals the web template's — an unchanged inherited label is not pushed onto the mobile element");
+	}
+
+	[Test]
+	[Description("An automatic same-name twin (Feed→Feed) does NOT carry a caption even when the page changed its value: same name means the same resource key, which the mobile template owns, so update-page would never overwrite it — emitting it would be inert. Only the data change carries.")]
+	public void Analyze_AutoComponentTwin_DoesNotCarryCaption() {
+		// Arrange — the page changed both the data source and the caption value of the inherited Feed.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
 				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS", "caption": "#ResourceString(Feed_caption)#" } ] } ]
 			""",
-			resourcesJson: """{ "Feed_caption": { "en-US": "Activities" } }""");
+			resourcesJson: """{ "Feed_caption": { "en-US": "My feed" } }""");
 		var web = Reg(("crt.TabContainer", true), ("crt.Feed", false));
 		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["FeedTabContainer"] = "FeedContainer"
@@ -2075,23 +2153,21 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlySet<string> templateNames = Names("FeedTabContainer", "Feed");
 		IReadOnlyDictionary<string, string> mobileTypes = MobileTypesByName(("Feed", "crt.Feed"));
 		IReadOnlyDictionary<string, JObject> baseline = BaselineNodes("""
-			[ { "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS" } ]
+			[ { "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS", "caption": "#ResourceString(Feed_caption)#" } ]
 			""");
+		JObject templateResources = TemplateResources("""{ "Feed_caption": { "en-US": "Template feed" } }""");
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(
 			bundle, webByType: web, containerNameMap: containerNameMap,
 			templateComponentNames: templateNames,
-			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline);
+			mobileTemplateTypesByName: mobileTypes, webTemplateBaselineNodes: baseline, webTemplateResources: templateResources);
 
-		// Assert — caption carried verbatim onto the mobile element, and its resource added to the schema.
+		// Assert
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "Feed");
 		JsonObject vals = twin.MobileValues!.AsObject();
 		vals["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS", because: "the changed data property carries");
-		vals["caption"]!.GetValue<string>().Should().Be("#ResourceString(Feed_caption)#",
-			because: "the page's caption overrides the template label — carried verbatim so the mobile element points at the page's key");
-		guide.ResourceStrings.Should().ContainKey("Feed_caption").WhoseValue.Should().Be("Activities",
-			because: "the caption resource is registered so update-page adds the page's label text to the mobile schema");
+		vals.ContainsKey("caption").Should().BeFalse(because: "an automatic same-name twin shares the template's caption key — update-page would not overwrite it, so emitting it is inert");
 	}
 
 	[Test]
