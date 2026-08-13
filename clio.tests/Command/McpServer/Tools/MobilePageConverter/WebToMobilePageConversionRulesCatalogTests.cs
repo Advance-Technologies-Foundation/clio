@@ -56,9 +56,10 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "a column's code is its bound attribute name, which is what the $binding refers to");
 		grid.RowLayout.ValueTypeFrom.Should().Be("dataValueType",
 			because: "the title may bind only a text column, and dataValueType is where a column says what it is");
-		grid.RowLayout.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 27, 28, 29, 30 },
-			because: "the designer offers only text columns for a row title, and these are the text value types "
-				+ "in the platform's own DataValueType numbering");
+		grid.RowLayout.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
+			because: "a row title accepts text columns, and this is the DISPLAY-text subset of "
+				+ "CreatioDataValueKind.Text — leaving out PhoneText/WebText/EmailText would give a contacts "
+				+ "detail no title AND a note claiming the source had no acceptable column, which would be false");
 		grid.DropProperties.Should().BeEquivalentTo(
 			new[] { "columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" },
 			because: "these are the web grid's own properties, and mobile crt.List has no equivalent for any of them");

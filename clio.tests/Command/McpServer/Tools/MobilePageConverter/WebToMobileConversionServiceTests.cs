@@ -46,7 +46,7 @@ public sealed class WebToMobileConversionServiceTests {
 				RowLayout = new RowLayoutRule {
 					SourceProperty = "columns", TargetProperty = "itemLayout", TargetType = "crt.ListItem",
 					BindingFrom = "code", NameSuffix = "_ListItem",
-					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 27, 28, 29, 30]
+					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 19, 27, 28, 29, 30, 42, 44, 45]
 				},
 				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent"]
 			},
@@ -3621,6 +3621,58 @@ public sealed class WebToMobileConversionServiceTests {
 		row["body"].AsArray().Select(x => x["value"]?.GetValue<string>()).Should().Equal(
 			new[] { "$StagesDS_QualifyStatus", "$StagesDS_StartDate" },
 			because: "the lookup passed over for the title is not lost — it becomes a body row in its original position");
+	}
+
+	[Test]
+	[Description("An email or phone column can title the row: they are text in the platform's own DataValueType map, and excluding them would leave a contacts detail with no title AND a note claiming the source had nothing acceptable.")]
+	public void Analyze_MobileValues_EmailAndPhoneColumns_CanTitleTheRow() {
+		// Arrange — 45 is EmailText, 42 is PhoneText, 10 is a lookup.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Comms", "type": "crt.DataGrid", "items": "$Comms",
+				  "columns": [
+					{ "id": "c1", "code": "CommsDS_Owner", "dataValueType": 10 },
+					{ "id": "c2", "code": "CommsDS_Email", "dataValueType": 45 },
+					{ "id": "c3", "code": "CommsDS_Phone", "dataValueType": 42 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "Comms");
+		grid.MobileValues["itemLayout"]["title"]?.GetValue<string>().Should().Be("$CommsDS_Email",
+			because: "EmailText is a text type, so the first email column leads the row rather than being skipped");
+		grid.Reason.Should().NotContain("no title",
+			because: "a title was found, so the note must not claim the source had no acceptable column");
+	}
+
+	[Test]
+	[Description("A web type that resolves to a mobile type its mapping does NOT list gets neither a synthesized row nor the drops: the transform is tied to the mapping, not to the web type, so a type that one day survives as itself keeps its own properties.")]
+	public void Analyze_MobileValues_TypeResolvedOutsideTheMapping_IsLeftAlone() {
+		// Arrange — the grid's own type IS in the mobile registry here, so it survives as itself and the
+		// crt.DataGrid -> crt.List mapping must not touch it.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SelfMapped", "type": "crt.DataGrid", "items": "$SelfMapped",
+				  "columns": [ { "id": "c1", "code": "SelfMappedDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+		var mobileWithGrid = new HashSet<string>(MobileTypes, StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileWithGrid, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), null, Rules, null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "SelfMapped");
+		grid.MobileType.Should().Be("crt.DataGrid", because: "the type is supported on mobile as itself here");
+		grid.MobileValues["itemLayout"].Should().BeNull(
+			because: "the row belongs to the crt.List mapping; this element is not being converted through it");
+		grid.MobileValues["columns"].Should().NotBeNull(
+			because: "dropProperties belongs to that same mapping — an element outside it keeps its own properties");
 	}
 
 	[Test]
