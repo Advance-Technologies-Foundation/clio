@@ -79,6 +79,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-entity-schema-properties",
 		"get-fsm-mode",
 		"get-guidance",
+		"get-knowledge-feedback-policy",
 		"get-identity-public-jwk",
 		"get-identity-service-config",
 		"get-mobile-page-conversion-guide",
