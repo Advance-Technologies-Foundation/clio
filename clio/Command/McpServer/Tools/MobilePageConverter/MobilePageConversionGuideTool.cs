@@ -248,7 +248,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
 				nonConvertingContainers: nonConvertingContainers,
 				ownBodyViewConfigOps: pageResponse.Page?.OwnBodySummary?.ViewConfigDiffOps,
-				mobileTemplateFloatAction: mobileTemplateProbe.FloatAction);
+				mobileTemplateFloatAction: mobileTemplateProbe.FloatAction,
+				mobileTemplateFabProbed: mobileTemplateProbe.FabProbed);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -483,12 +484,17 @@ public sealed class MobilePageConversionGuideTool {
 	/// environment, read failure) — the caller surfaces that as an explicit guide constraint instead of
 	/// silently falling back to a single root merge that may replace the template's arrays wholesale.
 	/// </summary>
+	/// <param name="FabProbed">True only when the template's Scaffold was actually inspected, so
+	/// <paramref name="FloatAction"/> being null MEANS the template carries no FAB. False in every state
+	/// where nothing was learned (no schema name, unreadable bundle, no viewConfig, no Scaffold node, no
+	/// fabConversion rule to search with) — the FAB pass must not read those as "no FAB".</param>
 	private sealed record MobileTemplateProbe(
 		IReadOnlyDictionary<string, string> ContainerParents,
 		JsonNode ViewModelConfig,
 		JsonNode ModelConfig,
 		bool Unavailable,
-		JsonNode FloatAction = null);
+		JsonNode FloatAction = null,
+		bool FabProbed = false);
 
 	/// <summary>
 	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle: maps each mobile
@@ -528,11 +534,12 @@ public sealed class MobilePageConversionGuideTool {
 					? WebToMobileAnalysisService.CollectParentByName(viewConfig)
 					: emptyParents;
 				// The template's OWN resolved FAB configuration (Scaffold.floatAction) — the base the FAB
-				// pass appends the converted header buttons to. Null when the template carries none.
-				JsonNode floatAction = WebToMobileAnalysisService.ExtractScaffoldFloatAction(
-					bundle.ViewConfig, fabRule?.ScaffoldName, fabRule?.FloatActionProperty);
+				// pass appends the converted header buttons to. A null floatAction only means "this template
+				// has no FAB" when the Scaffold was found, which is what fabProbed reports.
+				bool fabProbed = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+					bundle.ViewConfig, fabRule?.ScaffoldName, fabRule?.FloatActionProperty, out JsonNode floatAction);
 				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig,
-					Unavailable: false, FloatAction: floatAction);
+					Unavailable: false, FloatAction: floatAction, FabProbed: fabProbed);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.

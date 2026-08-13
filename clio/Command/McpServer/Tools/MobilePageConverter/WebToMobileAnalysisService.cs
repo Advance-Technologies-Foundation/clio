@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -100,9 +100,16 @@ public static class WebToMobileAnalysisService {
 	/// <paramref name="nonConvertingContainers"/>.</param>
 	/// <param name="mobileTemplateFloatAction">The mobile template's OWN resolved <c>Scaffold.floatAction</c>
 	/// configuration (icon, visibility, the template's own menu items). The FAB pass appends the converted
-	/// header buttons AFTER those items so the full-replace merge it emits keeps the template's actions. Null
-	/// when the template carries no FAB or its bundle could not be read (the rules' default skeleton is used
-	/// then — see <see cref="FabConversionRule"/>).</param>
+	/// header buttons AFTER those items, so the template's own actions are inherited, never re-emitted. Null
+	/// when the template carries no FAB — or when nothing could be read;
+	/// <paramref name="mobileTemplateFabProbed"/> is what tells those two apart.</param>
+	/// <param name="mobileTemplateFabProbed">True ONLY when the mobile template's Scaffold was actually
+	/// inspected, so a null <paramref name="mobileTemplateFloatAction"/> means the template really carries no
+	/// FAB and the pass may emit its FIRST definition as a Scaffold merge. Leave false whenever nothing was
+	/// learned (no template name, unreadable bundle, no Scaffold node, no fabConversion rule to search with):
+	/// the pass then emits additive inserts against the rules' standard FAB name, which can never erase the
+	/// template's own items — where a merge in that state is silently dropped by the platform diff applier
+	/// and the converted items never reach the compiled page.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -126,7 +133,8 @@ public static class WebToMobileAnalysisService {
 		bool mobileTemplateUnavailable = false,
 		IReadOnlySet<string> nonConvertingContainers = null,
 		IReadOnlyList<Clio.Command.PageOperationInfo> ownBodyViewConfigOps = null,
-		JsonNode mobileTemplateFloatAction = null) {
+		JsonNode mobileTemplateFloatAction = null,
+		bool mobileTemplateFabProbed = false) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -160,15 +168,24 @@ public static class WebToMobileAnalysisService {
 		var fabButtonNodes = new List<JObject>();
 		bool fabSkippedNoBaseline = false;
 		if (fabSourceContainers.Count > 0) {
-			if (templateComponentNames is { Count: > 0 }) {
-				foreach (string container in fabSourceContainers) {
-					if (FindContainerItemsByName(tree, container) is { } headerItems) {
-						CollectFabButtonNodes(headerItems, map, componentMap, templateComponentNames,
-							fabRule.SourceButtonType, fabButtonNodes);
-					}
+			// With the baseline the walk collects the page-added buttons to convert. Without it the same walk
+			// runs with an EMPTY baseline — every button is then a potential page-added one — to answer the only
+			// question left: did the wholesale header exclusion actually take a button away? The mere absence of
+			// a baseline answers nothing, and since every record-page template declares its header
+			// non-converting, a baseline-less run over a button-free header is the common case, not an edge one.
+			bool hasBaseline = templateComponentNames is { Count: > 0 };
+			IReadOnlySet<string> baseline = hasBaseline ? templateComponentNames : new HashSet<string>();
+			var collected = new List<JObject>();
+			foreach (string container in fabSourceContainers) {
+				if (FindContainerItemsByName(tree, container) is { } headerItems) {
+					CollectFabButtonNodes(headerItems, map, componentMap, baseline,
+						fabRule.SourceButtonType, collected);
 				}
+			}
+			if (hasBaseline) {
+				fabButtonNodes.AddRange(collected);
 			} else {
-				fabSkippedNoBaseline = true;
+				fabSkippedNoBaseline = collected.Count > 0;
 			}
 		}
 
@@ -206,15 +223,6 @@ public static class WebToMobileAnalysisService {
 				}
 			}
 			nonConvertingPruned = true;
-		}
-		// A button extracted for the FAB pass is not "lost": it is reported under fabConversion (as an item
-		// or a dropped candidate), so it leaves the excluded-components report — its non-button neighbours
-		// stay there.
-		if (fabButtonNodes.Count > 0) {
-			var extractedButtonNames = new HashSet<string>(
-				fabButtonNodes.Select(n => n["name"]?.ToString()).Where(n => !string.IsNullOrEmpty(n)),
-				StringComparer.OrdinalIgnoreCase);
-			excludedComponents.RemoveAll(e => extractedButtonNames.Contains(e.Name));
 		}
 
 		// 0b. Filter out the web template's own components at read time. The merged tree carries the
@@ -292,10 +300,30 @@ public static class WebToMobileAnalysisService {
 		FabConversionResult fabConversion = null;
 		if (fabButtonNodes.Count > 0) {
 			fabConversion = BuildFabConversion(fabButtonNodes, fabRule, mobileTemplateFloatAction,
-				mobileTemplateUnavailable, requestMap, resources, BuildFabTakenNames(bundle, map, componentMap));
+				mobileTemplateFabProbed, requestMap, resources, BuildFabTakenNames(bundle, map, componentMap));
 			if (fabConversion?.Entries is { Count: > 0 }) {
 				elementMap.AddRange(fabConversion.Entries);
 			}
+		}
+		// The advisory follows the PAYLOAD, not the pass having run: a section that reports only dropped
+		// candidates carries no element-map entry, so the mandatory-apply constraint would point at nothing.
+		bool hasFabEntries = fabConversion?.Entries is { Count: > 0 };
+		bool fabNothingToApply = fabConversion is not null && !hasFabEntries;
+
+		// A button the pass REPORTED — as a converted item or as a dropped candidate — is not "lost", so it
+		// leaves the excluded-components report; its non-button neighbours stay there. The key is what the
+		// pass reported, never what was extracted for it: a button it could not report at all (its menu
+		// flattened to no candidate) would otherwise vanish from sourceStructure, excludedComponents,
+		// fabConversion and the element map at once — the silent loss this whole pass exists to prevent.
+		// Name AND type, so a same-named non-button neighbour is not swept out with it.
+		if (fabConversion?.Info is { } fabInfo) {
+			var reportedButtons = new HashSet<string>(
+				fabInfo.Items.Select(i => i.SourceButton)
+					.Concat((fabInfo.DroppedItems ?? []).Select(d => d.SourceButton))
+					.Where(n => !string.IsNullOrEmpty(n)),
+				StringComparer.OrdinalIgnoreCase);
+			excludedComponents.RemoveAll(e => reportedButtons.Contains(e.Name)
+				&& string.Equals(e.Type, fabRule.SourceButtonType, StringComparison.OrdinalIgnoreCase));
 		}
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
@@ -442,14 +470,15 @@ public static class WebToMobileAnalysisService {
 				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
 				normalization: componentPropertyOverrides,
 				nonConvertingContainers: nonConvertingPruned ? excludedContainers : null,
-				hasFabConversion: fabConversion?.Info is not null,
-				fabSkippedNoBaseline: fabSkippedNoBaseline),
+				hasFabConversion: hasFabEntries,
+				fabSkippedNoBaseline: fabSkippedNoBaseline,
+				fabNothingToApply: fabNothingToApply),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				normalization: componentPropertyOverrides,
-				hasFabConversion: fabConversion?.Info is not null),
+				hasFabConversion: hasFabEntries),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1646,7 +1675,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		IReadOnlyCollection<string> nonConvertingContainers = null, bool hasFabConversion = false,
-		bool fabSkippedNoBaseline = false) {
+		bool fabSkippedNoBaseline = false, bool fabNothingToApply = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1759,12 +1788,21 @@ public static class WebToMobileAnalysisService {
 				"conversion error. Report guide.fabConversion.items and every droppedItems entry (with its " +
 				"reason) to the user.");
 		}
+		if (fabNothingToApply) {
+			constraints.Add(
+				"The FAB conversion produced NOTHING to apply: no converted menu item reached the element map, " +
+				"so there is no floating-action-button payload to paste and the mobile template's own FAB stays " +
+				"exactly as it is. Do NOT author a Scaffold floatAction merge yourself and do NOT re-create the " +
+				"source buttons as page elements to compensate. Report every guide.fabConversion.droppedItems " +
+				"entry with its reason to the user — each one is a header action the mobile page will not have.");
+		}
 		if (fabSkippedNoBaseline) {
 			constraints.Add(
-				"Header buttons could NOT be converted into FAB menu items: the source page's web-template " +
-				"baseline was unavailable, so page-added buttons cannot be told apart from the template's own " +
-				"chrome (Save/Cancel/Close). The non-converting header was excluded wholesale — recreate any " +
-				"needed action manually, or re-run with environment-name/uri set so the template can be read.");
+				"One or more header buttons could NOT be converted into FAB menu items: the source page's " +
+				"web-template baseline was unavailable, so those buttons cannot be told apart from the " +
+				"template's own chrome (Save/Cancel/Close). The non-converting header was excluded wholesale, " +
+				"so they are reported in excludedComponents — recreate any needed action manually, or re-run " +
+				"with environment-name/uri set so the template can be read.");
 		}
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
@@ -2724,14 +2762,19 @@ public static class WebToMobileAnalysisService {
 	/// <summary>
 	/// Extracts the resolved <c>floatAction</c> (or any other FAB property) from a mobile template's merged
 	/// <c>viewConfig</c>: the FIRST node named <paramref name="scaffoldName"/>, at any depth, has its
-	/// <paramref name="floatActionProperty"/> deep-cloned. Null when the tree, the Scaffold, or the property
-	/// is absent. Used by the guide tool's mobile-template probe to hand the template's own FAB items to the
-	/// FAB pass.
+	/// <paramref name="floatActionProperty"/> deep-cloned into <paramref name="floatAction"/> (null when that
+	/// Scaffold carries none). Returns FALSE when no such node was found at all — no tree, no Scaffold, or
+	/// nothing to search with. That is NOT the same answer as "this template has no FAB": nothing was
+	/// learned, and the FAB pass must treat it as unknown (see <see cref="BuildFabConversion"/>), because
+	/// reading it as "no FAB" emits a Scaffold merge the platform diff applier silently drops whenever the
+	/// template does own one. Used by the guide tool's mobile-template probe.
 	/// </summary>
-	internal static JsonNode ExtractScaffoldFloatAction(JsonNode viewConfig, string scaffoldName, string floatActionProperty) {
+	internal static bool TryExtractScaffoldFloatAction(
+		JsonNode viewConfig, string scaffoldName, string floatActionProperty, out JsonNode floatAction) {
+		floatAction = null;
 		if (viewConfig is not JsonArray nodes
 			|| string.IsNullOrWhiteSpace(scaffoldName) || string.IsNullOrWhiteSpace(floatActionProperty)) {
-			return null;
+			return false;
 		}
 		foreach (JsonNode child in nodes) {
 			if (child is not JsonObject node) {
@@ -2739,16 +2782,15 @@ public static class WebToMobileAnalysisService {
 			}
 			string name = node["name"] is JsonValue value && value.TryGetValue(out string s) ? s : null;
 			if (string.Equals(name, scaffoldName, StringComparison.OrdinalIgnoreCase)) {
-				return node[floatActionProperty]?.DeepClone();
+				floatAction = node[floatActionProperty]?.DeepClone();
+				return true;
 			}
-			if (node["items"] is JsonArray items) {
-				JsonNode found = ExtractScaffoldFloatAction(items, scaffoldName, floatActionProperty);
-				if (found is not null) {
-					return found;
-				}
+			if (node["items"] is JsonArray items
+				&& TryExtractScaffoldFloatAction(items, scaffoldName, floatActionProperty, out floatAction)) {
+				return true;
 			}
 		}
-		return null;
+		return false;
 	}
 
 	/// <summary>The mobile template's resolved <c>floatAction</c> as a Newtonsoft object (null when absent/unreadable).</summary>
@@ -2804,7 +2846,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<JObject> buttonNodes,
 		FabConversionRule rule,
 		JsonNode mobileTemplateFloatAction,
-		bool mobileTemplateUnavailable,
+		bool mobileTemplateFabProbed,
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
 		JObject resources,
 		HashSet<string> takenNames) {
@@ -2828,15 +2870,20 @@ public static class WebToMobileAnalysisService {
 			&& nameElement.ValueKind == JsonValueKind.String
 				? nameElement.GetString()
 				: null;
-		// Insert mode needs a named FAB to target: the template's own, or — when the template bundle could
-		// not be read — the skeleton's standard name (the overwhelmingly common case; inserts are additive,
-		// so a wrong assumption loses the converted items but can never erase the template's own).
-		// Merge mode remains for a FAB the inserts cannot target: the template was read and provides no
-		// floatAction (first definition — the applier accepts it), or provides one WITHOUT a name (not a
-		// named child, so the applier's merge guard does not strip it and a full replace is applied).
+		// Insert mode needs a named FAB to target: the template's own, or — when the template's FAB is
+		// UNKNOWN — the skeleton's standard name (inserts are additive, so a wrong assumption loses the
+		// converted items but can never erase the template's own).
+		// Merge mode is only for a FAB the inserts cannot target, and both cases require POSITIVE knowledge:
+		// the probe inspected the template's Scaffold and it carries no floatAction (this merge is its first
+		// definition — the applier accepts it), or it carries one WITHOUT a name (not a named child, so the
+		// applier's merge guard does not strip it and a full replace is applied). A null floatAction that was
+		// never probed — no template name, an unreadable bundle, no Scaffold node, no fabConversion rule to
+		// search with — is UNKNOWN, not "no FAB": merging there emits the exact shape the applier silently
+		// drops whenever the template does own a named floatAction, losing every converted item without a word.
+		bool fabUnknown = templateFloatAction is null && !mobileTemplateFabProbed;
 		string insertTargetName = !string.IsNullOrWhiteSpace(templateFabName)
 			? templateFabName
-			: mobileTemplateUnavailable ? defaultFabName : null;
+			: fabUnknown ? defaultFabName : null;
 		bool insertMode = !string.IsNullOrWhiteSpace(insertTargetName);
 		bool assumedTarget = insertMode && string.IsNullOrWhiteSpace(templateFabName);
 
@@ -2886,21 +2933,38 @@ public static class WebToMobileAnalysisService {
 			return null;
 		}
 
+		// An item that produces no element-map entry is NOT converted, whatever the pass thought a moment
+		// ago: its source button already left the excluded-components report on the promise that this
+		// section accounts for it, so it moves to droppedItems and its caption seed goes with it (a
+		// resource the caller would otherwise register for a menu item that never reaches the page).
+		void DropUnemitted(FabMenuItemInfo unemitted) {
+			dropped.Add(new DroppedFabMenuItem {
+				SourceButton = unemitted.SourceButton,
+				SourceMenuItem = unemitted.SourceMenuItem,
+				Reason = "its converted values could not be serialized into the element map — recreate the "
+					+ "action manually on the mobile page"
+			});
+			captionSeeds.Remove(unemitted.Name + "_caption");
+		}
+
 		var entries = new List<ElementMapEntry>();
 		if (items.Count > 0 && insertMode) {
-			foreach (JToken converted in convertedItems) {
-				if (converted is not JObject item || item["name"]?.ToString() is not { Length: > 0 } itemName) {
-					continue;
-				}
-				var values = (JObject)item.DeepClone();
+			// BuildFabMenuItem appends to convertedItems and items in lockstep, so index i pairs the emitted
+			// JSON with the advisory entry it belongs to.
+			var emitted = new List<FabMenuItemInfo>();
+			for (int i = 0; i < items.Count; i++) {
+				FabMenuItemInfo itemInfo = items[i];
+				var values = (JObject)convertedItems[i].DeepClone();
 				values.Remove("name");
 				JsonNode mobileValues = ToSystemTextNode(values);
 				if (mobileValues is null) {
+					DropUnemitted(itemInfo);
 					continue;
 				}
+				emitted.Add(itemInfo);
 				entries.Add(new ElementMapEntry {
 					Operation = "insert",
-					MobileName = itemName,
+					MobileName = itemInfo.Name,
 					MobileType = rule.MenuItemType,
 					ParentName = insertTargetName,
 					PropertyName = FabMenuItemsProperty,
@@ -2912,6 +2976,7 @@ public static class WebToMobileAnalysisService {
 						+ "silently drops it); the FAB is not visible in the Mobile Designer"
 				});
 			}
+			items = emitted;
 		} else if (items.Count > 0) {
 			if (floatAction[FabMenuItemsProperty] is not JArray menuItems) {
 				menuItems = new JArray();
@@ -2931,6 +2996,10 @@ public static class WebToMobileAnalysisService {
 						+ " of its own, so this merge is its FIRST definition (the diff applier accepts it) — "
 						+ "paste it onto the Scaffold verbatim; the FAB is not visible in the Mobile Designer"
 				});
+			} else {
+				// The one merge carries every item, so a payload that does not round-trip loses them all.
+				items.ForEach(DropUnemitted);
+				items = [];
 			}
 		}
 
@@ -2942,7 +3011,7 @@ public static class WebToMobileAnalysisService {
 			note += $" {dropped.Count} candidate(s) produced no item — see droppedItems.";
 		}
 		if (assumedTarget && items.Count > 0) {
-			note += " The mobile template could not be read, so the inserts target the standard "
+			note += " The mobile template's own FAB could not be resolved, so the inserts target the standard "
 				+ insertTargetName + " — verify at runtime.";
 		}
 		var info = new FabConversionInfo {

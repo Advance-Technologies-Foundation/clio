@@ -87,7 +87,8 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlySet<string> nonConvertingContainers = null,
 		IReadOnlyList<PageOperationInfo> ownBodyViewConfigOps = null,
 		WebToMobilePageConversionRules rules = null,
-		JsonNode mobileTemplateFloatAction = null) =>
+		JsonNode mobileTemplateFloatAction = null,
+		bool mobileTemplateFabProbed = false) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -102,7 +103,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateUnavailable: mobileTemplateUnavailable,
 			nonConvertingContainers: nonConvertingContainers,
 			ownBodyViewConfigOps: ownBodyViewConfigOps,
-			mobileTemplateFloatAction: mobileTemplateFloatAction);
+			mobileTemplateFloatAction: mobileTemplateFloatAction,
+			mobileTemplateFabProbed: mobileTemplateFabProbed);
 
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
@@ -2329,6 +2331,66 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A page-added header button the pass could NOT report at all (its menuItems flatten to no candidate) stays in excludedComponents: a button leaves that report only once fabConversion accounts for it, otherwise it would vanish from every surface at once.")]
+	public void Analyze_FabConversion_ButtonWithNoCandidate_StaysInExcludedComponents() {
+		// Arrange: the menu button carries menuItems, so the button itself is discarded in favour of its
+		// entries - and the array holds nothing an entry can be built from.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "menuItems": [ null ] } ] } ]
+			""",
+			resourcesJson: """{ "ActionsButton_caption": { "en-US": "Actions" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.FabConversion.Should().BeNull(because: "no candidate survived the flattening, so nothing was converted");
+		FabInserts(guide).Should().BeEmpty(because: "there is no item to insert");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "ActionsButton" && e.Container == "MainHeader",
+			because: "the excluded-components report is the only surface left that still names the button");
+		guide.SourceStructure.Should().NotContain(s => s.Name == "ActionsButton",
+			because: "the header is non-converting, so the button is not part of the converted layout either");
+	}
+
+	[Test]
+	[Description("Only the BUTTONS of a non-converting header leave excludedComponents for fabConversion - the header's non-button content stays reported there with its exclusion container.")]
+	public void Analyze_FabConversion_MixedHeaderContent_OnlyButtonLeavesExcludedComponents() {
+		// Arrange: the page adds both a button and a label to the excluded header.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } },
+				{ "name": "UsrHeaderNote", "type": "crt.Label" } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Label", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.FabConversion.Items.Should().ContainSingle(
+			because: "the button is the only FAB candidate in the header")
+			.Which.SourceButton.Should().Be("CreateOrderButton",
+				because: "the item names the source button it was converted from");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "CreateOrderButton",
+			because: "fabConversion accounts for the button, so it is not reported as lost");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "UsrHeaderNote" && e.Container == "MainHeader",
+			because: "a non-button neighbour has no FAB equivalent and stays reported as excluded");
+	}
+
+	[Test]
 	[Description("Without the web-template baseline the extraction is SKIPPED (page-added buttons cannot be told apart from chrome): no fabConversion section, the buttons stay in excludedComponents, and a constraint explains why.")]
 	public void Analyze_FabConversion_NoBaseline_SkippedWithConstraint() {
 		PageBundleInfo bundle = Bundle("""
@@ -2354,7 +2416,104 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("When the mobile template was READ successfully but carries no floatAction, there is nothing to insert into — the FAB is created from the rules' default skeleton with ONLY the converted items, as ONE Scaffold merge (a FIRST definition of floatAction, which the diff applier accepts); no baseline Copy/Delete is invented for a template that deliberately has none.")]
+	[Description("Without the baseline, a header that holds NO button loses nothing when it is excluded wholesale - the skip constraint must stay out (every record-page template declares its header non-converting, so this state is the common one, not an edge case).")]
+	public void Analyze_FabConversion_NoBaselineButtonlessHeader_NoSkipConstraint() {
+		// Arrange: no template baseline, and the excluded header carries only non-button chrome.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PageTitle", "type": "crt.Label" } ] },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Label", false), ("crt.Input", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: null,
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.Constraints.Should().NotContain(c => c.Contains("web-template baseline was unavailable"),
+			because: "no button was at risk, so warning that header buttons were lost is a false alarm");
+		guide.FabConversion.Should().BeNull(because: "nothing was extracted and nothing was dropped");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "PageTitle",
+			because: "the header's non-button content is still excluded and reported as such");
+	}
+
+	[Test]
+	[Description("Without the baseline, a page-added header button ORPHANED to the tree root is still converted through its own-body parent chain (own-body ops are page-added by construction), so the guide carries the mandatory FAB constraint and NOT the skip constraint - emitting both would be two contradictory mandates.")]
+	public void Analyze_FabConversion_NoBaselineOrphanConverted_NoSkipConstraint() {
+		// Arrange: no template baseline; the button sits at the tree root and reaches MainHeader only through
+		// its declared own-body parent chain.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [] } ] },
+			  { "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				"clicked": { "request": "crt.OpenPageRequest" } },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "CreateOrderButton", "crt.Button", parentName: "ActionButtonsContainer")
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: null,
+			ownBodyViewConfigOps: ownBody,
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "the orphan recovery identifies a page-added button with no baseline at all").Which;
+		insert.MobileName.Should().Be("CreateOrderButtonFabMenuItem",
+			because: "the generated name derives from the source button name");
+		guide.Constraints.Should().Contain(c => c.Contains("fabConversion is MANDATORY"),
+			because: "the converted item is a real payload the model must apply verbatim");
+		guide.Constraints.Should().NotContain(c => c.Contains("web-template baseline was unavailable"),
+			because: "telling the model the header buttons could NOT be converted, beside the item it must " +
+				"apply, is a contradiction the advisory must never emit");
+	}
+
+	[Test]
+	[Description("When every candidate is dropped the section reports the drops but the element map carries no FAB entry: the mandatory-apply constraint (which claims synthesized entries) must NOT be emitted, and a drop-only constraint mandates reporting droppedItems instead.")]
+	public void Analyze_FabConversion_AllCandidatesDropped_ReportsDropsWithoutClaimingPayload() {
+		// Arrange: the header's only button carries a request the rules file clears for mobile.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PrintButton", "type": "crt.Button", "caption": "#ResourceString(PrintButton_caption)#",
+				  "clicked": { "request": "crt.PrintReportRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "PrintButton_caption": { "en-US": "Print" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.FabConversion.DroppedItems.Should().ContainSingle(
+			because: "a dropped candidate is a header action the mobile page will not have");
+		guide.Constraints.Should().NotContain(c => c.Contains("fabConversion is MANDATORY"),
+			because: "that constraint tells the model to apply synthesized element-map entries, and this run " +
+				"produced none");
+		guide.Constraints.Should().Contain(c => c.Contains("produced NOTHING to apply"),
+			because: "the model must still be told the FAB has no payload and must not invent one");
+		guide.NextSteps.Should().NotContain(s => s.Contains("guide.fabConversion"),
+			because: "the build flow step describes applying a payload that does not exist here");
+	}
+
+	[Test]
+	[Description("When the mobile template's Scaffold was actually inspected and carries no floatAction, there is nothing to insert into — the FAB is created from the rules' default skeleton with ONLY the converted items, as ONE Scaffold merge (a FIRST definition of floatAction, which the diff applier accepts); no baseline Copy/Delete is invented for a template that deliberately has none.")]
 	public void Analyze_FabConversion_TemplateWithoutFab_CreatedFromDefaultSkeleton() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
@@ -2369,7 +2528,8 @@ public sealed class WebToMobileConversionServiceTests {
 			nonConvertingContainers: Names("MainHeader"),
 			templateComponentNames: Names("MainHeader"),
 			mobileTemplateFloatAction: null,
-			mobileTemplateUnavailable: false);
+			mobileTemplateUnavailable: false,
+			mobileTemplateFabProbed: true);
 
 		JsonObject floatAction = ScaffoldMerge(guide).MobileValues!.AsObject()["floatAction"]!.AsObject();
 		floatAction["name"]!.GetValue<string>().Should().Be("FloatingActionButton",
@@ -2409,8 +2569,43 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold",
 			because: "a full-replace merge in the unknown state would be silently dropped whenever the " +
 				"template actually owns floatAction — the common case");
-		guide.FabConversion.Note.Should().Contain("could not be read",
+		guide.FabConversion.Note.Should().Contain("could not be resolved",
 			because: "the assumed insert target must be visible to the caller");
+	}
+
+	[Test]
+	[Description("A null template floatAction that was never PROBED (no template name, no viewConfig, no Scaffold node, no fabConversion rule to search with) is UNKNOWN, not 'this template has no FAB': the pass emits additive inserts against the standard FAB name instead of the Scaffold merge the diff applier silently drops whenever the template does own a floatAction.")]
+	public void Analyze_FabConversion_TemplateFabNotProbed_InsertsInsteadOfMerging() {
+		// Arrange: the template read reported nothing about the FAB - mobileTemplateUnavailable stays false
+		// (the bundle itself was fine), yet the Scaffold was never inspected.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: null,
+			mobileTemplateUnavailable: false,
+			mobileTemplateFabProbed: false);
+
+		// Assert
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "an unknown template FAB must be treated like an unreadable one — inserts are additive " +
+				"and can never erase the template's own items").Which;
+		insert.ParentName.Should().Be("FloatingActionButton",
+			because: "the rules' defaultFab name is the assumed insert target");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold",
+			because: "a merge here would be silently dropped by the diff applier for every template that " +
+				"does own a named floatAction — the common case, and the loss would be invisible");
+		guide.FabConversion.Note.Should().Contain("could not be resolved",
+			because: "the caller must know the insert target was assumed, not read");
 	}
 
 	[Test]
@@ -2528,23 +2723,46 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("ExtractScaffoldFloatAction pulls the resolved floatAction off the Scaffold node at any depth and returns null when the Scaffold or the property is absent.")]
-	public void ExtractScaffoldFloatAction_FindsPropertyOrReturnsNull() {
+	[Description("TryExtractScaffoldFloatAction pulls the resolved floatAction off the Scaffold node and reports whether that node was found at all - the signal that separates 'this template has no FAB' (found, no property) from 'nothing was learned' (no Scaffold, no tree), which the FAB pass must not confuse.")]
+	public void TryExtractScaffoldFloatAction_ReportsWhetherTheScaffoldWasInspected() {
+		// Arrange
 		JsonNode viewConfig = JsonNode.Parse("""
 			[ { "name": "Scaffold", "type": "crt.Scaffold",
 			    "floatAction": { "name": "FloatingActionButton", "menuItems": [] },
 			    "items": [ { "name": "MainContainer", "items": [] } ] } ]
 			""");
+		JsonNode nestedScaffold = JsonNode.Parse("""
+			[ { "name": "Root", "items": [
+			    { "name": "Scaffold", "type": "crt.Scaffold",
+			      "floatAction": { "name": "FloatingActionButton" } } ] } ]
+			""");
 
-		JsonNode found = WebToMobileAnalysisService.ExtractScaffoldFloatAction(viewConfig, "Scaffold", "floatAction");
-		JsonNode missingProperty = WebToMobileAnalysisService.ExtractScaffoldFloatAction(viewConfig, "Scaffold", "somethingElse");
-		JsonNode missingScaffold = WebToMobileAnalysisService.ExtractScaffoldFloatAction(viewConfig, "OtherRoot", "floatAction");
+		// Act
+		bool foundProperty = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			viewConfig, "Scaffold", "floatAction", out JsonNode floatAction);
+		bool foundWithoutProperty = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			viewConfig, "Scaffold", "somethingElse", out JsonNode absentProperty);
+		bool foundNested = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			nestedScaffold, "Scaffold", "floatAction", out JsonNode nested);
+		bool foundMissingScaffold = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			viewConfig, "OtherRoot", "floatAction", out JsonNode missingScaffold);
+		bool foundWithoutTree = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			null, "Scaffold", "floatAction", out JsonNode noTree);
 
-		found.Should().NotBeNull();
-		found!["name"]!.GetValue<string>().Should().Be("FloatingActionButton",
+		// Assert
+		foundProperty.Should().BeTrue(because: "the Scaffold node was inspected");
+		floatAction!["name"]!.GetValue<string>().Should().Be("FloatingActionButton",
 			because: "the property is deep-cloned off the Scaffold node");
-		missingProperty.Should().BeNull(because: "an absent property yields null, not an empty node");
-		missingScaffold.Should().BeNull(because: "an absent Scaffold yields null rather than throwing");
+		foundWithoutProperty.Should().BeTrue(
+			because: "the Scaffold WAS inspected — it simply carries no such property, which is real knowledge");
+		absentProperty.Should().BeNull(because: "an absent property yields null, not an empty node");
+		foundNested.Should().BeTrue(because: "the Scaffold is found at any depth, not only at the array root");
+		nested!["name"]!.GetValue<string>().Should().Be("FloatingActionButton");
+		foundMissingScaffold.Should().BeFalse(
+			because: "no Scaffold node means nothing was learned about the template's FAB");
+		missingScaffold.Should().BeNull(because: "a not-found lookup yields no property either");
+		foundWithoutTree.Should().BeFalse(because: "there was no viewConfig to search");
+		noTree.Should().BeNull(because: "an absent tree yields null rather than throwing");
 	}
 
 	#endregion

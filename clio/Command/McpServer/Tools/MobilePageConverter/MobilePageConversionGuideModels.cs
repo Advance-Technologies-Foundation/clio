@@ -556,8 +556,12 @@ public sealed class MobilePageConversionGuide {
 	/// flattened, recursively, with their own captions), and which candidates were dropped with the reason
 	/// (unsupported <c>clicked</c> request — a dead menu item is not shipped — no caption, or no action).
 	/// Dropped candidates appear HERE, not in <see cref="ExcludedComponents"/>; the header's non-button
-	/// content stays reported there. Null when the pass did not run (no fabConversion rules section, the
-	/// template excludes no header, or the web-template baseline was unavailable) or no button was found.
+	/// content stays reported there. When EVERY candidate was dropped this section carries no items and the
+	/// element map carries no FAB entry at all — there is then nothing to apply, and a constraint says so.
+	/// Null when the pass reports nothing: no fabConversion rules section, the template excludes no header,
+	/// no button was found (or none yielded a candidate — such a button stays in <see cref="ExcludedComponents"/>,
+	/// which never lets one go unreported), or the web-template baseline was unavailable and no page-added
+	/// button was recovered from the page's own-body operations (a constraint then explains the exclusion).
 	/// </summary>
 	[JsonPropertyName("fabConversion")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
