@@ -40,7 +40,8 @@ public class CreateBusinessProcessTool(
 		 + "address) | processParameter (the recipient mirrors that parameter's type — a Contact-lookup parameter is "
 		 + "resolved to the contact's email at send time) | expression (a raw formula macro; add "
 		 + "referenceSchema:<ObjectName> when it references a record, e.g. a fixed Contact)}), "
-		 + "importance?:none|normal|high|low, ignoreErrors?, performer? (manual mode only — who performs the task: "
+		 + "importance?:none|normal|high|low (the designer labels normal as \"Medium\"), ignoreErrors?, "
+		 + "performer? (manual mode only — who performs the task: "
 		 + "{type:user|manager|role, contact? (a formula; defaults to the current user's contact), role? (a "
 		 + "SysAdminUnit role name or record id, required for type:role), showPage?})}), "
 		 + "useBackgroundMode? (element-level: every element supports it; true runs it asynchronously via the "
@@ -60,7 +61,7 @@ public class CreateBusinessProcessTool(
 		 + "changedColumns?:[<ColumnName>,...]} instead of a page save handler. changedColumns restricts an "
 		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
 		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
-		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder.")]
+		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. If an environment rejects type:\"sendEmail\" (\"Element type 'sendEmail' is not supported yet\"), its deployed CrtProcessBuilder predates that element type: fall back to a generic userTask named EmailTemplateUserTask, which older packages do build. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {

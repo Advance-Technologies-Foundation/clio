@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using ATF.Repository.Providers;
 using Clio.Command.ProcessModel;
@@ -196,6 +197,32 @@ public sealed class ServerProcessDescriberTests {
 			because: "roleDisplay carries the resolved role name for a human reader");
 		email.Performer.ShowPage.Should().BeTrue(
 			because: "the show-execution-page flag is part of the performer block");
+	}
+
+	[Test]
+	[Description("Leaves the email block's hasBody unset (null) when an older server omits it, so the absent flag serializes away instead of defaulting to false and reading as a verified 'no body'.")]
+	public void Describe_ShouldLeaveEmailHasBodyNull_WhenServerOmitsIt() {
+		// Arrange — an older CrtProcessBuilder that reports an email block without the hasBody flag
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"auto\",\"subject\":\"After modify\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.Should().NotBeNull(because: "the email block itself is still reported by an older server");
+		email.HasBody.Should().BeNull(
+			because: "an omitted hasBody stays null rather than defaulting to false, which would be indistinguishable "
+				+ "from a server that reported 'this element has no custom-message body' — the same reason "
+				+ "ignoreErrors, showPage, useBackgroundMode and isResult are all nullable on this wire shape");
+		email.IgnoreErrors.Should().BeNull(
+			because: "the sibling flags on the same block degrade the same way, so hasBody is not a special case");
 	}
 
 	[Test]
@@ -500,6 +527,36 @@ public sealed class ServerProcessDescriberTests {
 		element.WritesConnectionsAtRuntime.Should().BeNull(
 			because: "null means NOT ESTABLISHED, which is exactly what an older package can say about it");
 		element.Deprecated.Should().BeNull(because: "same reason — an omitted fact must not read as false");
+	}
+
+	[Test]
+	[Description("A field a NEWER server reports that this build does not declare — at the graph root and on an element — survives the clio DTO round trip through [JsonExtensionData], so clio does not structurally lag the server by a release.")]
+	public void Describe_ShouldPreserveUnknownServerFields_WhenReserializingTheGraph() {
+		// Arrange — a root fact and an element block the DTOs do not declare. Without an overflow bag both are
+		// dropped without a trace, which is the same silent-loss failure the connections DTO calls out.
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"futureRootFact\":\"kept\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"futureBlock\":{\"setting\":42}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act — the command re-serializes the value as DescribeProcessResult, so the round trip is the same here
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "an undeclared member must not fail the read");
+		result.Value.AdditionalData.Should().ContainKey("futureRootFact",
+			because: "the root overflow bag is what keeps an undeclared server field addressable at all");
+		result.Value.Elements[0].AdditionalData.Should().ContainKey("futureBlock",
+			because: "an element-level block needs the same protection — that is where a new email/signal-shaped "
+				+ "feature lands first");
+		reserialized.Should().Contain("\"futureRootFact\":\"kept\"",
+			because: "capturing it is only half the fix: the describe output is what the caller reads, so the "
+				+ "field has to come back out on re-serialization");
+		reserialized.Should().Contain("\"futureBlock\":{\"setting\":42}",
+			because: "the element block must survive verbatim, nesting included, not be flattened or stringified");
 	}
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).

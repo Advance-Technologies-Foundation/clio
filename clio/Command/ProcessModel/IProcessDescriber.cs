@@ -155,6 +155,14 @@ public class DescribeProcessResult {
 	/// <summary>Process-level parameters (inputs / variables).</summary>
 	[JsonPropertyName("parameters")]
 	public List<DescribedParameter> Parameters { get; set; }
+
+	/// <summary>
+	/// Captures every other field the server returns at the graph root so the description round-trips
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
+	/// command output verbatim instead of being discarded without a trace.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>
@@ -271,6 +279,14 @@ public sealed class DescribedElement {
 	/// </summary>
 	[JsonPropertyName("writesConnectionsAtRuntime")]
 	public bool? WritesConnectionsAtRuntime { get; set; }
+
+	/// <summary>
+	/// Captures every other field the server reports on an element so the description round-trips losslessly:
+	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
+	/// verbatim instead of being discarded without a trace.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>The email configuration of a Send email element, read back from its parameters.</summary>
@@ -291,9 +307,13 @@ public sealed class DescribedEmail {
 	[JsonPropertyName("subject")]
 	public string Subject { get; set; }
 
-	/// <summary>True when the element carries a custom-message body (the body HTML itself is not echoed).</summary>
+	/// <summary>
+	/// True when the element carries a custom-message body (the body HTML itself is not echoed). Omitted (null)
+	/// when the server (an older <c>CrtProcessBuilder</c>) does not report it — which is NOT the same answer as
+	/// <c>false</c>, so a caller must not read an absent flag as "this element has no body".
+	/// </summary>
 	[JsonPropertyName("hasBody")]
-	public bool HasBody { get; set; }
+	public bool? HasBody { get; set; }
 
 	/// <summary>Importance token (<c>none</c>/<c>normal</c>/<c>high</c>/<c>low</c>); null when not set.</summary>
 	[JsonPropertyName("importance")]
