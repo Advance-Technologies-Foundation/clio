@@ -74,7 +74,9 @@ public sealed class SourceCodeSchemaUpdateCommandTests {
 
 	[Test]
 	public void TryUpdateSchema_Reads_Body_From_File() {
-		string tempFile = Path.GetTempFileName();
+		// A fresh path under the OS temp root; WriteAllText below creates the file, so the insecure,
+		// small-pool GetTempFileName() (S5445) is not needed to materialize it.
+		string tempFile = Path.Combine(Path.GetTempPath(), "srcupdate-" + System.Guid.NewGuid().ToString("N") + ".cs");
 		try {
 			File.WriteAllText(tempFile, "// from file");
 			_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
