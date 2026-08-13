@@ -18,6 +18,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 	private const string SelectUrl = "http://test/DataService/json/SyncReply/SelectQuery";
 	private const string SchemaUId = "11111111-1111-1111-1111-111111111111";
 	private const string PackageUId = "22222222-2222-2222-2222-222222222222";
+	private const string BaseSchemaUId = "33333333-3333-3333-3333-333333333333";
 
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
@@ -318,6 +319,69 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 	}
 
 	[Test]
+	[Description("TryResolve re-anchors on the most-base variant of the requested name and resolves columns from the full hierarchy when the name resolves to a replacing layer.")]
+	public void TryResolve_ShouldReAnchorOnBaseVariant_WhenNameResolvesToReplacingLayer() {
+		// Arrange — the requested name exists twice: the queried replacing layer and its most-base variant.
+		// Only the re-fetched hierarchy carries the column declaration, so the assertions fail if the
+		// resolver keeps the partial hierarchy anchored on the replacing layer.
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("UsrMncrdSct26e53fc1Section", "entitySchemaName: 'UsrMncrdSct', diff: []"),
+			Schema("UsrMncrdSct26e53fc1Section", "entitySchemaName: 'UsrMncrdSct', diff: []", BaseSchemaUId)
+		]);
+		_hierarchyClient.GetParentSchemas(BaseSchemaUId, PackageUId).Returns([
+			Schema("UsrMncrdSct26e53fc1Section", """
+				entitySchemaName: "UsrMncrdSct",
+				getGridDataColumns: function() { return { UsrName: { path: "UsrName" } }; }
+				"""),
+			Schema("BaseDataView", "entitySchemaName: 'UsrMncrdSct', diff: []", BaseSchemaUId)
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("UsrMncrdSct", "UsrName", Column("UsrName", "Name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "UsrMncrdSct26e53fc1Section" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a replaced Classic section must still resolve; error: {0}", response.Error);
+		_hierarchyClient.Received(1).GetParentSchemas(BaseSchemaUId, PackageUId);
+		response.Source.Should().Be("schema-default",
+			because: "the re-anchored hierarchy is the one that declares the static columns");
+		response.Columns.Select(column => column.Name).Should().Equal(["UsrName"],
+			because: "cross-package replaced sections must report the replacing layer's own columns, "
+				+ "not silently degrade to the entity default");
+	}
+
+	[Test]
+	[Description("TryResolve keeps the initial hierarchy when the re-anchored designer call returns nothing, instead of failing on an empty result.")]
+	public void TryResolve_ShouldKeepInitialHierarchy_WhenReAnchoredLookupReturnsEmpty() {
+		// Arrange
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("UsrMncrdSct26e53fc1Section", """
+				entitySchemaName: "UsrMncrdSct",
+				getGridDataColumns: function() { return { UsrName: { path: "UsrName" } }; }
+				"""),
+			Schema("UsrMncrdSct26e53fc1Section", "entitySchemaName: 'UsrMncrdSct', diff: []", BaseSchemaUId)
+		]);
+		_hierarchyClient.GetParentSchemas(BaseSchemaUId, PackageUId).Returns([]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("UsrMncrdSct", "UsrName", Column("UsrName", "Name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "UsrMncrdSct26e53fc1Section" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "an empty re-anchored hierarchy must degrade to the hierarchy already in hand; error: {0}",
+			response.Error);
+		response.Source.Should().Be("schema-default",
+			because: "the initial hierarchy still declares the static columns");
+		response.Columns.Select(column => column.Name).Should().Equal(["UsrName"],
+			because: "the fallback must preserve the columns the first designer call already returned");
+	}
+
+	[Test]
 	[Description("TryResolve returns a failure envelope without querying Creatio when schema-name is blank.")]
 	public void TryResolve_ShouldFailBeforeRemoteCalls_WhenSchemaNameIsBlank() {
 		// Arrange
@@ -333,8 +397,10 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
-	private static PageDesignerHierarchySchema Schema(string name, string body) => new() {
-		UId = SchemaUId,
+	private static PageDesignerHierarchySchema Schema(string name, string body) => Schema(name, body, SchemaUId);
+
+	private static PageDesignerHierarchySchema Schema(string name, string body, string uid) => new() {
+		UId = uid,
 		Name = name,
 		PackageUId = PackageUId,
 		PackageName = "TestPackage",
