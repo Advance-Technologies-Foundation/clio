@@ -539,6 +539,30 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<TabAreaLayerGroup> TabAreaLayers { get; init; }
 
+	// ── Header buttons converted into FAB menu items ───────────────────
+	/// <summary>
+	/// Page-added <c>crt.Button</c> components of the web template's non-converting header container,
+	/// converted into mobile floating-action-button (FAB) menu items. The ACTIONABLE payload is already in
+	/// <see cref="ElementMap"/> as synthesized entries (no <c>webName</c>): normally one <c>insert</c> per
+	/// converted item into the template FAB's <c>menuItems</c> (parentName = the FAB's name), so the
+	/// template's own items (Copy/Delete) are inherited and come first — they are never re-emitted; only
+	/// when the template provides no <c>floatAction</c> does the map carry ONE Scaffold <c>merge</c> with
+	/// the complete FAB (its first definition). Apply exactly the shape the map contains, verbatim — never
+	/// author a <c>floatAction</c> merge yourself: when the template already owns <c>floatAction</c>, the
+	/// platform diff applier silently drops that merged property and the items never reach the compiled page.
+	/// The FAB lives in page METADATA only (<c>floatAction</c> is a Scaffold property, not an element), so it
+	/// is not visible in the Mobile Designer — expected, not an error. This section is the advisory summary:
+	/// which buttons became items (a button with its own <c>menuItems</c> is discarded and its entries are
+	/// flattened, recursively, with their own captions), and which candidates were dropped with the reason
+	/// (unsupported <c>clicked</c> request — a dead menu item is not shipped — no caption, or no action).
+	/// Dropped candidates appear HERE, not in <see cref="ExcludedComponents"/>; the header's non-button
+	/// content stays reported there. Null when the pass did not run (no fabConversion rules section, the
+	/// template excludes no header, or the web-template baseline was unavailable) or no button was found.
+	/// </summary>
+	[JsonPropertyName("fabConversion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public FabConversionInfo FabConversion { get; init; }
+
 	// ── Spacing normalized on inserted containers ──────────────────────
 	/// <summary>
 	/// Spacing normalization applied by the converter: mobile pages follow the mobile spacing
@@ -824,6 +848,82 @@ public sealed class TabAreaLayerGroup {
 	/// </summary>
 	[JsonPropertyName("movedChildren")]
 	public IReadOnlyList<string> MovedChildren { get; init; } = [];
+}
+
+/// <summary>
+/// Advisory summary of the header-buttons → FAB-menu-items conversion (see
+/// <see cref="MobilePageConversionGuide.FabConversion"/>). The actionable payload is the synthesized
+/// <c>merge</c> entry on the mobile Scaffold in the element map; this section explains what happened so the
+/// caller can present it at the conversion gate and in the final report.
+/// </summary>
+public sealed class FabConversionInfo {
+	/// <summary>Caller-facing summary of the pass outcome, composed from the actual counts.</summary>
+	[JsonPropertyName("note")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Note { get; init; }
+
+	/// <summary>The mobile element the FAB configuration merges onto (the element map entry's <c>mobileName</c>).</summary>
+	[JsonPropertyName("scaffoldName")]
+	public string ScaffoldName { get; init; }
+
+	/// <summary>The converted items, in the order they were appended after the template's own items.</summary>
+	[JsonPropertyName("items")]
+	public IReadOnlyList<FabMenuItemInfo> Items { get; init; } = [];
+
+	/// <summary>Candidates that produced NO item, each with the reason (report them to the user).</summary>
+	[JsonPropertyName("droppedItems")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<DroppedFabMenuItem> DroppedItems { get; init; }
+}
+
+/// <summary>One converted FAB menu item and the header button (or its menu entry) it came from.</summary>
+public sealed class FabMenuItemInfo {
+	/// <summary>Generated mobile element name of the menu item (unique on the page).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The item's caption — the resolved en-US text, or the literal/binding carried verbatim.</summary>
+	[JsonPropertyName("caption")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Caption { get; init; }
+
+	/// <summary>Name of the source header button the item came from.</summary>
+	[JsonPropertyName("sourceButton")]
+	public string SourceButton { get; init; }
+
+	/// <summary>
+	/// Name of the source menu entry when the item was flattened out of the button's own <c>menuItems</c>
+	/// (the button itself was discarded). Null when the button itself became the item.
+	/// </summary>
+	[JsonPropertyName("sourceMenuItem")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SourceMenuItem { get; init; }
+
+	/// <summary>Web request of the source <c>clicked</c> binding.</summary>
+	[JsonPropertyName("webRequest")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string WebRequest { get; init; }
+
+	/// <summary>Mobile request the item dispatches (remapped when the mobile name differs).</summary>
+	[JsonPropertyName("mobileRequest")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string MobileRequest { get; init; }
+}
+
+/// <summary>A FAB candidate that produced no menu item (a dead menu item is not shipped).</summary>
+public sealed class DroppedFabMenuItem {
+	/// <summary>Name of the source header button.</summary>
+	[JsonPropertyName("sourceButton")]
+	public string SourceButton { get; init; }
+
+	/// <summary>Name of the source menu entry, when the candidate was one (null for the button itself).</summary>
+	[JsonPropertyName("sourceMenuItem")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SourceMenuItem { get; init; }
+
+	/// <summary>Why no item was produced (e.g. the request is not supported on the Creatio Mobile app).</summary>
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
 }
 
 /// <summary>

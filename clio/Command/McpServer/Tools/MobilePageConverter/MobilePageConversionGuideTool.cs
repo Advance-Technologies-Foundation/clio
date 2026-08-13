@@ -200,7 +200,7 @@ public sealed class MobilePageConversionGuideTool {
 		// the template's natives and each template-owned collection can be split into focused targeted merges
 		// instead of the mobile diff engine's array-replace root merge silently dropping one side (see
 		// WebToMobileAnalysisService.SplitRootMergeIntoTargetedMerges).
-		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args);
+		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args, rules.FabConversion);
 		IReadOnlyDictionary<string, string> mobileContainerParents = positionalPlacements is { Count: > 0 }
 			? mobileTemplateProbe.ContainerParents
 			: null;
@@ -247,7 +247,8 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
 				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
 				nonConvertingContainers: nonConvertingContainers,
-				ownBodyViewConfigOps: pageResponse.Page?.OwnBodySummary?.ViewConfigDiffOps);
+				ownBodyViewConfigOps: pageResponse.Page?.OwnBodySummary?.ViewConfigDiffOps,
+				mobileTemplateFloatAction: mobileTemplateProbe.FloatAction);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -486,7 +487,8 @@ public sealed class MobilePageConversionGuideTool {
 		IReadOnlyDictionary<string, string> ContainerParents,
 		JsonNode ViewModelConfig,
 		JsonNode ModelConfig,
-		bool Unavailable);
+		bool Unavailable,
+		JsonNode FloatAction = null);
 
 	/// <summary>
 	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle: maps each mobile
@@ -498,7 +500,8 @@ public sealed class MobilePageConversionGuideTool {
 	/// merged bundle and never throws. Returns a null base (and <c>Unavailable = false</c>) when no template
 	/// name is known; <c>Unavailable = true</c> when a name was known but the read failed.
 	/// </summary>
-	private MobileTemplateProbe LoadMobileTemplateProbe(string mobileSchemaName, MobilePageConversionGuideArgs args) {
+	private MobileTemplateProbe LoadMobileTemplateProbe(
+		string mobileSchemaName, MobilePageConversionGuideArgs args, FabConversionRule fabRule) {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
 			return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: false);
@@ -524,7 +527,12 @@ public sealed class MobilePageConversionGuideTool {
 				IReadOnlyDictionary<string, string> parents = bundle.ViewConfig is { } viewConfig
 					? WebToMobileAnalysisService.CollectParentByName(viewConfig)
 					: emptyParents;
-				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig, Unavailable: false);
+				// The template's OWN resolved FAB configuration (Scaffold.floatAction) — the base the FAB
+				// pass appends the converted header buttons to. Null when the template carries none.
+				JsonNode floatAction = WebToMobileAnalysisService.ExtractScaffoldFloatAction(
+					bundle.ViewConfig, fabRule?.ScaffoldName, fabRule?.FloatActionProperty);
+				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig,
+					Unavailable: false, FloatAction: floatAction);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.

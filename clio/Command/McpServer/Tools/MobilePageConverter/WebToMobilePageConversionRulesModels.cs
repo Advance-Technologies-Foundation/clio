@@ -65,6 +65,16 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("emptyContainerRemoval")]
 	public EmptyContainerRemovalRule EmptyContainerRemoval { get; init; }
 
+	/// <summary>
+	/// Group: page-added <c>crt.Button</c> components of a non-converting web header container converted
+	/// into mobile floating-action-button (FAB) menu items inserted into the template FAB's
+	/// <c>menuItems</c> — see <see cref="FabConversionRule"/>. Null when the section is absent from the
+	/// rules file — the FAB pass is then a no-op (the feature is switched by data, not code, like
+	/// <see cref="TabAreaLayers"/>).
+	/// </summary>
+	[JsonPropertyName("fabConversion")]
+	public FabConversionRule FabConversion { get; init; }
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -309,6 +319,66 @@ public sealed class EmptyContainerRemovalRule {
 	/// </summary>
 	[JsonPropertyName("removableTypes")]
 	public IReadOnlyList<string> RemovableTypes { get; init; } = [];
+}
+
+/// <summary>
+/// Rule for converting the web header's page-added buttons into mobile floating-action-button (FAB)
+/// menu items. The pass runs only for the <see cref="SourceContainers"/> a matched template ALSO declares
+/// in its <c>nonConvertingContainers</c> — the extraction is the button-shaped exception to that exclusion:
+/// every page-added <see cref="SourceButtonType"/> found under such a container (recursively, at any depth)
+/// becomes one <see cref="MenuItemType"/> entry INSERTED into the template FAB's <c>menuItems</c>
+/// (parentName = the FAB's own name), so the template's items (Copy/Delete)
+/// are inherited and appear first — they are never re-emitted. The FAB itself is a Scaffold PROPERTY
+/// (<see cref="FloatActionProperty"/>), not an element — it lives in page metadata only and never appears
+/// in the Mobile Designer. A Scaffold merge carrying <c>floatAction</c> must NOT be generated when the
+/// template already provides one: the platform diff applier silently drops a merged property that already
+/// exists on the target as a named child, so such a merge never reaches the compiled page. Only when the
+/// template provides NO <c>floatAction</c> does the pass emit ONE Scaffold merge with the complete FAB (a
+/// first definition, which the applier accepts). A button that carries its own <c>menuItems</c>
+/// is itself discarded and its entries are flattened recursively into the same flat list. Template-inherited
+/// (chrome) buttons — Save/Cancel/Close — are never extracted: they are filtered against the web template's
+/// component-name baseline. Absent/unusable switches the whole pass off (the header content is then simply
+/// excluded, per <c>nonConvertingContainers</c>).
+/// </summary>
+public sealed class FabConversionRule {
+	/// <summary>
+	/// Web template containers whose page-added buttons are extracted (e.g. ["MainHeader"]). Only the
+	/// intersection with the matched template's <c>nonConvertingContainers</c> is extracted from — a template
+	/// that does not exclude the container (e.g. a list template) never triggers the FAB pass.
+	/// </summary>
+	[JsonPropertyName("sourceContainers")]
+	public IReadOnlyList<string> SourceContainers { get; init; } = [];
+
+	/// <summary>Web component type extracted as a FAB menu item (strictly this type).</summary>
+	[JsonPropertyName("sourceButtonType")]
+	public string SourceButtonType { get; init; } = "crt.Button";
+
+	/// <summary>Mobile component type of one generated FAB menu item.</summary>
+	[JsonPropertyName("menuItemType")]
+	public string MenuItemType { get; init; } = "crt.MenuItem";
+
+	/// <summary>Mobile template element the FAB configuration merges onto (the page root).</summary>
+	[JsonPropertyName("scaffoldName")]
+	public string ScaffoldName { get; init; } = "Scaffold";
+
+	/// <summary>The Scaffold property that carries the FAB configuration.</summary>
+	[JsonPropertyName("floatActionProperty")]
+	public string FloatActionProperty { get; init; } = "floatAction";
+
+	/// <summary>
+	/// The FAB skeleton (name / type / icon / visible — WITHOUT <c>menuItems</c>). Two roles: when the
+	/// mobile template was read and provides no <c>floatAction</c>, the fallback Scaffold merge is built
+	/// from this skeleton plus the converted items; when the template bundle could not be read at all, the
+	/// skeleton's <c>name</c> is the assumed insert target (the standard FloatingActionButton). Mirrors
+	/// BaseMobilePageTemplate. No baseline menu items are carried anywhere: inserts inherit the real
+	/// template items by construction, and a generated item name (always <c>*FabMenuItem</c>) cannot
+	/// collide with the standard <c>*MenuItem</c> names.
+	/// </summary>
+	[JsonPropertyName("defaultFab")]
+	public IReadOnlyDictionary<string, JsonElement> DefaultFab { get; init; } = new Dictionary<string, JsonElement>();
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
 }
 
 /// <summary>

@@ -98,6 +98,11 @@ public static class WebToMobileAnalysisService {
 	/// into a non-converting container but which the diff-apply orphaned to the tree root (so the position-based
 	/// prune never saw it there). Null/empty skips this orphan recovery; only meaningful with
 	/// <paramref name="nonConvertingContainers"/>.</param>
+	/// <param name="mobileTemplateFloatAction">The mobile template's OWN resolved <c>Scaffold.floatAction</c>
+	/// configuration (icon, visibility, the template's own menu items). The FAB pass appends the converted
+	/// header buttons AFTER those items so the full-replace merge it emits keeps the template's actions. Null
+	/// when the template carries no FAB or its bundle could not be read (the rules' default skeleton is used
+	/// then — see <see cref="FabConversionRule"/>).</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -120,7 +125,8 @@ public static class WebToMobileAnalysisService {
 		JsonNode mobileTemplateModelConfig = null,
 		bool mobileTemplateUnavailable = false,
 		IReadOnlySet<string> nonConvertingContainers = null,
-		IReadOnlyList<Clio.Command.PageOperationInfo> ownBodyViewConfigOps = null) {
+		IReadOnlyList<Clio.Command.PageOperationInfo> ownBodyViewConfigOps = null,
+		JsonNode mobileTemplateFloatAction = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -138,6 +144,33 @@ public static class WebToMobileAnalysisService {
 		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
 		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
+
+		// 0-fab. Header-buttons → FAB extraction runs on the INTACT tree, BEFORE the 0a exclusion prune
+		//        below — pruning detaches the buttons from the header that identifies them, exactly why 0a
+		//        itself must run before 0b. Only containers the matched template ALSO declares non-converting
+		//        are extracted from (the FAB conversion is the button-shaped exception to that exclusion),
+		//        and only PAGE-ADDED buttons are taken — a template-inherited (chrome) button (Save/Cancel/
+		//        Close) is filtered out against the web template's component-name baseline. Without that
+		//        baseline the extraction is SKIPPED (chrome and page content cannot be told apart; the
+		//        header is then excluded wholesale) and a constraint says so. The extracted nodes are turned
+		//        into FAB menu items after the element map is built (the request map and the page resources
+		//        are needed there).
+		FabConversionRule fabRule = rules.FabConversion;
+		IReadOnlyList<string> fabSourceContainers = ResolveFabSourceContainers(fabRule, nonConvertingContainers);
+		var fabButtonNodes = new List<JObject>();
+		bool fabSkippedNoBaseline = false;
+		if (fabSourceContainers.Count > 0) {
+			if (templateComponentNames is { Count: > 0 }) {
+				foreach (string container in fabSourceContainers) {
+					if (FindContainerItemsByName(tree, container) is { } headerItems) {
+						CollectFabButtonNodes(headerItems, map, componentMap, templateComponentNames,
+							fabRule.SourceButtonType, fabButtonNodes);
+					}
+				}
+			} else {
+				fabSkippedNoBaseline = true;
+			}
+		}
 
 		// 0a. Declarative, rule-driven exclusion: drop the components of the web template's non-converting
 		//     containers (e.g. MainHeader / its action bar) BEFORE chrome subtraction. It must run first
@@ -164,10 +197,24 @@ public static class WebToMobileAnalysisService {
 				Dictionary<string, string> orphanToContainer =
 					ResolveOrphanExclusions(ownBodyViewConfigOps, excludedNameToContainer, excludedContainers, map, componentMap);
 				if (orphanToContainer.Count > 0) {
+					// An orphaned button declared into a FAB source container is still a page-added header
+					// button (own-body ops are page-added by construction — no baseline needed here), so it is
+					// extracted for the FAB pass before the prune drops it by name.
+					CollectOrphanFabButtonNodes(tree, orphanToContainer, fabSourceContainers,
+						fabRule?.SourceButtonType, fabButtonNodes);
 					tree = PruneOrphansByName(tree, orphanToContainer, excludedComponents);
 				}
 			}
 			nonConvertingPruned = true;
+		}
+		// A button extracted for the FAB pass is not "lost": it is reported under fabConversion (as an item
+		// or a dropped candidate), so it leaves the excluded-components report — its non-button neighbours
+		// stay there.
+		if (fabButtonNodes.Count > 0) {
+			var extractedButtonNames = new HashSet<string>(
+				fabButtonNodes.Select(n => n["name"]?.ToString()).Where(n => !string.IsNullOrEmpty(n)),
+				StringComparer.OrdinalIgnoreCase);
+			excludedComponents.RemoveAll(e => extractedButtonNames.Contains(e.Name));
 		}
 
 		// 0b. Filter out the web template's own components at read time. The merged tree carries the
@@ -231,6 +278,25 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor);
+
+		// Header buttons → FAB menu items (extracted at 0-fab): every page-added header button becomes one
+		// crt.MenuItem INSERTED into the mobile template's own FAB (parentName = the template FAB's name,
+		// propertyName = menuItems) so the template's items (Copy/Delete) are inherited, never re-emitted.
+		// A merge carrying floatAction inside the Scaffold values must NOT be used here: the platform diff
+		// applier silently DROPS any merged property that already exists on the target as a named child
+		// (JsonApplier's ItemWithItemsPropertyMergeException guard), so such a merge never reaches the
+		// compiled page. Only when the template provides NO floatAction at all does the pass fall back to
+		// ONE Scaffold merge with the complete floatAction — a first definition, which the applier accepts.
+		// floatAction is a Scaffold PROPERTY, not an element, so nothing FAB-related ever appears in the
+		// Mobile Designer.
+		FabConversionResult fabConversion = null;
+		if (fabButtonNodes.Count > 0) {
+			fabConversion = BuildFabConversion(fabButtonNodes, fabRule, mobileTemplateFloatAction,
+				mobileTemplateUnavailable, requestMap, resources, BuildFabTakenNames(bundle, map, componentMap));
+			if (fabConversion?.Entries is { Count: > 0 }) {
+				elementMap.AddRange(fabConversion.Entries);
+			}
+		}
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -315,8 +381,10 @@ public static class WebToMobileAnalysisService {
 		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap, bundle?.ViewModelConfig);
 
 		// 8. Every localized string the converted body references (top-level captions AND nested tokens such
-		//    as config.title / text.template), resolved to its text — so the caller registers them all.
-		IReadOnlyDictionary<string, string> resourceStrings = CollectResourceStrings(elementMap, modelConfig, viewModelConfig, resources);
+		//    as config.title / text.template), resolved to its text — so the caller registers them all. The
+		//    FAB items' re-keyed captions are seeded explicitly: their keys do not exist in the source strings.
+		IReadOnlyDictionary<string, string> resourceStrings = CollectResourceStrings(
+			elementMap, modelConfig, viewModelConfig, resources, fabConversion?.CaptionSeeds);
 
 		return new MobilePageConversionGuide {
 			SourcePage = sourcePage,
@@ -342,6 +410,7 @@ public static class WebToMobileAnalysisService {
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
+			FabConversion = fabConversion?.Info,
 			// Back-compat alias: spacingNormalization shipped before normalizations existed, so its shape is
 			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
 			SpacingNormalization = spacingNormalization.Count > 0
@@ -372,12 +441,15 @@ public static class WebToMobileAnalysisService {
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
 				normalization: componentPropertyOverrides,
-				nonConvertingContainers: nonConvertingPruned ? excludedContainers : null),
+				nonConvertingContainers: nonConvertingPruned ? excludedContainers : null,
+				hasFabConversion: fabConversion?.Info is not null,
+				fabSkippedNoBaseline: fabSkippedNoBaseline),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
-				normalization: componentPropertyOverrides),
+				normalization: componentPropertyOverrides,
+				hasFabConversion: fabConversion?.Info is not null),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1573,7 +1645,8 @@ public static class WebToMobileAnalysisService {
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
-		IReadOnlyCollection<string> nonConvertingContainers = null) {
+		IReadOnlyCollection<string> nonConvertingContainers = null, bool hasFabConversion = false,
+		bool fabSkippedNoBaseline = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1669,6 +1742,30 @@ public static class WebToMobileAnalysisService {
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
 		}
+		if (hasFabConversion) {
+			constraints.Add(
+				"fabConversion is MANDATORY, not a proposal: the page-added header buttons are ALREADY converted " +
+				"into floating-action-button menu items and baked into the element map as synthesized entries " +
+				"(no webName) — normally one INSERT per converted item into the template FAB's menuItems " +
+				"(parentName = FloatingActionButton, propertyName = menuItems); only when the mobile template " +
+				"provides no floatAction of its own does the map instead carry ONE Scaffold merge with the " +
+				"complete floatAction (its first definition). Apply exactly the shape the map contains, " +
+				"VERBATIM. NEVER re-emit the template's own items (Copy/Delete are inherited and come first), " +
+				"never reorder them, never re-create the source buttons as page elements, and NEVER author a " +
+				"Scaffold merge that carries floatAction yourself — when the template already owns floatAction, " +
+				"the platform diff applier silently DROPS that merged property and the converted items never " +
+				"reach the compiled page. floatAction is a Scaffold PROPERTY, not an element, so the FAB never " +
+				"appears in the Freedom UI Mobile Designer — that is expected platform behavior, not a " +
+				"conversion error. Report guide.fabConversion.items and every droppedItems entry (with its " +
+				"reason) to the user.");
+		}
+		if (fabSkippedNoBaseline) {
+			constraints.Add(
+				"Header buttons could NOT be converted into FAB menu items: the source page's web-template " +
+				"baseline was unavailable, so page-added buttons cannot be told apart from the template's own " +
+				"chrome (Save/Cancel/Close). The non-converting header was excluded wholesale — recreate any " +
+				"needed action manually, or re-run with environment-name/uri set so the template can be read.");
+		}
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
@@ -1684,7 +1781,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		ComponentPropertyOverrideResult normalization = null) {
+		ComponentPropertyOverrideResult normalization = null, bool hasFabConversion = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1699,6 +1796,9 @@ public static class WebToMobileAnalysisService {
 		}
 		if (hasTabAreaLayers) {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
+		}
+		if (hasFabConversion) {
+			steps.Add("guide.fabConversion summarizes the header buttons converted into floating-action-button menu items; the actionable payload is the set of synthesized elementMap entries (no webName) — normally one INSERT per item into the template FAB's menuItems (parentName FloatingActionButton, propertyName menuItems), or ONE Scaffold merge with the complete floatAction only when the template provides none. Apply exactly the shape the map contains, mobileValues VERBATIM; never re-emit the template's own Copy/Delete items and never author a floatAction merge on the Scaffold yourself (the diff applier silently drops it when the template already owns floatAction). This structure is MANDATORY — do NOT ask the user whether to apply it; STATE the converted items and every droppedItems entry (with its reason) when you present the plan, and note that the FAB is visible only at runtime, never in the Mobile Designer (floatAction lives in page metadata).");
 		}
 		AppendNormalizationLines(steps, normalization);
 		steps.Add("Validate the body with validate-page; resolve any findings.");
@@ -2053,8 +2153,16 @@ public static class WebToMobileAnalysisService {
 	/// registers this map on the mobile page so every carried token renders.
 	/// </summary>
 	private static IReadOnlyDictionary<string, string> CollectResourceStrings(
-		List<ElementMapEntry> elementMap, JsonNode modelConfig, JsonNode viewModelConfig, JObject resources) {
+		List<ElementMapEntry> elementMap, JsonNode modelConfig, JsonNode viewModelConfig, JObject resources,
+		IReadOnlyDictionary<string, string> extraSeeds = null) {
 		var result = new Dictionary<string, string>(StringComparer.Ordinal);
+		// Seeds carry keys that do NOT exist in the source page's strings (e.g. a FAB item's re-keyed
+		// <itemName>_caption) together with their resolved text — a token scan alone cannot resolve them.
+		if (extraSeeds is not null) {
+			foreach (KeyValuePair<string, string> seed in extraSeeds) {
+				result.TryAdd(seed.Key, seed.Value);
+			}
+		}
 		void Scan(string json) {
 			if (string.IsNullOrEmpty(json)) {
 				return;
@@ -2455,6 +2563,498 @@ public static class WebToMobileAnalysisService {
 			DroppedRequests = dropped,
 			FlaggedRequests = flagged
 		};
+	}
+
+	// ── Header buttons → FAB menu items ────────────────────────────────────────────────────────
+
+	/// <summary>The mobile FAB property that carries its menu items — a platform constant of
+	/// <c>crt.FloatingActionButton</c>, the insert target of every converted item.</summary>
+	private const string FabMenuItemsProperty = "menuItems";
+
+	/// <summary>Carries the FAB pass output: the synthesized element-map entries (empty when no item was
+	/// produced — the template's own FAB is then left untouched; one <c>insert</c> per converted menu item
+	/// targeting the template FAB's <c>menuItems</c>, or ONE Scaffold merge carrying the complete
+	/// <c>floatAction</c> when the template provides none to insert into), the advisory guide section, and
+	/// the re-keyed caption resources to seed into <c>resourceStrings</c> (their keys do not exist in the
+	/// source page's strings, so the token scan alone cannot resolve them).</summary>
+	private sealed record FabConversionResult(
+		IReadOnlyList<ElementMapEntry> Entries,
+		FabConversionInfo Info,
+		IReadOnlyDictionary<string, string> CaptionSeeds);
+
+	/// <summary>One FAB menu-item candidate: a page-added header button itself, or — when the button
+	/// carries its own <c>menuItems</c> — one flattened menu entry (the button is then discarded).</summary>
+	private sealed record FabCandidate(JObject Node, string SourceButton, string SourceMenuItem);
+
+	/// <summary>
+	/// The FAB source containers effective for this run: the rule's <c>sourceContainers</c> intersected with
+	/// the matched template's <c>nonConvertingContainers</c> — the FAB conversion is the button-shaped
+	/// exception to that exclusion, so a template that does not exclude the container (e.g. a list template)
+	/// never triggers the pass. Empty when the rule is absent/unusable or nothing intersects.
+	/// </summary>
+	private static IReadOnlyList<string> ResolveFabSourceContainers(
+		FabConversionRule rule, IReadOnlySet<string> nonConvertingContainers) {
+		if (rule is null
+			|| rule.SourceContainers is not { Count: > 0 }
+			|| string.IsNullOrWhiteSpace(rule.SourceButtonType)
+			|| string.IsNullOrWhiteSpace(rule.MenuItemType)
+			|| string.IsNullOrWhiteSpace(rule.ScaffoldName)
+			|| string.IsNullOrWhiteSpace(rule.FloatActionProperty)
+			|| nonConvertingContainers is not { Count: > 0 }) {
+			return [];
+		}
+		return rule.SourceContainers
+			.Where(c => !string.IsNullOrWhiteSpace(c) && nonConvertingContainers.Contains(c))
+			.ToList();
+	}
+
+	/// <summary>Finds the FIRST node named <paramref name="name"/> anywhere in the tree and returns its items (null when absent or childless).</summary>
+	private static JArray FindContainerItemsByName(JArray nodes, string name) {
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			if (string.Equals(node["name"]?.ToString(), name, StringComparison.OrdinalIgnoreCase)) {
+				return node["items"] as JArray;
+			}
+			if (node["items"] is JArray items) {
+				JArray found = FindContainerItemsByName(items, name);
+				if (found is not null) {
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Collects, from the INTACT subtree of a FAB source container, every PAGE-ADDED button node — strictly
+	/// <paramref name="buttonType"/>, at any depth. A mapped twin (container/component rule of its own) is
+	/// carved out with its whole subtree, mirroring the exclusion prune. A baseline (chrome) button —
+	/// Save/Cancel/Close — is never collected. Chrome layers, page-added non-button containers, and anonymous
+	/// wrappers are all transparent: the walk keeps looking underneath them. Collected nodes are deep-cloned
+	/// (the exclusion prune mutates the tree right after this pass); a button's own <c>menuItems</c> travel
+	/// inside the clone.
+	/// </summary>
+	private static void CollectFabButtonNodes(
+		JArray nodes,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
+		IReadOnlySet<string> baseline,
+		string buttonType,
+		List<JObject> collected) {
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			bool isCarveOut = !string.IsNullOrEmpty(name)
+				&& (containerNameMap.ContainsKey(name) || (componentMap is not null && componentMap.ContainsKey(name)));
+			if (isCarveOut) {
+				continue; // converts under its own rule, out of scope for the FAB bucket
+			}
+			bool isChrome = !string.IsNullOrEmpty(name) && baseline.Contains(name);
+			if (!isChrome && string.Equals(node["type"]?.ToString(), buttonType, StringComparison.OrdinalIgnoreCase)) {
+				collected.Add((JObject)node.DeepClone());
+				continue;
+			}
+			if (node["items"] is JArray items) {
+				CollectFabButtonNodes(items, containerNameMap, componentMap, baseline, buttonType, collected);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Collects the FAB buttons among the resolved ORPHANS — page-added inserts whose declared parent chain
+	/// leads into a non-converting container but which the merge detached to the tree root, so the
+	/// container-subtree walk above never saw them. Own-body ops are page-added by construction, so no
+	/// chrome baseline is needed here; only orphans excluded by a FAB source container qualify. Runs right
+	/// before <see cref="PruneOrphansByName"/> drops the nodes.
+	/// </summary>
+	private static void CollectOrphanFabButtonNodes(
+		JArray nodes,
+		IReadOnlyDictionary<string, string> orphanToContainer,
+		IReadOnlyList<string> fabSourceContainers,
+		string buttonType,
+		List<JObject> collected) {
+		if (fabSourceContainers is not { Count: > 0 } || string.IsNullOrWhiteSpace(buttonType)) {
+			return;
+		}
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			if (!string.IsNullOrEmpty(name)
+				&& orphanToContainer.TryGetValue(name, out string container)
+				&& fabSourceContainers.Contains(container, StringComparer.OrdinalIgnoreCase)
+				&& string.Equals(node["type"]?.ToString(), buttonType, StringComparison.OrdinalIgnoreCase)) {
+				collected.Add((JObject)node.DeepClone());
+				continue;
+			}
+			if (node["items"] is JArray items) {
+				CollectOrphanFabButtonNodes(items, orphanToContainer, fabSourceContainers, buttonType, collected);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Element names already taken on the page — the source page's own component names plus the template
+	/// twins' mobile names — so a generated FAB item name can be made unique against them (the FAB's own
+	/// names are added inside <see cref="BuildFabConversion"/>, where the template FAB is known).
+	/// </summary>
+	private static HashSet<string> BuildFabTakenNames(
+		PageBundleInfo bundle,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap) {
+		HashSet<string> taken = bundle.ViewConfig is null
+			? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			: CollectComponentNames(bundle.ViewConfig);
+		foreach (string mobileTwin in containerNameMap.Values) {
+			taken.Add(mobileTwin);
+		}
+		foreach (ComponentMappingRule twin in componentMap.Values) {
+			if (!string.IsNullOrWhiteSpace(twin?.Mobile)) {
+				taken.Add(twin.Mobile);
+			}
+		}
+		return taken;
+	}
+
+	/// <summary>
+	/// Extracts the resolved <c>floatAction</c> (or any other FAB property) from a mobile template's merged
+	/// <c>viewConfig</c>: the FIRST node named <paramref name="scaffoldName"/>, at any depth, has its
+	/// <paramref name="floatActionProperty"/> deep-cloned. Null when the tree, the Scaffold, or the property
+	/// is absent. Used by the guide tool's mobile-template probe to hand the template's own FAB items to the
+	/// FAB pass.
+	/// </summary>
+	internal static JsonNode ExtractScaffoldFloatAction(JsonNode viewConfig, string scaffoldName, string floatActionProperty) {
+		if (viewConfig is not JsonArray nodes
+			|| string.IsNullOrWhiteSpace(scaffoldName) || string.IsNullOrWhiteSpace(floatActionProperty)) {
+			return null;
+		}
+		foreach (JsonNode child in nodes) {
+			if (child is not JsonObject node) {
+				continue;
+			}
+			string name = node["name"] is JsonValue value && value.TryGetValue(out string s) ? s : null;
+			if (string.Equals(name, scaffoldName, StringComparison.OrdinalIgnoreCase)) {
+				return node[floatActionProperty]?.DeepClone();
+			}
+			if (node["items"] is JsonArray items) {
+				JsonNode found = ExtractScaffoldFloatAction(items, scaffoldName, floatActionProperty);
+				if (found is not null) {
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+
+	/// <summary>The mobile template's resolved <c>floatAction</c> as a Newtonsoft object (null when absent/unreadable).</summary>
+	private static JObject ParseTemplateFloatAction(JsonNode floatAction) {
+		if (floatAction is null) {
+			return null;
+		}
+		try {
+			return JToken.Parse(floatAction.ToJsonString()) as JObject;
+		} catch (Newtonsoft.Json.JsonException) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Flattens a button's <c>menuItems</c> into flat FAB candidates, recursively: a nested submenu node
+	/// (an entry carrying its own <c>items</c>) is a group opener like the button itself — skipped, its
+	/// entries flattened in place — so no hierarchy survives; each leaf keeps its OWN caption (no parent
+	/// prefix). Document order is preserved.
+	/// </summary>
+	private static void FlattenFabMenuEntries(JArray entries, string sourceButton, List<FabCandidate> candidates) {
+		foreach (JToken token in entries) {
+			if (token is not JObject entry) {
+				continue;
+			}
+			if (entry["items"] is JArray nested && nested.Count > 0) {
+				FlattenFabMenuEntries(nested, sourceButton, candidates);
+				continue;
+			}
+			candidates.Add(new FabCandidate(entry, sourceButton, entry["name"]?.ToString()));
+		}
+	}
+
+	/// <summary>
+	/// Turns the extracted page-added header buttons into FAB menu items. The default emission is one
+	/// synthesized <c>insert</c> per converted item into the template FAB's <c>menuItems</c> (parentName =
+	/// the FAB's own name): the template's items (Copy/Delete), icon and visibility are inherited, never
+	/// re-emitted. A Scaffold merge carrying <c>floatAction</c> is NOT emitted when the template already
+	/// provides one — the platform diff applier silently drops a merged property that already exists on the
+	/// target as a named child, so such a merge never reaches the compiled page. The merge shape survives
+	/// only as the fallback for a template with no <c>floatAction</c> to insert into: the rules' default
+	/// skeleton plus the converted items, emitted as ONE Scaffold merge (a first definition, which the
+	/// applier accepts). When the template bundle could not be read at all, inserts are emitted against the
+	/// skeleton's standard FAB name (a generated item name always ends with <c>FabMenuItem</c>, so it
+	/// cannot collide with the standard <c>*MenuItem</c> names it cannot see). Each
+	/// candidate becomes one <c>crt.MenuItem</c> carrying ONLY its caption, its converted <c>clicked</c>
+	/// request (same remap/paramMap rules as every event binding), and its <c>visible</c> —
+	/// style/color/icon are ignored by design. A candidate with no caption, no <c>clicked</c>, or a request
+	/// the Creatio Mobile app does not support produces NO item (a dead menu item is not shipped) and is
+	/// reported in <c>droppedItems</c>. Returns null when there is nothing to report at all.
+	/// </summary>
+	private static FabConversionResult BuildFabConversion(
+		IReadOnlyList<JObject> buttonNodes,
+		FabConversionRule rule,
+		JsonNode mobileTemplateFloatAction,
+		bool mobileTemplateUnavailable,
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		JObject resources,
+		HashSet<string> takenNames) {
+		var candidates = new List<FabCandidate>();
+		foreach (JObject button in buttonNodes) {
+			string buttonName = button["name"]?.ToString();
+			if (button["menuItems"] is JArray menu && menu.Count > 0) {
+				FlattenFabMenuEntries(menu, buttonName, candidates);
+			} else {
+				candidates.Add(new FabCandidate(button, buttonName, null));
+			}
+		}
+		if (candidates.Count == 0) {
+			return null;
+		}
+
+		JObject templateFloatAction = ParseTemplateFloatAction(mobileTemplateFloatAction);
+		string templateFabName = templateFloatAction?["name"]?.ToString();
+		string defaultFabName = rule.DefaultFab is not null
+			&& rule.DefaultFab.TryGetValue("name", out JsonElement nameElement)
+			&& nameElement.ValueKind == JsonValueKind.String
+				? nameElement.GetString()
+				: null;
+		// Insert mode needs a named FAB to target: the template's own, or — when the template bundle could
+		// not be read — the skeleton's standard name (the overwhelmingly common case; inserts are additive,
+		// so a wrong assumption loses the converted items but can never erase the template's own).
+		// Merge mode remains for a FAB the inserts cannot target: the template was read and provides no
+		// floatAction (first definition — the applier accepts it), or provides one WITHOUT a name (not a
+		// named child, so the applier's merge guard does not strip it and a full replace is applied).
+		string insertTargetName = !string.IsNullOrWhiteSpace(templateFabName)
+			? templateFabName
+			: mobileTemplateUnavailable ? defaultFabName : null;
+		bool insertMode = !string.IsNullOrWhiteSpace(insertTargetName);
+		bool assumedTarget = insertMode && string.IsNullOrWhiteSpace(templateFabName);
+
+		var taken = new HashSet<string>(takenNames, StringComparer.OrdinalIgnoreCase);
+		if (insertMode) {
+			taken.Add(insertTargetName);
+			if (templateFloatAction?[FabMenuItemsProperty] is JArray templateItems) {
+				foreach (JToken existing in templateItems) {
+					if (existing is JObject existingItem
+						&& existingItem["name"]?.ToString() is { Length: > 0 } existingName) {
+						taken.Add(existingName);
+					}
+				}
+			}
+		}
+
+		JObject floatAction = null;
+		if (!insertMode) {
+			floatAction = templateFloatAction;
+			if (floatAction is null) {
+				floatAction = new JObject();
+				foreach (KeyValuePair<string, JsonElement> pair in rule.DefaultFab ?? new Dictionary<string, JsonElement>()) {
+					floatAction[pair.Key] = JToken.Parse(pair.Value.GetRawText());
+				}
+			}
+			if (floatAction["name"]?.ToString() is { Length: > 0 } fabName) {
+				taken.Add(fabName);
+			}
+			if (floatAction[FabMenuItemsProperty] is JArray existingItems) {
+				foreach (JToken existing in existingItems) {
+					if (existing is JObject existingItem
+						&& existingItem["name"]?.ToString() is { Length: > 0 } existingName) {
+						taken.Add(existingName);
+					}
+				}
+			}
+		}
+
+		var convertedItems = new JArray();
+		var items = new List<FabMenuItemInfo>();
+		var dropped = new List<DroppedFabMenuItem>();
+		var captionSeeds = new Dictionary<string, string>(StringComparer.Ordinal);
+		foreach (FabCandidate candidate in candidates) {
+			BuildFabMenuItem(candidate, rule, requestMap, resources, taken, convertedItems, items, dropped, captionSeeds);
+		}
+		if (items.Count == 0 && dropped.Count == 0) {
+			return null;
+		}
+
+		var entries = new List<ElementMapEntry>();
+		if (items.Count > 0 && insertMode) {
+			foreach (JToken converted in convertedItems) {
+				if (converted is not JObject item || item["name"]?.ToString() is not { Length: > 0 } itemName) {
+					continue;
+				}
+				var values = (JObject)item.DeepClone();
+				values.Remove("name");
+				JsonNode mobileValues = ToSystemTextNode(values);
+				if (mobileValues is null) {
+					continue;
+				}
+				entries.Add(new ElementMapEntry {
+					Operation = "insert",
+					MobileName = itemName,
+					MobileType = rule.MenuItemType,
+					ParentName = insertTargetName,
+					PropertyName = FabMenuItemsProperty,
+					MobileValues = mobileValues,
+					Reason = "page-added header button converted to a FAB menu item — insert it into the "
+						+ "template FAB's " + FabMenuItemsProperty + " verbatim; the template's own items "
+						+ "(e.g. Copy/Delete) are inherited and come first, so never re-emit them, and never "
+						+ "merge " + rule.FloatActionProperty + " through the Scaffold (the diff applier "
+						+ "silently drops it); the FAB is not visible in the Mobile Designer"
+				});
+			}
+		} else if (items.Count > 0) {
+			if (floatAction[FabMenuItemsProperty] is not JArray menuItems) {
+				menuItems = new JArray();
+				floatAction[FabMenuItemsProperty] = menuItems;
+			}
+			foreach (JToken converted in convertedItems) {
+				menuItems.Add(converted.DeepClone());
+			}
+			var values = new JObject { [rule.FloatActionProperty] = floatAction };
+			JsonNode mobileValues = ToSystemTextNode(values);
+			if (mobileValues is not null) {
+				entries.Add(new ElementMapEntry {
+					Operation = "merge",
+					MobileName = rule.ScaffoldName,
+					MobileValues = mobileValues,
+					Reason = "the mobile template provides no targetable " + rule.FloatActionProperty
+						+ " of its own, so this merge is its FIRST definition (the diff applier accepts it) — "
+						+ "paste it onto the Scaffold verbatim; the FAB is not visible in the Mobile Designer"
+				});
+			}
+		}
+
+		string note = items.Count > 0
+			? $"{items.Count} page-added header button(s)/menu entries became FAB menu items, appended after "
+				+ "the mobile template's own items; the source buttons appear nowhere else on the mobile page."
+			: "Every FAB candidate was dropped (see droppedItems); the template's own FAB is untouched.";
+		if (dropped.Count > 0 && items.Count > 0) {
+			note += $" {dropped.Count} candidate(s) produced no item — see droppedItems.";
+		}
+		if (assumedTarget && items.Count > 0) {
+			note += " The mobile template could not be read, so the inserts target the standard "
+				+ insertTargetName + " — verify at runtime.";
+		}
+		var info = new FabConversionInfo {
+			Note = note,
+			ScaffoldName = rule.ScaffoldName,
+			Items = items,
+			DroppedItems = dropped.Count > 0 ? dropped : null
+		};
+		return new FabConversionResult(entries, info, captionSeeds);
+	}
+
+	/// <summary>A Newtonsoft object re-parsed as a System.Text.Json node (null when it does not round-trip).</summary>
+	private static JsonNode ToSystemTextNode(JObject values) {
+		try {
+			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
+		} catch (System.Text.Json.JsonException) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Builds one FAB menu item from a candidate — or records why none was produced. The item carries the
+	/// caption (a resource token is re-keyed to a per-item key seeded into <c>resourceStrings</c>; a literal
+	/// or data binding is carried verbatim), the converted <c>clicked</c> (rules-file remap + paramMap first,
+	/// the offline supported set as the fallback — the same authority order every event binding uses; an
+	/// unsupported or unknown request drops the candidate, matching the walk's dead-button rule), and the
+	/// source <c>visible</c> verbatim.
+	/// </summary>
+	private static void BuildFabMenuItem(
+		FabCandidate candidate,
+		FabConversionRule rule,
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		JObject resources,
+		HashSet<string> taken,
+		JArray menuItems,
+		List<FabMenuItemInfo> items,
+		List<DroppedFabMenuItem> dropped,
+		Dictionary<string, string> captionSeeds) {
+		void Drop(string reason) => dropped.Add(new DroppedFabMenuItem {
+			SourceButton = candidate.SourceButton, SourceMenuItem = candidate.SourceMenuItem, Reason = reason
+		});
+
+		string caption = candidate.Node["caption"]?.ToString();
+		if (string.IsNullOrWhiteSpace(caption)) {
+			Drop("it carries no caption to label the menu item with");
+			return;
+		}
+		if (candidate.Node["clicked"] is not JObject clicked || !IsEventBinding(clicked)) {
+			Drop("it carries no clicked request — a menu item without an action is not shipped");
+			return;
+		}
+		string webRequest = clicked["request"].ToString();
+		JObject convertedClicked;
+		string mobileRequest;
+		if (requestMap.TryGetValue(webRequest, out RequestMappingRule requestRule)) {
+			if (string.IsNullOrWhiteSpace(requestRule.Mobile)) {
+				Drop($"its request '{webRequest}' is not supported on the Creatio Mobile app — a dead menu item is not shipped");
+				return;
+			}
+			convertedClicked = (JObject)clicked.DeepClone();
+			convertedClicked["request"] = requestRule.Mobile;
+			ApplyParamMap(convertedClicked, requestRule.ParamMap);
+			mobileRequest = requestRule.Mobile;
+		} else if (MobileSupportedRequests.Contains(webRequest)) {
+			convertedClicked = (JObject)clicked.DeepClone();
+			mobileRequest = webRequest;
+		} else {
+			Drop($"its request '{webRequest}' is not supported on the Creatio Mobile app — a dead menu item is not shipped");
+			return;
+		}
+
+		string sourceName = string.IsNullOrWhiteSpace(candidate.SourceMenuItem)
+			? candidate.SourceButton
+			: candidate.SourceMenuItem;
+		string baseName = (string.IsNullOrWhiteSpace(sourceName) ? "HeaderButton" : sourceName) + "FabMenuItem";
+		string itemName = baseName;
+		for (int i = 2; taken.Contains(itemName); i++) {
+			itemName = baseName + i.ToString(CultureInfo.InvariantCulture);
+		}
+		taken.Add(itemName);
+
+		string sourceKey = ResourceStringHelper.ExtractKeys(caption).FirstOrDefault();
+		string captionValue = caption;
+		string advisoryCaption = caption;
+		if (!string.IsNullOrEmpty(sourceKey)) {
+			string key = itemName + "_caption";
+			string text = ResolveResourceString(resources, sourceKey) ?? sourceKey;
+			captionSeeds[key] = text;
+			captionValue = "#ResourceString(" + key + ")#";
+			advisoryCaption = text;
+		}
+
+		var item = new JObject {
+			["name"] = itemName,
+			["type"] = rule.MenuItemType,
+			["caption"] = captionValue,
+			["clicked"] = convertedClicked
+		};
+		// visible is the one state-bearing property carried besides the action; style/color/icon are
+		// ignored by design (the FAB menu renders plain captions).
+		if (candidate.Node["visible"] is { } visible) {
+			item["visible"] = visible.DeepClone();
+		}
+		menuItems.Add(item);
+		items.Add(new FabMenuItemInfo {
+			Name = itemName,
+			Caption = advisoryCaption,
+			SourceButton = candidate.SourceButton,
+			SourceMenuItem = candidate.SourceMenuItem,
+			WebRequest = webRequest,
+			MobileRequest = mobileRequest
+		});
 	}
 
 	// ── Adaptive (per-breakpoint) layout proposal ──────────────────────────────────────────────
