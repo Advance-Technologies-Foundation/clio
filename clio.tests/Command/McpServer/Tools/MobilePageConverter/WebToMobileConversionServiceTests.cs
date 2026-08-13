@@ -48,7 +48,7 @@ public sealed class WebToMobileConversionServiceTests {
 					BindingFrom = "code", NameSuffix = "_ListItem",
 					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 27, 28, 29, 30]
 				},
-				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent", "activeRow", "bulkActions"]
+				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent"]
 			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
@@ -3487,9 +3487,6 @@ public sealed class WebToMobileConversionServiceTests {
 			  "selectionState": "$ProductsList_SelectionState",
 			  "_selectionOptions": { "attribute": "ProductsList_SelectionState" },
 			  "features": { "rows": { "selection": { "enable": true } } },
-			  "activeRow": "$ProductsList_ActiveRow",
-			  "bulkActions": [ { "clicked": { "request": "crt.DeleteRecordsRequest",
-				"params": { "filters": "$ProductsList | crt.ToCollectionFilters : 'ProductsList'" } } } ],
 			  "columns": [
 				{ "id": "c1", "code": "ProductsListDS_Product", "path": "Product", "caption": "#ResourceString(ProductsListDS_Product)#" },
 				{ "id": "c2", "code": "ProductsListDS_Price", "path": "Price", "caption": "#ResourceString(ProductsListDS_Price)#" },
@@ -3519,6 +3516,9 @@ public sealed class WebToMobileConversionServiceTests {
 		itemLayout.Should().NotBeNull(
 			because: "the row is what makes a mobile list render at all — leaving it for the caller to build from "
 				+ "prose produced pages with no title and no body (ENG-95046)");
+		itemLayout["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "authoring itemLayout bypasses the registry's GUID-macro default, so the row needs a stable name "
+				+ "of its own — and merge-by-name against a template depends on it");
 		itemLayout["type"]?.GetValue<string>().Should().Be("crt.ListItem",
 			because: "the mobile row element is inserted into the list's itemLayout");
 		itemLayout["title"].GetValueKind().Should().Be(JsonValueKind.String,
@@ -3545,15 +3545,15 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		JsonNode values = Element(guide, "ProductsList").MobileValues;
 		foreach (string gridOnly in new[] {
-			"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent",
-			"activeRow", "bulkActions" }) {
+			"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" }) {
 			values[gridOnly].Should().BeNull(
 				because: $"'{gridOnly}' is a web-grid property with no mobile crt.List equivalent — pasting it "
 					+ "verbatim is what left the converted detail showing empty columns (ENG-95046)");
 		}
 		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
 			because: "the collection binding is the one grid property the mobile list does need");
-		values["type"]?.GetValue<string>().Should().Be("crt.List", because: "the element is still the mobile list");
+		values["type"]?.GetValue<string>().Should().Be("crt.List",
+			because: "the drop pass removes grid-only properties and must not disturb the element's own type");
 	}
 
 	[Test]
@@ -3573,7 +3573,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
 		row.Should().NotBeNull(because: "one column is still enough to render a row");
-		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name");
+		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name",
+			because: "the single column is the display column, so it leads the row rather than sitting in the body");
 		row["body"].Should().NotBeNull(because: "the body collection is always present, so the shape is predictable");
 		row["body"].AsArray().Should().BeEmpty(because: "the only column became the title");
 	}
@@ -3690,6 +3691,51 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A column whose type the source does not declare stays eligible for the title even when a SIBLING is typed: requiring a declared type would make a partly-typed grid behave worse than a wholly untyped one, and the missing-title note would then claim something false.")]
+	public void Analyze_MobileValues_PartlyTypedGrid_StillTitlesTheUntypedDisplayColumn() {
+		// Arrange — the display column carries no dataValueType, the lookup after it does.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Partly", "type": "crt.DataGrid", "items": "$Partly",
+				  "columns": [
+					{ "id": "c1", "code": "PartlyDS_Name" },
+					{ "id": "c2", "code": "PartlyDS_Owner", "dataValueType": 10 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "Partly");
+		grid.MobileValues["itemLayout"]["title"]?.GetValue<string>().Should().Be("$PartlyDS_Name",
+			because: "an undeclared type is unknown, not unacceptable — one typed sibling must not disqualify it");
+		grid.Reason.Should().NotContain("no title",
+			because: "a title was found, so there is nothing to report");
+	}
+
+	[Test]
+	[Description("A grid whose every column code is unusable as a binding gets NO row, and the reason says the row could not be built at all — a blank list is worse than a missing title, so it must not be the one outcome that stays silent.")]
+	public void Analyze_Reason_RowThatCouldNotBeBuilt_IsReported() {
+		// Arrange — both codes fail the binding-identifier gate.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Unusable", "type": "crt.DataGrid", "items": "$Unusable",
+				  "columns": [
+					{ "id": "c1", "code": "$AlreadyBound" },
+					{ "id": "c2", "code": "Has Space" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "Unusable");
+		grid.MobileValues["itemLayout"].Should().BeNull(because: "no entry yielded a usable binding");
+		grid.Reason.Should().Contain("NO ROW",
+			because: "the list would render blank, and the caller cannot see that from the element map alone");
+	}
+
+	[Test]
 	[Description("A value type is read whether the source encodes it as an integer, a float or a quoted string — reading only the integer form would silently score a typed column as untyped and drop it out of the running for the title in a grid where other columns ARE typed.")]
 	public void Analyze_MobileValues_ValueTypeEncodings_AreAllUnderstood() {
 		// Arrange — the text column is the one encoded as a STRING; the lookup ahead of it is a plain integer,
@@ -3732,7 +3778,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ElementMapEntry grid = Element(guide, "Authored");
-		grid.MobileValues["itemLayout"]["title"].Should().BeNull(because: "the authored row carried no title");
+		grid.MobileValues["itemLayout"]["title"].Should().BeNull(because: "the fixture authored a row with no title, which is what makes this case distinguishable from a synthesized one");
 		grid.Reason.Should().NotContain("no title",
 			because: "the note explains that the SOURCE had no acceptable column; here the row was not "
 				+ "synthesized at all, so claiming that would be wrong");
