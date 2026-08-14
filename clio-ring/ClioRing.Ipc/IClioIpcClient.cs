@@ -112,10 +112,10 @@ public interface IClioIpcClient : IAsyncDisposable {
 	Task<IAsyncDisposable> PauseForUpdateAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Sends a bare MCP <c>ping</c> round-trip on the warm channel (no server-side work). This is the
-	/// steady-state protocol round-trip time — the closest measurable proxy for the <c>initialize</c>
-	/// handshake RTT, which the stdio transport fuses with process spawn and cannot report alone.
-	/// Connects first if needed.
+	/// Sends a side-effect-free health round-trip on the warm channel: bare MCP <c>ping</c> for legacy
+	/// protocols, or <c>tools/list</c> for MCP 2026-07-28 and later where ping no longer exists. This is
+	/// the steady-state protocol round-trip time — the closest measurable proxy for handshake RTT,
+	/// which the stdio transport fuses with process spawn and cannot report alone. Connects first if needed.
 	/// </summary>
 	Task PingAsync(CancellationToken cancellationToken = default);
 }

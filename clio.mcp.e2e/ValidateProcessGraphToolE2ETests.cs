@@ -178,6 +178,11 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	// buries real failures in the same run.
 	private static async Task<string> ResolveEnvironmentOrIgnoreAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
+		// Resolve the clio binary the same way ArrangeAsync does. Without this the reachability probe
+		// spawns whatever the raw settings point at, which fails in about three seconds instead of
+		// pinging - and a probe that cannot run reads as "environment unreachable", turning a healthy
+		// stand into three silent skips. A gate that fails open like that is worse than no gate.
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore($"Configure McpE2E:Sandbox:EnvironmentName (with CrtProcessBuilder installed) to run {ToolName} graph-validation E2E tests.");

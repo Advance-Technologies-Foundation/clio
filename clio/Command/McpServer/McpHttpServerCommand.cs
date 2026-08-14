@@ -52,13 +52,13 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 	public string AllowedBaseUrls { get; set; }
 
 	[Option("session-idle-ttl", Default = "5m", Required = false,
-		HelpText = "Idle time after which an unused per-session container is evicted. Accepts a "
+		HelpText = "Idle time after which an unused credential-scoped tenant container is evicted. Accepts a "
 			+ "suffixed duration ('90s', '5m', '1h', '1d'), a bare number of seconds ('300'), or a "
 			+ "TimeSpan ('00:05:00'). Defaults to 5 minutes.")]
 	public string SessionIdleTtl { get; set; }
 
 	[Option("max-sessions", Default = 50, Required = false,
-		HelpText = "Maximum number of per-session containers kept in memory. When exceeded, the "
+		HelpText = "Maximum number of credential-scoped tenant containers kept in memory. When exceeded, the "
 			+ "least-recently-used container is evicted. Defaults to 50.")]
 	public int MaxSessions { get; set; }
 
@@ -192,7 +192,8 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		builder.Services.AddSingleton<ITargetUrlValidator>(
 			new TargetUrlValidator(options.Host, allowedBaseUrls));
 
-		// Bounded, evictable per-session container cache (Story 8, FR-08). Configured at Run time from
+		// Bounded, evictable credential-scoped tenant-container cache (Story 8, FR-08). It is independent
+		// of MCP transport sessions and is configured at Run time from
 		// --session-idle-ttl / --max-sessions and registered as an instance AFTER the shared build, so
 		// last-registration-wins gives this configured cache in HTTP while stdio / ephemeral containers
 		// keep the shared default. HTTP-host-scoped like the gate/validator above; see the
@@ -364,8 +365,11 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	/// <item><description><see cref="HttpServerTransportOptions.EnableLegacySse"/> = <see langword="false"/>:
 	/// only the modern Streamable HTTP endpoint is exposed; the legacy request/response-split SSE endpoints
 	/// (/sse, /message) are not mapped.</description></item>
-	/// <item><description><see cref="HttpServerTransportOptions.Stateless"/> = <see langword="false"/>:
-	/// the server tracks per-session state (the per-session container cache keys off it).</description></item>
+	/// <item><description><see cref="HttpServerTransportOptions.SessionMode"/> =
+	/// <see cref="HttpServerSessionMode.StatefulForInitializeClients"/>: legacy initialize clients keep
+	/// their session-based client identity and server-to-client flows, while discovery-first clients use
+	/// the 2026-07-28 stateless protocol on the same endpoint. The credential-keyed child-container cache
+	/// is process-scoped and does not depend on MCP transport sessions.</description></item>
 	/// </list>
 	/// </summary>
 	/// <param name="options">The transport options instance the SDK is configuring.</param>
@@ -377,8 +381,13 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 #pragma warning disable MCP9004
 		options.EnableLegacySse = false;
 #pragma warning restore MCP9004
+		// MCP9006: SDK 2.x keeps this switch only for stateful backward compatibility. clio deliberately
+		// serves legacy initialize clients in hybrid mode, and those handlers must retain the HTTP
+		// request ExecutionContext so per-request credential passthrough remains isolated.
+#pragma warning disable MCP9006
 		options.PerSessionExecutionContext = false;
-		options.Stateless = false;
+#pragma warning restore MCP9006
+		options.SessionMode = HttpServerSessionMode.StatefulForInitializeClients;
 	}
 
 	private static void ConfigureHostFiltering(IServiceCollection services, string boundHost) {

@@ -11,7 +11,7 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// skipped rather than failed, mirroring the <c>McpE2E:Sandbox</c> guard in the other e2e fixtures.
 /// </summary>
 /// <remarks>
-/// Required environment variables (set before a manual run):
+/// Base environment variables required by the live passthrough fixtures:
 /// <list type="bullet">
 /// <item><description><c>CLIO_MCP_HTTP_E2E_PLATFORM_API_KEY</c> — the platform API key the edge gate
 /// requires (passed to <c>--platform-api-key</c> and sent as <c>Authorization: Bearer</c>).</description></item>
@@ -25,6 +25,11 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// <item><description><c>CLIO_MCP_HTTP_E2E_TENANT2_URL</c> / <c>CLIO_MCP_HTTP_E2E_TENANT2_TOKEN</c> /
 /// <c>CLIO_MCP_HTTP_E2E_TENANT2_IS_NET_CORE=true|false</c> — second, DISTINCT tenant's Creatio URL,
 /// bearer access token, and explicit runtime (or <c>_TENANT2_LOGIN</c> / <c>_TENANT2_PASSWORD</c>, same rule as tenant 1).</description></item>
+/// <item><description>Additional configuration required only by the mixed-protocol tenant-isolation
+/// test: <c>CLIO_MCP_HTTP_E2E_TENANT1_EXPECTED_RESPONSE_MARKER</c> /
+/// <c>CLIO_MCP_HTTP_E2E_TENANT2_EXPECTED_RESPONSE_MARKER</c> — distinct strings present in each
+/// tenant's <c>describe-environment</c> response. These bind each result to the expected tenant
+/// instead of merely asserting that two responses differ.</description></item>
 /// <item><description><c>CLIO_MCP_HTTP_E2E_REGISTERED_ENV</c> — (15d only) name of a pre-registered
 /// clio environment, used for the <c>mcp-http -e &lt;env&gt;</c> no-regression leg.</description></item>
 /// </list>
@@ -83,6 +88,25 @@ internal sealed class McpHttpPassthroughStand {
 			TenantTwoCredentialsBase64 = tenantTwoCredentials!,
 			RegisteredEnvironmentName = Read("CLIO_MCP_HTTP_E2E_REGISTERED_ENV")
 		};
+	}
+
+	/// <summary>
+	/// Requires distinct response markers for the one live test that binds each result to a tenant.
+	/// Other passthrough fixtures remain independent of this stronger assertion configuration.
+	/// </summary>
+	/// <returns>Distinct marker text for tenant one and tenant two.</returns>
+	public static (string TenantOne, string TenantTwo) RequireDistinctResponseMarkersOrIgnore() {
+		string? tenantOne = Read("CLIO_MCP_HTTP_E2E_TENANT1_EXPECTED_RESPONSE_MARKER");
+		string? tenantTwo = Read("CLIO_MCP_HTTP_E2E_TENANT2_EXPECTED_RESPONSE_MARKER");
+		if (string.IsNullOrWhiteSpace(tenantOne)
+			|| string.IsNullOrWhiteSpace(tenantTwo)
+			|| string.Equals(tenantOne, tenantTwo, StringComparison.Ordinal)) {
+			Assert.Ignore(
+				"This mixed-protocol tenant-isolation test additionally requires distinct "
+				+ "CLIO_MCP_HTTP_E2E_TENANT{1,2}_EXPECTED_RESPONSE_MARKER values found in each "
+				+ "tenant's describe-environment response.");
+		}
+		return (tenantOne!, tenantTwo!);
 	}
 
 	private static bool TryResolveTenantCredentials(int tenantNumber, string? url, bool isNetCore, out string? credentialsBase64) {
