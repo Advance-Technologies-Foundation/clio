@@ -2276,10 +2276,14 @@ public static class WebToMobileAnalysisService {
 			" — NO ROW could be built for this list: the source carries no usable "
 			+ (string.IsNullOrWhiteSpace(rule?.SourceProperty) ? "row source" : rule.SourceProperty)
 			+ ", so the list would render blank — tell the user and configure the row in the designer",
+		// Worded to stay true whichever way the title was lost. Today only one way is reachable — the source
+		// offered no column of an accepted type — because the synthesis emits the title as a string and the
+		// contract guard therefore never removes it. Naming that cause as the ONLY one would still be a claim
+		// this function cannot verify, and a note that outlives its reason is how the previous one drifted.
 		RowOutcome.BuiltWithoutTitle =>
-			" — the row carries no title: the source has no column of a type a row title accepts (a title "
-			+ "accepts text columns only), so ask the user which value the row should lead with and set it in "
-			+ "the designer",
+			" — the row carries no title, most often because the source has no column of a type a row title "
+			+ "accepts (a title accepts text columns only): ask the user which value the row should lead with "
+			+ "and set it in the designer",
 		_ => string.Empty
 	};
 
@@ -2377,8 +2381,8 @@ public static class WebToMobileAnalysisService {
 			.Select(e => new JObject { ["value"] = e.Binding }));
 		DropValuesContradictingDeclaredScalars(ctx, rule.TargetType, row);
 		values[rule.TargetProperty] = row;
-		// Re-read rather than trusting titleIndex: the guard above may have removed a title whose shape the
-		// registry contradicts, and reporting BuiltWithTitle then would send the caller looking for one.
+		// Read from the row that actually shipped, not from titleIndex: the contract guard runs between the two,
+		// so deciding on the index would report a title the values may no longer carry.
 		return row["title"] is not null ? RowOutcome.BuiltWithTitle : RowOutcome.BuiltWithoutTitle;
 	}
 
