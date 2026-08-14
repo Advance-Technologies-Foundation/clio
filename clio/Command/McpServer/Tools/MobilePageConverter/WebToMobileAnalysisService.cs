@@ -2524,7 +2524,19 @@ public static class WebToMobileAnalysisService {
 		}
 		const string sourcePrefix = "source.";
 		if (token.StartsWith(sourcePrefix, StringComparison.Ordinal)) {
-			return scope.Node[token[sourcePrefix.Length..]];
+			// Resolved as a PATH, not a flat key: a nested reference such as source.features.rows is the natural
+			// thing for a rule author to write, and reading Node["features.rows"] would return nothing and give
+			// them a silently missing property instead of a value. SelectToken is Newtonsoft's own path syntax,
+			// already a dependency here, so this needs no template engine.
+			try {
+				return scope.Node.SelectToken(token[sourcePrefix.Length..]);
+			}
+			catch (JsonException) {
+				// A malformed path is a defect in the rules DATA, which is resolved at runtime and may come from
+				// outside this binary. Dropping the key matches every other unresolvable token rather than
+				// failing a whole page's conversion over one property.
+				return null;
+			}
 		}
 		return null;
 	}
@@ -2536,6 +2548,14 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void MergeAbsentKeys(JObject target, JObject rendered) {
 		foreach (JProperty prop in rendered.Properties()) {
+			// A key the copy rule deliberately REFUSES to carry is not "absent, so free to fill": the element's
+			// identity and its value binding are excluded on purpose (see ExcludedSourceProps), and letting a
+			// template supply them would make the rules file able to rename an element — desynchronizing every
+			// parentName that refers to it — or to prebuild the type-specific binding the caller must add. This
+			// is the top level only; the row nested inside carries its own name and type legitimately.
+			if (ExcludedSourceProps.Contains(prop.Name)) {
+				continue;
+			}
 			if (target[prop.Name] is null) {
 				// Cloned, not moved: the token still belongs to the rendered tree, and re-parenting a token that
 				// has one relies on how the JSON library happens to treat it. A copy costs nothing here — these
