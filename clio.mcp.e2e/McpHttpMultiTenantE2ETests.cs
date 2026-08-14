@@ -23,6 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.Manual")]
 [NonParallelizable]
 public sealed class McpHttpMultiTenantE2ETests {
+	private const string LegacyProtocolVersion = "2025-11-25";
 
 	private McpE2ESettings _settings = null!;
 
@@ -32,53 +33,54 @@ public sealed class McpHttpMultiTenantE2ETests {
 	}
 
 	[Test]
-	[Description("One mcp-http process with no pre-registered environments serves two distinct tenants in a single run via only X-Integration-Credentials, and both calls succeed (SM-01 / AC-07).")]
+	[Description("One hybrid mcp-http process with no pre-registered environments concurrently serves a modern stateless tenant and a legacy stateful tenant via distinct X-Integration-Credentials, and both calls remain isolated (SM-01 / AC-07).")]
 	public async Task SingleProcess_ShouldServeTwoTenants_WhenOnlyPerRequestCredentialsAreUsed() {
 		// Arrange
 		McpHttpPassthroughStand stand = McpHttpPassthroughStand.RequireOrIgnore();
+		(string tenantOneMarker, string tenantTwoMarker) =
+			McpHttpPassthroughStand.RequireDistinctResponseMarkersOrIgnore();
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(3));
 		await using McpHttpServerSession server =
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
+		await using McpClient modernTenantClient = await server.ConnectAsync(
+			stand.PlatformApiKey,
+			stand.TenantOneCredentialsBase64,
+			cts.Token);
+		await using McpClient legacyTenantClient = await server.ConnectAsync(
+			stand.PlatformApiKey,
+			stand.TenantTwoCredentialsBase64,
+			cts.Token,
+			protocolVersion: LegacyProtocolVersion);
 
-		// Act — sequential calls in ONE run, each authenticating purely by header (no -e, no registered env).
-		CallToolResult tenantOne = await CallDescribeEnvironmentAsync(
-			server, stand.PlatformApiKey, stand.TenantOneCredentialsBase64, cts.Token);
-		CallToolResult tenantTwo = await CallDescribeEnvironmentAsync(
-			server, stand.PlatformApiKey, stand.TenantTwoCredentialsBase64, cts.Token);
+		// Act — launch both calls before awaiting either. The clients negotiate different transport
+		// lifecycles, but each request authenticates purely from its own header (no -e / registered env).
+		Task<CallToolResult> modernTenantCall = CallViaClioRunAsync(
+			modernTenantClient, GetCreatioInfoTool.ToolName, new Dictionary<string, object?>(), cts.Token);
+		Task<CallToolResult> legacyTenantCall = CallViaClioRunAsync(
+			legacyTenantClient, GetCreatioInfoTool.ToolName, new Dictionary<string, object?>(), cts.Token);
+		CallToolResult[] results = await Task.WhenAll(modernTenantCall, legacyTenantCall);
+		CallToolResult tenantOne = results[0];
+		CallToolResult tenantTwo = results[1];
 
 		// Assert
+		modernTenantClient.SessionId.Should().BeNull(
+			because: "the modern tenant must remain stateless while its request credentials select the tenant container");
+		legacyTenantClient.SessionId.Should().NotBeNullOrWhiteSpace(
+			because: "the legacy tenant must retain a transport session without changing credential-scoped isolation");
 		tenantOne.IsError.Should().NotBeTrue(
-			because: "the first tenant must be served from its per-request credentials with no pre-registered environment (SM-01)");
+			because: "the modern tenant must be served from its own per-request credentials with no pre-registered environment (SM-01)");
 		tenantTwo.IsError.Should().NotBeTrue(
-			because: "the second, distinct tenant must be served from its per-request credentials in the same process run (SM-01)");
-		// MANUAL-RUNNER FINDING (live-stand run, ENG-93347): describe-environment's response does NOT
-		// echo the target host/URL — it reports a rich environment-metadata JSON (coreVersion,
-		// workspace/user/userAccount GUIDs, db/framework info) with no URL field. Two distinct live
-		// tenants matched on every seed-data GUID (workspace/user/userAccount are identical default seed
-		// values from the same base image) but genuinely differed on coreVersion, so that is the
-		// discriminator used here instead of the originally assumed host. If both tenants are ever
-		// upgraded to the same coreVersion, pick a different differing field from a fresh live response.
+			because: "the legacy tenant must be served from its own distinct per-request credentials in the same process run (SM-01)");
 		string tenantOneText = ExtractText(tenantOne);
 		string tenantTwoText = ExtractText(tenantTwo);
-		tenantOneText.Should().NotBe(tenantTwoText,
-			because: "two distinct tenants must not produce byte-identical describe-environment responses");
-		tenantOneText.Should().Contain("\"coreVersion\"",
-			because: "the first response must report environment metadata, not an error or empty payload");
-		tenantTwoText.Should().Contain("\"coreVersion\"",
-			because: "the second response must report environment metadata, not an error or empty payload");
-	}
-
-	private static async Task<CallToolResult> CallDescribeEnvironmentAsync(
-		McpHttpServerSession server, string platformApiKey, string credentialsBase64, CancellationToken cancellationToken) {
-		await using McpClient client = await server.ConnectAsync(
-			platformApiKey,
-			credentialsBase64,
-			cancellationToken);
-		// describe-environment is a long-tail tool (absent from lazy-mode tools/list, ENG-90312/92761) —
-		// it must be reached via clio-run, exactly as a real client would; a direct tools/call by name
-		// returns "Unknown tool" here.
-		return await CallViaClioRunAsync(client, GetCreatioInfoTool.ToolName,
-			new Dictionary<string, object?>(), cancellationToken);
+		tenantOneText.Should().Contain(tenantOneMarker,
+			because: "the modern client's response must be bound to tenant one's configured identity marker");
+		tenantOneText.Should().NotContain(tenantTwoMarker,
+			because: "the modern client must never receive tenant two's response marker");
+		tenantTwoText.Should().Contain(tenantTwoMarker,
+			because: "the legacy client's response must be bound to tenant two's configured identity marker");
+		tenantTwoText.Should().NotContain(tenantOneMarker,
+			because: "the legacy client must never receive tenant one's response marker");
 	}
 
 	// Dispatches to a long-tail tool (hidden from lazy-mode tools/list) via clio-run, the same path a

@@ -82,15 +82,15 @@ public sealed class ToolContractGetTool {
 			// since it hard-crashes on the index shape and cannot be patched. Every other client is
 			// unaffected — this only flips the no-names/non-full-detail branch inside GetContracts.
 			//
-			// Load-bearing SDK assumption (pinned to ModelContextProtocol 1.4.1, see Directory.Packages.props):
+			// Load-bearing SDK assumption (verified against ModelContextProtocol 2.2.0, see Directory.Packages.props):
 			// Server.ClientInfo is captured while the SDK handles the `initialize` REQUEST, independent of the
 			// `notifications/initialized` notification. This is what makes detection work for the real CAADT
 			// 1.4.0 client, which deliberately never sends `notifications/initialized`: ClientInfo is already
 			// populated by the time any `tools/call` (including this one) is dispatched. If a future SDK bump
 			// ever moved ClientInfo capture onto the `initialized` notification, requestContext.Server.ClientInfo
 			// would be null here for that client and IsLegacyStdioClient(null) => false would silently re-break
-			// it (no exception, every shipped test still passes). If you upgrade the SDK, re-verify this
-			// initialize-time capture behavior against the real client before trusting it.
+			// it (no exception, ordinary modern-client tests still pass). The SDK-upgrade gate therefore
+			// re-verifies initialize-time capture against the real CAADT 1.4 client before every MCP bump.
 			bool legacyNoNamesFullShape = IsLegacyStdioClient(requestContext?.Server?.ClientInfo);
 			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
 			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
