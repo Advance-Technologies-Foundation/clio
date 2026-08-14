@@ -44,12 +44,11 @@ public sealed class WebToMobileConversionServiceTests {
 			new ComponentEquivalenceRule {
 				Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"],
 				Category = "AlternativeAvailable",
-				RowLayout = new RowLayoutRule {
+				ListRow = new ListRowSynthesisRule {
 					SourceProperty = "columns", TargetProperty = "itemLayout", TargetType = "crt.ListItem",
 					BindingFrom = "code", NameSuffix = "_ListItem",
 					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 19, 27, 28, 29, 30, 42, 44, 45]
-				},
-				DropProperties = ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent"]
+				}
 			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
@@ -4088,8 +4087,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A web grid converted to crt.List does NOT carry the grid-only properties the mobile list has no equivalent for; the column array survives only as the synthesized row.")]
-	public void Analyze_MobileValues_GridConvertedToList_DropsGridOnlyProperties() {
+	[Description("Building the row READS the grid's columns and leaves them in place: the synthesized itemLayout coexists with the grid-only properties, because pruning what mobile crt.List does not declare belongs to the registry (ENG-91859), not to this mapping.")]
+	public void Analyze_MobileValues_GridConvertedToList_SynthesizesRowWithoutRemovingItsSource() {
 		// Arrange
 		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
 
@@ -4098,16 +4097,95 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		JsonNode values = Element(guide, "ProductsList").MobileValues;
-		foreach (string gridOnly in new[] {
-			"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" }) {
-			values[gridOnly].Should().BeNull(
-				because: $"'{gridOnly}' is a web-grid property with no mobile crt.List equivalent — pasting it "
-					+ "verbatim is what left the converted detail showing empty columns (ENG-95046)");
-		}
+		values["itemLayout"]?["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the row is built from the column array, which is the only reason this mapping reads it");
+		values["columns"].Should().NotBeNull(
+			because: "feeding the row must not consume the source — a per-rule drop list would be a second pruning "
+				+ "mechanism beside the registry one, and carrying these is not what broke the reported page: a list "
+				+ "whose title was an object rendered its columns fine with them present (ENG-95046)");
 		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
-			because: "the collection binding is the one grid property the mobile list does need");
+			because: "the collection binding is the grid property the mobile list genuinely needs");
 		values["type"]?.GetValue<string>().Should().Be("crt.List",
-			because: "the drop pass removes grid-only properties and must not disturb the element's own type");
+			because: "synthesizing the row must not disturb the element's own type");
+	}
+
+	/// <summary>A mobile registry whose crt.ListItem declares each named input with the given raw descriptor.</summary>
+	private static IReadOnlyDictionary<string, ComponentRegistryEntry> RowRegistry(
+		params (string prop, string descriptorJson)[] inputs) {
+		var declared = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string prop, string descriptorJson) in inputs) {
+			declared[prop] = JsonDocument.Parse(descriptorJson).RootElement.Clone();
+		}
+		return new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.ListItem"] = new ComponentRegistryEntry { ComponentType = "crt.ListItem", Inputs = declared }
+		};
+	}
+
+	[Test]
+	[Description("A synthesized row value that CONTRADICTS a scalar the mobile registry declares is dropped rather than shipped: with body declared a string, the array body the synthesis builds is removed, while the string title the registry agrees with survives.")]
+	public void Analyze_MobileValues_SynthesizedRow_DropsValueContradictingADeclaredScalar() {
+		// Arrange — the producer declaring body as a scalar is the shape mismatch this guard exists for; the
+		// same check covers title, whose object-wrapped form RENDERS (empty Title column, body rows fine) and
+		// is therefore invisible to validate-page's client-engine simulation (ENG-95046).
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var mobile = RowRegistry(
+			("title", """{ "type": "string" }"""),
+			("body", """{ "type": "string" }"""));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["body"].Should().BeNull(
+			because: "the synthesis builds body as an array, and shipping an array where the registry declares a "
+				+ "scalar is exactly the class of defect this guard exists to stop");
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the title agrees with its declared string shape, so the guard must leave it alone");
+	}
+
+	[Test]
+	[Description("With the registry declaring the REAL crt.ListItem shapes — title a string, body an array — the scalar guard removes nothing: it must not become a second, stricter pruning pass over a row the converter built correctly.")]
+	public void Analyze_MobileValues_SynthesizedRow_KeepsEverythingTheRegistryAgreesWith() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var mobile = RowRegistry(
+			("title", """{ "type": "string" }"""),
+			("body", """{ "type": "array" }"""));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		JsonNode row = grid.MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "a correctly shaped title must survive the guard untouched");
+		row["body"]?.AsArray().Should().HaveCount(2,
+			because: "an array body matches the declared array input, so nothing is dropped");
+		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "a property the registry does not declare at all is not the guard's business");
+		grid.Reason.Should().NotContain("no title",
+			because: "the row kept its title, so the outcome must not report one that was never lost");
+	}
+
+	[Test]
+	[Description("With no crt.ListItem entry in the mobile registry the row is shipped as built: an absent registry means unknown, not invalid, so the guard degrades to a no-op instead of stripping the row.")]
+	public void Analyze_MobileValues_SynthesizedRow_IsUntouchedWhenTheRegistryHasNoEntry() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act — mobileByType carries no crt.ListItem at all
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web,
+			mobileByType: Reg(("crt.List", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the converter must not withhold a row just because the registry cannot confirm its shape — "
+				+ "the mobile registry is still incomplete (ENG-91859)");
+		row["body"]?.AsArray().Should().HaveCount(2,
+			because: "the body is shipped for the same reason");
 	}
 
 	[Test]
@@ -4202,7 +4280,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A web type that resolves to a mobile type its mapping does NOT list gets neither a synthesized row nor the drops: the transform is tied to the mapping, not to the web type, so a type that one day survives as itself keeps its own properties.")]
+	[Description("A web type that resolves to a mobile type its mapping does NOT list gets no synthesized row: the transform is tied to the mapping, not to the web type, so a type that one day survives as itself is left alone.")]
 	public void Analyze_MobileValues_TypeResolvedOutsideTheMapping_IsLeftAlone() {
 		// Arrange — the grid's own type IS in the mobile registry here, so it survives as itself and the
 		// crt.DataGrid -> crt.List mapping must not touch it.
@@ -4225,8 +4303,6 @@ public sealed class WebToMobileConversionServiceTests {
 		grid.MobileType.Should().Be("crt.DataGrid", because: "the type is supported on mobile as itself here");
 		grid.MobileValues["itemLayout"].Should().BeNull(
 			because: "the row belongs to the crt.List mapping; this element is not being converted through it");
-		grid.MobileValues["columns"].Should().NotBeNull(
-			because: "dropProperties belongs to that same mapping — an element outside it keeps its own properties");
 	}
 
 	[Test]

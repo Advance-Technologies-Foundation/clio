@@ -1774,9 +1774,9 @@ public static class WebToMobileAnalysisService {
 						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 						: "container; mobile-supported")
 						// Defensive symmetry: reachable only for a rule that maps a web type to ITSELF and still
-						// declares a rowLayout, which no shipped rule does — a rowLayout exists precisely because
+						// declares a listRow, which no shipped rule does — a listRow exists precisely because
 						// the web type has no mobile counterpart.
-						+ RowNote(containerRow, ResolveMappingRule(ctx, node, type)?.RowLayout)
+						+ RowNote(containerRow, ResolveMappingRule(ctx, node, type)?.ListRow)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, name);
@@ -1808,7 +1808,7 @@ public static class WebToMobileAnalysisService {
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				Reason = leafReason + RowNote(leafRow, ResolveMappingRule(ctx, node, leafMobileType)?.RowLayout)
+				Reason = leafReason + RowNote(leafRow, ResolveMappingRule(ctx, node, leafMobileType)?.ListRow)
 			});
 		}
 	}
@@ -2202,18 +2202,13 @@ public static class WebToMobileAnalysisService {
 		// own properties must be left alone. Requiring the resolved mobile type to be one the rule maps to keeps
 		// the transform tied to the mapping rather than to the web type.
 		ComponentEquivalenceRule mappingRule = ResolveMappingRule(ctx, node, mobileType);
-		rowOutcome = ApplyRowLayout(mappingRule?.RowLayout, node, values, mobileName);
-		// Web properties the mapped mobile type has no equivalent for. Deliberately rule-driven, NOT pruned
-		// against the registry — see the copy rule above (ENG-91859). Runs AFTER the row so the source array
-		// (e.g. the grid's columns) can feed the row and still not be carried.
+		rowOutcome = SynthesizeListRow(ctx, mappingRule?.ListRow, node, values, mobileName);
+		// A converted grid still CARRIES its grid-only properties (columns, primaryColumnName, …) even though
+		// mobile crt.List declares neither. That is deliberate: removing them per-rule would be a second
+		// pruning mechanism beside the registry one, and the registry is the right owner once ENG-91859 makes
+		// it complete. Carrying them is not what broke the reported page — a list whose row was built but whose
+		// title was an object rendered its columns fine WITH them present (ENG-95046).
 		ProcessEventBindings(ctx, node, values, mobileName);
-		// AFTER the event pass on purpose: that pass writes values[name] for any event-shaped property, so
-		// dropping first would let it re-add a name this rule just removed.
-		foreach (string drop in mappingRule?.DropProperties ?? []) {
-			if (!string.IsNullOrWhiteSpace(drop)) {
-				values.Remove(drop);
-			}
-		}
 		// Synthesize a field label ONLY as a fallback — when the source did not carry one. Most fields carry
 		// their own web `label` verbatim above (e.g. "$Resources.Strings.<attribute>", which auto-resolves to
 		// the bound column's caption); overwriting it with a guessed column-code key breaks that resolution.
@@ -2246,7 +2241,7 @@ public static class WebToMobileAnalysisService {
 			: null;
 	}
 
-	/// <summary>What <see cref="ApplyRowLayout"/> did, so no caller has to re-infer it from the output.</summary>
+	/// <summary>What <see cref="SynthesizeListRow"/> did, so no caller has to re-infer it from the output.</summary>
 	private enum RowOutcome {
 
 		/// <summary>No rule declared a row here, or the node authored its own and kept it.</summary>
@@ -2274,7 +2269,7 @@ public static class WebToMobileAnalysisService {
 	/// the author's choice, not a source that had nothing to offer. And the source array must be present at all.
 	/// </para>
 	/// </summary>
-	private static string RowNote(RowOutcome outcome, RowLayoutRule rule) => outcome switch {
+	private static string RowNote(RowOutcome outcome, ListRowSynthesisRule rule) => outcome switch {
 		// Worse than a missing title: the list renders blank. Names WHAT was unusable so the reader looks at the
 		// right thing, without claiming to know which of the ways it was unusable.
 		RowOutcome.NotBuilt =>
@@ -2314,7 +2309,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Builds the row child a <see cref="RowLayoutRule"/> declares and writes it onto
+	/// Builds the row child a <see cref="ListRowSynthesisRule"/> declares and writes it onto
 	/// <paramref name="values"/>. The first source entry becomes the row's <c>title</c> as a plain
 	/// <c>$&lt;binding&gt;</c> STRING (the shape the mobile registry declares for <c>crt.ListItem.title</c>;
 	/// wrapping it as <c>{ "value": … }</c> — the BODY entry shape — renders an empty Title column), each
@@ -2322,7 +2317,8 @@ public static class WebToMobileAnalysisService {
 	/// absent, the source property is not an array, no entry yields a binding, or the caller's node already
 	/// carries the target property (a web node that brought its own row wins — it is real authored content).
 	/// </summary>
-	private static RowOutcome ApplyRowLayout(RowLayoutRule rule, JObject node, JObject values, string mobileName) {
+	private static RowOutcome SynthesizeListRow(ElementMapContext ctx, ListRowSynthesisRule rule, JObject node,
+		JObject values, string mobileName) {
 		if (rule is null || string.IsNullOrWhiteSpace(rule.SourceProperty)
 			|| string.IsNullOrWhiteSpace(rule.TargetProperty) || string.IsNullOrWhiteSpace(rule.BindingFrom)) {
 			return RowOutcome.NotSynthesized;
@@ -2379,8 +2375,66 @@ public static class WebToMobileAnalysisService {
 		row["body"] = new JArray(entries
 			.Where((_, index) => index != titleIndex)
 			.Select(e => new JObject { ["value"] = e.Binding }));
+		DropValuesContradictingDeclaredScalars(ctx, rule.TargetType, row);
 		values[rule.TargetProperty] = row;
-		return titleIndex >= 0 ? RowOutcome.BuiltWithTitle : RowOutcome.BuiltWithoutTitle;
+		// Re-read rather than trusting titleIndex: the guard above may have removed a title whose shape the
+		// registry contradicts, and reporting BuiltWithTitle then would send the caller looking for one.
+		return row["title"] is not null ? RowOutcome.BuiltWithTitle : RowOutcome.BuiltWithoutTitle;
+	}
+
+	/// <summary>
+	/// Removes any property of a SYNTHESIZED row whose value contradicts a scalar the mobile registry declares
+	/// for <paramref name="mobileType"/> — e.g. a <c>crt.ListItem.title</c> emitted as
+	/// <c>{ "value": … }</c> (the BODY entry shape) where the registry declares a plain string.
+	/// </summary>
+	/// <remarks>
+	/// This is the one failure mode nothing else catches. An object-wrapped title RENDERS: the list shows its
+	/// body rows and only the Title column comes up empty, so it reads as a data problem rather than a shape
+	/// one, and <c>validate-page</c>'s client-engine simulation — which does catch the neighbouring mistake of
+	/// addressing <c>itemLayout</c> as a child slot, because that breaks the build — passes it (ENG-95046).
+	/// Dropping rather than throwing is deliberate: the guide is a report, not a build, and killing a whole
+	/// page's conversion over one slot would cost the caller far more than an absent title, which the row's
+	/// <see cref="RowOutcome"/> note then tells them to set in the designer.
+	/// Verifies against the registry rather than a hardcoded name, so it keeps holding if the producer
+	/// changes the declared shape.
+	/// </remarks>
+	private static void DropValuesContradictingDeclaredScalars(ElementMapContext ctx, string mobileType, JObject row) {
+		if (string.IsNullOrWhiteSpace(mobileType) || ctx?.MobileByType is null
+			|| !ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry) || entry is null) {
+			return;
+		}
+		foreach (JProperty prop in row.Properties().ToList()) {
+			if (DeclaresScalarString(entry, prop.Name) && prop.Value is not JValue { Type: JTokenType.String }) {
+				row.Remove(prop.Name);
+			}
+		}
+	}
+
+	/// <summary>
+	/// True when the registry entry declares <paramref name="propName"/> as a plain <c>string</c>. Deliberately
+	/// separate from <see cref="ResolveExpectedShape"/>, which answers a different question — which CONTAINER
+	/// (object vs array) a value belongs in — and must keep returning null for scalars so
+	/// <see cref="CoerceToDeclaredShape"/> leaves them alone.
+	/// </summary>
+	private static bool DeclaresScalarString(ComponentRegistryEntry entry, string propName) {
+		if (entry.Inputs is not null) {
+			foreach (KeyValuePair<string, JsonElement> input in entry.Inputs) {
+				if (string.Equals(input.Key, propName, StringComparison.OrdinalIgnoreCase)) {
+					return input.Value.ValueKind == JsonValueKind.Object
+						&& input.Value.TryGetProperty("type", out JsonElement t)
+						&& t.ValueKind == JsonValueKind.String
+						&& string.Equals(t.GetString(), "string", StringComparison.OrdinalIgnoreCase);
+				}
+			}
+		}
+		if (entry.Properties is not null) {
+			foreach (KeyValuePair<string, ComponentPropertyDefinition> prop in entry.Properties) {
+				if (string.Equals(prop.Key, propName, StringComparison.OrdinalIgnoreCase)) {
+					return string.Equals(prop.Value.Type, "string", StringComparison.OrdinalIgnoreCase);
+				}
+			}
+		}
+		return false;
 	}
 
 	/// <summary>
