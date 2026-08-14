@@ -16,7 +16,7 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]
-[Property("Module", "Command")]
+[Property("Module", "McpServer")]
 public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 	private static Stream JsonStream(string json) => new MemoryStream(Encoding.UTF8.GetBytes(json));
@@ -142,6 +142,20 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 				"land inside AreaProfileContainer, not directly in GeneralTabContainer, so the Area is never left empty");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:top" && c.Mobile == "Tabs:top");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:bottom" && c.Mobile == "Tabs:bottom");
+	}
+
+	[Test]
+	[Description("Bundled tabbed template maps the attachments detail as a name-only, same-component twin: web AttachmentList -> mobile AttachmentFileList (both crt.FileList) with no carryProperties whitelist, so the page's delta over the web-template baseline — recordColumnName included — merges onto the template-provided element instead of being pruned as chrome.")]
+	public void LoadBundled_TabbedTemplateMapsAttachmentListTwin() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		TemplateMappingRule tabbed = rules.Templates.First(t =>
+			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
+		ComponentMappingRule attachments = tabbed.Components.Single(c => c.Web == "AttachmentList");
+		attachments.Mobile.Should().Be("AttachmentFileList",
+			because: "the web AttachmentList maps to the mobile AttachmentFileList element");
+		attachments.CarryProperties.Should().BeEmpty(
+			because: "it is the same component on both sides (crt.FileList) — a name-only twin carries the page's delta over the web-template baseline, no whitelist needed");
 	}
 
 	[Test]

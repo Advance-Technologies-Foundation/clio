@@ -340,16 +340,46 @@ public sealed class ClioIpcClient : IClioIpcClient {
 		try {
 		await ConnectAsync(cancellationToken).ConfigureAwait(false);
 		McpClient client = _client ?? throw new InvalidOperationException("clio MCP client is not connected.");
-		try {
-			await client.PingAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-		}
-		catch (Exception ex) when (ex is not OperationCanceledException) {
-			MarkDisconnected();
-			throw;
-		}
+		await ExecuteVersionAwareHealthProbeAsync(
+			client.NegotiatedProtocolVersion,
+			async token => await client.PingAsync(cancellationToken: token).ConfigureAwait(false),
+			async token => {
+				await client.ListToolsAsync(cancellationToken: token).ConfigureAwait(false);
+			},
+			MarkDisconnected,
+			cancellationToken).ConfigureAwait(false);
 		}
 		finally {
 			EndActiveCall();
+		}
+	}
+
+	/// <summary>
+	/// Executes the side-effect-free health operation supported by the negotiated protocol.
+	/// </summary>
+	/// <param name="protocolVersion">Negotiated MCP protocol version.</param>
+	/// <param name="legacyPing">Legacy standalone-ping operation.</param>
+	/// <param name="modernToolDiscovery">Modern discovery operation used after ping removal.</param>
+	/// <param name="markDisconnected">Callback that clears connection state after a probe failure.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	/// <returns>A task that represents the selected health operation.</returns>
+	internal static async Task ExecuteVersionAwareHealthProbeAsync(
+		string? protocolVersion,
+		Func<CancellationToken, Task> legacyPing,
+		Func<CancellationToken, Task> modernToolDiscovery,
+		Action markDisconnected,
+		CancellationToken cancellationToken) {
+		// MCP 2026-07-28 removed the standalone ping method. A tools/list round trip is the lightest
+		// side-effect-free liveness probe supported by both clio and the modern SDK.
+		try {
+			Task probe = string.CompareOrdinal(protocolVersion, "2026-07-28") >= 0
+				? modernToolDiscovery(cancellationToken)
+				: legacyPing(cancellationToken);
+			await probe.ConfigureAwait(false);
+		}
+		catch (Exception ex) when (ex is not OperationCanceledException) {
+			markDisconnected();
+			throw;
 		}
 	}
 
@@ -454,7 +484,11 @@ public sealed class ClioIpcClient : IClioIpcClient {
 		if (capabilities.Tools is not null) { caps.Add("tools"); }
 		if (capabilities.Resources is not null) { caps.Add("resources"); }
 		if (capabilities.Prompts is not null) { caps.Add("prompts"); }
+		// MCP9005: Ring still reports the capability when an older clio server advertises it.
+		// The value is display-only and can disappear naturally on modern protocol revisions.
+#pragma warning disable MCP9005
 		if (capabilities.Logging is not null) { caps.Add("logging"); }
+#pragma warning restore MCP9005
 		if (capabilities.Completions is not null) { caps.Add("completions"); }
 		return caps;
 	}

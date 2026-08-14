@@ -91,4 +91,33 @@ public sealed class SettingsRepositoryDeployDefaultsTests {
 		// Assert
 		result.IsEmpty.Should().BeTrue(because: "an all-empty instance is equivalent to clearing the persisted defaults");
 	}
+
+	[Test]
+	[Description("Knowledge-feedback standing approval round-trips without exposing a mutable repository-owned instance.")]
+	public void KnowledgeFeedbackSettings_ShouldRoundTripDetachedStandingApproval_WhenConfigured() {
+		// Arrange
+		SettingsRepository sut = new(_fileSystem);
+		KnowledgeFeedbackSettings settings = new() {
+			Mode = "auto",
+			Destination = "https://creatio.ghe.com/engineering/clio-feedback",
+			ReportingScope = "full",
+			StandingApproval = new KnowledgeFeedbackStandingApproval {
+				PolicyHash = $"sha256:{new string('a', 64)}"
+			}
+		};
+
+		// Act
+		sut.SetKnowledgeFeedbackSettings(settings);
+		settings.StandingApproval.PolicyHash = "mutated-after-save";
+		SettingsRepository reloaded = new(_fileSystem);
+		KnowledgeFeedbackSettings result = reloaded.GetKnowledgeFeedbackSettings();
+
+		// Assert
+		result.Mode.Should().Be("auto",
+			because: "the requested standing preference must persist across repository instances");
+		result.ReportingScope.Should().Be("full",
+			because: "internal comprehensive scope must survive persistence");
+		result.StandingApproval!.PolicyHash.Should().Be($"sha256:{new string('a', 64)}",
+			because: "repository persistence must detach from caller mutations");
+	}
 }

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
@@ -11,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 [Property("Module", "Command")]
 internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfInstallerOptions> {
 	private readonly ICreatioInstallerService _creatioInstallerService = Substitute.For<ICreatioInstallerService>();
@@ -46,7 +48,7 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 		};
 
 		// Act
-		int result = command.Execute(options);
+		int result = ExecuteWithoutConsoleRead(command, options);
 
 		// Assert
 		result.Should().Be(1,
@@ -80,7 +82,7 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 		};
 
 		// Act
-		int result = command.Execute(options);
+		int result = ExecuteWithExpectedConsoleReads(command, options, shouldPrompt ? 1 : 0);
 
 		// Assert
 		result.Should().Be(installerResult,
@@ -101,7 +103,7 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 		};
 
 		// Act
-		int result = command.Execute(options);
+		int result = ExecuteWithExpectedConsoleReads(command, options, expectedReads: 1);
 
 		// Assert
 		result.Should().Be(1,
@@ -127,7 +129,7 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 		};
 
 		// Act
-		int result = command.Execute(options);
+		int result = ExecuteWithExpectedConsoleReads(command, options, expectedReads: 1);
 		_creatioInstallerService.Execute(Arg.Any<PfInstallerOptions>()).Returns(0);
 
 		// Assert
@@ -146,4 +148,45 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 	private int CountExitPrompts() => _logger.ReceivedCalls().Count(call =>
 		call.GetMethodInfo().Name == nameof(ILogger.WriteLine)
 		&& Equals(call.GetArguments().SingleOrDefault(), "Press enter to exit..."));
+
+	private static int ExecuteWithExpectedConsoleReads(InstallerCommand command, PfInstallerOptions options,
+		int expectedReads) {
+		TextReader originalInput = Console.In;
+		TrackingTextReader input = new();
+		try {
+			Console.SetIn(input);
+			int result = command.Execute(options);
+			input.ReadCount.Should().Be(expectedReads,
+				because: "Explorer execution must read only for the acknowledgement prompts asserted by the test");
+			return result;
+		}
+		finally {
+			Console.SetIn(originalInput);
+		}
+	}
+
+	private static int ExecuteWithoutConsoleRead(InstallerCommand command, PfInstallerOptions options) {
+		TextReader originalInput = Console.In;
+		try {
+			Console.SetIn(new ThrowingTextReader());
+			return command.Execute(options);
+		}
+		finally {
+			Console.SetIn(originalInput);
+		}
+	}
+
+	private sealed class ThrowingTextReader : TextReader {
+		public override string? ReadLine() =>
+			throw new AssertionException("Silent execution must not read from the console.");
+	}
+
+	private sealed class TrackingTextReader : TextReader {
+		public int ReadCount { get; private set; }
+
+		public override string? ReadLine() {
+			ReadCount++;
+			return string.Empty;
+		}
+	}
 }

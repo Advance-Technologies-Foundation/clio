@@ -297,7 +297,6 @@ public sealed class PageSyncTool(
 					foreach (int idx in pendingIndices) {
 						results[idx] = ProcessPendingPage(pages[idx], idx, ctx);
 					}
-					Thread.Sleep(500);
 				} catch (Exception ex) {
 					FillPendingWithError(results, pendingIndices, pages, SensitiveErrorTextRedactor.Redact(ex.Message));
 				}

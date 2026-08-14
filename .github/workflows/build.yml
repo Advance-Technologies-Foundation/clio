@@ -7,9 +7,8 @@
 # the SHARED per-repository working directory without clio.tests, which failed the
 # unit-test job with MSB1009 on that runner only. A hosted runner is a clean machine
 # per job, and for a public repository it costs nothing.
-# The SDK is pinned rather than inherited from the image: clio multi-targets net8.0 and
-# (when the SDK allows) net10.0, so an image without the .NET 10 SDK would silently
-# drop a target framework instead of failing.
+# The SDK is pinned rather than inherited from the image. The main unit and integration
+# suites intentionally run only on net10.0; product multi-targeting is validated elsewhere.
 name: Build
 on:
   push:
@@ -46,6 +45,7 @@ jobs:
             analyzers:
               - 'Clio.Analyzers/**'
               - 'Clio.Analyzers.Tests/**'
+              - 'Directory.Packages.props'
             cliogate:
               - 'cliogate/**'
               - 'cliogate.tests/**'
@@ -70,6 +70,15 @@ jobs:
             8.0.x
             10.0.x
 
+      - name: Build NET8 product compatibility
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
+          dotnet build .\clio\clio.csproj `
+            --framework net8.0 `
+            -p:RunAnalyzers=false;
+
       # Anchor the working directory: `shell: powershell` loads the user profile (there is no -NoProfile) and
       # every project path in these steps is relative, so the step should not depend on the cwd it inherits.
       # Hygiene only — the MSB1009 incident this looks like a fix for is diagnosed in the step body below, and
@@ -93,6 +102,7 @@ jobs:
           # not because it addresses the above.
           dotnet build-server shutdown;
           dotnet test .\clio.tests\clio.tests.csproj `
+            --framework net10.0 `
             --filter "Category!=Integration" `
             -p:RunAnalyzers=false;
 
@@ -112,9 +122,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Run integration tests
         shell: powershell
@@ -122,6 +130,7 @@ jobs:
           $ErrorActionPreference = 'Stop';
           Set-Location $env:GITHUB_WORKSPACE;
           dotnet test .\clio.tests\clio.tests.csproj `
+            --framework net10.0 `
             --filter "Category=Integration" `
             -p:RunAnalyzers=false;
 
@@ -138,14 +147,14 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Run analyzer tests
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
           Set-Location $env:GITHUB_WORKSPACE;
-          dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj -p:RunAnalyzers=false;
+          dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj `
+            --framework net10.0 `
+            -p:RunAnalyzers=false;
 

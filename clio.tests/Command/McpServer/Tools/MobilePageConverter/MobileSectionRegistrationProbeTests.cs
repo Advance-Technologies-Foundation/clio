@@ -12,7 +12,7 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]
-[Property("Module", "Command")]
+[Property("Module", "McpServer")]
 public sealed class MobileSectionRegistrationProbeTests {
 
 	private const string PageUId = "11111111-1111-1111-1111-111111111111";

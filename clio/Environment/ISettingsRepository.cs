@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using System;
 using Clio.Common.db;
 using Clio.Common.DbHub;
 using Clio.Command.McpServer.Knowledge;
@@ -305,6 +306,20 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <param name="defaults">The defaults to persist, or <c>null</c>/empty to clear them.</param>
 		void SetDeployCreatioDefaults(DeployCreatioDefaults defaults);
+
+		/// <summary>Gets a detached snapshot of the configured agent knowledge-feedback policy.</summary>
+		/// <returns>The configured policy, or safe ask/sanitized defaults when absent.</returns>
+		KnowledgeFeedbackSettings GetKnowledgeFeedbackSettings();
+
+		/// <summary>Atomically persists the agent knowledge-feedback policy and standing approval.</summary>
+		/// <param name="settings">The complete validated policy to persist.</param>
+		void SetKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings);
+
+		/// <summary>Atomically updates the latest knowledge-feedback policy under the settings lock.</summary>
+		/// <param name="mutation">Mutation applied to a detached latest snapshot.</param>
+		/// <returns>The persisted detached snapshot.</returns>
+		KnowledgeFeedbackSettings UpdateKnowledgeFeedbackSettings(
+			Func<KnowledgeFeedbackSettings, KnowledgeFeedbackSettings> mutation);
 
 		/// <summary>Gets the preferred LocalMachine/My certificate thumbprint for IIS HTTPS deployment.</summary>
 		/// <returns>The normalized thumbprint, or <c>null</c> when no preference is configured.</returns>
