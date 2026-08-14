@@ -91,7 +91,7 @@
       "web": ["crt.DataGrid", "crt.DataTable"],
       "mobile": ["crt.List", "crt.ListItem"],
       "category": "AlternativeAvailable",
-      "rowLayout": {
+      "listRow": {
         "sourceProperty": "columns",
         "targetProperty": "itemLayout",
         "targetType": "crt.ListItem",
@@ -100,8 +100,7 @@
         "valueTypeFrom": "dataValueType",
         "titleValueTypes": [1, 19, 27, 28, 29, 30, 42, 44, 45]
       },
-      "dropProperties": ["columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent"],
-      "note": "Web grid → mobile crt.List + crt.ListItem. WHICH of the two paths applies decides who builds the row, so read the element's own elementMap entry rather than this note alone. An INSERTED list (operation insert, mobileType crt.List) arrives with the row ALREADY BUILT inside its own mobileValues: a crt.ListItem under `itemLayout`, `title` bound to the first column a row title accepts and one `body` entry per remaining column, with the grid-only properties this rule lists in `dropProperties` left out. Paste that; do not rebuild it. A list the mobile TEMPLATE provides is a MERGE twin instead, carries no prebuilt row, and its row is yours to configure by merge-by-name on the template's own ListItem element — never insert a second crt.List. In either case never emit the row as its own insert operation (`parentName` the list + `propertyName: \"itemLayout\"`): crt.List is not a container and itemLayout is an input, so the client answers \"is not a container for other items\" and the WHOLE schema fails to build."
+      "note": "Web grid → mobile crt.List + crt.ListItem. WHICH of the two paths applies decides who builds the row, so read the element's own elementMap entry rather than this note alone. An INSERTED list (operation insert, mobileType crt.List) arrives with the row ALREADY BUILT inside its own mobileValues: a crt.ListItem under `itemLayout`, `title` bound to the first column a row title accepts and one `body` entry per remaining column. Paste that; do not rebuild it. The values also still carry the grid's own properties (columns, primaryColumnName, selectionState, _selectionOptions, features, fitContent) even though mobile crt.List declares none of them — reconcile against the crt.ListItem/crt.List contracts in mobileComponentContracts rather than against this list. A list the mobile TEMPLATE provides is a MERGE twin instead, carries no prebuilt row, and its row is yours to configure by merge-by-name on the template's own ListItem element — never insert a second crt.List. In either case never emit the row as its own insert operation (`parentName` the list + `propertyName: \"itemLayout\"`): crt.List is not a container and itemLayout is an input, so the client answers \"is not a container for other items\" and the WHOLE schema fails to build."
     },
     {
       "web": ["crt.FolderTree", "crt.FolderTreeActions"],

@@ -128,12 +128,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			row["body"].Should().NotBeNull(
 				because: $"the row on '{list.WebName}' must carry the body collection, even when the grid had only "
 					+ "the one display column and it is therefore empty");
-			foreach (string gridOnly in new[] {
-				"columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" }) {
-				list.MobileValues![gridOnly].Should().BeNull(
-					because: $"'{gridOnly}' is a web-grid property with no mobile crt.List equivalent, and pasting "
-						+ $"it onto '{list.WebName}' verbatim is what left the converted detail showing empty columns");
-			}
 		}
 	}
 

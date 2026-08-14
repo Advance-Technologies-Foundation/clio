@@ -366,17 +366,8 @@ public sealed class ComponentEquivalenceRule {
 	/// row (<c>crt.ListItem</c>) has no web counterpart to copy: it must be BUILT from the grid's columns.
 	/// Null for every mapping whose mobile element needs no synthesized child.
 	/// </summary>
-	[JsonPropertyName("rowLayout")]
-	public RowLayoutRule RowLayout { get; init; }
-
-	/// <summary>
-	/// Optional: source properties NOT carried onto the mobile element. The generic copy rule carries every
-	/// web property verbatim and deliberately does NOT prune against the mobile registry (it is incomplete —
-	/// ENG-91859), so a mapping whose mobile type genuinely has no equivalent for a web property names it
-	/// here. Applied AFTER <see cref="RowLayout"/>, so a property may feed the row and still be dropped.
-	/// </summary>
-	[JsonPropertyName("dropProperties")]
-	public IReadOnlyList<string> DropProperties { get; init; }
+	[JsonPropertyName("listRow")]
+	public ListRowSynthesisRule ListRow { get; init; }
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
@@ -389,7 +380,7 @@ public sealed class ComponentEquivalenceRule {
 /// becomes one <c>body</c> object <c>{ "value": "$&lt;binding&gt;" }</c>, in source order. Only the
 /// participating NAMES are data.
 /// </summary>
-public sealed class RowLayoutRule {
+public sealed class ListRowSynthesisRule {
 
 	/// <summary>Web array property the row is built FROM (e.g. <c>"columns"</c>).</summary>
 	[JsonPropertyName("sourceProperty")]
@@ -436,7 +427,7 @@ public sealed class RowLayoutRule {
 	/// </para>
 	/// <para>
 	/// An entry whose type the source does not declare is ELIGIBLE — see the remarks on the title choice in
-	/// <c>ApplyRowLayout</c>. A title is omitted only when entries ARE typed and none of them qualifies; the
+	/// <c>SynthesizeListRow</c>. A title is omitted only when entries ARE typed and none of them qualifies; the
 	/// element's reason then says so. Empty or absent keeps the plain first-entry behaviour.
 	/// </para>
 	/// </summary>

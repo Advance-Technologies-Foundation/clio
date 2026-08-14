@@ -36,33 +36,34 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ENG-95046: the bundled grid rule declares the row synthesis and the grid-only properties to drop, so a converted list's row is data rather than an instruction the caller has to carry out.")]
-	public void LoadBundled_GridRuleDeclaresRowLayoutAndDropProperties() {
+	[Description("ENG-95046: the bundled grid rule declares the row synthesis, so a converted list's row is data rather than an instruction the caller has to carry out.")]
+	public void LoadBundled_GridRuleDeclaresListRowSynthesis() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
 		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Web.Contains("crt.DataGrid"));
-		grid.RowLayout.Should().NotBeNull(
+		grid.ListRow.Should().NotBeNull(
 			because: "the crt.ListItem row has no web counterpart to copy — it must be built from the grid's "
 				+ "columns, and leaving that to the caller produced lists with no row at all");
-		grid.RowLayout.SourceProperty.Should().Be("columns",
+		grid.ListRow.SourceProperty.Should().Be("columns",
 			because: "the row is built from the web grid's column array — nothing else in the node describes the row");
-		grid.RowLayout.TargetProperty.Should().Be("itemLayout",
+		grid.ListRow.TargetProperty.Should().Be("itemLayout",
 			because: "itemLayout is the input the mobile list renders each record with");
-		grid.RowLayout.TargetType.Should().Be("crt.ListItem",
+		grid.ListRow.TargetType.Should().Be("crt.ListItem",
 			because: "the row element the mobile list expects inside itemLayout is a crt.ListItem");
-		grid.RowLayout.BindingFrom.Should().Be("code",
+		grid.ListRow.BindingFrom.Should().Be("code",
 			because: "a column's code is its bound attribute name, which is what the $binding refers to");
-		grid.RowLayout.ValueTypeFrom.Should().Be("dataValueType",
+		grid.ListRow.ValueTypeFrom.Should().Be("dataValueType",
 			because: "the title may bind only a text column, and dataValueType is where a column says what it is");
-		grid.RowLayout.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
+		grid.ListRow.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
 			because: "a row title accepts text columns, and this is the DISPLAY-text subset of "
 				+ "CreatioDataValueKind.Text — leaving out PhoneText/WebText/EmailText would give a contacts "
 				+ "detail no title AND a note claiming the source had no acceptable column, which would be false");
-		grid.DropProperties.Should().BeEquivalentTo(
-			new[] { "columns", "primaryColumnName", "selectionState", "_selectionOptions", "features", "fitContent" },
-			because: "these are the web grid's own properties, and mobile crt.List has no equivalent for any of them");
+		grid.Mobile.Should().Contain("crt.ListItem",
+			because: "every entry here is looked up in the mobile registry and shipped as a mobileComponentContracts "
+				+ "entry, so naming the row component is what gives the caller its allowed properties and example — "
+				+ "the only contract available on the merge-twin path, where the row stays theirs to configure");
 	}
 
 	[Test]
