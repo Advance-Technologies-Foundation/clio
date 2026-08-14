@@ -1776,7 +1776,7 @@ public static class WebToMobileAnalysisService {
 						// Defensive symmetry: reachable only for a rule that maps a web type to ITSELF and still
 						// declares a listRow, which no shipped rule does — a listRow exists precisely because
 						// the web type has no mobile counterpart.
-						+ RowNote(containerRow, ResolveMappingRule(ctx, node, type)?.ListRow)
+						+ RowNote(containerRow, ResolveMappingRule(ctx, node, type)?.RowSource)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, name);
@@ -1808,7 +1808,7 @@ public static class WebToMobileAnalysisService {
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				Reason = leafReason + RowNote(leafRow, ResolveMappingRule(ctx, node, leafMobileType)?.ListRow)
+				Reason = leafReason + RowNote(leafRow, ResolveMappingRule(ctx, node, leafMobileType)?.RowSource)
 			});
 		}
 	}
@@ -2202,7 +2202,7 @@ public static class WebToMobileAnalysisService {
 		// own properties must be left alone. Requiring the resolved mobile type to be one the rule maps to keeps
 		// the transform tied to the mapping rather than to the web type.
 		ComponentEquivalenceRule mappingRule = ResolveMappingRule(ctx, node, mobileType);
-		rowOutcome = SynthesizeListRow(ctx, mappingRule?.ListRow, node, values, mobileName);
+		rowOutcome = RenderViewConfigTemplates(ctx, mappingRule, node, values, mobileName);
 		// A converted grid still CARRIES its grid-only properties (columns, primaryColumnName, …) even though
 		// mobile crt.List declares neither. That is deliberate: removing them per-rule would be a second
 		// pruning mechanism beside the registry one, and the registry is the right owner once ENG-91859 makes
@@ -2241,7 +2241,7 @@ public static class WebToMobileAnalysisService {
 			: null;
 	}
 
-	/// <summary>What <see cref="SynthesizeListRow"/> did, so no caller has to re-infer it from the output.</summary>
+	/// <summary>What <see cref="RenderViewConfigTemplates"/> did, so no caller re-infers it from the output.</summary>
 	private enum RowOutcome {
 
 		/// <summary>No rule declared a row here, or the node authored its own and kept it.</summary>
@@ -2269,12 +2269,12 @@ public static class WebToMobileAnalysisService {
 	/// the author's choice, not a source that had nothing to offer. And the source array must be present at all.
 	/// </para>
 	/// </summary>
-	private static string RowNote(RowOutcome outcome, ListRowSynthesisRule rule) => outcome switch {
+	private static string RowNote(RowOutcome outcome, RowSourceRule source) => outcome switch {
 		// Worse than a missing title: the list renders blank. Names WHAT was unusable so the reader looks at the
 		// right thing, without claiming to know which of the ways it was unusable.
 		RowOutcome.NotBuilt =>
 			" — NO ROW could be built for this list: the source carries no usable "
-			+ (string.IsNullOrWhiteSpace(rule?.SourceProperty) ? "row source" : rule.SourceProperty)
+			+ (string.IsNullOrWhiteSpace(source?.Property) ? "row source" : source.Property)
 			+ ", so the list would render blank — tell the user and configure the row in the designer",
 		// Worded to stay true whichever way the title was lost. Today only one way is reachable — the source
 		// offered no column of an accepted type — because the synthesis emits the title as a string and the
@@ -2312,78 +2312,237 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
+	/// <summary>The only values a template may put in a placement field — both are read-only views.</summary>
+	private const string MetaParentNameToken = "{{ meta.parentName }}";
+	private const string MetaPropertyNameToken = "{{ meta.propertyName }}";
+
+	private static readonly Regex TemplateTokenPattern =
+		new(@"\{\{\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\}\}", RegexOptions.Compiled, RegexTimeout);
+
+	/// <summary>The values a template's tokens resolve against for ONE element.</summary>
+	private sealed record TemplateScope(string MobileName, JObject Node, string Title, IReadOnlyList<string> Body);
+
 	/// <summary>
-	/// Builds the row child a <see cref="ListRowSynthesisRule"/> declares and writes it onto
-	/// <paramref name="values"/>. The first source entry becomes the row's <c>title</c> as a plain
-	/// <c>$&lt;binding&gt;</c> STRING (the shape the mobile registry declares for <c>crt.ListItem.title</c>;
-	/// wrapping it as <c>{ "value": … }</c> — the BODY entry shape — renders an empty Title column), each
-	/// remaining entry becomes one <c>body</c> object, and source order is preserved. A no-op when the rule is
-	/// absent, the source property is not an array, no entry yields a binding, or the caller's node already
-	/// carries the target property (a web node that brought its own row wins — it is real authored content).
+	/// Renders the mapping's <c>viewConfigTemplates</c> onto <paramref name="values"/>. The SHAPE is data: a
+	/// template declares the structure the web node has no counterpart for — for a grid → list, the
+	/// <c>crt.ListItem</c> under <c>itemLayout</c>, its <c>title</c> a plain <c>$&lt;binding&gt;</c> string (the
+	/// shape the mobile registry declares; the <c>{ "value": … }</c> BODY shape there renders an empty Title
+	/// column) and one body entry per remaining column, in source order.
 	/// </summary>
-	private static RowOutcome SynthesizeListRow(ElementMapContext ctx, ListRowSynthesisRule rule, JObject node,
-		JObject values, string mobileName) {
-		if (rule is null || string.IsNullOrWhiteSpace(rule.SourceProperty)
-			|| string.IsNullOrWhiteSpace(rule.TargetProperty) || string.IsNullOrWhiteSpace(rule.BindingFrom)) {
+	/// <remarks>
+	/// Only keys the generic property copy left ABSENT are written, so a template adds structure instead of
+	/// restating carried values — which is also why a template's <c>type</c>/<c>name</c>/<c>items</c> are inert
+	/// here: the copy produced them already.
+	/// <para>
+	/// A no-op when the mapping declares no template or row source, no filter matches the node, the node AUTHORED
+	/// the target property itself (real content wins over anything synthesized), or a template tries to SET
+	/// <c>parentName</c>/<c>propertyName</c> to anything but their meta token — the rules file deciding an
+	/// element's parent would desynchronize it from every other <c>parentName</c> in the element map.
+	/// </para>
+	/// </remarks>
+	private static RowOutcome RenderViewConfigTemplates(ElementMapContext ctx, ComponentEquivalenceRule rule,
+		JObject node, JObject values, string mobileName) {
+		if (rule?.ViewConfigTemplates is not { Count: > 0 } templates || rule.RowSource is not { } source
+			|| string.IsNullOrWhiteSpace(source.Property) || string.IsNullOrWhiteSpace(source.Binding)) {
+			return RowOutcome.NotSynthesized;
+		}
+		if (!MatchesAnyFilter(rule.Filters, node)) {
 			return RowOutcome.NotSynthesized;
 		}
 		// The node authored its own target property: keep it, and report NOTHING was synthesized — a missing
 		// title there is the author's choice, not a source that had nothing acceptable to offer.
-		if (values[rule.TargetProperty] is not null) {
+		if (!string.IsNullOrWhiteSpace(source.Into) && values[source.Into] is not null) {
 			return RowOutcome.NotSynthesized;
 		}
-		if (node[rule.SourceProperty] is not JArray source) {
+		if (node[source.Property] is not JArray sourceEntries) {
 			return RowOutcome.NotBuilt;
 		}
-		// A source entry contributes only when its value is a usable binding IDENTIFIER. The page body comes
-		// from a customer environment, so the value is not assumed well-formed: it is REJECTED rather than
-		// repaired, because stripping the offending characters would produce a plausible-looking token that
-		// silently resolves to nothing. An entry that fails is skipped exactly like one carrying no value at
-		// all — including the first, in which case the next usable column moves up.
-		List<(string Binding, int? ValueType)> entries = source
+		// A source entry contributes only when its value is a usable binding IDENTIFIER. The page body comes from
+		// a customer environment, so the value is not assumed well-formed: it is REJECTED rather than repaired,
+		// because stripping the offending characters would produce a plausible-looking token that silently
+		// resolves to nothing. An entry that fails is skipped exactly like one carrying no value at all —
+		// including the first, in which case the next usable column moves up.
+		List<(string Binding, int? ValueType)> entries = sourceEntries
 			.OfType<JObject>()
 			.Select(entry => (
-				Binding: entry[rule.BindingFrom]?.ToString(),
-				ValueType: string.IsNullOrWhiteSpace(rule.ValueTypeFrom)
+				Binding: entry[source.Binding]?.ToString(),
+				ValueType: string.IsNullOrWhiteSpace(source.ValueTypeFrom)
 					? null
-					: ReadValueType(entry[rule.ValueTypeFrom])))
+					: ReadValueType(entry[source.ValueTypeFrom])))
 			.Where(e => !string.IsNullOrWhiteSpace(e.Binding) && BindingIdentifierPattern.IsMatch(e.Binding))
 			.Select(e => ("$" + e.Binding, e.ValueType))
 			.ToList();
 		if (entries.Count == 0) {
 			return RowOutcome.NotBuilt;
 		}
-		// The title is the first entry the TARGET accepts, not simply the first entry: the mobile designer
-		// offers only text columns for a list row's title, so a lookup binds to nothing and leaves the Title
-		// column empty while the body still renders (ENG-95046). A skipped entry is not lost — it becomes a
-		// body row in its original position. With no types declared this degrades to "first entry".
+		// row.title is the first entry the TARGET accepts, not simply the first: the mobile designer offers only
+		// text columns for a list row's title, so a lookup binds to nothing and leaves the Title column empty
+		// while the body still renders (ENG-95046). A skipped entry is not lost — it moves to row.body in its
+		// original position. With no types declared this degrades to "first entry".
 		// An entry whose type the source does not declare is ELIGIBLE, not rejected. Requiring a declared type
 		// would make a PARTLY typed grid behave worse than a wholly untyped one: one typed sibling would be
 		// enough to disqualify the untyped display column, and the row would ship titleless while the note
 		// claimed the source had no acceptable column — which would be false, its type is merely unknown.
-		int titleIndex = rule.TitleValueTypes is { Count: > 0 }
-			? entries.FindIndex(e => !e.ValueType.HasValue || rule.TitleValueTypes.Contains(e.ValueType.Value))
+		int titleIndex = source.TitleValueTypes is { Count: > 0 }
+			? entries.FindIndex(e => !e.ValueType.HasValue || source.TitleValueTypes.Contains(e.ValueType.Value))
 			: 0;
-		var row = new JObject();
-		if (!string.IsNullOrWhiteSpace(mobileName) && !string.IsNullOrWhiteSpace(rule.NameSuffix)) {
-			row["name"] = mobileName + rule.NameSuffix;
+		var scope = new TemplateScope(
+			mobileName,
+			node,
+			titleIndex >= 0 ? entries[titleIndex].Binding : null,
+			entries.Where((_, index) => index != titleIndex).Select(e => e.Binding).ToList());
+		foreach (ViewConfigTemplateRule template in templates) {
+			if (!TargetsOwnPlacement(template) || template.Value is not { } declared) {
+				continue;
+			}
+			if (RenderTemplateToken(JToken.Parse(declared.GetRawText()), scope) is JObject rendered) {
+				MergeAbsentKeys(values, rendered);
+			}
 		}
-		if (!string.IsNullOrWhiteSpace(rule.TargetType)) {
-			row["type"] = rule.TargetType;
+		// A mapping that names no target declared nothing to synthesize, so it is NOT a failed build: reporting
+		// NotBuilt here would append a note claiming the source had no usable row source, which would be false —
+		// the source was never read for one.
+		if (string.IsNullOrWhiteSpace(source.Into)) {
+			return RowOutcome.NotSynthesized;
 		}
-		// No qualifying entry: the row ships with no title at all rather than one bound to a column the target
-		// cannot display — an absent title is visibly incomplete, a wrong one looks configured and is not.
-		if (titleIndex >= 0) {
-			row["title"] = entries[titleIndex].Binding;
+		if (values[source.Into] is not JObject row) {
+			return RowOutcome.NotBuilt;
 		}
-		row["body"] = new JArray(entries
-			.Where((_, index) => index != titleIndex)
-			.Select(e => new JObject { ["value"] = e.Binding }));
-		DropValuesContradictingDeclaredScalars(ctx, rule.TargetType, row);
-		values[rule.TargetProperty] = row;
+		DropValuesContradictingDeclaredScalars(ctx, row["type"]?.ToString(), row);
 		// Read from the row that actually shipped, not from titleIndex: the contract guard runs between the two,
 		// so deciding on the index would report a title the values may no longer carry.
 		return row["title"] is not null ? RowOutcome.BuiltWithTitle : RowOutcome.BuiltWithoutTitle;
+	}
+
+	/// <summary>True when any filter matches the node, or the mapping declares none (match everything).</summary>
+	private static bool MatchesAnyFilter(IReadOnlyList<ElementFilterRule> filters, JObject node) {
+		if (filters is not { Count: > 0 }) {
+			return true;
+		}
+		string type = node["type"]?.ToString();
+		return filters.Any(f => !string.IsNullOrWhiteSpace(f?.Type)
+			&& string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>
+	/// True when the template leaves placement to the converter. <c>parentName</c>/<c>propertyName</c> may only be
+	/// their own meta token or absent: they are a read-only view of what the converter already computed, and a
+	/// rules file that could set them would reparent an element behind the element map's back.
+	/// </summary>
+	private static bool TargetsOwnPlacement(ViewConfigTemplateRule template) =>
+		(string.IsNullOrWhiteSpace(template.ParentName)
+			|| string.Equals(template.ParentName.Trim(), MetaParentNameToken, StringComparison.Ordinal))
+		&& (string.IsNullOrWhiteSpace(template.PropertyName)
+			|| string.Equals(template.PropertyName.Trim(), MetaPropertyNameToken, StringComparison.Ordinal));
+
+	/// <summary>
+	/// Renders one template node. A string interpolates its <c>{{ token }}</c>s — a string that is EXACTLY one
+	/// token yields that token's own value, so a slot can carry a non-string; an object carrying <c>$each</c>
+	/// repeats its <c>as</c> body once per member of the named slot with <c>item</c> bound to the member; any
+	/// other object and array recurse. A token resolving to nothing drops its key.
+	/// </summary>
+	/// <param name="item">
+	/// The current <c>$each</c> member, or null outside one. ONE method handles both cases on purpose: while
+	/// there were two, only the outer one knew about <c>$each</c>, so a nested repeat fell through to the plain
+	/// object branch and wrote its own <c>$each</c>/<c>as</c> keys into the page as data.
+	/// </param>
+	private static JToken RenderTemplateToken(JToken template, TemplateScope scope, JToken item = null) {
+		switch (template) {
+			case JValue { Type: JTokenType.String } value:
+				return RenderTemplateString(value.ToString(), scope, item);
+			case JObject obj when obj["$each"] is { } slotName:
+				return RenderEach(slotName.ToString(), obj["as"], scope, item);
+			case JObject obj: {
+				var rendered = new JObject();
+				foreach (JProperty prop in obj.Properties()) {
+					if (RenderTemplateToken(prop.Value, scope, item) is { Type: not JTokenType.Null } value) {
+						rendered[prop.Name] = value;
+					}
+				}
+				return rendered;
+			}
+			case JArray arr:
+				return new JArray(arr
+					.Select(element => RenderTemplateToken(element, scope, item))
+					.Where(t => t is not null));
+			default:
+				return template;
+		}
+	}
+
+	/// <summary>
+	/// Repeats <paramref name="body"/> once per member of the named slot, binding <c>item</c>. An empty or
+	/// unknown slot yields an empty array rather than nothing, so a list with one column still ships the
+	/// collection its row declares instead of omitting the key.
+	/// </summary>
+	private static JToken RenderEach(string slotName, JToken body, TemplateScope scope, JToken outerItem) {
+		if (body is null || ResolveTemplateSlot(slotName, scope, outerItem) is not JArray members) {
+			return new JArray();
+		}
+		return new JArray(members
+			.Select(member => RenderTemplateToken(body, scope, member))
+			.Where(t => t is not null));
+	}
+
+	/// <summary>
+	/// Interpolates a template string. A string that is EXACTLY one token returns that token's raw value (so a
+	/// slot may be an array or a number); otherwise every token is substituted textually and the result is a
+	/// string. A single token resolving to nothing returns null so its key is dropped.
+	/// </summary>
+	private static JToken RenderTemplateString(string template, TemplateScope scope, JToken item = null) {
+		Match single = TemplateTokenPattern.Match(template);
+		if (single.Success && single.Length == template.Trim().Length) {
+			return ResolveTemplateSlot(single.Groups[1].Value, scope, item);
+		}
+		string rendered = TemplateTokenPattern.Replace(template,
+			m => ResolveTemplateSlot(m.Groups[1].Value, scope, item)?.ToString() ?? string.Empty);
+		return rendered;
+	}
+
+	/// <summary>
+	/// Resolves one token. <c>meta.name</c> is the converted element's own name; <c>row.title</c> /
+	/// <c>row.body</c> are the slots computed from the row source; <c>source.&lt;property&gt;</c> reads the WEB
+	/// node verbatim; <c>item</c> is the current member inside a <c>$each</c>. An unknown token resolves to
+	/// nothing rather than to its own text, so a typo drops a key instead of shipping a literal <c>{{ … }}</c>.
+	/// </summary>
+	private static JToken ResolveTemplateSlot(string token, TemplateScope scope, JToken item) {
+		if (string.Equals(token, "item", StringComparison.Ordinal)) {
+			return item;
+		}
+		// Each of these returns a genuine C# null for "no value". Writing the ternary over the string instead
+		// (`x is null ? null : x`) types it as string, and the implicit string->JToken conversion turns a null
+		// string into a JSON NULL — which is a present key, not an absent one, so the row would ship
+		// "title": null instead of omitting it.
+		if (string.Equals(token, "meta.name", StringComparison.Ordinal)) {
+			return string.IsNullOrWhiteSpace(scope.MobileName) ? null : (JToken)scope.MobileName;
+		}
+		if (string.Equals(token, "row.title", StringComparison.Ordinal)) {
+			return scope.Title is null ? null : (JToken)scope.Title;
+		}
+		if (string.Equals(token, "row.body", StringComparison.Ordinal)) {
+			return new JArray(scope.Body.Select(b => (JToken)b));
+		}
+		const string sourcePrefix = "source.";
+		if (token.StartsWith(sourcePrefix, StringComparison.Ordinal)) {
+			return scope.Node[token[sourcePrefix.Length..]];
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Writes only the keys <paramref name="target"/> does not already carry. The generic property copy runs
+	/// first and its values are the page's real content, so a template never overwrites them — it fills the
+	/// structure the web node had no counterpart for.
+	/// </summary>
+	private static void MergeAbsentKeys(JObject target, JObject rendered) {
+		foreach (JProperty prop in rendered.Properties()) {
+			if (target[prop.Name] is null) {
+				// Cloned, not moved: the token still belongs to the rendered tree, and re-parenting a token that
+				// has one relies on how the JSON library happens to treat it. A copy costs nothing here — these
+				// are a handful of small objects per element — and keeps the two trees independent.
+				target[prop.Name] = prop.Value.DeepClone();
+			}
+		}
 	}
 
 	/// <summary>

@@ -43,20 +43,39 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Web.Contains("crt.DataGrid"));
-		grid.ListRow.Should().NotBeNull(
-			because: "the crt.ListItem row has no web counterpart to copy — it must be built from the grid's "
-				+ "columns, and leaving that to the caller produced lists with no row at all");
-		grid.ListRow.SourceProperty.Should().Be("columns",
+		grid.RowSource.Should().NotBeNull(
+			because: "the crt.ListItem row has no web counterpart to copy — its slots must be built from the "
+				+ "grid's columns, and leaving that to the caller produced lists with no row at all");
+		grid.RowSource.Property.Should().Be("columns",
 			because: "the row is built from the web grid's column array — nothing else in the node describes the row");
-		grid.ListRow.TargetProperty.Should().Be("itemLayout",
-			because: "itemLayout is the input the mobile list renders each record with");
-		grid.ListRow.TargetType.Should().Be("crt.ListItem",
-			because: "the row element the mobile list expects inside itemLayout is a crt.ListItem");
-		grid.ListRow.BindingFrom.Should().Be("code",
+		grid.RowSource.Into.Should().Be("itemLayout",
+			because: "itemLayout is the input the mobile list renders each record with, and an authored one wins");
+		grid.RowSource.Binding.Should().Be("code",
 			because: "a column's code is its bound attribute name, which is what the $binding refers to");
-		grid.ListRow.ValueTypeFrom.Should().Be("dataValueType",
+		grid.RowSource.ValueTypeFrom.Should().Be("dataValueType",
 			because: "the title may bind only a text column, and dataValueType is where a column says what it is");
-		grid.ListRow.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
+		grid.Filters.Should().NotBeNull().And.HaveCount(2,
+			because: "the mapping covers both web grid types, and a filter naming only crt.DataGrid would leave a "
+				+ "crt.DataTable list without a row");
+		grid.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.DataGrid", "crt.DataTable" });
+		grid.ViewConfigTemplates.Should().NotBeNull().And.HaveCount(1,
+			because: "the row's SHAPE is data now — one template produces the crt.List with its nested row");
+		ViewConfigTemplateRule template = grid.ViewConfigTemplates[0];
+		template.ParentName.Should().Be("{{ meta.parentName }}",
+			because: "placement is READ-ONLY: a rules file that could set parentName would reparent an element "
+				+ "behind the element map's back, desynchronizing it from every other parentName");
+		template.PropertyName.Should().Be("{{ meta.propertyName }}",
+			because: "the slot is read-only for the same reason");
+		template.Value.Should().NotBeNull();
+		string skeleton = template.Value!.Value.GetRawText();
+		skeleton.Should().Contain("crt.ListItem",
+			because: "the row element the mobile list expects inside itemLayout is a crt.ListItem");
+		skeleton.Should().Contain("\"title\": \"{{ row.title }}\"",
+			because: "the registry declares crt.ListItem.title a plain string binding — the { value } BODY shape "
+				+ "there renders an empty Title column while the body rows still look correct");
+		skeleton.Should().Contain("\"$each\": \"row.body\"",
+			because: "every column after the leading one becomes its own body entry");
+		grid.RowSource.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
 			because: "a row title accepts text columns, and this is the DISPLAY-text subset of "
 				+ "CreatioDataValueKind.Text — leaving out PhoneText/WebText/EmailText would give a contacts "
 				+ "detail no title AND a note claiming the source had no acceptable column, which would be false");
