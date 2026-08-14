@@ -4315,6 +4315,67 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A source.* token reads the WEB node by PATH, so a nested reference resolves instead of silently returning nothing — a rule author writing source.features.rows must get the value, not a missing property.")]
+	public void Analyze_ViewConfigTemplate_SourceToken_ResolvesANestedPath() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Nested", "type": "crt.DataGrid", "items": "$Nested",
+				  "features": { "rows": { "selection": { "enable": true } } },
+				  "columns": [ { "id": "c1", "code": "NestedDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "itemLayout": { "type": "crt.ListItem", "title": "{{ row.title }}",
+			                  "flat": "{{ source.items }}",
+			                  "nested": "{{ source.features.rows.selection.enable }}",
+			                  "missing": "{{ source.features.nope.deeper }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		JsonNode row = Element(guide, "Nested").MobileValues["itemLayout"];
+		row["flat"]?.GetValue<string>().Should().Be("$Nested",
+			because: "a single-segment source token keeps working");
+		row["nested"]?.GetValue<bool>().Should().BeTrue(
+			because: "a dotted source token must resolve through the web node rather than being read as one key, "
+				+ "and a token that is exactly one reference yields the value's own type rather than its text");
+		row["missing"].Should().BeNull(
+			because: "a path that resolves to nothing drops its key, exactly like an unknown token");
+	}
+
+	[Test]
+	[Description("A template NEVER overwrites a value the generic property copy already produced: the carried values are the page's real content, and a template exists to add the structure the web node had no counterpart for.")]
+	public void Analyze_ViewConfigTemplate_DoesNotOverwriteCarriedValues() {
+		// Arrange — the template deliberately restates keys the copy has already filled, with wrong values.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.WrongType",
+			  "name": "WrongName",
+			  "items": "$WrongBinding",
+			  "itemLayout": { "type": "crt.ListItem", "title": "{{ row.title }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		values["type"]?.GetValue<string>().Should().Be("crt.List",
+			because: "the resolved mobile type is the converter's to decide — a template restating it must lose");
+		values["name"]?.GetValue<string>().Should().NotBe("WrongName",
+			because: "the copy rule REFUSES to carry the element identity, so a template filling that gap would "
+				+ "let the rules file rename an element and desynchronize every parentName referring to it — the "
+				+ "excluded keys are not free real estate");
+		Element(guide, "ProductsList").MobileName.Should().Be("ProductsList",
+			because: "the converter's own identity for the element stands regardless of what a template asked for");
+		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
+			because: "the collection binding is real page content carried from the web node");
+		values["itemLayout"].Should().NotBeNull(
+			because: "the key the copy left ABSENT is the one a template is for");
+	}
+
+	[Test]
 	[Description("A filter that does not match the node suppresses the template entirely: filters NARROW which source elements a mapping's templates apply to, so a non-matching element keeps its own values and gets no row.")]
 	public void Analyze_ViewConfigTemplate_NonMatchingFilter_RendersNothing() {
 		// Arrange
