@@ -23,7 +23,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class McpHttpTransportDefaultsTests {
 
 	[Test]
-	[Description("The MCP HTTP transport options resolved from DI honor the pinned defaults (EnableLegacySse=false, PerSessionExecutionContext=false, Stateless=false) that the credential-passthrough edge depends on (ADR RISK #1).")]
+	[Description("The MCP HTTP transport options resolved from DI honor the pinned defaults (EnableLegacySse=false, PerSessionExecutionContext=false, hybrid session mode) that the credential-passthrough edge depends on (ADR RISK #1).")]
 	public void WithHttpTransport_ShouldPinTransportDefaults_WhenConfiguredByHost() {
 		// Arrange — register the MCP server + HTTP transport exactly as McpHttpServerCommand.Run does,
 		// applying the production ConfigureHttpTransport lambda, then build the provider.
@@ -43,10 +43,14 @@ public sealed class McpHttpTransportDefaultsTests {
 		options.EnableLegacySse.Should().BeFalse(
 			because: "only the modern Streamable HTTP endpoint is exposed; the legacy SSE endpoints must stay unmapped (Story 15e)");
 #pragma warning restore MCP9004
+		// MCP9006: this intentional legacy-compatibility read pins the request ExecutionContext behavior
+		// required by the credential-passthrough middleware while hybrid stateful clients are supported.
+#pragma warning disable MCP9006
 		options.PerSessionExecutionContext.Should().BeFalse(
 			because: "tool handlers must run on the REQUEST's ExecutionContext so the per-request credential context flows into the handler — RISK #1 must not silently drift (Story 15e)");
-		options.Stateless.Should().BeFalse(
-			because: "the server must track per-session state so the per-session container cache keys off it (Story 15e)");
+#pragma warning restore MCP9006
+		options.SessionMode.Should().Be(HttpServerSessionMode.StatefulForInitializeClients,
+			because: "legacy initialize clients need session behavior while modern discovery-first clients should remain stateless on the same endpoint");
 	}
 
 	[Test]
@@ -65,9 +69,12 @@ public sealed class McpHttpTransportDefaultsTests {
 		options.EnableLegacySse.Should().BeFalse(
 			because: "the pin disables the legacy SSE endpoints (Story 15e)");
 #pragma warning restore MCP9004
+		// MCP9006: see the production assignment; this read protects the same intentional compatibility pin.
+#pragma warning disable MCP9006
 		options.PerSessionExecutionContext.Should().BeFalse(
 			because: "the pin keeps handlers on the request ExecutionContext for credential passthrough (Story 15e)");
-		options.Stateless.Should().BeFalse(
-			because: "the pin keeps the server session-stateful (Story 15e)");
+#pragma warning restore MCP9006
+		options.SessionMode.Should().Be(HttpServerSessionMode.StatefulForInitializeClients,
+			because: "the pin must preserve legacy sessions without forcing modern clients to downgrade");
 	}
 }

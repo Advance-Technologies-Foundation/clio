@@ -202,17 +202,12 @@ public sealed class ClioRunExecutor(
 		// ({"args":{"args":{…}}}) and break deserialization. Protocol `_meta` (incl. the progress token,
 		// which RequestParams exposes as a read-only view over Meta["progressToken"]) is NOT copied here:
 		// DispatchAsync is the single owner of Meta forwarding for BOTH callers, so it carries the caller's
-		// Meta onto childParams just before dispatch. Task-augmentation metadata is copied here because
-		// DispatchAsync does not touch it.
+		// Meta onto childParams just before dispatch. The SDK 2.x Tasks extension is intentionally not
+		// registered by clio, so no Tasks-specific request state exists to forward here.
 		CallToolRequestParams originalParams = callContext.Params;
 		CallToolRequestParams childParams = new() {
 			Name = canonicalName,
-			Arguments = originalParams?.Arguments,
-#pragma warning disable MCPEXP001 // Task-augmentation metadata is SDK-experimental; copied verbatim so a
-			// task-augmented direct call keeps its task identity through the forgiving dispatch. If the SDK
-			// removes/renames the property this assignment is the single line to update.
-			Task = originalParams?.Task
-#pragma warning restore MCPEXP001
+			Arguments = originalParams?.Arguments
 		};
 		CallToolResult result = await DispatchAsync(tool, canonicalName, childParams, callContext, cancellationToken)
 			.ConfigureAwait(false);
@@ -238,7 +233,7 @@ public sealed class ClioRunExecutor(
 		// This is the SINGLE owner of _meta forwarding for BOTH callers (the clio-run entry path and
 		// InvokeResolvedAsync) — do not delete it, and do not re-add a Meta copy at either call site.
 		// clio-run builds childParams via BuildChildParams, which constructs a fresh CallToolRequestParams
-		// (Name + Arguments only) with a null Meta; InvokeResolvedAsync builds it with Name/Arguments/Task
+		// (Name + Arguments only) with a null Meta; InvokeResolvedAsync also builds Name/Arguments only
 		// but deliberately leaves Meta to this line. Without it the caller's ProgressToken — which
 		// RequestParams exposes as a read-only view over Meta["progressToken"] — is dropped, and any
 		// notifications/progress a dispatched tool emits (e.g. deploy-creatio / uninstall-creatio typed stage

@@ -17,6 +17,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <SIOVersion>22.2.0</SIOVersion>
     <AvaloniaVersion>12.1.1</AvaloniaVersion>
     <IdentityModelVersion>8.22.0</IdentityModelVersion>
+    <ModelContextProtocolVersion>2.2.0</ModelContextProtocolVersion>
     
   </PropertyGroup>
   <ItemGroup Label="Used in production">
@@ -28,11 +29,11 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- ENG-93885: ToolContractGetTool.IsLegacyStdioClient relies on this SDK capturing Server.ClientInfo
-         at initialize-REQUEST time (no notifications/initialized required) — verified on 1.4.1. Before
-         bumping, re-run ToolContractGetToolLegacyClientRawStdioE2ETests (clio.mcp.e2e), which pins that
-         wire behavior against the unpatchable CAADT 1.4.0 stdio client. -->
-    <PackageVersion Include="ModelContextProtocol" Version="1.4.1" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
+         at initialize-REQUEST time (no notifications/initialized required). Keep
+         ToolContractGetToolLegacyClientRawStdioE2ETests as the upgrade gate for the unpatchable CAADT
+         1.4.0 stdio client. -->
+    <PackageVersion Include="ModelContextProtocol" Version="$(ModelContextProtocolVersion)" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="$(ModelContextProtocolVersion)" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="$(MsPackageVersion)" />

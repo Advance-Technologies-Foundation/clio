@@ -1149,7 +1149,11 @@ public class BindingsModule {
 		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
 		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
 					options.Capabilities ??= new();
+					// MCP9005: advertise the deprecated Logging capability for legacy initialize clients
+					// retained by the hybrid HTTP transport. Modern discovery-first clients do not depend on it.
+#pragma warning disable MCP9005
 					options.Capabilities.Logging = new();
+#pragma warning restore MCP9005
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithRequestFilters(filters => {
