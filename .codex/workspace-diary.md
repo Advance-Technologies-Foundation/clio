@@ -8658,3 +8658,24 @@ Decision: Make hybrid interleaving and mixed-protocol credential isolation posit
 Discovery: Signed Claude reply `394f2b52` is valid/trusted and replies to request `245ce8a5`; Claude agrees there are no remaining actionable findings. All four final local lenses also report no findings. The authoritative project context confirms MCP E2E runs in TeamCity for this path-filtered PR, though it remains advisory and may finish after auto-merge.
 Files: clio.mcp.e2e/McpHttpHybridSessionModeE2ETests.cs, clio.mcp.e2e/McpHttpMultiTenantE2ETests.cs, clio.mcp.e2e/Support/Mcp/McpHttpPassthroughStand.cs, clio-ring/ClioRing.Ipc/ClioIpcClient.cs, clio-ring/ClioRing.Tests/ClioIpcHealthProbeTests.cs
 Impact: The final exact diff passes 3,446 MCP unit tests, 156 Ring tests, focused real-process modern/legacy/CAADT E2E, NET8 compatibility build, read-only Ring IPC proof, clean vulnerability audit, and Windows x64 NativeAOT publish.
+
+## 2026-08-14 09:03 – Restore NET8 compatibility for TeamCity MCP E2E
+Context: PR #1075 made every modern test project NET10-only, but TeamCity intentionally builds and runs the live MCP E2E harness on NET8; current builds therefore failed in preparation with NETSDK1045 before any tests ran.
+Decision: Keep GitHub unit, integration, and analyzer execution on NET10 while restoring conditional NET8/NET10 targeting only to the MCP E2E project and its process fixture. Leave the production Clio targets and TeamCity configuration unchanged.
+Discovery: TeamCity steps explicitly build `clio.mcp.e2e` with `-f net8.0`, load `bin/Debug/net8.0/clio.dll`, and run tests on NET8. The restored projects build successfully on both frameworks, and the environment-free stdio MCP lifecycle test passes on both.
+Files: clio.mcp.e2e/clio.mcp.e2e.csproj, clio.process.fixture/clio.process.fixture.csproj
+Impact: TeamCity can continue its NET8 E2E contract without reintroducing duplicate NET8 unit-test execution in GitHub.
+
+## 2026-08-14 09:08 – Claude review closed E2E trigger coverage
+Context: The user required early Claude consultation through the observable `clio-test-optimization` Visualizer room before finalizing the NET8 TeamCity correction.
+Decision: Accept Claude's verified review that the two target projects are sufficient, add both E2E paths to GitHub's NET10 test-change filter, add the process fixture to TeamCity's trigger paths, and name the exact TeamCity configuration in both project comments.
+Discovery: Claude reply `4a73d280` (valid and trusted signature, reply to `9f65babc`) found that the original two-file diff would skip GitHub unit validation because neither path matched `build.yml`. It also identified the acceptable restore-time cost: `clio.tests` references `clio.mcp.e2e`, so restore sees the NET8 graph even though GitHub still builds and executes only NET10 tests.
+Files: .github/workflows/build.yml, .github/workflows/teamcity-mcp-e2e.yml, clio.mcp.e2e/clio.mcp.e2e.csproj, clio.process.fixture/clio.process.fixture.csproj
+Impact: NET8 and NET10 E2E builds pass; the environment-free stdio lifecycle test passes on both; the exact GitHub NET10 unit lane passes 8,998/23 skipped and integration passes 24/2 skipped. No NET8 tests were reintroduced in GitHub.
+
+## 2026-08-14 09:30 – Remove unavailable reviewer model pins
+Context: The repository's three Codex reviewer profiles pinned `gpt-5.3-codex`, which is unavailable for the current Codex account and prevented the specialist agents from starting.
+Decision: Remove the explicit model pins so Codex can select a supported model while preserving each profile's reasoning effort and instructions.
+Discovery: The pin existed only in the code-quality, performance, and security reviewer profiles under `.codex/agents`.
+Files: .codex/agents/code-quality-reviewer.toml, .codex/agents/performance-review.toml, .codex/agents/security-reviewer.toml
+Impact: Repository reviewer agents no longer fail immediately because of an unavailable model override.

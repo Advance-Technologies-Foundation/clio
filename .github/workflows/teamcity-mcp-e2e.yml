@@ -81,6 +81,7 @@ on:
       - '!clio/help/**'
       - '!clio/Commands.md'
       - 'clio.mcp.e2e/**'
+      - 'clio.process.fixture/**'
       - 'cliogate/**'
       - 'Directory.Packages.props'
   # Manual retrigger for a specific clio branch (e.g. re-run e2e after a flaky
