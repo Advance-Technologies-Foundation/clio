@@ -535,8 +535,11 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: "a sendEmail element with a custom-message HTML body must build without a transport error");
 		string callResultJson = JsonSerializer.Serialize(callResult);
-		callResultJson.Should().Contain(processName,
-			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package that supports the sendEmail element)");
+		// The success LINE, not merely the name: the command logs "Building process '<name>'..." before it calls the
+		// server, so a name match alone also passes when the build then FAILS - which lets a rejected descriptor reach
+		// the describe parser and surface as an unrelated parse error instead of the real server message.
+		callResultJson.Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line (run against an environment with the ProcessDesignService package that supports the sendEmail element)");
 
 		// Readback: the distinctive HTML body proves the body round-tripped — it is stored as a ConstValue on the
 		// element's Body parameter (build) and surfaced by describe (decode), not merely that a sendEmail element exists.
@@ -555,6 +558,95 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		sendEmailJson.Should().Contain("ClioSendEmailProbe",
 			because: "the custom-message HTML body is stored verbatim on the Body parameter and surfaced by describe");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, a descriptor built to the FULL documented email contract - mode, subject, body/bodyFormat, all three recipient value sources, importance, ignoreErrors and a manual-mode performer - is accepted and every field reads back, so drift between the tool's [Description] prose and what the server actually accepts cannot ship undetected.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process accepts the full documented email contract and describe reads every field back")]
+	public async Task CreateBusinessProcess_Should_AcceptTheFullEmailContract_AndReadEveryFieldBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailContractE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFullEmailContractDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "every field the tool's email contract advertises must be accepted by the server it targets");
+		// Asserting the success LINE, not just the process name: the command logs "Building process '<name>'..."
+		// before it calls the server, so a name match alone passes even when the build then fails - which sent a
+		// rejected descriptor into the describe parser and surfaced as an unrelated "no matching element" error.
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line, so this is what proves the "
+				+ "whole email contract was accepted rather than merely transported");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(e => e.Name == "SendEmail1");
+		DescribedEmail email = element.Email!;
+		email.Should().NotBeNull(because: "the element must round-trip as a configured Send email element");
+		email.Mode.Should().Be("manual", because: "the send mode is part of the advertised contract");
+		email.Subject.Should().Be("Clio full-contract probe",
+			because: "a plain constant subject must survive verbatim");
+		email.HasBody.Should().BeTrue(because: "bodyFormat html + body must register as a custom message");
+		email.Importance.Should().Be("high", because: "the importance token must round-trip, not be normalised away");
+		email.IgnoreErrors.Should().BeTrue(because: "the ignore-errors flag is part of the contract");
+		email.Performer.Should().NotBeNull(
+			because: "a manual-mode performer is advertised and must be readable back");
+		email.Performer!.Type.Should().Be("user", because: "the performer assignment type must survive");
+
+		// All three recipient value sources, on the three separate address lines they were sent on. This is the part
+		// the prose could silently drift on: the value-source triple is documented in a [Description] string with no
+		// type-checked DTO behind it, so only a round trip proves the shapes the server accepts still match.
+		email.To.Should().NotBeNull().And.HaveCount(2,
+			because: "the To line carried a constant address AND a process-parameter recipient");
+		email.To!.Select(r => r.Source).Should().Contain("ConstValue",
+			because: "the constant address is stored inline on the element");
+		email.Cc.Should().NotBeNull().And.HaveCount(1, because: "the Cc line carried one constant address");
+		email.Bcc.Should().NotBeNull().And.HaveCount(1, because: "the Bcc line carried one formula recipient");
+		email.Bcc!.Single().Source.Should().Be("Script",
+			because: "an 'expression' recipient is stored as a formula, which is what makes it resolve at send time");
+	}
+
+	// Exercises EVERY field the create-business-process email contract advertises, in one element, so the write path
+	// has executable verification rather than only prose. `sender` is deliberately omitted: it needs a mailbox record
+	// (or an address configured on that specific environment), which would make this test depend on stand data rather
+	// than on the contract. The recipient triple is the point - a constant, a process parameter and a raw formula.
+	private static string BuildFullEmailContractDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Email Contract E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail", "caption": "Send email",
+		      "email": {
+		        "mode": "manual",
+		        "subject": "Clio full-contract probe",
+		        "body": "<html><body><p>ClioEmailContractProbe</p></body></html>",
+		        "bodyFormat": "html",
+		        "to": [ { "value": "to-const@example.com" }, { "processParameter": "RecipientAddress" } ],
+		        "cc": [ { "value": "cc-const@example.com" } ],
+		        "bcc": [ { "expression": "[#SysVariable.CurrentUserContact#]", "referenceSchema": "Contact" } ],
+		        "importance": "high",
+		        "ignoreErrors": true,
+		        "performer": { "type": "user", "showPage": true }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "RecipientAddress", "type": "Text", "direction": "In", "caption": "Recipient address" }
+		  ]
+		}
+		""";
 
 	// A sendEmail element carrying a custom-message HTML body with a distinctive probe token, so the describe read-back
 	// proves the body round-tripped (build stores it as a ConstValue on the Body parameter, describe decodes it) rather

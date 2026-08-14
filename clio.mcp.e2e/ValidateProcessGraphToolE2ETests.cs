@@ -87,7 +87,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	public async Task ValidateProcessGraph_Should_ReportNoErrors_WhenGraphIsValid() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
-		string environmentName = ResolveEnvironmentOrIgnore();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
 		Dictionary<string, object?> graph = new() {
 			["environment-name"] = environmentName,
 			["nodes"] = new[] {
@@ -115,7 +115,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	public async Task ValidateProcessGraph_Should_ClassifySendEmail_AsKnownType() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
-		string environmentName = ResolveEnvironmentOrIgnore();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
 		Dictionary<string, object?> graph = new() {
 			["environment-name"] = environmentName,
 			["nodes"] = new[] {
@@ -149,7 +149,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	public async Task ValidateProcessGraph_Should_SurfaceR1Error_WhenStartHasIncomingFlow() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
-		string environmentName = ResolveEnvironmentOrIgnore();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
 		Dictionary<string, object?> graph = new() {
 			["environment-name"] = environmentName,
 			["nodes"] = new[] {
@@ -171,13 +171,37 @@ public sealed class ValidateProcessGraphToolE2ETests {
 			because: "the R1 violation must be reported in the response findings");
 	}
 
-	private static string ResolveEnvironmentOrIgnore() {
+	// Ignores on BOTH conditions that make these tests meaningless: no environment configured, and a configured
+	// environment that cannot be reached. Checking only the former made an unreachable stand FAIL the fixture
+	// instead of skipping it, which is how every other Sandbox fixture here behaves and what the tier's
+	// Skipped-not-Failed contract expects — an absent stand is not a product defect, and reporting it as one
+	// buries real failures in the same run.
+	private static async Task<string> ResolveEnvironmentOrIgnoreAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore($"Configure McpE2E:Sandbox:EnvironmentName (with CrtProcessBuilder installed) to run {ToolName} graph-validation E2E tests.");
 		}
+
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"{ToolName} graph-validation E2E requires a reachable configured sandbox environment. "
+				+ $"'{environmentName}' was not reachable.");
+		}
+
 		return environmentName!;
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: cts.Token);
+			return result.ExitCode == 0;
+		} catch (OperationCanceledException) {
+			return false;
+		}
 	}
 
 	private static Dictionary<string, object?> Node(string name, string type) =>
