@@ -361,63 +361,110 @@ public sealed class ComponentEquivalenceRule {
 	public string PrimaryWeb { get; init; }
 
 	/// <summary>
-	/// Optional: synthesize the mobile element's ROW child from a web array property, instead of leaving the
-	/// transform for the caller to perform. Declared for the web grid → mobile <c>crt.List</c> mapping, whose
-	/// row (<c>crt.ListItem</c>) has no web counterpart to copy: it must be BUILT from the grid's columns.
-	/// Null for every mapping whose mobile element needs no synthesized child.
+	/// Optional: narrows which SOURCE elements this mapping's <see cref="ViewConfigTemplates"/> apply to. A node
+	/// matches when any filter matches it. Absent or empty means every element of a <see cref="Web"/> type.
+	/// <para>
+	/// A filter narrows; it does NOT authorize. The resolved MOBILE type must still be one this rule maps to —
+	/// a web type that survives as itself once the mobile registry gains it keeps its own properties, and a
+	/// filter naming only the web type cannot express that.
+	/// </para>
 	/// </summary>
-	[JsonPropertyName("listRow")]
-	public ListRowSynthesisRule ListRow { get; init; }
+	[JsonPropertyName("filters")]
+	public IReadOnlyList<ElementFilterRule> Filters { get; init; }
+
+	/// <summary>
+	/// Optional: where the per-record slots (<c>row.title</c>, <c>row.body</c>) a
+	/// <see cref="ViewConfigTemplates"/> template references come FROM. Selection stays in code — the binding
+	/// identifier gate and the type-aware title choice cannot be expressed in a template — so this carries only
+	/// the participating names.
+	/// </summary>
+	[JsonPropertyName("rowSource")]
+	public RowSourceRule RowSource { get; init; }
+
+	/// <summary>
+	/// Optional: the mobile view-config SHAPE this mapping produces, as data. Each template renders one value
+	/// onto the converted element; a key the generic property copy already produced is left alone, so a template
+	/// ADDS the structure the web node has no counterpart for (e.g. a list's <c>itemLayout</c>) rather than
+	/// restating what was carried.
+	/// </summary>
+	[JsonPropertyName("viewConfigTemplates")]
+	public IReadOnlyList<ViewConfigTemplateRule> ViewConfigTemplates { get; init; }
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
 
+/// <summary>Matches a source element. Only the component type is matched today.</summary>
+public sealed class ElementFilterRule {
+
+	/// <summary>Web component type the filter matches (e.g. <c>"crt.DataGrid"</c>).</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+}
+
 /// <summary>
-/// Declares how to build a mobile element's row child from a web array property. The SHAPE is fixed (it is the
-/// <c>crt.ListItem</c> contract): the first source entry becomes the row's <c>title</c> — a plain
-/// <c>$&lt;binding&gt;</c> STRING, which is what the mobile registry declares — and each remaining entry
-/// becomes one <c>body</c> object <c>{ "value": "$&lt;binding&gt;" }</c>, in source order. Only the
-/// participating NAMES are data.
+/// One templated mobile view-config value. <c>parentName</c> and <c>propertyName</c> are READ-ONLY views of what
+/// the converter already computed for the element (<c>meta.*</c>): a template may reference them so the shape it
+/// produces can be read in place, but it must never SET them — the rules file deciding an element's parent would
+/// desynchronize it from every other <c>parentName</c> in the element map.
 /// </summary>
-public sealed class ListRowSynthesisRule {
+public sealed class ViewConfigTemplateRule {
 
-	/// <summary>Web array property the row is built FROM (e.g. <c>"columns"</c>).</summary>
-	[JsonPropertyName("sourceProperty")]
-	public string SourceProperty { get; init; }
+	/// <summary>Template for the element's parent, normally <c>"{{ meta.parentName }}"</c>.</summary>
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
 
-	/// <summary>Mobile property the row is written TO (e.g. <c>"itemLayout"</c>).</summary>
-	[JsonPropertyName("targetProperty")]
-	public string TargetProperty { get; init; }
+	/// <summary>Template for the parent's slot, normally <c>"{{ meta.propertyName }}"</c>.</summary>
+	[JsonPropertyName("propertyName")]
+	public string PropertyName { get; init; }
 
-	/// <summary>Mobile component type of the row element (e.g. <c>"crt.ListItem"</c>).</summary>
-	[JsonPropertyName("targetType")]
-	public string TargetType { get; init; }
+	/// <summary>
+	/// The value skeleton. Strings interpolate <c>{{ token }}</c>; an object
+	/// <c>{ "$each": "&lt;slot&gt;", "as": { … } }</c> repeats its <c>as</c> body once per slot member with
+	/// <c>{{ item }}</c> bound to the member; a token resolving to nothing omits its key.
+	/// </summary>
+	[JsonPropertyName("value")]
+	public JsonElement? Value { get; init; }
+}
+
+/// <summary>
+/// Where a template's per-record slots come from: the web array property to read, which of an entry's properties
+/// carries the bound attribute name, and which value types may lead the row.
+/// </summary>
+public sealed class RowSourceRule {
+
+	/// <summary>Web array property the slots are built FROM (e.g. <c>"columns"</c>).</summary>
+	[JsonPropertyName("property")]
+	public string Property { get; init; }
 
 	/// <summary>
 	/// Property of a source entry holding the bound attribute name (e.g. a column's <c>"code"</c>). Its value is
-	/// prefixed with <c>$</c> to form the binding. An entry missing it is skipped.
+	/// prefixed with <c>$</c> to form the binding. An entry missing it, or carrying one that is not a usable
+	/// identifier, is skipped.
 	/// </summary>
-	[JsonPropertyName("bindingFrom")]
-	public string BindingFrom { get; init; }
+	[JsonPropertyName("binding")]
+	public string Binding { get; init; }
 
-	/// <summary>Suffix appended to the mobile element name to name the row element (e.g. <c>"_ListItem"</c>).</summary>
-	[JsonPropertyName("nameSuffix")]
-	public string NameSuffix { get; init; }
+	/// <summary>
+	/// Mobile property the rendered structure is written to (e.g. <c>"itemLayout"</c>). Used to detect a node
+	/// that AUTHORED its own — real content, which wins over anything synthesized.
+	/// </summary>
+	[JsonPropertyName("into")]
+	public string Into { get; init; }
 
 	/// <summary>
 	/// Property of a source entry holding its value type (e.g. a column's <c>"dataValueType"</c>). Read together
-	/// with <see cref="TitleValueTypes"/> to choose which entry may be the title.
+	/// with <see cref="TitleValueTypes"/> to choose which entry may lead the row.
 	/// </summary>
 	[JsonPropertyName("valueTypeFrom")]
 	public string ValueTypeFrom { get; init; }
 
 	/// <summary>
-	/// Creatio <c>DataValueType</c> ids the TITLE may bind (see <c>CreatioDataValueType</c> for the full map).
-	/// The mobile designer offers only TEXT columns for a list row's title — a lookup binds to nothing and
-	/// renders an empty Title column while the body rows still look correct — so the title is the first entry
-	/// whose value type is listed here, NOT simply the first entry. Every other entry, including one skipped
-	/// over, becomes a body row in source order.
+	/// Creatio <c>DataValueType</c> ids the row's leading value may bind (see <c>CreatioDataValueType</c> for the
+	/// full map). The mobile designer offers only TEXT columns for a list row's title — a lookup binds to nothing
+	/// and renders an empty Title column while the body rows still look correct — so <c>row.title</c> is the
+	/// first entry whose value type is listed here, NOT simply the first entry. Every other entry, including one
+	/// skipped over, lands in <c>row.body</c> in source order.
 	/// <para>
 	/// The shipped list is the DISPLAY-text subset of <c>CreatioDataValueKind.Text</c>: 1 Text, 19
 	/// LocalizableString, 27 ShortText, 28 MediumText, 29 MaxSizeText, 30 LongText, 42 PhoneText, 44 WebText,
@@ -426,11 +473,12 @@ public sealed class ListRowSynthesisRule {
 	/// MetadataText (not a value a reader reads), and 43 RichText (markup, not a single-line headline).
 	/// </para>
 	/// <para>
-	/// An entry whose type the source does not declare is ELIGIBLE — see the remarks on the title choice in
-	/// <c>SynthesizeListRow</c>. A title is omitted only when entries ARE typed and none of them qualifies; the
-	/// element's reason then says so. Empty or absent keeps the plain first-entry behaviour.
+	/// An entry whose type the source does not declare is ELIGIBLE — requiring a declared type would make a
+	/// PARTLY typed grid behave worse than a wholly untyped one. <c>row.title</c> is empty only when entries ARE
+	/// typed and none qualifies; the element's reason then says so. Empty or absent keeps first-entry behaviour.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("titleValueTypes")]
 	public IReadOnlyList<int> TitleValueTypes { get; init; }
 }
+
