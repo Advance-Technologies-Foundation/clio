@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
+using ErrorOr;
 
 namespace Clio.Command;
 
@@ -154,6 +156,7 @@ public sealed class ModifyBusinessProcessService(
 /// </summary>
 public class ModifyBusinessProcessCommand(
 	IModifyBusinessProcessService modifyBusinessProcessService,
+	IProcessDescriber processDescriber,
 	ILogger logger)
 	: Command<ModifyBusinessProcessOptions> {
 	/// <inheritdoc />
@@ -187,10 +190,39 @@ public class ModifyBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
+			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
+		}
+	}
+
+	// Same silent-drop guard as the build path: a server predating sendEmail discards an email block and still
+	// answers success, so an edit can report an applied operation whose email configuration never landed. Read the
+	// process back and say so. Only runs when the operations actually carried a block; a failed read-back is never
+	// escalated, since it is not evidence of a drop. See EmailBlockExpectation for why this is not version-based.
+	private void WarnOnDiscardedEmailBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
+		IReadOnlyList<string> expected = EmailBlockExpectation.FromOperations(options.OperationsJson);
+		if (expected.Count == 0) {
+			return;
+		}
+
+		string identity = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
+		if (string.IsNullOrWhiteSpace(identity)) {
+			return;
+		}
+
+		ErrorOr<DescribeProcessResult> described =
+			processDescriber.Describe(new ProcessIdentity(identity, null, null), null);
+		if (described.IsError) {
+			return;
+		}
+
+		string? warning = EmailBlockExpectation.BuildWarning(
+			EmailBlockExpectation.Missing(described.Value, expected));
+		if (warning is not null) {
+			logger.WriteWarning(warning);
 		}
 	}
 }

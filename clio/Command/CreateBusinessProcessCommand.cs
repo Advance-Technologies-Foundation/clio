@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
+using ErrorOr;
 
 namespace Clio.Command;
 
@@ -128,6 +131,7 @@ public sealed class CreateBusinessProcessService(
 /// </summary>
 public class CreateBusinessProcessCommand(
 	ICreateBusinessProcessService createBusinessProcessService,
+	IProcessDescriber processDescriber,
 	ILogger logger)
 	: Command<CreateBusinessProcessOptions> {
 	/// <inheritdoc />
@@ -146,10 +150,35 @@ public class CreateBusinessProcessCommand(
 				options.Environment,
 				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
+			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
+		}
+	}
+
+	// A server that predates sendEmail DISCARDS an email block and still answers success:true, so a build can
+	// report a configured email element that is in fact empty. Read the saved process back and say so when the
+	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
+	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
+	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
+	private void WarnOnDiscardedEmailBlocks(CreateBusinessProcessOptions options, string? schemaName) {
+		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
+		if (expected.Count == 0 || string.IsNullOrWhiteSpace(schemaName)) {
+			return;
+		}
+
+		ErrorOr<DescribeProcessResult> described =
+			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null);
+		if (described.IsError) {
+			return;
+		}
+
+		string? warning = EmailBlockExpectation.BuildWarning(
+			EmailBlockExpectation.Missing(described.Value, expected));
+		if (warning is not null) {
+			logger.WriteWarning(warning);
 		}
 	}
 }

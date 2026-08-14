@@ -1,6 +1,7 @@
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -127,7 +128,8 @@ public class CreateBusinessProcessToolTests {
 		public CreateBusinessProcessOptions? CapturedOptions { get; private set; }
 
 		public FakeCreateBusinessProcessCommand()
-			: base(Substitute.For<ICreateBusinessProcessService>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<ICreateBusinessProcessService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
 		}
 
 		public override int Execute(CreateBusinessProcessOptions options) {
