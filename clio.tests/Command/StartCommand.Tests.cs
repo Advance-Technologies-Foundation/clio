@@ -50,6 +50,7 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 			_iisSiteDetector,
 			_applicationClient,
 			new System.IO.Abstractions.FileSystem());
+		_command.PingStartupDelay = TimeSpan.Zero;
 	}
 
 	[Test]

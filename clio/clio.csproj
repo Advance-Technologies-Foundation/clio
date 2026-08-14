@@ -162,7 +162,15 @@
 		<PackageReference Include="YamlDotNet" />
 		<PackageReference Include="SharpZipLib" />
 		<PackageReference Include="JsonhCs" />
+		<!-- Keep the complete IdentityModel runtime family explicit so central version alignment
+		     applies to recursive dependencies from JwtBearer and Microsoft.Data.SqlClient too. -->
+		<PackageReference Include="Microsoft.IdentityModel.Abstractions" />
+		<PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+		<PackageReference Include="Microsoft.IdentityModel.Logging" />
+		<PackageReference Include="Microsoft.IdentityModel.Protocols" />
+		<PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" />
 		<PackageReference Include="Newtonsoft.Json" />
 		<PackageReference Include="Acornima" />
 		<PackageReference Include="Tomlyn" />

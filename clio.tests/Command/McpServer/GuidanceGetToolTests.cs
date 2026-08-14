@@ -20,14 +20,25 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class GuidanceGetToolTests {
 	private ServiceProvider _container;
 	private IKnowledgeGuidanceSource _source;
+	private IKnowledgeFeedbackPolicyService _feedbackPolicyService;
 	private GuidanceGetTool _tool;
 
 	[SetUp]
 	public void SetUp() {
 		_source = Substitute.For<IKnowledgeGuidanceSource>();
 		_source.GetNames().Returns(["synthetic-guide"]);
+		_feedbackPolicyService = Substitute.For<IKnowledgeFeedbackPolicyService>();
+		_feedbackPolicyService.GetPolicy().Returns(new KnowledgeFeedbackPolicy(
+			"auto",
+			"auto",
+			"https://creatio.ghe.com/engineering/clio-feedback",
+			"full",
+			"sha256:policy",
+			new KnowledgeFeedbackApprovalView("sha256:policy"),
+			"approved"));
 		ServiceCollection services = new();
 		services.AddSingleton(_source);
+		services.AddSingleton(_feedbackPolicyService);
 		services.AddTransient<GuidanceGetTool>();
 		_container = services.BuildServiceProvider();
 		_tool = _container.GetRequiredService<GuidanceGetTool>();
@@ -77,6 +88,12 @@ public sealed class GuidanceGetToolTests {
 			because: "the bundle-owned resource URI must survive tool routing");
 		response.Article.Text.Should().Be(text,
 			because: "the delivery surface must not rewrite verified synthetic bytes");
+		response.FeedbackPolicy.Mode.Should().Be("auto",
+			because: "every guidance response must carry the effective reconciliation policy");
+		response.FeedbackPolicy.ReportingScope.Should().Be("full",
+			because: "an approved internal policy must preserve comprehensive reporting scope");
+		response.FeedbackPolicy.PolicyHash.Should().Be("sha256:policy",
+			because: "agents need the exact reporting article hash bound to standing approval");
 	}
 
 	[Test]

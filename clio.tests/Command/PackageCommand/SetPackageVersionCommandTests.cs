@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
+using System.Runtime.InteropServices;
 using Clio.Command.PackageCommand;
 using Clio.Common;
 using FluentAssertions;
@@ -15,9 +17,17 @@ public class SetPackageVersionCommandTests : BaseCommandTests<SetPackageVersionO
 
 	#region Constants: Private
 
-	private const string PackagePath = @"C:\pkg\CrtProcessBuilder";
+	// OS-neutral paths: the command resolves the descriptor via _fileSystem.Path.Combine, which uses the
+	// running OS separator. A hardcoded @"C:\...\descriptor.json" seed only matches that lookup on Windows —
+	// on macOS/Linux the backslash is a plain filename char, so the seeded key and the combined lookup key
+	// (…CrtProcessBuilder/descriptor.json) diverge and the descriptor is "not found". Build the root per-OS
+	// and derive the descriptor path with Path.Combine so both keys align everywhere.
+	private static readonly string PackagePath =
+		RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+			? @"C:\pkg\CrtProcessBuilder"
+			: "/pkg/CrtProcessBuilder";
 
-	private const string DescriptorPath = @"C:\pkg\CrtProcessBuilder\descriptor.json";
+	private static readonly string DescriptorPath = Path.Combine(PackagePath, "descriptor.json");
 
 	/// <summary>A descriptor as <c>clio compress</c> ships one — the real shape, not a stub.</summary>
 	private const string Descriptor = """

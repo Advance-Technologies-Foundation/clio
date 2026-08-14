@@ -124,7 +124,11 @@ internal static class PageBodySamplingService {
 				Instructions = PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile ? MobileSystemPrompt : SystemPrompt,
 				MaxOutputTokens = 500
 			};
+			// MCP9005: sampling is deprecated only for MCP 2026-07-28 and later. Hybrid mode keeps
+			// this established best-effort path for legacy initialize clients until their support is dropped.
+#pragma warning disable MCP9005
 			ChatResponse response = await server.SampleAsync(messages, chatOptions, null, ct);
+#pragma warning restore MCP9005
 			return ParseSamplingResponse(response.Text ?? string.Empty);
 		} catch {
 			return new PageSamplingReview { Skipped = true };

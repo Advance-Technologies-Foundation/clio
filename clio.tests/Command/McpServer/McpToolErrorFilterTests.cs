@@ -475,16 +475,8 @@ public sealed class McpToolErrorFilterTests
 			new FakeRetrySafeTool());
 
 	private static RequestContext<CallToolRequestParams> CreateContext(
-		string toolName, IDictionary<string, JsonElement>? arguments = null) {
-		RequestContext<CallToolRequestParams> context =
-			(RequestContext<CallToolRequestParams>)RuntimeHelpers.GetUninitializedObject(
-				typeof(RequestContext<CallToolRequestParams>));
-		context.Params = new CallToolRequestParams {
-			Name = toolName,
-			Arguments = arguments
-		};
-		return context;
-	}
+		string toolName, IDictionary<string, JsonElement>? arguments = null) =>
+		McpRequestContextTestFactory.CreateCallToolContext(toolName, arguments);
 
 	private static McpServerTool CreateRealTool() =>
 		McpServerTool.Create(GetFakeToolMethod(), new FakeToolWithCompositeArgs());

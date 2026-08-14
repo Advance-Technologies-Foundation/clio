@@ -245,19 +245,21 @@ public sealed class McpProgressHeartbeatTests {
 		};
 
 		// Act — cancel the request once the work is provably running, well inside the long deadline.
-		Func<Task> act = async () => await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+		Task runTask = McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 			server: null,
 			progressToken: null,
 			operationName: "cancelled-op",
 			work: work,
 			deadline: TimeSpan.FromSeconds(30),
 			cancellationToken: cts.Token,
-			interval: FastInterval).ConfigureAwait(false);
-		workStarted.Wait(StopGuard);
-		cts.Cancel();
-
-		// Assert
+			interval: FastInterval);
 		try {
+			workStarted.Wait(StopGuard).Should().BeTrue(
+				because: "the request must be cancelled only after the detached work has started");
+			cts.Cancel();
+			Func<Task> act = async () => await runTask.ConfigureAwait(false);
+
+			// Assert
 			await act.Should().ThrowAsync<OperationCanceledException>(
 				because: "a cancelled request (or server shutdown) must surface as cancellation, not a fabricated 150 s deadline whose 'work continues, keep polling' guidance would be false").ConfigureAwait(false);
 		}
@@ -265,9 +267,16 @@ public sealed class McpProgressHeartbeatTests {
 			// RunWithProgressAndDeadlineAsync deliberately detaches work from the request lifetime.
 			// Release and join it before disposing its wait handles so no late fault can leak into
 			// another test's process-wide stderr capture.
+			cts.Cancel();
 			releaseWork.Set();
 			workCompleted.Wait(StopGuard).Should().BeTrue(
 				because: "the detached test work must finish before its synchronization primitives are disposed");
+			try {
+				await runTask.ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) {
+				// Expected when cleanup has to cancel the request after an earlier assertion failure.
+			}
 		}
 	}
 
