@@ -119,8 +119,27 @@ public sealed class TelemetryService : ITelemetryService
 		"workflow_completed",
 		"workflow_failed",
 		"changes_requested",
-		"changes_applied"
+		"changes_applied",
+
+		// --- Session measurement (NOT a funnel stage) ---
+		// Reports what a host session consumed. It is deliberately not a stage: it marks no progress
+		// through a run, belongs to the session rather than to any one flow, and must never be counted
+		// in a funnel.
+		//
+		// It exists because per-stage token attribution turned out to be unachievable, which only a
+		// measurement showed: across 52 agent-emitted events, ZERO carried a token counter. An agent
+		// cannot see its own running totals — nothing in the tool surface exposes them — so the guide's
+		// promise that "the differences show which stage of which flow cost the tokens" could not be
+		// kept. The host's own session transcript does have the numbers, and a hook can read it at the
+		// end of a session, which is the one place a true total exists.
+		SessionUsageEvent
 	];
+
+	/// <summary>
+	/// Session-scoped consumption measurement, emitted once per host session. Not a funnel stage: it
+	/// anchors nothing, terminates nothing, and is never counted as progress through a run.
+	/// </summary>
+	internal const string SessionUsageEvent = "session_usage";
 
 	private static readonly HashSet<string> AllowedEventNameSet = new(AllowedEventNames, StringComparer.Ordinal);
 

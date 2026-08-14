@@ -478,6 +478,39 @@ public sealed class WorkflowTelemetryVocabularyTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Accepts the session consumption measurement without letting it act as a funnel stage.")]
+	public void TelemetryService_Should_Accept_SessionUsage_As_A_Measurement_Not_A_Stage()
+	{
+		// Arrange
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-14T08:00:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		// Act: the shape a host session produces — the deterministic floor start under `unattributed`,
+		// then the end-of-session totals in that same session-scoped pair.
+		service.Send(CreateRequest("workflow_started") with { Workflow = "unattributed" });
+		time.Advance(TimeSpan.FromMinutes(5));
+		TelemetryEventResult result = service.Send(CreateRequest(TelemetryService.SessionUsageEvent) with {
+			Workflow = "unattributed", InputTokens = 470, OutputTokens = 187_785, CachedInputTokens = 42_285_146
+		});
+
+		// Assert: recorded, with the counters intact and elapsed measured from the session's start.
+		result.Status.Should().Be("recorded",
+			because: "an agent cannot see its own running totals, so the host-side measurement is the only source of them");
+		JsonElement stored = ReadNewestStoredEvent();
+		ReadIntAttribute(stored, "output_tokens").Should().Be(187_785);
+		ReadIntAttribute(stored, "duration_since_session_start_ms").Should().Be(300_000);
+
+		// ...and it does not become the anchor: a stage after it is still measured from the session's
+		// real start, not from the moment the totals happened to be taken.
+		time.Advance(TimeSpan.FromMinutes(1));
+		service.Send(CreateRequest("work_item_completed") with { Workflow = "unattributed" });
+		ReadIntAttribute(ReadNewestStoredEvent(), "duration_since_session_start_ms").Should().Be(360_000,
+			because: "session_usage is a measurement, so it must not anchor a session it merely reports on");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A second run of the same flow in one session does not inherit the first run's timings.")]
 	public void TelemetryService_Should_Not_Carry_A_Finished_Runs_Timings_Into_The_Next_Run()
 	{
