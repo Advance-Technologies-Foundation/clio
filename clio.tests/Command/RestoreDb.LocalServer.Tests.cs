@@ -277,9 +277,12 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		_backupFileDetector.DetectBackupType("backup.backup").Returns(BackupFileType.PostgresBackup);
 		_postgresToolsPathDetector.GetPgRestorePath(null).Returns("/usr/bin/pg_restore");
 
-		var postgres = new Postgres();
-		postgres.Init("localhost", 5432, "postgres", "postgres");
+		Postgres postgres = Substitute.For<Postgres>();
+		postgres.CheckDbExists("testdb").Returns(false);
+		postgres.CreateDb("testdb").Returns(true);
 		_dbClientFactory.CreatePostgres("localhost", 5432, "postgres", "postgres").Returns(postgres);
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
 
 		var options = new RestoreDbCommandOptions {
 			DbServerName = "my-postgres",
@@ -290,9 +293,10 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		var sut = CreateSut();
 
 		// Act
-		sut.Execute(options);
+		int result = sut.Execute(options);
 
 		// Assert
+		result.Should().Be(0, because: "backup type detection should continue through the isolated PostgreSQL restore path");
 		_backupFileDetector.Received(1).DetectBackupType("backup.backup");
 	}
 
@@ -688,9 +692,12 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		_backupFileDetector.DetectBackupType("backup.backup").Returns(BackupFileType.PostgresBackup);
 		_postgresToolsPathDetector.GetPgRestorePath("/custom/path/to/bin").Returns("/custom/path/to/bin/pg_restore");
 
-		var postgres = new Postgres();
-		postgres.Init("localhost", 5432, "postgres", "postgres");
+		Postgres postgres = Substitute.For<Postgres>();
+		postgres.CheckDbExists("testdb").Returns(false);
+		postgres.CreateDb("testdb").Returns(true);
 		_dbClientFactory.CreatePostgres("localhost", 5432, "postgres", "postgres").Returns(postgres);
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
 
 		var options = new RestoreDbCommandOptions {
 			DbServerName = "my-postgres",
@@ -701,9 +708,10 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		var sut = CreateSut();
 
 		// Act
-		sut.Execute(options);
+		int result = sut.Execute(options);
 
 		// Assert
+		result.Should().Be(0, because: "the explicit tools path should be used without contacting a real PostgreSQL server");
 		_postgresToolsPathDetector.Received(1).GetPgRestorePath("/custom/path/to/bin");
 	}
 

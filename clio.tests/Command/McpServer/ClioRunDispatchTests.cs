@@ -244,11 +244,8 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
-	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
-	// executor reuses this context and only sets Params/MatchedPrimitive before InvokeAsync).
 	private static RequestContext<CallToolRequestParams> CallContext() =>
-		(RequestContext<CallToolRequestParams>)System.Runtime.CompilerServices.RuntimeHelpers
-			.GetUninitializedObject(typeof(RequestContext<CallToolRequestParams>));
+		McpRequestContextTestFactory.CreateCallToolContext(ClioRunTool.ToolName);
 
 	private void RegisterTool(string name, McpServerTool tool, bool destructive) {
 		_registry.TryGetTool(name, out Arg.Any<McpServerTool>())

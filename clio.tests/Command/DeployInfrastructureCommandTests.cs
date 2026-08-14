@@ -297,10 +297,11 @@ public class DeployInfrastructureCommandTests : BaseCommandTests<DeployInfrastru
 
 		_command.RetryDelay = 10;
 		_command.PodDelay = 10;
+		_command.OrphanedPersistentVolumeStabilizationDelay = 0;
 		_command.VerifyPostgresConnectionMaxRetryAttempts = 3;
-		_command.VerifyPostgresConnectionDelaySeconds = 1;
+		_command.VerifyPostgresConnectionDelaySeconds = 0;
 		_command.VerifyRedisConnectionMaxRetryAttempts = 3;
-		_command.VerifyRedisConnectionDelaySeconds = 1;
+		_command.VerifyRedisConnectionDelaySeconds = 0;
 		_command.CleanupOrphanedPersistentVolumesMaxAttempts = 2;
 		_command.VerifyRedisConnectionConnectionTimeout = 100;
 		_command.VerifyRedisConnectionSyncTimeout = 100;

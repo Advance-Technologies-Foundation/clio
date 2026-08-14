@@ -48,16 +48,9 @@ public sealed class McpDurableCallToolHandlerTests {
 		_executor.ClearReceivedCalls();
 	}
 
-	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
-	// dispatch path only reads/writes Params and MatchedPrimitive on it).
 	private static RequestContext<CallToolRequestParams> CallContext(string toolName,
-		Dictionary<string, JsonElement> arguments = null) {
-		RequestContext<CallToolRequestParams> context =
-			(RequestContext<CallToolRequestParams>)System.Runtime.CompilerServices.RuntimeHelpers
-				.GetUninitializedObject(typeof(RequestContext<CallToolRequestParams>));
-		context.Params = new CallToolRequestParams { Name = toolName, Arguments = arguments };
-		return context;
-	}
+		Dictionary<string, JsonElement> arguments = null) =>
+		McpRequestContextTestFactory.CreateCallToolContext(toolName, arguments);
 
 	// A real SDK-built tool over a static echo method, so a resolved McpServerTool instance exists
 	// without a live server.

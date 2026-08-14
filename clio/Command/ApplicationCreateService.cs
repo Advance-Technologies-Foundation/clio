@@ -6,7 +6,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using System.Threading;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -66,7 +65,8 @@ public sealed class ApplicationCreateService(
 	IApplicationInfoService applicationInfoService,
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger,
-	ICaptionCultureResolver captionCultureResolver)
+	ICaptionCultureResolver captionCultureResolver,
+	IRetryDelay retryDelay)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
@@ -558,7 +558,7 @@ public sealed class ApplicationCreateService(
 				lastLoadException = exception;
 				if (attempt < PollAttempts)
 				{
-					Thread.Sleep(PollDelay);
+					retryDelay.Wait(PollDelay);
 				}
 			}
 		}

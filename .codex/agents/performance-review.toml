@@ -1,3 +1,2 @@
-﻿model = "gpt-5.3-codex"
 model_reasoning_effort = "high"
 developer_instructions = "Focus on code performance issues, write tests to validate hypothesis before flagging an issue. When finding performance issues give concrete steps on how to reproduce the issue and suggest potential optimizations."

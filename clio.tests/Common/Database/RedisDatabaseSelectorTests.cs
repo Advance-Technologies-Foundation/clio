@@ -39,7 +39,7 @@ public class RedisDatabaseSelectorTests
 			attempts++;
 			if (attempts == 1)
 			{
-				throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "transient blip");
+				throw CreateConnectionException("transient blip");
 			}
 
 			return multiplexer;
@@ -66,7 +66,7 @@ public class RedisDatabaseSelectorTests
 		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
 		{
 			attempts++;
-			throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "still down");
+			throw CreateConnectionException("still down");
 		};
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
@@ -119,7 +119,7 @@ public class RedisDatabaseSelectorTests
 		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
 		{
 			attempts++;
-			throw new RedisConnectionException(ConnectionFailureType.AuthenticationFailure, "wrong password");
+			throw CreateConnectionException("wrong password", ConnectionFailureType.AuthenticationFailure);
 		};
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
@@ -172,7 +172,7 @@ public class RedisDatabaseSelectorTests
 		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
 		{
 			attempts++;
-			throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "transient blip");
+			throw CreateConnectionException("transient blip");
 		};
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
@@ -199,7 +199,7 @@ public class RedisDatabaseSelectorTests
 			attempts++;
 			if (attempts == 1)
 			{
-				throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "socket dropped");
+				throw CreateConnectionException("socket dropped", ConnectionFailureType.SocketFailure);
 			}
 
 			return multiplexer;
@@ -224,7 +224,7 @@ public class RedisDatabaseSelectorTests
 		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
 		{
 			attempts++;
-			throw new RedisConnectionException(ConnectionFailureType.InternalFailure, "internal fault");
+			throw CreateConnectionException("internal fault", ConnectionFailureType.InternalFailure);
 		};
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
@@ -343,4 +343,12 @@ public class RedisDatabaseSelectorTests
 		options.User.Should().BeNull(because: "a null username must not configure an ACL user");
 		options.Password.Should().BeNull(because: "a whitespace-only password must not be forwarded as a credential");
 	}
+
+	private static RedisConnectionException CreateConnectionException(string message,
+		ConnectionFailureType failureType = ConnectionFailureType.UnableToConnect) => new(
+		failureType,
+		CommandFlags.None,
+		message,
+		innerException: null,
+		CommandStatus.Unknown);
 }
