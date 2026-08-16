@@ -7,6 +7,11 @@ using ModelContextProtocol.Protocol;
 
 namespace Clio.Command.McpServer.Tools;
 
+// MCP9005: MCP 2026-07-28 deprecates the Logging feature, but hybrid mode intentionally keeps it
+// for legacy initialize clients. This file is the complete compatibility adapter and can be removed
+// when clio drops those protocol revisions.
+#pragma warning disable MCP9005
+
 /// <summary>
 /// Forwards tool execution log messages to the MCP client as <c>notifications/message</c>
 /// notifications, enabling real-time observability in MCP Inspector and other clients.
@@ -89,3 +94,5 @@ internal static class McpLogNotifier {
 		_ => LoggingLevel.Info
 	};
 }
+
+#pragma warning restore MCP9005

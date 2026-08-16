@@ -285,17 +285,75 @@ public sealed class ComponentRegistryClientTests {
 			because: "RefreshAsync must surface CDN failures so the CLI verb can print an actionable diagnostic");
 	}
 
+	[Test]
+	[Description("RefreshAsync preserves the production one-second and two-second exponential backoff schedule without making the unit test wait.")]
+	public async Task RefreshAsync_Requests_Exponential_Backoff_Between_Transient_Failures() {
+		// Arrange
+		FakeRegistryCacheStore cache = new();
+		FakeHttpHandler handler = new();
+		handler.EnqueueAlways(HttpStatusCode.InternalServerError, body: null);
+		List<TimeSpan> requestedDelays = [];
+		List<CancellationToken> observedTokens = [];
+		using CancellationTokenSource cancellationSource = new();
+		ComponentRegistryClient client = CreateClient(cache, handler, delayAsync: (delay, token) => {
+			requestedDelays.Add(delay);
+			observedTokens.Add(token);
+			return Task.CompletedTask;
+		});
+
+		// Act
+		bool refreshed = await client.RefreshAsync("latest", cancellationSource.Token);
+
+		// Assert
+		refreshed.Should().BeFalse(
+			because: "three transient CDN failures should exhaust the retry budget");
+		requestedDelays.Should().Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)],
+			because: "the retry seam must preserve the production exponential backoff schedule");
+		observedTokens.Should().OnlyContain(token => token == cancellationSource.Token,
+			because: "each wait must remain cancellable by the original caller");
+		handler.Requests.Should().HaveCount(ComponentRegistryClient.CdnFetchAttempts,
+			because: "two waits belong between the three configured fetch attempts");
+	}
+
+	[Test]
+	[Description("RefreshAsync stops retrying when cancellation interrupts the injected backoff delay.")]
+	public async Task RefreshAsync_Stops_Retrying_When_Backoff_Is_Cancelled() {
+		// Arrange
+		FakeRegistryCacheStore cache = new();
+		FakeHttpHandler handler = new();
+		handler.EnqueueAlways(HttpStatusCode.InternalServerError, body: null);
+		using CancellationTokenSource cancellationSource = new();
+		CancellationToken observedToken = default;
+		ComponentRegistryClient client = CreateClient(cache, handler, delayAsync: (_, token) => {
+			observedToken = token;
+			return Task.FromException(new TaskCanceledException());
+		});
+
+		// Act
+		bool refreshed = await client.RefreshAsync("latest", cancellationSource.Token);
+
+		// Assert
+		refreshed.Should().BeFalse(
+			because: "a cancelled backoff ends the best-effort refresh without another CDN request");
+		observedToken.Should().Be(cancellationSource.Token,
+			because: "the delay seam must receive the caller's cancellation token");
+		handler.Requests.Should().ContainSingle(
+			because: "cancellation during the first backoff must prevent the second fetch attempt");
+	}
+
 	private static ComponentRegistryClient CreateClient(
 		FakeRegistryCacheStore cache,
 		HttpMessageHandler handler,
-		IFileSystem? fileSystem = null) {
+		IFileSystem? fileSystem = null,
+		Func<TimeSpan, CancellationToken, Task>? delayAsync = null) {
 		fileSystem ??= new MockFileSystem();
 		return new ComponentRegistryClient(
 			new FakeHttpClientFactory(handler),
 			cache,
 			fileSystem,
 			NullLogger<ComponentRegistryClient>.Instance,
-			CdnBaseUrl);
+			CdnBaseUrl,
+			delayAsync ?? ((_, _) => Task.CompletedTask));
 	}
 
 	private sealed class FakeHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory {

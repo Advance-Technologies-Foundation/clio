@@ -19,6 +19,10 @@
 			"$ref": "#/definitions/knowledgeconfiguration",
 			"description": "Trusted knowledge sources, local cache, and deterministic topic-resolution settings"
 		},
+		"knowledge-feedback": {
+			"$ref": "#/definitions/knowledgefeedbacksettings",
+			"description": "Agent policy for reporting discrepancies between observed behavior and Clio knowledge"
+		},
 		"container-image-cli": {
 			"type": "string",
 			"description": "Default container image CLI used by build-docker-image",
@@ -109,6 +113,39 @@
 		"Environments"
 	],
 	"definitions": {
+		"knowledgefeedbacksettings": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"mode": {
+					"type": "string",
+					"enum": ["ask", "auto", "off"],
+					"default": "ask"
+				},
+				"destination": {
+					"type": "string",
+					"format": "uri",
+					"description": "Exact HTTPS GitHub repository URL used for feedback issues"
+				},
+				"reporting-scope": {
+					"type": "string",
+					"enum": ["full", "sanitized"],
+					"default": "sanitized"
+				},
+				"standing-approval": {
+					"$ref": "#/definitions/knowledgefeedbackapproval"
+				}
+			},
+			"required": ["mode", "destination", "reporting-scope"]
+		},
+		"knowledgefeedbackapproval": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"policy-hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+			},
+			"required": ["policy-hash"]
+		},
 		"dbhubsettings": {
 			"type": "object",
 			"additionalProperties": false,

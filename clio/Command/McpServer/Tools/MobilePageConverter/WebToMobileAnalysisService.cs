@@ -108,7 +108,11 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileContainerParents = null,
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
-		bool mobileTemplateUnavailable = false) {
+		bool mobileTemplateUnavailable = false,
+		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
+		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
+		bool webTemplateUnavailable = false,
+		JObject webTemplateResources = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -118,6 +122,10 @@ public static class WebToMobileAnalysisService {
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap =
 			componentNameMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase);
+		IReadOnlyDictionary<string, string> mobileTypesByName =
+			mobileTemplateTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		IReadOnlyDictionary<string, JObject> webBaselineNodes =
+			webTemplateBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
 
 		// 0. Filter out the web template's own components at read time. The merged tree carries the
 		//    chrome the source page inherits from its web template (e.g. PageWithTabsFreedomTemplate:
@@ -128,7 +136,7 @@ public static class WebToMobileAnalysisService {
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
 		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
-			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames);
+			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames, mobileTypesByName, mobileByType, webBaselineNodes);
 			templatePruned = true;
 		}
 
@@ -178,7 +186,8 @@ public static class WebToMobileAnalysisService {
 			ResolvePositionalParents(positionalPlacements, mobileContainerParents);
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
-			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor,
+			mobileTypesByName, webBaselineNodes, webTemplateResources);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -318,7 +327,9 @@ public static class WebToMobileAnalysisService {
 				dataSectionArrayConflicts: dataSectionArrayConflicts,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
 				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
-				normalization: componentPropertyOverrides),
+				normalization: componentPropertyOverrides,
+				webTemplateUnavailable: webTemplateUnavailable,
+				hasComponentTwin: componentMap.Count > 0),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -628,6 +639,75 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// Collects a name → component-TYPE map for every named component in a merged viewConfig tree
+	/// (System.Text.Json). Built from the MOBILE template so the converter can recognize a template element
+	/// the web page also provides under the SAME name and type — an AUTOMATIC same-component twin that needs
+	/// no <c>components</c> rule (that rule exists only for a web→mobile NAME change). First occurrence wins.
+	/// Case-insensitive.
+	/// </summary>
+	public static Dictionary<string, string> CollectComponentTypesByName(JsonArray viewConfig) {
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		CollectComponentTypesByName(viewConfig, map);
+		return map;
+	}
+
+	private static void CollectComponentTypesByName(JsonArray nodes, Dictionary<string, string> map) {
+		if (nodes is null) {
+			return;
+		}
+		foreach (JsonNode node in nodes) {
+			if (node is not JsonObject obj) {
+				continue;
+			}
+			// Defensive string reads: an environment-supplied node could carry a non-string `name`/`type`, and
+			// GetValue<string>() would THROW — degrading the whole (best-effort, catch-wrapped) mobile probe.
+			string name = StringProp(obj, "name");
+			if (!string.IsNullOrWhiteSpace(name) && !map.ContainsKey(name)) {
+				map[name] = StringProp(obj, "type");
+			}
+			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
+				CollectComponentTypesByName(items, map);
+			}
+		}
+	}
+
+	/// <summary>Reads a JSON STRING property, or null when absent / not a string (no throw on a non-string).</summary>
+	private static string StringProp(JsonObject obj, string propertyName) =>
+		obj.TryGetPropertyValue(propertyName, out JsonNode node) && node is JsonValue value
+			&& value.TryGetValue(out string text) ? text : null;
+
+	/// <summary>
+	/// Collects a name → node map (Newtonsoft <see cref="JObject"/>) for every named component in a merged
+	/// viewConfig tree (System.Text.Json input). Built from the WEB template as the conversion BASELINE: a
+	/// same-component twin carries only the page's DELTA over this baseline, so a property the page left at the
+	/// web-template default is omitted and the mobile template's own default stands. First occurrence wins.
+	/// Case-insensitive.
+	/// </summary>
+	public static Dictionary<string, JObject> CollectComponentNodesByName(JsonArray viewConfig) {
+		var map = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
+		if (viewConfig is null) {
+			return map;
+		}
+		CollectComponentNodesByName(JArray.Parse(viewConfig.ToJsonString()), map);
+		return map;
+	}
+
+	private static void CollectComponentNodesByName(JArray nodes, Dictionary<string, JObject> map) {
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			if (!string.IsNullOrWhiteSpace(name) && !map.ContainsKey(name)) {
+				map[name] = node;
+			}
+			if (node["items"] is JArray items) {
+				CollectComponentNodesByName(items, map);
+			}
+		}
+	}
+
+	/// <summary>
 	/// Builds a child-name → parent-name map for every named component of a merged viewConfig tree
 	/// (System.Text.Json). Used to resolve the mobile parent a positional (<c>:top</c> / <c>:bottom</c>)
 	/// insert attaches to — e.g. the mobile <c>Tabs</c> anchor lives in <c>MainContainer</c>, so content
@@ -670,7 +750,10 @@ public static class WebToMobileAnalysisService {
 		JArray nodes,
 		IReadOnlyDictionary<string, string> containerNameMap,
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
-		IReadOnlySet<string> baseline) {
+		IReadOnlySet<string> baseline,
+		IReadOnlyDictionary<string, string> mobileTypesByName,
+		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
+		IReadOnlyDictionary<string, JObject> webBaselineNodes) {
 		var result = new JArray();
 		foreach (JToken token in nodes) {
 			if (token is not JObject node) {
@@ -678,26 +761,43 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			string name = node["name"]?.ToString();
+			string type = node["type"]?.ToString();
 			JArray items = node["items"] as JArray;
 			// Kept despite being in the baseline: a container twin (merge target) or a component twin
 			// (a content element the template maps web→mobile, e.g. the list grid — its merge carries
 			// the page's delta, like grid columns, that the conversion needs).
 			bool isMappedTwin = !string.IsNullOrEmpty(name)
 				&& (containerNameMap.ContainsKey(name) || (componentMap is not null && componentMap.ContainsKey(name)));
+			// Also kept: an AUTOMATIC same-component twin — a BASELINE (inherited-chrome) LEAF content element
+			// the mobile template also provides under the SAME name and type. No `components` rule is needed
+			// (that is only for a web→mobile name change). WalkElements then carries the page's delta onto it by
+			// merge-by-name. Membership reads the SAME map WalkElements' auto-twin gate reads (webBaselineNodes),
+			// not the separate `baseline` name set, so prune and walk can never disagree about which elements are
+			// twins (a skew would keep here but reject there, re-inserting a duplicate). The container predicate is
+			// likewise IDENTICAL to WalkElements' `isContainer` (children, or a registry/name-heuristic container).
+			bool isContainerLike = (items is { Count: > 0 }) || IsLayoutContainer(type, name, null, mobileByType);
+			bool isAutoTwin = !isMappedTwin
+				&& !string.IsNullOrEmpty(name)
+				&& webBaselineNodes.ContainsKey(name)
+				&& mobileTypesByName is not null
+				&& mobileTypesByName.TryGetValue(name, out string mobileTwinType)
+				&& !string.IsNullOrEmpty(type)
+				&& string.Equals(mobileTwinType, type, StringComparison.OrdinalIgnoreCase)
+				&& !isContainerLike;
 			bool isTemplateOwned = !string.IsNullOrEmpty(name)
 				&& baseline.Contains(name)
-				&& !isMappedTwin;
+				&& !isMappedTwin && !isAutoTwin;
 			if (isTemplateOwned) {
 				// Drop the template node itself; hoist any surviving (application) descendants up.
 				if (items is not null) {
-					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, componentMap, baseline)) {
+					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes)) {
 						result.Add(survivor);
 					}
 				}
 				continue;
 			}
 			if (items is not null) {
-				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline);
+				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes);
 			}
 			result.Add(node);
 		}
@@ -1304,7 +1404,8 @@ public static class WebToMobileAnalysisService {
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
-		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null) {
+		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
+		bool webTemplateUnavailable = false, bool hasComponentTwin = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1348,6 +1449,18 @@ public static class WebToMobileAnalysisService {
 				"Components inherited from the source page's web template (and its base templates) are excluded " +
 				"from this guide — the mobile template already provides the equivalent header/scaffold chrome. " +
 				"Only the page's delta over its web template is converted; do NOT re-add the web header containers.");
+		}
+		// Only when a NAME-MAPPED twin exists (the rule declares one, e.g. AttachmentList -> AttachmentFileList):
+		// an automatic same-name twin cannot fire without a baseline, so an unreadable web template affects only
+		// the rule-declared twin, which then degrades to an advisory merge (no prebuilt delta).
+		if (webTemplateUnavailable && hasComponentTwin) {
+			constraints.Add(
+				"Could not read the source page's WEB template bundle (no active environment, or the read failed), " +
+				"so its baseline is unknown. A rule-declared same-component twin (e.g. the attachments detail " +
+				"AttachmentList -> AttachmentFileList) cannot be diffed against the template, so it degrades to an " +
+				"ADVISORY merge with NO prebuilt mobileValues -- configure the mobile element by merge-by-name per " +
+				"componentSuggestions, or re-run with environment-name/uri set so clio can diff against the real web " +
+				"template and prebuild the delta.");
 		}
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");
@@ -1453,7 +1566,10 @@ public static class WebToMobileAnalysisService {
 		List<FlaggedRequest> FlaggedRequests,
 		Dictionary<string, JObject> SourceLayouts,
 		Dictionary<string, int> GridContainerColumns,
-		IReadOnlyDictionary<string, string> PositionalParentByAnchor);
+		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
+		IReadOnlyDictionary<string, string> MobileTypesByName,
+		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
+		JObject WebBaselineResources);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -1475,14 +1591,20 @@ public static class WebToMobileAnalysisService {
 		List<FlaggedRequest> flaggedRequests,
 		Dictionary<string, JObject> sourceLayouts,
 		Dictionary<string, int> gridContainerColumns,
-		IReadOnlyDictionary<string, string> positionalParentByAnchor) {
+		IReadOnlyDictionary<string, string> positionalParentByAnchor,
+		IReadOnlyDictionary<string, string> mobileTypesByName,
+		IReadOnlyDictionary<string, JObject> webBaselineNodes,
+		JObject webBaselineResources) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToColumn, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
-			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
+			webBaselineResources);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
@@ -1554,19 +1676,54 @@ public static class WebToMobileAnalysisService {
 				string twinMobileType = !string.IsNullOrWhiteSpace(compRule.MobileType)
 					? compRule.MobileType
 					: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
+				// Deterministic merge payload carried onto the template-provided element:
+				//  • an explicit carryProperties whitelist → just those keys (e.g. the folder tree binding);
+				//  • otherwise, when the twin is the SAME component on both sides (twinMobileType == web type,
+				//    e.g. crt.FileList → crt.FileList) → carry the page's DELTA over the web-template baseline
+				//    (only what the page changed; an unchanged property is left to the mobile template's default);
+				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List), OR a
+				//    same-component twin with no baseline node → no payload; it stays an advisory merge and the
+				//    how-to is left to componentSuggestions.
+				// The payload never carries the component `type` (a merge targets an element the template already
+				// owns) nor placement (layoutConfig — owned by the template). The page's caption IS carried (it
+				// overrides the template label; CollectResourceStrings adds its resource to the schema).
+				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
 					MobileType = twinMobileType,
-					// A twin whose rule declares carryProperties gets a DETERMINISTIC merge payload: the listed
-					// web-node properties carried verbatim onto the mobile element (e.g. the folder tree's
-					// sourceSchemaName/rootSchemaName). Null when the rule carries none — the twin stays an advisory
-					// merge configured by the caller (e.g. DataTable → List's structural grid→row transform).
-					MobileValues = BuildCarriedTwinValues(ctx, node, compRule, twinMobileType),
-					Reason = ComponentTwinReason(name, type, compRule)
+					MobileValues = twinValues,
+					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile);
 				}
+				continue;
+			}
+
+			// 1c. automatic same-component twin — a component INHERITED FROM THE WEB TEMPLATE (in the baseline)
+			//     that the mobile template also provides as a LEAF under the SAME name and type (e.g. Feed → Feed).
+			//     No `components` rule is needed; that rule exists only for a web→mobile NAME change (AttachmentList
+			//     → AttachmentFileList). The web-template membership gate is REQUIRED: without it a page-authored
+			//     leaf that merely shares a name+type with a mobile-template element would be reclassified from
+			//     insert to merge, losing its ParentName / Index / caption / event bindings. Carry ONLY the page's
+			//     DELTA over the web-template baseline, so an inherited component the page did not touch contributes
+			//     nothing and the mobile template's own defaults stand — an unchanged twin is an ADVISORY merge
+			//     (null values), still emitted so the element is a valid rule target in the survivors map. A layout
+			//     container is never an auto twin (handled by the container map / insert paths below).
+			if (!isContainer
+				&& ctx.WebBaselineNodes.ContainsKey(name)
+				&& ctx.MobileTypesByName.TryGetValue(name, out string autoTwinType)
+				&& !string.IsNullOrEmpty(type)
+				&& string.Equals(autoTwinType, type, StringComparison.OrdinalIgnoreCase)) {
+				JsonNode delta = BuildDeltaTwinMergeValues(ctx, node, name, type, name);
+				// Always emit (advisory when the delta is null): the element exists on mobile, so it must appear in
+				// the survivors map — a page business rule targeting it converts instead of being dropped as
+				// "every referenced element is unsupported".
+				ctx.Out.Add(new ElementMapEntry {
+					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = name, MobileType = type,
+					MobileValues = delta,
+					Reason = AutoComponentTwinReason(name, type, delta is not null)
+				});
 				continue;
 			}
 
@@ -1644,20 +1801,141 @@ public static class WebToMobileAnalysisService {
 	/// keeps no component-specific transform — the "how" (e.g. a grid's columns → the list row) is defined
 	/// by the general components rule and surfaced there for the model to apply.
 	/// </summary>
-	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule) {
+	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule, bool hasPrebuiltPayload) {
 		string basis = !string.IsNullOrWhiteSpace(rule.Note) ? rule.Note : $"web '{name}' maps to mobile '{rule.Mobile}'";
-		// A twin that carries properties ships a prebuilt mobileValues merge payload — tell the caller to
-		// paste it (not to hand-configure), since merges are otherwise advisory. Keeps the DataTable-style
-		// (no carryProperties) advisory wording unchanged.
-		if (rule.CarryProperties is { Count: > 0 }) {
-			return $"{basis} — template-provided element — merge the prebuilt mobileValues " +
-				$"({string.Join(", ", rule.CarryProperties)}) onto '{rule.Mobile}' by name (do not insert a duplicate)";
+		// Whenever a prebuilt mobileValues payload was produced — a carryProperties whitelist OR a
+		// same-component carry-all — tell the caller to paste it (a merge is otherwise advisory). A structural
+		// twin with no payload keeps the advisory, type-driven wording (e.g. DataTable → List).
+		if (hasPrebuiltPayload) {
+			string what = rule.CarryProperties is { Count: > 0 } ? $" ({string.Join(", ", rule.CarryProperties)})" : "";
+			return $"{basis} — template-provided element — merge the prebuilt mobileValues{what} onto " +
+				$"'{rule.Mobile}' by name (do not insert a duplicate)";
 		}
 		string detail = string.IsNullOrEmpty(type)
 			? $"template-provided element — configure '{rule.Mobile}' by merge-by-name (do not insert a duplicate)"
 			: $"template-provided element — configure '{rule.Mobile}' by merge-by-name per componentSuggestions[\"{type}\"] (do not insert a duplicate)";
 		return $"{basis} — {detail}";
 	}
+
+	/// <summary>
+	/// Builds the merge payload for a component twin. An explicit
+	/// <see cref="ComponentMappingRule.CarryProperties"/> whitelist carries just those keys
+	/// (<see cref="BuildCarriedTwinValues"/>); otherwise, when the twin is the SAME component on both sides
+	/// (<paramref name="webType"/> survives on mobile as <paramref name="twinMobileType"/>, e.g.
+	/// crt.FileList → crt.FileList), the page's DELTA over the web-template baseline is carried
+	/// (<see cref="BuildDeltaTwinMergeValues"/>) — a name twin of one component is just the same element renamed
+	/// between the web and mobile templates. A twin whose web type has no mobile equivalent (a structural
+	/// conversion, e.g. crt.DataGrid → crt.List) gets no payload and stays advisory.
+	/// </summary>
+	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule, string twinMobileType, string webType) {
+		if (rule.CarryProperties is { Count: > 0 }) {
+			return BuildCarriedTwinValues(ctx, node, rule, twinMobileType);
+		}
+		bool sameComponent = !string.IsNullOrEmpty(webType)
+			&& string.Equals(twinMobileType, webType, StringComparison.OrdinalIgnoreCase);
+		return sameComponent ? BuildDeltaTwinMergeValues(ctx, node, node["name"]?.ToString(), twinMobileType, rule.Mobile) : null;
+	}
+
+	/// <summary>
+	/// Merge payload for a SAME-component twin (an explicit name-mapped one, e.g. AttachmentList →
+	/// AttachmentFileList, or an automatic same-name one, e.g. Feed → Feed): every source property the page
+	/// CHANGED from the web-template baseline — added, or set to a value different from the baseline — copied
+	/// onto the template-provided element, minus element identity (<c>name</c>/<c>type</c>), the value binding
+	/// (<c>control</c>/<c>value</c>) and placement (<c>layoutConfig</c> — the mobile template positions the
+	/// element it owns; no merge pass normalizes placement), shape-coerced to the mobile registry contract. A
+	/// property still equal to the web baseline is OMITTED so it cannot override the mobile template's own
+	/// default (an unchanged attachments <c>recordColumnName</c> leaves the mobile default <c>RecordId</c>). A
+	/// page-CHANGED event binding IS carried (converted + recorded via <see cref="ProcessOneEventBinding"/>), so
+	/// a rebound handler is not lost; an unchanged binding is the template element's own and is left alone. The
+	/// <c>caption</c> is carried ALWAYS (not delta-gated) so the page's label overrides the template element's and
+	/// its resource is added to the mobile schema — a Freedom UI rename keeps the same token and only changes the
+	/// value, which a delta comparison would miss. Emits NO <c>type</c> (a merge targets an element the template
+	/// already owns). Null when the page changed nothing,
+	/// AND when no baseline node is known for <paramref name="webName"/> — without the baseline the page's change
+	/// cannot be told from the template's own value, so the twin degrades to an advisory merge (no prebuilt
+	/// values) rather than pasting the whole web node (including web-only values) onto the mobile element.
+	/// </summary>
+	private static JsonNode BuildDeltaTwinMergeValues(ElementMapContext ctx, JObject node, string webName, string mobileType, string mobileName) {
+		// No baseline node for this element -> we cannot compute a delta. Degrade to an advisory merge (null)
+		// instead of carrying the whole web node; the caller reports it as a merge configured per componentSuggestions.
+		if (string.IsNullOrEmpty(webName) || !ctx.WebBaselineNodes.TryGetValue(webName, out JObject baseline) || baseline is null) {
+			return null;
+		}
+		var values = new JObject();
+		foreach (JProperty prop in node.Properties()) {
+			// `items` as an ARRAY is the child view-element collection (structural) — never a value.
+			if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+				continue;
+			}
+			// A page-CHANGED event binding is part of the page's delta — convert + record it (the only place an
+			// interaction enters a twin merge). An unchanged binding is inherited and left to the template element.
+			if (IsEventBinding(prop.Value)) {
+				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
+					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values);
+				}
+				continue;
+			}
+			// caption: the page's label OVERRIDES the template element's, but ONLY when the page actually RENAMED
+			// it and the twin can carry that override. A Freedom UI rename keeps the SAME #ResourceString token and
+			// changes only the resolved VALUE, so compare the RESOLVED text (page strings vs the web template's),
+			// not the token — a "carry always" would push the inherited template caption onto every untouched twin.
+			// And SKIP an automatic same-name twin: same name => same resource key, which the mobile template owns,
+			// so update-page would never overwrite it (an inert instruction). A name-mapped twin keeps the page's
+			// own key, which the mobile element does not own, so the override lands and CollectResourceStrings
+			// registers the page's text into the mobile schema.
+			if (string.Equals(prop.Name, "caption", StringComparison.OrdinalIgnoreCase)) {
+				bool sameNameTwin = string.Equals(webName, mobileName, StringComparison.OrdinalIgnoreCase);
+				if (!sameNameTwin && CaptionValueChanged(ctx, prop.Value, baseline["caption"])) {
+					values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+				}
+				continue;
+			}
+			// Element identity, the value binding, and placement (layoutConfig — owned by the template) are excluded.
+			if (ExcludedSourceProps.Contains(prop.Name) || TwinMergeExcludedProps.Contains(prop.Name)) {
+				continue;
+			}
+			// Carry ONLY what the page changed from the web-template baseline. A value still equal to the baseline
+			// is left out so the mobile template's own default stands.
+			if (baseline[prop.Name] is { } baseValue && JToken.DeepEquals(baseValue, prop.Value)) {
+				continue;
+			}
+			values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+		}
+		if (values.Count == 0) {
+			return null;
+		}
+		try {
+			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
+		} catch (System.Text.Json.JsonException) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Properties EXCLUDED from a same-component twin merge on top of <see cref="ExcludedSourceProps"/>, because
+	/// they belong to the template-provided element the merge targets, not to the page's data delta.
+	/// <c>layoutConfig</c> is the element's placement, which the MOBILE template owns; carrying the page's web grid
+	/// coordinates would override it, and no merge pass normalizes it (adaptive / single-column / property-override
+	/// all run on inserts only). NOTE: <c>caption</c> is deliberately NOT here — the page's label overrides the
+	/// template's and is carried always (see <see cref="BuildDeltaTwinMergeValues"/>).
+	/// </summary>
+	private static readonly HashSet<string> TwinMergeExcludedProps = new(StringComparer.OrdinalIgnoreCase) {
+		"layoutConfig"
+	};
+
+	/// <summary>
+	/// Reason line for an AUTOMATIC same-component twin (<see cref="ElementMapContext.MobileTypesByName"/>): the
+	/// mobile template provides an element with the same name and type. When the page CHANGED it, the caller
+	/// pastes the prebuilt mobileValues onto it by name; when it is UNCHANGED (<paramref name="hasPayload"/> is
+	/// false) the entry is advisory — the mobile template already provides the element, nothing to merge, and it
+	/// is emitted only so the element is a valid business-rule target. No <c>components</c> rule is involved.
+	/// </summary>
+	private static string AutoComponentTwinReason(string name, string type, bool hasPayload) =>
+		hasPayload
+			? $"web '{name}' ({type}) is provided by the mobile template under the same name — merge the prebuilt " +
+				$"mobileValues onto '{name}' by name (do not insert a duplicate)"
+			: $"web '{name}' ({type}) is provided by the mobile template under the same name and is unchanged from " +
+				$"the web template — nothing to merge; the mobile template already provides it (do not insert a duplicate)";
 
 	/// <summary>
 	/// Builds the deterministic merge <c>values</c> for a component twin whose rule declares
@@ -1742,6 +2020,33 @@ public static class WebToMobileAnalysisService {
 			return (cultures["en-US"] ?? cultures.Properties().FirstOrDefault()?.Value)?.ToString();
 		}
 		return value.ToString();
+	}
+
+	/// <summary>
+	/// True when the page RENAMED a same-component twin's caption — the page's resolved label text differs from
+	/// the web template's for the SAME element. A Freedom UI rename keeps the same <c>#ResourceString</c> token and
+	/// changes only the resolved VALUE, so a token comparison misses it and a "carry always" would push the
+	/// inherited template caption onto every untouched twin. A caption the template did NOT have, or a changed
+	/// TOKEN, is a change; for an identical token the resolved text is compared (page strings vs the web template's
+	/// via <see cref="ElementMapContext.WebBaselineResources"/>) — treated as UNCHANGED when either side cannot be
+	/// resolved, so the inherited caption is never over-carried.
+	/// </summary>
+	private static bool CaptionValueChanged(ElementMapContext ctx, JToken pageCaption, JToken baselineCaption) {
+		if (pageCaption is null) {
+			return false;
+		}
+		if (baselineCaption is null || !JToken.DeepEquals(baselineCaption, pageCaption)) {
+			return true; // the page added a caption the template lacked, or bound it to a different token
+		}
+		// Same token — a value-only rename. Compare the resolved label on both sides; a template value we cannot
+		// resolve counts as "not a rename" (never over-carry the inherited caption).
+		string key = ResourceStringHelper.ExtractKeys(pageCaption.ToString()).FirstOrDefault();
+		if (string.IsNullOrEmpty(key)) {
+			return false; // identical literal caption — unchanged
+		}
+		string pageText = ResolveResourceString(ctx.Resources, key);
+		string baseText = ResolveResourceString(ctx.WebBaselineResources, key);
+		return pageText is not null && baseText is not null && !string.Equals(pageText, baseText, StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -2051,41 +2356,47 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void ProcessEventBindings(ElementMapContext ctx, JObject node, JObject values, string elementName) {
 		foreach (JProperty prop in node.Properties()) {
-			if (!IsEventBinding(prop.Value)) {
-				continue;
+			if (IsEventBinding(prop.Value)) {
+				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values);
 			}
-			string binding = prop.Name;
-			var source = (JObject)prop.Value;
-			string webRequest = source["request"].ToString();
-			values.Remove(binding); // own this property regardless of the prune loop
-
-			if (ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)) {
-				if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
-					var clone = (JObject)source.DeepClone();
-					clone["request"] = rule.Mobile;
-					ApplyParamMap(clone, rule.ParamMap);
-					values[binding] = clone;
-					ctx.ConvertedRequests.Add(new ConvertedRequest {
-						ElementName = elementName, Binding = binding, WebRequest = webRequest, MobileRequest = rule.Mobile
-					});
-				} else {
-					ctx.DroppedRequests.Add(new DroppedRequest {
-						ElementName = elementName, Binding = binding, WebRequest = webRequest,
-						Reason = string.IsNullOrWhiteSpace(rule.Note)
-							? "Request is not supported on mobile; the binding was removed (the component still renders)."
-							: rule.Note
-					});
-				}
-				continue;
-			}
-
-			// Not in the map: unknown OOTB request or a custom usr.* — keep it but flag for review.
-			values[binding] = (JObject)source.DeepClone();
-			ctx.FlaggedRequests.Add(new FlaggedRequest {
-				ElementName = elementName, Binding = binding, Request = webRequest,
-				Reason = "Request is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it."
-			});
 		}
+	}
+
+	/// <summary>
+	/// Converts ONE event-binding request and writes the outcome into <paramref name="values"/> + the
+	/// requestConversions collectors — the per-binding core shared by the insert builder (which processes every
+	/// binding on the node) and the same-component-twin delta (which processes only a binding the page CHANGED).
+	/// </summary>
+	private static void ProcessOneEventBinding(ElementMapContext ctx, string elementName, string binding, JObject source, JObject values) {
+		string webRequest = source["request"].ToString();
+		values.Remove(binding); // own this property regardless of the prune loop
+
+		if (ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)) {
+			if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
+				var clone = (JObject)source.DeepClone();
+				clone["request"] = rule.Mobile;
+				ApplyParamMap(clone, rule.ParamMap);
+				values[binding] = clone;
+				ctx.ConvertedRequests.Add(new ConvertedRequest {
+					ElementName = elementName, Binding = binding, WebRequest = webRequest, MobileRequest = rule.Mobile
+				});
+			} else {
+				ctx.DroppedRequests.Add(new DroppedRequest {
+					ElementName = elementName, Binding = binding, WebRequest = webRequest,
+					Reason = string.IsNullOrWhiteSpace(rule.Note)
+						? "Request is not supported on mobile; the binding was removed (the component still renders)."
+						: rule.Note
+				});
+			}
+			return;
+		}
+
+		// Not in the map: unknown OOTB request or a custom usr.* — keep it but flag for review.
+		values[binding] = (JObject)source.DeepClone();
+		ctx.FlaggedRequests.Add(new FlaggedRequest {
+			ElementName = elementName, Binding = binding, Request = webRequest,
+			Reason = "Request is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it."
+		});
 	}
 
 	/// <summary>Renames keys in the binding's <c>params</c> object per the rule's web→mobile param map (no-op when empty).</summary>
