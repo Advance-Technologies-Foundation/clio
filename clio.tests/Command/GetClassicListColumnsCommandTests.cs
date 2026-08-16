@@ -158,6 +158,65 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 	}
 
 	[Test]
+	[Description("ParseColumns stops the callParent walk-down at the first middle layer that does not call its parent.")]
+	public void ParseColumns_ShouldTruncateAtMiddleLayer_WhenThatLayerDoesNotCallParent() {
+		// Arrange — base -> middle -> top, mirroring a real BaseSectionV2 -> EntitySectionV2 -> Usr* chain.
+		// The middle layer overrides outright, so the base literals must not reach the result.
+		string[] bodies = [
+			"getGridDataColumns: function() { return { A: { path: 'A' } }; }",
+			"getGridDataColumns: function() { return { B: { path: 'B' } }; }",
+			"getGridDataColumns: function() { const columns = this.callParent(arguments); columns.C = { path: 'C' }; return columns; }"
+		];
+
+		// Act
+		IReadOnlyList<string> result = _parser.ParseColumns(bodies).Columns;
+
+		// Assert
+		result.Should().Equal(["B", "C"],
+			because: "the walk-down stops at the most-derived layer that does not call its parent, so the base layer is excluded");
+	}
+
+	[Test]
+	[Description("ParseColumns composes every layer when each derived Classic method calls its parent across three layers.")]
+	public void ParseColumns_ShouldComposeAllLayers_WhenEveryDerivedMethodCallsParent() {
+		// Arrange — the mirror of the truncation case: the walk-down must decrement twice and reach the base.
+		string[] bodies = [
+			"getGridDataColumns: function() { return { A: { path: 'A' } }; }",
+			"getGridDataColumns: function() { const columns = this.callParent(arguments); columns.B = { path: 'B' }; return columns; }",
+			"getGridDataColumns: function() { const columns = this.callParent(arguments); columns.C = { path: 'C' }; return columns; }"
+		];
+
+		// Act
+		IReadOnlyList<string> result = _parser.ParseColumns(bodies).Columns;
+
+		// Assert
+		result.Should().Equal(["A", "B", "C"],
+			because: "an unbroken callParent chain composes every layer base-to-derived");
+	}
+
+	[Test]
+	[Description("ParseColumns harvests a column method declared inside the Classic 'methods' object rather than at the top level.")]
+	public void ParseColumns_ShouldHarvestColumns_WhenMethodIsDeclaredInsideMethodsObject() {
+		// Arrange
+		string body = """
+			define([], function() { return {
+			  entitySchemaName: "Contact",
+			  methods: {
+			    getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+			  }
+			}; });
+			""";
+
+		// Act
+		IReadOnlyList<string> result = _parser.ParseColumns([body]).Columns;
+
+		// Assert
+		result.Should().Equal(["Name"],
+			because: "Classic schemas commonly nest the column methods under 'methods', and missing that lookup "
+				+ "would silently degrade the answer to entity-default instead of failing");
+	}
+
+	[Test]
 	[Description("ParseColumns accepts quoted Classic method and path property keys.")]
 	public void ParseColumns_ShouldReadColumns_WhenMethodAndPathKeysAreQuoted() {
 		// Arrange
@@ -246,6 +305,34 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 			because: "the resolver must preserve the schema declaration order");
 		response.Columns.Select(column => column.Caption).Should().Equal(["Full name", "Created on"],
 			because: "direct entity column captions should enrich the stable column paths");
+	}
+
+	[Test]
+	[Description("TryResolve returns schema-default when the section declares its column method inside the Classic 'methods' object.")]
+	public void TryResolve_ShouldReturnSchemaDefault_WhenColumnMethodIsNestedUnderMethods() {
+		// Arrange — the nested shape must reach schema-default through the resolver, not only through the
+		// parser API; a missed lookup would degrade silently to entity-default with a plausible answer.
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", """
+				entitySchemaName: "Contact",
+				methods: {
+				  getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+				}
+				""")
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("Contact", "Name", Column("Name", "Full name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the nested declaration is a valid Classic shape; error: {0}", response.Error);
+		response.Source.Should().Be("schema-default",
+			because: "a column method nested under 'methods' is still a static schema declaration");
+		response.Columns.Select(column => column.Name).Should().Equal(["Name"],
+			because: "the nested method's literals must be harvested like a top-level declaration");
 	}
 
 	[Test]

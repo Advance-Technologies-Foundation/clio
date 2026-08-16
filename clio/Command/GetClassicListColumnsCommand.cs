@@ -87,6 +87,12 @@ public class GetClassicListColumnsCommand(IClassicListColumnResolver resolver, I
 	/// <inheritdoc />
 	public override int Execute(GetClassicListColumnsOptions options) {
 		bool success = TryResolve(options, out GetClassicListColumnsResponse response);
+		// Notes can carry an inner exception message from the designer call, which routinely holds a
+		// host:port or a full request URI. The MCP tool redacts before returning; the CLI writes the
+		// serialized response straight to stdout, so it has to redact here too.
+		if (response?.Notes is {Count: > 0}) {
+			response.Notes = Clio.Command.McpServer.SensitiveErrorTextRedactor.RedactAll(response.Notes);
+		}
 		logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
 	}

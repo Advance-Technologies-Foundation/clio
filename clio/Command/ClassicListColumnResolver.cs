@@ -96,7 +96,8 @@ internal sealed class ClassicListColumnResolver(
 			// parses its response as JSON, so an expired session (HTML error page) surfaces as a parser/transport
 			// exception rather than InvalidOperationException. The schema's own package is a valid anchor. The
 			// sibling logs the degradation at debug; this resolver has no logger, so it surfaces through notes —
-			// the MCP tool redacts them, so an inner message carrying a host or URI stays safe on both paths.
+			// both the MCP tool and the CLI Execute path run these notes through SensitiveErrorTextRedactor,
+			// so an inner message carrying a host or URI stays safe on both paths.
 			notes.Add($"GetDesignPackageUId failed for '{schemaName}' ({exception.Message}); " +
 				"anchoring on the schema's own package.");
 			designPackageUId = packageUId;

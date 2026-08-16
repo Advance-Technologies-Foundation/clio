@@ -23,11 +23,11 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 	private const string SectionSchema = "ContactSectionV2";
 
 	[Test]
-	[Description("Invokes get-classic-list-columns through the real stdio MCP server against the configured sandbox and returns source-aware columns.")]
+	[Description("Invokes get-classic-list-columns through the real stdio MCP server against the configured sandbox and returns statically parsed schema columns.")]
 	[AllureTag(GetClassicListColumnsTool.ToolName)]
-	[AllureName("get-classic-list-columns resolves a sandbox Classic section")]
-	[AllureDescription("Uses the configured sandbox and the standard Contact section to prove the real read-only MCP path returns a source-aware result.")]
-	public async Task Resolve_ShouldReturnColumns_WhenConfiguredSandboxIsAvailable() {
+	[AllureName("get-classic-list-columns resolves a sandbox Classic section as schema-default")]
+	[AllureDescription("Uses the configured sandbox and the standard Contact section to prove the real read-only MCP path parses static list columns out of live Classic bodies, not just hand-written ones.")]
+	public async Task Resolve_ShouldReturnSchemaDefault_WhenConfiguredSandboxIsAvailable() {
 		// Arrange
 		ArrangeContext arrangeContext = await AllureApi.Step("Arrange configured sandbox MCP session", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
@@ -65,10 +65,13 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 				response.Entity.Should().Be("Contact", because: "ContactSectionV2 is bound to the Contact entity");
 				return Task.CompletedTask;
 			});
-			await AllureApi.Step("Assert source and columns form a valid resolved result", () => {
-				response.Source.Should().BeOneOf(["schema-default", "entity-default"],
-					because: "a standard section must resolve either static schema columns or its entity display column");
+			await AllureApi.Step("Assert the live body resolved through the static-parse branch", () => {
+				response.Source.Should().Be("schema-default",
+					because: "ContactSectionV2 declares its list columns statically, so the live path must prove the "
+						+ "parser works against a real Classic body rather than only hand-written ones");
 				response.Columns.Should().NotBeEmpty(because: "a non-none source must carry at least one default column");
+				response.Columns.Select(column => column.Name).Should().Contain("Name",
+					because: "the Contact section list shows the contact name");
 				return Task.CompletedTask;
 			});
 			await AllureApi.Step("Assert successful execution includes an Info log message", () => {
@@ -78,6 +81,50 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 				return Task.CompletedTask;
 			});
 		}
+	}
+
+	[Test]
+	[Description("Resolves a never-configured sandbox Classic section to entity-default, discriminating it from the schema-default branch.")]
+	[AllureTag(GetClassicListColumnsTool.ToolName)]
+	[AllureName("get-classic-list-columns resolves a never-configured Classic section as entity-default")]
+	[AllureDescription("The source discriminator is the load-bearing part of the contract, so a section with no static list columns must return exactly entity-default while the reconfigured section returns schema-default.")]
+	public async Task Resolve_ShouldReturnEntityDefault_WhenSectionDeclaresNoStaticColumns() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		string? neverConfiguredSection = settings.Sandbox.ClassicEntityDefaultSectionSchema;
+		if (string.IsNullOrWhiteSpace(neverConfiguredSection)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:ClassicEntityDefaultSectionSchema with a seeded Classic section "
+				+ "that has no static list columns to run the entity-default discrimination E2E.");
+			return;
+		}
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			GetClassicListColumnsTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = neverConfiguredSection,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicListColumnsResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicListColumnsResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "resolving a seeded section is a valid read-only request");
+		response.Success.Should().BeTrue(
+			because: $"the seeded section '{neverConfiguredSection}' should resolve. Error: {response.Error}");
+		response.Source.Should().Be("entity-default",
+			because: "a section that was never configured has no static list columns, so the primary display "
+				+ "column is the answer — and it must read differently from the reconfigured section");
+		response.Columns.Should().ContainSingle(
+			because: "the entity-default fallback is exactly the primary display column");
+		response.Notes.Should().NotBeEmpty(
+			because: "the response must say why the entity fallback was selected");
 	}
 
 	[Test]

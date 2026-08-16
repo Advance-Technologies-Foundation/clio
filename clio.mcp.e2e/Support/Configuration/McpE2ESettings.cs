@@ -101,5 +101,13 @@ internal sealed class SandboxSettings {
 
 	public string? PackageName { get; set; }
 
+	/// <summary>
+	/// Classic section schema on the sandbox that was never configured with static list columns, used by
+	/// get-classic-list-columns to prove the <c>entity-default</c> branch discriminates from
+	/// <c>schema-default</c>. Sandbox-specific (a seeded <c>Usr*Section</c>), so it is opt-in through
+	/// <c>McpE2E__Sandbox__ClassicEntityDefaultSectionSchema</c>; the test self-ignores when unset.
+	/// </summary>
+	public string? ClassicEntityDefaultSectionSchema { get; set; }
+
 	public string SeedKeyPrefix { get; set; } = "clio-mcp-e2e";
 }
