@@ -83,6 +83,13 @@ Example result:
 }
 ```
 
+### Captions
+
+`caption` is enriched from the section entity's own column metadata, keyed by direct column name. A **dotted
+lookup-traversal path** (`Account.PrimaryContact.Name`) therefore comes back with `caption` omitted — the name
+belongs to another entity, and attaching the last segment's local title would be a caption from the wrong
+place. Read a missing `caption` as "traversal path", not as "unknown column".
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

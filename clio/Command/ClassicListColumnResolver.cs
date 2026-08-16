@@ -31,11 +31,13 @@ internal sealed class ClassicListColumnResolver(
 	/// <inheritdoc />
 	public GetClassicListColumnsResponse Resolve(string sectionSchemaName) {
 		if (string.IsNullOrWhiteSpace(sectionSchemaName)) {
-			throw new ArgumentException("schema-name is required", nameof(sectionSchemaName));
+			// No `nameof` argument: ArgumentException appends "(Parameter 'sectionSchemaName')" to Message, and
+			// this message travels into the machine-consumed `error` field of the response.
+			throw new ArgumentException("schema-name is required");
 		}
 		string normalizedName = sectionSchemaName.Trim();
 		if (!PageSchemaMetadataHelper.IsValidSchemaName(normalizedName)) {
-			throw new ArgumentException(PageSchemaMetadataHelper.SchemaNameFormatError, nameof(sectionSchemaName));
+			throw new ArgumentException(PageSchemaMetadataHelper.SchemaNameFormatError);
 		}
 
 		var notes = new List<string>();
@@ -45,20 +47,36 @@ internal sealed class ClassicListColumnResolver(
 			.Select(schema => schema.Body)
 			.Where(body => !string.IsNullOrWhiteSpace(body))
 			.ToArray();
+		ClassicListColumnParseResult parsed = parser.ParseColumns(bodies);
 		string entity = parser.ParseEntityName(bodies);
 		if (string.IsNullOrWhiteSpace(entity)) {
-			throw new InvalidOperationException($"Classic section '{normalizedName}' does not declare entitySchemaName.");
+			// Naming the skipped layers here matters: ParseEntityName drops exactly the same unanchorable bodies,
+			// so a section that plainly declares entitySchemaName can reach this line purely because every layer
+			// was skipped — and a bare "does not declare entitySchemaName" then points the caller at a
+			// schema-binding problem that does not exist.
+			string skipped = parsed.UnparsedLayerCount > 0
+				? $" {parsed.UnparsedLayerCount} of {bodies.Length} schema layers were skipped, so the declaration may be in a layer that could not be read."
+				: string.Empty;
+			throw new InvalidOperationException(
+				$"Classic section '{normalizedName}' does not declare entitySchemaName.{skipped}");
 		}
 
 		EntitySchemaPropertiesInfo properties = columnManager.GetSchemaProperties(
 			new GetEntitySchemaPropertiesOptions { SchemaName = entity });
-		ClassicListColumnParseResult parsed = parser.ParseColumns(bodies);
 		if (parsed.UnparsedLayerCount > 0) {
-			// Without this the drop is invisible: a most-derived layer that fails to parse would silently hand the
+			// Without this the drop is invisible: a most-derived layer that is skipped would silently hand the
 			// answer to an ancestor layer — or to the entity fallback — and the caller would read that as the
-			// section's real column set.
-			notes.Add($"{parsed.UnparsedLayerCount} of {bodies.Length} section schema layers could not be parsed " +
-				"as JavaScript and were skipped; the resolved columns may be incomplete.");
+			// section's real column set. The two reasons are worded apart: claiming a body "could not be parsed
+			// as JavaScript" when it parsed fine sends the reader looking for a syntax error that is not there.
+			int invalid = parsed.UnparsedLayerCount - parsed.UnanchoredLayerCount;
+			string reason = (invalid, parsed.UnanchoredLayerCount) switch {
+				(0, _) => "did not expose a Classic schema object",
+				(_, 0) => "could not be parsed as JavaScript",
+				_ => $"were skipped ({invalid} could not be parsed as JavaScript, "
+					+ $"{parsed.UnanchoredLayerCount} exposed no Classic schema object)"
+			};
+			notes.Add($"{parsed.UnparsedLayerCount} of {bodies.Length} section schema layers {reason} " +
+				"and were skipped; the resolved columns may be incomplete.");
 		}
 		IReadOnlyList<string> schemaColumns = parsed.Columns;
 		if (schemaColumns.Count > 0) {
@@ -75,6 +93,9 @@ internal sealed class ClassicListColumnResolver(
 		return Success(normalizedName, entity, NoneSource, [], notes);
 	}
 
+	// The fifth near-verbatim copy of the name -> UId -> design-package -> re-anchor walk, alongside
+	// PageSchemaResolver, GetClassicPageSourcesCommand and GetPageHierarchyCommand. Unifying them is tracked as
+	// ENG-93249 — named here so this copy is visible to whoever picks that up, like the other three.
 	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchy(string schemaName, List<string> notes) {
 		(JToken metadata, string metadataError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 			applicationClient, serviceUrlBuilder, schemaName,
@@ -102,6 +123,8 @@ internal sealed class ClassicListColumnResolver(
 				"anchoring on the schema's own package.");
 			designPackageUId = packageUId;
 		}
+		// GetParentSchemas returns the hierarchy MOST-DERIVED FIRST; Resolve reverses it to feed the parser
+		// base-to-top. Reordering either side without the other silently inverts inheritance precedence.
 		IReadOnlyList<PageDesignerHierarchySchema> initial =
 			hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
 		if (initial.Count == 0) {
@@ -125,6 +148,11 @@ internal sealed class ClassicListColumnResolver(
 			.Where(column => !string.IsNullOrWhiteSpace(column.Name))
 			.GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
 			.ToDictionary(group => group.Key, group => group.First().Title, StringComparer.OrdinalIgnoreCase);
+		// KNOWN LIMITATION — a dotted lookup-traversal path (`Account.PrimaryContact.Name`, which the parser
+		// deliberately harvests) has no entry in this map: the metadata describes the section's OWN entity, keyed
+		// by direct column name. Such a column comes back with `caption` omitted, which the doc states so a
+		// consumer reads it as "traversal path" rather than "unknown column". Do NOT fall back to the last
+		// segment's local title — that would attach a caption from the wrong entity, which is worse than none.
 		return paths.Select(path => new ClassicListColumnInfo(path,
 			captions.TryGetValue(path, out string caption) ? caption : null)).ToArray();
 	}

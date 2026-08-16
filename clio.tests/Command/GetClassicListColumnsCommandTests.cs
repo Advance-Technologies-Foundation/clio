@@ -308,6 +308,70 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 	}
 
 	[Test]
+	[Description("TryResolve takes entitySchemaName from the most-derived layer that declares one, not the base layer.")]
+	public void TryResolve_ShouldTakeEntityName_FromTheMostDerivedLayer() {
+		// Arrange — the layers declare DIFFERENT entities on purpose. Every other fixture repeats one entity on
+		// every layer, so reversing the loop or taking the first non-null would keep the suite green.
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", """
+				entitySchemaName: "Contact",
+				getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+				"""),
+			Schema("Base", "entitySchemaName: 'BaseEntity', diff: []", BaseSchemaUId)
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("Contact", "Name", Column("Name", "Full name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the hierarchy resolves; error: {0}", response.Error);
+		response.Entity.Should().Be("Contact",
+			because: "the most-derived declaration is the section's effective entity; taking the base layer's "
+				+ "would query the wrong entity's metadata and enrich captions from it");
+	}
+
+	[Test]
+	[Description("ParseColumns treats a body that parses cleanly but exposes no Classic schema object as skipped, and says so without claiming a syntax error.")]
+	public void ParseColumns_ShouldReportUnanchoredLayer_WhenABodyParsesButExposesNoSchemaObject() {
+		// Arrange — valid JavaScript, no schema markers anywhere: the "factory returns a local" shape.
+		string[] bodies = [
+			"getGridDataColumns: function() { return { Name: { path: 'Name' } }; }",
+			"define([], function() { var config = 1 + 2; return config; });"
+		];
+
+		// Act
+		ClassicListColumnParseResult result = _parser.ParseColumns(bodies);
+
+		// Assert
+		result.UnparsedLayerCount.Should().Be(1, because: "the layer contributed nothing and was skipped");
+		result.UnanchoredLayerCount.Should().Be(1,
+			because: "the body is valid JavaScript, so reporting it as a syntax error would send the reader "
+				+ "looking for a broken body that is not broken");
+		result.Columns.Should().Equal(["Name"], because: "the readable layer still contributes");
+	}
+
+	[Test]
+	[Description("ParseColumns detects callParent in an arrow-function override, so the composition rule does not depend on the override's function form.")]
+	public void ParseColumns_ShouldComposeBaseColumns_WhenDerivedMethodIsAnArrowFunction() {
+		// Arrange
+		string[] bodies = [
+			"getGridDataColumns: function() { return { Name: { path: 'Name' } }; }",
+			"getGridDataColumns: () => { const columns = this.callParent(arguments); columns.CreatedOn = { path: 'CreatedOn' }; return columns; }"
+		];
+
+		// Act
+		IReadOnlyList<string> result = _parser.ParseColumns(bodies).Columns;
+
+		// Assert
+		result.Should().Equal(["Name", "CreatedOn"],
+			because: "CallsParent looks for the callParent CALL, not for a particular function form, so an "
+				+ "arrow-function override composes exactly like a classic one");
+	}
+
+	[Test]
 	[Description("TryResolve returns schema-default when the section declares its column method inside the Classic 'methods' object.")]
 	public void TryResolve_ShouldReturnSchemaDefault_WhenColumnMethodIsNestedUnderMethods() {
 		// Arrange — the nested shape must reach schema-default through the resolver, not only through the
@@ -480,7 +544,9 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		// Assert
 		result.Should().BeFalse(because: "a section schema name is required to resolve any metadata");
 		response.Success.Should().BeFalse(because: "validation errors use the failure envelope");
-		response.Error.Should().Contain("schema-name is required", because: "the caller needs an actionable option error");
+		response.Error.Should().Be("schema-name is required",
+			because: "the error travels into the machine-consumed `error` field, so it must not carry the C# "
+				+ "parameter name ArgumentException appends when given a nameof argument");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 

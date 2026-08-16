@@ -9,11 +9,20 @@ using Acornima.Ast;
 /// <summary>Static list-column metadata parsed out of a Classic section hierarchy.</summary>
 /// <param name="Columns">Distinct static column paths in base-to-top declaration order.</param>
 /// <param name="UnparsedLayerCount">
-/// Number of schema bodies that survived neither parse attempt and were therefore skipped. A non-zero value
-/// means the column set may be incomplete, so the caller can report the degradation instead of presenting a
-/// partial — or entity-default — answer as if the whole hierarchy had been read.
+/// Number of schema bodies that were skipped, for either reason in <paramref name="UnanchoredLayerCount"/>'s
+/// note. A non-zero value means the column set may be incomplete, so the caller can report the degradation
+/// instead of presenting a partial — or entity-default — answer as if the whole hierarchy had been read.
 /// </param>
-public sealed record ClassicListColumnParseResult(IReadOnlyList<string> Columns, int UnparsedLayerCount);
+/// <param name="UnanchoredLayerCount">
+/// How many of <paramref name="UnparsedLayerCount"/> parsed as valid JavaScript but exposed no anchorable
+/// Classic schema object (a factory assigning to a local, say). Kept apart from the genuine syntax errors
+/// because the two need different wording: "could not be parsed as JavaScript" is an affirmatively wrong
+/// statement about a body that parsed fine, and it points a consumer at the wrong problem.
+/// </param>
+public sealed record ClassicListColumnParseResult(
+	IReadOnlyList<string> Columns,
+	int UnparsedLayerCount,
+	int UnanchoredLayerCount = 0);
 
 /// <summary>Extracts static list-column and entity metadata from Classic section JavaScript bodies.</summary>
 public interface IClassicListColumnParser {
@@ -51,12 +60,14 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 		ArgumentNullException.ThrowIfNull(schemaBodies);
 		var columns = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		ObjectExpression[] parsed = schemaBodies
+		LayerParse[] parsed = schemaBodies
 			.Where(body => !string.IsNullOrWhiteSpace(body))
-			.Select(ParseSchemaObject)
+			.Select(ParseLayer)
 			.ToArray();
-		ObjectExpression[] schemas = parsed.Where(schema => schema is not null).ToArray();
+		ObjectExpression[] schemas = parsed.Where(layer => layer.Schema is not null)
+			.Select(layer => layer.Schema).ToArray();
 		int unparsedLayerCount = parsed.Length - schemas.Length;
+		int unanchoredLayerCount = parsed.Count(layer => layer.Schema is null && !layer.SyntaxError);
 		foreach (string methodName in ColumnMethodNames) {
 			Node[] methods = schemas
 				.Select(schema => FindFunctionProperty(schema, methodName))
@@ -73,7 +84,7 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 				columns.AddRange(FindStaticColumnPaths(methods[methodIndex]).Where(seen.Add));
 			}
 		}
-		return new ClassicListColumnParseResult(columns, unparsedLayerCount);
+		return new ClassicListColumnParseResult(columns, unparsedLayerCount, unanchoredLayerCount);
 	}
 
 	/// <inheritdoc />
@@ -90,30 +101,56 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 		return entity;
 	}
 
-	private static ObjectExpression ParseSchemaObject(string source) {
+	/// <summary>One schema body's parse outcome, keeping the two failure reasons apart.</summary>
+	/// <param name="Schema">The anchored Classic schema object, or <see langword="null"/>.</param>
+	/// <param name="SyntaxError">
+	/// <see langword="true"/> only when the body itself is not valid JavaScript. A body that parses cleanly
+	/// but exposes no anchorable schema object is a DIFFERENT failure, and reporting it as a syntax error
+	/// sends the caller looking for a broken body that is not broken.
+	/// </param>
+	private readonly record struct LayerParse(ObjectExpression Schema, bool SyntaxError);
+
+	private static LayerParse ParseLayer(string source) {
+		// Acornima's stack guard raises InsufficientExecutionStackException on deeply nested input rather than
+		// a SyntaxErrorException — McpServer/Tools/PageBodySyntaxValidator catches it explicitly for this same
+		// input class. Without it here, one truncated or deeply nested layer fails the WHOLE read with a raw
+		// CLR message instead of being counted and surfaced through the skipped-layers note.
 		try {
 			Script script = new Acornima.Parser().ParseScript(source);
 			ObjectExpression schema = FindDefineFactorySchemaObject(script);
 			if (schema is not null) {
-				return schema;
+				return new LayerParse(schema, false);
 			}
+			// The body is valid JavaScript; the re-wrap is only a second way to anchor a bare property list.
 			try {
 				script = new Acornima.Parser().ParseScript($"({{{source}}})");
 			}
 			catch (SyntaxErrorException) {
-				return null;
+				return new LayerParse(null, false);
 			}
-			return FindClassicSchemaObject(script);
+			catch (InsufficientExecutionStackException) {
+				return new LayerParse(null, false);
+			}
+			return new LayerParse(FindClassicSchemaObject(script), false);
 		}
 		catch (SyntaxErrorException) {
 			try {
-				return FindClassicSchemaObject(new Acornima.Parser().ParseScript($"({{{source}}})"));
+				return new LayerParse(
+					FindClassicSchemaObject(new Acornima.Parser().ParseScript($"({{{source}}})")), true);
 			}
 			catch (SyntaxErrorException) {
-				return null;
+				return new LayerParse(null, true);
+			}
+			catch (InsufficientExecutionStackException) {
+				return new LayerParse(null, true);
 			}
 		}
+		catch (InsufficientExecutionStackException) {
+			return new LayerParse(null, true);
+		}
 	}
+
+	private static ObjectExpression ParseSchemaObject(string source) => ParseLayer(source).Schema;
 
 	private static ObjectExpression FindDefineFactorySchemaObject(Node root) {
 		CallExpression defineCall = Descendants(root)
@@ -154,6 +191,10 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 		.Where(IsSchemaPath)
 		.ToArray();
 
+	// Scope limitation, deliberate and pinned by a test: only a `callParent` CALL counts. A Classic override
+	// written as an arrow function still calls callParent the same way, so the shape of the override itself is
+	// irrelevant here — what would NOT be detected is an override that composes its parent by some other means
+	// (Ext.callParent aliased through a local, say). Such a layer reads as a full override and truncates the walk.
 	private static bool CallsParent(Node method) => DescendantsSkippingNestedFunctions(method)
 		.OfType<CallExpression>()
 		.Any(call => call.Callee switch {

@@ -20,29 +20,35 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 
-	private const string SectionSchema = "ContactSectionV2";
-
 	[Test]
 	[Description("Invokes get-classic-list-columns through the real stdio MCP server against the configured sandbox and returns statically parsed schema columns.")]
 	[AllureTag(GetClassicListColumnsTool.ToolName)]
 	[AllureName("get-classic-list-columns resolves a sandbox Classic section as schema-default")]
 	[AllureDescription("Uses the configured sandbox and the standard Contact section to prove the real read-only MCP path parses static list columns out of live Classic bodies, not just hand-written ones.")]
 	public async Task Resolve_ShouldReturnSchemaDefault_WhenConfiguredSandboxIsAvailable() {
-		// Arrange
+		// Arrange — which sections carry static list columns is a fact about the STAND, so the reconfigured half
+		// of the discrimination pair is configurable exactly like the never-configured half. Defaults to
+		// ContactSectionV2; a differently-seeded sandbox retargets it instead of turning the build red.
+		McpE2ESettings loaded = TestConfiguration.Load();
+		string sectionSchema = loaded.Sandbox.ClassicSchemaDefaultSectionSchema;
+		if (string.IsNullOrWhiteSpace(sectionSchema)) {
+			Assert.Ignore("McpE2E:Sandbox:ClassicSchemaDefaultSectionSchema is blank; set it to a Classic section "
+				+ "whose live body declares static list columns to run the schema-default E2E.");
+			return;
+		}
 		ArrangeContext arrangeContext = await AllureApi.Step("Arrange configured sandbox MCP session", async () => {
-			McpE2ESettings settings = TestConfiguration.Load();
-			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			return await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+			loaded.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			return await ArrangeAsync(loaded, TimeSpan.FromMinutes(3));
 		});
 		await using (arrangeContext) {
 
 			// Act
-			CallToolResult callResult = await AllureApi.Step("Act by resolving ContactSectionV2 through stdio MCP", async () =>
+			CallToolResult callResult = await AllureApi.Step($"Act by resolving {sectionSchema} through stdio MCP", async () =>
 				await arrangeContext.Session.CallToolAsync(
 					GetClassicListColumnsTool.ToolName,
 					new Dictionary<string, object?> {
 						["args"] = new Dictionary<string, object?> {
-							["schema-name"] = SectionSchema,
+							["schema-name"] = sectionSchema,
 							["environment-name"] = arrangeContext.EnvironmentName
 						}
 					},
@@ -56,22 +62,23 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 				callResult.IsError.Should().NotBeTrue(
 					because: "a valid read-only tool request must return a structured payload rather than an MCP error");
 				response.Success.Should().BeTrue(
-					because: $"the standard Contact section should resolve successfully. Error: {response.Error}");
+					because: $"the configured section '{sectionSchema}' should resolve successfully. Error: {response.Error}");
 				return Task.CompletedTask;
 			});
 			await AllureApi.Step("Assert response is bound to the requested section and entity", () => {
-				response.SectionSchema.Should().Be(SectionSchema,
+				response.SectionSchema.Should().Be(sectionSchema,
 					because: "the response must preserve the exact inspected Classic section");
-				response.Entity.Should().Be("Contact", because: "ContactSectionV2 is bound to the Contact entity");
+				response.Entity.Should().NotBeNullOrWhiteSpace(
+					because: "a resolved section always names the entity its list is bound to");
 				return Task.CompletedTask;
 			});
 			await AllureApi.Step("Assert the live body resolved through the static-parse branch", () => {
 				response.Source.Should().Be("schema-default",
-					because: "ContactSectionV2 declares its list columns statically, so the live path must prove the "
-						+ "parser works against a real Classic body rather than only hand-written ones");
-				response.Columns.Should().NotBeEmpty(because: "a non-none source must carry at least one default column");
-				response.Columns.Select(column => column.Name).Should().Contain("Name",
-					because: "the Contact section list shows the contact name");
+					because: $"'{sectionSchema}' is configured as the section that declares its list columns "
+						+ "statically, so the live path must prove the parser works against a real Classic body "
+						+ "rather than only hand-written ones");
+				response.Columns.Should().NotBeEmpty(
+					because: "a non-none source must carry at least one default column");
 				return Task.CompletedTask;
 			});
 			await AllureApi.Step("Assert successful execution includes an Info log message", () => {

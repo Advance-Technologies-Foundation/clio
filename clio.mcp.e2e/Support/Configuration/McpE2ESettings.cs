@@ -102,6 +102,14 @@ internal sealed class SandboxSettings {
 	public string? PackageName { get; set; }
 
 	/// <summary>
+	/// Classic section schema on the sandbox whose live body DOES declare static list columns, used by
+	/// get-classic-list-columns to prove the <c>schema-default</c> branch against a real Classic body.
+	/// Defaults to <c>ContactSectionV2</c>; override through
+	/// <c>McpE2E__Sandbox__ClassicSchemaDefaultSectionSchema</c> on a stand where Contact is bare.
+	/// </summary>
+	public string ClassicSchemaDefaultSectionSchema { get; set; } = "ContactSectionV2";
+
+	/// <summary>
 	/// Classic section schema on the sandbox that was never configured with static list columns, used by
 	/// get-classic-list-columns to prove the <c>entity-default</c> branch discriminates from
 	/// <c>schema-default</c>. Sandbox-specific (a seeded <c>Usr*Section</c>), so it is opt-in through
