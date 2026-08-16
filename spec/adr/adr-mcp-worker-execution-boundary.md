@@ -4,7 +4,7 @@
 - **Date:** 2026-08-17
 - **Jira:** [ENG-95262](https://creatio.atlassian.net/browse/ENG-95262) (parent: ENG-95286 — Migration tool from Classic UI to Freedom UI)
 - **Supersedes:** nothing. **Amends:** `adr-read-only-mcp-response-deadline.md` (its mechanism is scheduled for
-  deletion at Stage 10), `adr-mcp-durable-invocation.md` (shares the `WithCallToolHandler` seam — see §9).
+  deletion at Stage 10), `adr-mcp-durable-invocation.md` (adjacent dispatch seam — routing must cover both, see §9).
 - **Reproduction lab:** branch `spike/eng-95262-lab` (preserved spike, deliberately not a merge candidate).
 
 ## 1. Context
@@ -40,7 +40,7 @@ not analysis, so the BMAD Phase-1 gate is recorded as **satisfied by the issue**
 | Field run `wf_3509d34b-193` (8 agents, 115.6 min) | MCP clio: 44 calls / **60.2 min waiting** / avg 82 s / 15 timeouts. clio CLI: 42 calls / 1.7 min / avg 2.4 s / **0 timeouts**. Same stand, same minutes. |
 | Same operation head-to-head | `get-page`: MCP 16 calls, avg 90.2 s, 11 timeouts — CLI 18 calls, avg 2.3 s, 0 timeouts |
 | Deterministic reproduction (stub + real `clio mcp-server`) | Locked tool: A 12 s / 1 backend request; B and C 12 s / **0**; D with a **healthy** backend 12 s / **0** |
-| Lock coverage | 44 of 123 tool files never take the monitor; every tool in the field's 120 s cascade is one of the locked ones |
+| Lock coverage *(issue measurement — **not** re-derived; §1.4 re-derives it per tool instead)* | 44 of 123 tool files never take the monitor; every tool in the field's 120 s cascade is one of the locked ones |
 | Platform hypothesis | **Refuted.** Creatio does not serialize concurrent requests on one session: 8 concurrent heavy `SelectQuery` = 2.27 s on one shared session vs 2.67 s on eight logins |
 | `ForceUseSession` | measured **no-op** for cookie-authenticated DataService traffic on the test stand |
 | Costs | warm login p50 0.468 s; clio process start ~0.27 s; child `clio mcp-server` spawn + `initialize` ~0.65 s |
@@ -76,11 +76,13 @@ inside doc comments and inside an exception message in `McpToolInvokerRegistry.c
 full in the inventory so the number can be re-derived rather than taken on trust; Stage 1's coverage test
 replaces the ad-hoc parse with one that lives in the build.
 
-Three structural facts were re-verified against master rather than trusted from the issue:
+Four structural facts were re-verified against master rather than trusted from the issue:
 
 - **Exactly two operation registries exist** — `ICompileOperationRegistry` (`BindingsModule.cs:738`) and
   `IRestartOperationRegistry` (`BindingsModule.cs:742`). `install-process-builder` and `create-app-section`
   have none. (The issue cited lines 736/740; the registrations moved, the fact holds.)
+- **Lock coverage re-derived per tool** (the issue counted files): 115 of 189 tools reach the per-tenant
+  monitor, 72 take no lock at all, and 2 take the narrow `configuration-build` reservation instead.
 - **Sampling has exactly two callers** — `update-page` and `sync-pages`, both through
   `PageBodySamplingService` (`clio/Command/McpServer/Tools/PageBodySamplingService.cs:130`).
 - **Constraint 10 survives, with a changed citation.** `BuildCacheKey` is no longer
@@ -286,12 +288,24 @@ behaviour.
 
 ## 9. Relationship to adjacent ADRs
 
-- **`adr-mcp-durable-invocation.md` (ENG-93370) — shared seam, must compose.** Durable invocation installs a
-  `WithCallToolHandler` for unmatched tool names (`McpDurableCallToolHandler`); the Stage-4 relay needs the
-  same seam for matched ones. They compose in one order and only one: **durable name resolution runs first**
-  (it decides *which canonical tool* a name means, via `McpToolCompatibilityCatalog`), then the router
-  decides *where* that canonical tool executes. Routing before name resolution would key on an alias and
-  miss. Stage 4 must extend the existing handler rather than register a competing one.
+- **`adr-mcp-durable-invocation.md` (ENG-93370) — adjacent seam; routing must cover BOTH dispatch paths.**
+  There are two, and they are not the same place:
+
+  | Path | Seam | Fires for |
+  |---|---|---|
+  | matched tool | `filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors)` (`BindingsModule.cs:1160`) | every registered tool name — including `clio-run`, whose *argument* is the inner command |
+  | unmatched name | `WithCallToolHandler` → `McpDurableCallToolHandler` (`BindingsModule.cs:165`) | names the SDK did **not** match; `MatchedPrimitive` is `null` |
+
+  The Stage-4 relay's target is the **matched** path, so it does **not** extend
+  `McpDurableCallToolHandler` — that handler is a no-op whenever `MatchedPrimitive` is set. But routing
+  installed on the matched path alone would leave a hole: a long-tail tool reached through a deprecated
+  alias arrives *unmatched*, so it would execute in-process while its canonical sibling runs in a worker.
+  **Both seams must route, and they must agree** — exactly the reason `McpReadDeadlineGate` was made a
+  single shared authority for both paths rather than duplicated into each.
+
+  The ordering principle still holds inside each path: **name resolution runs before routing** (which
+  canonical tool a name means, via `McpToolCompatibilityCatalog`), then the router decides *where* that
+  canonical tool executes. Routing on an unresolved alias would key on the wrong name and miss.
 - **`adr-read-only-mcp-response-deadline.md` (ENG-93373) — amended, then retired.** Its gate is the
   structural hole described in §1.3. It stays in force until the worker path covers the same tools, and is
   deleted at Stage 10.

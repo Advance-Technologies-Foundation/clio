@@ -71,6 +71,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-U-104 | Metadata resolution unwraps `clio-run` / `clio-run-destructive` and keys on the **inner** command |
 | TC-U-105 | The 37 hint-unbounded tools all carry an explicit `BudgetPolicy` — none defaults to "unbounded" |
 | TC-U-106 | Feature-disabled tools are excluded from the coverage requirement but not from the catalog |
+| TC-U-107 | A deprecated alias and its canonical carry **identical** execution metadata (e.g. `StopAllCreatio` vs `stop-all-creatio`); divergence fails the test |
 
 ### Stage 2 — process supervisor
 
@@ -103,6 +104,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-E-403 | E2E | **Monotonic sequence delivery under concurrency** — sequences arrive in order; a reordered delivery fails (R3) |
 | TC-E-404 | E2E | Cancellation propagates parent → child and the child stops issuing backend requests |
 | TC-U-401 | Unit | The relay does not forward notifications through `McpClientHandlers.NotificationHandlers` (rule 12) — structural assertion, since the reordering is not deterministic enough to test by observation alone |
+| TC-U-402 | Unit | **Both** dispatch seams route and agree: a tool reached as a matched name and the same tool reached through a deprecated alias (unmatched, via `McpDurableCallToolHandler`) resolve to the same execution location |
 | TC-C-401 | ClioRing | `ClioRing.Tests` green against the changed contract; unknown-field tolerance and ordered replay preserved |
 
 ### Stage 5 — credential channel + per-client isolation

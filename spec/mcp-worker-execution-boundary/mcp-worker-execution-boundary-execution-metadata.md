@@ -57,9 +57,10 @@ over 35 commits. The census reproduces; it is not stale.
 - **`Location`** — `in-process` only when the tool can never block on a Creatio environment: guidance,
   tool contracts, component/knowledge lookups, telemetry consent, purely local workspace scaffolding.
   Everything that resolves an environment is `worker`.
-- **`Lifetime`** — `sticky` for the four long-running starters (`compile-creatio`, `install-process-builder`,
-  the two `restart-*` starters, `create-app-section`) and the two status pollers that must reach the same
-  worker (`compile-status`, `restart-status`). Everything else is `per-call`.
+- **`Lifetime`** — `sticky` for the five long-running starters (`compile-creatio`, `install-process-builder`,
+  the two `restart-*` starters, `create-app-section`) plus the two status pollers that must reach the same
+  worker (`compile-status`, `restart-status`) — 7 rows across **four** operation families. Everything else
+  is `per-call`.
 - **`OperationFamily`** — set only where a status poll or a shared reservation needs it. It is the routing
   key that sends `compile-status` to the worker that is running `compile-creatio`.
 - **`BudgetPolicy`** — `parent-kill (default)` for ordinary worker calls; `parent-kill (extended)` for
@@ -103,6 +104,19 @@ signal (rule 5).
 
 A starter and its poller **must** agree on `OperationFamily` and `Lifetime`. That disagreement is exactly
 what the Stage 1 coverage test is for.
+
+### 5.1b Deprecated aliases are separate rows, and must not drift from their canonical
+
+A deprecated tool name is registered as its **own** `[McpServerTool]` method that delegates to the
+canonical one — not as catalog metadata. `StopTool.cs` declares both `stop-all-creatio` (`:34`) and the
+PascalCase `StopAllCreatio` (`:52`), the second marked *"[Deprecated: use stop-all-creatio]"* and
+implemented as `=> StopAllCreatio(requestContext)`.
+
+Consequence for Stage 1: an alias and its canonical execute the **same code** and must therefore carry
+**identical** execution metadata. If they diverge, one name routes to a worker and the other runs
+in-process — the same failure shape as a starter/status disagreement, and it belongs in the same coverage
+test. (`StopAllCreatio` is also why the table below is not uniformly kebab-case: it is a real, deliberate
+legacy name, not a parse artifact.)
 
 ### 5.2 Full-duplex requirement
 

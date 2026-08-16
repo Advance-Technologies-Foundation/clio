@@ -32,6 +32,7 @@ routing is decided by declared intent rather than inferred from safety hints tha
 - [ ] AC-05 — Metadata resolution unwraps `clio-run` and keys on the inner command (TC-U-104).
 - [ ] AC-06 — Each of the 37 hint-unbounded tools carries an explicit `BudgetPolicy` (TC-U-105).
 - [ ] AC-07 — Feature-disabled tools are excluded from the coverage requirement but stay in the catalog (TC-U-106).
+- [ ] AC-08 — A deprecated alias and its canonical carry identical metadata; divergence fails the test (TC-U-107).
 - [ ] AC-08 — No behaviour change: metadata is declared and asserted, nothing reads it to route yet.
 
 ## Tests
