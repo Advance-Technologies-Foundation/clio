@@ -2718,3 +2718,177 @@ stories:
     depends_on:
       - story-process-element-connections-3
     blocks: []
+
+  # --- mcp-worker-execution-boundary (ENG-95262) — added 2026-08-17 ---
+  # Stage 0 delivered as design artifacts only; the issue itself gates production code on
+  # "no production code until the ADR and the three inventories exist". Stages 1-10 are the
+  # staged rollout from the ADR; stories 11-12 are the two folded-in production fixes, which
+  # are independent of every stage and can be picked up in any order.
+  - id: story-mcp-worker-execution-boundary-0
+    title: "Design artifacts: ADR, inventories, stories, test plan"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-0.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 0. No PRD: the Jira issue is the PRD (requirements, measured evidence, decision, rejected alternatives, 11 constraints, DoD) — recorded in ADR section 1.1 rather than skipped. Census RE-MEASURED on master 3fc50bf99: 189 tools / 65 ReadOnly / 87 Destructive / 37 bounded by nothing, against the issue's 185/63/84/38 on 82947ba0c — the catalog grew by 4 tools over 35 commits, so the numbers reconcile rather than conflict. Two structural facts re-verified with drifted citations: only two operation registries exist (BindingsModule.cs:738 and :742, issue said 736/740), and constraint 10 survives but its code changed — ENG-94529 made BuildCacheKey (name|uri) rather than (Environment ?? Uri), and a registered name still keys differently from an explicit URI for one target. Reproduction lab preserved on spike/eng-95262-lab, deliberately not a merge candidate."
+    depends_on: []
+    blocks:
+      - story-mcp-worker-execution-boundary-1
+  - id: story-mcp-worker-execution-boundary-1
+    title: "Execution metadata + catalog coverage test"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-1.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 1. Six reflected fields per tool; the inventory is the worklist, NOT a paste source — its Location column is a file-level heuristic that over-assigns 'worker' and inventory section 4 names the classes to re-check by hand. Routing cannot reuse an existing property: the invoker registry exposes only ReadOnly/Destructive/retry-safety and McpCoreToolProfile is residency, not execution. The key must be resolved AFTER unwrapping clio-run. Metadata only — must not change dispatch."
+    depends_on:
+      - story-mcp-worker-execution-boundary-0
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-2
+    title: "Process supervisor: containment, concurrency cap, stale-worker cleanup"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-2.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 2. Containment, not EOF: Windows Job Object with kill-on-close, Unix process-group plus parent-death signalling, identity-checked stale cleanup (PIDs are reused). The prototype LEAKED one orphan when the parent was killed mid-operation, which is what the parent-SIGKILL E2E exists for. Carries the two open measurements that gate the stage: OQ-1 Windows spawn cost and Job Object containment, OQ-2 the concurrent-children ceiling as a number. Everything measured so far was macOS, so no cohort ships on Windows until OQ-1 closes. Touches the DI composition root — full unit suite required."
+    depends_on:
+      - story-mcp-worker-execution-boundary-1
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-3
+    title: "Worker mode: no host bootstrap, frozen tool generation"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-3.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 3. Asymmetric deadline handling is deliberate: a STICKY worker keeps CLIO_MCP_RESPONSE_DEADLINE_SECONDS (stripping it turned a 25s backend call into a 77s block in the prototype, because the in-progress envelope is what returns the call), while an ORDINARY worker must not inherit a read-deadline override since the parent enforces by killing. The worker builds its client through the SAME ApplicationClientFactory path as the parent — a second construction site is exactly how a bearer principal silently became Supervisor once before, and the discriminating test is a fail-first identity assertion at the Creatio end, not 'the call succeeded'. Full unit suite required."
+    depends_on:
+      - story-mcp-worker-execution-boundary-2
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-4
+    title: "Transparent full-duplex relay"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: XL
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-4.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4. The relay MUST own the child's transport read loop: measured on SDK 1.4.1, forwarding through McpClientHandlers.NotificationHandlers reordered sequences 0..5 into [5,4,2,3,0,1], and a single-consumer FIFO in the parent did not fix it — the reordering is at or before the SDK's handler dispatch. Sampling relay and _meta/progressToken fidelity both PASS unchanged. Highest silent risk is sampling: update-page and sync-pages call server.SampleAsync, and a non-full-duplex relay degrades semantic review to Skipped=true with no error at all. Composes with adr-mcp-durable-invocation (ENG-93370) on the shared WithCallToolHandler seam in one order only — durable name resolution first, then routing; routing first would key on an alias and miss. Extend that handler, do not register a competing one."
+    depends_on:
+      - story-mcp-worker-execution-boundary-3
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-5
+    title: "HTTP credential channel + per-client sticky isolation"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-5.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 5. Secret material must never reach a child's command line — /proc/<pid>/cmdline and ps make it world-readable to any local user; the channel is an inherited handle or a pipe written after spawn (pipe preferred: env blocks are inherited by grandchildren and appear in crash dumps). Sticky scope key is principal + normalised target + credential fingerprint, all three: status tools are credential-scoped TODAY, so environment-only scoping would be both a cross-client boundary violation and a regression against shipped behaviour. Normalisation must be conservative — over-normalising merges two targets and carries one caller's credentials to another's; when in doubt spawn another worker, 0.7s against a credential crossover. Full unit suite required."
+    depends_on:
+      - story-mcp-worker-execution-boundary-3
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-6
+    title: "First cohort behind an off-by-default flag"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-6.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 6. The cohort is exactly the commands agents were forced off in creatio-ai-app-development-toolkit#93. Acceptance is the wedge scenario asserted ON BACKEND REQUEST COUNTERS, not timings: the wedged system also finishes at 12s, so only the counter delta distinguishes 'answered' from 'never asked'. Call D (backend healthy again) succeeding with at least one request is the acceptance criterion for the whole feature. Flag off must be byte-identical to today. The e2e suite is NOT run by GitHub CI — trigger Team_Atf_ClioMcpE2eTests on TeamCity and state the result in the PR."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-7
+    title: "Sticky supervision + parent-owned configuration-build reservation"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-7.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 7. 'Reap on terminal status' cannot work: only compile and restart have operation registries, install-process-builder and create-app-section have none, and restart-by-credentials is deliberately unreportable — three of the four long-running modes have no terminal status to reap on, hence the private completion signal. The configuration-build reservation moves to the parent keyed by normalised tenant + resource; its 30-minute reclaim ceiling and monotonic ownership tokens carry over unchanged, having been designed for the 'holder may never release' case. Carries OQ-4 (whether create-app-section gains a real registry). Full unit suite required."
+    depends_on:
+      - story-mcp-worker-execution-boundary-6
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-8
+    title: "Long synchronous / streaming commands (deploy, uninstall)"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio+clio-ring"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-8.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 8. The one family where killing the process is the WRONG tool: deploy-creatio and uninstall-creatio are synchronous, destructive and progress-streaming, ClioRing waits for the authoritative terminal stage, and a generic 45-60s kill could leave a half-installed environment. Gated by the ClioRing contract suite AND the Windows x64 NativeAOT publish — contract changes can alter source-generated DTO/serialization paths, so a JIT-only pass is not evidence."
+    depends_on:
+      - story-mcp-worker-execution-boundary-7
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-9
+    title: "Interprocess file gates"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-9.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 9. Separate address spaces isolate memory, not the filesystem. .clio-pages/{schema}/meta.json is read-modify-write WITH SWALLOWED I/O failures, so an interleaved write is lost with no error — and CwdLock is today the only thing accidentally serialising it. Hard ordering constraint: this gate must land BEFORE CwdLock is removed in stage 10, or a correct guard becomes an invisible race. DbHub needs nothing, already cross-process safe via .clio.lock and FileShare.None."
+    depends_on:
+      - story-mcp-worker-execution-boundary-6
+    blocks:
+      - story-mcp-worker-execution-boundary-10
+  - id: story-mcp-worker-execution-boundary-10
+    title: "Expand by cohort, then delete the old machinery"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-10.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 10. Deletes the universal per-tenant monitor, McpReadResponseDeadline + McpReadDeadlineGate, CwdLock, session-container pinning and the CLIO_MCP_READ_DEADLINE_SECONDS contract — this work ends by removing machinery rather than adding a second layer. Deletion order is constrained: the .clio-pages gate (story 9) before CwdLock, the parent-owned reservation (story 7) before per-call children reach compile-creatio, and the monitor and deadline LAST since they are the only bound for any cohort still in-process. Also reverts the CLI-first exception in creatio-ai-app-development-toolkit#93, which names this work as its own reversal condition; that PR's two prohibitions stay regardless."
+    depends_on:
+      - story-mcp-worker-execution-boundary-9
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-11
+    title: "Transport failures must not surface as domain answers (PageSchemaMetadataHelper)"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-11.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Folded in, independent of every stage. PageSchemaMetadataHelper.ExecuteSelectQuery (clio/Command/PageSchemaMetadataHelper.cs:33-46) ends in a bare catch, so an HTML login page, a timeout and a 500 all become 'Failed to query SysPackage' while the same command through the CLI returns success:true in ~1s. It is a SECOND, unguarded copy of the SelectQuery plumbing sitting next to the one ENG-93365 already fixed with ServiceResponseJsonGuard. Closes a feature DoD item on its own."
+    depends_on: []
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-12
+    title: "MobilePageConversionGuideTool leaks the shared fallback lock mapping"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-12.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Folded in, independent of every stage. Two defects in one call site: the tool takes GetLock(SharedFallbackKey) at three places (MobilePageConversionGuideTool.cs:111, :339, :531) after it has already resolved a real tenant — so it serializes unrelated tenants — and never calls the balancing MarkAvailable. GetLock PINS the lock-provider mapping in-use and is documented as 'balanced by MarkAvailable' (McpToolExecutionLock.cs:157-159), so unbalanced the mapping is pinned permanently. Fix by using the ExecuteUnderTenantLock helper, which balances by construction, instead of a hand-rolled lock."
+    depends_on: []
+    blocks: []
