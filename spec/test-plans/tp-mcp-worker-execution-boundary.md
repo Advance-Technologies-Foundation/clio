@@ -83,8 +83,9 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-E-201 | E2E | **SIGKILL the parent while a worker has a descendant of its own; both disappear** — Linux and macOS (R4, **R-8a**) |
 | TC-E-203 | E2E | The same containment on **Windows**, via Job Object kill-on-close (**R-8b**). Blocked on OQ-1; until it passes, no cohort ships on Windows and any delivery is scoped to R-8a only |
 | TC-E-202 | E2E | Budget expiry kills the worker and its descendants; the parent answers with a bounded error |
-| TC-M-201 | Manual/measured | Windows child spawn cost and Job Object containment (**OQ-1** — Stage 2 cannot close without this number) |
-| TC-M-202 | Manual/measured | Memory/CPU ceiling for concurrent children; produces the supported maximum (**OQ-2**) |
+| TC-M-201 | Manual/measured | **DONE 2026-08-17** (ADR §2.4): spawn + `initialize` p50 2.763 s on Windows Server 2022; Job Object kill-on-close contains the subtree only when assignment precedes first execution |
+| TC-E-204 | E2E | **The budget clock starts at spawn, not at admission** — under a concurrency cap, a call queued behind CPU is not killed for waiting (derived from the width-16 measurement: 16.9 s of pure queueing) |
+| TC-M-202 | Manual/measured | **DONE 2026-08-17** (ADR §2.4): linear past core count, so the cap is core-count-derived; memory is not the binding constraint |
 
 ### Stage 3 — worker mode
 

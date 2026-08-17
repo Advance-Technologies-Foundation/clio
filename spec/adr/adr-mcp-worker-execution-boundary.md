@@ -132,6 +132,61 @@ Measured against the same stub and the same harness as the reproduction:
 - **The relay holds on the shipping SDK** (`ModelContextProtocol` 1.4.1) — with one caveat that became a
   hard rule; see §3.2.
 
+### 2.4 Windows measurements (2026-08-17, ts1-core-dev04: Windows Server 2022, 4 cores / 16 GB)
+
+Everything in §2.2 was measured on macOS. These four are the Windows numbers, and the first one contradicts
+the cost model stated above.
+
+**Containment — the Job Object approach works, and the assign-after-start race is real.** Two scenarios, a
+standalone probe, parent force-terminated (`TerminateProcess`, no cleanup runs):
+
+| Order of operations | Result after the parent is force-killed |
+|---|---|
+| child created running, **then** assigned to the job | child was in the job (`IsProcessInJob` = true), but the grandchild it spawned before the assignment landed **SURVIVED** |
+| `CREATE_SUSPENDED` → `AssignProcessToJobObject` → `ResumeThread` | **whole subtree died** — full containment |
+
+So `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` delivers the guarantee rule 6 asks for, on the condition that the
+child is in the job *before it executes a single instruction*. This reproduces the prototype's one leaked
+orphan exactly, and it constrains the API: **.NET's `Process.Start` cannot express `CREATE_SUSPENDED`**, so
+the supervisor must either P/Invoke `CreateProcess` or assign at creation via
+`PROC_THREAD_ATTRIBUTE_JOB_LIST`. "Start it, then assign it" is not an implementation detail — it leaks.
+
+**Spawn cost — 4× the macOS figure.** Child spawn + MCP `initialize`, one warmup discarded, n=8:
+**p50 2.763 s** (min 2.519, max 2.904, mean 2.702) against **0.65 s** on macOS.
+
+That moves the per-call tax from ~0.7 s to ~2.8 s on Windows, and the arithmetic in §2.2 with it: the
+observed 44-call workload costs **+123 s**, not +31 s. The decision still holds by a wide margin against
+38–60 min of timeouts, but the "~0.7 s per call" figure must not be quoted as the cost — it is the macOS
+best case. Caveat on the number itself: it was measured invoking `dotnet clio.dll`, the development shape.
+Production clio is an apphost (`clio.exe`), which skips muxer resolution, so 2.76 s is an upper bound and
+re-measuring against a published apphost is worth doing before Stage 6 sets a default budget.
+
+**Concurrency — the cap is core count, not a constant.** All widths succeeded (no failures, no drops):
+
+| concurrent children | wall | per-call latency min / p50 / max | peak working set |
+|---|---|---|---|
+| 1 | 2.76 s | 2.74 / 2.74 / 2.74 s | 94 MB |
+| 4 (= cores) | 4.53 s | 3.83 / 4.33 / 4.48 s | 334 MB |
+| 8 | 8.90 s | 6.08 / 8.18 / 8.89 s | 649 MB |
+| 16 | 17.47 s | 8.02 / 15.37 / **16.89** s | 1073 MB |
+
+Wall time grows linearly past the core count, so nothing is gained above ~4 on this box — throughput is flat
+and the only thing that changes is per-call latency. Memory is not the binding constraint (1 GB at width 16
+of 16 GB available); CPU is.
+
+**This produces a hard design requirement the plan did not state.** At width 16 a call waited **16.9 s** to
+reach `initialize` — purely queued behind CPU, with a perfectly healthy backend. A 12 s budget measured from
+*enqueue* would have killed it. Therefore: **the budget clock starts when the child is spawned, never when
+the call is admitted**, and the concurrency cap is derived from `Environment.ProcessorCount`. Otherwise the
+supervisor kills healthy calls for being busy, which is a new failure mode invented by the fix.
+
+**NativeAOT (Stage 8 gate) — the substantive half passes; the native link is blocked by the host.** The
+managed compile of `ClioRing.Ipc`, `ClioRing` and `ClioRing.Desktop` succeeded and emitted **zero
+IL2026/IL3050/IL2104/IL3053 warnings**, which is the part of the Ring policy that says something about our
+code. `dotnet publish -r win-x64 -p:PublishAot=true` then failed at `Platform linker not found` —
+ts1-core-dev04 has no "Desktop Development for C++" workload. That is a machine prerequisite, not a code
+defect, so the AOT-hostile-pattern check is green and only the final link remains unproven.
+
 ### 2.3 What this deletes
 
 Unlike the in-process alternative, this decision *removes* machinery rather than adding it. At Stage 10:
@@ -367,8 +422,8 @@ no-toggle decision above replaces. Each of these remains a separate, later decis
 
 | # | Question | Owner stage |
 |---|---|---|
-| OQ-1 | Windows child spawn cost and Job Object containment — everything measured so far was macOS | 2 |
-| OQ-2 | Memory/CPU ceiling for concurrent children; the supported maximum needs a number | 2 |
+| ~~OQ-1~~ | **CLOSED 2026-08-17 on Windows Server 2022 (ts1-core-dev04, 4 cores / 16 GB).** See §2.4. | 2 |
+| ~~OQ-2~~ | **CLOSED 2026-08-17.** The cap must be derived from core count, not a constant. See §2.4. | 2 |
 | OQ-3 | Cost on a machine where the curated-knowledge bootstrap actually runs its budgeted startup path | 3 |
 | OQ-4 | Whether `create-app-section` gets a real operation registry or only a private completion signal | 7 |
 | OQ-5 | Whether master ships this default-on or gated — decided at merge proposal, on evidence from this branch | merge |

@@ -29,8 +29,16 @@ a killed worker takes its children with it and a dead parent leaves nothing behi
 - [ ] AC-03 — **R-8a (Unix): SIGKILL the parent while a worker has a descendant of its own: both disappear** on Linux and macOS (TC-E-201).
 - [ ] AC-03b — **R-8b (Windows): the same containment via Job Object kill-on-close** (TC-E-203). Split from AC-03 because the verification differs and Windows is unmeasured (OQ-1) — one cross-platform criterion would be satisfiable by a Unix-only test and then read as green everywhere. Any delivery before this passes is explicitly scoped to R-8a.
 - [ ] AC-04 — Budget expiry kills the worker and its descendants; the parent answers with a bounded error (TC-E-202).
-- [ ] AC-05 — **OQ-1 closed**: Windows child spawn cost and Job Object containment measured (TC-M-201). Until this number exists, no cohort ships on Windows.
-- [ ] AC-06 — **OQ-2 closed**: memory/CPU ceiling for concurrent children measured; the supported maximum is a number, not "8 was fine on a laptop" (TC-M-202).
+- [x] AC-05 — **OQ-1 CLOSED 2026-08-17** on Windows Server 2022 (ADR §2.4): spawn + `initialize` p50 **2.763 s**
+      (n=8, 4x the macOS figure), and Job Object kill-on-close gives full subtree containment **only** with
+      `CREATE_SUSPENDED` → assign → `ResumeThread`. Assign-after-start leaks exactly one grandchild, reproduced.
+      Consequence for this story: `Process.Start` cannot express `CREATE_SUSPENDED`, so the Windows path must
+      P/Invoke `CreateProcess` or use `PROC_THREAD_ATTRIBUTE_JOB_LIST`. Implement to that, not to "start then assign".
+- [x] AC-06 — **OQ-2 CLOSED 2026-08-17** (ADR §2.4): wall time grows linearly past core count, so the cap is
+      `Environment.ProcessorCount`-derived, not a constant. Memory is not the constraint (1 GB at width 16 of 16 GB).
+- [ ] AC-07 — **The budget clock starts at SPAWN, never at admission.** At width 16 a healthy call waited 16.9 s
+      just to reach `initialize`; a 12 s budget measured from enqueue would have killed it. Killing healthy calls
+      for being queued is a failure mode this fix would otherwise invent. Needs a test.
 
 ## Tests
 Unit: TC-U-201, TC-U-202. E2E (`clio.mcp.e2e`): TC-E-201 (Unix), TC-E-203 (Windows), TC-E-202. Measured: TC-M-201, TC-M-202.
