@@ -48,10 +48,11 @@ separate address spaces do not create a data race where a monitor used to hide o
   lock would strand a schema permanently after the first budget kill.
 
 ## Acceptance Criteria
-- [ ] AC-01 — Two concurrent workers writing the same `meta.json` produce a consistent file; neither write is
-  silently lost (TC-E-901). **Implemented and covered, but NOT yet evidenced:** TC-E-901 needs a reachable
-  Creatio stand and is skipped without one, so it has never executed. It closes only on a green
-  `Team_Atf_ClioMcpE2eTests` run — GitHub CI does not run `clio.mcp.e2e`.
+- [x] AC-01 — **VERIFIED 2026-08-17 on a live stand** (TC-E-901, 30 s, `sae_m_seeenu_15888720_0820`,
+      .NET Framework 4.8 / MSSql): two concurrent real `clio update-page` processes on one schema left a
+      whole, parseable `meta.json` with its baseline intact. This was the story's only compile-only
+      criterion. Stand prerequisite the run exposed: `SchemaNamePrefix` must permit `ClioMcp_*` for the
+      WHOLE run, because Creatio enforces the prefix on SAVE as well as on create — see the test plan.
 - [x] AC-02 — I/O failures in the baseline/meta path **surface as a response warning** instead of being
   swallowed (TC-U-901). **Amended:** "surface" cannot mean "throw". `PageBaselineStore` and
   `PageBaselineGuard` both document that a failed refresh must never fail a save that already succeeded, so

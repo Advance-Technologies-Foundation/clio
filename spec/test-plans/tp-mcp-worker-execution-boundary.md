@@ -154,7 +154,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 
 | ID | Tier | Assertion |
 |---|---|---|
-| TC-E-901 | E2E | Two concurrent workers writing `.clio-pages/{schema}/meta.json` produce a consistent file; neither write is silently lost (R7) |
+| TC-E-901 | E2E | **PASSED 2026-08-17 against a live stand** (`sae_m_seeenu_15888720_0820`, .NET Framework 4.8 / MSSql), 30 s: two concurrent real `clio update-page` processes on one schema left a whole, parseable `meta.json` carrying its baseline. This was stage 9's only compile-only criterion; it is now executed |
 | TC-U-901 | Unit | I/O failures in the baseline/meta path **surface** instead of being swallowed |
 | TC-E-902 | E2E | Browser-session cache under concurrent access behaves per its documented policy |
 
@@ -174,6 +174,30 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-U-F02 | Unit | The bare `catch` is gone — an unexpected exception is not converted into a domain answer |
 | TC-U-F03 | Unit | `MobilePageConversionGuideTool` balances every `GetLock` with `MarkAvailable` at all three sites (`:111`, `:339`, `:531`); the `SharedFallbackKey` mapping is not permanently pinned after a call |
 | TC-U-F04 | Unit | It resolves and uses the **real tenant key** rather than `SharedFallbackKey` |
+
+### Stand prerequisites the live TC-E-901 run exposed
+
+Both were found by running, not by reading, and both block the suite rather than one test.
+
+1. **`SchemaNamePrefix` must permit the seeded fixture, and it is enforced at SAVE time, not only at
+   creation.** Four e2e files (`ClioPagesConcurrencyE2ETests`, `PageUpdateToolE2ETests`,
+   `PageSyncToolE2ETests`, plus the sync conflict cases) depend on a page literally named
+   `ClioMcp_BlankPageToSave`. On a stand with the default `SchemaNamePrefix = Usr`, Creatio rejects both
+   `create-page` **and every later `update-page`** with *"code ... must start with the Usr prefix"*. So a
+   stand hosting this suite must keep `SchemaNamePrefix` set to `ClioMcp_` (or empty) for the whole run —
+   relaxing it only while seeding is not enough, which is exactly the mistake the first run made.
+2. **The fixture is not self-seeding.** No test creates `ClioMcp_BlankPageToSave`; it must pre-exist in a
+   writable package. On a stock stand the only writable package is `Custom` (maintainer `Customer`), and
+   the page is created from `BlankPageTemplate`.
+
+### A defect the arrange step revealed
+
+`get-page` **exits 0 when it fails**: a missing schema returns `{"success":false, ... "error":"Schema
+'X' not found"}` with exit code **0**. TC-E-901's arrange step asserts `read.ExitCode.Should().Be(0)`, so
+that assertion passes on a stand where nothing was materialised, and the test then fails later at the
+`meta.json` existence check with a misleading message. Two consequences: the CLI contract is wrong (a
+failed read must not exit 0), and every e2e arrange step that gates on exit code alone is weaker than it
+looks. Tracked as story 13.
 
 ## 6. Regression scope per stage
 

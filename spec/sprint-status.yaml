@@ -2882,6 +2882,18 @@ stories:
     status_note: "Folded in, independent of every stage. PageSchemaMetadataHelper.ExecuteSelectQuery (clio/Command/PageSchemaMetadataHelper.cs:33-46) ends in a bare catch, so an HTML login page, a timeout and a 500 all become 'Failed to query SysPackage' while the same command through the CLI returns success:true in ~1s. It is a SECOND, unguarded copy of the SelectQuery plumbing sitting next to the one ENG-93365 already fixed with ServiceResponseJsonGuard. Closes a feature DoD item on its own."
     depends_on: []
     blocks: []
+  - id: story-mcp-worker-execution-boundary-13
+    title: "get-page exits 0 when it fails"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-13.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Found by RUNNING TC-E-901 on a live stand, not by reading. clio get-page on a missing schema prints success:false with an error and exits 0, so TC-E-901's arrange assertion (ExitCode == 0) passed while nothing was materialised and the test failed later at the meta.json check with a misleading message. The MCP surface is unaffected - this is the CLI exit-code contract. Treat it as a class rather than an instance: audit list-pages, get-schema, get-client-unit-schema and get-classic-page-sources for the same shape, and scan callers before flipping it, because anything currently reading exit 0 as carry-on starts failing (which is the point)."
+    depends_on: []
+    blocks: []
   - id: story-mcp-worker-execution-boundary-12
     title: "MobilePageConversionGuideTool leaks the shared fallback lock mapping"
     feature: "mcp-worker-execution-boundary"
