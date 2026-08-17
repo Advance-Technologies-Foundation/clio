@@ -91,6 +91,8 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private readonly List<HttpListenerResponse> _stalledResponses = [];
 
 	private readonly List<string> _observedSelectSessions = [];
+	private readonly List<string> _observedSelectAuthorizationHeaders = [];
+	private readonly List<string> _observedLoginPrincipals = [];
 	private readonly List<string> _unexpectedHandlerFailures = [];
 	private int _loginCount;
 	private int _selectCount;
@@ -139,6 +141,43 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 		get {
 			lock (_sync) {
 				return [.. _observedSelectSessions];
+			}
+		}
+	}
+
+	/// <summary>
+	/// The <c>Authorization</c> header carried by every observed <c>SelectQuery</c>, in arrival order; a
+	/// request that carried none is recorded as <c>&lt;none&gt;</c>.
+	/// </summary>
+	/// <remarks>
+	/// This is the identity assertion's only trustworthy witness (ENG-95262 TC-E-302). "The call succeeded" is
+	/// explicitly insufficient: a bearer principal that silently fell back to the <c>Supervisor</c>
+	/// login/password default succeeds just as well, and the two are distinguishable only by what the request
+	/// actually presented — a <c>Bearer</c> header for the delegated principal, versus a forms-auth cookie for
+	/// the fallback.
+	/// </remarks>
+	public IReadOnlyList<string> ObservedSelectAuthorizationHeaders {
+		get {
+			lock (_sync) {
+				return [.. _observedSelectAuthorizationHeaders];
+			}
+		}
+	}
+
+	/// <summary>
+	/// The <c>UserName</c> presented by every observed forms-auth login, in arrival order; a body that carried
+	/// none is recorded as <c>&lt;none&gt;</c> and an unparseable one as <c>&lt;unparsed&gt;</c>.
+	/// </summary>
+	/// <remarks>
+	/// The other half of the identity witness (ENG-95262 TC-E-302). clio's client construction falls back to
+	/// <c>Login ?? "Supervisor"</c>, so "which principal logged in" is the only observation that distinguishes a
+	/// correctly delegated call from that fallback — and the fallback SUCCEEDS, which is why no assertion on the
+	/// call's outcome can substitute for this one.
+	/// </remarks>
+	public IReadOnlyList<string> ObservedLoginPrincipals {
+		get {
+			lock (_sync) {
+				return [.. _observedLoginPrincipals];
 			}
 		}
 	}
@@ -203,6 +242,8 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 			_loginCount = 0;
 			_selectCount = 0;
 			_observedSelectSessions.Clear();
+			_observedSelectAuthorizationHeaders.Clear();
+			_observedLoginPrincipals.Clear();
 		}
 	}
 
@@ -229,7 +270,9 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 			return $"login={_loginCount.ToString(CultureInfo.InvariantCulture)}, "
 				+ $"select={_selectCount.ToString(CultureInfo.InvariantCulture)}, "
 				+ $"mode={_mode}, "
-				+ $"select-sessions=[{string.Join(", ", _observedSelectSessions)}]"
+				+ $"select-sessions=[{string.Join(", ", _observedSelectSessions)}], "
+				+ $"select-authorization=[{string.Join(", ", _observedSelectAuthorizationHeaders)}], "
+				+ $"login-principals=[{string.Join(", ", _observedLoginPrincipals)}]"
 				+ failures;
 		}
 	}
@@ -259,7 +302,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private async Task RespondAsync(HttpListenerContext context) {
 		try {
 			string path = context.Request.Url?.AbsolutePath ?? string.Empty;
-			await DrainRequestBodyAsync(context).ConfigureAwait(false);
+			string requestBody = await DrainRequestBodyAsync(context).ConfigureAwait(false);
 
 			if (string.Equals(path, CountersPath, StringComparison.Ordinal)) {
 				await WriteJsonAsync(context, BuildCountersPayload()).ConfigureAwait(false);
@@ -279,7 +322,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 			}
 
 			if (path.EndsWith(LoginPathSuffix, StringComparison.Ordinal)) {
-				await RespondToLoginAsync(context).ConfigureAwait(false);
+				await RespondToLoginAsync(context, requestBody).ConfigureAwait(false);
 				return;
 			}
 
@@ -320,12 +363,13 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 		}
 	}
 
-	private async Task RespondToLoginAsync(HttpListenerContext context) {
+	private async Task RespondToLoginAsync(HttpListenerContext context, string requestBody) {
 		int loginNumber;
 		TimeSpan loginDelay;
 		lock (_sync) {
 			loginNumber = ++_loginCount;
 			loginDelay = _loginDelay;
+			_observedLoginPrincipals.Add(ReadLoginPrincipal(requestBody));
 		}
 		if (loginDelay > TimeSpan.Zero) {
 			await Task.Delay(loginDelay, _cancellation.Token).ConfigureAwait(false);
@@ -356,6 +400,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 		lock (_sync) {
 			_selectCount++;
 			_observedSelectSessions.Add(ReadSessionToken(context.Request));
+			_observedSelectAuthorizationHeaders.Add(ReadAuthorizationHeader(context.Request));
 			mode = _mode;
 			selectDelay = _selectDelay;
 		}
@@ -434,6 +479,24 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private static string BuildSessionToken(int loginNumber) =>
 		$"stub-session-{loginNumber.ToString(CultureInfo.InvariantCulture)}";
 
+	private static string ReadLoginPrincipal(string requestBody) {
+		if (string.IsNullOrWhiteSpace(requestBody)) {
+			return "<none>";
+		}
+		try {
+			JsonNode? parsed = JsonNode.Parse(requestBody);
+			JsonNode? userName = parsed?["UserName"];
+			return userName is null ? "<none>" : userName.ToString();
+		} catch (JsonException) {
+			return "<unparsed>";
+		}
+	}
+
+	private static string ReadAuthorizationHeader(HttpListenerRequest request) {
+		string? header = request.Headers["Authorization"];
+		return string.IsNullOrWhiteSpace(header) ? "<none>" : header.Trim();
+	}
+
 	private static string ReadSessionToken(HttpListenerRequest request) {
 		string? rawCookieHeader = request.Headers["Cookie"];
 		if (string.IsNullOrWhiteSpace(rawCookieHeader)) {
@@ -494,12 +557,15 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 			["rows"] = new JsonArray()
 		};
 
-	private static async Task DrainRequestBodyAsync(HttpListenerContext context) {
+	// Returns the request body as text. It is read (rather than merely drained) because the forms-auth login
+	// body is the only place the presented principal appears.
+	private static async Task<string> DrainRequestBodyAsync(HttpListenerContext context) {
 		if (!context.Request.HasEntityBody) {
-			return;
+			return string.Empty;
 		}
 		using MemoryStream buffer = new();
 		await context.Request.InputStream.CopyToAsync(buffer).ConfigureAwait(false);
+		return Encoding.UTF8.GetString(buffer.ToArray());
 	}
 
 	private static async Task WriteJsonAsync(HttpListenerContext context, JsonNode payload) {

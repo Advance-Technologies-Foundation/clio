@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Common.McpWorker;
 using Clio.Common.Telemetry;
 using CommandLine;
 
@@ -12,7 +13,34 @@ namespace Clio.Command.McpServer;
 
 [Verb("mcp-server", Aliases = ["mcp"], HelpText = "Starts mcp server in stdio mode")]
 public class McpServerCommandOptions : BaseCommandOptions
-{ }
+{
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this process serves MCP calls as a short-lived child worker
+	/// of an MCP host, which skips the host's startup bootstrap and shutdown drains.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Hidden and internal: a worker is spawned by clio's own MCP host, never by a user, and the flag is not
+	/// part of the documented surface.
+	/// </para>
+	/// <para>
+	/// Mode is selected by an OPTION rather than an environment variable for three reasons. An environment
+	/// variable is inherited by grandchildren, so it would silently turn any clio a worker spawns through
+	/// <c>clio-run</c> into a worker too; the flag shows up in the child's command line, which is already the
+	/// worker's identity for the stale-worker reap; and the argument keeps the verb itself first, so the MCP
+	/// mode detection that suppresses the startup update check and neutralises an ambient proxy keeps working
+	/// unchanged. The flag is not secret, so carrying it in argv costs nothing.
+	/// </para>
+	/// <para>
+	/// There is deliberately no <c>--worker-lifetime</c>: sticky versus ordinary is decided parent-side, by
+	/// which environment the parent composes for the child.
+	/// </para>
+	/// </remarks>
+	[Option("worker", Required = false, Hidden = true,
+		HelpText = "Internal: serve MCP calls as a short-lived child worker; skips host bootstrap.")]
+	public bool Worker { get; set; }
+}
 
 
 /// <summary>
@@ -28,7 +56,12 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
 
 	public override int Execute(McpServerCommandOptions options) {
-		BootstrapCuratedKnowledge(curatedKnowledgeBootstrapService, logger);
+		ArgumentNullException.ThrowIfNull(options);
+		// Worker-side containment first, BEFORE anything that could spawn a descendant: the worker leads its
+		// own process group and arms parent-death signalling, so a hard-killed parent takes the worker and
+		// everything below it. A parent that is SIGKILLed runs no code, so this half cannot live there.
+		ArmWorkerContainment(options, logger);
+		BootstrapCuratedKnowledgeForHost(options, curatedKnowledgeBootstrapService, logger);
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
 		// in-flight eviction guard operate on the SAME instances ToolCommandResolver uses.
@@ -55,7 +88,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		AppDomain.CurrentDomain.ProcessExit += onProcessExit;
 		// Drain the telemetry spool left over from previous sessions; fire-and-forget,
 		// the server starts serving immediately.
-		flushScheduler.TryScheduleFlush();
+		ScheduleStartupTelemetryFlush(options, flushScheduler);
 		try {
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
@@ -76,13 +109,91 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			// runtime as soon as the main (foreground) thread exits, leaving the on-disk cache
 			// stale indefinitely. The two drains run concurrently so shutdown stays bounded at
 			// ~10 seconds.
-			Task.WhenAll(
-					ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10)),
-					flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)))
-				.GetAwaiter().GetResult();
+			DrainHostBackgroundWork(options, flushScheduler);
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Runs the curated-knowledge bootstrap unless this process is a worker.
+	/// </summary>
+	/// <remarks>
+	/// This is the single biggest worker startup saving: the bootstrap is a budgeted git clone of the
+	/// clio-knowledge repository with a 5,000 ms startup deadline. A worker serves one call and never answers a
+	/// guidance request, so paying that on every spawn would dominate the spawn cost the whole design rests on.
+	/// </remarks>
+	/// <param name="options">The parsed command options; <c>--worker</c> suppresses the bootstrap.</param>
+	/// <param name="bootstrapService">The curated knowledge bootstrap service.</param>
+	/// <param name="logger">The host logger.</param>
+	internal static void BootstrapCuratedKnowledgeForHost(
+		McpServerCommandOptions options,
+		ICuratedKnowledgeBootstrapService bootstrapService,
+		ILogger logger) {
+		if (options.Worker) {
+			return;
+		}
+		BootstrapCuratedKnowledge(bootstrapService, logger);
+	}
+
+	/// <summary>
+	/// Schedules the startup telemetry flush unless this process is a worker.
+	/// </summary>
+	/// <remarks>
+	/// Telemetry stays the PARENT's job. N workers posting where one process did is a regression, not a
+	/// feature — which is also why <c>send-telemetry</c> stays classified as an in-process tool: a branch here
+	/// covers the host's own flush, not a tool call that would reach the same endpoint from a child.
+	/// </remarks>
+	/// <param name="options">The parsed command options; <c>--worker</c> suppresses the flush.</param>
+	/// <param name="flushScheduler">The telemetry flush scheduler.</param>
+	internal static void ScheduleStartupTelemetryFlush(
+		McpServerCommandOptions options,
+		ITelemetryFlushScheduler flushScheduler) {
+		if (options.Worker) {
+			return;
+		}
+		flushScheduler.TryScheduleFlush();
+	}
+
+	/// <summary>
+	/// Drains the host's fire-and-forget background work at shutdown unless this process is a worker.
+	/// </summary>
+	/// <remarks>
+	/// Both drains are bounded at 10 seconds, so a worker that ran them would pay up to ten seconds of pure
+	/// exit latency per call — and neither drain has anything to do: a worker refreshes no component-registry
+	/// catalog and posts no telemetry.
+	/// </remarks>
+	/// <param name="options">The parsed command options; <c>--worker</c> suppresses both drains.</param>
+	/// <param name="flushScheduler">The telemetry flush scheduler.</param>
+	internal static void DrainHostBackgroundWork(
+		McpServerCommandOptions options,
+		ITelemetryFlushScheduler flushScheduler) {
+		if (options.Worker) {
+			return;
+		}
+		Task.WhenAll(
+				ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10)),
+				flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)))
+			.GetAwaiter().GetResult();
+	}
+
+	/// <summary>
+	/// Arms worker-side containment when this process is a worker: process-group promotion plus parent-death
+	/// signalling. A no-op for an ordinary host, which nothing supervises.
+	/// </summary>
+	/// <param name="options">The parsed command options; containment is armed only under <c>--worker</c>.</param>
+	/// <param name="logger">The host logger; the outcome is recorded as a debug line.</param>
+	/// <returns>What arming produced, or <see langword="null"/> when this process is not a worker.</returns>
+	internal static ParentDeathWatchResult ArmWorkerContainment(McpServerCommandOptions options, ILogger logger) {
+		if (!options.Worker) {
+			return null;
+		}
+		ParentDeathWatchResult result = UnixParentDeathWatch.Arm();
+		logger.WriteDebug(
+			$"MCP worker containment armed: group-leader={result.ProcessGroupPromoted}, "
+			+ $"mode={result.Mode}, parent={result.ParentProcessId}, "
+			+ $"parent-already-exited={result.ParentAlreadyExited}.");
+		return result;
 	}
 
 	/// <summary>

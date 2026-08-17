@@ -32,6 +32,7 @@ using Clio.Common;
 using Clio.Common.Assertions;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
+using Clio.Common.McpWorker;
 using Clio.Common.SystemServices;
 using Clio.Common.Telemetry;
 using Clio.Common.K8;
@@ -425,7 +426,12 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
 		services.AddTransient<ISysSettingConditionOperandResolver, SysSettingConditionOperandResolver>();
-		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
+		// Routed through CreateFeatureToggleService so a WORKER child reads the parent's frozen generation
+		// instead of appsettings.json. This registration and the one inside RegisterMcpServer must stay on the
+		// same factory: the first gates which verbs the parser accepts, the second gates which MCP primitives
+		// are registered, and the two disagreeing is exactly the defect the frozen generation prevents.
+		services.AddTransient<IFeatureToggleService>(sp =>
+			CreateFeatureToggleService(sp.GetRequiredService<ISettingsRepository>()));
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IListUserTasksService, ListUserTasksService>();
@@ -1088,6 +1094,25 @@ public class BindingsModule {
 		return settingsRepository;
 	}
 
+	/// <summary>
+	/// Builds the feature-toggle service this process must run on: the live settings-backed one for an
+	/// ordinary clio, and the immutable frozen one for an MCP worker child.
+	/// </summary>
+	/// <remarks>
+	/// A worker's tool surface is fixed inside this container build — MCP primitive registration happens
+	/// before the stdio transport is attached — so the generation has to be present at process start. It
+	/// arrives in an environment variable the parent composed at spawn; an absent payload freezes every gated
+	/// feature OFF rather than falling back to <c>appsettings.json</c>, because that fallback is precisely the
+	/// parent/child disagreement being prevented.
+	/// </remarks>
+	/// <param name="settingsRepository">The settings repository backing the live service.</param>
+	/// <returns>The feature-toggle service for this process.</returns>
+	private static IFeatureToggleService CreateFeatureToggleService(ISettingsRepository settingsRepository) {
+		return McpWorkerEnvironment.IsWorkerProcess
+			? new FrozenFeatureToggleService(McpWorkerEnvironment.ReadFrozenFeatures())
+			: new FeatureToggleService(settingsRepository);
+	}
+
 	private static void RegisterIisHttpsServices(IServiceCollection services) {
 		services.AddTransient<INetFrameworkHttpsConfigurator, NetFrameworkHttpsConfigurator>();
 		services.AddTransient<IIisCertificateResolver, IisCertificateResolver>();
@@ -1182,7 +1207,7 @@ public class BindingsModule {
 		ISettingsRepository settingsRepository) {
 		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
 		Assembly mcpAssembly = Assembly.GetExecutingAssembly();
-		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
+		IFeatureToggleService mcpFeatureToggleService = CreateFeatureToggleService(settingsRepository);
 		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					// MCP9005: advertise the deprecated Logging capability for legacy initialize clients
@@ -1270,7 +1295,13 @@ public class BindingsModule {
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
 		foreach (Type type in types) {
-			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
+			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)
+				// The frozen feature-toggle service takes a runtime-only constructor argument — the immutable
+				// map the parent handed this worker at spawn — so the scan cannot construct it and
+				// ValidateOnBuild would stop every host from starting. CreateFeatureToggleService is the only
+				// site allowed to build it, which is also what keeps the parser gate and the MCP tool surface
+				// on one generation.
+				|| type == typeof(FrozenFeatureToggleService)) {
 				continue;
 			}
 			// An exception is never a service. Registering one (they carry a marker interface such as
@@ -1345,6 +1376,14 @@ public class BindingsModule {
 					// process), so auto-registering them would fail ValidateOnBuild and stop the host from
 					// starting at all.
 					|| implementedInterface.Namespace == typeof(Common.McpWorker.IProcessContainment).Namespace
+					// The worker MCP relay (ENG-95262 Stage 4a) is not wired into dispatch yet, and the scan
+					// would register it anyway because its types are Clio-namespaced classes. Skipped so that
+					// claim stays true, and so a later constructor on WorkerMcpRelay or WorkerChildTransportOwner
+					// — both of which will take per-worker runtime state, not container services — cannot start
+					// failing ValidateOnBuild and stop every host from starting. The order that wires the relay
+					// into dispatch registers this namespace explicitly, the way the supervisor namespace above
+					// already does.
+					|| implementedInterface.Namespace == typeof(Command.McpServer.Relay.IWorkerMcpRelay).Namespace
 					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
 					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
 					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {
