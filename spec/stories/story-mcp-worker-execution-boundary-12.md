@@ -21,7 +21,14 @@ one mobile-conversion call does not permanently pin the shared fallback mapping
 - `MobilePageConversionGuideTool` takes `lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey))` at three sites — `:111`, `:339`, `:531` — after it has already resolved a real tenant, and never calls the balancing `MarkAvailable`.
 - `GetLock` **pins the lock-provider mapping in-use** (`McpToolExecutionLock.cs:157-159`), explicitly documented as "balanced by `MarkAvailable`". Unbalanced, the mapping is pinned permanently.
 - Two defects in one: the wrong key (shared fallback rather than the resolved tenant, which serializes unrelated tenants) and the missing release.
-- Use the same `ExecuteUnderTenantLock` path the other tools use rather than hand-rolling the `lock` — the helper balances by construction.
+- **Correction applied during implementation.** `ExecuteUnderTenantLock` / `ExecuteWithCleanLog` /
+  `ResolveTenantLockKey` are `private protected` on `BaseTool<T>` (`BaseTool.cs:59`), and
+  `MobilePageConversionGuideTool` derives from nothing (`:33`, a sealed class with a seven-service
+  constructor). The helper is therefore **unreachable** from here. Rebasing the class onto
+  `BaseTool<PageGetOptions>` was rejected: it costs constructor churn, a `command: null` base argument,
+  and a second inherited `[McpServerToolType]` registration surface, for no safety the local fix does not
+  already give. The implementation instead uses a balanced `try`/`finally` around the resolved tenant key
+  at all three sites — same guarantee, no inheritance change.
 
 ## Acceptance Criteria
 - [ ] AC-01 — Every `GetLock` at all three sites is balanced by `MarkAvailable`, including on the exception path (TC-U-F03).

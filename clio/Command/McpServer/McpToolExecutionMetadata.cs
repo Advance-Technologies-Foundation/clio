@@ -97,12 +97,18 @@ public enum McpToolBudgetPolicy {
 /// relay must be full-duplex for it.
 /// </summary>
 /// <remarks>
-/// A flags enum so <c>sampling | progress</c> ("both" in the execution-metadata inventory) is expressible
-/// as a real combination rather than a fourth hand-maintained literal. <see cref="Unspecified"/> is still
-/// the zero value, so <see cref="None"/> ("declared: needs nothing") stays distinguishable from "not
-/// declared".
+/// Members keep power-of-two values so <c>Sampling | Progress</c> composes (that combination is the
+/// inventory's "both", named <see cref="Both"/> here) and a third request kind can be added later without
+/// a combinatorial explosion of literals.
 /// </remarks>
-[Flags]
+/// <remarks>
+/// Deliberately NOT marked <c>[Flags]</c>. The zero member must stay <see cref="Unspecified"/> — it is what
+/// lets the coverage test tell "the author left this field at its default" apart from <see cref="None"/>
+/// ("declared: this tool needs nothing"), and a nullable enum is not a legal attribute-argument type in C#,
+/// so there is no other way to encode the absent case. A <c>[Flags]</c> enum whose zero member is not named
+/// <c>None</c> trips SonarCloud S2346, and between losing the omission check and losing an attribute that
+/// only affects <c>ToString</c> decomposition, the attribute is the cheaper thing to give up.
+/// </remarks>
 public enum McpToolClientRequests {
 	/// <summary>No value declared. Never a valid classification — the coverage test fails on it.</summary>
 	Unspecified = 0,

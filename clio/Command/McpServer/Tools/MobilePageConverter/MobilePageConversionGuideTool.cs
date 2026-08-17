@@ -107,14 +107,7 @@ public sealed class MobilePageConversionGuideTool {
 
 		PageGetResponse pageResponse;
 		try {
-			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
-			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
-				try {
-					getCommand.TryGetPage(getOptions, out pageResponse);
-				} finally {
-					_logger.ClearMessages();
-				}
-			}
+			pageResponse = ReadPageUnderTenantLock(getOptions);
 		} catch (Exception ex) {
 			return Fail(args, null, $"Failed to read source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -291,6 +284,52 @@ public sealed class MobilePageConversionGuideTool {
 	}
 
 	/// <summary>
+	/// Reads one page (the conversion source, or a web/mobile template) under the per-tenant MCP execution
+	/// lock (FR-05), with every in-flight marker balanced on both the normal and the exception path. The
+	/// single seam behind all three page reads this tool performs.
+	/// </summary>
+	/// <param name="options">The page-read options carrying the target identity (environment name, or uri/login/password).</param>
+	/// <returns>
+	/// The command's response; <see langword="null"/> only if the command left the out-parameter unset. A
+	/// resolution failure propagates as an exception, which each caller handles per its own policy (the
+	/// source-page read fails the tool; the two template probes degrade to a best-effort baseline).
+	/// </returns>
+	/// <remarks>
+	/// <para>
+	/// This tool derives from nothing, so <c>BaseTool&lt;T&gt;.ExecuteUnderTenantLock</c> — which balances the
+	/// markers by construction — is out of reach (it is <c>private protected</c>, requiring a derived type in
+	/// this assembly). This helper is the same shape spelled out explicitly, matching the other non-derived
+	/// call sites (<see cref="PageEditToolHelpers.TryExecuteSaveBody"/>, <c>AddItemModelTool</c>,
+	/// <c>PageSyncTool</c>, <c>SchemaSyncTool</c>).
+	/// </para>
+	/// <para>
+	/// Three things this ordering is load-bearing for. The key is the RESOLVED tenant
+	/// (<see cref="IToolCommandResolver.GetTenantKey"/>), never
+	/// <see cref="McpToolExecutionLock.SharedFallbackKey"/>, so unrelated tenants do not serialize behind one
+	/// mobile conversion. <see cref="McpToolExecutionLock.MarkAvailable"/> runs in a <c>finally</c>, balancing
+	/// the in-use pin <see cref="McpToolExecutionLock.GetLock"/> takes at hand-out — unbalanced, that mapping
+	/// is never evictable again. And <c>Resolve</c> runs INSIDE the lock, after
+	/// <see cref="McpToolExecutionLock.MarkInUse"/>, so the session container cannot be LRU-evicted and
+	/// disposed while this call is acquiring it.
+	/// </para>
+	/// </remarks>
+	internal PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) {
+		string tenantKey = _commandResolver.GetTenantKey(options);
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
+			try {
+				PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
+				command.TryGetPage(options, out PageGetResponse response);
+				return response;
+			} finally {
+				// MarkAvailable FIRST: the pin must be released even if clearing the capture buffer throws.
+				McpToolExecutionLock.MarkAvailable(tenantKey);
+				_logger.ClearMessages();
+			}
+		}
+	}
+
+	/// <summary>
 	/// The web template baseline: a name → node map of every component the source page's web template
 	/// provides (inherited chrome), with <see cref="Names"/> derived from its keys for chrome subtraction. The
 	/// node map is the DELTA baseline — a same-component twin carries only the properties the page changed from
@@ -334,15 +373,7 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			};
-			PageGetResponse templateResponse;
-			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
-			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
-				try {
-					command.TryGetPage(options, out templateResponse);
-				} finally {
-					_logger.ClearMessages();
-				}
-			}
+			PageGetResponse templateResponse = ReadPageUnderTenantLock(options);
 			if (templateResponse?.Success == true && templateResponse.Bundle?.ViewConfig is { } viewConfig) {
 				// One traversal: derive Names from the node map's keys rather than walking the tree twice.
 				IReadOnlyDictionary<string, JObject> nodes =
@@ -526,15 +557,7 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			};
-			PageGetResponse templateResponse;
-			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
-			lock (McpToolExecutionLock.GetLock(McpToolExecutionLock.SharedFallbackKey)) {
-				try {
-					command.TryGetPage(options, out templateResponse);
-				} finally {
-					_logger.ClearMessages();
-				}
-			}
+			PageGetResponse templateResponse = ReadPageUnderTenantLock(options);
 			if (templateResponse?.Success == true && templateResponse.Bundle is { } bundle) {
 				IReadOnlyDictionary<string, string> parents = emptyParents;
 				IReadOnlyDictionary<string, string> types = emptyTypes;
