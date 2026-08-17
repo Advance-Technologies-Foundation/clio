@@ -1380,15 +1380,15 @@ public static class WebToMobileAnalysisService {
 	private static readonly Regex ResourceStringsRefPattern =
 		new(@"\$Resources\.Strings\.([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled, RegexTimeout);
 
+	/// <summary>The parent slot every converted element is inserted into.</summary>
+	private const string ItemsPropertyName = "items";
+
 	/// <summary>
 	/// The identifier a <c>$Token</c> binding may name — the SAME grammar the scanners in this file use to
 	/// recognize one (see <see cref="ExtractDollarRefs"/>). Written out as an explicit ASCII class rather than
 	/// a predicate like <c>char.IsLetterOrDigit</c>, which is Unicode-wide and would accept a Cyrillic
 	/// homoglyph that renders identically and resolves to nothing.
 	/// </summary>
-	/// <summary>The parent slot every converted element is inserted into.</summary>
-	private const string ItemsPropertyName = "items";
-
 	private static readonly Regex BindingIdentifierPattern =
 		new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled, RegexTimeout);
 
@@ -2363,10 +2363,42 @@ public static class WebToMobileAnalysisService {
 		if (declared is not { } value || ctx.Rules?.ComponentValueConstraints is not { Count: > 0 } constraints) {
 			return null;
 		}
-		string raw = value.GetRawText();
-		return constraints.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c?.Type)
-			&& !string.IsNullOrWhiteSpace(c.Property)
-			&& raw.Contains('"' + c.Type + '"', StringComparison.OrdinalIgnoreCase));
+		// Walked as JSON, in DECLARATION order, and matched only against a `type` PROPERTY. A substring search
+		// over the raw text picked whichever constraint came first in the rules FILE rather than which type the
+		// template declares first, and would also match a type name that merely appears inside some string value.
+		foreach (string declaredType in DeclaredTypes(JToken.Parse(value.GetRawText()))) {
+			ComponentValueConstraintRule match = constraints.FirstOrDefault(c =>
+				!string.IsNullOrWhiteSpace(c?.Type) && !string.IsNullOrWhiteSpace(c.Property)
+				&& string.Equals(c.Type, declaredType, StringComparison.OrdinalIgnoreCase));
+			if (match is not null) {
+				return match;
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Every component type a template DECLARES, outermost first, in declaration order — the order a reader of
+	/// the skeleton would meet them.
+	/// </summary>
+	private static IEnumerable<string> DeclaredTypes(JToken template) {
+		switch (template) {
+			case JObject obj: {
+				if (obj["type"]?.Value<string>() is { Length: > 0 } declared) {
+					yield return declared;
+				}
+				foreach (string nested in obj.Properties().SelectMany(prop => DeclaredTypes(prop.Value))) {
+					yield return nested;
+				}
+				break;
+			}
+			case JArray arr: {
+				foreach (string nested in arr.SelectMany(DeclaredTypes)) {
+					yield return nested;
+				}
+				break;
+			}
+		}
 	}
 
 	/// <summary>
@@ -2494,7 +2526,9 @@ public static class WebToMobileAnalysisService {
 			&& nested["type"] is not null && values[p.Name] is not null)) {
 			return carried;
 		}
-		OverlayRenderedValues(values, rendered);
+		// The element's own resolved type, which the values already carry as their first key — the shape guard
+		// reshapes against the component the value is landing on, not against the one it came from.
+		OverlayRenderedValues(ctx, values, values["type"]?.ToString(), rendered);
 		return accepts is null ? carried : ReportConstrainedValue(ctx, values, accepts);
 	}
 
@@ -2617,12 +2651,21 @@ public static class WebToMobileAnalysisService {
 	/// carry them on purpose, so filling that gap from a template would let the rules file rename an element or
 	/// prebuild the type-specific binding the caller must add.
 	/// </summary>
-	private static void OverlayRenderedValues(JObject target, JObject rendered) {
+	private static void OverlayRenderedValues(ElementMapContext ctx, JObject target, string mobileType,
+		JObject rendered) {
 		foreach (JProperty prop in rendered.Properties()) {
 			if (ExcludedSourceProps.Contains(prop.Name)) {
 				continue;
 			}
-			target[prop.Name] = prop.Value.DeepClone();
+			// The same two guards the copy rule applies, for the same reasons. `items` as an ARRAY is the child
+			// view-element collection — structural, emitted by the tree walk — so writing it here would nest a
+			// whole child tree inside its parent's values; as a STRING it is a real collection binding and is
+			// written like anything else. And the value is reshaped to what the registry declares, so a template
+			// that writes an object where the mobile component wants an array does not ship the wrong container.
+			if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+				continue;
+			}
+			target[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
 		}
 	}
 

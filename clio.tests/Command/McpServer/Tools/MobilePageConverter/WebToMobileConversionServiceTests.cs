@@ -4434,6 +4434,28 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A template writing `items` as an ARRAY is refused the same way the copy rule refuses it: that shape is the child view-element collection, emitted by the tree walk, so writing it into a parent's values would nest a whole child tree inside them.")]
+	public void Analyze_ViewConfigTemplate_ItemsAsAnArray_IsNotWrittenIntoTheValues() {
+		// Arrange — the shape a container template would produce, and the one the copy rule already skips.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "items": [ { "name": "Nested", "type": "crt.Label" } ],
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
+			because: "the STRING collection binding the page declared survives; the template's array form is the "
+				+ "structural child collection and must not overwrite it");
+		values["itemLayout"].Should().NotBeNull(
+			because: "refusing one key must not discard the rest of the render");
+	}
+
+	[Test]
 	[Description("A template nested past the render budget has that branch abandoned rather than being followed down. The rules file is fetched at runtime, so a template is input from OUTSIDE the binary; the JSON reader stops anything deeper than its own limit, and this budget bounds the recursion within it.")]
 	public void Analyze_ViewConfigTemplate_PathologicallyNestedTemplate_DegradesInsteadOfExhaustingTheStack() {
 		// Arrange — deep enough to pass the render budget, shallow enough that the JSON reader still accepts it,
