@@ -10,7 +10,10 @@
 > which supersedes this ADR's delivery section — with the requirements in
 > [spec-deliver-process-builder-package.md](../prd/spec-deliver-process-builder-package.md) and the
 > experiment log in [deliver-process-builder-package-plan.md](../deliver-process-builder-package/deliver-process-builder-package-plan.md).
-> The name `clioprocessbuilder` is left in place below as the historical record.
+> The GHE repository was renamed too — `cli-process-builder` → **`crt-process-builder`** (ENG-95409),
+> which changed nothing but the name: the descriptor `UId`, the REST route and the assembly name are all
+> independent of it. The names `clioprocessbuilder` and `cli-process-builder` are left in place below as
+> the historical record.
 
 **Jira**: [ENG-90883](https://creatio.atlassian.net/browse/ENG-90883) (Approach 1 of [ENG-91447](https://creatio.atlassian.net/browse/ENG-91447); follow-ups [ENG-91842](https://creatio.atlassian.net/browse/ENG-91842))
 
@@ -22,7 +25,7 @@
 
 **Companion doc**: [backend-designer-manual-qa.md](../backend-designer/backend-designer-manual-qa.md) (manual QA checklist)
 
-**Code**: GHE `engineering/crt-process-builder` (package `CrtProcessBuilder`); clio MCP layer in this repository
+**Code**: GHE `engineering/cli-process-builder` (package `clioprocessbuilder`); clio MCP layer in this repository
 
 **Created**: 2026-06-25
 
@@ -76,7 +79,7 @@ Deliver process design as a **backend command-driven "non-visual designer"**, pa
 - `DescribeProcess({name|uid})` and `ListUserTasks()` — structured read-back / palette catalog.
 
 ### Internal architecture (package) — principle only
-The package is a thin WCF transport (`ProcessDesignService`) over a domain orchestrator that owns only operation sequencing, the security gate, and error-to-response handling, delegating each concern (graph build/edit, schema lifecycle, parameters, mappings, modify operations, user-task catalog, describe, layout) to a single-purpose, constructor-injected collaborator — so new element kinds and operations **extend the collaborators, not the orchestrator** (per-element handler strategy). The concrete collaborator interfaces, handlers and the DI composition root are the **source of truth in the `engineering/crt-process-builder` repository**, and the architecture rationale + request-flow sequence diagram live in the Confluence [architecture & delivery options](https://creatio.atlassian.net/wiki/spaces/TER/pages/4752572418) page; this ADR records only the **boundary contract** (the service surface above) and the cross-cutting decisions below — not the package's internal class structure (which would drift, since the code lives in another repo).
+The package is a thin WCF transport (`ProcessDesignService`) over a domain orchestrator that owns only operation sequencing, the security gate, and error-to-response handling, delegating each concern (graph build/edit, schema lifecycle, parameters, mappings, modify operations, user-task catalog, describe, layout) to a single-purpose, constructor-injected collaborator — so new element kinds and operations **extend the collaborators, not the orchestrator** (per-element handler strategy). The concrete collaborator interfaces, handlers and the DI composition root are the **source of truth in the `engineering/cli-process-builder` repository**, and the architecture rationale + request-flow sequence diagram live in the Confluence [architecture & delivery options](https://creatio.atlassian.net/wiki/spaces/TER/pages/4752572418) page; this ADR records only the **boundary contract** (the service surface above) and the cross-cutting decisions below — not the package's internal class structure (which would drift, since the code lives in another repo).
 
 ### Key design choices recorded
 1. **Security gate = `CanManageProcessDesign` + General user**, mirroring the platform's own `ProcessSchemaManagerService.Publish`. The cliogate `CanManageSolution` operation is broader and omits the connection-type check, so it is intentionally **not** used.
