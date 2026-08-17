@@ -35,7 +35,7 @@ This plan deliberately implements the **clio-side half only**, with the artifact
 
 | Chain link | Status in this plan | Owner |
 |---|---|---|
-| Source on GHE | **Already done** — `creatio.ghe.com/engineering/cli-process-builder`, branch `main` | — |
+| Source on GHE | **Already done** — `creatio.ghe.com/engineering/crt-process-builder`, branch `main` | — |
 | Rename package → `CrtProcessBuilder` | **IN SCOPE** (P0) | this ticket |
 | CI build (TeamCity, composable-app style) | **SKIPPED** — manual, documented runbook instead | ENG-92113 |
 | Deliver `.gz` to `\\tscrm.com\dfs-ts\…` + build registration | **SKIPPED** | ENG-92113 |
