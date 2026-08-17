@@ -129,6 +129,34 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"the row on '{list.WebName}' must carry the body collection, even when the grid had only "
 					+ "the one display column and it is therefore empty");
 		}
+		AssertMergedListsCarryTheirRowAsADelta(guide);
+	}
+
+	/// <summary>
+	/// The MERGE half of the same contract. A list page's grid is a twin of the element the mobile template
+	/// provides, so it is never an insert — filtering on <c>insert</c> alone left this path unasserted while its
+	/// payload changed shape from null to a row-carrying delta.
+	/// </summary>
+	private static void AssertMergedListsCarryTheirRowAsADelta(MobilePageConversionGuide guide) {
+		foreach (ElementMapEntry twin in guide.ElementMap.Where(e =>
+			e.Operation == "merge" && e.MobileValues?["itemLayout"] is not null)) {
+			JsonNode row = twin.MobileValues!["itemLayout"]!;
+			row["type"]?.GetValue<string>().Should().Be("crt.ListItem",
+				because: $"the delta on '{twin.WebName}' exists to carry the row, so what it carries must BE one");
+			row["body"].Should().NotBeNull(
+				because: $"the row on '{twin.WebName}' must carry its body collection like any other");
+			row["name"].Should().BeNull(
+				because: $"'{twin.WebName}' merges into an element the mobile template owns — a synthesized name "
+					+ "would rename the template's own row");
+			twin.MobileValues["type"].Should().BeNull(
+				because: "a merge carries a DELTA; restating the element's type would fight the template it merges into");
+			if (row["title"] is null) {
+				twin.Reason.Should().Contain("no title",
+					because: $"'{twin.WebName}' shipped a row with no title, and an empty Title column is "
+						+ "indistinguishable from a converter failure unless the guide says so — the merge path "
+						+ "must report it exactly like the insert path");
+			}
+		}
 	}
 
 	[Test]

@@ -71,7 +71,8 @@ public sealed class MobilePageConversionGuideTool {
 		"mobile type(s) from the WebToMobilePageConversionRules matrix and registry comparison; for grid -> " +
 		"[crt.List, crt.ListItem] an INSERTED list arrives with the row already built inside its own mobileValues " +
 		"(itemLayout = a crt.ListItem) — paste it, and never emit the row as a separate insert; a list the mobile " +
-		"TEMPLATE provides is a merge twin instead and its row is still yours to configure), mobileContracts (inline " +
+		"TEMPLATE provides is a merge twin whose row is prebuilt too — it arrives as a DELTA carrying only the "+
+		"itemLayout, which you merge by name onto that element; do NOT rebuild the row on either path), mobileContracts (inline " +
 		"allowed properties + example + designer defaults for each suggested mobile type), modelConfigDiff / " +
 		"viewModelConfigDiff (READY-TO-PASTE diffs — paste them verbatim as the page's diffs; never source the " +
 		"data-source section from a pre-existing body or attribute types like ForwardReference get dropped), " +
