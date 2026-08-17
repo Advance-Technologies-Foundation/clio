@@ -101,17 +101,17 @@
       },
       "viewConfigTemplates": [
         {
-          "parentName": "{{ meta.parentName }}",
-          "propertyName": "{{ meta.propertyName }}",
+          "parentName": "{{ diff.parentName }}",
+          "propertyName": "{{ diff.propertyName }}",
           "value": {
             "type": "crt.List",
-            "name": "{{ meta.name }}",
+            "name": "{{ diff.name }}",
             "items": "{{ source.items }}",
             "itemLayout": {
-              "name": "{{ meta.name }}_ListItem",
+              "name": "{{ diff.name }}_ListItem",
               "type": "crt.ListItem",
-              "title": "{{ row.title }}",
-              "body": { "$each": "row.body", "as": { "value": "{{ item }}" } }
+              "title": "${{ source.columns[0].code }}",
+              "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
             }
           }
         }

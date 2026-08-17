@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -61,19 +63,19 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		grid.ViewConfigTemplates.Should().NotBeNull().And.HaveCount(1,
 			because: "the row's SHAPE is data now — one template produces the crt.List with its nested row");
 		ViewConfigTemplateRule template = grid.ViewConfigTemplates[0];
-		template.ParentName.Should().Be("{{ meta.parentName }}",
+		template.ParentName.Should().Be("{{ diff.parentName }}",
 			because: "placement is READ-ONLY: a rules file that could set parentName would reparent an element "
 				+ "behind the element map's back, desynchronizing it from every other parentName");
-		template.PropertyName.Should().Be("{{ meta.propertyName }}",
+		template.PropertyName.Should().Be("{{ diff.propertyName }}",
 			because: "the slot is read-only for the same reason");
 		template.Value.Should().NotBeNull();
 		string skeleton = template.Value!.Value.GetRawText();
 		skeleton.Should().Contain("crt.ListItem",
 			because: "the row element the mobile list expects inside itemLayout is a crt.ListItem");
-		skeleton.Should().Contain("\"title\": \"{{ row.title }}\"",
+		skeleton.Should().Contain("\"title\": \"${{ source.columns[0].code }}\"",
 			because: "the registry declares crt.ListItem.title a plain string binding — the { value } BODY shape "
 				+ "there renders an empty Title column while the body rows still look correct");
-		skeleton.Should().Contain("\"$each\": \"row.body\"",
+		skeleton.Should().Contain("\"$each\": \"source.columns[1:]\"",
 			because: "every column after the leading one becomes its own body entry");
 		grid.RowSource.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
 			because: "a row title accepts text columns, and this is the DISPLAY-text subset of "
@@ -334,5 +336,29 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		rules.Version.Should().Be("9.9.9",
 			because: "when the client serves rules, the catalog must use them rather than the bundled fallback");
+	}
+
+	[Test]
+	[Description("The JSONPath index and slice the mandated template format relies on (source.columns[0].code and source.columns[1:]) must be supported by the JSON library already in use — the format cannot be implemented as written otherwise.")]
+	public void JsonPathIndexAndSlice_AreSupportedByTheJsonLibraryInUse() {
+		// Arrange
+		JObject node = JObject.Parse("""
+			{ "items": "$Grid", "columns": [ { "code": "A" }, { "code": "B" }, { "code": "C" } ] }
+			""");
+
+		// Act
+		JToken lead = node.SelectToken("columns[0].code");
+		List<JToken> rest = node.SelectTokens("columns[1:]").ToList();
+		JToken items = node.SelectToken("items");
+
+		// Assert
+		lead?.ToString().Should().Be("A",
+			because: "the template addresses the row's leading value by index");
+		items?.ToString().Should().Be("$Grid",
+			because: "a plain property path must keep working alongside the indexed ones");
+		rest.Should().HaveCount(2,
+			because: "the slice must yield every entry after the first");
+		rest.Select(t => t["code"]?.ToString()).Should().ContainInOrder(new[] { "B", "C" },
+			because: "the slice must preserve source order, which is what the row's body depends on");
 	}
 }

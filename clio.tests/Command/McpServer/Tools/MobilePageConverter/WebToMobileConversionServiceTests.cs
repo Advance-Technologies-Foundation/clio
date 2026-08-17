@@ -30,18 +30,18 @@ public sealed class WebToMobileConversionServiceTests {
 
 	/// <summary>The shipped grid → list view-config template, so the fixture exercises the real skeleton.</summary>
 	private static readonly ViewConfigTemplateRule ListTemplate = new() {
-		ParentName = "{{ meta.parentName }}",
-		PropertyName = "{{ meta.propertyName }}",
+		ParentName = "{{ diff.parentName }}",
+		PropertyName = "{{ diff.propertyName }}",
 		Value = JsonDocument.Parse("""
 			{
 			  "type": "crt.List",
-			  "name": "{{ meta.name }}",
+			  "name": "{{ diff.name }}",
 			  "items": "{{ source.items }}",
 			  "itemLayout": {
-			    "name": "{{ meta.name }}_ListItem",
+			    "name": "{{ diff.name }}_ListItem",
 			    "type": "crt.ListItem",
-			    "title": "{{ row.title }}",
-			    "body": { "$each": "row.body", "as": { "value": "{{ item }}" } }
+			    "title": "${{ source.columns[0].code }}",
+			    "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
 			  }
 			}
 			""").RootElement.Clone()
@@ -4131,7 +4131,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	/// <summary>Rules carrying ONE grid→list mapping whose template is the given raw JSON skeleton.</summary>
 	private static WebToMobilePageConversionRules RulesWithTemplate(
-		string valueJson, string parentName = "{{ meta.parentName }}", string propertyName = "{{ meta.propertyName }}",
+		string valueJson, string parentName = "{{ diff.parentName }}", string propertyName = "{{ diff.propertyName }}",
 		IReadOnlyList<ElementFilterRule> filters = null) => new() {
 		Components = [
 			new ComponentEquivalenceRule {
@@ -4158,9 +4158,9 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
 
 	private const string RowOnlyTemplate = """
-		{ "itemLayout": { "name": "{{ meta.name }}_ListItem", "type": "crt.ListItem",
-		                  "title": "{{ row.title }}",
-		                  "body": { "$each": "row.body", "as": { "value": "{{ item }}" } } } }
+		{ "itemLayout": { "name": "{{ diff.name }}_ListItem", "type": "crt.ListItem",
+		                  "title": "${{ source.columns[0].code }}",
+		                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
 		""";
 
 	[Test]
@@ -4277,7 +4277,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Arrange
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
 			{ "itemLayout": { "type": "crt.ListItem", "title": "{{ row.tittle }}",
-			                  "body": { "$each": "row.body", "as": { "value": "{{ item }}" } } } }
+			                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
 			""");
 
 		// Act
@@ -4295,10 +4295,10 @@ public sealed class WebToMobileConversionServiceTests {
 	public void Analyze_ViewConfigTemplate_NestedEach_ExpandsInsteadOfLeakingTemplateKeys() {
 		// Arrange — the inner repeat walks the same slot again, which is enough to prove the branch is reached.
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
-			{ "itemLayout": { "type": "crt.ListItem", "title": "{{ row.title }}",
-			                  "body": { "$each": "row.body", "as": {
-			                      "value": "{{ item }}",
-			                      "nested": { "$each": "row.body", "as": { "value": "{{ item }}" } } } } } }
+			{ "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			                  "body": { "$each": "source.columns[1:]", "as": {
+			                      "value": "${{ code }}",
+			                      "nested": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } } } }
 			""");
 
 		// Act
@@ -4315,6 +4315,77 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The MANDATED template, verbatim, against the diff operation it was specified for: every token resolves, the row lands under itemLayout with a string title and one body entry per remaining column, and every carried property the template does not name survives.")]
+	public void Analyze_ViewConfigTemplate_MandatedFormat_RendersTheSpecifiedOperation() {
+		// Arrange — the values of the insert operation exactly as specified.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{
+				  "name": "DataGrid_rcdtw3f",
+				  "layoutConfig": { "column": 1, "colSpan": 1, "row": 1, "rowSpan": 1 },
+				  "type": "crt.DataGrid",
+				  "features": { "rows": { "selection": { "enable": true, "multiple": true } } },
+				  "items": "$DataGrid_rcdtw3f",
+				  "primaryColumnName": "DataGrid_rcdtw3fDS_Id",
+				  "columns": [
+					{ "id": "74498dd4-4574-275e-6178-c2514d6d3439", "code": "DataGrid_rcdtw3fDS_Name",
+					  "caption": "#ResourceString(DataGrid_rcdtw3fDS_Name)#", "dataValueType": 28 },
+					{ "id": "cebffd2c-ec87-7237-2c06-db6ca27ef019", "code": "DataGrid_rcdtw3fDS_Address",
+					  "caption": "#ResourceString(DataGrid_rcdtw3fDS_Address)#", "dataValueType": 29 } ],
+				  "placeholder": false
+				} ] } ]
+			""");
+		// The template exactly as specified, including the brace spacing.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{
+			    "type": "crt.List",
+			    "name":  "{{ diff.name }}",
+			    "items": "{{ source.items }}",
+			    "itemLayout": {
+			        "name":  "{{ diff.name }}_ListItem",
+			        "type":  "crt.ListItem",
+			        "title": "${{source.columns[0].code}}",
+			        "body":  { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+			    }
+			}
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "DataGrid_rcdtw3f");
+		JsonNode values = grid.MobileValues;
+		grid.MobileType.Should().Be("crt.List");
+		values["type"]?.GetValue<string>().Should().Be("crt.List");
+		values["items"]?.GetValue<string>().Should().Be("$DataGrid_rcdtw3f",
+			because: "{{ source.items }} reads the operation's own collection binding");
+
+		JsonNode row = values["itemLayout"];
+		row.Should().NotBeNull(because: "the template's nested structure is what the web node had no counterpart for");
+		row["name"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3f_ListItem",
+			because: "a token inside a longer string interpolates in place");
+		row["type"]?.GetValue<string>().Should().Be("crt.ListItem");
+		row["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the $ sits OUTSIDE the braces, so the rendered title is a plain binding string");
+		row["title"]?.GetValue<string>().Should().Be("$DataGrid_rcdtw3fDS_Name",
+			because: "MediumText is a type the row's lead accepts, so the first column leads");
+		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$DataGrid_rcdtw3fDS_Address" },
+			because: "the slice yields every column after the lead, and ${{ code }} binds the member's own code");
+
+		values["layoutConfig"]?["rowSpan"]?.GetValue<int>().Should().Be(1,
+			because: "the template does not name layoutConfig, so it survives — this is what keeps the element placed");
+		values["features"]?["rows"]?["selection"]?["enable"]?.GetValue<bool>().Should().BeTrue(
+			because: "a carried property the template does not name is untouched; pruning what mobile crt.List does "
+				+ "not declare belongs to the registry (ENG-91859), not to this mapping");
+		values["primaryColumnName"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3fDS_Id");
+		values["columns"].Should().NotBeNull(because: "feeding the row must not consume its source");
+		values.ToJsonString().Should().NotContain("{{").And.NotContain("$each",
+			because: "no template syntax may reach the page as data");
+	}
+
+	[Test]
 	[Description("A source.* token reads the WEB node by PATH, so a nested reference resolves instead of silently returning nothing — a rule author writing source.features.rows must get the value, not a missing property.")]
 	public void Analyze_ViewConfigTemplate_SourceToken_ResolvesANestedPath() {
 		// Arrange
@@ -4325,7 +4396,7 @@ public sealed class WebToMobileConversionServiceTests {
 				  "columns": [ { "id": "c1", "code": "NestedDS_Name", "dataValueType": 30 } ] } ] } ]
 			""");
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
-			{ "itemLayout": { "type": "crt.ListItem", "title": "{{ row.title }}",
+			{ "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
 			                  "flat": "{{ source.items }}",
 			                  "nested": "{{ source.features.rows.selection.enable }}",
 			                  "missing": "{{ source.features.nope.deeper }}" } }
@@ -4346,33 +4417,45 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A template NEVER overwrites a value the generic property copy already produced: the carried values are the page's real content, and a template exists to add the structure the web node had no counterpart for.")]
-	public void Analyze_ViewConfigTemplate_DoesNotOverwriteCarriedValues() {
-		// Arrange — the template deliberately restates keys the copy has already filled, with wrong values.
+	[Description("The render is laid OVER the carried values: a key the template names wins, a key it does not name survives untouched, and the element's identity and value binding are never writable from a template.")]
+	public void Analyze_ViewConfigTemplate_OverlaysCarriedValuesAndLeavesTheRestAlone() {
+		// Arrange — the template restates one carried key with a different value, claims the identity keys, and
+		// says nothing about layoutConfig, which the page needs and no rule names.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "ProductsList", "type": "crt.DataGrid", "items": "$ProductsList",
+				  "layoutConfig": { "column": 1, "colSpan": 2, "row": 3, "rowSpan": 4 },
+				  "columns": [ { "id": "c1", "code": "ProductsListDS_Name", "dataValueType": 28 } ] } ] } ]
+			""");
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
 			{ "type": "crt.WrongType",
 			  "name": "WrongName",
-			  "items": "$WrongBinding",
-			  "itemLayout": { "type": "crt.ListItem", "title": "{{ row.title }}" } }
+			  "items": "$OverlaidBinding",
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}" } }
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
 
 		// Assert
-		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		JsonNode values = grid.MobileValues;
+		values["items"]?.GetValue<string>().Should().Be("$OverlaidBinding",
+			because: "a key the template NAMES wins — the shipped skeleton relies on that to declare the mobile "
+				+ "structure over what was carried");
+		values["layoutConfig"]?["colSpan"]?.GetValue<int>().Should().Be(2,
+			because: "a key the template does not name survives untouched, which is how the element keeps its "
+				+ "placement and the grid's own properties without any rule naming them");
 		values["type"]?.GetValue<string>().Should().Be("crt.List",
-			because: "the resolved mobile type is the converter's to decide — a template restating it must lose");
+			because: "the resolved mobile type is the converter's — a template claiming it must lose, or a rules "
+				+ "file could change what component an element IS");
 		values["name"]?.GetValue<string>().Should().NotBe("WrongName",
-			because: "the copy rule REFUSES to carry the element identity, so a template filling that gap would "
-				+ "let the rules file rename an element and desynchronize every parentName referring to it — the "
-				+ "excluded keys are not free real estate");
-		Element(guide, "ProductsList").MobileName.Should().Be("ProductsList",
+			because: "the copy rule refuses to carry the element identity on purpose, so a template filling that "
+				+ "gap would let the rules file rename an element and desynchronize every parentName referring to it");
+		grid.MobileName.Should().Be("ProductsList",
 			because: "the converter's own identity for the element stands regardless of what a template asked for");
-		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
-			because: "the collection binding is real page content carried from the web node");
 		values["itemLayout"].Should().NotBeNull(
-			because: "the key the copy left ABSENT is the one a template is for");
+			because: "the structure the web node had no counterpart for is what a template is actually for");
 	}
 
 	[Test]
