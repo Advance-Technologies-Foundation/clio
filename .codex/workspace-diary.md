@@ -8679,3 +8679,10 @@ Decision: Remove the explicit model pins so Codex can select a supported model w
 Discovery: The pin existed only in the code-quality, performance, and security reviewer profiles under `.codex/agents`.
 Files: .codex/agents/code-quality-reviewer.toml, .codex/agents/performance-review.toml, .codex/agents/security-reviewer.toml
 Impact: Repository reviewer agents no longer fail immediately because of an unavailable model override.
+
+## 2026-08-17 15:10 – sync-schemas progress-marker e2e reported a stand failure as a missing marker
+Context: TeamCity test `SchemaSyncTool_Should_Stream_Per_Operation_Progress_Markers` (Team_Atf_ClioMcpE2eTests) failed 5 times in 484 runs between 2026-07-16 and 2026-08-17, always with the same message about the absent `2/2: create-lookup` marker. Clio revision 3ea22dc6c both failed (build 15887162) and passed (build 15887714), so the outcome is not code-determined.
+Decision: Keep the marker expectations, but assert batch `success` before them and dump the raw tool result, so an operation that fails on the environment is named as itself.
+Discovery: `sync-schemas` runs stop-on-first-failure (SchemaSyncTool.cs ExecuteBatchOperation) and the stage marker is pushed BEFORE each operation, so a failed operation 1 suppresses every later marker. The tool still returns a typed `SchemaSyncResponse` with `success:false` and MCP `IsError` unset, so the test's only precondition (`IsError`) passed and the failure surfaced as a progress-path defect. The failing runs took 8-9.6s against 24-26s for green ones, and build 15887162 also failed an unrelated `modify-entity-schema-column` test with exit code 1 — both point at the stand, not at clio.
+Files: clio.mcp.e2e/SchemaSyncToolE2ETests.cs
+Impact: The next occurrence names the failing operation and carries its payload in the TeamCity log, so the same investigation does not have to be repeated from build metadata.
