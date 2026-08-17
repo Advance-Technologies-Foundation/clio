@@ -19,7 +19,9 @@ spawn stays near 0.65 s and the worker can never disagree with the parent about 
 
 ## Design
 - Worker startup runs **no** host bootstrap: no telemetry flush/drain, no catalog refresh (rule 11). Telemetry stays the parent's job — N workers posting where one process did is a regression, not a feature.
-- The enabled-tool generation is resolved once in the parent and passed down **frozen**. A worker that re-read `appsettings.json` could disagree mid-session; four toggles exist today (`deploy-identity`, `process-designer`, `mobile-page-converter`, `watch-compilation`).
+- The enabled-tool generation is resolved once in the parent and passed down **frozen**. A worker that re-read `appsettings.json` could disagree mid-session; **five** toggles exist today, not four: `deploy-identity`, `process-designer`, `mobile-page-converter`,
+  `watch-compilation`, and `ring` (`RingCommand.cs:23`, a CLI-only command). A worker also dispatches CLI
+  verbs through `clio-run`, so the fifth is in scope for the frozen generation even though it gates no MCP tool.
 - Deadline environment handling is asymmetric and deliberate: a **sticky** worker **keeps** `CLIO_MCP_RESPONSE_DEADLINE_SECONDS` (its in-progress envelope is what returns the call — stripping it turned a 25 s backend call into a 77 s block in the prototype); an **ordinary** worker must not inherit a read-deadline override, because the parent enforces the budget by killing.
 - **Credentials:** stdio workers read `appsettings.json` directly and receive only the environment **name** — no secret crosses the channel. Secret material never appears on a command line (R-1). The HTTP channel is Stage 5.
 - The worker builds its client through the **same** `ApplicationClientFactory` path as the parent (R-3). A second construction site is how a bearer principal silently became `Supervisor` once before.

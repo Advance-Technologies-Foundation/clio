@@ -183,7 +183,17 @@ rule 12 is new, from the relay spike.
 12. **(New, from the relay spike.) Notifications must not be forwarded through the SDK's client
     notification handlers.** See §3.2.
 
-### 3.1 Relay properties proven on SDK 1.4.1
+### 3.1 Relay properties — measured on SDK 1.4.1, which clio NO LONGER SHIPS
+
+> **Evidence expiry, found 2026-08-17.** Every measurement in §3.1 and §3.2 was taken against
+> `ModelContextProtocol` **1.4.1**. `Directory.Packages.props` now pins **2.2.0** (commit `e6c95ec9c`,
+> "Upgrade MCP SDK to 2.2 hybrid transport") — a major bump that explicitly changed transports. So the two
+> PASSes below are *encouraging but stale*, and **rule 12 rests on a FAIL observed in a version we do not
+> use**: the concurrent-dispatch reordering may be fixed in 2.2.0, or the API that would let a relay own the
+> read loop may have moved. Stage 4 must **re-run all three measurements on 2.2.0 first** and land them as
+> standing tests. If the reordering no longer reproduces, rule 12 is retired on evidence rather than kept
+> out of caution; if it does, it is kept with a current citation. Until then no relay code is written.
+
 
 - **Server→client requests relay correctly — PASS.** The child's `sampling/createMessage` reached the
   parent's `SamplingHandler`, was forwarded via `parentServer.SampleAsync(...)` to the **real** client, and
