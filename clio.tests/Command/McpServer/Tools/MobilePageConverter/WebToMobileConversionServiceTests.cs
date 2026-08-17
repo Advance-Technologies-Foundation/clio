@@ -4386,6 +4386,44 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A MERGE twin gets no templated row: the template renders for an INSERT only. A merge is found by name against the element the mobile template already provides, has no parent or slot to echo, and carries a delta — a whole skeleton would overwrite the row that template supplies.")]
+	public void Analyze_ViewConfigTemplate_MergeTwin_IsNotRenderedFromTheTemplate() {
+		// Arrange — a list page: the mobile template provides List/ListItem, so the web grid is a merge twin.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "items": "$DataTable",
+				  "columns": [
+					{ "id": "c1", "code": "PDS_LeadName", "dataValueType": 28 },
+					{ "id": "c2", "code": "PDS_Status", "dataValueType": 28 } ] } ] } ]
+			""");
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["ListContainer"] = "ListContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+
+		// Act — the SHIPPED rules, so the grid → list template is present and would fire if merge were included.
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null,
+			WebToMobilePageConversionRulesCatalog.LoadBundled(), templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: containerNameMap,
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
+		twin.Operation.Should().Be("merge", because: "the mobile template already provides the element");
+		twin.MobileValues?["itemLayout"].Should().BeNull(
+			because: "rendering the skeleton here would replace the ListItem the mobile template supplies, and the "
+				+ "guidance tells the caller to configure that one by merge-by-name instead");
+		twin.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
+			because: "nothing was synthesized for a merge, so neither row note may fire and send the caller "
+				+ "looking for a row the converter never claimed to build");
+	}
+
+	[Test]
 	[Description("A source.* token reads the WEB node by PATH, so a nested reference resolves instead of silently returning nothing — a rule author writing source.features.rows must get the value, not a missing property.")]
 	public void Analyze_ViewConfigTemplate_SourceToken_ResolvesANestedPath() {
 		// Arrange
