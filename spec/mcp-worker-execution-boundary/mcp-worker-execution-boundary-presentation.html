@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Межа виконання MCP</title>
+<!--
+  ENG-95262 — MCP worker execution boundary: architecture explainer (Ukrainian).
+
+  WHAT THIS IS
+    A standalone, self-contained page explaining the architecture change: why one unanswered
+    Creatio request wedges a whole environment today, and why running each MCP call in its own
+    short-lived process fixes it. Built around the comparison with the clio CLI, which already
+    works this way. Three SVG diagrams: CLI, MCP today, MCP after.
+
+  HOW TO VIEW
+    Open this file directly in a browser. No build step, no network access, no dependencies —
+    all CSS is inline and every diagram is hand-authored inline SVG.
+
+  HOW TO EDIT
+    Text lives in the markup; colours and type live in the CSS custom properties at the top of the stylesheet. The page supports light and dark themes: every colour token is redefined in all
+    three places (bare :root, the prefers-color-scheme media query, and the data-theme="dark" stamp).
+    If you add a colour, add it to ALL THREE — a token defined only inside the media query
+    renders one theme's text on the other theme's background.
+
+  RELATED
+    ADR   spec/adr/adr-mcp-worker-execution-boundary.md
+    Jira  https://creatio.atlassian.net/browse/ENG-95262
+    PR    https://github.com/Advance-Technologies-Foundation/clio/pull/1080
+-->
+<style>
+  :root {
+    --ground: #EFF2F3;
+    --surface: #FFFFFF;
+    --surface-2: #E4E9EB;
+    --ink: #12191C;
+    --ink-2: #3C4A50;
+    --muted: #66787F;
+    --hair: #CBD5D8;
+    --hair-strong: #A9B8BD;
+    --accent: #0B7D70;
+    --accent-soft: #D9EBE8;
+    --alert: #B7401A;
+    --alert-soft: #F7E2DA;
+    --warn: #96690F;
+    --on-bar: #FFFFFF;
+    --shadow: 0 1px 2px rgba(18, 25, 28, .06), 0 8px 24px -16px rgba(18, 25, 28, .22);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0E1417;
+      --surface: #151D21;
+      --surface-2: #1D272C;
+      --ink: #E7EEF0;
+      --ink-2: #BCCACF;
+      --muted: #859AA1;
+      --hair: #2A363B;
+      --hair-strong: #3D4C52;
+      --accent: #35B3A2;
+      --accent-soft: #143733;
+      --alert: #E5734A;
+      --alert-soft: #3C1E14;
+      --warn: #D9A73F;
+      --on-bar: #0E1417;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0E1417;
+    --surface: #151D21;
+    --surface-2: #1D272C;
+    --ink: #E7EEF0;
+    --ink-2: #BCCACF;
+    --muted: #859AA1;
+    --hair: #2A363B;
+    --hair-strong: #3D4C52;
+    --accent: #35B3A2;
+    --accent-soft: #143733;
+    --alert: #E5734A;
+    --alert-soft: #3C1E14;
+    --warn: #D9A73F;
+    --on-bar: #0E1417;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 58rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.1rem, 4vw, 2.5rem) 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(2.6rem, 5vw, 4rem);
+  }
+
+  .prose { max-width: 40rem; }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.85rem, 5vw, 2.85rem);
+    line-height: 1.1;
+    letter-spacing: -.035em;
+    font-weight: 600;
+    margin: 0 0 1.1rem;
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-family: var(--mono);
+    font-size: clamp(1.15rem, 2.5vw, 1.42rem);
+    line-height: 1.24;
+    letter-spacing: -.02em;
+    font-weight: 600;
+    margin: 0 0 .8rem;
+    text-wrap: balance;
+  }
+
+  p { margin: 0 0 .95rem; color: var(--ink-2); }
+  p:last-child { margin-bottom: 0; }
+
+  .lede {
+    font-size: clamp(1.04rem, 2.1vw, 1.18rem);
+    line-height: 1.52;
+    color: var(--ink);
+  }
+
+  code { font-family: var(--mono); font-size: .875em; background: var(--surface-2); padding: .1em .34em; border-radius: 3px; color: var(--ink); }
+  strong { color: var(--ink); font-weight: 600; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    margin: 0 0 1.3rem;
+  }
+  .eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+
+  /* ---------- figures ---------- */
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: 10px;
+    padding: 1.15rem 1.25rem 1rem;
+    box-shadow: var(--shadow);
+  }
+  .figwrap { overflow-x: auto; }
+  .dgm { display: block; width: 100%; min-width: 30rem; height: auto; color: var(--ink-2); }
+  figcaption {
+    margin-top: .9rem; padding-top: .75rem; border-top: 1px solid var(--hair);
+    font-size: .86rem; color: var(--muted);
+  }
+  figcaption strong { color: var(--ink); }
+
+  .dg-box { fill: var(--surface); stroke: currentColor; stroke-width: 1.25; }
+  .dg-dash { fill: none; stroke: currentColor; stroke-width: 1.25; stroke-dasharray: 6 4; opacity: .65; }
+  .dg-band { fill: var(--surface-2); stroke: currentColor; stroke-width: 1.1; }
+  .dg-ok { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .dg-bad { fill: var(--alert-soft); stroke: var(--alert); stroke-width: 1.5; }
+  .dg-lock { fill: var(--surface-2); stroke: var(--alert); stroke-width: 1.5; }
+  .dg-l { fill: none; stroke: currentColor; stroke-width: 1.4; }
+  .dg-l-ok { fill: none; stroke: var(--accent); stroke-width: 1.7; }
+  .dg-l-bad { fill: none; stroke: var(--alert); stroke-width: 1.7; }
+  .dg-l-dash { fill: none; stroke: currentColor; stroke-width: 1.3; stroke-dasharray: 5 4; }
+  .dg-head { fill: currentColor; }
+  .dg-head-ok { fill: var(--accent); }
+  .dg-head-bad { fill: var(--alert); }
+  .dg-t { font-family: var(--mono); font-size: 12.5px; fill: var(--ink); }
+  .dg-s { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+  .dg-ok-t { fill: var(--accent); }
+  .dg-bad-t { fill: var(--alert); }
+  .dg-x { stroke: var(--alert); stroke-width: 2.2; fill: none; }
+
+  /* ---------- wedge bars ---------- */
+  .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(18.5rem, 1fr)); gap: 1.2rem; }
+  .panel { background: var(--surface); border: 1px solid var(--hair); border-radius: 10px; padding: 1.1rem 1.2rem 1.3rem; box-shadow: var(--shadow); }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: .7rem; margin-bottom: 1rem; padding-bottom: .65rem; border-bottom: 1px solid var(--hair); }
+  .panel-head h3 { font-family: var(--mono); font-size: .95rem; font-weight: 600; margin: 0; }
+  .panel-tag { font-family: var(--mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; padding: .2rem .5rem; border-radius: 3px; }
+  .tag-now { background: var(--alert-soft); color: var(--alert); }
+  .tag-after { background: var(--accent-soft); color: var(--accent); }
+  .calls { display: flex; flex-direction: column; gap: .9rem; }
+  .call { display: grid; grid-template-columns: 1.1rem 1fr auto; gap: .65rem; align-items: center; }
+  .call-id { font-family: var(--mono); font-weight: 600; font-size: .85rem; color: var(--muted); }
+  .track { position: relative; height: 1.4rem; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+  .bar { position: absolute; inset: 0 auto 0 0; display: flex; align-items: center; padding-left: .45rem; font-family: var(--mono); font-size: .69rem; color: var(--on-bar); white-space: nowrap; }
+  .bar-stall { background: var(--warn); }
+  .bar-dead { background: var(--alert); }
+  .bar-ok { background: var(--accent); }
+  .counter { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .76rem; font-weight: 600; min-width: 5.2rem; text-align: right; padding: .12rem .42rem; border-radius: 3px; }
+  .c-zero { background: var(--alert-soft); color: var(--alert); }
+  .c-one { background: var(--accent-soft); color: var(--accent); }
+  .legend { margin-top: 1.05rem; padding-top: .75rem; border-top: 1px solid var(--hair); font-size: .82rem; color: var(--muted); }
+  .legend strong { color: var(--ink); }
+
+  /* ---------- table ---------- */
+  .scroll { overflow-x: auto; border: 1px solid var(--hair); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .89rem; min-width: 34rem; }
+  th, td { text-align: left; padding: .68rem .9rem; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  thead th { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; background: var(--surface-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  td:first-child { color: var(--ink); }
+  .yes { color: var(--accent); font-weight: 600; }
+  .no { color: var(--alert); font-weight: 600; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  footer { border-top: 1px solid var(--hair); padding-top: 1.35rem; font-size: .85rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .4rem 1.5rem; }
+  footer a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--hair-strong); }
+  footer a:hover, footer a:focus-visible { border-bottom-color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="prose">
+    <p class="eyebrow">ENG-95262 · clio MCP</p>
+    <h1>Межа виконання MCP</h1>
+    <p class="lede">Один запит до Creatio, на який не прийшла відповідь, робить <code>clio mcp-server</code> назавжди непридатним для того середовища — і воно не оживає навіть після того, як сервер одужав. Виправлення — не кращий таймаут, а виконання кожного виклику в окремому короткоживучому процесі. Саме так, як це вже роками працює в CLI.</p>
+  </header>
+
+  <section>
+    <p class="eyebrow">Крок 1 · як працює CLI</p>
+
+    <figure>
+      <div class="figwrap">
+        <svg class="dgm" viewBox="0 0 700 214" role="img" aria-label="Кожна команда clio — окремий процес: три процеси, кожен зі своїм входом і запитом до Creatio; повислий другий процес убивають ззовні, третій працює нормально.">
+          <defs>
+            <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="dg-head" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+            <marker id="a1ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="dg-head-ok" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+            <marker id="a1bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="dg-head-bad" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+          </defs>
+
+          <line class="dg-l" x1="30" y1="18" x2="656" y2="18" marker-end="url(#a1)" />
+          <text class="dg-s" x="662" y="22">час</text>
+
+          <rect class="dg-ok" x="30" y="36" width="150" height="52" rx="5" />
+          <text class="dg-t" x="42" y="58">clio get-page</text>
+          <text class="dg-s" x="42" y="76">процес живе 2 с</text>
+
+          <rect class="dg-bad" x="205" y="36" width="230" height="52" rx="5" />
+          <text class="dg-t" x="217" y="58">clio list-pages</text>
+          <text class="dg-s" x="217" y="76">повис — тримає лише себе</text>
+          <path class="dg-x" d="M427,50 l14,14 M441,50 l-14,14" />
+
+          <rect class="dg-ok" x="460" y="36" width="150" height="52" rx="5" />
+          <text class="dg-t" x="472" y="58">clio get-schema</text>
+          <text class="dg-s" x="472" y="76">процес живе 2 с</text>
+
+          <line class="dg-l-ok" x1="105" y1="88" x2="105" y2="142" marker-end="url(#a1ok)" />
+          <line class="dg-l-bad" x1="320" y1="88" x2="320" y2="142" marker-end="url(#a1bad)" />
+          <line class="dg-l-ok" x1="535" y1="88" x2="535" y2="142" marker-end="url(#a1ok)" />
+          <text class="dg-s" x="112" y="112">свій вхід</text>
+          <text class="dg-s" x="112" y="126">і свій запит</text>
+          <text class="dg-bad-t dg-s" x="443" y="108">вбиває той,</text>
+          <text class="dg-bad-t dg-s" x="443" y="122">хто запустив</text>
+
+          <rect class="dg-band" x="30" y="144" width="626" height="42" rx="5" />
+          <text class="dg-t" x="46" y="170">Creatio</text>
+          <text class="dg-s" x="560" y="170">спільного нічого</text>
+        </svg>
+      </div>
+      <figcaption>Кожен <code>clio &lt;команда&gt;</code> — <strong>окремий процес</strong>: запустився, зробив одну справу, завершився. Він не має спільної сесії й спільного замка з іншими, тому повислий процес не заважає нікому, а вбиває його той, хто запустив.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <p class="eyebrow">Крок 2 · як працює MCP-сервер сьогодні</p>
+
+    <figure>
+      <div class="figwrap">
+        <svg class="dgm" viewBox="0 0 700 292" role="img" aria-label="Один довгоживучий процес clio mcp-server із замком на середовище: виклик A захопив замок і повис, виклики B, C, D гинуть на замку, не надіславши жодного запиту до здорового Creatio.">
+          <defs>
+            <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="dg-head" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+            <marker id="a2ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="dg-head-ok" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+          </defs>
+
+          <rect class="dg-box" x="16" y="112" width="80" height="56" rx="5" />
+          <text class="dg-t" x="34" y="145">агент</text>
+
+          <rect class="dg-dash" x="126" y="20" width="392" height="252" rx="8" />
+          <text class="dg-s" x="140" y="40">один процес clio mcp-server · живе годинами</text>
+
+          <rect class="dg-lock" x="366" y="52" width="56" height="204" rx="5" />
+          <text class="dg-bad-t dg-t" x="394" y="154" text-anchor="middle" transform="rotate(-90 394 154)">замок на середовище</text>
+
+          <line class="dg-l" x1="96" y1="132" x2="146" y2="80" marker-end="url(#a2)" />
+          <line class="dg-l" x1="96" y1="140" x2="146" y2="128" marker-end="url(#a2)" />
+          <line class="dg-l" x1="96" y1="148" x2="146" y2="176" marker-end="url(#a2)" />
+          <line class="dg-l" x1="96" y1="156" x2="146" y2="224" marker-end="url(#a2)" />
+
+          <text class="dg-t" x="152" y="76">A</text>
+          <line class="dg-l-ok" x1="166" y1="72" x2="360" y2="72" marker-end="url(#a2ok)" />
+          <text class="dg-s" x="180" y="62">захопив замок і повис</text>
+          <path class="dg-l-ok" d="M422,72 L470,72 L470,206 L556,206" marker-end="url(#a2ok)" />
+
+          <text class="dg-t" x="152" y="124">B</text>
+          <line class="dg-l" x1="166" y1="120" x2="352" y2="120" />
+          <path class="dg-x" d="M354,113 l13,13 M367,113 l-13,13" />
+
+          <text class="dg-t" x="152" y="172">C</text>
+          <line class="dg-l" x1="166" y1="168" x2="352" y2="168" />
+          <path class="dg-x" d="M354,161 l13,13 M367,161 l-13,13" />
+
+          <text class="dg-t" x="152" y="220">D</text>
+          <line class="dg-l" x1="166" y1="216" x2="352" y2="216" />
+          <path class="dg-x" d="M354,209 l13,13 M367,209 l-13,13" />
+          <text class="dg-bad-t dg-s" x="180" y="238">чекають замок → помилка за 120 с</text>
+          <text class="dg-bad-t dg-s" x="180" y="252">жодного запиту не надіслано</text>
+
+          <rect class="dg-band" x="556" y="178" width="132" height="56" rx="5" />
+          <text class="dg-t" x="572" y="202">Creatio</text>
+          <text class="dg-ok-t dg-s" x="572" y="220">здоровий</text>
+        </svg>
+      </div>
+      <figcaption>Один процес обслуговує всі виклики, і перед роботою кожен бере <strong>замок на середовище</strong>. Виклик A повис із замком у руках — і <strong>B, C, D гинуть на замку, не дійшовши до сервера</strong>. Сервер при цьому здоровий; його ніхто не питав.</figcaption>
+    </figure>
+
+    <div class="prose" style="margin-top:1.35rem">
+      <h2>Ключова відмінність</h2>
+      <p>Нескінченний таймаут запиту <strong>однаковий</strong> в обох випадках — це той самий код. CLI не має імунітету до повисання, він має імунітет до <strong>поширення</strong>.</p>
+      <p>А обмеження на 120 секунд не рятує, бо воно обмежує <strong>відповідь, а не роботу</strong>: клієнт отримує помилку, а покинутий запит далі тримає замок. Тому середовище лишається мертвим і після того, як Creatio одужав — його чистить лише перезапуск процесу.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Це відтворено · чотири виклики, бюджет 12 с</p>
+    <div class="panels">
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Сьогодні</h3>
+          <span class="panel-tag tag-now">заблоковано</span>
+        </div>
+        <div class="calls">
+          <div class="call">
+            <span class="call-id">A</span>
+            <div class="track"><div class="bar bar-stall" style="width:100%">12,0 с · повис</div></div>
+            <span class="counter c-one">1 запит</span>
+          </div>
+          <div class="call">
+            <span class="call-id">B</span>
+            <div class="track"><div class="bar bar-dead" style="width:100%">12,0 с · не питав</div></div>
+            <span class="counter c-zero">0 запитів</span>
+          </div>
+          <div class="call">
+            <span class="call-id">C</span>
+            <div class="track"><div class="bar bar-dead" style="width:100%">12,0 с · не питав</div></div>
+            <span class="counter c-zero">0 запитів</span>
+          </div>
+          <div class="call">
+            <span class="call-id">D</span>
+            <div class="track"><div class="bar bar-dead" style="width:100%">12,0 с · сервер здоровий</div></div>
+            <span class="counter c-zero">0 запитів</span>
+          </div>
+        </div>
+        <p class="legend">Чотири виклики — <strong>один</strong> запит до сервера. Виклик D іде до <strong>здорового</strong> сервера і все одно падає.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>З child-процесами</h3>
+          <span class="panel-tag tag-after">ізольовано</span>
+        </div>
+        <div class="calls">
+          <div class="call">
+            <span class="call-id">A</span>
+            <div class="track"><div class="bar bar-stall" style="width:100%">12,0 с · вбито по бюджету</div></div>
+            <span class="counter c-one">1 запит</span>
+          </div>
+          <div class="call">
+            <span class="call-id">B</span>
+            <div class="track"><div class="bar bar-stall" style="width:100%">12,0 с · вбито по бюджету</div></div>
+            <span class="counter c-one">1 запит</span>
+          </div>
+          <div class="call">
+            <span class="call-id">C</span>
+            <div class="track"><div class="bar bar-stall" style="width:100%">12,0 с · вбито по бюджету</div></div>
+            <span class="counter c-one">1 запит</span>
+          </div>
+          <div class="call">
+            <span class="call-id">D</span>
+            <div class="track"><div class="bar bar-ok" style="width:12%">0,8 с</div></div>
+            <span class="counter c-one">1 запит · ок</span>
+          </div>
+        </div>
+        <p class="legend">Те, що A, B і C закінчуються по бюджету — <strong>правильно</strong>: сервер справді не відповідає. Сенс у тому, що D проходить.</p>
+      </div>
+
+    </div>
+    <div class="prose" style="margin-top:1.3rem">
+      <p><strong>Дивитися треба на лічильник запитів, а не на час.</strong> Перевірка «виклик завершився за 12 с» проходить і на зламаній системі, бо вона теж завершується за 12 с. Тільки лічильник відрізняє «нам відповіли» від «ми навіть не спитали».</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Крок 3 · як буде працювати MCP-сервер</p>
+
+    <figure>
+      <div class="figwrap">
+        <svg class="dgm" viewBox="0 0 700 322" role="img" aria-label="Процес parent нічого не виконує, лише передає виклики; на кожен виклик створюється окремий child зі своїм запитом до Creatio, а якщо child повис, parent вбиває його по бюджету.">
+          <defs>
+            <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="dg-head" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+            <marker id="a3ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path class="dg-head-ok" d="M0,0 L10,5 L0,10 z" />
+            </marker>
+          </defs>
+
+          <rect class="dg-box" x="14" y="140" width="76" height="54" rx="5" />
+          <text class="dg-t" x="30" y="172">агент</text>
+
+          <rect class="dg-box" x="122" y="132" width="122" height="70" rx="5" />
+          <text class="dg-t" x="136" y="158">parent</text>
+          <text class="dg-s" x="136" y="176">нічого не</text>
+          <text class="dg-s" x="136" y="190">виконує</text>
+
+          <line class="dg-l" x1="90" y1="167" x2="116" y2="167" marker-end="url(#a3)" />
+
+          <rect class="dg-ok" x="292" y="24" width="192" height="50" rx="5" />
+          <text class="dg-t" x="304" y="45">child · get-page</text>
+          <text class="dg-s" x="304" y="63">0,8 с → відповів і завершився</text>
+
+          <rect class="dg-bad" x="292" y="90" width="192" height="50" rx="5" />
+          <text class="dg-t" x="304" y="111">child · list-pages</text>
+          <text class="dg-bad-t dg-s" x="304" y="129">12 с → вбито по бюджету</text>
+          <path class="dg-x" d="M462,101 l12,12 M474,101 l-12,12" />
+
+          <rect class="dg-ok" x="292" y="156" width="192" height="50" rx="5" />
+          <text class="dg-t" x="304" y="177">child · get-schema</text>
+          <text class="dg-s" x="304" y="195">0,7 с → відповів і завершився</text>
+
+          <rect class="dg-ok" x="292" y="222" width="192" height="50" rx="5" />
+          <text class="dg-t" x="304" y="243">child · compile-creatio</text>
+          <text class="dg-s" x="304" y="261">лишається для опитувань</text>
+
+          <line class="dg-l" x1="244" y1="158" x2="286" y2="52" marker-end="url(#a3)" />
+          <line class="dg-l" x1="244" y1="163" x2="286" y2="112" marker-end="url(#a3)" />
+          <line class="dg-l" x1="244" y1="172" x2="286" y2="180" marker-end="url(#a3)" />
+          <line class="dg-l" x1="244" y1="177" x2="286" y2="244" marker-end="url(#a3)" />
+          <text class="dg-s" x="250" y="118">виклик у child</text>
+
+          <line class="dg-l-ok" x1="484" y1="49" x2="556" y2="140" marker-end="url(#a3ok)" />
+          <line class="dg-l-ok" x1="484" y1="115" x2="556" y2="152" marker-end="url(#a3ok)" />
+          <line class="dg-l-ok" x1="484" y1="181" x2="556" y2="176" marker-end="url(#a3ok)" />
+          <line class="dg-l-ok" x1="484" y1="247" x2="556" y2="188" marker-end="url(#a3ok)" />
+
+          <rect class="dg-band" x="562" y="132" width="126" height="66" rx="5" />
+          <text class="dg-t" x="578" y="158">Creatio</text>
+          <text class="dg-s" x="578" y="176">свій вхід</text>
+          <text class="dg-s" x="578" y="190">на кожну</text>
+
+          <path class="dg-l-dash" d="M300,286 L240,286 L240,204" marker-end="url(#a3)" />
+          <path class="dg-l-dash" d="M232,204 L232,286 L292,286" marker-end="url(#a3)" />
+          <text class="dg-s" x="308" y="283">поступ і запити child до клієнта —</text>
+          <text class="dg-s" x="308" y="297">parent передає їх в обидва боки</text>
+        </svg>
+      </div>
+      <figcaption><strong>Parent нічого не виконує</strong>: він передає виклик у child і повертає відповідь, а поступ і запити child до клієнта проводить в обидва боки. Якщо час вийшов, parent <strong>вбиває</strong> child — не просить його зупинитися. Це той самий устрій, що в CLI, лише перенесений усередину MCP.</figcaption>
+    </figure>
+
+    <div class="prose" style="margin-top:1.35rem">
+      <h2>Чому саме вбивство, а не таймаут</h2>
+      <p>Бо частині операцій нема куди вписати таймаут. У <code>UploadFile</code>, <code>DownloadFile</code> і встановлення застосунку параметра таймауту <strong>не існує взагалі</strong> — там нічого не попросиш. Убитому процесу не потрібно погоджуватися.</p>
+      <p>Після цього замок стає не потрібен: кожен child — сам собі окремий процес зі своїм входом і своєю пам'яттю, тож двом child-процесам нема чого ділити. Тому ця зміна в кінці <strong>прибирає</strong> механізм, а не додає ще один шар.</p>
+      <p><strong>Ціна — приблизно 0,7 секунди на виклик</strong>: запуск процесу разом із входом у Creatio, який відбувається всередині того ж кроку. На виміряному навантаженні це +31 секунда проти 38–60 хвилин таймаутів. І це рівно та ціна, яку CLI платить завжди.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Три устрої поряд</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>CLI</th>
+            <th>MCP сьогодні</th>
+            <th>MCP після зміни</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Процесів на виклик</td>
+            <td class="num">1</td>
+            <td class="num no">0 — спільний</td>
+            <td class="num yes">1</td>
+          </tr>
+          <tr>
+            <td>Нескінченний таймаут запиту</td>
+            <td class="no">є</td>
+            <td class="no">є</td>
+            <td class="yes">є, але обмежений убивством</td>
+          </tr>
+          <tr>
+            <td>Замок на середовище</td>
+            <td class="yes">немає</td>
+            <td class="no">є, без обмеження</td>
+            <td class="yes">не потрібен</td>
+          </tr>
+          <tr>
+            <td>Спільна сесія входу</td>
+            <td class="yes">немає</td>
+            <td class="no">є</td>
+            <td class="yes">немає</td>
+          </tr>
+          <tr>
+            <td>Кому шкодить повислий виклик</td>
+            <td>лише собі</td>
+            <td class="no">кожному наступному до цього середовища</td>
+            <td>лише собі</td>
+          </tr>
+          <tr>
+            <td>Після одужання сервера</td>
+            <td class="yes">наступний запуск працює</td>
+            <td class="no">досі мертве</td>
+            <td class="yes">наступний виклик працює</td>
+          </tr>
+          <tr>
+            <td>Схеми інструментів, поступ, запити до клієнта</td>
+            <td class="no">немає</td>
+            <td class="yes">є</td>
+            <td class="yes">є, без змін</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose" style="margin-top:1.1rem">
+      <p>Останній рядок і є причиною, чому не можна просто сказати «користуйтеся CLI». Агентові потрібні саме схеми інструментів, підказки, повідомлення про поступ і запити від сервера до клієнта — усього цього в CLI немає.</p>
+      <p><strong>Тому контракт MCP лишається незмінним, а переноситься лише межа виконання.</strong> Назви інструментів, їхні схеми й підказки ті самі; для агента і для ClioRing зовні не змінюється нічого. Змінюється тільки те, що кожен виклик тепер виконується так, як його виконав би CLI.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>ENG-95262</span>
+    <span><a href="https://creatio.atlassian.net/browse/ENG-95262">Задача в Jira</a></span>
+    <span><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/1080">Pull request #1080</a></span>
+  </footer>
+
+</div>
+</body>
+</html>
