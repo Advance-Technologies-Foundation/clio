@@ -2803,7 +2803,7 @@ stories:
       - story-mcp-worker-execution-boundary-3
     blocks: []
   - id: story-mcp-worker-execution-boundary-6
-    title: "First cohort behind an off-by-default flag"
+    title: "First cohort routed to workers"
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: M
@@ -2811,7 +2811,7 @@ stories:
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-6.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    status_note: "Stage 6. The cohort is exactly the commands agents were forced off in creatio-ai-app-development-toolkit#93. Acceptance is the wedge scenario asserted ON BACKEND REQUEST COUNTERS, not timings: the wedged system also finishes at 12s, so only the counter delta distinguishes 'answered' from 'never asked'. Call D (backend healthy again) succeeding with at least one request is the acceptance criterion for the whole feature. Flag off must be byte-identical to today. The e2e suite is NOT run by GitHub CI — trigger Team_Atf_ClioMcpE2eTests on TeamCity and state the result in the PR. AC-06 carries the .clio-pages ordering constraint: get-page is a .clio-pages reader-writer and a child escapes CwdLock by being another process, so story 9's file gate must exist before this cohort routes get-page, or get-page leaves the cohort."
+    status_note: "Stage 6. The cohort is exactly the commands agents were forced off in creatio-ai-app-development-toolkit#93. Acceptance is the wedge scenario asserted ON BACKEND REQUEST COUNTERS, not timings: the wedged system also finishes at 12s, so only the counter delta distinguishes 'answered' from 'never asked'. Call D (backend healthy again) succeeding with at least one request is the acceptance criterion for the whole feature. NO FEATURE TOGGLE (decided 2026-08-17): the branch is the test environment, so a toggle defaulting to off would mean the branch verifies the OLD path. Cohort membership is the tool Location metadata from story 1 - data, not a switch - and the in-process arm of the A/B comparison is a DI substitution of the metadata reader. The merge-time default for master is OQ-5, decided at merge proposal. The e2e suite is NOT run by GitHub CI — trigger Team_Atf_ClioMcpE2eTests on TeamCity and state the result in the PR. AC-06 carries the .clio-pages ordering constraint: get-page is a .clio-pages reader-writer and a child escapes CwdLock by being another process, so story 9's file gate must exist before this cohort routes get-page, or get-page leaves the cohort."
     depends_on:
       - story-mcp-worker-execution-boundary-4
     blocks: []

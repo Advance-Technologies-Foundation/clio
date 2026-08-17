@@ -127,8 +127,8 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 |---|---|---|
 | TC-E-601 | E2E | **The wedge scenario (§4) — the shipping C# port of the lab harness.** Asserts on `/counters` deltas: D issues ≥ 1 request **on a session distinct from A's** (per-call identity or per-session token, not a global counter), and **no session object is referenced by both A and D**. "D issued a request" alone is necessary but not sufficient — it does not distinguish a new clean session from a reused one |
 | TC-E-601b | E2E | **A is cleaned up, not merely outrun** — after D succeeds, A's session shows abandoned/cancelled state and A's child is gone; the environment holds no session on A's behalf. This is the "environment recovers" half of the anchor that a D-only assertion leaves uncovered |
-| TC-E-602 | E2E | Flag **off** ⇒ byte-identical behaviour to today for every cohort tool (no accidental default switch) |
-| TC-E-603 | E2E | Cohort tools produce identical results through the worker and in-process (`get-page`, `list-pages`, `list-app-sections`, `get-schema`, `get-related-page-addon`, SQL/OData) |
+| TC-E-602 | E2E | **No unintended route change**: every tool whose `Location` is `in-process` behaves byte-identically to master, asserted by running the existing e2e suite unchanged. There is no feature toggle to flip (ADR §5), so this is the assertion that replaces "flag off ⇒ identical" — the guard is the metadata, and TC-U-101/108 are what keep the metadata honest |
+| TC-E-603 | E2E | Cohort tools produce identical results through the worker and in-process (`get-page`, `list-pages`, `list-app-sections`, `get-schema`, `get-related-page-addon`, SQL/OData). The in-process arm is obtained by **substituting the metadata reader in DI** to report `Location = in-process`, not by a runtime flag |
 | TC-E-604 | E2E | Environment recovers **as soon as the backend does** — un-stall the stub and the next call succeeds with no restart |
 
 ### Stage 7 — sticky supervision
@@ -182,7 +182,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | 2, 3, 5, 7 | `Category=Unit&Module=McpServer` | **yes** — `BindingsModule.cs` / `clio/Common/**` touched |
 | 4 | `Category=Unit&Module=McpServer` + ClioRing contract + NativeAOT publish | **yes** — `BindingsModule.cs` touched to register the relay filter on both dispatch seams (`:1160`, `:165`) |
 | 8 | `Category=Unit&Module=McpServer` + ClioRing contract + NativeAOT publish | **yes** — the terminal-stage protocol (ADR §3.3) touches the supervisor and the relay in `clio/Common/**` |
-| 6 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | no — cohort routing only, behind the flag |
+| 6 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | no — cohort routing is metadata only; no DI or `clio/Common/**` change |
 | 9 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | no — file gates are local to the baseline/meta and cache paths |
 | 10 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | **yes** — deletes DI-registered machinery (the per-tenant monitor, `McpReadResponseDeadline` + gate, session-container pinning) from `BindingsModule.cs` and removes `CwdLock` from `clio/Common/**`; the deletions also span well over 3 modules |
 | Folded-in | `Category=Unit&(Module=Command\|Module=McpServer)` | no |

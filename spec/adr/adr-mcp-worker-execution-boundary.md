@@ -272,7 +272,23 @@ coverage test forces.
 
 ## 5. Rollout
 
-Staged, behind an off-by-default flag, expanding by cohort.
+Staged, expanding by cohort.
+
+**No feature toggle** (decided 2026-08-17, branch owner). The work is developed and tested on
+`feature/ENG-95262-mcp-worker-execution-boundary`, and the branch *is* the test environment — a toggle
+defaulting to off would mean the branch's own unit and e2e runs exercise the OLD path, so the thing being
+built would never be the thing being verified. Cohort membership is therefore expressed as **data, not a
+flag**: a tool routes to a worker because its `Location` metadata says `worker` (Stage 1). That gives the
+same control at finer grain, with no second switch to keep in step, and it is substitutable in DI for tests.
+
+Two consequences worth stating, because they are what a toggle would otherwise have covered:
+
+- **A/B comparison is per-tool, not per-binary.** TC-E-603 compares a tool's result through the worker
+  against the same tool with `Location = in-process`, which is a metadata substitution in the test, not a
+  runtime flag flip.
+- **The merge-time default is an open decision, not settled here** (OQ-5). Whether master ships this
+  default-on or gated is decided when the branch is proposed for merge, against evidence this branch
+  produces. Nothing in Stages 1-9 forecloses either choice.
 
 | Stage | Content |
 |---|---|
@@ -282,15 +298,20 @@ Staged, behind an off-by-default flag, expanding by cohort.
 | 3 | Worker mode: no host bootstrap, frozen tool generation |
 | 4 | Transparent full-duplex relay: capabilities, `SampleAsync`, raw notifications, cancellation, ordering |
 | 5 | HTTP credential channel + per-client sticky isolation |
-| 6 | First cohort behind the flag: retry-safe stdio reads (`get-page`, `list-pages`, `list-app-sections`, `get-schema`, `get-related-page-addon`, SQL/OData) |
+| 6 | First cohort routed to workers: retry-safe stdio reads (`get-page`, `list-pages`, `list-app-sections`, `get-schema`, `get-related-page-addon`, SQL/OData) |
 | 7 | Sticky supervision: private completion signal; move the shared `configuration-build` reservation to the parent |
 | 8 | Long synchronous / streaming commands (deploy, uninstall), gated by ClioRing contract tests + Windows x64 NativeAOT publish |
 | 9 | Interprocess file gates for the concrete shared artifacts |
 | 10 | Expand by cohort, then **delete** the universal monitor, `McpReadResponseDeadline` + `McpReadDeadlineGate`, `CwdLock`, session-container pinning, and the `CLIO_MCP_READ_DEADLINE_SECONDS` contract |
 
-**The first implementation PR must not**: switch the default dispatcher, enable `mcp-http` proxying, proxy
-destructive/deploy/uninstall/sticky operations, delete any existing deadline or guard, or change ClioRing
-behaviour.
+**Still out of bounds on this branch** — the original prohibition list minus the toggle clause, which the
+no-toggle decision above replaces. Each of these remains a separate, later decision:
+
+- proxy `mcp-http` traffic (Stage 5 builds the credential channel; enabling the HTTP path is not Stage 6);
+- proxy destructive / deploy / uninstall / sticky operations ahead of their own stages (7, 8);
+- **delete any existing deadline or guard** — Stage 10, and only after every cohort has moved. This one is
+  an ordering constraint, not a policy, and dropping the toggle does not relax it;
+- change ClioRing behaviour.
 
 **Folded in, independent of stage** (each is a production fix and carries its own story):
 
@@ -340,6 +361,7 @@ behaviour.
 | OQ-2 | Memory/CPU ceiling for concurrent children; the supported maximum needs a number | 2 |
 | OQ-3 | Cost on a machine where the curated-knowledge bootstrap actually runs its budgeted startup path | 3 |
 | OQ-4 | Whether `create-app-section` gets a real operation registry or only a private completion signal | 7 |
+| OQ-5 | Whether master ships this default-on or gated — decided at merge proposal, on evidence from this branch | merge |
 
 ## 9. Relationship to adjacent ADRs
 
