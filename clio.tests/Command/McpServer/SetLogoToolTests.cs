@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command.Branding;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -123,9 +125,11 @@ public class SetLogoToolTests {
 		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
-		result.Success.Should().BeFalse(because: "a request with no logo file has nothing to apply");
-		result.Error.Should().Contain("at least one logo",
-			because: "the failure must tell the caller that one of the slot fields is required");
+		result.Success.Should().BeFalse(because: "a request with no image file has nothing to apply");
+		result.Error.Should().Contain("at least one image",
+			because: "the failure must tell the caller that one of the image fields is required");
+		result.Error.Should().Contain("favicon",
+			because: "favicon is an accepted input on its own, so a caller reading the failure must see it listed");
 		commandResolver.DidNotReceive().Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>());
 		ConsoleLogger.Instance.ClearMessages();
 	}
@@ -425,6 +429,85 @@ public class SetLogoToolTests {
 		// Assert
 		result.Error.Should().Contain("'package'",
 			because: "a dropped package field would deliver the branding into the environment's current package instead of the one the caller named, which is a silent wrong-target write");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards the favicon path to the command and reports it in applied and bound.")]
+	public void SetLogo_ShouldForwardTheFavicon_AndReportIt() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Successful(
+			["logo", SetLogoCommand.FaviconLabel], "UsrMyApp", [],
+			[SetLogoCommand.FaviconCode, SetLogoCommand.UseFaviconCode]));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(
+			EnvironmentName: "docker_fix2", Logo: LogoFile, Favicon: "C:/brand/icon.svg", Package: "UsrMyApp"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the logos and the favicon both applied");
+		resolvedCommand.CapturedOptions.Favicon.Should().Be("C:/brand/icon.svg",
+			because: "a dropped favicon field would silently leave the browser tab unbranded");
+		result.Applied.Should().Contain(SetLogoCommand.FaviconLabel,
+			because: "the agent reads applied to tell the user the favicon landed");
+		result.Bound.Should().Contain(SetLogoCommand.UseFaviconCode,
+			because: "the gate must travel with the package or the install target ignores the delivered icon");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a favicon on its own, since the browser tab can be rebranded without touching the logos.")]
+	public void SetLogo_ShouldAcceptAFaviconWithoutAnyLogoSlot() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		FakeSetLogoCommand resolvedCommand = new(SetLogoResult.Successful(
+			[SetLogoCommand.FaviconLabel], "UsrMyApp", []));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>()).Returns(resolvedCommand);
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(new SetLogoArgs(
+			EnvironmentName: "docker_fix2", Favicon: "C:/brand/icon.svg"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a favicon is a complete request on its own");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the any-image guard must count the favicon, not only the logo slots");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Renames a camelCase favicon field to its kebab-case form instead of silently dropping it.")]
+	public void SetLogo_ShouldRenameLegacyFaviconAlias() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetLogoCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SetLogoTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetLogoArgs args = new(EnvironmentName: "docker_fix2") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["faviconImage"] = JsonDocument.Parse("\"C:/brand/icon.svg\"").RootElement
+			}
+		};
+
+		// Act
+		SetLogoToolResult result = tool.SetLogo(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an unknown field must not be treated as a valid argument");
+		result.Error.Should().Contain("favicon",
+			because: "the caller has to learn the canonical field name to fix the call");
+		commandResolver.DidNotReceive().Resolve<SetLogoCommand>(Arg.Any<SetLogoOptions>());
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
