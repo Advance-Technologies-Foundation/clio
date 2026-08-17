@@ -30,6 +30,8 @@ public static class SchemaValidationService
 	private const string ViewModelConfigPropertyName = "viewModelConfig";
 	private const string ModelConfigPropertyName = "modelConfig";
 	private const string PathPropertyName = "path";
+	private const string InsertOperationName = "insert";
+	private const string SetOperationName = "set";
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -295,6 +297,10 @@ public static class SchemaValidationService
 
 		SchemaValidationResult structureResult = ValidateMobileViewConfigDiffStructure(body);
 		if (!structureResult.IsValid) errors.AddRange(structureResult.Errors);
+
+		SchemaValidationResult typePlacementResult = ValidateMobileInsertTypePlacement(body);
+		if (!typePlacementResult.IsValid) errors.AddRange(typePlacementResult.Errors);
+		warnings.AddRange(typePlacementResult.Warnings);
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
@@ -593,6 +599,139 @@ public static class SchemaValidationService
 			$"viewConfigDiff entry at index {index} is missing required " +
 			$"{(missing.Count == 1 ? "property" : "properties")}: {string.Join(", ", missing)}.");
 	}
+
+	/// <summary>
+	/// Validates that every element-authoring operation in a mobile page body's <c>viewConfigDiff</c> declares its
+	/// component type WHERE THE DIFFER READS IT — inside <c>values</c>.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <see cref="JsonDiffApplier"/> (the faithful clone of the Creatio client differ) builds the view element from
+	/// <c>config["values"]</c> alone, then stamps the alias (<c>name</c>) onto it. Every other key on the operation
+	/// object — <c>operation</c>, <c>parentName</c>, <c>propertyName</c>, <c>index</c> and <b><c>type</c></b> — is
+	/// differ metadata and never reaches the applied config; the applier does not read <c>"type"</c> at all. An
+	/// operation-level <c>type</c> is therefore silently discarded, and the page persists a TYPELESS view element the
+	/// mobile runtime cannot render: the write succeeds, the designer and the app show nothing, and the element's
+	/// request bindings stay intact — which makes the failure look like a slot-placement problem rather than a
+	/// malformed operation (ENG-95429).
+	/// </para>
+	/// <para>
+	/// Scope: TOP-LEVEL <c>viewConfigDiff</c> entries whose operation is <c>insert</c> or <c>set</c>. <c>set</c> is
+	/// included because it is not an independent operation — <c>JsonDiffApplier.Set</c> is <c>Remove</c> followed by
+	/// <c>Insert</c> on the SAME config, so it drops an operation-level type identically and additionally destroys the
+	/// element that did carry a valid type. <c>merge</c> patches an element that already has its type; <c>remove</c> /
+	/// <c>move</c> author no element. An entry with no <c>operation</c> is NOT treated as merge — the differ requires
+	/// the key (<c>CheckOperation</c>) and its operation switch has no default branch, so such an entry is rejected or
+	/// dropped, never merged; the structural validator owns that diagnostic.
+	/// </para>
+	/// <para>
+	/// <see cref="ValidateMobileComponentTypes"/> cannot catch this: it resolves the type through
+	/// <c>GetMobileEntryType</c>, which deliberately accepts <c>entry.type</c> as a fallback, so a misplaced type
+	/// reads as a perfectly good mobile component and passes without so much as a warning. That leniency is correct
+	/// for the registry lookup (it must classify whatever type it can find) and is left alone here; this validator
+	/// owns the placement rule instead.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid only for the unambiguous hybrid — a <c>values</c> object
+	/// present AND the type sitting outside it — and that otherwise warns. The warning cases are deliberately
+	/// non-blocking: the FLAT shape (no <c>values</c> object at all) is tolerated elsewhere in this file
+	/// (<c>GetMobileEntryType</c>, <c>ValidateMobileInsertedFieldLabels</c>), which suggests real bodies use it, and a
+	/// missing type is not provably a misplacement. Blocking either would risk refusing a write that succeeds today.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch (JsonException) {
+			return result; // JSON errors reported by ValidateMobileBody
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Object
+				|| !document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)
+				|| viewConfigDiff.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			int index = 0;
+			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+				ValidateMobileInsertTypePlacementEntry(entry, index, result);
+				index++;
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Applies the type-placement rule to a single <c>viewConfigDiff</c> entry. See the caller's remarks for the
+	/// operation scope and for why only the hybrid shape blocks.
+	/// </summary>
+	private static void ValidateMobileInsertTypePlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| (!IsOperation(entry, InsertOperationName) && !IsOperation(entry, SetOperationName))) {
+			return;
+		}
+		bool hasEntryType = TryGetStringProperty(entry, TypePropertyName, out string entryType);
+		bool hasValuesObject =
+			entry.TryGetProperty(ValuesPropertyName, out JsonElement values) && values.ValueKind == JsonValueKind.Object;
+		string subject = DescribeViewConfigDiffEntry(entry, index);
+		if (!hasValuesObject) {
+			// FLAT shape: everything at operation level. The differ clones only `values`, so this element is typeless
+			// too — but two sibling validators deliberately accept this shape, so warn instead of blocking.
+			if (hasEntryType) {
+				result.Warnings.Add(
+					$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object and carries no "
+					+ "\"values\" object. The Creatio differ builds the element from \"values\" only, so the type is discarded "
+					+ $"and the element cannot render. Move the component properties into \"values\": {{ \"{TypePropertyName}\": "
+					+ $"\"{entryType}\", ... }}.");
+			}
+			return;
+		}
+		if (TryGetStringProperty(values, TypePropertyName, out string valuesType)) {
+			// The differ applies the `values` copy, so the element renders. A DIFFERENT operation-level type is still
+			// worth flagging: the author gets a component they did not ask for, silently.
+			if (hasEntryType && !string.Equals(entryType, valuesType, StringComparison.Ordinal)) {
+				result.Warnings.Add(
+					$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object but "
+					+ $"\"{TypePropertyName}\": \"{valuesType}\" inside \"values\". The Creatio differ applies the \"values\" "
+					+ $"copy and discards the other, so the element renders as '{valuesType}'. Remove the operation-level "
+					+ "type so the intent is unambiguous.");
+			}
+			return;
+		}
+		if (hasEntryType) {
+			result.IsValid = false;
+			result.Errors.Add(
+				$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object instead of inside "
+				+ "\"values\". The Creatio differ builds the element from \"values\" only, so the type is discarded and the "
+				+ "element cannot render even though the write reports success. Move it: "
+				+ $"\"values\": {{ \"{TypePropertyName}\": \"{entryType}\", ... }}. If this entry came back from get-page, the "
+				+ "page already carries the defect — correct it in the body you send back.");
+			return;
+		}
+		// Type is absent everywhere. Only worth reporting when the operation actually authors an element; an empty
+		// `values` object carries nothing to render and is not worth the noise.
+		if (values.EnumerateObject().Any()) {
+			result.Warnings.Add(
+				$"{subject} declares no \"{TypePropertyName}\" inside \"values\", so the mobile runtime has no component to "
+				+ "render and the element stays invisible even though the write reports success. Add "
+				+ $"\"{TypePropertyName}\" to \"values\" (use get-component-info schema-type=mobile to pick the component).");
+		}
+	}
+
+	/// <summary>
+	/// Names a <c>viewConfigDiff</c> entry for a diagnostic: quoted alias when it has one, otherwise the file's
+	/// established positional phrasing (see <see cref="ValidateViewConfigDiffEntry"/>) rather than a quoted phrase
+	/// that would read as an alias.
+	/// </summary>
+	private static string DescribeViewConfigDiffEntry(JsonElement entry, int index) =>
+		TryGetStringProperty(entry, "name", out string name)
+			? $"viewConfigDiff entry '{name}'"
+			: $"viewConfigDiff entry at index {index}";
 
 	/// <summary>
 	/// Validates that every <c>$AttributeName</c> binding in a mobile page body's
@@ -2121,12 +2260,19 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	private static bool IsInsertOperation(JsonElement entry) {
+	private static bool IsInsertOperation(JsonElement entry) => IsOperation(entry, InsertOperationName);
+
+	/// <summary>
+	/// True when <paramref name="entry"/>'s <c>operation</c> is <paramref name="operationName"/>. Single spelling of
+	/// the operation-name comparison so the literals stay in the consts above and cannot drift between validators.
+	/// The caller must have established that <paramref name="entry"/> is a JSON object.
+	/// </summary>
+	private static bool IsOperation(JsonElement entry, string operationName) {
 		if (!entry.TryGetProperty(OperationPropertyName, out JsonElement operation) ||
 		    operation.ValueKind != JsonValueKind.String) {
 			return false;
 		}
-		return string.Equals(operation.GetString(), "insert", StringComparison.OrdinalIgnoreCase);
+		return string.Equals(operation.GetString(), operationName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static void AppendBindingDeclarationError(

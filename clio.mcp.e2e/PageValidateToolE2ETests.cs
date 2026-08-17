@@ -683,6 +683,76 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-95429: returns valid=false for a mobile JSON body whose viewConfigDiff insert declares its component type on the operation object instead of inside 'values'. The Creatio differ builds the element from 'values' only, so the type is dropped and the page would persist a button that never renders while the write reports success.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile insert whose type sits outside values")]
+	[AllureDescription("Sends the ENG-95429 shape — a run-process button whose 'type' is a sibling of 'values' rather than a member of it — and verifies validate-page blocks it end-to-end instead of accepting an unrenderable element.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Insert_With_Type_Outside_Values() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMisplacedType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton", "type": "crt.Button",
+			      "parentName": "Scaffold", "propertyName": "actions",
+			      "values": { "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithMisplacedType);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the differ discards an operation-level type, so the write would persist a button the mobile runtime cannot render");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().NotBeNullOrEmpty(
+			because: "the misplaced type must be surfaced as an actionable validation error");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("RunProcessButton") && e.Contains("values"),
+			because: "validate-page must name the element and point at 'values' so the agent fixes the insert before writing");
+	}
+
+	[Test]
+	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]
+	[AllureDescription("Sends the corrected ENG-95429 shape (type inside 'values', everything else identical to the rejected body) and verifies validate-page accepts it end-to-end with no errors.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Insert_With_Type_Inside_Values() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithCorrectType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton",
+			      "parentName": "Scaffold", "propertyName": "actions",
+			      "values": { "type": "crt.Button",
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithCorrectType);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a type inside 'values' is exactly what the differ applies, so the canonical shape must keep passing");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "the type-placement rule must not fire on a correctly authored insert");
+		response.Validation.Warnings.Should().BeNullOrEmpty(
+			because: "the canonical shape must come back completely clean — a warning here would still push the agent to 'fix' correct code");
+	}
+
+	[Test]
 	[Description("Returns valid=true for a mobile JSON body whose viewModelConfigDiff is the ENG-94101 insert-delta shape: an 'insert' appends a new entry into a template-owned array (Items.modelConfig.filterAttributes) rather than a root merge replacing it. Proves the new merge+insert diff contract validates through the real MCP wire — the apply-oracle seeds a container at the insert path so a template-owned-array append does not false-positive as not-a-container.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page accepts the ENG-94101 template-array insert-delta shape")]

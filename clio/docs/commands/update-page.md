@@ -52,6 +52,17 @@ name instead of trying to edit a non-existent local `insert`.
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **Mobile: an authored component's `type` must sit inside `values`.** In a mobile body's
+  `viewConfigDiff`, an `operation:"insert"` or `operation:"set"` that supplies a `values` object but
+  declares `"type"` on the operation object instead of inside it is **rejected**. The Creatio differ
+  builds the element from `values` alone, so a type placed beside it is discarded and the page persists
+  an element the mobile runtime cannot render — the write would otherwise succeed and the component
+  would simply never appear. (`set` is included because it is `remove` + `insert` on the same payload.)
+  Reported as a non-blocking **warning** instead: an entry with no type anywhere, an entry whose type is
+  only at the operation level with no `values` object at all, and an entry that declares two different
+  types. If the offending entry came back from `get-page`, the page already carries the defect — correct
+  it in the body you send back. The same shape breaks web pages identically but is **not yet enforced**
+  there. Call `clio get-guidance --name mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
