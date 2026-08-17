@@ -13,6 +13,7 @@ spec:
       labels:
         app: clio-redis
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: redis
           image: redis:latest
