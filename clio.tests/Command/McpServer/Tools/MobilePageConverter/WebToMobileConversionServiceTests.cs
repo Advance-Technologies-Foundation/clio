@@ -47,6 +47,18 @@ public sealed class WebToMobileConversionServiceTests {
 			""").RootElement.Clone()
 	};
 
+	/// <summary>The shipped grid to list template group, so the fixture exercises the real skeleton.</summary>
+	private static readonly ViewConfigTemplateGroup GridToListTemplates = new() {
+		Filters = [new ElementFilterRule { Type = "crt.DataGrid" }, new ElementFilterRule { Type = "crt.DataTable" }],
+		Templates = [ListTemplate]
+	};
+
+	/// <summary>The shipped constraint: what a crt.ListItem title accepts.</summary>
+	private static readonly ComponentValueConstraintRule ListItemTitleAccepts = new() {
+		Type = "crt.ListItem", Property = "title", ValueTypeFrom = "dataValueType",
+		AcceptsDataValueTypes = [1, 19, 27, 28, 29, 30, 42, 44, 45]
+	};
+
 	private static readonly WebToMobilePageConversionRules Rules = new() {
 		Templates = [
 			new TemplateMappingRule {
@@ -62,19 +74,15 @@ public sealed class WebToMobileConversionServiceTests {
 			new ComponentEquivalenceRule { Web = ["crt.HtmlEditor"], Mobile = ["crt.RichTextEditor"], Category = "AlternativeAvailable" },
 			new ComponentEquivalenceRule {
 				Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"],
-				Category = "AlternativeAvailable",
-				Filters = [new ElementFilterRule { Type = "crt.DataGrid" }, new ElementFilterRule { Type = "crt.DataTable" }],
-				RowSource = new RowSourceRule {
-					Property = "columns", Binding = "code", Into = "itemLayout",
-					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 19, 27, 28, 29, 30, 42, 44, 45]
-				},
-				ViewConfigTemplates = [ListTemplate]
+				Category = "AlternativeAvailable"
 			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
 				Category = "AlternativeAvailable", PrimaryWeb = "crt.FolderTree"
 			}
-		]
+		],
+		ViewConfigTemplates = [GridToListTemplates],
+		ComponentValueConstraints = [ListItemTitleAccepts]
 	};
 
 	private static IReadOnlyDictionary<string, ComponentRegistryEntry> Reg(params (string type, bool container)[] entries) {
@@ -4129,24 +4137,25 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "synthesizing the row must not disturb the element's own type");
 	}
 
-	/// <summary>Rules carrying ONE grid→list mapping whose template is the given raw JSON skeleton.</summary>
+	/// <summary>Rules whose grid to list template is the given raw JSON skeleton.</summary>
 	private static WebToMobilePageConversionRules RulesWithTemplate(
 		string valueJson, string parentName = "{{ diff.parentName }}", string propertyName = "{{ diff.propertyName }}",
 		IReadOnlyList<ElementFilterRule> filters = null) => new() {
 		Components = [
 			new ComponentEquivalenceRule {
-				Web = ["crt.DataGrid"], Mobile = ["crt.List"], Category = "AlternativeAvailable",
-				Filters = filters,
-				RowSource = new RowSourceRule {
-					Property = "columns", Binding = "code", Into = "itemLayout",
-					ValueTypeFrom = "dataValueType", TitleValueTypes = [1, 19, 27, 28, 29, 30, 42, 44, 45]
-				},
-				ViewConfigTemplates = [new ViewConfigTemplateRule {
+				Web = ["crt.DataGrid"], Mobile = ["crt.List"], Category = "AlternativeAvailable"
+			}
+		],
+		ViewConfigTemplates = [
+			new ViewConfigTemplateGroup {
+				Filters = filters ?? [new ElementFilterRule { Type = "crt.DataGrid" }],
+				Templates = [new ViewConfigTemplateRule {
 					ParentName = parentName, PropertyName = propertyName,
 					Value = JsonDocument.Parse(valueJson).RootElement.Clone()
 				}]
 			}
-		]
+		],
+		ComponentValueConstraints = [ListItemTitleAccepts]
 	};
 
 	private static MobilePageConversionGuide AnalyzeWithRules(
@@ -4158,7 +4167,7 @@ public sealed class WebToMobileConversionServiceTests {
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
 
 	private const string RowOnlyTemplate = """
-		{ "itemLayout": { "name": "{{ diff.name }}_ListItem", "type": "crt.ListItem",
+		{ "type": "crt.List", "itemLayout": { "name": "{{ diff.name }}_ListItem", "type": "crt.ListItem",
 		                  "title": "${{ source.columns[0].code }}",
 		                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
 		""";
@@ -4276,7 +4285,7 @@ public sealed class WebToMobileConversionServiceTests {
 	public void Analyze_ViewConfigTemplate_UnknownToken_DropsTheKey() {
 		// Arrange
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
-			{ "itemLayout": { "type": "crt.ListItem", "title": "{{ row.tittle }}",
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "{{ row.tittle }}",
 			                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
 			""");
 
@@ -4295,7 +4304,7 @@ public sealed class WebToMobileConversionServiceTests {
 	public void Analyze_ViewConfigTemplate_NestedEach_ExpandsInsteadOfLeakingTemplateKeys() {
 		// Arrange — the inner repeat walks the same slot again, which is enough to prove the branch is reached.
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
-			{ "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
 			                  "body": { "$each": "source.columns[1:]", "as": {
 			                      "value": "${{ code }}",
 			                      "nested": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } } } }
@@ -4434,7 +4443,7 @@ public sealed class WebToMobileConversionServiceTests {
 				  "columns": [ { "id": "c1", "code": "NestedDS_Name", "dataValueType": 30 } ] } ] } ]
 			""");
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
-			{ "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
 			                  "flat": "{{ source.items }}",
 			                  "nested": "{{ source.features.rows.selection.enable }}",
 			                  "missing": "{{ source.features.nope.deeper }}" } }
@@ -4466,7 +4475,7 @@ public sealed class WebToMobileConversionServiceTests {
 				  "columns": [ { "id": "c1", "code": "ProductsListDS_Name", "dataValueType": 28 } ] } ] } ]
 			""");
 		WebToMobilePageConversionRules rules = RulesWithTemplate("""
-			{ "type": "crt.WrongType",
+			{ "type": "crt.List",
 			  "name": "WrongName",
 			  "items": "$OverlaidBinding",
 			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}" } }
@@ -4485,8 +4494,8 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a key the template does not name survives untouched, which is how the element keeps its "
 				+ "placement and the grid's own properties without any rule naming them");
 		values["type"]?.GetValue<string>().Should().Be("crt.List",
-			because: "the resolved mobile type is the converter's — a template claiming it must lose, or a rules "
-				+ "file could change what component an element IS");
+			because: "a template cannot change what component an element IS — its declared type is the gate, so a "
+				+ "template naming a different one is not applied at all rather than partially honoured");
 		values["name"]?.GetValue<string>().Should().NotBe("WrongName",
 			because: "the copy rule refuses to carry the element identity on purpose, so a template filling that "
 				+ "gap would let the rules file rename an element and desynchronize every parentName referring to it");

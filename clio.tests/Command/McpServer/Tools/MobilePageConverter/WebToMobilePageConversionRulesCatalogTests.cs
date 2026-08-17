@@ -38,38 +38,42 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ENG-95046: the bundled grid rule declares the row synthesis, so a converted list's row is data rather than an instruction the caller has to carry out.")]
-	public void LoadBundled_GridRuleDeclaresListRowSynthesis() {
+	[Description("ENG-95046: the grid mapping carries ONLY the type correspondence — no template, no selection, no prose. What a converted element looks like is a separate section, because a mapping answers 'which mobile type' and a template answers 'which shape', and the two change for different reasons.")]
+	public void LoadBundled_GridMappingCarriesTheTypeCorrespondenceOnly() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
 		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Web.Contains("crt.DataGrid"));
-		grid.RowSource.Should().NotBeNull(
-			because: "the crt.ListItem row has no web counterpart to copy — its slots must be built from the "
-				+ "grid's columns, and leaving that to the caller produced lists with no row at all");
-		grid.RowSource.Property.Should().Be("columns",
-			because: "the row is built from the web grid's column array — nothing else in the node describes the row");
-		grid.RowSource.Into.Should().Be("itemLayout",
-			because: "itemLayout is the input the mobile list renders each record with, and an authored one wins");
-		grid.RowSource.Binding.Should().Be("code",
-			because: "a column's code is its bound attribute name, which is what the $binding refers to");
-		grid.RowSource.ValueTypeFrom.Should().Be("dataValueType",
-			because: "the title may bind only a text column, and dataValueType is where a column says what it is");
-		grid.Filters.Should().NotBeNull().And.HaveCount(2,
-			because: "the mapping covers both web grid types, and a filter naming only crt.DataGrid would leave a "
-				+ "crt.DataTable list without a row");
-		grid.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.DataGrid", "crt.DataTable" });
-		grid.ViewConfigTemplates.Should().NotBeNull().And.HaveCount(1,
-			because: "the row's SHAPE is data now — one template produces the crt.List with its nested row");
-		ViewConfigTemplateRule template = grid.ViewConfigTemplates[0];
+		grid.Mobile.Should().Contain("crt.List").And.Contain("crt.ListItem",
+			because: "every entry here is looked up in the mobile registry and shipped as a mobileComponentContracts "
+				+ "entry, so naming the row component is what gives the caller its allowed properties and example — "
+				+ "the only contract available on the merge-twin path, where the row stays theirs to configure");
+		grid.Note.Should().BeNull(
+			because: "the rules file is a DATA channel resolved at runtime; caller-facing prose belongs to the "
+				+ "guide's own constraints and to the element's elementMap reason, which can say which path applied");
+	}
+
+	[Test]
+	[Description("ENG-95046: the bundled view-config template produces the list row as DATA. It carries no web/mobile pair — the filters identify the source and the template's own value.type declares the target, which is also what gates it.")]
+	public void LoadBundled_ViewConfigTemplateBuildsTheListRow() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ViewConfigTemplateGroup group = rules.ViewConfigTemplates.Single();
+		group.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.DataGrid", "crt.DataTable" },
+			because: "a filter naming only crt.DataGrid would leave a crt.DataTable list without a row");
+		ViewConfigTemplateRule template = group.Templates.Single();
 		template.ParentName.Should().Be("{{ diff.parentName }}",
 			because: "placement is READ-ONLY: a rules file that could set parentName would reparent an element "
 				+ "behind the element map's back, desynchronizing it from every other parentName");
 		template.PropertyName.Should().Be("{{ diff.propertyName }}",
 			because: "the slot is read-only for the same reason");
-		template.Value.Should().NotBeNull();
 		string skeleton = template.Value!.Value.GetRawText();
+		skeleton.Should().Contain("\"type\": \"crt.List\"",
+			because: "the template's own declared type is what gates it against the element's resolved mobile type — "
+				+ "no second declaration ties the two together");
 		skeleton.Should().Contain("crt.ListItem",
 			because: "the row element the mobile list expects inside itemLayout is a crt.ListItem");
 		skeleton.Should().Contain("\"title\": \"${{ source.columns[0].code }}\"",
@@ -77,14 +81,23 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 				+ "there renders an empty Title column while the body rows still look correct");
 		skeleton.Should().Contain("\"$each\": \"source.columns[1:]\"",
 			because: "every column after the leading one becomes its own body entry");
-		grid.RowSource.TitleValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
+	}
+
+	[Test]
+	[Description("ENG-95046: what a row's title accepts is declared against crt.ListItem, not against the grid that feeds it — so it holds for every present and future source instead of being restated per mapping.")]
+	public void LoadBundled_TitleConstraintIsDeclaredAgainstTheTargetComponent() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentValueConstraintRule title = rules.ComponentValueConstraints
+			.Single(c => c.Type == "crt.ListItem" && c.Property == "title");
+		title.ValueTypeFrom.Should().Be("dataValueType",
+			because: "a grid column declares its type there, and the lead is chosen by reading it");
+		title.AcceptsDataValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
 			because: "a row title accepts text columns, and this is the DISPLAY-text subset of "
 				+ "CreatioDataValueKind.Text — leaving out PhoneText/WebText/EmailText would give a contacts "
 				+ "detail no title AND a note claiming the source had no acceptable column, which would be false");
-		grid.Mobile.Should().Contain("crt.ListItem",
-			because: "every entry here is looked up in the mobile registry and shipped as a mobileComponentContracts "
-				+ "entry, so naming the row component is what gives the caller its allowed properties and example — "
-				+ "the only contract available on the merge-twin path, where the row stays theirs to configure");
 	}
 
 	[Test]
@@ -181,14 +194,16 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled grid → list component rule maps a web grid to [crt.List, crt.ListItem] and its note explains the crt.ListItem goes into the crt.List itemLayout.")]
+	[Description("The bundled grid → list component rule maps a web grid to [crt.List, crt.ListItem]. It explains nothing: how the row is built is DATA in the view-config template section, and what the caller must do arrives per element in its elementMap reason.")]
 	public void LoadBundled_GridRuleMapsToListAndListItem() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		ComponentEquivalenceRule grid = rules.Components.First(c => c.Web.Contains("crt.DataGrid"));
 		grid.Mobile.Should().Contain("crt.List");
 		grid.Mobile.Should().Contain("crt.ListItem");
-		grid.Note.Should().Contain("itemLayout");
+		grid.Note.Should().BeNull(
+			because: "the rules file is resolved at runtime and is a DATA channel — prose there cannot be verified "
+				+ "against the binary that ships it, and this note had already gone stale twice");
 	}
 
 	[Test]

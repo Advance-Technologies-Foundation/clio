@@ -90,33 +90,7 @@
     {
       "web": ["crt.DataGrid", "crt.DataTable"],
       "mobile": ["crt.List", "crt.ListItem"],
-      "category": "AlternativeAvailable",
-      "filters": [{ "type": "crt.DataGrid" }, { "type": "crt.DataTable" }],
-      "rowSource": {
-        "property": "columns",
-        "binding": "code",
-        "into": "itemLayout",
-        "valueTypeFrom": "dataValueType",
-        "titleValueTypes": [1, 19, 27, 28, 29, 30, 42, 44, 45]
-      },
-      "viewConfigTemplates": [
-        {
-          "parentName": "{{ diff.parentName }}",
-          "propertyName": "{{ diff.propertyName }}",
-          "value": {
-            "type": "crt.List",
-            "name": "{{ diff.name }}",
-            "items": "{{ source.items }}",
-            "itemLayout": {
-              "name": "{{ diff.name }}_ListItem",
-              "type": "crt.ListItem",
-              "title": "${{ source.columns[0].code }}",
-              "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
-            }
-          }
-        }
-      ],
-      "note": "Web grid → mobile crt.List + crt.ListItem. WHICH of the two paths applies decides who builds the row, so read the element's own elementMap entry rather than this note alone. An INSERTED list (operation insert, mobileType crt.List) arrives with the row ALREADY BUILT inside its own mobileValues: a crt.ListItem under `itemLayout`, `title` bound to the first column a row title accepts and one `body` entry per remaining column. Paste that; do not rebuild it. The values also still carry the web grid's own properties, including ones mobile crt.List does not declare — reconcile them against the crt.List and crt.ListItem contracts in mobileComponentContracts, which is the authority on what the mobile component accepts. A list the mobile TEMPLATE provides is a MERGE twin instead, carries no prebuilt row, and its row is yours to configure by merge-by-name on the template's own ListItem element — never insert a second crt.List. In either case never emit the row as its own insert operation (`parentName` the list + `propertyName: \"itemLayout\"`): crt.List is not a container and itemLayout is an input, so the client answers \"is not a container for other items\" and the WHOLE schema fails to build."
+      "category": "AlternativeAvailable"
     },
     {
       "web": ["crt.FolderTree", "crt.FolderTreeActions"],
@@ -149,6 +123,36 @@
       }
     }
   },
+  "viewConfigTemplates": [
+    {
+      "filters": [{ "type": "crt.DataGrid" }, { "type": "crt.DataTable" }],
+      "templates": [
+        {
+          "parentName": "{{ diff.parentName }}",
+          "propertyName": "{{ diff.propertyName }}",
+          "value": {
+            "type": "crt.List",
+            "name": "{{ diff.name }}",
+            "items": "{{ source.items }}",
+            "itemLayout": {
+              "name": "{{ diff.name }}_ListItem",
+              "type": "crt.ListItem",
+              "title": "${{ source.columns[0].code }}",
+              "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "componentValueConstraints": [
+    {
+      "type": "crt.ListItem",
+      "property": "title",
+      "valueTypeFrom": "dataValueType",
+      "acceptsDataValueTypes": [1, 19, 27, 28, 29, 30, 42, 44, 45]
+    }
+  ],
   "componentPropertyOverrides": [
     {
       "type": "crt.GridContainer",
