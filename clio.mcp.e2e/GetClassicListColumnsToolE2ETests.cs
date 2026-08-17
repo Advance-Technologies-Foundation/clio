@@ -26,14 +26,18 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 	[AllureName("get-classic-list-columns resolves a sandbox Classic section as schema-default")]
 	[AllureDescription("Uses the configured sandbox and the standard Contact section to prove the real read-only MCP path parses static list columns out of live Classic bodies, not just hand-written ones.")]
 	public async Task Resolve_ShouldReturnSchemaDefault_WhenConfiguredSandboxIsAvailable() {
-		// Arrange — which sections carry static list columns is a fact about the STAND, so the reconfigured half
-		// of the discrimination pair is configurable exactly like the never-configured half. Defaults to
-		// ContactSectionV2; a differently-seeded sandbox retargets it instead of turning the build red.
+		// Arrange — which sections carry static list columns is a fact about the SEEDING, not about the product,
+		// so this half of the discrimination pair is OPT-IN like the other one. It defaulted to ContactSectionV2,
+		// but the CI stand resolves that section to entity-default (its live body declares none), so the default
+		// asserted a false premise and turned the build red instead of skipping. The schema-default branch itself
+		// stays covered by GetClassicListColumnsCommandTests against hand-written bodies; what this test adds is
+		// proof against a REAL body, which needs a stand that really seeds one.
 		McpE2ESettings loaded = TestConfiguration.Load();
-		string sectionSchema = loaded.Sandbox.ClassicSchemaDefaultSectionSchema;
+		string? sectionSchema = loaded.Sandbox.ClassicSchemaDefaultSectionSchema;
 		if (string.IsNullOrWhiteSpace(sectionSchema)) {
 			Assert.Ignore("McpE2E:Sandbox:ClassicSchemaDefaultSectionSchema is blank; set it to a Classic section "
-				+ "whose live body declares static list columns to run the schema-default E2E.");
+				+ "whose live body declares static list columns (a `getGridDataColumns` / `initColumnsConfig` "
+				+ "override) to run the schema-default E2E.");
 			return;
 		}
 		ArrangeContext arrangeContext = await AllureApi.Step("Arrange configured sandbox MCP session", async () => {
@@ -96,7 +100,9 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 	[AllureName("get-classic-list-columns resolves a never-configured Classic section as entity-default")]
 	[AllureDescription("The source discriminator is the load-bearing part of the contract, so a section with no static list columns must return exactly entity-default while the reconfigured section returns schema-default.")]
 	public async Task Resolve_ShouldReturnEntityDefault_WhenSectionDeclaresNoStaticColumns() {
-		// Arrange
+		// Arrange — defaults to ContactSectionV2, which the sandbox run proves is bare (it resolved to
+		// entity-default carrying the resolver's "does not define static list columns" note and no skipped
+		// layers). A stand that DOES configure Contact retargets this at a section it leaves alone.
 		McpE2ESettings settings = TestConfiguration.Load();
 		string? neverConfiguredSection = settings.Sandbox.ClassicEntityDefaultSectionSchema;
 		if (string.IsNullOrWhiteSpace(neverConfiguredSection)) {
