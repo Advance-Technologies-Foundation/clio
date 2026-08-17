@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.Branding;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -98,6 +100,8 @@ public sealed class SetLogoToolE2ETests : McpContractFixtureBase {
 			because: "a request with no logo file has nothing to apply");
 		result.Error.Should().Contain("dark-logo",
 			because: "the failure must name the accepted slot fields so the caller can pick one");
+		result.Error.Should().Contain("favicon",
+			because: "favicon is accepted on its own, so an agent reading the failure must see it among the fields rather than conclude a logo file is mandatory");
 	}
 
 	[Test]
@@ -212,5 +216,106 @@ public sealed class SetLogoToolE2ETests : McpContractFixtureBase {
 			because: "package names where the data that landed went, so a run that bound nothing must omit the field over the wire instead of pointing the agent at a package it never touched");
 		result.Bound.Should().BeNull(
 			because: "bound is the field an agent reads to tell what the package now carries, so a run that bound nothing must omit it over the wire instead of emitting an empty array the agent has to special-case");
+	}
+
+	[Test]
+	[AllureTag(SetLogoTool.ToolName)]
+	[AllureName("set-logo advertises favicon as its own canonical field over the wire")]
+	[AllureDescription("Calls set-logo through the real clio MCP server with a camelCase faviconImage field and verifies the rename hint names favicon — proving the browser-tab icon is advertised under its own kebab-case field over the wire, distinct from the logo slots, without a live Creatio environment.")]
+	[Description("Calls set-logo through the real clio MCP server with a camelCase faviconImage field and verifies the rename hint names favicon — proving the browser-tab icon is advertised under its own kebab-case field over the wire, distinct from the logo slots, without a live Creatio environment.")]
+	public async Task SetLogo_Should_Return_RenameHint_When_CamelCase_Favicon_Alias_Is_Passed_Over_The_Wire() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SetLogoTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "docker_fix2",
+					["faviconImage"] = "C:/brand/icon.svg"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		SetLogoToolResult result =
+			EntitySchemaStructuredResultParser.Extract<SetLogoToolResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
+		result.Success.Should().BeFalse(
+			because: "a field named after the system setting must be rejected, not silently dropped — a dropped favicon would leave the browser tab unbranded while the run reported success");
+		result.Error.Should().Contain("'faviconImage' -> 'favicon'",
+			because: "the setting code is the name an agent is most likely to guess from the branding guidance, so the hint must map it to the canonical field");
+	}
+
+	[Test]
+	[AllureTag(SetLogoTool.ToolName)]
+	[AllureName("set-logo refuses a non-image favicon with a structured failure naming the accepted formats")]
+	[AllureDescription("Registers an isolated fake environment, passes a real temporary .txt file as favicon through the real clio MCP server, and verifies the structured failure names the refused extension and the accepted formats — the format gate refuses the file before any environment write, so no live Creatio environment is needed.")]
+	[Description("Registers an isolated fake environment, passes a real temporary .txt file as favicon through the real clio MCP server, and verifies the structured failure names the refused extension and the accepted formats — the format gate refuses the file before any environment write, so no live Creatio environment is needed.")]
+	public async Task SetLogo_Should_Refuse_A_NonImage_Favicon_Naming_The_Accepted_Formats() {
+		// Arrange
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-set-logo-format-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string faviconPath = Path.Combine(tempHome, "favicon.txt");
+		await File.WriteAllTextAsync(faviconPath, "not an image");
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			"""
+			{
+			  "ActiveEnvironmentKey": "set-logo-format-e2e",
+			  "Environments": {
+			    "set-logo-format-e2e": {
+			      "Uri": "http://127.0.0.1:1",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": false
+			    }
+			  }
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		try {
+			await using McpServerSession session =
+				await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				SetLogoTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = "set-logo-format-e2e",
+						["favicon"] = faviconPath
+					}
+				},
+				cancellationTokenSource.Token);
+			SetLogoToolResult result =
+				EntitySchemaStructuredResultParser.Extract<SetLogoToolResult>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "an unsupported image format must surface as a structured in-tool failure, not an MCP protocol error");
+			result.Success.Should().BeFalse(
+				because: "a favicon that is not an image has nothing to apply");
+			result.Error.Should().Contain(".txt",
+				because: "the failure must name the refused extension so the caller can fix the input");
+			result.Error.Should().Contain(SetLogoCommand.FaviconImageFormats,
+				because: "the failure must carry the accepted formats so the caller does not have to read the docs");
+			result.Applied.Should().BeNull(
+				because: "the format gate refuses the file before anything is written, so nothing was applied");
+		}
+		finally {
+			try {
+				Directory.Delete(tempHome, recursive: true);
+			}
+			catch (IOException) { /* the spawned server may still hold the temp home briefly on teardown */ }
+			catch (UnauthorizedAccessException) { /* same file-locking window on Windows */ }
+		}
 	}
 }
