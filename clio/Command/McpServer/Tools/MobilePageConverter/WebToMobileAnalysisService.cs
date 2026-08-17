@@ -1780,8 +1780,8 @@ public static class WebToMobileAnalysisService {
 						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 						: "container; mobile-supported")
 						// Defensive symmetry: reachable only for a rule that maps a web type to ITSELF and still
-						// declares a listRow, which no shipped rule does — a listRow exists precisely because
-						// the web type has no mobile counterpart.
+						// declares a view-config template, which no shipped rule does — such a template exists
+						// precisely because the web type has no mobile counterpart.
 						+ RowNote(containerRow)
 				});
 				if (items is not null) {
@@ -2309,31 +2309,6 @@ public static class WebToMobileAnalysisService {
 		return m.Success ? new LeadPath(m.Groups[1].Value, m.Groups[2].Value) : null;
 	}
 
-
-	/// <summary>
-	/// Every component type a template DECLARES, outermost first, in declaration order — the order a reader of
-	/// the skeleton would meet them.
-	/// </summary>
-	private static IEnumerable<string> DeclaredTypes(JToken template) {
-		switch (template) {
-			case JObject obj: {
-				if (obj["type"]?.Value<string>() is { Length: > 0 } declared) {
-					yield return declared;
-				}
-				foreach (string nested in obj.Properties().SelectMany(prop => DeclaredTypes(prop.Value))) {
-					yield return nested;
-				}
-				break;
-			}
-			case JArray arr: {
-				foreach (string nested in arr.SelectMany(DeclaredTypes)) {
-					yield return nested;
-				}
-				break;
-			}
-		}
-	}
-
 	/// <summary>
 	/// Prepares the projection a template sees. The template addresses the structure it builds by POSITION —
 	/// <c>columns[0].code</c> for the value it leads with, <c>columns[1:]</c> for the rest — so the selection
@@ -2603,17 +2578,6 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Renders one template node. A string interpolates its <c>{{ path }}</c>s — a string that is EXACTLY one
-	/// path yields that path's own value, so a slot can carry a non-string; an object carrying <c>$each</c>
-	/// repeats its <c>as</c> body once per member of the resolved collection; any other object and array
-	/// recurse. A path resolving to nothing drops its key.
-	/// </summary>
-	/// <param name="item">
-	/// The current <c>$each</c> member, or null outside one. ONE method handles both cases on purpose: while
-	/// there were two, only the outer one knew about <c>$each</c>, so a nested repeat fell through to the plain
-	/// object branch and wrote its own <c>$each</c>/<c>as</c> keys into the page as data.
-	/// </param>
-	/// <summary>
 	/// How deep a template may nest before rendering gives up on the branch. Well past anything a real skeleton
 	/// needs — the shipped one nests three.
 	/// </summary>
@@ -2628,6 +2592,17 @@ public static class WebToMobileAnalysisService {
 	/// </remarks>
 	private const int MaxTemplateDepth = 32;
 
+	/// <summary>
+	/// Renders one template node. A string interpolates its <c>{{ path }}</c>s — a string that is EXACTLY one
+	/// path yields that path's own value, so a slot can carry a non-string; an object carrying <c>$each</c>
+	/// repeats its <c>as</c> body once per member of the resolved collection; any other object and array
+	/// recurse. A path resolving to nothing drops its key.
+	/// </summary>
+	/// <param name="item">
+	/// The current <c>$each</c> member, or null outside one. ONE method handles both cases on purpose: while
+	/// there were two, only the outer one knew about <c>$each</c>, so a nested repeat fell through to the plain
+	/// object branch and wrote its own <c>$each</c>/<c>as</c> keys into the page as data.
+	/// </param>
 	private static JToken RenderTemplateToken(JToken template, TemplateRoots roots, JToken item = null,
 		int depth = 0) {
 		// Degrades the same way an unresolvable path does — the branch yields nothing and its key is dropped —
