@@ -13,11 +13,11 @@ namespace Clio.Command.ProcessModel;
 /// <c>IExtensibleDataObject</c>, so its <c>DataContractJsonSerializer</c> DISCARDS the block and the build still
 /// answers <c>success:true</c>. The caller gets a process whose email step is unconfigured while every signal it
 /// can see says the operation worked.</para>
-/// <para>Detection is deliberately NOT version-based. The bundled package and the branch that adds
-/// <c>sendEmail</c> both report <c>PackageVersion 1.1.0.0</c>, so a version comparison cannot tell them apart and
-/// a floor against that number is a no-op. What DOES discriminate is behaviour: ask the server to describe what it
-/// just saved, and see whether the block came back. That works on any build, including future ones, and needs no
-/// registry of versions to maintain.</para>
+/// <para>Detection is deliberately BEHAVIOURAL rather than version-based, because it verifies the OUTCOME instead
+/// of the advertised capability: a version floor states what an environment should support, while a describe round
+/// trip states what it actually did. It also stays correct without coordinating with rebundle timing — the version
+/// an environment reports is stamped at rebundle time, so anything keyed to a particular number has to be revisited
+/// whenever the bundle moves, and this does not.</para>
 /// <para>The checks below are pure so they can be tested without a server; the describe round trip is the
 /// caller's job (the commands own the <see cref="IProcessDescriber"/> dependency).</para>
 /// </summary>

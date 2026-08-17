@@ -241,8 +241,11 @@ public sealed class DescribedElement {
 	/// <summary>
 	/// For a Send email element (<c>EmailTemplateUserTask</c>): its configuration decoded back into the descriptor
 	/// vocabulary. <c>null</c> for other element kinds and when the server (an older <c>CrtProcessBuilder</c>) does
-	/// not report it. Round-trips into a <c>create</c>/<c>modify</c> <c>email</c> block (recipients re-enter as
-	/// append-only entries).
+	/// not report it. Round-trips into a <c>create</c>/<c>modify</c> <c>email</c> block with TWO qualifications: a
+	/// FORMULA subject is reported for reading only — describe echoes the parameter's stored value whatever its
+	/// source, and feeding a <c>[#...#]</c> subject back is refused by the write path's constant guard, so re-enter
+	/// it through <c>addMapping</c> with an <c>expression</c> source; and recipients re-enter as MATCH-OR-APPEND
+	/// entries (an identical one is a no-op, a new one appends, none can be removed).
 	/// <para>The block reports EFFECTIVE values: a field the element inherits untouched from the
 	/// <c>EmailTemplateUserTask</c> schema (a platform default such as <c>ignoreErrors</c>) comes back like a
 	/// configured one, because it is the value the element will actually use. So the block's PRESENCE is not
