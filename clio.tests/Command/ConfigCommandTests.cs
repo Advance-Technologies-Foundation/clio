@@ -1,3 +1,4 @@
+using System;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -13,14 +14,17 @@ namespace Clio.Tests.Command;
 public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 
 	private ISettingsRepository _settingsRepository;
+	private IKnowledgeFeedbackPolicyService _feedbackPolicyService;
 	private ILogger _logger;
 	private ConfigCommand _sut;
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_feedbackPolicyService = Substitute.For<IKnowledgeFeedbackPolicyService>();
 		_logger = Substitute.For<ILogger>();
 		containerBuilder.AddSingleton(_settingsRepository);
+		containerBuilder.AddSingleton(_feedbackPolicyService);
 		containerBuilder.AddSingleton(_logger);
 	}
 
@@ -28,11 +32,20 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		base.Setup();
 		_settingsRepository.GetDeployCreatioDefaults().Returns(new DeployCreatioDefaults());
 		_settingsRepository.AppSettingsFilePath.Returns("appsettings.json");
+		_feedbackPolicyService.GetPolicy().Returns(new KnowledgeFeedbackPolicy(
+			"ask",
+			"ask",
+			"https://github.com/Advance-Technologies-Foundation/clio",
+			"sanitized",
+			"sha256:current",
+			null,
+			"ask-each-time"));
 		_sut = Container.GetRequiredService<ConfigCommand>();
 	}
 
 	public override void TearDown() {
 		_settingsRepository.ClearReceivedCalls();
+		_feedbackPolicyService.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -200,5 +213,43 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		// Assert
 		result.Should().Be(0, because: "showing configured defaults succeeds");
 		_logger.Received().PrintTable(Arg.Any<ConsoleTable>());
+	}
+
+	[Test]
+	[Description("Persists automatic full-report approval through the shared knowledge-feedback policy service.")]
+	public void Execute_ShouldConfigureAutomaticFullFeedback_WhenPolicyArgumentsSupplied() {
+		// Arrange
+		ConfigOptions options = new() {
+			KnowledgeFeedbackMode = "auto",
+			KnowledgeFeedbackDestination = "https://creatio.ghe.com/engineering/clio-feedback",
+			KnowledgeFeedbackReportingScope = "full"
+		};
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a valid standing-approval update should succeed");
+		_feedbackPolicyService.Received(1).Configure(Arg.Is<KnowledgeFeedbackPolicyUpdate>(update =>
+			update.Mode == "auto"
+			&& update.Destination == "https://creatio.ghe.com/engineering/clio-feedback"
+			&& update.ReportingScope == "full"));
+	}
+
+	[Test]
+	[Description("Returns a validation error when knowledge-feedback configuration is rejected.")]
+	public void Execute_ShouldReturnError_WhenKnowledgeFeedbackConfigurationInvalid() {
+		// Arrange
+		_feedbackPolicyService
+			.When(service => service.Configure(Arg.Any<KnowledgeFeedbackPolicyUpdate>()))
+			.Do(_ => throw new ArgumentException("Invalid feedback policy."));
+		ConfigOptions options = new() { KnowledgeFeedbackMode = "invalid" };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "invalid feedback policy must not be persisted as success");
+		_logger.Received(1).WriteError("Invalid feedback policy.");
 	}
 }

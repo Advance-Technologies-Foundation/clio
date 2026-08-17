@@ -1,4 +1,14 @@
 ---
+# ENG-94529: these jobs run on GITHUB-HOSTED runners on purpose.
+# They only need a .NET SDK and the repository, so nothing here justifies borrowing a
+# machine from the shared self-hosted pool - a pool that also contains laptops. Two
+# concrete failures came from that pool: a runner without corporate DNS turned the
+# TeamCity trigger red for three days, and a sparse checkout by another workflow left
+# the SHARED per-repository working directory without clio.tests, which failed the
+# unit-test job with MSB1009 on that runner only. A hosted runner is a clean machine
+# per job, and for a public repository it costs nothing.
+# The SDK is pinned rather than inherited from the image. The main unit and integration
+# suites intentionally run only on net10.0; product multi-targeting is validated elsewhere.
 name: Build
 on:
   push:
@@ -13,7 +23,7 @@ jobs:
   # ── Detect which areas of the codebase changed ────────────────────────
   changes:
     name: Detect changes
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       clio-src:    ${{ steps.filter.outputs.clio-src }}
       tests:       ${{ steps.filter.outputs.tests }}
@@ -32,9 +42,12 @@ jobs:
               - 'Directory.Packages.props'
             tests:
               - 'clio.tests/**'
+              - 'clio.mcp.e2e/**'
+              - 'clio.process.fixture/**'
             analyzers:
               - 'Clio.Analyzers/**'
               - 'Clio.Analyzers.Tests/**'
+              - 'Directory.Packages.props'
             cliogate:
               - 'cliogate/**'
               - 'cliogate.tests/**'
@@ -47,18 +60,51 @@ jobs:
       needs.changes.outputs.clio-src == 'true' ||
       needs.changes.outputs.tests   == 'true' ||
       github.ref == 'refs/heads/master'
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build NET8 product compatibility
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
+          dotnet build .\clio\clio.csproj `
+            --framework net8.0 `
+            -p:RunAnalyzers=false;
+
+      # Anchor the working directory: `shell: powershell` loads the user profile (there is no -NoProfile) and
+      # every project path in these steps is relative, so the step should not depend on the cwd it inherits.
+      # Hygiene only — the MSB1009 incident this looks like a fix for is diagnosed in the step body below, and
+      # its cause is on the runner host.
+
       - name: Run unit tests
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
+          # Why the Set-Location above, and what it is NOT for. Two self-hosted runners spent a day failing
+          # this job in ~1s with `MSB1009: Project file does not exist` while actions/checkout reported
+          # success. Anchoring the cwd did not help, and an on-runner diagnostic (2026-08-11, TS1-CORE-DEV24,
+          # install at C:/creatio/actions-runner) showed why: the workspace contained ONLY `.git`, yet
+          # `git status` reported a clean tree and `git ls-files --error-unmatch clio.tests/clio.tests.csproj`
+          # resolved. Git was operating on a worktree somewhere else — a stale `core.worktree` in the repo
+          # config, or a machine-level GIT_WORK_TREE/GIT_DIR — so checkout "succeeded" while this directory
+          # stayed empty. That is a runner-host defect: deleting `_work/clio` on the affected box (forcing a
+          # fresh clone) and clearing those variables is the fix, and no workflow change can substitute for it.
+          # The Set-Location stays because a relative path in a profile-loading shell should not be trusted,
+          # not because it addresses the above.
           dotnet build-server shutdown;
           dotnet test .\clio.tests\clio.tests.csproj `
+            --framework net10.0 `
             --filter "Category!=Integration" `
             -p:RunAnalyzers=false;
 
@@ -70,17 +116,23 @@ jobs:
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&
       github.event_name == 'pull_request'
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
       - name: Run integration tests
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
           dotnet test .\clio.tests\clio.tests.csproj `
+            --framework net10.0 `
             --filter "Category=Integration" `
             -p:RunAnalyzers=false;
 
@@ -89,15 +141,22 @@ jobs:
     name: Analyzer Tests
     needs: changes
     if: needs.changes.outputs.analyzers == 'true'
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
       - name: Run analyzer tests
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
-          dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj -p:RunAnalyzers=false;
+          Set-Location $env:GITHUB_WORKSPACE;
+          dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj `
+            --framework net10.0 `
+            -p:RunAnalyzers=false;
 

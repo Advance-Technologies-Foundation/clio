@@ -170,7 +170,7 @@
 						if (!string.IsNullOrWhiteSpace(_reportPath))
 							SaveLogFile(currentLogContent, _reportPath);
 					}
-					Thread.Sleep(3000);
+					cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(3));
 				} catch {}
 			}
 			return currentLogContent;
@@ -222,14 +222,19 @@
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
 			var initialInstallLog = GetInstallLog(environmentSettings) ?? string.Empty;
-			var cancellationTokenSource = new CancellationTokenSource();
+			using var cancellationTokenSource = new CancellationTokenSource();
 			var log = initialInstallLog;
 			var task = Task.Factory.StartNew(
 				() => log = ListenForLogs(cancellationTokenSource.Token, environmentSettings, initialInstallLog));
-			string result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
+			string result;
+			try {
+				result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
+			}
+			finally {
+				cancellationTokenSource.Cancel();
+				task.GetAwaiter().GetResult();
+			}
 			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
-			cancellationTokenSource.Cancel();
-			task.Wait();
 			var completeInstallLog = GetInstallLog(environmentSettings) ?? string.Empty;
 			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;

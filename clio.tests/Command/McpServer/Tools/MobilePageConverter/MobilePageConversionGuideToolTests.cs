@@ -15,7 +15,7 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 /// </summary>
 [TestFixture]
 [Category("Unit")]
-[Property("Module", "Command")]
+[Property("Module", "McpServer")]
 public sealed class MobilePageConversionGuideToolTests {
 
 	private static MobilePageConversionGuideArgs Args(string schemaName = "UsrLeads_FormPage") =>

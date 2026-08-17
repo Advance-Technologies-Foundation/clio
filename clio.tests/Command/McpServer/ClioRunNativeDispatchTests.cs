@@ -36,13 +36,8 @@ public sealed class ClioRunNativeDispatchTests {
 
 	private static RequestContext<CallToolRequestParams> CallContext(
 		string toolName,
-		Dictionary<string, JsonElement> arguments) {
-		RequestContext<CallToolRequestParams> context =
-			(RequestContext<CallToolRequestParams>)System.Runtime.CompilerServices.RuntimeHelpers
-				.GetUninitializedObject(typeof(RequestContext<CallToolRequestParams>));
-		context.Params = new CallToolRequestParams { Name = toolName, Arguments = arguments };
-		return context;
-	}
+		Dictionary<string, JsonElement> arguments) =>
+		McpRequestContextTestFactory.CreateCallToolContext(toolName, arguments);
 
 	// A real SDK-built scalar-parameter tool.
 	[McpServerToolType]

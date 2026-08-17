@@ -12,7 +12,7 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 
 [TestFixture]
 [Category("Unit")]
-[Property("Module", "Command")]
+[Property("Module", "McpServer")]
 public sealed class PageBusinessRuleProbeTests {
 
 	private static AddonSchemaDto Schema(string metaData, params AddonResourceDto[] resources) =>

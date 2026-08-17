@@ -23,6 +23,7 @@ public sealed class ApplicationCreateServiceTests {
 	private IApplicationInfoService _applicationInfoService = null!;
 	private ISysSettingsManager _sysSettingsManager = null!;
 	private ICaptionCultureResolver _captionCultureResolver = null!;
+	private IRetryDelay _retryDelay = null!;
 	private ILogger _logger = null!;
 	private ApplicationCreateService _sut = null!;
 	private EnvironmentSettings _environment = null!;
@@ -65,6 +66,7 @@ public sealed class ApplicationCreateServiceTests {
 		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
 		_captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
 		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), Arg.Any<string?>()).Returns("en-US");
+		_retryDelay = Substitute.For<IRetryDelay>();
 		_sut = new ApplicationCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
@@ -72,7 +74,8 @@ public sealed class ApplicationCreateServiceTests {
 			_applicationInfoService,
 			_ => _sysSettingsManager,
 			_logger,
-			_captionCultureResolver);
+			_captionCultureResolver,
+			_retryDelay);
 	}
 
 	[Test]
@@ -114,6 +117,7 @@ public sealed class ApplicationCreateServiceTests {
 			because: "successful CreateApp calls should reuse the structured application-info result shape");
 		_applicationInfoService.Received(1)
 			.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp");
+		_retryDelay.DidNotReceiveWithAnyArgs().Wait(default);
 	}
 
 	[Test]
@@ -470,6 +474,7 @@ public sealed class ApplicationCreateServiceTests {
 				because: "successful CreateApp responses should retry eventual-consistency misses and still explain the last metadata load failure");
 		_applicationInfoService.Received(15)
 			.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp");
+		_retryDelay.Received(14).Wait(TimeSpan.FromSeconds(2));
 	}
 
 	[Test]
@@ -492,6 +497,7 @@ public sealed class ApplicationCreateServiceTests {
 			because: "CreateApp can complete before the follow-up application-info query becomes consistent in the target environment");
 		_applicationInfoService.Received(3)
 			.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp");
+		_retryDelay.Received(2).Wait(TimeSpan.FromSeconds(2));
 	}
 
 	[Test]

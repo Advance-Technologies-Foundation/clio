@@ -83,7 +83,7 @@ public static class IpcProofRunner {
 	private static async Task RunConnectedProofAsync(ClioIpcClient client, ProofState state,
 		IReadOnlyList<string> candidateEnvNames, Action<string> log, CancellationToken cancellationToken) {
 		log($"[ipc-proof] capabilities: {string.Join(", ", state.Handshake!.Capabilities)} protocol={state.Handshake.ProtocolVersion ?? "n/a"}");
-		await MeasurePingsAsync(client, state.Results, log, cancellationToken).ConfigureAwait(false);
+		await MeasureHealthProbesAsync(client, state.Results, log, cancellationToken).ConfigureAwait(false);
 		await FetchCatalogAsync(client, state, log, cancellationToken).ConfigureAwait(false);
 		IReadOnlyList<string> envNames = await ListEnvironmentsAsync(client, state.Results, log, cancellationToken)
 			.ConfigureAwait(false);
@@ -92,23 +92,25 @@ public static class IpcProofRunner {
 		await MeasureRestartAsync(client, state, log, cancellationToken).ConfigureAwait(false);
 	}
 
-	private static async Task MeasurePingsAsync(ClioIpcClient client,
+	private static async Task MeasureHealthProbesAsync(ClioIpcClient client,
 		ICollection<(string Step, string Value, string Notes)> results, Action<string> log,
 		CancellationToken cancellationToken) {
-		var pings = new List<double>();
+		var probeLatencies = new List<double>();
 		for (int index = 0; index < 5; index++) {
 			var stopwatch = Stopwatch.StartNew();
 			try {
 				await client.PingAsync(cancellationToken).ConfigureAwait(false);
-				pings.Add(stopwatch.Elapsed.TotalMilliseconds);
+				probeLatencies.Add(stopwatch.Elapsed.TotalMilliseconds);
 			}
 			catch (Exception ex) {
-				log($"[ipc-proof] ping {index} failed: {ex.Message}");
+				log($"[ipc-proof] health probe {index} failed: {ex.Message}");
 			}
 		}
-		string summary = pings.Count > 0 ? $"{pings.Min():F1}/{pings.Average():F1}/{pings.Max():F1} ms" : "FAILED";
-		results.Add(("Handshake/warm protocol RTT (ping min/avg/max, n=5)", summary,
-			"Bare MCP ping round-trip; stdio fuses spawn+initialize so this is the steady-state handshake-shaped RTT."));
+		string summary = probeLatencies.Count > 0
+			? $"{probeLatencies.Min():F1}/{probeLatencies.Average():F1}/{probeLatencies.Max():F1} ms"
+			: "FAILED";
+		results.Add(("Handshake/warm protocol RTT (health min/avg/max, n=5)", summary,
+			"Version-aware read-only health round-trip; modern MCP uses tools/list because 2026-07-28 removed ping."));
 	}
 
 	private static async Task FetchCatalogAsync(ClioIpcClient client, ProofState state, Action<string> log,

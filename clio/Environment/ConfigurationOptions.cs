@@ -344,6 +344,40 @@ namespace Clio
 			&& string.IsNullOrWhiteSpace(DeploymentMethod);
 	}
 
+	/// <summary>
+	/// Configures how agents reconcile observed behavior with Clio knowledge and report discrepancies.
+	/// </summary>
+	public sealed class KnowledgeFeedbackSettings {
+		/// <summary>Gets or sets the requested policy mode: <c>ask</c>, <c>auto</c>, or <c>off</c>.</summary>
+		[JsonProperty("mode")]
+		public string Mode { get; set; } = "ask";
+
+		/// <summary>Gets or sets the exact GitHub repository URL where an agent should file reports.</summary>
+		[JsonProperty("destination")]
+		public string Destination { get; set; } =
+			"https://github.com/Advance-Technologies-Foundation/clio";
+
+		/// <summary>Gets or sets the report detail policy: <c>full</c> or <c>sanitized</c>.</summary>
+		[JsonProperty("reporting-scope")]
+		public string ReportingScope { get; set; } = "sanitized";
+
+		/// <summary>
+		/// Gets or sets the standing approval that authorizes automatic reporting under one exact
+		/// reporting-policy article hash.
+		/// </summary>
+		[JsonProperty("standing-approval", NullValueHandling = NullValueHandling.Ignore)]
+		public KnowledgeFeedbackStandingApproval StandingApproval { get; set; }
+	}
+
+	/// <summary>
+	/// Records the exact reporting-policy guidance a user approved for automatic issue filing.
+	/// </summary>
+	public sealed class KnowledgeFeedbackStandingApproval {
+		/// <summary>Gets or sets the SHA-256 of the exact reporting-policy article that was approved.</summary>
+		[JsonProperty("policy-hash")]
+		public string PolicyHash { get; set; }
+	}
+
 	public class Settings
 	{
 		/// <summary>
@@ -358,6 +392,7 @@ namespace Clio
 			Environments = new Dictionary<string, EnvironmentSettings>();
 			Features = new Dictionary<string, bool>();
 			Knowledge = new KnowledgeConfiguration();
+			KnowledgeFeedback = new KnowledgeFeedbackSettings();
 		}
 
 		//TODO: This wont work for Mac and Linux
@@ -407,6 +442,10 @@ namespace Clio
 		/// </summary>
 		[JsonProperty("knowledge")]
 		public KnowledgeConfiguration Knowledge { get; set; }
+
+		/// <summary>Gets or sets agent feedback and standing-approval policy.</summary>
+		[JsonProperty("knowledge-feedback")]
+		public KnowledgeFeedbackSettings KnowledgeFeedback { get; set; }
 
 		/// <summary>
 		/// Gets or sets the legacy knowledge root used only for one-time migration.
@@ -571,6 +610,49 @@ namespace Clio
 			AttachDbServers(_settings);
 			TrySaveSchema(_fileSystem);
 		}
+
+		/// <inheritdoc />
+		public SettingsReloadResult Reload() {
+			// The bootstrap service reads the file on every call (it never caches) and already takes the
+			// settings file lock, which is re-entrant for this thread — so a concurrent reg-web-app from
+			// another process or thread either finishes before this read starts or waits for it, and a
+			// partially written file is never observed.
+			SettingsBootstrapResult result;
+			try {
+				// Explicitly the NON-repairing read: GetResult writes the file back when a migration is
+				// pending or the file is missing, and this method is called by a ReadOnly MCP tool on every
+				// invocation. A read must not rewrite appsettings.json.
+				result = _settingsBootstrapService.GetResultWithoutRepairs();
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+				or TimeoutException or Newtonsoft.Json.JsonException) {
+				return new SettingsReloadResult(false, null, BuildReloadWarning(exception.Message));
+			}
+			SettingsBootstrapReport report = result?.Report;
+			// "file-missing" is as much a reason to keep the current snapshot as "broken": the non-repairing
+			// read does not create the file, so it hands back an empty (not an authoritative) Settings, and
+			// replacing the live one with it would silently clear every registered environment.
+			if (result is null
+				|| string.Equals(report?.Status, "broken", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(report?.Status, SettingsBootstrapService.FileMissingStatus,
+					StringComparison.OrdinalIgnoreCase)) {
+				string issue = report?.Issues?.FirstOrDefault()?.Message
+					?? $"{FileName} could not be read.";
+				return new SettingsReloadResult(false, report, BuildReloadWarning(issue));
+			}
+			// Same post-load normalization the constructor and UpdateSettingsIfChanged apply: without it a
+			// hand-edited file can leave Features/Knowledge null and drops the OrdinalIgnoreCase rebuild
+			// that IsFeatureEnabled depends on. It runs on a LOCAL snapshot, and only the fully initialized
+			// object is published — a concurrent reader either sees the whole old snapshot or the whole new
+			// one, never one with null Environments/Features halfway through normalization.
+			Settings fresh = NormalizeSettings(result.Settings);
+			AttachDbServers(fresh);
+			_settings = fresh;
+			return new SettingsReloadResult(true, report, null);
+		}
+
+		private static string BuildReloadWarning(string reason) =>
+			$"Could not re-read {AppSettingsFile}: {reason} The previously loaded settings are still in use.";
 
 		internal static Settings CreateDefaultSettings(Settings settings = null) {
 			Settings result = settings ?? new Settings();
@@ -764,28 +846,37 @@ namespace Clio
 		}
 
 		private void EnsureSettingsCollections() {
-			_settings ??= new Settings();
-			_settings.Environments ??= new Dictionary<string, EnvironmentSettings>();
-			_settings.Features ??= new Dictionary<string, bool>();
-			_settings.Knowledge ??= new KnowledgeConfiguration();
-			_settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
-				StringComparer.OrdinalIgnoreCase);
-			_settings.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
-			EnsureFeaturesComparer();
-			EnsureKnowledgeComparers();
+			_settings = NormalizeSettings(_settings);
 		}
 
-		private void EnsureKnowledgeComparers() {
-			if (!ReferenceEquals(_settings.Knowledge.Sources.Comparer, StringComparer.OrdinalIgnoreCase)) {
+		// Takes the instance to normalize as a parameter rather than reading the field, so a caller that
+		// is building a replacement snapshot (Reload) can finish it on a local variable and publish it
+		// with a single reference assignment — readers never observe a half-initialized _settings.
+		private static Settings NormalizeSettings(Settings settings) {
+			Settings result = settings ?? new Settings();
+			result.Environments ??= new Dictionary<string, EnvironmentSettings>();
+			result.Features ??= new Dictionary<string, bool>();
+			result.Knowledge ??= new KnowledgeConfiguration();
+			result.KnowledgeFeedback ??= new KnowledgeFeedbackSettings();
+			result.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+				StringComparer.OrdinalIgnoreCase);
+			result.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
+			EnsureFeaturesComparer(result);
+			EnsureKnowledgeComparers(result);
+			return result;
+		}
+
+		private static void EnsureKnowledgeComparers(Settings settings) {
+			if (!ReferenceEquals(settings.Knowledge.Sources.Comparer, StringComparer.OrdinalIgnoreCase)) {
 				Dictionary<string, KnowledgeSourceConfiguration> sources = new(StringComparer.OrdinalIgnoreCase);
-				foreach ((string alias, KnowledgeSourceConfiguration source) in _settings.Knowledge.Sources) {
+				foreach ((string alias, KnowledgeSourceConfiguration source) in settings.Knowledge.Sources) {
 					sources[alias] = source;
 				}
-				_settings.Knowledge.Sources = sources;
+				settings.Knowledge.Sources = sources;
 			}
-			if (!ReferenceEquals(_settings.Knowledge.TopicPins.Comparer, StringComparer.Ordinal)) {
-				_settings.Knowledge.TopicPins = new Dictionary<string, string>(
-					_settings.Knowledge.TopicPins,
+			if (!ReferenceEquals(settings.Knowledge.TopicPins.Comparer, StringComparer.Ordinal)) {
+				settings.Knowledge.TopicPins = new Dictionary<string, string>(
+					settings.Knowledge.TopicPins,
 					StringComparer.Ordinal);
 			}
 		}
@@ -795,8 +886,8 @@ namespace Clio
 		// OrdinalIgnoreCase comparer. This makes IsFeatureEnabled/SetFeature/GetFeatures all
 		// case-insensitive in one place; the convention is: the command writes the key as-given and
 		// lookups never depend on casing. The rebuild is idempotent and skipped once applied.
-		private void EnsureFeaturesComparer() {
-			if (ReferenceEquals(_settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
+		private static void EnsureFeaturesComparer(Settings settings) {
+			if (ReferenceEquals(settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
 				return;
 			}
 			// Rebuild manually rather than via the Dictionary(IDictionary, IEqualityComparer) copy-constructor:
@@ -805,10 +896,10 @@ namespace Clio
 			Dictionary<string, bool> rebuilt = new(StringComparer.OrdinalIgnoreCase);
 			// On a case-collision the last-enumerated value wins; this is acceptable because such a
 			// state only arises from a manual appsettings.json edit (the command never writes colliding keys).
-			foreach (KeyValuePair<string, bool> kvp in _settings.Features) {
+			foreach (KeyValuePair<string, bool> kvp in settings.Features) {
 				rebuilt[kvp.Key] = kvp.Value;
 			}
-			_settings.Features = rebuilt;
+			settings.Features = rebuilt;
 		}
 
 		private void UpdateSettings(Action<Settings> mutation) => UpdateSettingsIfChanged(settings => {
@@ -1504,6 +1595,43 @@ namespace Clio
 			UpdateSettings(settings =>
 				settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults);
 		}
+
+		public KnowledgeFeedbackSettings GetKnowledgeFeedbackSettings() {
+			return CloneKnowledgeFeedbackSettings(_settings.KnowledgeFeedback ?? new KnowledgeFeedbackSettings());
+		}
+
+		public void SetKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings) {
+			ArgumentNullException.ThrowIfNull(settings);
+			KnowledgeFeedbackSettings snapshot = CloneKnowledgeFeedbackSettings(settings);
+			UpdateSettings(current => current.KnowledgeFeedback = CloneKnowledgeFeedbackSettings(snapshot));
+		}
+
+		public KnowledgeFeedbackSettings UpdateKnowledgeFeedbackSettings(
+			Func<KnowledgeFeedbackSettings, KnowledgeFeedbackSettings> mutation) {
+			ArgumentNullException.ThrowIfNull(mutation);
+			KnowledgeFeedbackSettings persisted = null;
+			UpdateSettings(current => {
+				KnowledgeFeedbackSettings latest = CloneKnowledgeFeedbackSettings(
+					current.KnowledgeFeedback ?? new KnowledgeFeedbackSettings());
+				persisted = CloneKnowledgeFeedbackSettings(
+					mutation(latest) ?? throw new InvalidOperationException(
+						"Knowledge-feedback mutation returned no settings."));
+				current.KnowledgeFeedback = CloneKnowledgeFeedbackSettings(persisted);
+			});
+			return CloneKnowledgeFeedbackSettings(persisted);
+		}
+
+		private static KnowledgeFeedbackSettings CloneKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings) =>
+			new() {
+				Mode = settings.Mode,
+				Destination = settings.Destination,
+				ReportingScope = settings.ReportingScope,
+				StandingApproval = settings.StandingApproval is null
+					? null
+					: new KnowledgeFeedbackStandingApproval {
+						PolicyHash = settings.StandingApproval.PolicyHash
+					}
+			};
 
 		public string GetPinnedIisCertificateThumbprint() => _settings.IisCertificateThumbprint;
 

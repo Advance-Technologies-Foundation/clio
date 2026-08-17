@@ -42,6 +42,7 @@ public sealed class ShowWebAppListToolE2ETests
 		// Assert
 		AssertToolCallSucceeded(actResult);
 		AssertStructuredPayloadReturned(actResult);
+		AssertSettingsFilePathIsReported(actResult);
 		AssertSandboxEnvironmentIsPresent(actResult, settings.Sandbox.EnvironmentName!);
 		AssertSensitiveValuesAreMasked(actResult, settings.Sandbox.EnvironmentName!, sandboxEnvironment);
 	}
@@ -87,6 +88,16 @@ public sealed class ShowWebAppListToolE2ETests
 	{
 		actResult.Environments.Should().NotBeEmpty(
 			because: "the MCP tool should return the registered environments as structured JSON instead of log lines");
+	}
+
+	[AllureStep("Assert the settings file the list was read from is reported")]
+	[AllureDescription("Assert that the list-environments payload names the appsettings.json it read at call time")]
+	private static void AssertSettingsFilePathIsReported(ShowWebAppListActResult actResult)
+	{
+		string payload = ShowWebAppListResultParser.ExtractRawJson(actResult.CallResult);
+		payload.Should().Contain("settingsFilePath",
+			because: "the tool reads appsettings.json at call time and must name the file it read, so a caller "
+				+ "that edited a different file (another CLIO_HOME) can see the divergence");
 	}
 
 	[AllureStep("Assert sandbox environment is present in result")]

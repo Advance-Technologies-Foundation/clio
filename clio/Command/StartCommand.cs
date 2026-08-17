@@ -32,6 +32,7 @@ public class StartCommand : Command<StartOptions>
 	private readonly IIISAppPoolManager _iisAppPoolManager;
 	private readonly IIISSiteDetector _iisSiteDetector;
 	private readonly IApplicationClient _applicationClient;
+	internal TimeSpan PingStartupDelay = TimeSpan.FromSeconds(2);
 
 
 	public event EventHandler<ProgressNotificationValue> StatusChanged;
@@ -267,7 +268,7 @@ public class StartCommand : Command<StartOptions>
 			_logger.WriteInfo($"Pinging {env.Uri}/ping to verify accessibility...");
 			
 			// Wait a moment for IIS to fully start
-			await Task.Delay(2000);
+			await Task.Delay(PingStartupDelay);
 			
 			string pingUrl = $"{env.Uri}/ping";
 			_applicationClient.ExecuteGetRequest(pingUrl, 30000, 3, 2);
