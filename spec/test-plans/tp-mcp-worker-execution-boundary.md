@@ -26,7 +26,7 @@ the call and assert the delta.
 |---|---|---|
 | R1 | A stalled call still wedges the environment | the whole point; regression here is total |
 | R2 | Sampling silently degrades to `Skipped=true` under the relay | no error surfaces — `update-page` / `sync-pages` just give a worse answer |
-| R3 | Notification reordering breaks ordered replay | **measured**: the SDK's handler dispatch reorders `0..5` into `[5,4,2,3,0,1]` |
+| R3 | Notification reordering breaks ordered replay | **measured**: the SDK dispatches notification callbacks concurrently — `0..5` arrived as `[5,4,2,3,0,1]`, and as `[2,0,1,3,4]` on a retry with a FIFO added (ADR §3.2) |
 | R4 | Orphaned worker survives parent death | **measured**: the prototype leaked one orphan |
 | R5 | Credential downgrade in the worker (bearer executes as Supervisor) | this exact defect already happened once in this codebase; the symptom is **success** |
 | R6 | Sticky worker reachable by the wrong caller | environment-only scoping is the natural — and wrong — key |
@@ -39,7 +39,7 @@ the call and assert the delta.
 | Tier | Filter / project | Notes |
 |---|---|---|
 | Unit | `--filter "Category=Unit&Module=McpServer"` | metadata, routing, catalog coverage, relay units |
-| Full unit suite | `--filter "Category=Unit"` | **required** whenever `BindingsModule.cs` or `clio/Common/**` is touched (Stages 2, 3, 5, 7) |
+| Full unit suite | `--filter "Category=Unit"` | **required** whenever `BindingsModule.cs` or `clio/Common/**` is touched, or a change spans more than 3 modules (`AGENTS.md:369-373`) — Stages 2, 3, 4, 5, 7, 8, 10; see §6 for the per-stage files that trigger it |
 | E2E | `clio.mcp.e2e` | live stdio protocol; **not run by GitHub CI** — must be triggered on TeamCity (`Team_Atf_ClioMcpE2eTests`) and the result stated in the PR |
 | ClioRing contract | `dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release` + Windows x64 NativeAOT publish | mandatory for Stages 4 and 8 |
 | Reproduction lab | branch `spike/eng-95262-lab` | the deterministic stub + wedge harness; the shipping artifact is the C# port (TC-E-01) |
@@ -72,6 +72,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-U-105 | The 37 hint-unbounded tools all carry an explicit `BudgetPolicy` — none defaults to "unbounded" |
 | TC-U-106 | Feature-disabled tools are excluded from the coverage requirement but not from the catalog |
 | TC-U-107 | A deprecated alias and its canonical carry **identical** execution metadata (e.g. `StopAllCreatio` vs `stop-all-creatio`); divergence fails the test |
+| TC-U-108 | **Cross-field invariants** (inventory §3): `OperationFamily = deploy` ⇒ `Location = worker` **and** `BudgetPolicy = terminal-stage`; `Location = in-process` ⇒ `OperationFamily = none`, `Lifetime = n/a`, `BudgetPolicy = none`. A row that is per-field valid but internally impossible fails in the build, not in review |
 
 ### Stage 2 — process supervisor
 
@@ -79,7 +80,8 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 |---|---|---|
 | TC-U-201 | Unit | Concurrency cap admits N, queues N+1, and never drops a call |
 | TC-U-202 | Unit | Stale-worker cleanup is **identity-checked** — a reused PID belonging to a stranger is not killed |
-| TC-E-201 | E2E | **SIGKILL the parent while a worker has a descendant of its own; both disappear** (R4) |
+| TC-E-201 | E2E | **SIGKILL the parent while a worker has a descendant of its own; both disappear** — Linux and macOS (R4, **R-8a**) |
+| TC-E-203 | E2E | The same containment on **Windows**, via Job Object kill-on-close (**R-8b**). Blocked on OQ-1; until it passes, no cohort ships on Windows and any delivery is scoped to R-8a only |
 | TC-E-202 | E2E | Budget expiry kills the worker and its descendants; the parent answers with a bounded error |
 | TC-M-201 | Manual/measured | Windows child spawn cost and Job Object containment (**OQ-1** — Stage 2 cannot close without this number) |
 | TC-M-202 | Manual/measured | Memory/CPU ceiling for concurrent children; produces the supported maximum (**OQ-2**) |
@@ -104,6 +106,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-E-403 | E2E | **Monotonic sequence delivery under concurrency** — sequences arrive in order; a reordered delivery fails (R3) |
 | TC-E-404 | E2E | Cancellation propagates parent → child and the child stops issuing backend requests |
 | TC-U-401 | Unit | The relay does not forward notifications through `McpClientHandlers.NotificationHandlers` (rule 12) — structural assertion, since the reordering is not deterministic enough to test by observation alone |
+| TC-U-403 | Unit | **Router ordering (rule 9, AC-06):** an unmatched write tool routed through the worker still hits the destructive-confirmation gate **first**, and a refused confirmation prevents dispatch — asserted on the call order and on the child never being spawned, not by inspection |
 | TC-U-402 | Unit | **Both** dispatch seams route and agree: a tool reached as a matched name and the same tool reached through a deprecated alias (unmatched, via `McpDurableCallToolHandler`) resolve to the same execution location |
 | TC-C-401 | ClioRing | `ClioRing.Tests` green against the changed contract; unknown-field tolerance and ordered replay preserved |
 
@@ -122,7 +125,8 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 
 | ID | Tier | Assertion |
 |---|---|---|
-| TC-E-601 | E2E | **The wedge scenario (§4) — the shipping C# port of the lab harness.** Asserts on `/counters` deltas: D issues ≥ 1 request and succeeds |
+| TC-E-601 | E2E | **The wedge scenario (§4) — the shipping C# port of the lab harness.** Asserts on `/counters` deltas: D issues ≥ 1 request **on a session distinct from A's** (per-call identity or per-session token, not a global counter), and **no session object is referenced by both A and D**. "D issued a request" alone is necessary but not sufficient — it does not distinguish a new clean session from a reused one |
+| TC-E-601b | E2E | **A is cleaned up, not merely outrun** — after D succeeds, A's session shows abandoned/cancelled state and A's child is gone; the environment holds no session on A's behalf. This is the "environment recovers" half of the anchor that a D-only assertion leaves uncovered |
 | TC-E-602 | E2E | Flag **off** ⇒ byte-identical behaviour to today for every cohort tool (no accidental default switch) |
 | TC-E-603 | E2E | Cohort tools produce identical results through the worker and in-process (`get-page`, `list-pages`, `list-app-sections`, `get-schema`, `get-related-page-addon`, SQL/OData) |
 | TC-E-604 | E2E | Environment recovers **as soon as the backend does** — un-stall the stub and the next call succeeds with no restart |
@@ -140,7 +144,9 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 
 | ID | Tier | Assertion |
 |---|---|---|
-| TC-E-801 | E2E | `deploy-creatio` is bounded by **terminal stage**, not a generic kill; a mid-deploy budget expiry never leaves a half-installed environment |
+| TC-E-801 | E2E | `deploy-creatio` is bounded by **terminal stage** per the ADR §3.3 protocol, not a generic kill; a deploy that keeps streaming stages past the ordinary budget runs to its terminal stage and is never killed mid-deploy |
+| TC-E-802 | E2E | **The lost-child case** (ADR §3.3): a child killed mid-deploy, and a child that goes silent past the stage-event timeout, each produce an explicit *indeterminate* error naming the last stage reached — **never a success, never an automatic retry**. This is the case that distinguishes the protocol from a generic kill |
+| TC-E-803 | E2E | Post-terminal exit grace: a child that emits its terminal stage then hangs is killed after the grace window, and the tool result is the **terminal stage**, not an error |
 | TC-C-801 | ClioRing | Full contract suite + **Windows x64 NativeAOT publish** green (a JIT-only pass is explicitly insufficient) |
 
 ### Stage 9 — interprocess file gates
@@ -172,10 +178,13 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 
 | Stage | Targeted filter | Full suite required |
 |---|---|---|
-| 1 | `Category=Unit&Module=McpServer` | no |
+| 1 | `Category=Unit&Module=McpServer` | no — reflected attributes and a coverage test only; no DI, no `clio/Common/**` |
 | 2, 3, 5, 7 | `Category=Unit&Module=McpServer` | **yes** — `BindingsModule.cs` / `clio/Common/**` touched |
-| 4, 8 | `Category=Unit&Module=McpServer` + ClioRing contract + NativeAOT publish | no (unless DI touched) |
-| 6, 9, 10 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | no |
+| 4 | `Category=Unit&Module=McpServer` + ClioRing contract + NativeAOT publish | **yes** — `BindingsModule.cs` touched to register the relay filter on both dispatch seams (`:1160`, `:165`) |
+| 8 | `Category=Unit&Module=McpServer` + ClioRing contract + NativeAOT publish | **yes** — the terminal-stage protocol (ADR §3.3) touches the supervisor and the relay in `clio/Common/**` |
+| 6 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | no — cohort routing only, behind the flag |
+| 9 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | no — file gates are local to the baseline/meta and cache paths |
+| 10 | `Category=Unit&Module=McpServer` + `clio.mcp.e2e` | **yes** — deletes DI-registered machinery (the per-tenant monitor, `McpReadResponseDeadline` + gate, session-container pinning) from `BindingsModule.cs` and removes `CwdLock` from `clio/Common/**`; the deletions also span well over 3 modules |
 | Folded-in | `Category=Unit&(Module=Command\|Module=McpServer)` | no |
 
 ## 7. Exit criteria for the feature

@@ -45,11 +45,11 @@ precisely so the first worker cohort ships without inventing one.
 **Why it matters:** process arguments are world-readable on Linux (`/proc/<pid>/cmdline`), visible in
 `ps`/Task Manager to any local user, and routinely captured by crash handlers and monitoring agents. A local
 unprivileged user reads A-1/A-2/A-3 without any exploit.
-**Requirement:** **secret material must never appear in a child's command line — no exceptions, no
-"temporarily for debugging".** The channel is an inherited handle: an environment variable set on the child
-only (not the parent's environment), or a pipe written after spawn. The design preference is the pipe:
-environment blocks are inherited by grandchildren and appear in some crash dumps, while a pipe is read once
-and closed.
+**Requirement:** **secret material must never appear in a child's command line or in its environment block —
+no exceptions, no "temporarily for debugging".** The channel is a pipe or other inherited handle, written
+after spawn and closed once read. The environment block is excluded for the same reason the command line is,
+not as a less-preferred option: environment blocks are inherited by grandchildren and appear in some crash
+dumps, while a pipe is read once and closed.
 **Verification:** an E2E test that spawns a worker with a real credential and asserts the credential string
 does not appear in the child's command line, and — where the platform allows reading it — its environment
 block.
@@ -113,9 +113,34 @@ each observing its own identity at the Creatio end.
 same normalisation that decides whether two requests may share a worker. Normalising too aggressively (case,
 trailing slash, default port, host aliases, IP-vs-hostname) merges targets that are not the same, and the
 merged worker carries one caller's credentials to another caller's target.
-**Requirement:** normalisation is **conservative and explicit** — a documented, tested list of equivalences.
-Anything not on the list is a different target. When in doubt, spawn another worker; the cost is 0.7 s and
-the alternative is a credential crossover.
+**Requirement:** normalisation is **conservative and explicit** — the algorithm below, component by
+component. Anything the algorithm does not explicitly fold is a different target. When in doubt, spawn
+another worker; the cost is 0.7 s and the alternative is a credential crossover.
+
+**The algorithm (binding; TC-U-503's equivalence table is generated from this list, not from ad-hoc cases).**
+Applied to the resolved target URI, in order:
+
+| Component | Rule | Direction |
+|---|---|---|
+| Scheme | lowercase | **folded** — `HTTP` ≡ `http` |
+| Scheme value | `http` and `https` are **different targets** | not folded — a downgrade is a different security context |
+| Host, ASCII | lowercase (DNS is case-insensitive) | **folded** |
+| Host, non-ASCII | convert to Punycode / A-label (IDNA 2008, `UseStd3AsciiRules`), then lowercase | **folded** |
+| Host, IPv6 literal | RFC 5952 canonical form (lowercase hex, `::` at the longest zero run, brackets kept) | **folded** |
+| Host, IPv4 literal | dotted-quad only; non-canonical forms (octal, decimal-integer, `0x`) are **rejected**, not normalised | rejected |
+| Host vs IP | a hostname and an IP address are **different targets** even when DNS resolves one to the other | not folded — resolution is neither stable nor authenticated |
+| Port | elide the scheme default (`:80` for `http`, `:443` for `https`) | **folded** |
+| Port, non-default | exact match | not folded |
+| Userinfo (`user:pass@`) | **rejected** — credentials never travel in the target (T-1, T-2) | rejected |
+| Path | strip exactly one trailing `/`; resolve `.` / `..` segments; keep percent-encoding case-normalised (uppercase hex) but decode only unreserved characters per RFC 3986 §6.2.2 | **folded** |
+| Path, case | preserved — Creatio paths are case-sensitive | not folded |
+| Query, fragment | **rejected** — a target is an origin plus base path, never a query | rejected |
+
+Everything not named above is left byte-exact and therefore distinguishing. Two rules are load-bearing and
+deliberately asymmetric: the IP/hostname split and the `http`/`https` split both cost an extra worker in the
+rare case and prevent a credential crossover in the wrong one.
+**Note:** rejection means the call fails with an explicit error, not a silent fallback to a looser key —
+fail-closed, as in R-5.
 **Current state:** `BuildCacheKey` (`ToolCommandResolver.cs:361-379`) already carries the uri in the
 identity after ENG-94529, but the name branch and the URI branch still yield different keys for one target,
 so the normalisation is work not yet done — see rule 10.
@@ -142,11 +167,20 @@ marker appears nowhere in the parent's output.
 The worker survives, keeps the session alive, and is no longer supervised by anything.
 **Observed:** the prototype **leaked one orphan** when the parent was killed mid-operation. This is measured
 behaviour, not a hypothetical.
-**Requirement (rule 6):** Windows Job Object with kill-on-close; Unix process-group containment plus
-parent-death signalling; identity-checked stale-worker cleanup at parent startup — *identity-checked*
-because PIDs are reused, and killing a stranger's process is its own defect.
-**Verification (E2E):** SIGKILL the parent while a worker has a descendant of its own; both must disappear.
-Windows containment is unmeasured (OQ-1) and belongs to Stage 2.
+**Requirement (rule 6), split by platform because the verification differs:**
+- **R-8a (Unix):** process-group containment plus parent-death signalling, verified by E2E on Linux and
+  macOS.
+- **R-8b (Windows):** Job Object with kill-on-close, verified by E2E on Windows.
+
+Both carry identity-checked stale-worker cleanup at parent startup — *identity-checked* because PIDs are
+reused, and killing a stranger's process is its own defect.
+
+**Why the split is not cosmetic:** Windows containment is unmeasured (OQ-1). A single cross-platform R-8
+would be satisfiable by a Unix-only test and then read as green everywhere, which is the outcome the split
+exists to prevent. **No cohort ships on Windows until R-8b is verified**; a delivery made before then is
+explicitly scoped to R-8a only, and says so.
+**Verification (E2E):** SIGKILL the parent while a worker has a descendant of its own; both must disappear
+(TC-E-201, Unix). The Windows equivalent is TC-E-203, blocked on OQ-1; both belong to Stage 2.
 
 ### T-8 — Worker outliving its credential's validity
 
@@ -163,14 +197,15 @@ optimisation.
 
 | # | Requirement | Stage | Verified by |
 |---|---|---|---|
-| R-1 | No secret material in a child's command line; inherited handle or pipe only | 3 | command-line/environment inspection test |
+| R-1 | No secret material in a child's command line **or environment block**; pipe or other inherited handle only, written after spawn and closed | 3 | command-line/environment inspection test |
 | R-2 | Routing key derived from resolved tenant identity, never from raw tool arguments | 1, 4 | smuggling-rejection tests still pass with routing on |
 | R-3 | Worker builds its client through the same `ApplicationClientFactory` path as the parent | 3 | fail-first identity assertion |
 | R-4 | Worker fails closed on unusable material — never falls back to a default identity | 3 | negative auth test asserting refusal, not success |
 | R-5 | Sticky scope key = principal + normalised target + credential fingerprint; lookup fails closed | 5, 7 | two-caller isolation test |
-| R-6 | Conservative, documented, tested target normalisation | 5 | equivalence-table test |
+| R-6 | Target normalisation follows the component-by-component algorithm in T-5; nothing is folded that the algorithm does not name | 5 | equivalence-table test generated from the T-5 table |
 | R-7 | No secrets in logs, errors, notifications, dumps or snapshots; worker stderr redacted | 2–5 | redaction test with secret marker |
-| R-8 | Cross-platform containment; identity-checked stale-worker cleanup | 2 | parent-SIGKILL E2E |
+| R-8a | Unix process-group containment plus parent-death signalling; identity-checked stale-worker cleanup | 2 | parent-SIGKILL E2E on Linux and macOS (TC-E-201) |
+| R-8b | Windows Job Object containment with kill-on-close; identity-checked stale-worker cleanup | 2 | parent-kill E2E on Windows (TC-E-203) — unmeasured today, **OQ-1** |
 | R-9 | Sticky lifetime bounded by credential validity, with an explicit maximum | 7 | lifetime test |
 
 ## 5. Residual risk accepted
@@ -180,5 +215,6 @@ optimisation.
   this worse; it must simply not make it *easier* (which is what T-1 is about).
 - **Stdio workers read `appsettings.json` directly.** Deliberate — it avoids a channel entirely for the
   Stage 6 cohort, and the file is already readable by anything running as that user.
-- **Windows containment behaviour is unverified** (OQ-1). Stage 2 cannot close without measuring it; until
-  then no cohort ships on Windows.
+- **Windows containment behaviour is unverified** (OQ-1) — which is why R-8 is split into R-8a (Unix,
+  verifiable today) and R-8b (Windows, blocked on OQ-1). Stage 2 cannot close without measuring it; until
+  then no cohort ships on Windows, and any interim delivery is scoped to R-8a only.

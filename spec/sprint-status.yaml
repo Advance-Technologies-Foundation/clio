@@ -2785,7 +2785,7 @@ stories:
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-4.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    status_note: "Stage 4. The relay MUST own the child's transport read loop: measured on SDK 1.4.1, forwarding through McpClientHandlers.NotificationHandlers reordered sequences 0..5 into [5,4,2,3,0,1], and a single-consumer FIFO in the parent did not fix it — the reordering is at or before the SDK's handler dispatch. Sampling relay and _meta/progressToken fidelity both PASS unchanged. Highest silent risk is sampling: update-page and sync-pages call server.SampleAsync, and a non-full-duplex relay degrades semantic review to Skipped=true with no error at all. Composes with adr-mcp-durable-invocation (ENG-93370) on the shared WithCallToolHandler seam in one order only — durable name resolution first, then routing; routing first would key on an alias and miss. Extend that handler, do not register a competing one."
+    status_note: "Stage 4. The relay MUST own the child's transport read loop: measured on SDK 1.4.1, forwarding through McpClientHandlers.NotificationHandlers reordered sequences 0..5 into [5,4,2,3,0,1], and a single-consumer FIFO in the parent did not fix it ([2,0,1,3,4] on retry). The two runs disagreeing shows the SDK dispatches notification callbacks CONCURRENTLY — a FIFO fed by racing producers preserves their disorder, so no buffering depth helps; owning the read loop works because it takes messages off the wire serially, before SDK dispatch. Full unit suite required — BindingsModule.cs is touched to register the relay filter on both dispatch seams. Sampling relay and _meta/progressToken fidelity both PASS unchanged. Highest silent risk is sampling: update-page and sync-pages call server.SampleAsync, and a non-full-duplex relay degrades semantic review to Skipped=true with no error at all. Composes with adr-mcp-durable-invocation (ENG-93370) on the shared WithCallToolHandler seam in one order only — durable name resolution first, then routing; routing first would key on an alias and miss. Extend that handler, do not register a competing one."
     depends_on:
       - story-mcp-worker-execution-boundary-3
     blocks: []
@@ -2811,7 +2811,7 @@ stories:
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-6.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    status_note: "Stage 6. The cohort is exactly the commands agents were forced off in creatio-ai-app-development-toolkit#93. Acceptance is the wedge scenario asserted ON BACKEND REQUEST COUNTERS, not timings: the wedged system also finishes at 12s, so only the counter delta distinguishes 'answered' from 'never asked'. Call D (backend healthy again) succeeding with at least one request is the acceptance criterion for the whole feature. Flag off must be byte-identical to today. The e2e suite is NOT run by GitHub CI — trigger Team_Atf_ClioMcpE2eTests on TeamCity and state the result in the PR."
+    status_note: "Stage 6. The cohort is exactly the commands agents were forced off in creatio-ai-app-development-toolkit#93. Acceptance is the wedge scenario asserted ON BACKEND REQUEST COUNTERS, not timings: the wedged system also finishes at 12s, so only the counter delta distinguishes 'answered' from 'never asked'. Call D (backend healthy again) succeeding with at least one request is the acceptance criterion for the whole feature. Flag off must be byte-identical to today. The e2e suite is NOT run by GitHub CI — trigger Team_Atf_ClioMcpE2eTests on TeamCity and state the result in the PR. AC-06 carries the .clio-pages ordering constraint: get-page is a .clio-pages reader-writer and a child escapes CwdLock by being another process, so story 9's file gate must exist before this cohort routes get-page, or get-page leaves the cohort."
     depends_on:
       - story-mcp-worker-execution-boundary-4
     blocks: []
@@ -2827,7 +2827,8 @@ stories:
     status_note: "Stage 7. 'Reap on terminal status' cannot work: only compile and restart have operation registries, install-process-builder and create-app-section have none, and restart-by-credentials is deliberately unreportable — three of the four long-running modes have no terminal status to reap on, hence the private completion signal. The configuration-build reservation moves to the parent keyed by normalised tenant + resource; its 30-minute reclaim ceiling and monotonic ownership tokens carry over unchanged, having been designed for the 'holder may never release' case. Carries OQ-4 (whether create-app-section gains a real registry). Full unit suite required."
     depends_on:
       - story-mcp-worker-execution-boundary-6
-    blocks: []
+    blocks:
+      - story-mcp-worker-execution-boundary-10
   - id: story-mcp-worker-execution-boundary-8
     title: "Long synchronous / streaming commands (deploy, uninstall)"
     feature: "mcp-worker-execution-boundary"
@@ -2837,7 +2838,7 @@ stories:
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-8.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    status_note: "Stage 8. The one family where killing the process is the WRONG tool: deploy-creatio and uninstall-creatio are synchronous, destructive and progress-streaming, ClioRing waits for the authoritative terminal stage, and a generic 45-60s kill could leave a half-installed environment. Gated by the ClioRing contract suite AND the Windows x64 NativeAOT publish — contract changes can alter source-generated DTO/serialization paths, so a JIT-only pass is not evidence."
+    status_note: "Stage 8. The one family where killing the process is the WRONG tool: deploy-creatio and uninstall-creatio are synchronous, destructive and progress-streaming, ClioRing waits for the authoritative terminal stage, and a generic 45-60s kill could leave a half-installed environment. The terminal-stage signalling protocol is specified in ADR section 3.3 (channel = the existing stage-event stream; a stage-event silence timer, default 300s, rather than an operation timer; a 30s post-terminal exit grace; and an explicit INDETERMINATE error with no automatic retry when a child dies without a terminal stage) — without it terminal-stage is a label and TC-E-801 could only prove one implementation passes. Full unit suite required. Gated by the ClioRing contract suite AND the Windows x64 NativeAOT publish — contract changes can alter source-generated DTO/serialization paths, so a JIT-only pass is not evidence."
     depends_on:
       - story-mcp-worker-execution-boundary-7
     blocks: []
@@ -2850,7 +2851,7 @@ stories:
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-9.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    status_note: "Stage 9. Separate address spaces isolate memory, not the filesystem. .clio-pages/{schema}/meta.json is read-modify-write WITH SWALLOWED I/O failures, so an interleaved write is lost with no error — and CwdLock is today the only thing accidentally serialising it. Hard ordering constraint: this gate must land BEFORE CwdLock is removed in stage 10, or a correct guard becomes an invisible race. DbHub needs nothing, already cross-process safe via .clio.lock and FileShare.None."
+    status_note: "Stage 9. Separate address spaces isolate memory, not the filesystem. .clio-pages/{schema}/meta.json is read-modify-write WITH SWALLOWED I/O failures, so an interleaved write is lost with no error — and CwdLock is today the only thing accidentally serialising it. Hard ordering constraint, and the trigger is a tool going CROSS-PROCESS, not the stage-10 deletion: a child escapes CwdLock simply by being another process, so the gate must exist before any .clio-pages writer joins the worker cohort (get-page, stage 6). Encoded as story 6 AC-06 rather than an inverted depends_on edge, which would make the graph cyclic. Stage 10's CwdLock removal is a second, later checkpoint on the same gate. DbHub needs nothing, already cross-process safe via .clio.lock and FileShare.None."
     depends_on:
       - story-mcp-worker-execution-boundary-6
     blocks:
@@ -2864,8 +2865,9 @@ stories:
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-10.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    status_note: "Stage 10. Deletes the universal per-tenant monitor, McpReadResponseDeadline + McpReadDeadlineGate, CwdLock, session-container pinning and the CLIO_MCP_READ_DEADLINE_SECONDS contract — this work ends by removing machinery rather than adding a second layer. Deletion order is constrained: the .clio-pages gate (story 9) before CwdLock, the parent-owned reservation (story 7) before per-call children reach compile-creatio, and the monitor and deadline LAST since they are the only bound for any cohort still in-process. Also reverts the CLI-first exception in creatio-ai-app-development-toolkit#93, which names this work as its own reversal condition; that PR's two prohibitions stay regardless."
+    status_note: "Stage 10. Deletes the universal per-tenant monitor, McpReadResponseDeadline + McpReadDeadlineGate, CwdLock, session-container pinning and the CLIO_MCP_READ_DEADLINE_SECONDS contract — this work ends by removing machinery rather than adding a second layer. Deletion order is constrained: the .clio-pages gate (story 9) before CwdLock, the parent-owned reservation (story 7) before per-call children reach compile-creatio, and the monitor and deadline LAST since they are the only bound for any cohort still in-process. Both ordering constraints are encoded, not prose-only: depends_on lists story 7 and story 9, and both list story 10 in blocks. Full unit suite required — the deletions touch BindingsModule.cs (monitor, deadline, session pinning) and clio/Common/** (CwdLock), and span well over 3 modules. Also reverts the CLI-first exception in creatio-ai-app-development-toolkit#93, which names this work as its own reversal condition; that PR's two prohibitions stay regardless."
     depends_on:
+      - story-mcp-worker-execution-boundary-7
       - story-mcp-worker-execution-boundary-9
     blocks: []
   - id: story-mcp-worker-execution-boundary-11

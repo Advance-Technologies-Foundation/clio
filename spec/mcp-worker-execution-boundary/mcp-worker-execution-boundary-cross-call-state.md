@@ -42,10 +42,26 @@ sharing it.
 
 | # | State | Where | What the parent must own |
 |---|---|---|---|
-| P-1 | **Compile operation registry** — `BoundedOperationStore<CompileOperationRecord>` | `ICompileOperationRegistry`, singleton at `BindingsModule.cs:738` | `compile-creatio` writes it, `compile-status` reads it later. With a child per call the poll reaches a *different process* and finds nothing. Either the sticky worker serves both calls, or the parent owns the registry. |
+| P-1 | **Compile operation registry** — `BoundedOperationStore<CompileOperationRecord>` | `ICompileOperationRegistry`, singleton at `BindingsModule.cs:738` | `compile-creatio` writes it, `compile-status` reads it later. With a child per call the poll reaches a *different process* and finds nothing. Either the sticky worker serves both calls, or the parent owns the registry. **Key cardinality is not the sticky key — see below.** |
 | P-2 | **Restart operation registry** — `BoundedOperationStore<RestartOperationRecord>` | `IRestartOperationRegistry`, singleton at `BindingsModule.cs:742` | Same shape as P-1, for `restart-by-environment-name` / `restart-status`. |
 | P-3 | **`configuration-build` reservation** — `_configurationBuildInFlight`, a `ConcurrentDictionary` with a 30-minute reclaim ceiling and monotonic ownership tokens | `McpToolExecutionLock.TryReserveConfigurationBuild` (`:215`), held by `CompileCreatioTool.cs:66` and `InstallProcessBuilderTool.cs:167` | This is the one piece of mutual exclusion that is genuinely *needed*: two concurrent configuration builds against one environment corrupt each other regardless of which process issued them. Stage 7 moves it to the parent, keyed by **normalised tenant + resource**. Its 30-minute ceiling and token-based ownership carry over unchanged — they were designed for exactly this "holder may never release" case. |
 | P-4 | **Enabled-tool generation** — the feature-toggle-filtered set of `[McpServerToolType]` classes | `McpFeatureToggleFilter.RegisterEnabledPrimitives`, `appsettings.json` `features` | Resolved once at parent startup and passed to every child **frozen** (rule 11). A child that re-read `appsettings.json` could disagree with the parent mid-session — a tool present in `tools/list` but absent in the worker, or the reverse. Four toggles today: `deploy-identity`, `process-designer`, `mobile-page-converter`, `watch-compilation`. |
+
+**Two different keys, and conflating them is a defect either way.** The sticky *worker* key is
+`principal + normalised target + credential fingerprint` (threat model R-5) — it answers "whose session is
+this". The *exclusion* key for a Creatio configuration build is `normalised target + resource` — it answers
+"which server am I about to recompile". Creatio's configuration build is server-wide, so:
+
+- Keying the exclusion by the sticky key (with the principal in it) lets two principals on one environment
+  compile concurrently and corrupt each other's package compilation state.
+- Keying it by `normalised target` alone is correct for exclusion, but it means one principal's stuck build
+  denies every other principal on that environment — which is why P-3's **30-minute reclaim ceiling and
+  monotonic ownership tokens are load-bearing, not incidental**: they are the bound on that denial, and they
+  carry over to the parent unchanged.
+
+So P-1/P-2 (status *reporting*, per caller) stay keyed like the sticky worker, and P-3 (mutual *exclusion*,
+per environment) is keyed by normalised tenant + resource with the reclaim ceiling as its maximum hold time.
+Story 7 owns both, and TC-U-702 asserts the exclusion crosses processes and principals.
 
 **The gap P-1/P-2 do not cover.** Only these two registries exist. `install-process-builder` and
 `create-app-section` have no registry at all, and `restart-by-credentials` is deliberately unreportable —
@@ -77,11 +93,24 @@ the race is real. Stage 9 installs the gates.
 The deletions in §2 are not independent of the gates in §4, and doing them in the wrong order reintroduces a
 defect while removing another:
 
-1. **H-1's file gate must land before D-4's `CwdLock` is removed.** `CwdLock` is today the only thing
-   serialising `.clio-pages` writes. Removing it first converts a correct guard into a silent data race —
-   and H-1's failures are already swallowed, so the race would not even be visible.
-2. **P-3 must move to the parent before per-call children reach `compile-creatio`.** Otherwise two children
-   each hold their own private "reservation" and neither excludes the other.
+**The trigger is a tool going cross-process, not a deletion.** `CwdLock` and P-3 are *in-process* guards:
+what they serialise is concurrent access within one address space. A second process does not need them
+deleted to escape them — it was never inside them. So each constraint below is stated against the event that
+actually removes the serialisation (a writer joining the worker cohort), and the deletion at Stage 10 is
+merely the last moment by which the gate must exist.
+
+1. **H-1's file gate must land before any `.clio-pages` writer joins the worker cohort.** `get-page` is in
+   Stage 6's cohort and `update-page` / `sync-pages` follow; the moment one of them runs in a child,
+   `CwdLock` serialises nothing, with or without Stage 10's deletion. H-1's I/O failures are swallowed, so a
+   lost write in that window is invisible. **Encoded as story 6 AC-06**: no cohort tool writes `.clio-pages`
+   until the gate exists — so either story 9's gate lands with (or before) the first cohort, or `get-page`
+   stays out of the cohort until it does. (An AC rather than a `depends_on` edge, because story 9 already
+   depends on story 6 for its own cohort context and inverting the edge would make the graph cyclic; the
+   constraint is on one tool, not on the whole story.) Stage 10's `CwdLock` deletion is a second, later
+   checkpoint on the same gate, not the first one.
+2. **P-3 must move to the parent before per-call children reach `compile-creatio`** — again a cross-process
+   event, not a deletion event. Otherwise two children each hold their own private "reservation" and neither
+   excludes the other.
 3. **D-1 and D-3 are removed last (Stage 10)** — they are the fallback for every tool not yet on the worker
    path. Deleting them while cohorts remain in-process removes the only bound those cohorts have.
 

@@ -43,7 +43,7 @@ not analysis, so the BMAD Phase-1 gate is recorded as **satisfied by the issue**
 | Lock coverage *(issue measurement — **not** re-derived; §1.4 re-derives it per tool instead)* | 44 of 123 tool files never take the monitor; every tool in the field's 120 s cascade is one of the locked ones |
 | Platform hypothesis | **Refuted.** Creatio does not serialize concurrent requests on one session: 8 concurrent heavy `SelectQuery` = 2.27 s on one shared session vs 2.67 s on eight logins |
 | `ForceUseSession` | measured **no-op** for cookie-authenticated DataService traffic on the test stand |
-| Costs | warm login p50 0.468 s; clio process start ~0.27 s; child `clio mcp-server` spawn + `initialize` ~0.65 s |
+| Costs | clio process start ~0.27 s; child `clio mcp-server` spawn + `initialize` ~0.65 s, **which subsumes the warm login** (p50 0.468 s measured on its own — the child authenticates during `initialize`, so the two are concurrent phases of one 0.65 s window, not sequential additions) |
 
 ### 1.3 Two secondary defects, folded in
 
@@ -120,6 +120,11 @@ Measured against the same stub and the same harness as the reproduction:
 - **The budget needs no transport cooperation.** Children ran with clio's *default* 120 s read deadline and
   still died at the parent's 12 s budget.
 - **Cost is ~0.7 s per call** (0.72–0.78 s healthy, p50 0.78 s; ~0.68 s of it child spawn + `initialize`).
+  **The warm login is inside that 0.68 s, not added to it** — the child authenticates during `initialize`.
+  The end-to-end measurement is what settles this: a sequential login would put the total at ~1.1 s, and the
+  measured p50 is 0.78 s. §1.2's separate 0.468 s figure is the login phase measured on its own, not a
+  second cost to sum. So the cost model stands at **+31 s for 44 calls** (~+140 s for a 200-call agent run),
+  not +49 s.
   Eight concurrent calls: 1.47 s wall, 8/8 OK. On the observed workload (44 MCP calls in 116 min) that is
   **+31 s against 38–60 min of timeouts**.
 - **Long operations work with a sticky child.** `compile-creatio` returned in-progress at 8 s, and three
@@ -150,7 +155,9 @@ rule 12 is new, from the relay spike.
    See the credential threat model inventory.
 4. **Process lifetime ≠ response budget.** `deploy-creatio` and `uninstall-creatio` are synchronous,
    destructive and progress-streaming, and ClioRing waits for the authoritative terminal stage. A generic
-   45–60 s kill could leave a half-installed environment.
+   45–60 s kill could leave a half-installed environment. The signalling protocol is specified in §3.3 —
+   without it `terminal-stage` is a label, and TC-E-801 could only prove that one implementation happens to
+   pass.
 5. **Only two operation registries exist** (compile, restart). `install-process-builder` and
    `create-app-section` have none, and restart-by-credentials is deliberately unreportable, so "reap on
    terminal status" cannot manage three of the four long-running modes. Workers need a **private completion
@@ -188,13 +195,61 @@ rule 12 is new, from the relay spike.
 ### 3.2 Notification ordering — the one FAIL, and the rule it produces
 
 The child emitted sequences `0..5` sequentially on one stdout; the client received `[5, 4, 2, 3, 0, 1]`.
-Adding a single-consumer FIFO queue in the parent did **not** fix it (`[2, 0, 1, 3, 4]` on the retry), which
-locates the reordering **at or before the SDK's notification-handler dispatch**, not in the send path.
+Adding a single-consumer FIFO queue in the parent did **not** fix it (`[2, 0, 1, 3, 4]` on the retry).
+
+**What that proves — and what it does not.** A single-consumer FIFO only corrects order when its *producer*
+is serialised; racing producers fill it out of order and it preserves that order faithfully. The two runs
+disagreeing (`[5,4,2,3,0,1]` vs `[2,0,1,3,4]`) is itself the evidence: a deterministic source would have
+reproduced the same permutation. So the conclusion is not "at or before dispatch" — it is that **the SDK
+dispatches notification callbacks concurrently, and any path routing through the SDK dispatch layer is
+subject to non-deterministic races regardless of FIFO depth.** Owning the read loop is correct because it
+takes messages off the wire serially, before SDK dispatch is involved at all — not because it moves the
+FIFO closer to the source. An implementer who reads this as a queue-placement problem and tries another
+handler-layer fix will fail for a reason no amount of buffering addresses.
 
 Therefore the relay **must own the child's transport read loop**, so forwarding inherits the pipe's natural
 order. ClioRing itself tolerates reordering (it buffers by `(runId, sequence)`), but the relay must not be
 the component that introduces it — other clients have no such buffer, and ordered replay is part of the
 stage-event contract. This is an acceptance criterion for Stage 4, not a nice-to-have.
+
+### 3.3 The `terminal-stage` protocol (binding, Stage 8)
+
+Rule 4 says the parent waits for the authoritative terminal stage. That is only enforceable once three
+things are fixed: what carries the signal, how long the parent waits for it, and what happens when it never
+arrives.
+
+**Channel.** The existing stage-event stream, not a new one. The child already emits
+`notifications/progress` carrying `_meta.clioStageEvent` with `(runId, sequence)` — the same events ClioRing
+correlates on (rule 1), relayed raw. A terminal stage is a stage event whose `status` is one of the
+terminal values (`Completed` / `Failed` / `Cancelled`) for the run's root `runId`. No named pipe, no second
+IPC path: a private channel would be a second contract to keep in sync with the one ClioRing already reads,
+and the relay is required to be full-duplex for these tools anyway.
+
+**Parent-side bound.** Two separate timers, and neither is a total-operation kill:
+
+| Timer | Bound | On expiry |
+|---|---|---|
+| Terminal-stage wait | no fixed total; the operation may run as long as it streams | — |
+| **Stage-event silence** | configurable, default **300 s** with no stage event of any kind | treat as a lost child (below) |
+| Post-terminal exit grace | **30 s** between the terminal stage and child exit | kill the child; the operation itself already terminated, so this is safe |
+
+The silence timer, not an operation timer, is what bounds `terminal-stage`. It is the one bound that cannot
+truncate a legitimately long deploy: a healthy deploy streams stages continuously, and a child that has gone
+30 s past its own terminal stage has nothing left to lose.
+
+**Failure actions — the parent never guesses that a deploy finished.**
+
+- **Child exits without a terminal stage** (crash, kill, non-zero exit): the call fails with an explicit
+  *indeterminate* error naming the last stage reached, the environment is marked **possibly half-installed**,
+  and the parent does **not** retry. Retry-on-ambiguity is how a half-installed environment becomes two.
+- **Silence timer expires:** same indeterminate outcome, and the child is killed only *after* the error is
+  reported, so its last stage is captured first.
+- **Terminal stage arrives, child then hangs:** the exit grace applies; the tool result is the terminal
+  stage, not an error.
+
+The `BudgetPolicy = terminal-stage` value therefore means "bounded by silence and by the terminal event",
+never "unbounded". TC-E-801 asserts the mid-deploy case; TC-E-802 asserts the lost-child case, which is the
+one that distinguishes this protocol from a generic kill.
 
 ## 4. Execution metadata (Stage 1 contract)
 

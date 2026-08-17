@@ -28,6 +28,7 @@ the exact commands that wedged environments stop wedging them, without betting t
 - [ ] AC-03 — Cohort tools return identical results through the worker and in-process (TC-E-603).
 - [ ] AC-04 — Environment recovers as soon as the backend does, with no restart (TC-E-604).
 - [ ] AC-05 — Nothing outside the cohort changes route.
+- [ ] AC-06 — **No cohort tool writes `.clio-pages` until story 9's file gate exists.** `get-page` is a `.clio-pages` reader-writer and a child escapes `CwdLock` simply by being another process — the gate must land with (or before) this cohort, or `get-page` stays out of it (cross-call state §5).
 
 ## Tests
 E2E TC-E-601…604 in `clio.mcp.e2e`. **Must be run on TeamCity** (`Team_Atf_ClioMcpE2eTests`) — GitHub CI does not run this suite — and the result stated in the PR.

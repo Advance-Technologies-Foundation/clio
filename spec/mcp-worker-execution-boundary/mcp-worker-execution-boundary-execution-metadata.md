@@ -33,8 +33,8 @@ sure nothing is missed, and to name up front the rows where the heuristic is kno
 
 | Proposed classification | Count |
 |---|---|
-| `Location = worker` | 156 |
-| `Location = in-process` | 33 |
+| `Location = worker` | 157 |
+| `Location = in-process` | 32 |
 | `Lifetime = sticky` | 7 |
 | `OperationFamily ≠ none` | 9 |
 
@@ -70,6 +70,16 @@ over 35 commits. The census reproduces; it is not stale.
 - **`RequiresClientRequests`** — `sampling` where the tool calls `server.SampleAsync`; `progress` where it
   emits `notifications/progress` or stage events. Both mean the relay must be full-duplex for that call.
 - **`SharedFileResource`** — the concrete artifact two processes could now corrupt (rule 8).
+
+**Cross-field invariants (enforced by the Stage 1 coverage test, TC-U-108).** The rules above constrain each
+column separately, which is how a row can satisfy all six and still be internally impossible — the original
+`deploy-creatio` row classified a `deploy`-family tool as `in-process | BudgetPolicy: none`, contradicting
+rule 4, this file's own §3 prose and its `uninstall-creatio` sibling. Two invariants make that class of row
+fail in the build rather than in review:
+
+- `OperationFamily = deploy` ⇒ `Location = worker` **and** `BudgetPolicy = terminal-stage`.
+- `Location = in-process` ⇒ `OperationFamily = none`, `Lifetime = n/a` and `BudgetPolicy = none` — a tool
+  that never routes to a worker has no parent budget to expire and no sticky worker for a poll to reach.
 
 ## 4. Heuristic used for `Location`, and its limits
 
@@ -239,7 +249,7 @@ long-running tools are non-resident and are reached as
 | `delete-schema` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `delete-theme` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `delete-toolkit` | Destructive | in-process | n/a | none | none (never blocks on Creatio) | none | none |
-| `deploy-creatio` | Destructive | in-process | n/a | deploy | none (never blocks on Creatio) | progress | none |
+| `deploy-creatio` | Destructive | worker | per-call | deploy | terminal-stage | progress | none |
 | `deploy-identity` `deploy-identity` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `describe-business-process` `process-designer` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
 | `describe-environment` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |

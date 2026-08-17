@@ -19,7 +19,7 @@ separate address spaces do not create a data race where a monitor used to hide o
 
 ## Design
 - **Separate address spaces do not isolate files** (rule 8). `.clio-pages/{schema}/meta.json` is read-modify-write **with swallowed I/O failures** (`PageBaselineGuard.cs`, `PageFileWriter.cs`): the loser of an interleaved write is lost with no error at all.
-- Today `CwdLock` accidentally serialises this. **Ordering constraint (cross-call state §5): the file gate must land before `CwdLock` is removed at Stage 10** — removing it first converts a correct guard into an invisible race.
+- Today `CwdLock` accidentally serialises this — but only *within one process*. **Ordering constraint (cross-call state §5): the gate must land before any `.clio-pages` writer joins the worker cohort**, which is Stage 6 (`get-page`), not Stage 10. A child escapes `CwdLock` by being a different process; it does not wait for the deletion. **Story 6 AC-06 encodes this**: no cohort tool writes `.clio-pages` until this gate exists, so either the gate ships with the first cohort or `get-page` leaves it. Stage 10's `CwdLock` removal is a second, later checkpoint on the same gate.
 - Browser-session cache: file lock, or an explicitly documented last-write-wins.
 - `appsettings.json`: read-share on read, atomic replace on write.
 - DbHub needs nothing — already cross-process safe (`.clio.lock`, `FileShare.None`).
