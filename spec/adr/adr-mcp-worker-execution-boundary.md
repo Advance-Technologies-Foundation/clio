@@ -411,5 +411,5 @@ no-toggle decision above replaces. Each of these remains a separate, later decis
 | Credential threat model | `spec/mcp-worker-execution-boundary/mcp-worker-execution-boundary-credential-threat-model.md` |
 | Test plan | `spec/test-plans/tp-mcp-worker-execution-boundary.md` |
 | Stories | `spec/stories/story-mcp-worker-execution-boundary-*.md` |
-| Architecture explainer (UA) | `spec/mcp-worker-execution-boundary/mcp-worker-execution-boundary-presentation.html` — standalone page, open it in a browser |
+| Architecture explainer (UA) | [`docs/architecture/mcp-worker-execution-boundary.html`](../../docs/architecture/mcp-worker-execution-boundary.html) — a self-contained slide deck; open it in a browser |
 | Reproduction lab | branch `spike/eng-95262-lab` (not a merge candidate) |

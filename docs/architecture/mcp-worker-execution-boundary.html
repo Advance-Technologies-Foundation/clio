@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Межа виконання MCP · ENG-95262</title>
+<!--
+  ENG-95262 — MCP worker execution boundary.
+  Standalone 16:9 presentation. No external assets or build step.
+  Navigation: arrow keys, Space, Home/End, buttons, or dots.
+-->
+<style>
+  :root {
+    --ground: #e9edef;
+    --slide: #f8faf9;
+    --surface: #ffffff;
+    --surface-2: #edf2f1;
+    --ink: #10181b;
+    --ink-2: #34444a;
+    --muted: #667980;
+    --hair: #d2dcde;
+    --accent: #087f70;
+    --accent-2: #33a997;
+    --accent-soft: #d9efeb;
+    --alert: #c34922;
+    --alert-soft: #f8e1d9;
+    --warn: #a97916;
+    --warn-soft: #f4ead1;
+    --blue: #327aa1;
+    --blue-soft: #deedf5;
+    --shadow: 0 20px 55px rgba(16, 24, 27, .16);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #091013;
+      --slide: #111a1e;
+      --surface: #172226;
+      --surface-2: #202d32;
+      --ink: #edf4f5;
+      --ink-2: #c5d1d4;
+      --muted: #8ea2a8;
+      --hair: #304147;
+      --accent: #48c2b0;
+      --accent-2: #78d6c8;
+      --accent-soft: #173b36;
+      --alert: #f0835f;
+      --alert-soft: #46261c;
+      --warn: #e7b64c;
+      --warn-soft: #40351f;
+      --blue: #75b8dc;
+      --blue-soft: #213844;
+      --shadow: 0 24px 70px rgba(0, 0, 0, .5);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { width: 100%; height: 100%; }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 30%),
+      var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button { font: inherit; }
+
+  .viewport {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 18px 18px 58px;
+  }
+
+  .deck-shell { position: relative; }
+
+  .deck {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 1280px;
+    height: 720px;
+    transform-origin: top left;
+    background: var(--slide);
+    border: 1px solid color-mix(in srgb, var(--hair) 80%, transparent);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  .deck::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--hair) 32%, transparent) 1px, transparent 1px),
+      linear-gradient(color-mix(in srgb, var(--hair) 28%, transparent) 1px, transparent 1px);
+    background-size: 64px 64px;
+    opacity: .22;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    grid-template-rows: auto 1fr auto;
+    gap: 22px;
+    padding: 54px 66px 38px;
+    isolation: isolate;
+  }
+
+  .slide.active { display: grid; }
+
+  .slide-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 36px;
+  }
+
+  .kicker {
+    margin: 0 0 10px;
+    color: var(--accent);
+    font: 700 14px/1 var(--mono);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+
+  h1, h2, h3, p { margin: 0; }
+
+  h1 {
+    max-width: 980px;
+    font: 680 62px/1.03 var(--sans);
+    letter-spacing: -.045em;
+    text-wrap: balance;
+  }
+
+  h2 {
+    max-width: 980px;
+    font: 680 38px/1.08 var(--sans);
+    letter-spacing: -.032em;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font: 680 19px/1.15 var(--sans);
+    letter-spacing: -.015em;
+  }
+
+  .slide-no {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font: 600 16px/1 var(--mono);
+    padding-top: 6px;
+  }
+
+  .lead {
+    max-width: 880px;
+    color: var(--ink-2);
+    font-size: 24px;
+    line-height: 1.42;
+  }
+
+  .body-copy {
+    color: var(--ink-2);
+    font-size: 18px;
+    line-height: 1.45;
+  }
+
+  strong { color: var(--ink); }
+
+  code {
+    font: .88em/1 var(--mono);
+    background: var(--surface-2);
+    border-radius: 5px;
+    padding: .12em .36em;
+  }
+
+  .slide-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 23px;
+    color: var(--muted);
+    font: 600 13px/1.3 var(--mono);
+  }
+
+  .takeaway {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 980px;
+    color: var(--ink-2);
+  }
+
+  .takeaway::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; min-height: 0; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; min-height: 0; }
+  .split-46 { display: grid; grid-template-columns: .84fr 1.16fr; gap: 30px; min-height: 0; }
+
+  .card {
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    border: 1px solid var(--hair);
+    border-radius: 14px;
+    padding: 22px;
+  }
+
+  .soft-accent { background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface)); }
+  .soft-alert { background: color-mix(in srgb, var(--alert-soft) 74%, var(--surface)); }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    font: 700 12px/1 var(--mono);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill-ok { color: var(--accent); background: var(--accent-soft); }
+  .pill-bad { color: var(--alert); background: var(--alert-soft); }
+  .pill-warn { color: var(--warn); background: var(--warn-soft); }
+
+  /* Title */
+  .title-slide {
+    grid-template-rows: 1fr auto;
+    padding-top: 70px;
+  }
+
+  .title-layout { display: grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items: center; }
+  .title-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+  .title-copy .lead { max-width: 690px; }
+
+  .isolation-visual {
+    position: relative;
+    height: 460px;
+    border-radius: 22px;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 97%, transparent), color-mix(in srgb, var(--accent-soft) 55%, var(--surface)));
+    border: 1px solid var(--hair);
+    overflow: hidden;
+  }
+
+  .isolation-visual::before,
+  .isolation-visual::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(1px);
+  }
+
+  .isolation-visual::before { width: 260px; height: 260px; right: -90px; top: -80px; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .isolation-visual::after { width: 230px; height: 230px; left: -90px; bottom: -80px; background: color-mix(in srgb, var(--blue) 14%, transparent); }
+
+  .parent-node {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 138px;
+    height: 138px;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--slide);
+    font: 700 18px/1.2 var(--mono);
+    text-align: center;
+    z-index: 2;
+  }
+
+  .worker-node {
+    position: absolute;
+    width: 154px;
+    min-height: 74px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1.5px solid var(--accent);
+    color: var(--ink);
+    font: 700 14px/1.2 var(--mono);
+    z-index: 2;
+  }
+
+  .worker-node span { color: var(--muted); font-size: 11px; font-weight: 600; }
+  .worker-node.bad { border-color: var(--alert); }
+  .worker-node.bad span { color: var(--alert); }
+  .w1 { left: 30px; top: 58px; }
+  .w2 { right: 28px; top: 52px; }
+  .w3 { left: 32px; bottom: 56px; }
+  .w4 { right: 26px; bottom: 54px; }
+
+  .spoke { position: absolute; height: 2px; background: var(--hair); transform-origin: left center; z-index: 1; }
+  .s1 { width: 155px; left: 150px; top: 164px; transform: rotate(24deg); }
+  .s2 { width: 154px; left: 292px; top: 214px; transform: rotate(-29deg); }
+  .s3 { width: 154px; left: 148px; top: 302px; transform: rotate(-28deg); }
+  .s4 { width: 152px; left: 292px; top: 258px; transform: rotate(27deg); }
+
+  /* Diagrams */
+  .diagram-card { padding: 14px 18px 12px; overflow: hidden; }
+  .diagram { width: 100%; height: 100%; display: block; }
+  .diagram text { font-family: var(--mono); fill: var(--ink); }
+  .diagram .label { font-size: 17px; font-weight: 700; }
+  .diagram .small { font-size: 13px; font-weight: 600; fill: var(--muted); }
+  .diagram .tiny { font-size: 11px; font-weight: 600; fill: var(--muted); }
+  .diagram .box { fill: var(--surface); stroke: var(--hair); stroke-width: 2; }
+  .diagram .okbox { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.2; }
+  .diagram .badbox { fill: var(--alert-soft); stroke: var(--alert); stroke-width: 2.2; }
+  .diagram .lockbox { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 2.2; }
+  .diagram .line { stroke: var(--ink-2); stroke-width: 2; fill: none; }
+  .diagram .okline { stroke: var(--accent); stroke-width: 2.4; fill: none; }
+  .diagram .badline { stroke: var(--alert); stroke-width: 2.4; fill: none; }
+  .diagram .dash { stroke-dasharray: 7 6; }
+
+  .fact-stack { display: flex; flex-direction: column; gap: 14px; }
+  .fact { display: grid; grid-template-columns: 42px 1fr; gap: 13px; align-items: start; padding: 16px; border-left: 3px solid var(--hair); }
+  .fact.good { border-color: var(--accent); }
+  .fact.bad { border-color: var(--alert); }
+  .fact.warn { border-color: var(--warn); }
+  .fact-num { font: 700 25px/1 var(--mono); color: var(--muted); }
+  .fact p { margin-top: 4px; color: var(--ink-2); font-size: 16px; line-height: 1.36; }
+
+  /* Reproduction charts */
+  .chart-card { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .chart-sub { color: var(--muted); font: 600 12px/1.25 var(--mono); }
+  .request-chart { display: grid; grid-template-columns: 70px repeat(4, 1fr); gap: 10px; align-items: end; flex: 1; min-height: 0; }
+  .y-note { align-self: stretch; display: flex; align-items: center; justify-content: center; color: var(--muted); font: 600 12px/1 var(--mono); writing-mode: vertical-rl; transform: rotate(180deg); }
+  .bar-col { height: 100%; display: grid; grid-template-rows: 1fr auto; gap: 9px; align-items: end; }
+  .bar-well { height: 100%; min-height: 210px; display: flex; align-items: flex-end; justify-content: center; position: relative; border-bottom: 1px solid var(--hair); background: linear-gradient(to top, color-mix(in srgb, var(--hair) 28%, transparent) 1px, transparent 1px); background-size: 100% 50%; }
+  .vbar { width: 64%; min-height: 6px; border-radius: 8px 8px 2px 2px; display: flex; align-items: flex-start; justify-content: center; padding-top: 10px; color: var(--surface); font: 700 24px/1 var(--mono); }
+  .vbar.one { height: 88%; background: var(--accent); }
+  .vbar.zero { height: 6px; min-height: 6px; padding-top: 0; background: var(--alert); color: var(--alert); }
+  .bar-label { text-align: center; font: 700 14px/1.2 var(--mono); }
+  .bar-label span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+
+  .timeline-list { display: flex; flex-direction: column; gap: 13px; margin-top: 8px; }
+  .timeline-row { display: grid; grid-template-columns: 26px 1fr 94px; gap: 11px; align-items: center; }
+  .timeline-id { font: 700 14px/1 var(--mono); }
+  .timeline-track { height: 28px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+  .timeline-bar { height: 100%; min-width: 12px; display: flex; align-items: center; padding: 0 10px; color: var(--surface); font: 700 11px/1 var(--mono); white-space: nowrap; }
+  .timeline-bar.stall { width: 100%; background: var(--warn); }
+  .timeline-bar.dead { width: 100%; background: var(--alert); }
+  .timeline-bar.ok { width: 7%; background: var(--accent); padding: 0; }
+  .timeline-count { text-align: right; font: 700 12px/1 var(--mono); color: var(--muted); }
+  .timeline-count.yes { color: var(--accent); }
+  .timeline-count.no { color: var(--alert); }
+
+  /* Relay and economics */
+  .relay-grid { display: grid; grid-template-columns: 1fr 74px 1fr; gap: 14px; align-items: stretch; min-height: 0; }
+  .lane { display: flex; flex-direction: column; gap: 12px; }
+  .lane-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .relay-item { flex: 1; display: flex; gap: 13px; align-items: center; padding: 15px 16px; border: 1px solid var(--hair); border-radius: 10px; background: var(--surface); }
+  .relay-icon { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: var(--surface-2); color: var(--accent); font: 800 14px/1 var(--mono); }
+  .relay-item p { color: var(--muted); font-size: 13px; line-height: 1.3; margin-top: 3px; }
+  .relay-arrow { display: grid; place-items: center; color: var(--accent); font: 800 30px/1 var(--mono); }
+
+  .economics { display: grid; grid-template-columns: 1.05fr .95fr; gap: 24px; min-height: 0; }
+  .performance-stack { display: grid; grid-template-rows: 288px 138px; gap: 14px; min-height: 0; }
+  .performance-stack .card { padding: 18px; }
+  .performance-stack .scale-chart { gap: 14px; }
+  .performance-stack .scale-track { height: 40px; }
+  .scale-chart { display: flex; flex-direction: column; gap: 20px; }
+  .scale-row { display: grid; grid-template-columns: 148px 1fr 130px; gap: 14px; align-items: center; }
+  .scale-label { font: 700 13px/1.25 var(--mono); }
+  .scale-track { height: 44px; border-radius: 8px; background: var(--surface-2); overflow: hidden; }
+  .scale-bar { height: 100%; min-width: 10px; display: flex; align-items: center; padding: 0 12px; color: var(--surface); font: 700 12px/1 var(--mono); white-space: nowrap; }
+  .scale-bar.cost { width: 1.36%; background: var(--blue); padding: 0; }
+  .scale-bar.saved-low { width: 63.3%; background: var(--accent); }
+  .scale-bar.saved-high { width: 100%; background: var(--accent-2); }
+  .scale-value { text-align: right; font: 750 17px/1 var(--mono); }
+  .scale-axis { margin-left: 162px; display: flex; justify-content: space-between; color: var(--muted); font: 600 11px/1 var(--mono); }
+  .big-stat { display: flex; flex-direction: column; justify-content: center; gap: 9px; text-align: center; }
+  .big-stat .number { color: var(--accent); font: 760 64px/1 var(--mono); letter-spacing: -.06em; }
+  .big-stat .unit { color: var(--ink); font: 700 20px/1.2 var(--sans); }
+  .big-stat p { color: var(--muted); font-size: 15px; line-height: 1.35; }
+
+  /* Comparison */
+  .matrix { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); font-size: 15px; }
+  .matrix th, .matrix td { padding: 11px 15px; border-bottom: 1px solid var(--hair); text-align: left; vertical-align: middle; }
+  .matrix th { background: var(--surface-2); color: var(--muted); font: 700 12px/1.2 var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+  .matrix tr:last-child td { border-bottom: 0; }
+  .matrix th:not(:first-child), .matrix td:not(:first-child) { border-left: 1px solid var(--hair); }
+  .matrix td:first-child { font-weight: 700; }
+  .matrix .bad-cell { color: var(--alert); background: color-mix(in srgb, var(--alert-soft) 56%, transparent); font-weight: 700; }
+  .matrix .good-cell { color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 54%, transparent); font-weight: 700; }
+
+  .conclusion { display: grid; grid-template-columns: 1fr 280px; gap: 22px; align-items: center; margin-top: 18px; }
+  .conclusion-copy { padding: 18px 20px; border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent-soft) 54%, transparent); border-radius: 0 10px 10px 0; font-size: 18px; line-height: 1.38; color: var(--ink-2); }
+  .links { display: flex; justify-content: flex-end; gap: 10px; }
+  .links a { color: var(--accent); text-decoration: none; font: 700 12px/1 var(--mono); border: 1px solid var(--hair); border-radius: 8px; padding: 11px 12px; background: var(--surface); }
+
+  /* Navigation */
+  .controls {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 20;
+  }
+
+  .nav-button {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--hair);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(16, 24, 27, .1);
+  }
+
+  .nav-button:disabled { opacity: .35; cursor: default; }
+  .nav-button:focus-visible, .dot:focus-visible, .links a:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+
+  .dots { display: flex; align-items: center; gap: 7px; }
+  .dot { width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--muted) 42%, transparent); cursor: pointer; }
+  .dot.active { width: 25px; border-radius: 999px; background: var(--accent); }
+  .counter { min-width: 54px; color: var(--muted); text-align: center; font: 700 12px/1 var(--mono); }
+
+  @media (max-height: 500px) {
+    .viewport { padding: 8px 8px 42px; }
+    .controls { bottom: 5px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<main class="viewport" aria-label="Презентація ENG-95262">
+  <div class="deck-shell" id="deckShell">
+    <div class="deck" id="deck">
+
+      <section class="slide title-slide active" aria-labelledby="title-1">
+        <div class="title-layout">
+          <div class="title-copy">
+            <p class="kicker">ENG-95262 · clio MCP</p>
+            <h1 id="title-1">Межа виконання MCP</h1>
+            <p class="lead">Один запит до Creatio без відповіді сьогодні може назавжди «заморозити» середовище. Рішення — <strong>не кращий таймаут</strong>, а ізоляція кожного виклику в окремому короткоживучому процесі.</p>
+            <span class="pill pill-ok">контракт MCP не змінюється</span>
+          </div>
+          <div class="isolation-visual" aria-label="Parent маршрутизує чотири незалежні worker-процеси">
+            <span class="spoke s1"></span><span class="spoke s2"></span><span class="spoke s3"></span><span class="spoke s4"></span>
+            <div class="parent-node">MCP<br>parent</div>
+            <div class="worker-node w1">get-page<span>0,8 с · готово</span></div>
+            <div class="worker-node bad w2">list-pages<span>12 с · kill</span></div>
+            <div class="worker-node w3">get-schema<span>0,7 с · готово</span></div>
+            <div class="worker-node w4">compile-creatio<span>окремий worker</span></div>
+          </div>
+        </div>
+        <div class="slide-foot"><span>Архітектурне пояснення</span><span>17.08.2026</span></div>
+      </section>
+
+      <section class="slide" aria-labelledby="title-2">
+        <header class="slide-head">
+          <div><p class="kicker">01 · Вже перевірена модель</p><h2 id="title-2">CLI ізолює збій природно: один виклик — один процес</h2></div>
+          <span class="slide-no">02 / 08</span>
+        </header>
+        <div class="split-46">
+          <div class="fact-stack">
+            <div class="fact good"><span class="fact-num">1</span><div><h3>Свій процес</h3><p>Кожна команда має власну пам’ять, сесію входу та запит.</p></div></div>
+            <div class="fact bad"><span class="fact-num">×</span><div><h3>Зависання локальне</h3><p>Повислий процес тримає лише себе — його вбиває той, хто запустив.</p></div></div>
+            <div class="fact good"><span class="fact-num">→</span><div><h3>Наступний виклик живий</h3><p>Інша команда стартує незалежно й доходить до Creatio.</p></div></div>
+          </div>
+          <div class="card diagram-card">
+            <svg class="diagram" viewBox="0 0 680 420" role="img" aria-labelledby="cli-svg-title cli-svg-desc">
+              <title id="cli-svg-title">Три незалежні CLI-процеси на часовій шкалі</title>
+              <desc id="cli-svg-desc">Перший і третій процеси успішні. Другий завис і був убитий, але не завадив третьому.</desc>
+              <defs>
+                <marker id="arrow-cli" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--ink-2)"/></marker>
+                <marker id="arrow-cli-ok" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker>
+              </defs>
+              <line class="line" x1="42" y1="48" x2="632" y2="48" marker-end="url(#arrow-cli)"/>
+              <text class="small" x="590" y="34">час</text>
+              <rect class="okbox" x="42" y="84" width="160" height="72" rx="10"/>
+              <text class="label" x="60" y="114">get-page</text><text class="small" x="60" y="138">2 с · завершився</text>
+              <rect class="badbox" x="238" y="84" width="210" height="72" rx="10"/>
+              <text class="label" x="256" y="114">list-pages</text><text class="small" x="256" y="138">повис · kill</text>
+              <path class="badline" d="M420 100 l18 18 M438 100 l-18 18"/>
+              <rect class="okbox" x="484" y="84" width="154" height="72" rx="10"/>
+              <text class="label" x="502" y="114">get-schema</text><text class="small" x="502" y="138">2 с · завершився</text>
+              <line class="okline" x1="122" y1="156" x2="122" y2="254" marker-end="url(#arrow-cli-ok)"/>
+              <line class="badline" x1="343" y1="156" x2="343" y2="254"/>
+              <line class="okline" x1="561" y1="156" x2="561" y2="254" marker-end="url(#arrow-cli-ok)"/>
+              <rect class="box" x="42" y="270" width="596" height="76" rx="12"/>
+              <text class="label" x="62" y="305">Creatio</text><text class="small" x="62" y="329">три незалежні входи й запити</text>
+              <text class="small" x="256" y="218" fill="var(--alert)">збій не поширюється</text>
+              <path class="badline dash" d="M342 166 V226"/>
+            </svg>
+          </div>
+        </div>
+        <div class="slide-foot"><span class="takeaway">CLI не має імунітету до зависання — він має імунітет до його поширення.</span><span>ENG-95262</span></div>
+      </section>
+
+      <section class="slide" aria-labelledby="title-3">
+        <header class="slide-head">
+          <div><p class="kicker">02 · Проблема сьогодні</p><h2 id="title-3">Один довгоживучий MCP-процес перетворює локальний збій на блокування середовища</h2></div>
+          <span class="slide-no">03 / 08</span>
+        </header>
+        <div class="grid-2">
+          <div class="card diagram-card">
+            <svg class="diagram" viewBox="0 0 560 430" role="img" aria-labelledby="wedge-svg-title wedge-svg-desc">
+              <title id="wedge-svg-title">Виклики A, B, C і D в одному MCP-процесі</title>
+              <desc id="wedge-svg-desc">A захопив замок і завис. B, C та D не доходять до здорового Creatio.</desc>
+              <defs><marker id="arrow-wedge" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--ink-2)"/></marker></defs>
+              <rect class="box" x="26" y="34" width="338" height="352" rx="16"/>
+              <text class="small" x="46" y="60">один процес · живе годинами</text>
+              <rect class="lockbox" x="270" y="86" width="62" height="242" rx="10"/>
+              <text class="tiny" x="301" y="211" text-anchor="middle" transform="rotate(-90 301 211)">замок на середовище</text>
+              <text class="label" x="54" y="116">A</text><line class="okline" x1="82" y1="110" x2="266" y2="110"/><text class="small" x="95" y="97">захопив і повис</text>
+              <text class="label" x="54" y="176">B</text><line class="badline" x1="82" y1="170" x2="260" y2="170"/><path class="badline" d="M250 161 l18 18 M268 161 l-18 18"/>
+              <text class="label" x="54" y="236">C</text><line class="badline" x1="82" y1="230" x2="260" y2="230"/><path class="badline" d="M250 221 l18 18 M268 221 l-18 18"/>
+              <text class="label" x="54" y="296">D</text><line class="badline" x1="82" y1="290" x2="260" y2="290"/><path class="badline" d="M250 281 l18 18 M268 281 l-18 18"/>
+              <path class="okline" d="M332 110 H398 V212 H448" marker-end="url(#arrow-wedge)"/>
+              <rect class="okbox" x="404" y="174" width="132" height="82" rx="10"/>
+              <text class="label" x="422" y="207">Creatio</text><text class="small" x="422" y="232">вже здоровий</text>
+              <text class="small" x="49" y="354" fill="var(--alert)">B–D: 0 backend-запитів</text>
+            </svg>
+          </div>
+          <div class="fact-stack">
+            <div class="fact bad"><span class="fact-num">A</span><div><h3>Захоплює замок і зависає</h3><p>Покинута робота продовжує жити навіть після відповіді з помилкою клієнту.</p></div></div>
+            <div class="fact warn"><span class="fact-num">120</span><div><h3>Секунд — лише бюджет відповіді</h3><p>Він обмежує очікування клієнта, але <strong>не зупиняє роботу</strong> в процесі.</p></div></div>
+            <div class="fact bad"><span class="fact-num">0</span><div><h3>Запитів від B, C, D</h3><p>Вони гинуть на замку. Creatio вже може бути здоровим — його ніхто не питає.</p></div></div>
+          </div>
+        </div>
+        <div class="slide-foot"><span class="takeaway">Середовище не оживає саме: його чистить лише перезапуск MCP-процесу.</span><span>Поточна межа</span></div>
+      </section>
+
+      <section class="slide" aria-labelledby="title-4">
+        <header class="slide-head">
+          <div><p class="kicker">03 · Відтворення</p><h2 id="title-4">Дивитися треба на backend-запити, а не на однаковий 12-секундний фінал</h2></div>
+          <span class="slide-no">04 / 08</span>
+        </header>
+        <div class="grid-2">
+          <div class="card chart-card soft-alert">
+            <div class="chart-head"><div><h3>Сьогодні</h3><p class="chart-sub">загальний процес і замок</p></div><span class="pill pill-bad">заблоковано</span></div>
+            <div class="request-chart" aria-label="Backend-запити: A один, B нуль, C нуль, D нуль">
+              <div class="y-note">backend-запити</div>
+              <div class="bar-col"><div class="bar-well"><div class="vbar one">1</div></div><div class="bar-label">A<span>повис</span></div></div>
+              <div class="bar-col"><div class="bar-well"><div class="vbar zero"></div></div><div class="bar-label">B<span>0 запитів</span></div></div>
+              <div class="bar-col"><div class="bar-well"><div class="vbar zero"></div></div><div class="bar-label">C<span>0 запитів</span></div></div>
+              <div class="bar-col"><div class="bar-well"><div class="vbar zero"></div></div><div class="bar-label">D<span>сервер здоровий</span></div></div>
+            </div>
+          </div>
+          <div class="card chart-card soft-accent">
+            <div class="chart-head"><div><h3>З worker-процесами</h3><p class="chart-sub">кожен виклик доходить до сервера</p></div><span class="pill pill-ok">ізольовано</span></div>
+            <div class="timeline-list" aria-label="A, B і C вбиті після 12 секунд, D успішний за 0,8 секунди; усі зробили по одному backend-запиту">
+              <div class="timeline-row"><span class="timeline-id">A</span><div class="timeline-track"><div class="timeline-bar stall">12,0 с · kill по бюджету</div></div><span class="timeline-count yes">1 запит</span></div>
+              <div class="timeline-row"><span class="timeline-id">B</span><div class="timeline-track"><div class="timeline-bar stall">12,0 с · kill по бюджету</div></div><span class="timeline-count yes">1 запит</span></div>
+              <div class="timeline-row"><span class="timeline-id">C</span><div class="timeline-track"><div class="timeline-bar stall">12,0 с · kill по бюджету</div></div><span class="timeline-count yes">1 запит</span></div>
+              <div class="timeline-row"><span class="timeline-id">D</span><div class="timeline-track"><div class="timeline-bar ok"></div></div><span class="timeline-count yes">1 запит · ок</span></div>
+            </div>
+            <p class="body-copy"><strong>D проходить за 0,8 с.</strong> A–C коректно завершуються по бюджету: сервер справді не відповідає, але їхній збій більше не блокує наступний виклик.</p>
+          </div>
+        </div>
+        <div class="slide-foot"><span class="takeaway">«Завершився за 12 с» не доводить працездатність. Лічильник доводить, чи запит узагалі був.</span><span>Бюджет тесту: 12 с</span></div>
+      </section>
+
+      <section class="slide" aria-labelledby="title-5">
+        <header class="slide-head">
+          <div><p class="kicker">04 · Нова межа виконання</p><h2 id="title-5">Parent маршрутизує. Кожен worker виконує рівно один MCP-виклик</h2></div>
+          <span class="slide-no">05 / 08</span>
+        </header>
+        <div class="grid-2">
+          <div class="card diagram-card">
+            <svg class="diagram" viewBox="0 0 570 430" role="img" aria-labelledby="worker-svg-title worker-svg-desc">
+              <title id="worker-svg-title">Архітектура parent і короткоживучих worker-процесів</title>
+              <desc id="worker-svg-desc">Агент надсилає виклик parent-процесу. Parent створює окремий worker, який звертається до Creatio. Якщо бюджет вичерпано, parent убиває worker.</desc>
+              <defs><marker id="arrow-worker" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--ink-2)"/></marker><marker id="arrow-worker-ok" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker></defs>
+              <rect class="box" x="20" y="171" width="88" height="74" rx="12"/><text class="label" x="40" y="215">агент</text>
+              <line class="line" x1="108" y1="208" x2="151" y2="208" marker-end="url(#arrow-worker)"/>
+              <rect class="box" x="158" y="155" width="126" height="106" rx="12"/><text class="label" x="180" y="193">parent</text><text class="small" x="180" y="218">маршрут +</text><text class="small" x="180" y="238">бюджет</text>
+              <rect class="okbox" x="332" y="34" width="166" height="64" rx="10"/><text class="label" x="350" y="62">get-page</text><text class="small" x="350" y="83">0,8 с · done</text>
+              <rect class="badbox" x="332" y="120" width="166" height="64" rx="10"/><text class="label" x="350" y="148">list-pages</text><text class="small" x="350" y="169">12 с · kill</text>
+              <rect class="okbox" x="332" y="206" width="166" height="64" rx="10"/><text class="label" x="350" y="234">get-schema</text><text class="small" x="350" y="255">0,7 с · done</text>
+              <rect class="okbox" x="332" y="292" width="166" height="64" rx="10"/><text class="label" x="350" y="320">compile</text><text class="small" x="350" y="341">окремий worker</text>
+              <line class="line" x1="284" y1="190" x2="326" y2="69" marker-end="url(#arrow-worker)"/>
+              <line class="line" x1="284" y1="200" x2="326" y2="152" marker-end="url(#arrow-worker)"/>
+              <line class="line" x1="284" y1="216" x2="326" y2="238" marker-end="url(#arrow-worker)"/>
+              <line class="line" x1="284" y1="226" x2="326" y2="324" marker-end="url(#arrow-worker)"/>
+              <line class="okline" x1="498" y1="66" x2="548" y2="66" marker-end="url(#arrow-worker-ok)"/>
+              <line class="okline" x1="498" y1="152" x2="548" y2="152" marker-end="url(#arrow-worker-ok)"/>
+              <line class="okline" x1="498" y1="238" x2="548" y2="238" marker-end="url(#arrow-worker-ok)"/>
+              <line class="okline" x1="498" y1="324" x2="548" y2="324" marker-end="url(#arrow-worker-ok)"/>
+              <text class="tiny" x="320" y="390">окремий вхід на кожен виклик</text>
+            </svg>
+          </div>
+          <div class="fact-stack">
+            <div class="fact good"><span class="fact-num">①</span><div><h3>Створити worker</h3><p>Parent запускає короткоживучий <code>clio mcp-server</code> для одного виклику.</p></div></div>
+            <div class="fact good"><span class="fact-num">②</span><div><h3>Передати MCP-контракт</h3><p>Аргументи, результат, поступ і запити до клієнта проходять крізь parent.</p></div></div>
+            <div class="fact bad"><span class="fact-num">③</span><div><h3>Убити після бюджету</h3><p>Parent не просить зупинитися — він завершує процес ззовні.</p></div></div>
+            <div class="fact good"><span class="fact-num">④</span><div><h3>Прибрати спільний замок</h3><p>У worker-процесів немає спільної сесії чи пам’яті, яку треба захищати.</p></div></div>
+          </div>
+        </div>
+        <div class="slide-foot"><span class="takeaway">Убитому процесу не потрібно «погоджуватися» на таймаут.</span><span>Нова межа</span></div>
+      </section>
+
+      <section class="slide" aria-labelledby="title-6">
+        <header class="slide-head">
+          <div><p class="kicker">05 · MCP лишається MCP</p><h2 id="title-6">Ізоляція виконання не обрізає двосторонні можливості протоколу</h2></div>
+          <span class="slide-no">06 / 08</span>
+        </header>
+        <div class="relay-grid">
+          <div class="lane card">
+            <div class="lane-title"><h3>Agent ↔ Parent</h3><span class="pill pill-ok">стабільно</span></div>
+            <div class="relay-item"><span class="relay-icon">T</span><div><h3>Tool schema + args</h3><p>Назви, контракти та підказки без змін.</p></div></div>
+            <div class="relay-item"><span class="relay-icon">P</span><div><h3>Progress</h3><p>Parent ретранслює події в початковому порядку.</p></div></div>
+            <div class="relay-item"><span class="relay-icon">S</span><div><h3>Sampling / client requests</h3><p>Двосторонній виклик проходить через parent.</p></div></div>
+          </div>
+          <div class="relay-arrow" aria-hidden="true">⇄</div>
+          <div class="lane card soft-accent">
+            <div class="lane-title"><h3>Parent ↔ Worker</h3><span class="pill pill-warn">нове</span></div>
+            <div class="relay-item"><span class="relay-icon">1</span><div><h3>Один виклик</h3><p>Worker отримує точний tool call та контекст.</p></div></div>
+            <div class="relay-item"><span class="relay-icon">↕</span><div><h3>Повний relay</h3><p>Результат, progress і sampling ідуть в обидва боки.</p></div></div>
+            <div class="relay-item"><span class="relay-icon">×</span><div><h3>Жорстка межа</h3><p>Після завершення або kill worker не лишає стану.</p></div></div>
+          </div>
+        </div>
+        <div class="slide-foot"><span class="takeaway">Для агента й ClioRing зовнішня поверхня не змінюється — змінюється лише місце виконання.</span><span>MCP relay</span></div>
+      </section>
+
+      <section class="slide" aria-labelledby="title-7">
+        <header class="slide-head">
+          <div><p class="kicker">06 · Ціна ізоляції</p><h2 id="title-7">+31 секунда запусків замість 38–60 хвилин каскадних таймаутів</h2></div>
+          <span class="slide-no">07 / 08</span>
+        </header>
+        <div class="performance-stack">
+          <div class="economics">
+            <div class="card scale-chart" aria-label="Порівняння 31 секунди overhead із 2280–3600 секундами таймаутів">
+              <div class="chart-head"><div><h3>Виміряне навантаження</h3><p class="chart-sub">спільна шкала: 0–3600 секунд</p></div><span class="pill pill-ok">до 116× менше</span></div>
+              <div class="scale-row"><span class="scale-label">Запуск worker-ів</span><div class="scale-track"><div class="scale-bar cost"></div></div><span class="scale-value">+31 с</span></div>
+              <div class="scale-row"><span class="scale-label">Таймаути · min</span><div class="scale-track"><div class="scale-bar saved-low">38 хв</div></div><span class="scale-value">2280 с</span></div>
+              <div class="scale-row"><span class="scale-label">Таймаути · max</span><div class="scale-track"><div class="scale-bar saved-high">60 хв</div></div><span class="scale-value">3600 с</span></div>
+              <div class="scale-axis"><span>0</span><span>1800 с</span><span>3600 с</span></div>
+            </div>
+            <div class="card big-stat soft-accent">
+              <span class="number">≈0,7 с</span>
+              <span class="unit">на один виклик</span>
+              <p>Запуск процесу разом із входом у Creatio. Це та сама ціна, яку CLI платить завжди.</p>
+            </div>
+          </div>
+          <div class="grid-3">
+            <div class="card"><h3>Не всюди є timeout</h3><p class="body-copy"><code>UploadFile</code>, <code>DownloadFile</code> та install-операції не мають параметра таймауту.</p></div>
+            <div class="card"><h3>Kill універсальний</h3><p class="body-copy">Процесна межа працює навіть там, де транспорт не вміє скасування.</p></div>
+            <div class="card"><h3>Менше механізмів</h3><p class="body-copy">Після ізоляції спільний tenant-lock стає непотрібним і видаляється.</p></div>
+          </div>
+        </div>
+        <div class="slide-foot"><span class="takeaway">Невелика постійна ціна купує передбачувану верхню межу збою.</span><span>Виміряно</span></div>
+      </section>
+
+      <section class="slide" aria-labelledby="title-8">
+        <header class="slide-head">
+          <div><p class="kicker">07 · Підсумок</p><h2 id="title-8">Контракт лишається. Межа виконання переходить до worker-процесу.</h2></div>
+          <span class="slide-no">08 / 08</span>
+        </header>
+        <div>
+          <table class="matrix" aria-label="Порівняння CLI, поточного MCP і MCP після зміни">
+            <thead><tr><th>Властивість</th><th>CLI</th><th>MCP сьогодні</th><th>MCP після зміни</th></tr></thead>
+            <tbody>
+              <tr><td>Процес на виклик</td><td class="good-cell">окремий</td><td class="bad-cell">спільний</td><td class="good-cell">окремий worker</td></tr>
+              <tr><td>Замок на середовище</td><td class="good-cell">немає</td><td class="bad-cell">є, без межі</td><td class="good-cell">не потрібен</td></tr>
+              <tr><td>Кому шкодить зависання</td><td class="good-cell">лише собі</td><td class="bad-cell">усім наступним</td><td class="good-cell">лише собі</td></tr>
+              <tr><td>Після одужання Creatio</td><td class="good-cell">наступний працює</td><td class="bad-cell">досі мертве</td><td class="good-cell">наступний працює</td></tr>
+              <tr><td>Progress і client requests</td><td>немає</td><td class="good-cell">є</td><td class="good-cell">є через relay</td></tr>
+            </tbody>
+          </table>
+          <div class="conclusion">
+            <p class="conclusion-copy"><strong>Результат:</strong> один завислий Creatio-запит більше не отруює середовище. Parent завжди лишається здатним прийняти наступний виклик, а worker має чіткий життєвий цикл і жорсткий бюджет.</p>
+            <nav class="links" aria-label="Посилання"><a href="https://creatio.atlassian.net/browse/ENG-95262">Jira</a><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/1080">PR #1080</a></nav>
+          </div>
+        </div>
+        <div class="slide-foot"><span class="takeaway">Не кращий timeout. Краща межа відмови.</span><span>ENG-95262</span></div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<nav class="controls" aria-label="Навігація презентацією">
+  <button class="nav-button" id="prev" type="button" aria-label="Попередній слайд">←</button>
+  <div class="dots" id="dots" aria-label="Слайди"></div>
+  <span class="counter" id="counter" aria-live="polite">1 / 8</span>
+  <button class="nav-button" id="next" type="button" aria-label="Наступний слайд">→</button>
+</nav>
+
+<script>
+(() => {
+  const shell = document.getElementById('deckShell');
+  const deck = document.getElementById('deck');
+  const slides = [...document.querySelectorAll('.slide')];
+  const dots = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
+  let current = 0;
+
+  function fitDeck() {
+    const availableWidth = Math.max(320, window.innerWidth - 36);
+    const availableHeight = Math.max(180, window.innerHeight - 76);
+    const scale = Math.min(availableWidth / 1280, availableHeight / 720);
+    shell.style.width = `${1280 * scale}px`;
+    shell.style.height = `${720 * scale}px`;
+    deck.style.transform = `scale(${scale})`;
+  }
+
+  function show(index) {
+    current = Math.max(0, Math.min(slides.length - 1, index));
+    slides.forEach((slide, i) => {
+      const active = i === current;
+      slide.classList.toggle('active', active);
+      slide.setAttribute('aria-hidden', String(!active));
+    });
+    [...dots.children].forEach((dot, i) => {
+      const active = i === current;
+      dot.classList.toggle('active', active);
+      dot.setAttribute('aria-current', active ? 'true' : 'false');
+    });
+    counter.textContent = `${current + 1} / ${slides.length}`;
+    prev.disabled = current === 0;
+    next.disabled = current === slides.length - 1;
+    history.replaceState(null, '', `#${current + 1}`);
+  }
+
+  slides.forEach((_, i) => {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'dot';
+    dot.setAttribute('aria-label', `Слайд ${i + 1}`);
+    dot.addEventListener('click', () => show(i));
+    dots.appendChild(dot);
+  });
+
+  prev.addEventListener('click', () => show(current - 1));
+  next.addEventListener('click', () => show(current + 1));
+  document.addEventListener('keydown', event => {
+    if (['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); show(current + 1); }
+    if (['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); show(current - 1); }
+    if (event.key === 'Home') { event.preventDefault(); show(0); }
+    if (event.key === 'End') { event.preventDefault(); show(slides.length - 1); }
+  });
+  window.addEventListener('resize', fitDeck);
+
+  const hashIndex = Number.parseInt(location.hash.slice(1), 10) - 1;
+  fitDeck();
+  show(Number.isFinite(hashIndex) ? hashIndex : 0);
+})();
+</script>
+</body>
+</html>
