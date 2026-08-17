@@ -614,7 +614,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 ## Branding
 
 <a id="set-logo"></a>
-- [`set-logo`](docs/commands/set-logo.md) - Apply the product logos from local image files and bind them into a package as data bindings
+- [`set-logo`](docs/commands/set-logo.md) - Apply the product logos and the browser-tab favicon from local image files and bind them into a package as data bindings
 <a id="set-background-image"></a>
 - [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background and bind it into a package as data bindings
 
