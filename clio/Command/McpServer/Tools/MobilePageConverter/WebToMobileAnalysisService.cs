@@ -1693,18 +1693,19 @@ public static class WebToMobileAnalysisService {
 				//  • otherwise, when the twin is the SAME component on both sides (twinMobileType == web type,
 				//    e.g. crt.FileList → crt.FileList) → carry the page's DELTA over the web-template baseline
 				//    (only what the page changed; an unchanged property is left to the mobile template's default);
-				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List), OR a
-				//    same-component twin with no baseline node → no payload; it stays an advisory merge and the
-				//    how-to is left to componentSuggestions.
+				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List) → the
+				//    STRUCTURE its view-config template introduces (the row), as a delta; a same-component twin
+				//    with no baseline node still gets no payload and stays advisory.
 				// The payload never carries the component `type` (a merge targets an element the template already
 				// owns) nor placement (layoutConfig — owned by the template). The page's caption IS carried (it
 				// overrides the template label; CollectResourceStrings adds its resource to the schema).
-				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
+				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type,
+					out RowReport twinRow);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
 					MobileType = twinMobileType,
 					MobileValues = twinValues,
-					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null)
+					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null) + RowNote(twinRow)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile);
@@ -1852,13 +1853,58 @@ public static class WebToMobileAnalysisService {
 	/// between the web and mobile templates. A twin whose web type has no mobile equivalent (a structural
 	/// conversion, e.g. crt.DataGrid → crt.List) gets no payload and stays advisory.
 	/// </summary>
-	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule, string twinMobileType, string webType) {
+	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule,
+		string twinMobileType, string webType, out RowReport rowReport) {
+		rowReport = RowReport.None;
 		if (rule.CarryProperties is { Count: > 0 }) {
 			return BuildCarriedTwinValues(ctx, node, rule, twinMobileType);
 		}
 		bool sameComponent = !string.IsNullOrEmpty(webType)
 			&& string.Equals(twinMobileType, webType, StringComparison.OrdinalIgnoreCase);
-		return sameComponent ? BuildDeltaTwinMergeValues(ctx, node, node["name"]?.ToString(), twinMobileType, rule.Mobile) : null;
+		if (sameComponent) {
+			return BuildDeltaTwinMergeValues(ctx, node, node["name"]?.ToString(), twinMobileType, rule.Mobile);
+		}
+		// A STRUCTURAL twin — the web type has no mobile equivalent (crt.DataGrid → crt.List), which is exactly
+		// the case that used to ship no payload at all and leave the row to the caller. That is the mechanism
+		// this ticket proved unreliable: the same page converted three ways because the row was prose. The
+		// template produces it here too; only what the template INTRODUCES is emitted, so the element's own
+		// type, name, collection binding and placement stay the mobile template's.
+		return BuildStructuralTwinMergeValues(ctx, node, rule.Mobile, twinMobileType, out rowReport);
+	}
+
+	/// <summary>
+	/// Renders the view-config templates that apply to a structural merge twin and returns their structure as
+	/// the merge payload, or null when no template applies or produced any.
+	/// </summary>
+	private static JsonNode BuildStructuralTwinMergeValues(ElementMapContext ctx, JObject node, string mobileName,
+		string twinMobileType, out RowReport rowReport) {
+		rowReport = RowReport.None;
+		// A structural twin has no twinMobileType: that field is only set when the web type survives as itself or
+		// the template rule names one, and here neither holds — crt.DataGrid has no mobile counterpart. The type
+		// comes from the SAME component mapping the insert path resolves through, so both paths agree on what the
+		// element becomes and a template gates identically on either.
+		string targetType = !string.IsNullOrWhiteSpace(twinMobileType)
+			? twinMobileType
+			: FindRule(ctx.Rules, node["type"]?.ToString())?.Mobile?.FirstOrDefault();
+		if (string.IsNullOrWhiteSpace(targetType)) {
+			return null;
+		}
+		var values = new JObject();
+		// No parent or slot: a merge is found by NAME against the element the mobile template already provides,
+		// so there is no placement to echo — a template that tries to set one is refused, as on the insert path.
+		// The report is CARRIED OUT, not discarded: a row with no acceptable lead, or none at all, is the
+		// reported symptom of this ticket, and a merge twin that stays silent about it reports worse than the
+		// advisory text it replaced.
+		rowReport = RenderViewConfigTemplates(ctx, node, values, mobileName, targetType,
+			parentName: null, propertyName: null, TemplateApplication.MergeStructure);
+		if (values.Count == 0) {
+			return null;
+		}
+		try {
+			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
+		} catch (System.Text.Json.JsonException) {
+			return null;
+		}
 	}
 
 	/// <summary>
@@ -2321,6 +2367,23 @@ public static class WebToMobileAnalysisService {
 	/// <param name="HasUsableEntry">False when no entry survived validation — the row cannot be built at all.</param>
 	private sealed record TemplateSource(JObject Source, bool HasUsableEntry);
 
+	/// <summary>How a rendered view-config template is applied to the element it was rendered for.</summary>
+	private enum TemplateApplication {
+
+		/// <summary>
+		/// An INSERT: the whole render is laid over the values being built, winning on the keys it names.
+		/// </summary>
+		InsertValues,
+
+		/// <summary>
+		/// A MERGE: only the STRUCTURE the template introduces — a nested object declaring its own type — is
+		/// emitted, because the element already exists and belongs to the mobile template. Its type, its name and
+		/// its collection binding are that template's, and a merge that restated them would overwrite what the
+		/// page is merging INTO. The row is the one thing the template provides that no one else can.
+		/// </summary>
+		MergeStructure
+	}
+
 	/// <summary>What rendering a view-config template did, so no caller re-infers it from the output.</summary>
 	/// <param name="Outcome">The state to report.</param>
 	/// <param name="SourceProperty">
@@ -2448,7 +2511,8 @@ public static class WebToMobileAnalysisService {
 	/// </para>
 	/// </remarks>
 	private static RowReport RenderViewConfigTemplates(ElementMapContext ctx, JObject node, JObject values,
-		string mobileName, string mobileType, string parentName, string propertyName) {
+		string mobileName, string mobileType, string parentName, string propertyName,
+		TemplateApplication application = TemplateApplication.InsertValues) {
 		if (ctx.Rules?.ViewConfigTemplates is not { Count: > 0 } groups) {
 			return RowReport.None;
 		}
@@ -2468,14 +2532,14 @@ public static class WebToMobileAnalysisService {
 				if (!DeclaresTargetType(template.Value, mobileType) || !EchoesItsOwnPlacement(template, roots)) {
 					continue;
 				}
-				report = RenderOne(ctx, template, node, values, roots, report);
+				report = RenderOne(ctx, template, node, values, roots, report, application);
 			}
 		}
 		return report;
 	}
 
 	private static RowReport RenderOne(ElementMapContext ctx, ViewConfigTemplateRule template, JObject node,
-		JObject values, TemplateRoots roots, RowReport carried) {
+		JObject values, TemplateRoots roots, RowReport carried, TemplateApplication application) {
 		LeadPath lead = ReadLeadPath(template.Value);
 		ComponentValueConstraintRule accepts = ResolveConstraint(ctx, template.Value);
 		TemplateSource prepared = BuildTemplateSource(node, lead, accepts);
@@ -2486,16 +2550,49 @@ public static class WebToMobileAnalysisService {
 			roots with { Source = prepared.Source }) is not JObject rendered) {
 			return carried;
 		}
-		// Real authored content wins over anything synthesized. Only the STRUCTURE a template introduces counts —
-		// a rendered value that is an object declaring its own type, i.e. the thing the web node had no
-		// counterpart for. Comparing every key instead would be wrong: the generic copy already carried `items`
-		// and the rest, so any template naming them would look "authored" and never apply at all.
-		if (rendered.Properties().Any(p => p.Value is JObject nested
-			&& nested["type"] is not null && values[p.Name] is not null)) {
-			return carried;
+		if (application == TemplateApplication.MergeStructure) {
+			// A merge carries a DELTA onto an element the mobile template owns, so only the structure the
+			// template introduces is emitted. Nothing here re-checks "authored": the element the page is merging
+			// into is the template's own, and replacing its row with the deterministic one is the point.
+			CopyIntroducedStructure(values, rendered);
+		} else {
+			// Real authored content wins over anything synthesized. Only the STRUCTURE a template introduces
+			// counts — a rendered value that is an object declaring its own type, i.e. the thing the web node had
+			// no counterpart for. Comparing every key instead would be wrong: the generic copy already carried
+			// `items` and the rest, so any template naming them would look "authored" and never apply at all.
+			if (rendered.Properties().Any(p => IntroducesStructure(p) && values[p.Name] is not null)) {
+				return carried;
+			}
+			OverlayRenderedValues(values, rendered);
 		}
-		OverlayRenderedValues(values, rendered);
 		return accepts is null ? carried : ReportConstrainedValue(ctx, values, accepts);
+	}
+
+	/// <summary>
+	/// True when a rendered property is STRUCTURE the template introduces rather than a value it restates: an
+	/// object that declares its own component type. That distinction is what separates the row — which nothing
+	/// but the template can produce — from <c>type</c>/<c>name</c>/<c>items</c>, which the element already has.
+	/// </summary>
+	private static bool IntroducesStructure(JProperty rendered) =>
+		rendered.Value is JObject nested && nested["type"] is not null;
+
+	/// <summary>Emits only the structure a template introduces, for a merge payload.</summary>
+	/// <remarks>
+	/// The structure's own NAME is dropped: the element it is merged into belongs to the mobile template, and a
+	/// synthesized name would rename it. What the payload sets is the row's content, not its identity.
+	/// <para>
+	/// OPEN: this writes the structure as a whole, so any sibling key the template-provided row carries and the
+	/// skeleton does not name is replaced rather than kept — the opposite of the insert path's guarantee. Whether
+	/// that costs anything depends on what BaseMobileListTemplate's own ListItem carries, which needs a list-page
+	/// stand run to settle; it is called out in the PR rather than assumed away.
+	/// </para>
+	/// </remarks>
+	private static void CopyIntroducedStructure(JObject target, JObject rendered) {
+		foreach (JProperty prop in rendered.Properties().Where(IntroducesStructure)) {
+			var structure = (JObject)prop.Value.DeepClone();
+			structure.Remove("name");
+			target[prop.Name] = structure;
+		}
 	}
 
 	/// <summary>
@@ -2647,16 +2744,38 @@ public static class WebToMobileAnalysisService {
 	/// there were two, only the outer one knew about <c>$each</c>, so a nested repeat fell through to the plain
 	/// object branch and wrote its own <c>$each</c>/<c>as</c> keys into the page as data.
 	/// </param>
-	private static JToken RenderTemplateToken(JToken template, TemplateRoots roots, JToken item = null) {
+	/// <summary>
+	/// How deep a template may nest before rendering gives up on the branch. Well past anything a real skeleton
+	/// needs — the shipped one nests three.
+	/// </summary>
+	/// <remarks>
+	/// The rules file is resolved at RUNTIME (<see cref="WebToMobilePageConversionRulesCatalog"/> fetches it and
+	/// falls back to the bundled copy), so a template is input from outside this binary. The JSON reader already
+	/// refuses to parse past its own depth limit, and the catalog treats that as an unusable payload — so this
+	/// budget is not what stands between the process and a stack overflow — it is defence in depth for the
+	/// recursion, and it bounds DEPTH only. It does NOT bound the cost of nested <c>$each</c> repeats, which
+	/// multiply: three repeats over fifty entries is depth four and 125 000 nodes, well inside this budget. A
+	/// node budget would be the answer to that, and there is none today.
+	/// </remarks>
+	private const int MaxTemplateDepth = 32;
+
+	private static JToken RenderTemplateToken(JToken template, TemplateRoots roots, JToken item = null,
+		int depth = 0) {
+		// Degrades the same way an unresolvable path does — the branch yields nothing and its key is dropped —
+		// rather than throwing, because the surrounding contract is that bad rules data costs a property, never
+		// the conversion and never the process.
+		if (depth > MaxTemplateDepth) {
+			return null;
+		}
 		switch (template) {
 			case JValue { Type: JTokenType.String } value:
 				return RenderTemplateString(value.ToString(), roots, item);
 			case JObject obj when obj["$each"] is { } collectionPath:
-				return RenderEach(collectionPath.ToString(), obj["as"], roots, item);
+				return RenderEach(collectionPath.ToString(), obj["as"], roots, item, depth);
 			case JObject obj: {
 				var rendered = new JObject();
 				foreach (JProperty prop in obj.Properties()) {
-					if (RenderTemplateToken(prop.Value, roots, item) is { Type: not JTokenType.Null } value) {
+					if (RenderTemplateToken(prop.Value, roots, item, depth + 1) is { Type: not JTokenType.Null } value) {
 						rendered[prop.Name] = value;
 					}
 				}
@@ -2664,7 +2783,7 @@ public static class WebToMobileAnalysisService {
 			}
 			case JArray arr:
 				return new JArray(arr
-					.Select(element => RenderTemplateToken(element, roots, item))
+					.Select(element => RenderTemplateToken(element, roots, item, depth + 1))
 					.Where(t => t is not null));
 			default:
 				return template;
@@ -2676,12 +2795,13 @@ public static class WebToMobileAnalysisService {
 	/// the member. An empty or unresolvable collection yields an empty array rather than nothing, so a grid with
 	/// a single column still ships the collection its row declares instead of omitting the key.
 	/// </summary>
-	private static JToken RenderEach(string collectionPath, JToken body, TemplateRoots roots, JToken outerItem) {
+	private static JToken RenderEach(string collectionPath, JToken body, TemplateRoots roots, JToken outerItem,
+		int depth) {
 		if (body is null) {
 			return new JArray();
 		}
 		return new JArray(ResolveTemplateCollection(collectionPath, roots, outerItem)
-			.Select(member => RenderTemplateToken(body, roots, member))
+			.Select(member => RenderTemplateToken(body, roots, member, depth + 1))
 			.Where(t => t is not null));
 	}
 

@@ -450,25 +450,47 @@ public sealed class ElementFilterRule {
 }
 
 /// <summary>
-/// One templated mobile view-config value. <c>parentName</c> and <c>propertyName</c> are READ-ONLY views of what
-/// the converter already computed for the element (<c>meta.*</c>): a template may reference them so the shape it
-/// produces can be read in place, but it must never SET them — the rules file deciding an element's parent would
-/// desynchronize it from every other <c>parentName</c> in the element map.
+/// One templated mobile view-config value, and the contract a rules author writes against.
 /// </summary>
+/// <remarks>
+/// A path is resolved against one of two ROOTS, or against the current member inside a repeat:
+/// <list type="bullet">
+/// <item><c>{{ diff.name }}</c>, <c>{{ diff.parentName }}</c>, <c>{{ diff.propertyName }}</c> — what the
+/// converter already computed for the operation.</item>
+/// <item><c>{{ source.&lt;path&gt; }}</c> — the WEB node being converted, read as a JSON path, so indexes and
+/// slices work: <c>source.items</c>, <c>source.columns[0].code</c>, <c>source.columns[1:]</c>.</item>
+/// <item>a BARE path inside a <c>$each</c> body — the current member, e.g. <c>{{ code }}</c>.</item>
+/// </list>
+/// There is no <c>meta.*</c> root and no <c>{{ item }}</c> alias: an unresolvable path yields nothing, so a
+/// template written against either would be dropped or, for a placement field, skipped WHOLE and silently.
+/// <para>
+/// <c>parentName</c> and <c>propertyName</c> are READ-ONLY views: a template may echo them so the shape it
+/// produces can be read in place, but it must never SET them — a rules file deciding an element's parent would
+/// desynchronize it from every other <c>parentName</c> in the element map, so a template that does is refused
+/// entirely rather than partly honoured.
+/// </para>
+/// </remarks>
 public sealed class ViewConfigTemplateRule {
 
-	/// <summary>Template for the element's parent, normally <c>"{{ meta.parentName }}"</c>.</summary>
+	/// <summary>Echo of the element's computed parent — <c>"{{ diff.parentName }}"</c>, or absent.</summary>
 	[JsonPropertyName("parentName")]
 	public string ParentName { get; init; }
 
-	/// <summary>Template for the parent's slot, normally <c>"{{ meta.propertyName }}"</c>.</summary>
+	/// <summary>Echo of the parent's computed slot — <c>"{{ diff.propertyName }}"</c>, or absent.</summary>
 	[JsonPropertyName("propertyName")]
 	public string PropertyName { get; init; }
 
 	/// <summary>
-	/// The value skeleton. Strings interpolate <c>{{ token }}</c>; an object
-	/// <c>{ "$each": "&lt;slot&gt;", "as": { … } }</c> repeats its <c>as</c> body once per slot member with
-	/// <c>{{ item }}</c> bound to the member; a token resolving to nothing omits its key.
+	/// The value skeleton, and the element's TARGET type: its <c>type</c> is what gates the template against the
+	/// mobile type the element resolved to, so a template naming another type never applies.
+	/// <para>
+	/// Strings interpolate <c>{{ path }}</c> — a string that is EXACTLY one path yields that path's own value,
+	/// so a slot may carry a non-string, while anything else is substituted textually (which is what makes
+	/// <c>"${{ source.columns[0].code }}"</c> a literal <c>$</c> followed by the binding). An object
+	/// <c>{ "$each": "&lt;path&gt;", "as": { … } }</c> repeats its <c>as</c> body once per member of the
+	/// resolved collection, with the member as the root for BARE paths inside it. A path resolving to nothing
+	/// drops its key rather than emitting a null or its own text.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("value")]
 	public JsonElement? Value { get; init; }
