@@ -1747,13 +1747,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
 		twin.Operation.Should().Be("merge");
 		twin.MobileName.Should().Be("List");
-		// The payload is a DELTA: the row the template introduces, and nothing the mobile template already owns.
-		twin.MobileValues?["itemLayout"].Should().NotBeNull(
-			because: "the row is what no one but the template can produce, and leaving it to the caller is the "
-				+ "prose mechanism that gave one page three different results (ENG-95046)");
-		twin.MobileValues?["type"].Should().BeNull(
-			because: "a merge targets an element the mobile template owns — its type is not ours to restate");
-		twin.Reason.Should().Contain("Primary list component.");
+		// No component-specific values are prebuilt by clio; the how-to is delegated to componentSuggestions.
+		twin.MobileValues.Should().BeNull();
+		twin.Reason.Should().Contain("Primary list component.").And.Contain("componentSuggestions");
 		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
 		guide.ElementMap.Should().NotContain(e => e.WebName == "DataTable" && e.Operation == "insert");
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
@@ -4400,15 +4396,15 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A MERGE twin gets the row too, as a DELTA: only the structure the template introduces is emitted, so the element's own type, name and collection binding stay the mobile template's. Without this a list page's row is left to the caller — the prose mechanism this ticket proved gives a different result every run.")]
-	public void Analyze_ViewConfigTemplate_MergeTwin_CarriesTheRowAsADelta() {
+	[Description("A MERGE twin gets no templated row: the template renders for an INSERT only. A merge is found by name against the element the mobile template already provides, has no parent or slot to echo, and carries a delta — a whole skeleton would overwrite the row that template supplies.")]
+	public void Analyze_ViewConfigTemplate_MergeTwin_IsNotRenderedFromTheTemplate() {
 		// Arrange — a list page: the mobile template provides List/ListItem, so the web grid is a merge twin.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
 				{ "name": "DataTable", "type": "crt.DataGrid", "items": "$DataTable",
 				  "columns": [
 					{ "id": "c1", "code": "PDS_LeadName", "dataValueType": 28 },
-					{ "id": "c2", "code": "PDS_Status", "dataValueType": 10 } ] } ] } ]
+					{ "id": "c2", "code": "PDS_Status", "dataValueType": 28 } ] } ] } ]
 			""");
 		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["ListContainer"] = "ListContainer"
@@ -4417,7 +4413,7 @@ public sealed class WebToMobileConversionServiceTests {
 			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
 		};
 
-		// Act — the SHIPPED rules, so the real grid → list template decides the outcome.
+		// Act — the SHIPPED rules, so the grid → list template is present and would fire if merge were included.
 		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null,
@@ -4429,33 +4425,19 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
 		twin.Operation.Should().Be("merge", because: "the mobile template already provides the element");
-		JsonNode row = twin.MobileValues?["itemLayout"];
-		row.Should().NotBeNull(
-			because: "the row is the one thing the template provides that the mobile template cannot — leaving it "
-				+ "to the caller is the prose mechanism this ticket replaced");
-		row!["title"]?.GetValue<string>().Should().Be("$PDS_LeadName",
-			because: "the lead is chosen by type on this path too — the second column is a lookup");
-		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
-			new[] { "$PDS_Status" });
-		row["name"].Should().BeNull(
-			because: "the element being merged into belongs to the mobile template — a synthesized name would "
-				+ "RENAME its row, so the delta sets the row's content and never its identity");
-		twin.Reason.Should().NotContain("no title",
-			because: "this grid has an acceptable lead, so the merge path must not report a missing one");
-		twin.MobileValues!["type"].Should().BeNull(
-			because: "a merge targets an element the mobile template owns — restating its type would fight it");
-		twin.MobileValues["items"].Should().BeNull(
-			because: "the template-provided element binds its own collection; a delta must not overwrite it");
-		twin.MobileValues["layoutConfig"].Should().BeNull(
-			because: "placement belongs to the mobile template, which is why a merge carries no layout at all");
+		twin.MobileValues?["itemLayout"].Should().BeNull(
+			because: "rendering the skeleton here would replace the ListItem the mobile template supplies, and the "
+				+ "guidance tells the caller to configure that one by merge-by-name instead");
+		twin.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
+			because: "nothing was synthesized for a merge, so neither row note may fire and send the caller "
+				+ "looking for a row the converter never claimed to build");
 	}
 
 	[Test]
-	[Description("A template nested past the render budget has that branch abandoned rather than being followed down. The rules file is fetched at runtime, so a template is input from OUTSIDE the binary; the JSON reader stops anything deeper than its own limit, and this budget bounds what the reader cannot see — nested repeats, whose cost is the product of the collections they walk.")]
+	[Description("A template nested past the render budget has that branch abandoned rather than being followed down. The rules file is fetched at runtime, so a template is input from OUTSIDE the binary; the JSON reader stops anything deeper than its own limit, and this budget bounds the recursion within it.")]
 	public void Analyze_ViewConfigTemplate_PathologicallyNestedTemplate_DegradesInsteadOfExhaustingTheStack() {
-		// Arrange — nesting far past the budget, of the shape a malformed or hostile rules file could carry.
-		// Deep enough to pass the render budget, shallow enough that the JSON reader still accepts it — the
-		// point is to exercise THIS guard, not the parser's.
+		// Arrange — deep enough to pass the render budget, shallow enough that the JSON reader still accepts it,
+		// so this exercises THIS guard rather than the parser's.
 		var deep = new StringBuilder("\"leaf\"");
 		for (int i = 0; i < 50; i++) {
 			deep.Insert(0, "{ \"n\": ").Append(" }");
