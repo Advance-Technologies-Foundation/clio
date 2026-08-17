@@ -181,6 +181,13 @@ public class BindingsModule {
 				Command.McpServer.Tools.McpToolInvokerRegistry>();
 			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
 				Command.McpServer.McpToolCompatibilityCatalog>();
+			// Execution-metadata reader (ENG-95262 Stage 1): the single authority that answers "how and where
+			// does this tool execute" for a tool NAME, after unwrapping clio-run and canonicalising aliases.
+			// A singleton for the same reason as the registry above — it reflects the whole tool catalog — and
+			// subject to the same ORDERING DEPENDENCY note: it is also auto-registered as a transient by the
+			// reflection interface-scan inside RegisterInto, so this line must stay after it.
+			services.AddSingleton<Command.McpServer.IMcpToolExecutionMetadataReader,
+				Command.McpServer.McpToolExecutionMetadataReader>();
 		}
 		additionalRegistrations?.Invoke(services);
 		ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
@@ -195,6 +202,10 @@ public class BindingsModule {
 			// surface abort HOST STARTUP instead — the constructors throw on any collision.
 			provider.GetRequiredService<Command.McpServer.IMcpToolCompatibilityCatalog>();
 			provider.GetRequiredService<Command.McpServer.Tools.IMcpToolInvokerRegistry>();
+			// Warms the reflected execution-metadata map once at host startup rather than on the first
+			// routing question, and is the resolution that keeps the registration above from reading as dead
+			// (CLIO005) while Stage 1 has no routing consumer yet.
+			provider.GetRequiredService<Command.McpServer.IMcpToolExecutionMetadataReader>();
 		}
 		return provider;
 	}
