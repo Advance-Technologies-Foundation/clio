@@ -2234,70 +2234,26 @@ public static class WebToMobileAnalysisService {
 		/// <summary>No rule declared a row here, or the node authored its own and kept it.</summary>
 		NotSynthesized,
 
-		/// <summary>A row was built and carries a title.</summary>
-		BuiltWithTitle,
-
-		/// <summary>A row was built, but no entry had a type the target accepts for a title.</summary>
-		BuiltWithoutTitle,
+		/// <summary>The structure a template declares was built and written onto the element.</summary>
+		Built,
 
 		/// <summary>A row was declared for this mapping and could NOT be built: no usable source entry.</summary>
 		NotBuilt
 	}
 
 	/// <summary>
-	/// The note appended to a converted element's reason when the converter SYNTHESIZED its row and that row
-	/// could take no title: the source carries no entry of a type the target accepts for one (all lookups /
-	/// dates / numbers). Reported rather than left silent, because an empty Title column in the designer
-	/// otherwise looks like a converter failure and the caller cannot tell it apart from one.
-	/// <para>
-	/// Three conditions keep it honest. The element must be converted THROUGH the mapping (same guard as
-	/// <see cref="BuildMobileValues"/>, so a web type that survives as itself is never annotated). The row must
-	/// have been SYNTHESIZED — a node that authored its OWN target property kept it, and its missing title is
-	/// the author's choice, not a source that had nothing to offer. And the source array must be present at all.
-	/// </para>
+	/// The note appended to a converted element's reason when a declared structure could NOT be built: the
+	/// source carries no usable entry, so the element would render blank. Reported rather than left silent,
+	/// because a blank list in the designer is indistinguishable from a converter failure.
 	/// </summary>
 	private static string RowNote(RowReport report) => report.Outcome switch {
-		// Worse than a missing title: the list renders blank. Names WHAT was unusable so the reader looks at the
-		// right thing, without claiming to know which of the ways it was unusable.
 		RowOutcome.NotBuilt =>
 			" — NO ROW could be built for this list: the source carries no usable "
 			+ (string.IsNullOrWhiteSpace(report.SourceProperty) ? "row source" : report.SourceProperty)
 			+ ", so the list would render blank — tell the user and configure the row in the designer",
-		// Worded to stay true whichever way the title was lost. Today only one way is reachable — the source
-		// offered no column of an accepted type — because the synthesis emits the title as a string and the
-		// contract guard therefore never removes it. Naming that cause as the ONLY one would still be a claim
-		// this function cannot verify, and a note that outlives its reason is how the previous one drifted.
-		RowOutcome.BuiltWithoutTitle =>
-			" — the row carries no title, most often because the source has no column of a type a row title "
-			+ "accepts (a title accepts text columns only): ask the user which value the row should lead with "
-			+ "and set it in the designer",
 		_ => string.Empty
 	};
 
-	/// <summary>
-	/// Reads a source entry's value type tolerantly. A page body is JSON from a customer environment, so the
-	/// same value can arrive as an integer, a float (<c>28.0</c>) or a quoted string (<c>"28"</c>). Reading only
-	/// the integer form would silently score a typed column as untyped, which — in a grid where OTHER columns
-	/// are typed — drops it out of the running for the title without any sign that it happened. Null when the
-	/// token is absent or is not a whole number in any of those encodings.
-	/// </summary>
-	private static int? ReadValueType(JToken token) {
-		if (token is not JValue { Value: not null } value) {
-			return null;
-		}
-		switch (value.Value) {
-			case long l when l is >= int.MinValue and <= int.MaxValue:
-				return (int)l;
-			case int i:
-				return i;
-			case double d when d % 1 == 0 && d is >= int.MinValue and <= int.MaxValue:
-				return (int)d;
-			case string s when int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed):
-				return parsed;
-			default:
-				return null;
-		}
-	}
 
 	/// <summary>
 	/// A <c>{{ … }}</c> reference. The captured path is whatever sits between the braces, because it is JSON
@@ -2353,29 +2309,6 @@ public static class WebToMobileAnalysisService {
 		return m.Success ? new LeadPath(m.Groups[1].Value, m.Groups[2].Value) : null;
 	}
 
-	/// <summary>
-	/// The constraint that applies to a template's rendered structure: the first mobile type the template
-	/// DECLARES for which the rules file states what a property accepts. The template says it builds a
-	/// <c>crt.ListItem</c>; the constraints section says what a <c>crt.ListItem.title</c> takes — neither has to
-	/// know about the other, and the mapping between them needs no third declaration.
-	/// </summary>
-	private static ComponentValueConstraintRule ResolveConstraint(ElementMapContext ctx, JsonElement? declared) {
-		if (declared is not { } value || ctx.Rules?.ComponentValueConstraints is not { Count: > 0 } constraints) {
-			return null;
-		}
-		// Walked as JSON, in DECLARATION order, and matched only against a `type` PROPERTY. A substring search
-		// over the raw text picked whichever constraint came first in the rules FILE rather than which type the
-		// template declares first, and would also match a type name that merely appears inside some string value.
-		foreach (string declaredType in DeclaredTypes(JToken.Parse(value.GetRawText()))) {
-			ComponentValueConstraintRule match = constraints.FirstOrDefault(c =>
-				!string.IsNullOrWhiteSpace(c?.Type) && !string.IsNullOrWhiteSpace(c.Property)
-				&& string.Equals(c.Type, declaredType, StringComparison.OrdinalIgnoreCase));
-			if (match is not null) {
-				return match;
-			}
-		}
-		return null;
-	}
 
 	/// <summary>
 	/// Every component type a template DECLARES, outermost first, in declaration order — the order a reader of
@@ -2422,7 +2355,7 @@ public static class WebToMobileAnalysisService {
 	/// </list>
 	/// The node is never mutated: the caller still needs it as the base the render is laid over.
 	/// </remarks>
-	private static TemplateSource BuildTemplateSource(JObject node, LeadPath lead, ComponentValueConstraintRule accepts) {
+	private static TemplateSource BuildTemplateSource(JObject node, LeadPath lead) {
 		if (lead is null) {
 			return new TemplateSource(node, HasUsableEntry: true);
 		}
@@ -2440,18 +2373,9 @@ public static class WebToMobileAnalysisService {
 		if (usable.Count == 0) {
 			return new TemplateSource(projected, HasUsableEntry: false);
 		}
-		int leadIndex = accepts?.AcceptsDataValueTypes is { Count: > 0 }
-			&& !string.IsNullOrWhiteSpace(accepts.ValueTypeFrom)
-			? usable.FindIndex(entry => ReadValueType(entry[accepts.ValueTypeFrom]) is not { } valueType
-				|| accepts.AcceptsDataValueTypes.Contains(valueType))
-			: 0;
-		if (leadIndex >= 0) {
-			JObject chosen = usable[leadIndex];
-			usable.RemoveAt(leadIndex);
-			usable.Insert(0, chosen);
-		} else {
-			usable.Insert(0, new JObject());
-		}
+		// The lead is the FIRST usable entry. Selecting it by the target's accepted value types was removed by
+		// decision: a lookup then leads the row and its Title column renders empty, which is accepted — what the
+		// row must do is bind a string. The projection therefore only validates and preserves order.
 		projected[lead.SourceProperty] = new JArray(usable);
 		return new TemplateSource(projected, HasUsableEntry: true);
 	}
@@ -2509,8 +2433,7 @@ public static class WebToMobileAnalysisService {
 	private static RowReport RenderOne(ElementMapContext ctx, ViewConfigTemplateRule template, JObject node,
 		JObject values, TemplateRoots roots, RowReport carried) {
 		LeadPath lead = ReadLeadPath(template.Value);
-		ComponentValueConstraintRule accepts = ResolveConstraint(ctx, template.Value);
-		TemplateSource prepared = BuildTemplateSource(node, lead, accepts);
+		TemplateSource prepared = BuildTemplateSource(node, lead);
 		if (!prepared.HasUsableEntry) {
 			return new RowReport(RowOutcome.NotBuilt, lead?.SourceProperty);
 		}
@@ -2529,29 +2452,29 @@ public static class WebToMobileAnalysisService {
 		// The element's own resolved type, which the values already carry as their first key — the shape guard
 		// reshapes against the component the value is landing on, not against the one it came from.
 		OverlayRenderedValues(ctx, values, values["type"]?.ToString(), rendered);
-		return accepts is null ? carried : ReportConstrainedValue(ctx, values, accepts);
+		return ReportIntroducedStructure(ctx, values, rendered);
 	}
 
 	/// <summary>
-	/// Finds the structure the constraint is about in what actually shipped, validates it against the mobile
-	/// registry, and reports whether the constrained value survived. Located by the DECLARED type rather than by
-	/// a configured target key, so the rules file states the constraint once and nothing repeats where it lands.
+	/// Validates the structure a template introduced against the mobile registry and reports that it shipped.
+	/// Located by the type the template DECLARES for it, so nothing has to say where the structure lands.
 	/// </summary>
-	private static RowReport ReportConstrainedValue(ElementMapContext ctx, JObject values,
-		ComponentValueConstraintRule accepts) {
-		JObject target = values.Properties()
-			.Select(p => p.Value as JObject)
-			.FirstOrDefault(o => string.Equals(o?["type"]?.ToString(), accepts.Type, StringComparison.OrdinalIgnoreCase));
-		if (target is null) {
-			return RowReport.None;
+	/// <remarks>
+	/// The registry check stays even though value selection no longer does: it catches the one failure nothing
+	/// else sees — a scalar the registry declares emitted in the wrong shape, e.g. a row title written as the
+	/// <c>{ "value": … }</c> BODY form, which RENDERS and leaves only the Title column empty (ENG-95046).
+	/// </remarks>
+	private static RowReport ReportIntroducedStructure(ElementMapContext ctx, JObject values, JObject rendered) {
+		foreach (JProperty prop in rendered.Properties()) {
+			if (prop.Value is not JObject introduced || introduced["type"]?.ToString() is not { Length: > 0 } type) {
+				continue;
+			}
+			if (values[prop.Name] is JObject shipped) {
+				DropValuesContradictingDeclaredScalars(ctx, type, shipped);
+			}
+			return new RowReport(RowOutcome.Built);
 		}
-		DropValuesContradictingDeclaredScalars(ctx, accepts.Type, target);
-		// ONE authority: the structure that actually shipped. Not what the projection made available — the
-		// contract guard runs between the two — and not the template's intent either, since a template may write
-		// the value without going through the prepared lead at all.
-		return new RowReport(target[accepts.Property] is not null
-			? RowOutcome.BuiltWithTitle
-			: RowOutcome.BuiltWithoutTitle);
+		return RowReport.None;
 	}
 
 	/// <summary>

@@ -54,12 +54,6 @@ public sealed class WebToMobileConversionServiceTests {
 		Templates = [ListTemplate]
 	};
 
-	/// <summary>The shipped constraint: what a crt.ListItem title accepts.</summary>
-	private static readonly ComponentValueConstraintRule ListItemTitleAccepts = new() {
-		Type = "crt.ListItem", Property = "title", ValueTypeFrom = "dataValueType",
-		AcceptsDataValueTypes = [1, 19, 27, 28, 29, 30, 42, 44, 45]
-	};
-
 	private static readonly WebToMobilePageConversionRules Rules = new() {
 		Templates = [
 			new TemplateMappingRule {
@@ -82,8 +76,7 @@ public sealed class WebToMobileConversionServiceTests {
 				Category = "AlternativeAvailable", PrimaryWeb = "crt.FolderTree"
 			}
 		],
-		ViewConfigTemplates = [GridToListTemplates],
-		ComponentValueConstraints = [ListItemTitleAccepts]
+		ViewConfigTemplates = [GridToListTemplates]
 	};
 
 	private static IReadOnlyDictionary<string, ComponentRegistryEntry> Reg(params (string type, bool container)[] entries) {
@@ -4155,8 +4148,7 @@ public sealed class WebToMobileConversionServiceTests {
 					Value = JsonDocument.Parse(valueJson).RootElement.Clone()
 				}]
 			}
-		],
-		ComponentValueConstraints = [ListItemTitleAccepts]
+		]
 	};
 
 	private static MobilePageConversionGuide AnalyzeWithRules(
@@ -4199,32 +4191,28 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A slot with no value OMITS its key instead of shipping JSON null: a grid with no acceptable title column must produce a row with no title property at all, because \"title\": null is a PRESENT key of the wrong shape, not an absent one.")]
-	public void Analyze_ViewConfigTemplate_SlotWithoutValue_OmitsTheKeyRatherThanEmittingJsonNull() {
-		// Arrange — both columns are lookups, so no entry qualifies as the row's leading value.
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "AllLookups", "type": "crt.DataGrid", "items": "$AllLookups",
-				  "columns": [
-					{ "id": "c1", "code": "AllLookupsDS_Owner", "dataValueType": 10 },
-					{ "id": "c2", "code": "AllLookupsDS_Stage", "dataValueType": 10 } ] } ] } ]
+	[Description("A path that resolves to nothing OMITS its key instead of shipping JSON null. \"title\": null is a PRESENT key of the wrong shape, and the two JSON stacks disagree about it — Newtonsoft reports it present while System.Text.Json reports it absent — so the row and anything derived from it would silently disagree.")]
+	public void Analyze_ViewConfigTemplate_PathWithoutValue_OmitsTheKeyRatherThanEmittingJsonNull() {
+		// Arrange — a path the node does not carry, alongside one it does.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "itemLayout": { "type": "crt.ListItem",
+			                  "title": "${{ source.columns[0].code }}",
+			                  "icon": "{{ source.thereIsNoSuchProperty }}" } }
 			""");
 
 		// Act
-		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, RulesWithTemplate(RowOnlyTemplate));
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
 
 		// Assert
-		ElementMapEntry grid = Element(guide, "AllLookups");
-		string row = grid.MobileValues["itemLayout"]!.ToJsonString();
-		row.Should().NotContain("title",
-			because: "an unresolved token must drop its key — a JSON null would travel to the page as a present "
-				+ "property of the wrong shape, and the two JSON stacks disagree about it: Newtonsoft reports the "
-				+ "key as present while System.Text.Json reports it as absent, so the row and the reported outcome "
-				+ "would silently disagree");
-		grid.Reason.Should().Contain("no title",
-			because: "the outcome is derived from the row that shipped, so an omitted title must be reported");
+		string row = Element(guide, "ProductsList").MobileValues["itemLayout"]!.ToJsonString();
+		row.Should().NotContain("icon",
+			because: "an unresolved path must drop its key — a JSON null would travel to the page as a present "
+				+ "property of the wrong shape, and this is asserted on the RAW text because an indexer check "
+				+ "passes either way: the two JSON stacks disagree about whether such a key exists");
+		row.Should().Contain("$ProductsListDS_Product",
+			because: "dropping one key must not disturb the ones that resolved");
 	}
-
 	[Test]
 	[Description("$each expands one body entry per remaining slot member and PARTIAL interpolation works inside a longer string, so the row's name is the element name plus the template's literal suffix.")]
 	public void Analyze_ViewConfigTemplate_EachExpandsAndPartialInterpolationWorks() {
@@ -4629,8 +4617,6 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "an array body matches the declared array input, so nothing is dropped");
 		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
 			because: "a property the registry does not declare at all is not the guard's business");
-		grid.Reason.Should().NotContain("no title",
-			because: "the row kept its title, so the outcome must not report one that was never lost");
 	}
 
 	[Test]
@@ -4695,55 +4681,6 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The title binds the first TEXT column, not simply the first column: the mobile designer offers only text columns for a row title, so a leading lookup would render an empty Title column while the body still looked correct. The skipped lookup keeps its place among the body rows.")]
-	public void Analyze_MobileValues_GridWhoseFirstColumnIsALookup_TitlesTheFirstTextColumn() {
-		// Arrange — mirrors Leads_FormPage's StageHistoryList: a lookup first, then dates.
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "Stages", "type": "crt.DataGrid", "items": "$Stages",
-				  "columns": [
-					{ "id": "c1", "code": "StagesDS_QualifyStatus", "dataValueType": 10 },
-					{ "id": "c2", "code": "StagesDS_Comment", "dataValueType": 30 },
-					{ "id": "c3", "code": "StagesDS_StartDate", "dataValueType": 7 } ] } ] } ]
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
-
-		// Assert
-		JsonNode row = Element(guide, "Stages").MobileValues["itemLayout"];
-		row["title"]?.GetValue<string>().Should().Be("$StagesDS_Comment",
-			because: "value type 30 is LONG_TEXT and 10 is Lookup — the designer accepts only the text one as a title");
-		row["body"].AsArray().Select(x => x["value"]?.GetValue<string>()).Should().Equal(
-			new[] { "$StagesDS_QualifyStatus", "$StagesDS_StartDate" },
-			because: "the lookup passed over for the title is not lost — it becomes a body row in its original position");
-	}
-
-	[Test]
-	[Description("An email or phone column can title the row: they are text in the platform's own DataValueType map, and excluding them would leave a contacts detail with no title AND a note claiming the source had nothing acceptable.")]
-	public void Analyze_MobileValues_EmailAndPhoneColumns_CanTitleTheRow() {
-		// Arrange — 45 is EmailText, 42 is PhoneText, 10 is a lookup.
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "Comms", "type": "crt.DataGrid", "items": "$Comms",
-				  "columns": [
-					{ "id": "c1", "code": "CommsDS_Owner", "dataValueType": 10 },
-					{ "id": "c2", "code": "CommsDS_Email", "dataValueType": 45 },
-					{ "id": "c3", "code": "CommsDS_Phone", "dataValueType": 42 } ] } ] } ]
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
-
-		// Assert
-		ElementMapEntry grid = Element(guide, "Comms");
-		grid.MobileValues["itemLayout"]["title"]?.GetValue<string>().Should().Be("$CommsDS_Email",
-			because: "EmailText is a text type, so the first email column leads the row rather than being skipped");
-		grid.Reason.Should().NotContain("no title",
-			because: "a title was found, so the note must not claim the source had no acceptable column");
-	}
-
-	[Test]
 	[Description("A web type that resolves to a mobile type its mapping does NOT list gets no synthesized row: the transform is tied to the mapping, not to the web type, so a type that one day survives as itself is left alone.")]
 	public void Analyze_MobileValues_TypeResolvedOutsideTheMapping_IsLeftAlone() {
 		// Arrange — the grid's own type IS in the mobile registry here, so it survives as itself and the
@@ -4767,42 +4704,6 @@ public sealed class WebToMobileConversionServiceTests {
 		grid.MobileType.Should().Be("crt.DataGrid", because: "the type is supported on mobile as itself here");
 		grid.MobileValues["itemLayout"].Should().BeNull(
 			because: "the row belongs to the crt.List mapping; this element is not being converted through it");
-	}
-
-	[Test]
-	[Description("A grid with no text column at all ships a row with NO title rather than one bound to a column the mobile list cannot display — an absent title is visibly incomplete, a wrong one looks configured and is not.")]
-	public void Analyze_MobileValues_GridWithNoTextColumn_ShipsRowWithoutTitle() {
-		// Arrange
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "AllLookups", "type": "crt.DataGrid", "items": "$AllLookups",
-				  "columns": [
-					{ "id": "c1", "code": "AllLookupsDS_Owner", "dataValueType": 10 },
-					{ "id": "c2", "code": "AllLookupsDS_Stage", "dataValueType": 10 } ] } ] } ]
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
-
-		// Assert
-		JsonNode row = Element(guide, "AllLookups").MobileValues["itemLayout"];
-		row.Should().NotBeNull(because: "the row still carries the body rows the list can display");
-		row["title"].Should().BeNull(because: "no column qualifies, and an unsupported title binding is worse than none");
-		row["body"].AsArray().Should().HaveCount(2, because: "both lookups remain available as body rows");
-		Element(guide, "AllLookups").Reason.Should().Contain("no title",
-			because: "an empty Title column in the designer is indistinguishable from a converter failure unless "
-				+ "the guide says the source had nothing to put there, so the caller can ask the user instead");
-	}
-
-	[Test]
-	[Description("A list that DID get a title carries no missing-title note — the note must not fire on the normal case.")]
-	public void Analyze_MobileValues_ListWithTitle_CarriesNoMissingTitleNote() {
-		// Arrange & Act
-		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
-
-		// Assert
-		Element(guide, "ProductsList").Reason.Should().NotContain("no title",
-			because: "this grid's first column is usable as a title, so nothing is missing to report");
 	}
 
 	[Test]
@@ -4837,29 +4738,6 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A column whose type the source does not declare stays eligible for the title even when a SIBLING is typed: requiring a declared type would make a partly-typed grid behave worse than a wholly untyped one, and the missing-title note would then claim something false.")]
-	public void Analyze_MobileValues_PartlyTypedGrid_StillTitlesTheUntypedDisplayColumn() {
-		// Arrange — the display column carries no dataValueType, the lookup after it does.
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "Partly", "type": "crt.DataGrid", "items": "$Partly",
-				  "columns": [
-					{ "id": "c1", "code": "PartlyDS_Name" },
-					{ "id": "c2", "code": "PartlyDS_Owner", "dataValueType": 10 } ] } ] } ]
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
-
-		// Assert
-		ElementMapEntry grid = Element(guide, "Partly");
-		grid.MobileValues["itemLayout"]["title"]?.GetValue<string>().Should().Be("$PartlyDS_Name",
-			because: "an undeclared type is unknown, not unacceptable — one typed sibling must not disqualify it");
-		grid.Reason.Should().NotContain("no title",
-			because: "a title was found, so there is nothing to report");
-	}
-
-	[Test]
 	[Description("A grid whose every column code is unusable as a binding gets NO row, and the reason says the row could not be built at all — a blank list is worse than a missing title, so it must not be the one outcome that stays silent.")]
 	public void Analyze_Reason_RowThatCouldNotBeBuilt_IsReported() {
 		// Arrange — both codes fail the binding-identifier gate.
@@ -4879,33 +4757,6 @@ public sealed class WebToMobileConversionServiceTests {
 		grid.MobileValues["itemLayout"].Should().BeNull(because: "no entry yielded a usable binding");
 		grid.Reason.Should().Contain("NO ROW",
 			because: "the list would render blank, and the caller cannot see that from the element map alone");
-	}
-
-	[Test]
-	[Description("A value type is read whether the source encodes it as an integer, a float or a quoted string — reading only the integer form would silently score a typed column as untyped and drop it out of the running for the title in a grid where other columns ARE typed.")]
-	public void Analyze_MobileValues_ValueTypeEncodings_AreAllUnderstood() {
-		// Arrange — the text column is the one encoded as a STRING; the lookup ahead of it is a plain integer,
-		// so the grid is "partly typed" and the fallback to first-entry does not apply.
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "Mixed", "type": "crt.DataGrid", "items": "$Mixed",
-				  "columns": [
-					{ "id": "c1", "code": "MixedDS_Owner", "dataValueType": 10 },
-					{ "id": "c2", "code": "MixedDS_Name", "dataValueType": "30" },
-					{ "id": "c3", "code": "MixedDS_Note", "dataValueType": 28.0 } ] } ] } ]
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
-
-		// Assert
-		JsonNode row = Element(guide, "Mixed").MobileValues["itemLayout"];
-		row["title"]?.GetValue<string>().Should().Be("$MixedDS_Name",
-			because: "the quoted \"30\" is LONG_TEXT just as much as the number 30 is, so that column qualifies "
-				+ "for the title even though a lookup precedes it");
-		row["body"].AsArray().Select(x => x["value"]?.GetValue<string>()).Should().Equal(
-			new[] { "$MixedDS_Owner", "$MixedDS_Note" },
-			because: "the lookup passed over keeps its position, and 28.0 is read as MEDIUM_TEXT for the body");
 	}
 
 	[Test]
