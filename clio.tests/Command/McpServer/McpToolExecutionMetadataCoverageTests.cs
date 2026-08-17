@@ -21,12 +21,12 @@ namespace Clio.Tests.Command.McpServer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Why the allowlist exists.</b> Stage 1 lands the attribute, its reader and this test; the ~189
-/// individual tool methods are annotated by a LATER wave, because several agents are editing tool files
-/// concurrently. A coverage assertion over the live catalog would therefore fail on every tool today. The
-/// gate is <see cref="NotYetClassifiedTools"/> — an explicit, reviewed list of the tools not yet
-/// annotated — and it is deliberately NOT a skip/ignore: the suite stays green now and the assertions get
-/// stronger with every name removed. Four rules keep the list from becoming a rug to sweep failures under:
+/// <b>Why the allowlist existed, and why it is now empty.</b> Stage 1 landed the attribute, its reader and
+/// this test; the 189 individual tool methods were annotated by a LATER wave, because several agents were
+/// editing tool files concurrently. While that wave ran, the gate <see cref="NotYetClassifiedTools"/> — an
+/// explicit, reviewed list of the tools not yet annotated — kept the suite green without ever being a
+/// skip/ignore. The wave has landed and the gate is EMPTY, so all four of its rules now assert
+/// unconditionally:
 /// </para>
 /// <list type="number">
 /// <item><description>A tool with NO attribute fails unless it is named in the list, so a NEW tool cannot ship unclassified.</description></item>
@@ -35,7 +35,7 @@ namespace Clio.Tests.Command.McpServer;
 /// <item><description>Every name on the list must still resolve to a registered tool, so a rename or removal cannot leave a rotten entry behind.</description></item>
 /// </list>
 /// <para>
-/// The list is generated from this test's own discovery routine, not copied from the inventory: the
+/// The list was generated from this test's own discovery routine, not copied from the inventory: the
 /// inventory was measured on <c>3fc50bf99</c> and the live catalog is the authority.
 /// </para>
 /// <para>
@@ -49,200 +49,13 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class McpToolExecutionMetadataCoverageTests {
 
 	/// <summary>
-	/// The tools that Stage 1 has not annotated yet. The later annotation wave REMOVES a name here as it
-	/// adds the attribute; when the list is empty the coverage requirement is unconditional. Do not add a
-	/// name to make a failure go away — a new tool is expected to ship with its metadata.
+	/// The tools not yet annotated with <see cref="McpToolExecutionAttribute"/>. EMPTY since the annotation
+	/// wave landed, which is what makes the coverage requirement unconditional. Do not add a name to make a
+	/// failure go away — a new tool is expected to ship with its metadata.
 	/// </summary>
 	private static readonly IReadOnlySet<string> NotYetClassifiedTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-		"StopAllCreatio",
-		"add-data-binding-row",
-		"add-item-model",
-		"add-knowledge-source",
-		"add-package",
-		"add-package-dependency",
-		"advise-theme-palette",
-		"assert-infrastructure",
-		"build-theme",
-		"check-auth-code-flow",
-		"check-settings-health",
-		"check-theming-access",
-		"clear-browser-session",
-		"clear-redis-db-by-credentials",
-		"clear-redis-db-by-environment",
-		"clear-themes-cache",
-		"clio-run",
-		"clio-run-destructive",
-		"compile-creatio",
-		"compile-status",
-		"configure-knowledge-feedback-policy",
-		"create-app",
-		"create-app-section",
-		"create-business-process",
-		"create-client-unit-schema",
-		"create-data-binding",
-		"create-data-binding-db",
-		"create-entity-business-rules",
-		"create-entity-schema",
-		"create-lookup",
-		"create-oauth-technical-user",
-		"create-page",
-		"create-page-business-rules",
-		"create-related-page-addon",
-		"create-schema",
-		"create-server-to-server-oauth-app",
-		"create-sql-schema",
-		"create-sys-setting",
-		"create-theme",
-		"create-user-task",
-		"create-workspace",
-		"dataforge-context",
-		"dataforge-find-lookups",
-		"dataforge-find-tables",
-		"dataforge-get-relations",
-		"dataforge-get-table-columns",
-		"dataforge-initialize",
-		"dataforge-status",
-		"dataforge-update",
-		"delete-app",
-		"delete-app-section",
-		"delete-entity-business-rules",
-		"delete-knowledge",
-		"delete-page-business-rules",
-		"delete-schema",
-		"delete-theme",
-		"delete-toolkit",
-		"deploy-creatio",
-		"deploy-identity",
-		"describe-business-process",
-		"describe-environment",
-		"disable-knowledge-source",
-		"download-configuration-by-build",
-		"download-configuration-by-environment",
-		"enable-knowledge-source",
-		"execute-esq",
-		"experimental",
-		"find-app",
-		"find-empty-iis-port",
-		"find-entity-schema",
-		"finish-hotfix",
-		"generate-process-model",
-		"generate-source-code",
-		"get-app-info",
-		"get-browser-session",
-		"get-classic-page-sources",
-		"get-client-unit-schema",
-		"get-component-info",
-		"get-entity-schema-column-properties",
-		"get-entity-schema-properties",
-		"get-fsm-mode",
-		"get-guidance",
-		"get-identity-assertion",
-		"get-identity-public-jwk",
-		"get-identity-service-config",
-		"get-knowledge-feedback-policy",
-		"get-mobile-page-conversion-guide",
-		"get-page",
-		"get-page-hierarchy",
-		"get-process-signature",
-		"get-record-rights",
-		"get-related-page-addon",
-		"get-request-info",
-		"get-schema",
-		"get-schema-name-prefix",
-		"get-sql-schema",
-		"get-sys-setting",
-		"get-target-package",
-		"get-telemetry-consent",
-		"get-tool-contract",
-		"get-user-culture",
-		"info-knowledge",
-		"install-application",
-		"install-gate",
-		"install-knowledge",
-		"install-process-builder",
-		"install-sql-schema",
-		"install-toolkit",
-		"link-from-repository-by-env-package-path",
-		"link-from-repository-by-environment",
-		"link-from-repository-unlocked",
-		"list-app-sections",
-		"list-apps",
-		"list-creatio-builds",
-		"list-entity-client-schemas",
-		"list-environments",
-		"list-knowledge-examples",
-		"list-knowledge-sources",
-		"list-packages",
-		"list-page-templates",
-		"list-pages",
-		"list-printables",
-		"list-sys-settings",
-		"list-themes",
-		"list-user-tasks",
-		"modify-business-process",
-		"modify-entity-schema-column",
-		"modify-user-task-parameters",
-		"new-integration-test-project",
-		"new-test-project",
-		"new-ui-project",
-		"odata-create",
-		"odata-delete",
-		"odata-read",
-		"odata-update",
-		"pkg-to-db",
-		"pkg-to-file-system",
-		"push-workspace",
-		"read-data-binding-db",
-		"read-entity-business-rules",
-		"read-page-business-rules",
-		"reg-web-app",
-		"regenerate-identity-signing-key",
-		"remove-data-binding-row",
-		"remove-data-binding-row-db",
-		"remove-knowledge-source",
-		"remove-package-dependency",
-		"resolve-oauth-system-user",
-		"restart-by-credentials",
-		"restart-by-environment-name",
-		"restart-status",
-		"restore-db-by-credentials",
-		"restore-db-by-environment",
-		"restore-db-to-local-server",
-		"restore-workspace",
-		"send-telemetry",
-		"set-background-image",
-		"set-entity-schema-properties",
-		"set-fsm-mode",
-		"set-logo",
-		"set-record-rights",
-		"set-user-theme",
-		"show-passing-infrastructure",
-		"start-creatio",
-		"stop-all-creatio",
-		"stop-creatio",
-		"sync-pages",
-		"sync-schemas",
-		"uninstall-creatio",
-		"unlock-for-hotfix",
-		"update-app-section",
-		"update-client-unit-schema",
-		"update-entity-business-rules",
-		"update-entity-schema",
-		"update-knowledge",
-		"update-page",
-		"update-page-business-rules",
-		"update-schema",
-		"update-sql-schema",
-		"update-sys-setting",
-		"update-theme",
-		"update-toolkit",
-		"upload-image",
-		"upsert-data-binding-row-db",
-		"validate-page",
-		"validate-process-graph",
-		"verify-oauth-app",
-		"watch-compilation",
-		"withdraw-telemetry-consent",
+		// Empty: the annotation wave has landed. Every enabled canonical tool declares all six fields, so
+		// the four gate rules above now assert unconditionally.
 	};
 
 	/// <summary>
@@ -659,8 +472,12 @@ public sealed class McpToolExecutionMetadataCoverageTests {
 	[Test]
 	[Category("Unit")]
 	[Description("TC-U-106 (AC-07): a feature-disabled tool type is excluded from the coverage REQUIREMENT (its tools are " +
-		"absent from the enabled catalog) but stays in the toggle-blind catalog, where the same routine does report it. " +
-		"Both halves are asserted, because only the second proves the exclusion is a gate and not a blind spot.")]
+		"absent from the enabled catalog) but stays VISIBLE to the same routine in the toggle-blind catalog. The second " +
+		"half is what proves the exclusion is a deliberate scope and not a blind spot, and it is proved with a probe gate " +
+		"naming exactly the feature-gated tools: over the toggle-blind catalog the routine reports each as " +
+		"'classified but still listed', while over the enabled catalog it reports the very same names as STALE. The two " +
+		"different verdicts on one input are the present-in-blind / absent-from-enabled distinction, read through the " +
+		"routine's own lens.")]
 	public void FeatureDisabledTools_ShouldBeExcludedFromTheRequirement_ButStayInTheCatalog() {
 		// Arrange — disable every tool type that carries a [FeatureToggle], enable the rest.
 		bool IsEnabled(Type type) => type.GetCustomAttribute<FeatureToggleAttribute>(inherit: false) is null;
@@ -672,15 +489,19 @@ public sealed class McpToolExecutionMetadataCoverageTests {
 			.Where(name => !gatedOffCatalog.ContainsKey(name))
 			.OrderBy(name => name, StringComparer.Ordinal)
 			.ToArray();
-		// The gate minus the feature-gated names, so the assertions below are about feature gating only and not
-		// about the not-yet-annotated allowlist.
+		// The gate minus the feature-gated names, so the requirement half below is about feature gating only and
+		// not about the (now empty) not-yet-annotated allowlist.
 		IReadOnlySet<string> gateWithoutFeatureGatedTools = new HashSet<string>(
 			NotYetClassifiedTools.Where(name => !gatedToolNames.Contains(name, StringComparer.OrdinalIgnoreCase)),
 			StringComparer.OrdinalIgnoreCase);
+		// The probe gate: exactly the feature-gated names. It is deliberately NOT the production gate — it is an
+		// input fabricated to make the routine speak about these tools, the way the synthetic-fixture tests do.
+		IReadOnlySet<string> probeGate = new HashSet<string>(gatedToolNames, StringComparer.OrdinalIgnoreCase);
 
 		// Act
 		IReadOnlyList<string> enabledFailures = FindCoverageFailures(gatedOffCatalog, gateWithoutFeatureGatedTools);
-		IReadOnlyList<string> blindFailures = FindCoverageFailures(toggleBlindCatalog, gateWithoutFeatureGatedTools);
+		IReadOnlyList<string> blindProbeFailures = FindCoverageFailures(toggleBlindCatalog, probeGate);
+		IReadOnlyList<string> enabledProbeFailures = FindCoverageFailures(gatedOffCatalog, probeGate);
 
 		// Assert
 		gatedToolNames.Should().NotBeEmpty(
@@ -691,11 +512,19 @@ public sealed class McpToolExecutionMetadataCoverageTests {
 		enabledFailures.Should().BeEmpty(
 			because: "a feature-disabled tool is not part of the coverage requirement — it cannot be called, so it has " +
 				"no routing decision to make");
-		blindFailures.Should().NotBeEmpty(
-			because: "the same tools ARE still in the catalog, so the toggle-blind view must report them — otherwise the " +
-				"exclusion would be a blind spot rather than a deliberate scope");
-		blindFailures.Should().Contain(failure => failure.Contains("get-mobile-page-conversion-guide", StringComparison.Ordinal),
-			because: "the feature-gated tool must remain discoverable and classifiable, just not required while gated off");
+		blindProbeFailures.Should().HaveCount(gatedToolNames.Length,
+			because: "every feature-gated tool must be visible to the routine in the toggle-blind view — one verdict per " +
+				"name, and none of them reported as stale, otherwise the exclusion would be a blind spot");
+		blindProbeFailures.Should().Contain(failure =>
+				failure.Contains("get-mobile-page-conversion-guide", StringComparison.Ordinal)
+				&& failure.Contains("still listed", StringComparison.Ordinal),
+			because: "the feature-gated tool must remain discoverable AND classified — the routine sees it in the catalog " +
+				"and objects to it being gated, which is the opposite of not seeing it at all");
+		enabledProbeFailures.Should().Contain(failure =>
+				failure.Contains("get-mobile-page-conversion-guide", StringComparison.Ordinal)
+				&& failure.Contains("stale", StringComparison.Ordinal),
+			because: "the same name over the enabled catalog resolves to no tool at all, which is what 'excluded from the " +
+				"requirement' means in the routine's own terms");
 	}
 
 	[Test]

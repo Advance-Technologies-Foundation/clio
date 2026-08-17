@@ -15,6 +15,13 @@ public sealed class PageTemplatesListTool(
 
 	internal const string ToolName = "list-page-templates";
 
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover valid `template` values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageTemplateListResponse ListPageTemplates(

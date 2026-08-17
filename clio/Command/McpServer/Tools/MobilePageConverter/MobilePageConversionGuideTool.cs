@@ -59,6 +59,15 @@ public sealed class MobilePageConversionGuideTool {
 	internal const string ToolName = "get-mobile-page-conversion-guide";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Advisory-only in what it WRITES (nothing), but it READS the source page and probes the environment's
+	// platform version, so it can block on Creatio and must run in a worker.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Detect a page's source type and return an advisory mobile-conversion GUIDE. " +
 		"Supported source type today: Freedom UI WEB (sourceType \"freedom-web\"). Other source types (e.g. Classic UI) " +

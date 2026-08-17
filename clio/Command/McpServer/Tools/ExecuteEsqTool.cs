@@ -26,6 +26,13 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Executes a raw ESQ SelectQuery and returns the resulting rows.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Run a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment and return the rows — to read " +
 		"Creatio data, or to validate a widget/page filter before saving it. ESQ is a proprietary format that is " +

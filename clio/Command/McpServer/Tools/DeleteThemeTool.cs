@@ -26,6 +26,13 @@ public class DeleteThemeTool(
 	 Description("Delete a custom Creatio theme from a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Deleting an unknown id is an error (not idempotent). For the theme workflow, read get-guidance theming first.")]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	public CommandExecutionResult DeleteTheme(
 		[Description("Parameters: environment-name (required), id (required).")]
 		[Required] DeleteThemeArgs args) {

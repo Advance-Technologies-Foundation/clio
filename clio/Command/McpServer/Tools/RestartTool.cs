@@ -36,6 +36,15 @@ public class RestartTool(
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
+	// Long-running starter of the restart family: the worker must outlive the response so restart-status
+	// (which shares OperationFamily = Restart and Lifetime = Sticky) reaches the same worker.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.Restart,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = RestartByEnvironmentNameToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
@@ -71,6 +80,16 @@ public class RestartTool(
 	// would now fail the registry's duplicate-name guard by design.
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-credentials MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
+	// Same restart family and the same sticky worker as restart-by-environment-name: the readiness wait
+	// outlives the response here too. That this path is deliberately unreportable by restart-status (its
+	// tenant key is URI-derived) changes the poll story, not how the call executes.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.Restart,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); re-check with healthcheck, or use restart-by-environment-name when you need a pollable restart.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(

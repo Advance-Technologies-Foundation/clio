@@ -29,6 +29,13 @@ public sealed class GetPkgListTool(
 	/// </summary>
 	[McpServerTool(Name = GetPkgListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns packages from the specified Creatio environment as structured JSON with package name, version, and maintainer.")]
 	public IReadOnlyList<PackageListItemResult> GetPkgList(
 		[Description("List-packages parameters")] [Required] GetPkgListArgs args) {

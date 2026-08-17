@@ -477,6 +477,8 @@ no-toggle decision above replaces. Each of these remains a separate, later decis
 | OQ-4 | Whether `create-app-section` gets a real operation registry or only a private completion signal | 7 |
 | OQ-5 | Whether master ships this default-on or gated — decided at merge proposal, on evidence from this branch | merge |
 | OQ-6 | Migration off deprecated sampling (MCP9005 / SEP-2577) onto `InputRequest` / `ResolveInputRequestsAsync` — rule 1 works today but on a feature the SDK may remove | 4 |
+| OQ-7 | **9 of the 37 hint-unbounded tools classified `in-process`, so by the cross-field invariant they carry `BudgetPolicy = None` and the parent kill will never bound them.** They are local-only, so nothing waits on Creatio — but `install-toolkit` / `update-toolkit` do network I/O of their own. Decide whether local-but-unbounded needs its own bound, or record why not | 6 |
+| OQ-8 | `McpToolSharedFileResource` has no member for the workspace data-binding artifacts (`descriptor.json` / `data.json` / localization, shared by `create-data-binding` and the two row tools) or `.clio-migration/<schema>/manifest.json`. Those rows carry `None` because **no member exists**, not because anyone judged them safe | 9 |
 
 ## 9. Relationship to adjacent ADRs
 

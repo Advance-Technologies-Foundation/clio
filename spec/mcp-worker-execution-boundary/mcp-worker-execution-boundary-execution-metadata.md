@@ -1,14 +1,20 @@
 # Inventory 1 — execution metadata per MCP tool
 
-**Feature:** mcp-worker-execution-boundary · **Jira:** ENG-95262 · **Stage:** 0 (design artifact)
+**Feature:** mcp-worker-execution-boundary · **Jira:** ENG-95262 · **Stage:** 1 (annotation landed)
 **Measured against:** `origin/master` @ `3fc50bf99`, 2026-08-17
+**Reconciled against shipped annotations:** 2026-08-17 — see "Status" below
 
-This is the input to Stage 1. Stage 1 adds the six reflected fields below to every `[McpServerTool]` and a
-catalog coverage test that fails when an enabled canonical tool is unclassified, or when a starter and its
-status poller disagree. This document is the **worklist that test consumes**, not the final truth: the
-`Location` column is derived by the heuristic in §4 and every row is confirmed or corrected when the
-attribute is actually applied. That confirmation is the work of Stage 1 — the inventory's job is to make
-sure nothing is missed, and to name up front the rows where the heuristic is known to be weak (§5).
+## Status: confirmed, no longer proposed
+
+This document started as the Stage-0 **worklist**: the `Location` column was derived by the file-level
+heuristic in §4 and every row was to be confirmed or corrected when the attribute was actually applied.
+**That has now happened.** All 189 `[McpServerTool]` declarations carry an explicit `[McpToolExecution]`
+with all six fields, each one decided by reading what the method does rather than by the heuristic, and
+`McpToolExecutionMetadataCoverageTests` asserts the result with an **empty** `NotYetClassifiedTools` gate
+(20/20 green). Every table below now records the **shipped, confirmed** value.
+
+Nine rows were corrected against the heuristic during annotation; they are marked **(corrected)** in §6 with
+the reason, and the aggregate effect is in §2. The heuristic itself is retired — see §4.
 
 ## 1. The six fields
 
@@ -23,7 +29,13 @@ sure nothing is missed, and to name up front the rows where the heuristic is kno
 
 ## 2. Census
 
-189 `[McpServerTool]` declarations across 125 files; every one carries a resolvable, unique name.
+189 `[McpServerTool]` declarations across **122** files; every one carries a resolvable, unique name, and
+every one now carries an `[McpToolExecution]` with all six fields.
+
+(The Stage-0 draft said 125 files. Re-measured while reconciling: 123 files under
+`clio/Command/McpServer/` contain the text `McpServerTool(`, and one of those —
+`McpToolInvokerRegistry.cs` — only mentions it in a doc comment and an exception message, so 122 files
+actually declare tools. The declaration count of 189 is unaffected and reproduces exactly.)
 
 | Safety hint | Count |
 |---|---|
@@ -31,12 +43,23 @@ sure nothing is missed, and to name up front the rows where the heuristic is kno
 | `Destructive = true` | 87 |
 | **neither — bounded by nothing today** | **37** |
 
-| Proposed classification | Count |
-|---|---|
-| `Location = worker` | 157 |
-| `Location = in-process` | 32 |
-| `Lifetime = sticky` | 7 |
-| `OperationFamily ≠ none` | 9 |
+| Confirmed classification (shipped) | Count | Stage-0 heuristic proposed |
+|---|---|---|
+| `Location = worker` | **153** | 157 |
+| `Location = in-process` | **36** | 32 |
+| `Lifetime = sticky` | **7** | 7 |
+| `OperationFamily ≠ none` | **9** | 9 |
+
+`BudgetPolicy` follows `Location` and `Lifetime` exactly: it is `none` on all 36 in-process rows,
+`parent-kill (extended)` on all 7 sticky rows, `terminal-stage` on the 2 `deploy`-family rows and
+`parent-kill (default)` on the remaining 144. `RequiresClientRequests` is `progress` on 15 rows and
+`sampling` on 2 (§5.2); `SharedFileResource` is non-`none` on 8 rows (§5.3).
+
+The worker count moved by −4 net, from **six** `Location` corrections in the same direction (five tools that
+turned out never to resolve an environment: `add-data-binding-row`, `remove-data-binding-row`,
+`get-tool-contract`, `new-test-project`, `new-integration-test-project`) minus one in the other
+(`new-ui-project`, which does). The remaining three corrections are `RequiresClientRequests` only and do not
+touch these counts. All nine are listed in §6.
 
 Current lock behaviour, for comparison: 115 tools reach the per-tenant monitor, 72 take no lock at all, and
 2 take the narrow `configuration-build` reservation instead.
@@ -81,26 +104,45 @@ fail in the build rather than in review:
 - `Location = in-process` ⇒ `OperationFamily = none`, `Lifetime = n/a` and `BudgetPolicy = none` — a tool
   that never routes to a worker has no parent budget to expire and no sticky worker for a poll to reach.
 
-## 4. Heuristic used for `Location`, and its limits
+## 4. Heuristic used for `Location` — SUPERSEDED by per-tool review
 
-`Location` was derived by static signal: does the tool's declaring file resolve an environment
-(`EnvironmentOptions`, an `environment-name` argument, or the tenant-key path). The heuristic is **file-level,
-so it over-assigns `worker`** — a tool declared in a file that also contains an environment-scoped sibling
-inherits the signal. Over-assignment is the safe direction (an unnecessary worker costs 0.7 s; a missed one
-keeps the wedge), but it is not free, and the following classes are the ones to re-check by hand in Stage 1:
+**This section is history.** The `Location` column is no longer heuristic output: every one of the 189 rows
+was decided by reading the tool method and the command behind it, and the shipped attribute is the authority.
+The heuristic is recorded here only because it explains the Stage-0 numbers in §2 and because its predicted
+weak spots turned out to be exactly where the corrections landed.
 
-- purely local scaffolding that happens to accept an environment name (`new-test-project`,
-  `new-integration-test-project`, `new-ui-project`, `create-workspace`);
-- toolkit/skill management (`install-toolkit`, `update-toolkit`) — local file operations;
-- `experimental`, `send-telemetry` — process-local;
-- multi-tool files where one tool is environment-scoped and its neighbours are not.
+The heuristic was a static signal: does the tool's declaring file resolve an environment
+(`EnvironmentOptions`, an `environment-name` argument, or the tenant-key path). It was **file-level, so it
+over-assigned `worker`** — a tool declared in a file that also contained an environment-scoped sibling
+inherited the signal. Over-assignment was the safe direction (an unnecessary worker costs 0.7 s; a missed one
+keeps the wedge). The classes flagged as needing hand review, and what review found:
+
+| Flagged class | Outcome of per-tool review |
+|---|---|
+| local scaffolding that merely accepts an environment name (`new-test-project`, `new-integration-test-project`, `new-ui-project`, `create-workspace`) | **Split.** `new-test-project` / `new-integration-test-project` corrected to `in-process` (their options do not derive from `EnvironmentOptions`, no `IToolCommandResolver`, output is generated locally); `create-workspace` confirmed `in-process`; `new-ui-project` corrected the OTHER way, to `worker` — `UiProjectCreator.Create` calls `FindExistingPackage` unconditionally, which reaches `SelectQueryHelper.ExecuteSelectQuery` with the default `Timeout.Infinite`. |
+| toolkit/skill management (`install-toolkit`, `update-toolkit`) | Confirmed `in-process` — they install or update agent plugin files and never resolve an environment. They do block on the network, which is a budget gap, not a location error; see §5.4. |
+| `experimental`, `send-telemetry` | Confirmed `in-process`. `send-telemetry` additionally must not move: ADR rule 11 forbids a worker running the host's telemetry drain. |
+| multi-tool files where one tool is environment-scoped and its neighbours are not | **This is where the heuristic actually failed.** `DataBindingTool.cs` (`add-data-binding-row` / `remove-data-binding-row` corrected to `in-process`, inheriting the signal from their `create-data-binding` sibling) and `ToolContractGetTool` (`get-tool-contract`, a pure contract lookup). |
+
+Three rows were confirmed rather than corrected, but on grounds *different* from the heuristic's, and the
+reasons are load-bearing later:
+
+- `download-configuration-by-build` stayed `worker` even though it never resolves an environment (it
+  short-circuits to `DownloadFromPath` whenever `BuildZipPath` is set). It pins the process-wide working
+  directory under `McpToolExecutionLock.CwdLock`. ADR §2.3 deletes `CwdLock` at Stage 10, which is only sound
+  once every cwd mutator runs in its own child — so classifying this one `in-process` would either block that
+  deletion or reintroduce the race with the other cwd writers.
+- `assert-infrastructure` and `find-empty-iis-port` stayed `in-process` even though they block on Kubernetes /
+  local database / Redis probes: §3 keys `Location` on blocking *on a Creatio environment*, and neither does.
+  Recorded here in case the rule's intent is ever read as "can block on anything remote", which would move
+  both rows.
 
 ## 5. Rows that carry the design weight
 
 ### 5.1 Starter/status pairs — the coverage test's real target
 
-Only **two** operation registries exist: `ICompileOperationRegistry` (`BindingsModule.cs:738`) and
-`IRestartOperationRegistry` (`BindingsModule.cs:742`). Three of the four long-running modes have no registry
+Only **two** operation registries exist: `ICompileOperationRegistry` (`BindingsModule.cs:756`) and
+`IRestartOperationRegistry` (`BindingsModule.cs:760`). Three of the four long-running modes have no registry
 at all, which is why "reap on terminal status" cannot manage them and workers need a private completion
 signal (rule 5).
 
@@ -118,8 +160,8 @@ what the Stage 1 coverage test is for.
 ### 5.1b Deprecated aliases are separate rows, and must not drift from their canonical
 
 A deprecated tool name is registered as its **own** `[McpServerTool]` method that delegates to the
-canonical one — not as catalog metadata. `StopTool.cs` declares both `stop-all-creatio` (`:34`) and the
-PascalCase `StopAllCreatio` (`:52`), the second marked *"[Deprecated: use stop-all-creatio]"* and
+canonical one — not as catalog metadata. `StopTool.cs` declares both `stop-all-creatio` (`:48`) and the
+PascalCase `StopAllCreatio` (`:74`), the second marked *"[Deprecated: use stop-all-creatio]"* and
 implemented as `=> StopAllCreatio(requestContext)`.
 
 Consequence for Stage 1: an alias and its canonical execute the **same code** and must therefore carry
@@ -128,24 +170,71 @@ in-process — the same failure shape as a starter/status disagreement, and it b
 test. (`StopAllCreatio` is also why the table below is not uniformly kebab-case: it is a real, deliberate
 legacy name, not a parse artifact.)
 
+**Shipped state — two method-level alias pairs, both machine-readable.** The annotation used the attribute's
+`AliasOf` property, so the coverage test discovers them by reflection instead of a pinned literal:
+
+| Alias | Canonical | Declared at |
+|---|---|---|
+| `StopAllCreatio` | `stop-all-creatio` | `StopTool.cs` — `StopAllCreatioLegacy` is `=> StopAllCreatio(requestContext)` |
+| `clio-run-destructive` | `clio-run` | `ClioRunTool.cs` — `ClioRunDestructiveTool` is documented as a deprecated alias; `destructiveSurface: true` is retained on the executor signature for back-compat but no longer routes or refuses, so both names run one body |
+
+Both pairs are verified identical on all six routing fields by TC-U-107, which also checks the
+compatibility-catalog aliases through the reader. The Stage-0 draft named only the first pair; the second was
+found while annotating and did not exist as a checked invariant before.
+
 ### 5.2 Full-duplex requirement
 
 - **Sampling — exactly two callers:** `update-page` and `sync-pages`, both via `PageBodySamplingService`
   (`PageBodySamplingService.cs:130`). A relay that is not full-duplex degrades these to `Skipped=true`
-  silently — no error, just a quietly worse answer (rule 1).
-- **Progress / stage events — 14 tools:** `compile-creatio`, `create-app`, `create-app-section`,
-  `delete-app-section`, `deploy-creatio`, `get-app-info`, `install-process-builder`, `list-app-sections`,
-  `list-apps`, `restart-by-credentials`, `restart-by-environment-name`, `sync-schemas`, `uninstall-creatio`,
-  `update-app-section`. These are the tools whose ordering guarantee rule 12 protects.
+  silently — no error, just a quietly worse answer (rule 1). **Confirmed unchanged** by per-tool review.
+- **Progress / stage events — 15 tools** (corrected from the Stage-0 count of 14): `compile-creatio`,
+  `create-app`, `create-app-section`, `delete-app-section`, `deploy-creatio`, `get-app-info`,
+  `install-process-builder`, `list-app-sections`, `restart-by-credentials`, `restart-by-environment-name`,
+  `start-creatio`, `stop-creatio`, `sync-schemas`, `uninstall-creatio`, `update-app-section`. These are the
+  tools whose ordering guarantee rule 12 protects.
+
+  Three corrections, all from reading the emit sites rather than counting one mechanism:
+
+  - **`start-creatio` and `stop-creatio` added.** Both attach `StatusChanged` on the resolved command and
+    forward each event to `server.SendNotificationAsync("notifications/progress", …)` on the caller's progress
+    token (`StartTool.cs`, `StopTool.cs` `OnStatusChanged`). The Stage-0 census counted
+    `McpProgressHeartbeat` callers and therefore missed the tools that call `SendNotificationAsync` directly.
+    `StopCommand` raises four stage markers, so a half-duplex relay would drop all four.
+  - **`list-apps` removed.** Unlike every other tool in `ApplicationTool.cs` it takes no `McpServer` /
+    `RequestContext` parameter and runs no heartbeat, so it has no channel to emit progress on at all
+    (`ApplicationTool.cs:38-46` carries this reasoning in code). Its `stop-all-creatio`-style sibling
+    proximity is what put it on the Stage-0 list.
+
+  Note that `stop-creatio` and `stop-all-creatio` legitimately DIFFER on this field: the first passes a
+  `configureCommand` callback that attaches the handler, the second calls `InternalExecute(options)` with no
+  callback and therefore attaches nothing.
 
 ### 5.3 Shared file resources (Stage 9 gates)
+
+Eight rows carry a non-`none` `SharedFileResource`; the table below is the shipped set.
 
 | Resource | Tools | Hazard |
 |---|---|---|
 | `.clio-pages/{schema}/meta.json` | `get-page`, `update-page`, `sync-pages` | read-modify-write with swallowed I/O failures; two processes now race it |
-| browser-session cache | `get-browser-session` | shared under the clio home directory |
-| `configuration-build` reservation | `compile-creatio`, `install-process-builder` | in-process today; Stage 7 moves it to the parent, keyed by normalised tenant + resource |
+| browser-session cache | `get-browser-session`, `clear-browser-session` | shared under the clio home directory. `clear-browser-session` was missing from this row in the Stage-0 draft while §6 already carried it; the shipped annotation follows §6 |
+| `configuration-build` reservation | `compile-creatio`, `install-process-builder`, `compile-status` | in-process today; Stage 7 moves it to the parent, keyed by normalised tenant + resource. `compile-status` takes no reservation itself, but carries the tag because under the worker model the registry it reads lives inside the process that holds the reservation |
 | DbHub | — | already cross-process safe (`.clio.lock`, `FileShare.None`) — no work needed |
+
+**Two gaps the enum cannot express today** (found during annotation, deliberately NOT invented as values —
+these are Stage 9 decisions):
+
+- **Workspace data-binding files.** `create-data-binding` (worker) and the now-in-process
+  `add-data-binding-row` / `remove-data-binding-row` read-modify-write the SAME local artifacts — the
+  package's `Data/<binding>/descriptor.json`, `data.json` and localization files. After Stage 6 two processes
+  can interleave on them. All three rows carry `SharedFileResource = none` because
+  `McpToolSharedFileResource` has no member for workspace binding files.
+- **The classic-migration manifest.** `get-classic-page-sources` writes
+  `.clio-migration/<schema>/manifest.json`, and `get-schema` optionally writes an output file. Both carry
+  `none` for the same reason. The migration manifest is produced by exactly one tool (unlike `.clio-pages`,
+  which three tools race), so `none` is defensible — but it is an absence of an enum member, not a reviewed
+  judgement that the file is safe.
+
+If Stage 9 wants either gated, the enum needs a new member and the affected rows need re-annotating.
 
 ### 5.4 The 37 tools bounded by nothing
 
@@ -166,6 +255,27 @@ Note that this list is **not** the same as "unsafe": several are local-only. It 
 which nothing today decides a bound — which is why the metadata must be explicit rather than inferred from
 the safety hints (rule 7).
 
+**Confirmed unchanged** by the shipped annotations: the live set derived from the registry
+(`!IsReadOnly && !IsDestructive`) is exactly these 37 names, and the coverage test derives it that way rather
+than pinning the list, so it cannot go stale.
+
+**What the annotation revealed about 9 of them.** These nine landed `in-process`, which by the §3
+cross-field invariant forces `BudgetPolicy = none`: `create-workspace`, `disable-knowledge-source`,
+`enable-knowledge-source`, `experimental`, `install-toolkit`, `new-integration-test-project`,
+`new-test-project`, `send-telemetry`, `update-toolkit`. Their `Location` is right — none of them can block on
+a Creatio environment — but the consequence is that **Stage 7 will not bound them either**, and two of them
+(`install-toolkit`, `update-toolkit`) do perform network work: a git / marketplace install for up to four
+coding agents. So the "bounded by nothing" cohort does not shrink to zero when the worker boundary lands; it
+shrinks to these nine, and closing them needs a mechanism that is not the parent kill (there is no child to
+kill). That is a Stage 7 input, not a metadata error.
+
+**One worker row that will want a wide budget:** `watch-compilation` is `parent-kill (default)` per the §3
+rule, but `WatchCompilationCommand` polls Creatio's `CompilationHistory` in a one-second loop until it settles
+or `give-up-after-seconds` expires — default 300 s, caller-settable with no upper cap. It is deliberately NOT
+`configuration-build` family: it observes compilations started OUTSIDE clio and never consults
+`ICompileOperationRegistry`, so it has no sticky worker to reach and `per-call` is correct. Whoever sizes the
+default budget in Stage 7 needs this row.
+
 ### 5.5 Feature-toggled tools
 
 Workers inherit the parent's **frozen** enabled-tool generation (rule 11), so these must be resolved once at
@@ -178,6 +288,11 @@ parent startup and passed down, never re-read in the child.
 | `mobile-page-converter` | 1 |
 | `watch-compilation` | 1 |
 
+**Confirmed** (14 gated tools across 14 files). All 14 are annotated: a feature-gated tool is excluded from
+the coverage REQUIREMENT while its toggle is off, but it stays classifiable and classified — TC-U-106 proves
+both halves, using the gated names as a probe input so the two views give different verdicts on the same
+input.
+
 ### 5.6 Residency is not execution
 
 17 tools are resident in `tools/list` (`McpCoreToolProfile` plus the three lazy-mode entry points). Residency
@@ -186,14 +301,19 @@ long-running tools are non-resident and are reached as
 `clio-run {"command": "compile-creatio", …}`. The router must therefore resolve its key **after unwrapping
 `clio-run`** (rule 7) — routing on the outer name would send every long-running call to the same place.
 
-## 6. Full assignment — all 189 tools
+## 6. Full assignment — all 189 tools (shipped values)
 
 `*` marks a tool resident in `tools/list`. A backticked toggle name marks a feature-gated tool.
+
+Every row is the value actually declared by the tool's `[McpToolExecution]` attribute on this branch, verified
+against the source by the coverage test. **(corrected)** marks the nine rows where per-tool review overrode
+the Stage-0 heuristic; the reason is on the row, and the aggregate is in §2. Where a row and the code ever
+disagree again, the code wins and this table is stale — the coverage test is what makes that loud.
 
 | tool | hint | Location | Lifetime | OperationFamily | BudgetPolicy | RequiresClientRequests | SharedFileResource |
 |---|---|---|---|---|---|---|---|
 | `StopAllCreatio` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
-| `add-data-binding-row` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
+| `add-data-binding-row` | Destructive | **in-process** (corrected) | n/a | none | none (never blocks on Creatio) | none | none |
 | `add-item-model` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `add-knowledge-source` | Destructive | in-process | n/a | none | none (never blocks on Creatio) | none | none |
 | `add-package` | **unbounded** | worker | per-call | none | parent-kill (default) | none | none |
@@ -291,7 +411,7 @@ long-running tools are non-resident and are reached as
 | `get-sys-setting` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
 | `get-target-package` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
 | `get-telemetry-consent` | ReadOnly | in-process | n/a | none | none (never blocks on Creatio) | none | none |
-| `get-tool-contract`* | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
+| `get-tool-contract`* | ReadOnly | **in-process** (corrected) | n/a | none | none (never blocks on Creatio) | none | none |
 | `get-user-culture` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
 | `info-knowledge` | ReadOnly | in-process | n/a | none | none (never blocks on Creatio) | none | none |
 | `install-application` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
@@ -304,7 +424,7 @@ long-running tools are non-resident and are reached as
 | `link-from-repository-by-environment` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `link-from-repository-unlocked` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `list-app-sections`* | ReadOnly | worker | per-call | none | parent-kill (default) | progress | none |
-| `list-apps`* | ReadOnly | worker | per-call | none | parent-kill (default) | progress | none |
+| `list-apps`* | ReadOnly | worker | per-call | none | parent-kill (default) | **none** (corrected) | none |
 | `list-creatio-builds` | ReadOnly | in-process | n/a | none | none (never blocks on Creatio) | none | none |
 | `list-entity-client-schemas` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
 | `list-environments` | ReadOnly | in-process | n/a | none | none (never blocks on Creatio) | none | none |
@@ -320,9 +440,9 @@ long-running tools are non-resident and are reached as
 | `modify-business-process` `process-designer` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `modify-entity-schema-column` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `modify-user-task-parameters` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
-| `new-integration-test-project` | **unbounded** | worker | per-call | none | parent-kill (default) | none | none |
-| `new-test-project` | **unbounded** | worker | per-call | none | parent-kill (default) | none | none |
-| `new-ui-project` | **unbounded** | in-process | n/a | none | none (never blocks on Creatio) | none | none |
+| `new-integration-test-project` | **unbounded** | **in-process** (corrected) | n/a | none | none (never blocks on Creatio) | none | none |
+| `new-test-project` | **unbounded** | **in-process** (corrected) | n/a | none | none (never blocks on Creatio) | none | none |
+| `new-ui-project` | **unbounded** | **worker** (corrected) | per-call | none | parent-kill (default) | none | none |
 | `odata-create` | **unbounded** | worker | per-call | none | parent-kill (default) | none | none |
 | `odata-delete` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `odata-read` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
@@ -335,7 +455,7 @@ long-running tools are non-resident and are reached as
 | `read-page-business-rules` | ReadOnly | worker | per-call | none | parent-kill (default) | none | none |
 | `reg-web-app` | **unbounded** | worker | per-call | none | parent-kill (default) | none | none |
 | `regenerate-identity-signing-key` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
-| `remove-data-binding-row` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
+| `remove-data-binding-row` | Destructive | **in-process** (corrected) | n/a | none | none (never blocks on Creatio) | none | none |
 | `remove-data-binding-row-db` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `remove-knowledge-source` | Destructive | in-process | n/a | none | none (never blocks on Creatio) | none | none |
 | `remove-package-dependency` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
@@ -355,9 +475,9 @@ long-running tools are non-resident and are reached as
 | `set-record-rights` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `set-user-theme` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
 | `show-passing-infrastructure` | ReadOnly | in-process | n/a | none | none (never blocks on Creatio) | none | none |
-| `start-creatio` | **unbounded** | worker | per-call | none | parent-kill (default) | none | none |
+| `start-creatio` | **unbounded** | worker | per-call | none | parent-kill (default) | **progress** (corrected) | none |
 | `stop-all-creatio` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
-| `stop-creatio` | Destructive | worker | per-call | none | parent-kill (default) | none | none |
+| `stop-creatio` | Destructive | worker | per-call | none | parent-kill (default) | **progress** (corrected) | none |
 | `sync-pages` | Destructive | worker | per-call | none | parent-kill (default) | sampling | .clio-pages |
 | `sync-schemas` | Destructive | worker | per-call | none | parent-kill (default) | progress | none |
 | `uninstall-creatio` | Destructive | worker | per-call | deploy | terminal-stage | progress | none |
@@ -384,5 +504,12 @@ long-running tools are non-resident and are reached as
 
 ---
 
-Generated from `origin/master` @ `3fc50bf99`. Regenerate after any change to the tool catalog; the Stage 1
-coverage test is the mechanism that makes a stale row fail loudly instead of silently.
+Generated from `origin/master` @ `3fc50bf99`; **reconciled 2026-08-17 against the annotations shipped on
+`feature/ENG-95262-mcp-worker-execution-boundary`**, where all 189 tools carry `[McpToolExecution]` and
+`NotYetClassifiedTools` is empty.
+
+The tables above are now a **record**, not a proposal — the attribute in the source is the authority, and
+`clio.tests/Command/McpServer/McpToolExecutionMetadataCoverageTests.cs` is what makes a divergence fail loudly
+instead of silently. Regenerate after any change to the tool catalog. Two things this reconciliation did NOT
+resolve, both handed to Stage 7 / Stage 9 rather than papered over: the nine `in-process` tools that no budget
+will bound (§5.4) and the two shared local artifacts that `McpToolSharedFileResource` cannot name (§5.3).

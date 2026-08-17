@@ -35,6 +35,16 @@ public sealed class ApplicationGetListTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationGetListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	// RequiresClientRequests = None, not Progress: unlike every other tool in this file this method takes no
+	// McpServer / RequestContext parameter and runs no McpProgressHeartbeat, so it has no channel to emit
+	// notifications/progress on. (The Stage 0 inventory listed it as progress-streaming; the code does not.)
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Gets list of all applications from Creatio through backend MCP.")]
 	public ApplicationListResponse ApplicationGetList(
 		[Description("Parameters: environment-name (required unless credential passthrough supplies the tenant)")]
@@ -86,6 +96,13 @@ public sealed class ApplicationGetInfoTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationGetInfoToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Gets installed app identity, package, and entities from Creatio; each entity includes virtual. "
 		+ "Each entity column round-trips into sync-schemas update-entity as-is — send the same column object back and add an 'action' verb (modify/remove); "
 		+ "no field renaming needed, and no separate get-tool-contract call is required to learn the write shape. "
@@ -153,6 +170,13 @@ public sealed class ApplicationCreateTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context. Places the new section in `My applications`, visible to System administrators only — settle placement and audience BEFORE this call; see get-guidance name=workplaces. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
 		[Description("Parameters: environment-name (required unless passthrough); name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
@@ -291,6 +315,17 @@ public sealed class ApplicationSectionCreateTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationSectionCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// One of the five long-running starters: minutes-long, streams progress, and returns an in-progress
+	// envelope past the response deadline while the work continues. It has NO operation registry (ADR rule 5,
+	// OQ-4), so the worker that serves it must survive the response and be reaped by a private completion
+	// signal, not by a status poll.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.AppSectionCreate,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout. Create sections in one app SEQUENTIALLY — do not fan out parallel create-app-section calls against the same app; each insert takes ~90-100 s and overlapping inserts contend server-side. clio serializes creations per app in-process and auto-retries a detail-less InsertQuery rejection (error-class=contention) once with verification, but you should still create one section at a time. If the response is bounded by a deadline before the work finishes it returns error-class=creatio-timeout with section-created=in-progress: the section is still being created server-side — do NOT retry create-app-section (that would duplicate it) and do NOT fall back to create-page; instead poll list-app-sections / get-app-info until the section and its <Code>_ListPage / <Code>_FormPage appear. On failure the response carries error-class (transport | creatio-timeout | server-error | contention), section-created (true | false | unknown | in-progress), and retry-guidance — follow that guidance instead of blind retries.")]
 	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
 		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, code, icon-background, with-mobile-pages (optional). entity-schema-name must reference an existing object (validated before creation); several sections may target the same object, so reuse is allowed. The section code is generated from the caption; a non-Latin caption (for example 'Контакти') cannot produce a valid Latin code, so pass an explicit code such as code='Contacts'. If the object does not exist, creation fails with a 'does not exist' error; a detail-less InsertQuery rejection is classified error-class=contention — the server gives no detail, so it may be parallel creation OR a server-side rejection; clio verifies and auto-retries once, so create sections sequentially, run list-app-sections to confirm absence, and if a single sequential create still fails treat it as a server-side issue (check clio healthcheck / server logs).")]
@@ -397,6 +432,13 @@ public sealed class ApplicationSectionUpdateTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationSectionUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
 		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
@@ -498,6 +540,13 @@ public sealed class ApplicationSectionDeleteTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationSectionDeleteToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Deletes the section ITSELF, from EVERY workplace; to remove it from one workplace only, see get-guidance name=workplaces. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
 		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (all required)")]
@@ -573,6 +622,13 @@ public sealed class ApplicationSectionGetListTool(
 	/// </summary>
 	[McpServerTool(Name = ApplicationSectionGetListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionListContextResponse> ApplicationSectionGetList(
 		[Description("Parameters: application-code (required); environment-name (required unless passthrough)")]

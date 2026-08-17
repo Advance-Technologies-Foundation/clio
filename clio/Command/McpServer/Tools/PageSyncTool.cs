@@ -50,6 +50,16 @@ public sealed class PageSyncTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
+	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
+	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the verify read-back body.js
+	// and the meta.json rewrite, already routed through IInterprocessFileGate above.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Sampling,
+		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +

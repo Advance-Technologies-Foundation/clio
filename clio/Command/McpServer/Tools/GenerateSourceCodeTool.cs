@@ -28,6 +28,13 @@ public sealed class GenerateSourceCodeTool(
 	/// </summary>
 	[McpServerTool(Name = GenerateSourceCodeToolName, ReadOnly = false, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Generates source code for schemas in the specified Creatio environment. " +
 		"Equivalent to the 'Generate source code' button in the Creatio Configuration section. " +

@@ -45,6 +45,16 @@ public sealed class PageUpdateTool(
 		" See docs://mcp/guides/page-modification for the append diff-form contract.";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
+	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the IPageBaselineGuard
+	// conflict baseline under .clio-pages/{schema}/meta.json, which two clio processes could otherwise race.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Sampling,
+		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +

@@ -116,6 +116,16 @@ public sealed class PushWorkspaceTool(
 	/// </summary>
 	[McpServerTool(Name = PushWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// Local workspace files are only the payload: the call installs them into the resolved environment, so it
+	// can block on Creatio. SharedFileResource is None — the workspace root travels through
+	// IWorkspacePathBuilder.RootPath on a per-tenant container, not through a shared clio-managed artifact.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Pushes the local workspace at `workspace-path` to the specified Creatio environment")]
 	public CommandExecutionResult PushWorkspace(
 		[Description("Push-workspace parameters")] [Required] PushWorkspaceArgs args
@@ -146,6 +156,15 @@ public sealed class RestoreWorkspaceTool(
 	/// </summary>
 	[McpServerTool(Name = RestoreWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	// Pulls package content out of the resolved environment into the local workspace, so it can block on
+	// Creatio; the workspace root is per-tenant state, not a shared clio-managed artifact (see push-workspace).
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Restores the local workspace at `workspace-path` from the specified Creatio environment")]
 	public CommandExecutionResult RestoreWorkspace(
 		[Description("Restore-workspace parameters")] [Required] RestoreWorkspaceArgs args

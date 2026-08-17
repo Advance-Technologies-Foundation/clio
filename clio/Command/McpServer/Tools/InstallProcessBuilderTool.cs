@@ -68,6 +68,18 @@ public sealed class InstallProcessBuilderTool(
 	// makes the target rebuild its configuration.
 	[McpServerTool(Name = InstallProcessBuilderToolName, ReadOnly = false, Destructive = true,
 		Idempotent = true, OpenWorld = false)]
+	// One of the five long-running starters. Sticky because the install keeps running past the response
+	// deadline (the detached continuation above), so the worker must outlive the answer; ConfigurationBuild
+	// because it holds the narrow reservation this file already takes and must exclude a concurrent
+	// compile-creatio on the same tenant (which the parent owns from Stage 7 on). It has no operation
+	// registry, so reaping needs the private completion signal (ADR rule 5).
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.ConfigurationBuild,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
 	[Description("""
 	             Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio
 	             environment, making ProcessDesignService reachable there.

@@ -31,6 +31,13 @@ public sealed class CreateEntityBusinessRuleTool(
 	/// </remarks>
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Creates one or more entity-level Freedom UI business rules on a single entity schema in ONE batch call (one configuration rebuild for the whole batch): hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter (restrict a lookup to records matching a fixed condition by ANY mechanism — attribute value, relative period, time-of-day, child existence/count, or gating by another field). " +
 		"PREFER this over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where …' request — entity rules apply everywhere the lookup is used. " +
 		"Pass every rule for the same entity schema in the 'rules' array; a failed rule does not abort the others (the response reports per-rule status). " +
@@ -629,6 +636,13 @@ public sealed class CreatePageBusinessRuleTool(
 	/// </remarks>
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Creates one or more page-level Freedom UI business rules on a single page in ONE batch call (one configuration rebuild for the whole batch) that change page element visibility, editability, or required state. Pass every rule for the same page in the 'rules' array and prefer one batch call over many single-rule calls; a failed rule does not abort the others and the response reports per-rule status. Before calling, read get-guidance business-rules and get-tool-contract for create-page-business-rules.")]
 	public object BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, page-schema-name, rules (all required).")]
@@ -742,6 +756,13 @@ public sealed class ReadEntityBusinessRuleTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Reads ALL entity-level Freedom UI business rules persisted for an entity schema (full package hierarchy, so inherited rules are included). " +
 		"Each rule is returned in the create/update contract shape with 'name', 'enabled', and block 'uId's — pass those uIds back to update-entity-business-rules so the platform stores a short diff. " +
 		"apply-static-filter rules read back with the same friendly 'filter' shape used to create them. " +
@@ -786,6 +807,13 @@ public sealed class ReadPageBusinessRuleTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Reads ALL page-level Freedom UI business rules persisted for a page schema (full package hierarchy, so inherited rules are included). " +
 		"Each rule is returned in the create/update contract shape with 'name', 'enabled', and block 'uId's — pass those uIds back to update-page-business-rules so the platform stores a short diff. " +
 		"Call this BEFORE updating or deleting rules to obtain exact rule names and uIds.")]
@@ -829,6 +857,13 @@ public sealed class UpdateEntityBusinessRuleTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Updates one or more entity-level Freedom UI business rules on a single entity schema in ONE batch call (one configuration rebuild for the whole batch). " +
 		"Each rule REQUIRES 'name' (the match key — read it with read-entity-business-rules first) and fully replaces the matched rule's definition; there is no partial patch. " +
 		"Pass the block 'uId's returned by read to preserve identity of unchanged conditions/expressions/actions so the platform stores a short diff; omit 'enabled' to keep the current value, or set it to enable/disable the rule. " +
@@ -889,6 +924,13 @@ public sealed class UpdatePageBusinessRuleTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Updates one or more page-level Freedom UI business rules on a single page schema in ONE batch call (one configuration rebuild for the whole batch). " +
 		"Each rule REQUIRES 'name' (the match key — read it with read-page-business-rules first) and fully replaces the matched rule's definition; there is no partial patch. " +
 		"Pass the block 'uId's returned by read to preserve identity of unchanged conditions/expressions/actions so the platform stores a short diff; omit 'enabled' to keep the current value, or set it to enable/disable the rule. " +
@@ -949,6 +991,13 @@ public sealed class DeleteEntityBusinessRuleTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Deletes one or more entity-level Freedom UI business rules by internal rule name in ONE batch call (one configuration rebuild for the whole batch). " +
 		"Rule names come from read-entity-business-rules. Autogenerated apply-filter helper rules of a deleted rule are removed automatically. " +
 		"Rules inherited from base packages are matched too — deleting one stores a layered removal in the target package. " +
@@ -1009,6 +1058,13 @@ public sealed class DeletePageBusinessRuleTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Deletes one or more page-level Freedom UI business rules by internal rule name in ONE batch call (one configuration rebuild for the whole batch). " +
 		"Rule names come from read-page-business-rules. " +
 		"Rules inherited from base packages are matched too — deleting one stores a layered removal in the target package. " +

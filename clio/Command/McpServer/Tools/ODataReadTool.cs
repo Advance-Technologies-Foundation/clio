@@ -29,6 +29,13 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Reads Creatio records using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Query Creatio records via OData v4. " +
 		"Supports filters, select, expand, order by and top. " +

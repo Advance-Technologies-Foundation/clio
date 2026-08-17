@@ -66,6 +66,16 @@ public sealed class ToolContractGetTool {
 	}
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// InProcess (the inventory's file-level heuristic said worker): the tool serves the curated static
+	// contract catalog plus IMcpToolInvokerRegistry annotations and resolves no environment anywhere, so it
+	// can never block on Creatio — §3's own rule names tool contracts as in-process.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
@@ -5275,7 +5285,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildNewUiProject() {
 		return new ToolContractDefinition(
 			CreateUiProjectTool.CreateUiProjectToolName,
-			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Pure local file-system scaffolding under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>; no Creatio environment is contacted. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
+			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Writes under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>. It DOES read the environment once: a SysPackage lookup runs unconditionally to check whether the package already exists (UiProjectCreator.Create), so the tool needs a reachable environment even though it changes nothing on it. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
 			new ToolInputSchemaContract(
 				[WorkspaceDirectoryFieldName, ProjectNameFieldName, "packageName", VendorPrefixFieldName],
 				[
@@ -5358,7 +5368,7 @@ internal static class ToolContractCatalog {
 			AntiPatterns: [
 				new ToolAntiPattern(
 					$"{CreateUiProjectTool.CreateUiProjectToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"new-ui-project is local file-system scaffolding only. No Creatio assemblies change and no environment is contacted, so a compile-creatio follow-up serves no purpose."),
+					"new-ui-project writes only local files: no Creatio assemblies change, so a compile-creatio follow-up serves no purpose. (It does read the environment once for a SysPackage existence check, but that changes nothing there.)"),
 				new ToolAntiPattern(
 					$"{ApplicationCreateTool.ApplicationCreateToolName} → {CreateUiProjectTool.CreateUiProjectToolName}",
 					"create-app installs an application into a Creatio environment; new-ui-project scaffolds an Angular remote module on the local file system. They address different artifacts and should not be chained as if one followed from the other."),

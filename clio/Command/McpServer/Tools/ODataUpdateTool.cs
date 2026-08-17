@@ -18,6 +18,13 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Updates a single Creatio record using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +

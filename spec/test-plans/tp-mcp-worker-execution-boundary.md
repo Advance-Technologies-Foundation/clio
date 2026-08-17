@@ -26,6 +26,7 @@ the call and assert the delta.
 |---|---|---|
 | R1 | A stalled call still wedges the environment | the whole point; regression here is total |
 | R2 | Sampling silently degrades to `Skipped=true` under the relay | no error surfaces — `update-page` / `sync-pages` just give a worse answer |
+| R10 | A `RequiresClientRequests` value derived from the wrong signal | **happened**: the inventory's progress list was built from `McpProgressHeartbeat` call sites only, so it MISSED tools calling `server.SendNotificationAsync` directly (`stop-creatio`, `start-creatio`) and wrongly INCLUDED `list-apps`, which has no server parameter at all. Wrong in both directions; the cohort is 15, not 14 |
 | R3 | Notification reordering breaks ordered replay | **measured**: the SDK dispatches notification callbacks concurrently — `0..5` arrived as `[5,4,2,3,0,1]`, and as `[2,0,1,3,4]` on a retry with a FIFO added (ADR §3.2) |
 | R4 | Orphaned worker survives parent death | **measured**: the prototype leaked one orphan |
 | R5 | Credential downgrade in the worker (bearer executes as Supervisor) | this exact defect already happened once in this codebase; the symptom is **success** |
@@ -69,6 +70,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-U-102 | A synthetic new tool added without metadata fails TC-U-101 (proves the coverage test is not vacuous — R9) |
 | TC-U-103 | A starter and its status poller disagreeing on `OperationFamily` or `Lifetime` fails the test |
 | TC-U-104 | Metadata resolution unwraps `clio-run` / `clio-run-destructive` and keys on the **inner** command |
+| TC-U-109 | **The router must never key on the outer executor name.** `clio-run` and `clio-run-destructive` are both classified `in-process`, which is correct ONLY because the reader unwraps to the inner command. A router that passed the outer name would run the ENTIRE long tail in-process — reintroducing the exact unbounded wedge this work removes. Pin it: routing `clio-run` **with** an inner command yields the inner tool's location; **without** one yields an immediate in-process error, never a silent in-process execution |
 | TC-U-105 | The 37 hint-unbounded tools all carry an explicit `BudgetPolicy` — none defaults to "unbounded" |
 | TC-U-106 | Feature-disabled tools are excluded from the coverage requirement but not from the catalog |
 | TC-U-107 | A deprecated alias and its canonical carry **identical** execution metadata (e.g. `StopAllCreatio` vs `stop-all-creatio`); divergence fails the test |

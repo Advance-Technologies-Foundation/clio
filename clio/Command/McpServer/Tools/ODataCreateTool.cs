@@ -19,6 +19,13 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Creates one or more Creatio records using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Create one or more Creatio records via OData v4 (POST) in a single call. " +
 		"Provide the entity set name and a 'rows' array of field/value objects; pass all rows for the same " +

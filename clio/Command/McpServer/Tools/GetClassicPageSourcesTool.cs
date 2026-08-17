@@ -25,6 +25,16 @@ public sealed class GetClassicPageSourcesTool(
 	// already exist (OutputPathConfinement) — a `..` traversal, absolute system path, symlink escape, or existing
 	// target is rejected before any write, so this MCP-callable tool cannot be steered into overwriting a file.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// SharedFileResource stays None: the manifest this tool writes lives under a per-schema
+	// .clio-migration/<schema>/ path that only this tool produces, so it is not one of the artifacts two
+	// different tools read-modify-write (unlike .clio-pages).
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Collect the Classic page sources for a classic page schema and WRITE them to disk as a manifest " +
 		"the migration engine (migrate.mjs) folds: the whole replacing-schema layer chain (base->top) + the " +

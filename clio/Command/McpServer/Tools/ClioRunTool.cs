@@ -609,6 +609,17 @@ public sealed class ClioRunTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments (read or write/destructive).
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	// The wrapper itself only resolves the inner tool and dispatches it in-process; the router keys on the
+	// UNWRAPPED inner tool name (ADR rule 7), so the inner tool's own metadata decides whether that call is
+	// relayed to a worker. The caller's progress token is forwarded to the inner tool, which is why the
+	// wrapper declares no client requests of its own.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Generic executor for clio MCP tools hidden from tools/list (the long tail). `command` is an MCP tool name (kebab-case, e.g. \"sync-schemas\", \"create-lookup\", \"execute-esq\", \"odata-read\") and `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}. The wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted. Runs ANY tool — including write/destructive ones — directly; you do NOT need a different executor. Unknown tool or invalid args return a structured Error result with the real cause. Marked destructive so the host can confirm; not auto-approved.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
@@ -636,6 +647,17 @@ public sealed class ClioRunDestructiveTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments. Alias of <c>clio-run</c>.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	// Identical to clio-run: `destructiveSurface: true` is retained on the executor signature for back-compat
+	// but no longer routes or refuses (see ClioRunExecutor.RunAsync), so both names run ONE body and must carry
+	// the same execution metadata. AliasOf makes that link machine-readable.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None,
+		AliasOf = ClioRunTool.ToolName)]
 	[Description("Deprecated alias of `clio-run` (identical behavior — runs ANY clio MCP tool by name, read or write/destructive). Kept so a caller that picks either executor succeeds. Prefer `clio-run`. `command` is an MCP tool name (kebab-case); `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}; the wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,

@@ -19,6 +19,13 @@ public class WorkspacePackageTool(
 	/// Adds a package to the specified workspace and optionally bootstraps follow-up configuration download.
 	/// </summary>
 	[McpServerTool(Name = "add-package", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Adds a package to a specified local workspace.
 				 
@@ -54,6 +61,17 @@ public class CreateTestProjectTool(
 	/// </summary>
 	[McpServerTool(Name = "new-test-project", ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
+	// InProcess (the inventory's file-level heuristic said worker, and §4 pre-flagged this row):
+	// CreateTestProjectCommand.Execute only writes templates and drives the local dotnet CLI. The
+	// environment-name argument exists because the options inherit EnvironmentOptions; nothing on the path
+	// holds an IApplicationClient, so the call can never block on Creatio.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a new unit test project for a package in the specified local workspace.
 				 
@@ -81,6 +99,16 @@ public class CreateIntegrationTestProjectTool(
 	/// <summary>Creates a scenario-neutral integration-test project in a local clio workspace.</summary>
 	[McpServerTool(Name = "new-integration-test-project", ReadOnly = false, Destructive = false,
 		Idempotent = false, OpenWorld = false)]
+	// InProcess (the inventory's file-level heuristic said worker): CreateIntegrationTestProjectOptions does
+	// not inherit EnvironmentOptions, the tool takes no IToolCommandResolver and the generated project is
+	// deliberately independent of the clio environment registry — nothing here resolves an environment.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 		Creates a portable NUnit, ATF.Repository, FluentAssertions, and Allure integration-test project.
 		Read get-guidance name=integration-testing before adding scenario-specific tests. The generated
