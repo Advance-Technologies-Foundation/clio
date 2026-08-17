@@ -1769,7 +1769,7 @@ public static class WebToMobileAnalysisService {
 				// shape it declares can be read in place, and echoing needs the value the entry will carry.
 				string containerParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
-					containerParent, ItemsPropertyName, out RowOutcome containerRow);
+					containerParent, ItemsPropertyName, out RowReport containerRow);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
 					ParentName = containerParent, PropertyName = ItemsPropertyName,
@@ -1782,7 +1782,7 @@ public static class WebToMobileAnalysisService {
 						// Defensive symmetry: reachable only for a rule that maps a web type to ITSELF and still
 						// declares a listRow, which no shipped rule does — a listRow exists precisely because
 						// the web type has no mobile counterpart.
-						+ RowNote(containerRow, ResolveMappingRule(ctx, node, type)?.RowSource)
+						+ RowNote(containerRow)
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, name);
@@ -1805,7 +1805,7 @@ public static class WebToMobileAnalysisService {
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			string leafParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
-				leafParent, ItemsPropertyName, out RowOutcome leafRow);
+				leafParent, ItemsPropertyName, out RowReport leafRow);
 			string leafReason = isPositional
 				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 				: "field/leaf; mobile-supported";
@@ -1815,7 +1815,7 @@ public static class WebToMobileAnalysisService {
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				Reason = leafReason + RowNote(leafRow, ResolveMappingRule(ctx, node, leafMobileType)?.RowSource)
+				Reason = leafReason + RowNote(leafRow)
 			});
 		}
 	}
@@ -2165,8 +2165,8 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName,
 		string mobileType, CaptionResource caption, string parentName, string propertyName,
-		out RowOutcome rowOutcome) {
-		rowOutcome = RowOutcome.NotSynthesized;
+		out RowReport rowReport) {
+		rowReport = RowReport.None;
 		if (string.IsNullOrEmpty(mobileType)) {
 			return null;
 		}
@@ -2201,22 +2201,14 @@ public static class WebToMobileAnalysisService {
 				values["caption"] = "#ResourceString(" + caption.Key + ")#";
 			}
 		}
-		// A mapping whose mobile element needs a ROW child the web node has no counterpart for (grid → list)
-		// declares how to build it. Doing it here makes the row deterministic: it used to be prose the caller
-		// had to act on, and the same page converted three different ways — no row at all, a correct one, and
-		// one whose title was an object instead of the declared string (ENG-95046).
-		// Only when the element is ACTUALLY being converted through this rule's mapping: a rule is found by the
-		// WEB type, but the same web type can survive as itself once the mobile registry gains it, and then its
-		// own properties must be left alone. Requiring the resolved mobile type to be one the rule maps to keeps
-		// the transform tied to the mapping rather than to the web type.
-		ComponentEquivalenceRule mappingRule = ResolveMappingRule(ctx, node, mobileType);
-		rowOutcome = RenderViewConfigTemplates(ctx, mappingRule, node, values, mobileName,
-			parentName, propertyName);
-		// A converted grid still CARRIES its grid-only properties (columns, primaryColumnName, …) even though
-		// mobile crt.List declares neither. That is deliberate: removing them per-rule would be a second
-		// pruning mechanism beside the registry one, and the registry is the right owner once ENG-91859 makes
-		// it complete. Carrying them is not what broke the reported page — a list whose row was built but whose
-		// title was an object rendered its columns fine WITH them present (ENG-95046).
+		// The mobile structure a web node has no counterpart for — for a grid → list, the row — is declared as
+		// DATA and rendered here. Doing it in the converter makes it deterministic: it used to be prose the
+		// caller had to act on, and the same page converted three different ways — no row at all, a correct one,
+		// and one whose title was an object instead of the declared string (ENG-95046).
+		rowReport = RenderViewConfigTemplates(ctx, node, values, mobileName, mobileType, parentName, propertyName);
+		// A converted element still CARRIES its source properties, including ones the mobile type does not
+		// declare. Removing them per-rule would be a second pruning mechanism beside the registry one, and the
+		// registry is the right owner once ENG-91859 makes it complete.
 		ProcessEventBindings(ctx, node, values, mobileName);
 		// Synthesize a field label ONLY as a fallback — when the source did not carry one. Most fields carry
 		// their own web `label` verbatim above (e.g. "$Resources.Strings.<attribute>", which auto-resolves to
@@ -2235,20 +2227,6 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
-	/// <summary>
-	/// The components rule this element is ACTUALLY being converted through, or null. A rule is found by the
-	/// WEB type, but the same web type can survive as itself once the mobile registry gains it — then its own
-	/// properties must be left alone. Requiring the RESOLVED mobile type to be one the rule maps to keeps every
-	/// mapping-driven transform tied to the mapping instead of to the web type. ONE authority on purpose: a
-	/// second copy of this predicate is how the row note drifted from the row it describes once already.
-	/// </summary>
-	private static ComponentEquivalenceRule ResolveMappingRule(ElementMapContext ctx, JObject node, string mobileType) {
-		ComponentEquivalenceRule rule = FindRule(ctx.Rules, node["type"]?.ToString());
-		return rule?.Mobile is not null
-			&& rule.Mobile.Any(m => string.Equals(m, mobileType, StringComparison.OrdinalIgnoreCase))
-			? rule
-			: null;
-	}
 
 	/// <summary>What <see cref="RenderViewConfigTemplates"/> did, so no caller re-infers it from the output.</summary>
 	private enum RowOutcome {
@@ -2278,12 +2256,12 @@ public static class WebToMobileAnalysisService {
 	/// the author's choice, not a source that had nothing to offer. And the source array must be present at all.
 	/// </para>
 	/// </summary>
-	private static string RowNote(RowOutcome outcome, RowSourceRule source) => outcome switch {
+	private static string RowNote(RowReport report) => report.Outcome switch {
 		// Worse than a missing title: the list renders blank. Names WHAT was unusable so the reader looks at the
 		// right thing, without claiming to know which of the ways it was unusable.
 		RowOutcome.NotBuilt =>
 			" — NO ROW could be built for this list: the source carries no usable "
-			+ (string.IsNullOrWhiteSpace(source?.Property) ? "row source" : source.Property)
+			+ (string.IsNullOrWhiteSpace(report.SourceProperty) ? "row source" : report.SourceProperty)
 			+ ", so the list would render blank — tell the user and configure the row in the designer",
 		// Worded to stay true whichever way the title was lost. Today only one way is reachable — the source
 		// offered no column of an accepted type — because the synthesis emits the title as a string and the
@@ -2343,12 +2321,59 @@ public static class WebToMobileAnalysisService {
 	/// <param name="HasUsableEntry">False when no entry survived validation — the row cannot be built at all.</param>
 	private sealed record TemplateSource(JObject Source, bool HasUsableEntry);
 
+	/// <summary>What rendering a view-config template did, so no caller re-infers it from the output.</summary>
+	/// <param name="Outcome">The state to report.</param>
+	/// <param name="SourceProperty">
+	/// The source array the template read, so the "could not build" note can name what was unusable. Derived
+	/// from the template's own lead path rather than configured, which is why it is carried out rather than
+	/// looked up again.
+	/// </param>
+	private sealed record RowReport(RowOutcome Outcome, string SourceProperty = null) {
+		internal static readonly RowReport None = new(RowOutcome.NotSynthesized);
+	}
+
 	/// <summary>
-	/// Prepares the projection a template sees. The mandated template addresses the row by POSITION —
-	/// <c>columns[0].code</c> for the value the row leads with and <c>columns[1:]</c> for the rest — so the
-	/// selection rules have to be expressed by arranging what those positions point at. Two of them cannot live
-	/// in a template at all: a binding must be a usable identifier, and the lead must be of a type the target
-	/// accepts.
+	/// The lead path a template uses to address the entry a structure should lead with —
+	/// <c>source.&lt;array&gt;[0].&lt;binding&gt;</c>. Both names are READ OFF the template instead of being
+	/// declared beside it: stating them twice is a silent drift waiting to happen, since the selector would gate
+	/// on one field while the template rendered another.
+	/// </summary>
+	private static readonly Regex LeadPathPattern = new(
+		@"\{\{\s*source\.([A-Za-z_][A-Za-z0-9_]*)\[0\]\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}",
+		RegexOptions.Compiled, RegexTimeout);
+
+	/// <summary>Where a template's lead entry comes from, read off the template itself.</summary>
+	private sealed record LeadPath(string SourceProperty, string Binding);
+
+	private static LeadPath ReadLeadPath(JsonElement? declared) {
+		if (declared is not { } value) {
+			return null;
+		}
+		Match m = LeadPathPattern.Match(value.GetRawText());
+		return m.Success ? new LeadPath(m.Groups[1].Value, m.Groups[2].Value) : null;
+	}
+
+	/// <summary>
+	/// The constraint that applies to a template's rendered structure: the first mobile type the template
+	/// DECLARES for which the rules file states what a property accepts. The template says it builds a
+	/// <c>crt.ListItem</c>; the constraints section says what a <c>crt.ListItem.title</c> takes — neither has to
+	/// know about the other, and the mapping between them needs no third declaration.
+	/// </summary>
+	private static ComponentValueConstraintRule ResolveConstraint(ElementMapContext ctx, JsonElement? declared) {
+		if (declared is not { } value || ctx.Rules?.ComponentValueConstraints is not { Count: > 0 } constraints) {
+			return null;
+		}
+		string raw = value.GetRawText();
+		return constraints.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c?.Type)
+			&& !string.IsNullOrWhiteSpace(c.Property)
+			&& raw.Contains('"' + c.Type + '"', StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>
+	/// Prepares the projection a template sees. The template addresses the structure it builds by POSITION —
+	/// <c>columns[0].code</c> for the value it leads with, <c>columns[1:]</c> for the rest — so the selection
+	/// rules are expressed by arranging what those positions point at. Two of them cannot live in a template at
+	/// all: a binding must be a usable identifier, and the lead must be of a type the TARGET accepts.
 	/// </summary>
 	/// <remarks>
 	/// The one implicit thing in this design, stated plainly: the template SAYS "entry zero" and MEANS "the
@@ -2357,25 +2382,25 @@ public static class WebToMobileAnalysisService {
 	/// <item>An entry whose binding is not a usable identifier is REMOVED rather than repaired — the page comes
 	/// from a customer environment, and stripping the offending characters would produce a plausible-looking
 	/// token that silently resolves to nothing.</item>
-	/// <item>The entry the lead accepts is MOVED to the front. Removing one element leaves the relative order of
-	/// the others untouched, so the remainder keeps source order exactly as it did before.</item>
+	/// <item>The accepted entry is MOVED to the front. Removing one element leaves the relative order of the
+	/// others untouched, so the remainder keeps source order exactly as it did before.</item>
 	/// <item>When nothing qualifies, an EMPTY entry is prepended, so the lead position resolves to nothing (its
-	/// key is then dropped) while the real entries all remain addressable by the slice. Without it, the fixed
+	/// key is then dropped) while the real entries all remain addressable by the slice. Without it the fixed
 	/// index would either promote a value the target cannot display or swallow a real entry.</item>
 	/// </list>
-	/// The original values are never mutated: the caller still needs them as the base the render is laid over.
+	/// The node is never mutated: the caller still needs it as the base the render is laid over.
 	/// </remarks>
-	private static TemplateSource BuildTemplateSource(JObject node, RowSourceRule rule) {
-		if (rule is null || string.IsNullOrWhiteSpace(rule.Property) || string.IsNullOrWhiteSpace(rule.Binding)) {
+	private static TemplateSource BuildTemplateSource(JObject node, LeadPath lead, ComponentValueConstraintRule accepts) {
+		if (lead is null) {
 			return new TemplateSource(node, HasUsableEntry: true);
 		}
 		var projected = (JObject)node.DeepClone();
-		if (node[rule.Property] is not JArray source) {
+		if (node[lead.SourceProperty] is not JArray source) {
 			return new TemplateSource(projected, HasUsableEntry: false);
 		}
 		List<JObject> usable = source
 			.OfType<JObject>()
-			.Where(entry => entry[rule.Binding]?.ToString() is { } binding
+			.Where(entry => entry[lead.Binding]?.ToString() is { } binding
 				&& !string.IsNullOrWhiteSpace(binding)
 				&& BindingIdentifierPattern.IsMatch(binding))
 			.Select(entry => (JObject)entry.DeepClone())
@@ -2383,24 +2408,129 @@ public static class WebToMobileAnalysisService {
 		if (usable.Count == 0) {
 			return new TemplateSource(projected, HasUsableEntry: false);
 		}
-		// An entry whose type the source does not declare is ELIGIBLE, not rejected. Requiring a declared type
-		// would make a PARTLY typed grid behave worse than a wholly untyped one: one typed sibling would be
-		// enough to disqualify the untyped display column, and the row would ship without a lead while the note
-		// claimed the source had nothing acceptable — which would be false, its type is merely unknown.
-		int leadIndex = rule.TitleValueTypes is { Count: > 0 } && !string.IsNullOrWhiteSpace(rule.ValueTypeFrom)
-			? usable.FindIndex(entry => ReadValueType(entry[rule.ValueTypeFrom]) is not { } valueType
-				|| rule.TitleValueTypes.Contains(valueType))
+		int leadIndex = accepts?.AcceptsDataValueTypes is { Count: > 0 }
+			&& !string.IsNullOrWhiteSpace(accepts.ValueTypeFrom)
+			? usable.FindIndex(entry => ReadValueType(entry[accepts.ValueTypeFrom]) is not { } valueType
+				|| accepts.AcceptsDataValueTypes.Contains(valueType))
 			: 0;
 		if (leadIndex >= 0) {
-			JObject lead = usable[leadIndex];
+			JObject chosen = usable[leadIndex];
 			usable.RemoveAt(leadIndex);
-			usable.Insert(0, lead);
+			usable.Insert(0, chosen);
 		} else {
 			usable.Insert(0, new JObject());
 		}
-		projected[rule.Property] = new JArray(usable);
+		projected[lead.SourceProperty] = new JArray(usable);
 		return new TemplateSource(projected, HasUsableEntry: true);
 	}
+
+	/// <summary>
+	/// Renders the view-config templates that apply to this element, over <paramref name="values"/>. The SHAPE
+	/// is data: a template declares the mobile structure the web node has no counterpart for — for a grid → list,
+	/// the <c>crt.ListItem</c> under <c>itemLayout</c>, its title a plain <c>$&lt;binding&gt;</c> string (the
+	/// shape the mobile registry declares; the <c>{ "value": … }</c> BODY shape there renders an empty Title
+	/// column) and one body entry per remaining column, in source order.
+	/// </summary>
+	/// <remarks>
+	/// A template is gated by its OWN declared <c>value.type</c> against the resolved mobile type, so a web type
+	/// that survives as itself once the registry gains it keeps its own properties. The filters narrow which
+	/// source elements a group applies to; they do not authorize.
+	/// <para>
+	/// The render is laid OVER the carried values and wins on the keys it names; everything it does not name
+	/// survives, which is how <c>layoutConfig</c> and the source's own properties are kept without any rule
+	/// naming them. Paths read <c>source.*</c> from the WEB node — what the page actually declared — and
+	/// <c>diff.*</c> from what the converter computed for the operation.
+	/// </para>
+	/// <para>
+	/// Applies to an INSERT only. A merge is found by NAME, its target is named by the mobile template rather
+	/// than by the web node, it has no parent or slot to echo, and it carries a DELTA — a whole skeleton would
+	/// overwrite the row that template provides.
+	/// </para>
+	/// </remarks>
+	private static RowReport RenderViewConfigTemplates(ElementMapContext ctx, JObject node, JObject values,
+		string mobileName, string mobileType, string parentName, string propertyName) {
+		if (ctx.Rules?.ViewConfigTemplates is not { Count: > 0 } groups) {
+			return RowReport.None;
+		}
+		var roots = new TemplateRoots(
+			new JObject {
+				["name"] = mobileName,
+				["parentName"] = parentName,
+				["propertyName"] = propertyName
+			},
+			node);
+		RowReport report = RowReport.None;
+		foreach (ViewConfigTemplateGroup group in groups) {
+			if (!MatchesAnyFilter(group?.Filters, node)) {
+				continue;
+			}
+			foreach (ViewConfigTemplateRule template in group?.Templates ?? []) {
+				if (!DeclaresTargetType(template.Value, mobileType) || !EchoesItsOwnPlacement(template, roots)) {
+					continue;
+				}
+				report = RenderOne(ctx, template, node, values, roots, report);
+			}
+		}
+		return report;
+	}
+
+	private static RowReport RenderOne(ElementMapContext ctx, ViewConfigTemplateRule template, JObject node,
+		JObject values, TemplateRoots roots, RowReport carried) {
+		LeadPath lead = ReadLeadPath(template.Value);
+		ComponentValueConstraintRule accepts = ResolveConstraint(ctx, template.Value);
+		TemplateSource prepared = BuildTemplateSource(node, lead, accepts);
+		if (!prepared.HasUsableEntry) {
+			return new RowReport(RowOutcome.NotBuilt, lead?.SourceProperty);
+		}
+		if (RenderTemplateToken(JToken.Parse(template.Value!.Value.GetRawText()),
+			roots with { Source = prepared.Source }) is not JObject rendered) {
+			return carried;
+		}
+		// Real authored content wins over anything synthesized. Only the STRUCTURE a template introduces counts —
+		// a rendered value that is an object declaring its own type, i.e. the thing the web node had no
+		// counterpart for. Comparing every key instead would be wrong: the generic copy already carried `items`
+		// and the rest, so any template naming them would look "authored" and never apply at all.
+		if (rendered.Properties().Any(p => p.Value is JObject nested
+			&& nested["type"] is not null && values[p.Name] is not null)) {
+			return carried;
+		}
+		OverlayRenderedValues(values, rendered);
+		return accepts is null ? carried : ReportConstrainedValue(ctx, values, accepts);
+	}
+
+	/// <summary>
+	/// Finds the structure the constraint is about in what actually shipped, validates it against the mobile
+	/// registry, and reports whether the constrained value survived. Located by the DECLARED type rather than by
+	/// a configured target key, so the rules file states the constraint once and nothing repeats where it lands.
+	/// </summary>
+	private static RowReport ReportConstrainedValue(ElementMapContext ctx, JObject values,
+		ComponentValueConstraintRule accepts) {
+		JObject target = values.Properties()
+			.Select(p => p.Value as JObject)
+			.FirstOrDefault(o => string.Equals(o?["type"]?.ToString(), accepts.Type, StringComparison.OrdinalIgnoreCase));
+		if (target is null) {
+			return RowReport.None;
+		}
+		DropValuesContradictingDeclaredScalars(ctx, accepts.Type, target);
+		// ONE authority: the structure that actually shipped. Not what the projection made available — the
+		// contract guard runs between the two — and not the template's intent either, since a template may write
+		// the value without going through the prepared lead at all.
+		return new RowReport(target[accepts.Property] is not null
+			? RowOutcome.BuiltWithTitle
+			: RowOutcome.BuiltWithoutTitle);
+	}
+
+	/// <summary>
+	/// True when the template's own <c>value.type</c> is the mobile type the element resolved to. This is what
+	/// gates a template: the mapping decides WHICH mobile type an element becomes, the template decides what
+	/// that type's values look like, and neither needs a second declaration tying them together.
+	/// </summary>
+	private static bool DeclaresTargetType(JsonElement? declared, string mobileType) =>
+		declared is { } value && !string.IsNullOrWhiteSpace(mobileType)
+		&& value.ValueKind == JsonValueKind.Object
+		&& value.TryGetProperty("type", out JsonElement type)
+		&& type.ValueKind == JsonValueKind.String
+		&& string.Equals(type.GetString(), mobileType, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>The roots a view-config template resolves its paths against, for ONE converted element.</summary>
 	/// <param name="Diff">
@@ -2459,70 +2589,6 @@ public static class WebToMobileAnalysisService {
 		catch (JsonException) {
 			return [];
 		}
-	}
-
-	/// <summary>
-	/// Renders the mapping's view-config templates over <paramref name="values"/>. The SHAPE is data: a template
-	/// declares the mobile structure the web node has no counterpart for — for a grid → list, the
-	/// <c>crt.ListItem</c> under <c>itemLayout</c>, its title a plain <c>$&lt;binding&gt;</c> string (the shape
-	/// the mobile registry declares; the <c>{ "value": … }</c> BODY shape there renders an empty Title column)
-	/// and one body entry per remaining column, in source order.
-	/// </summary>
-	/// <remarks>
-	/// The render is laid OVER the carried values and wins on the keys it names; everything it does not name
-	/// survives untouched, which is how <c>layoutConfig</c> and the grid's own properties are kept without any
-	/// rule naming them. Paths read <c>source.*</c> from the WEB node — the values of the operation being
-	/// converted — not from the mobile values being built, so a template sees what the page actually declared.
-	/// <para>
-	/// Applies to an INSERT only. A merge is found by NAME and carries a DELTA against the element the mobile
-	/// template already provides: it has no parent or slot to echo, its target is named by that template rather
-	/// than by the web node, and sending a whole skeleton would overwrite the row the template supplies. That
-	/// path stays with the twin builder.
-	/// </para>
-	/// <para>
-	/// A no-op when the mapping declares no template, no filter matches, or the node AUTHORED the target
-	/// property itself — real content wins over anything synthesized, and a missing title there is the author's
-	/// choice rather than a source with nothing to offer.
-	/// </para>
-	/// </remarks>
-	private static RowOutcome RenderViewConfigTemplates(ElementMapContext ctx, ComponentEquivalenceRule rule,
-		JObject node, JObject values, string mobileName, string parentName, string propertyName) {
-		if (rule?.ViewConfigTemplates is not { Count: > 0 } templates || !MatchesAnyFilter(rule.Filters, node)) {
-			return RowOutcome.NotSynthesized;
-		}
-		RowSourceRule rowSource = rule.RowSource;
-		if (rowSource?.Into is { } into && !string.IsNullOrWhiteSpace(into) && values[into] is not null) {
-			return RowOutcome.NotSynthesized;
-		}
-		TemplateSource prepared = BuildTemplateSource(node, rowSource);
-		if (!prepared.HasUsableEntry) {
-			return RowOutcome.NotBuilt;
-		}
-		var roots = new TemplateRoots(
-			new JObject {
-				["name"] = mobileName,
-				["parentName"] = parentName,
-				["propertyName"] = propertyName
-			},
-			prepared.Source);
-		foreach (ViewConfigTemplateRule template in templates) {
-			if (!EchoesItsOwnPlacement(template, roots) || template.Value is not { } declared) {
-				continue;
-			}
-			if (RenderTemplateToken(JToken.Parse(declared.GetRawText()), roots) is JObject rendered) {
-				OverlayRenderedValues(values, rendered);
-			}
-		}
-		if (rowSource?.Into is not { } target || string.IsNullOrWhiteSpace(target)
-			|| values[target] is not JObject row) {
-			return RowOutcome.NotSynthesized;
-		}
-		DropValuesContradictingDeclaredScalars(ctx, row["type"]?.ToString(), row);
-		// ONE authority: the row that actually shipped. Not what the projection made available — the contract
-		// guard runs between the two — and not the template's intent either, since a template may write a title
-		// without going through the prepared lead at all. Two sources here is how the note drifted from the row
-		// it describes once already.
-		return row["title"] is not null ? RowOutcome.BuiltWithTitle : RowOutcome.BuiltWithoutTitle;
 	}
 
 	/// <summary>
