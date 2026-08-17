@@ -22,7 +22,7 @@
 
 **Companion doc**: [backend-designer-manual-qa.md](../backend-designer/backend-designer-manual-qa.md) (manual QA checklist)
 
-**Code**: GHE `engineering/cli-process-builder` (package `clioprocessbuilder`); clio MCP layer in this repository
+**Code**: GHE `engineering/crt-process-builder` (package `CrtProcessBuilder`); clio MCP layer in this repository
 
 **Created**: 2026-06-25
 
@@ -76,7 +76,7 @@ Deliver process design as a **backend command-driven "non-visual designer"**, pa
 - `DescribeProcess({name|uid})` and `ListUserTasks()` — structured read-back / palette catalog.
 
 ### Internal architecture (package) — principle only
-The package is a thin WCF transport (`ProcessDesignService`) over a domain orchestrator that owns only operation sequencing, the security gate, and error-to-response handling, delegating each concern (graph build/edit, schema lifecycle, parameters, mappings, modify operations, user-task catalog, describe, layout) to a single-purpose, constructor-injected collaborator — so new element kinds and operations **extend the collaborators, not the orchestrator** (per-element handler strategy). The concrete collaborator interfaces, handlers and the DI composition root are the **source of truth in the `engineering/cli-process-builder` repository**, and the architecture rationale + request-flow sequence diagram live in the Confluence [architecture & delivery options](https://creatio.atlassian.net/wiki/spaces/TER/pages/4752572418) page; this ADR records only the **boundary contract** (the service surface above) and the cross-cutting decisions below — not the package's internal class structure (which would drift, since the code lives in another repo).
+The package is a thin WCF transport (`ProcessDesignService`) over a domain orchestrator that owns only operation sequencing, the security gate, and error-to-response handling, delegating each concern (graph build/edit, schema lifecycle, parameters, mappings, modify operations, user-task catalog, describe, layout) to a single-purpose, constructor-injected collaborator — so new element kinds and operations **extend the collaborators, not the orchestrator** (per-element handler strategy). The concrete collaborator interfaces, handlers and the DI composition root are the **source of truth in the `engineering/crt-process-builder` repository**, and the architecture rationale + request-flow sequence diagram live in the Confluence [architecture & delivery options](https://creatio.atlassian.net/wiki/spaces/TER/pages/4752572418) page; this ADR records only the **boundary contract** (the service surface above) and the cross-cutting decisions below — not the package's internal class structure (which would drift, since the code lives in another repo).
 
 ### Key design choices recorded
 1. **Security gate = `CanManageProcessDesign` + General user**, mirroring the platform's own `ProcessSchemaManagerService.Publish`. The cliogate `CanManageSolution` operation is broader and omits the connection-type check, so it is intentionally **not** used.
