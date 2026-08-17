@@ -80,8 +80,25 @@ internal sealed class ClassicListColumnResolver(
 		}
 		IReadOnlyList<string> schemaColumns = parsed.Columns;
 		if (schemaColumns.Count > 0) {
+			if (parsed.DeclaresBothColumnMethods) {
+				// The flattened list is an approximation exactly here, and the approximation is not conservative:
+				// overlapping paths take their order from getGridDataColumns, so load-only service columns lead
+				// the reported set, and a full initColumnsConfig override does not suppress ancestor
+				// getGridDataColumns columns. Each column's `origin` says which method declared it, so a consumer
+				// that needs the rendered set can filter rather than inherit this merge order as a ruling.
+				notes.Add("The section declares both getGridDataColumns and initColumnsConfig; the reported set " +
+					"merges them, so it can include columns the section loads but never renders, and overlapping " +
+					"columns take their order from getGridDataColumns. Use each column's 'origin' to select the " +
+					"rendered set, the loaded set, or the union.");
+			}
+			if (parsed.SubtractiveLayerCount > 0) {
+				// Without this the wrong answer is silent: a layer that composes its parent and deletes a key
+				// contributes no literal, so the removed column stays in the set under source 'schema-default'.
+				notes.Add($"{parsed.SubtractiveLayerCount} section schema layer(s) remove inherited columns with " +
+					"'delete'; subtraction is not applied, so the reported set may include columns the section hides.");
+			}
 			return Success(normalizedName, entity, SchemaDefaultSource,
-				BuildColumnInfo(schemaColumns, properties.Columns), notes);
+				BuildColumnInfo(schemaColumns, properties.Columns, parsed.ColumnOrigins), notes);
 		}
 		if (!string.IsNullOrWhiteSpace(properties.PrimaryDisplayColumnName)) {
 			notes.Add("The section schema does not define static list columns; using the entity primary display column.");
@@ -143,7 +160,8 @@ internal sealed class ClassicListColumnResolver(
 
 	private static IReadOnlyList<ClassicListColumnInfo> BuildColumnInfo(
 		IEnumerable<string> paths,
-		IReadOnlyList<EntitySchemaPropertyColumnInfo> metadata) {
+		IReadOnlyList<EntitySchemaPropertyColumnInfo> metadata,
+		IReadOnlyDictionary<string, string> origins = null) {
 		var captions = (metadata ?? [])
 			.Where(column => !string.IsNullOrWhiteSpace(column.Name))
 			.GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
@@ -153,8 +171,12 @@ internal sealed class ClassicListColumnResolver(
 		// by direct column name. Such a column comes back with `caption` omitted, which the doc states so a
 		// consumer reads it as "traversal path" rather than "unknown column". Do NOT fall back to the last
 		// segment's local title — that would attach a caption from the wrong entity, which is worse than none.
+		// `origin` is omitted rather than defaulted when the caller has no origin map (the entity-default
+		// fallback): a column invented by the entity primary-display fallback was declared by neither method,
+		// and naming one would be a claim about the section body that is not true.
 		return paths.Select(path => new ClassicListColumnInfo(path,
-			captions.TryGetValue(path, out string caption) ? caption : null)).ToArray();
+			captions.TryGetValue(path, out string caption) ? caption : null,
+			origins is not null && origins.TryGetValue(path, out string origin) ? origin : null)).ToArray();
 	}
 
 	private static GetClassicListColumnsResponse Success(

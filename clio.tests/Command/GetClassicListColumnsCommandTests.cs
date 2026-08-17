@@ -26,6 +26,9 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private GetClassicListColumnsCommand _command;
 	private IClassicListColumnParser _parser;
+	// Execute writes the serialized response through ILogger, so the Execute tests need a substitute to read it
+	// back — TryResolve tests never touch it, which is exactly why Execute's own behaviour went unasserted.
+	private ILogger _logger;
 
 	public override void Setup() {
 		base.Setup();
@@ -41,6 +44,7 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		_applicationClient.ClearReceivedCalls();
 		_hierarchyClient.ClearReceivedCalls();
 		_columnManager.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
 
@@ -50,6 +54,8 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_logger = Substitute.For<ILogger>();
+		containerBuilder.AddTransient<ILogger>(_ => _logger);
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_hierarchyClient);
@@ -723,6 +729,200 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		result.Should().BeFalse(because: "the entity fallback and the captions both depend on the entity metadata");
 		response.Error.Should().Contain("entity metadata unavailable",
 			because: "the envelope is the only channel the caller has for the underlying reason");
+	}
+
+	[Test]
+	[Description("ParseColumns records which Classic method declared each path so a consumer can tell rendered columns from loaded ones.")]
+	public void ParseColumns_ShouldRecordColumnOrigins_WhenBothMethodsDeclareColumns() {
+		// Arrange — Id is load-only, CreatedOn is render-only, Name is declared by both. The flattened list
+		// alone cannot express that difference, which is the whole reason origins exist.
+		string body = """
+			define([], function() { return {
+			  entitySchemaName: "Contact",
+			  initColumnsConfig: function() { return [{ path: "Name" }, { path: "CreatedOn" }]; },
+			  getGridDataColumns: function() { return { Id: { path: "Id" }, Name: { path: "Name" } }; }
+			}; });
+			""";
+
+		// Act
+		ClassicListColumnParseResult result = _parser.ParseColumns([body]);
+
+		// Assert
+		result.Columns.Should().Equal(["Id", "Name", "CreatedOn"],
+			because: "adding origins must not change the merge order or the membership of the reported set");
+		result.ColumnOrigins["Id"].Should().Be("getGridDataColumns",
+			because: "Id is declared only by the method describing what the section LOADS");
+		result.ColumnOrigins["CreatedOn"].Should().Be("initColumnsConfig",
+			because: "CreatedOn is declared only by the method describing what the grid RENDERS");
+		result.ColumnOrigins["Name"].Should().Be("both",
+			because: "a path both methods declare must not be recorded as belonging to whichever one ran first — "
+				+ "the duplicate is dropped from Columns, but the second declaration is still a fact about the body");
+		result.DeclaresBothColumnMethods.Should().BeTrue(
+			because: "the resolver turns this into the runtime note that the flattened set is an approximation");
+	}
+
+	[Test]
+	[Description("ParseColumns reports a single-method section without the both-methods approximation flag.")]
+	public void ParseColumns_ShouldNotFlagBothMethods_WhenOnlyOneMethodIsDeclared() {
+		// Arrange
+		string body = """
+			define([], function() { return {
+			  entitySchemaName: "Contact",
+			  getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+			}; });
+			""";
+
+		// Act
+		ClassicListColumnParseResult result = _parser.ParseColumns([body]);
+
+		// Assert
+		result.DeclaresBothColumnMethods.Should().BeFalse(
+			because: "the merge approximation only exists when both methods contribute; flagging it otherwise "
+				+ "would attach a caveat to a set that has none");
+		result.ColumnOrigins["Name"].Should().Be("getGridDataColumns",
+			because: "the origin is a fact about the body regardless of how many methods it declares");
+	}
+
+	[Test]
+	[Description("ParseColumns counts a layer that composes its parent and deletes a column, since subtraction is not applied.")]
+	public void ParseColumns_ShouldCountSubtractiveLayers_WhenAnOverrideDeletesAComposedColumn() {
+		// Arrange — the shape attested in real Classic bodies: compose the parent, then remove a key. The
+		// override declares no literal of its own, so StartDate survives the additive walk.
+		string[] bodies = [
+			"""
+			define([], function() { return {
+			  entitySchemaName: "Activity",
+			  getGridDataColumns: function() { return { Title: { path: "Title" }, StartDate: { path: "StartDate" } }; }
+			}; });
+			""",
+			"""
+			define([], function() { return {
+			  getGridDataColumns: function() { var c = this.callParent(arguments); delete c.StartDate; return c; }
+			}; });
+			"""
+		];
+
+		// Act
+		ClassicListColumnParseResult result = _parser.ParseColumns(bodies);
+
+		// Assert
+		result.Columns.Should().Equal(["Title", "StartDate"],
+			because: "the composition is additive only, so the deleted column survives — this test pins the "
+				+ "current behaviour rather than claiming it is right");
+		result.SubtractiveLayerCount.Should().Be(1,
+			because: "the resolver needs to say so at runtime instead of presenting a confidently wrong set");
+	}
+
+	[Test]
+	[Description("Resolve notes the merge approximation and exposes per-column origins when a section declares both methods.")]
+	public void TryResolve_ShouldNoteTheMergeApproximation_WhenSectionDeclaresBothMethods() {
+		// Arrange
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", """
+				entitySchemaName: "Contact",
+				initColumnsConfig: function() { return [{ path: "Name" }]; },
+				getGridDataColumns: function() { return { Id: { path: "Id" }, Name: { path: "Name" } }; }
+				""")
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("Contact", "Name", Column("Name", "Full name"), Column("Id", "Id")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the hierarchy resolves; error: {0}", response.Error);
+		response.Notes.Should().ContainSingle(note => note.Contains("both getGridDataColumns and initColumnsConfig"),
+			because: "the approximation must be visible at runtime, not only in the doc");
+		response.Columns.Single(column => column.Name == "Id").Origin.Should().Be("getGridDataColumns",
+			because: "a consumer selecting the rendered set has to be able to drop the load-only column");
+		response.Columns.Single(column => column.Name == "Name").Origin.Should().Be("both",
+			because: "Name is both loaded and rendered, and either selection keeps it");
+	}
+
+	[Test]
+	[Description("Resolve omits origin on the entity-default fallback, where no Classic method declared the column.")]
+	public void TryResolve_ShouldOmitOrigin_WhenColumnsComeFromTheEntityFallback() {
+		// Arrange
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", "entitySchemaName: 'Contact', diff: []")
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("Contact", "Name", Column("Name", "Full name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("entity-default", because: "the section declares no static columns");
+		response.Columns.Single().Origin.Should().BeNull(
+			because: "naming a declaring method for a column the entity fallback invented would be a claim "
+				+ "about the section body that is not true");
+	}
+
+	[Test]
+	[Description("Execute redacts the error field, not only notes, before writing the response to stdout.")]
+	public void Execute_ShouldRedactError_WhenTheFailureMessageCarriesAUri() {
+		// Arrange — the entity metadata read is one of the pipeline steps whose exception reaches Error verbatim,
+		// and a transport message there routinely carries the host and full request URI.
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", "entitySchemaName: 'Contact', diff: []")
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(_ => throw new InvalidOperationException(
+				"Request to http://secret-host:8080/0/DataService/json/SyncReply/SelectQuery failed"));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a failed resolution exits non-zero");
+		string written = LastWrittenInfo();
+		written.Should().NotContain("secret-host",
+			because: "the CLI writes the serialized response straight to stdout, so Error has to be redacted "
+				+ "here exactly as the MCP tool redacts it before returning");
+		written.Should().Contain("\"success\":false",
+			because: "redaction must not disturb the failure envelope the caller parses");
+	}
+
+	[Test]
+	[Description("Execute writes the serialized response and exits zero on a successful resolution.")]
+	public void Execute_ShouldWriteSerializedResponseAndExitZero_WhenResolutionSucceeds() {
+		// Arrange
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", """
+				entitySchemaName: "Contact",
+				getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+				""")
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("Contact", "Name", Column("Name", "Full name")));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the 0/1 exit code is part of the CLI contract and nothing else asserts it");
+		string written = LastWrittenInfo();
+		written.Should().Contain("\"source\":\"schema-default\"",
+			because: "the serialized response is the command's only output channel");
+		written.Should().Contain("\"origin\":\"getGridDataColumns\"",
+			because: "the provenance field has to survive serialization to reach the consumer");
+	}
+
+	// Execute's only output channel is the container-registered ILogger, so the assertions read what it received.
+	private string LastWrittenInfo() {
+		var written = new List<string>();
+		_logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+			.ToList()
+			.ForEach(call => written.Add(call.GetArguments()[0] as string));
+		written.Should().NotBeEmpty(because: "Execute writes the serialized response through the logger");
+		return written[^1];
 	}
 
 	private static PageDesignerHierarchySchema Schema(string name, string body) => Schema(name, body, SchemaUId);

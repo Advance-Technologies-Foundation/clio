@@ -109,7 +109,10 @@ internal sealed class SandboxSettings {
 	/// resolves <c>ContactSectionV2</c> to <c>entity-default</c>, so defaulting to it asserted a false premise
 	/// and turned the build red rather than skipping. Point
 	/// <c>McpE2E__Sandbox__ClassicSchemaDefaultSectionSchema</c> at a section the stand really seeds with a
-	/// <c>getGridDataColumns</c> / <c>initColumnsConfig</c> override.
+	/// <c>getGridDataColumns</c> / <c>initColumnsConfig</c> override. Documented alongside the other sandbox
+	/// settings in <c>clio.mcp.e2e/appsettings.example.json</c>, which is where stand configuration is
+	/// discoverable — an XML comment alone is not, and whoever configures the TeamCity stand will not read it.
+	/// While this stays blank the ticket's live discrimination criterion does NOT run.
 	/// </summary>
 	public string? ClassicSchemaDefaultSectionSchema { get; set; }
 

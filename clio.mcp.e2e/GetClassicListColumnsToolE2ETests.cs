@@ -24,7 +24,7 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 	[Description("Invokes get-classic-list-columns through the real stdio MCP server against the configured sandbox and returns statically parsed schema columns.")]
 	[AllureTag(GetClassicListColumnsTool.ToolName)]
 	[AllureName("get-classic-list-columns resolves a sandbox Classic section as schema-default")]
-	[AllureDescription("Uses the configured sandbox and the standard Contact section to prove the real read-only MCP path parses static list columns out of live Classic bodies, not just hand-written ones.")]
+	[AllureDescription("Uses the configured sandbox and the section named by McpE2E:Sandbox:ClassicSchemaDefaultSectionSchema to prove the real read-only MCP path parses static list columns out of live Classic bodies, not just hand-written ones. Self-ignores while that setting is blank — no base Studio section is known to declare static list columns, so the stand has to seed one.")]
 	public async Task Resolve_ShouldReturnSchemaDefault_WhenConfiguredSandboxIsAvailable() {
 		// Arrange — which sections carry static list columns is a fact about the SEEDING, not about the product,
 		// so this half of the discrimination pair is OPT-IN like the other one. It defaulted to ContactSectionV2,
@@ -98,7 +98,7 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 	[Description("Resolves a never-configured sandbox Classic section to entity-default, discriminating it from the schema-default branch.")]
 	[AllureTag(GetClassicListColumnsTool.ToolName)]
 	[AllureName("get-classic-list-columns resolves a never-configured Classic section as entity-default")]
-	[AllureDescription("The source discriminator is the load-bearing part of the contract, so a section with no static list columns must return exactly entity-default while the reconfigured section returns schema-default.")]
+	[AllureDescription("The source discriminator is the load-bearing part of the contract, so a section with no static list columns must return exactly entity-default. This half runs on a stock stand; the schema-default half of the pair runs only once McpE2E:Sandbox:ClassicSchemaDefaultSectionSchema names a seeded section, so on a stand that does not set it the two do NOT run as a pair.")]
 	public async Task Resolve_ShouldReturnEntityDefault_WhenSectionDeclaresNoStaticColumns() {
 		// Arrange — defaults to ContactSectionV2, which the sandbox run proves is bare (it resolved to
 		// entity-default carrying the resolver's "does not define static list columns" note and no skipped

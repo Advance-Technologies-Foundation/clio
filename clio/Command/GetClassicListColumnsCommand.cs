@@ -17,10 +17,22 @@ public class GetClassicListColumnsOptions : EnvironmentOptions {
 }
 
 /// <summary>One resolved Classic list column.</summary>
+/// <param name="Name">Column path as declared by the section.</param>
+/// <param name="Caption">Entity column title, omitted for a dotted traversal path.</param>
+/// <param name="Origin">
+/// Which Classic method declared this path: <c>getGridDataColumns</c>, <c>initColumnsConfig</c>, or
+/// <c>both</c>. The two are not interchangeable — <c>initColumnsConfig</c> describes what the grid RENDERS,
+/// <c>getGridDataColumns</c> what the section LOADS — so a flattened list alone cannot tell a consumer
+/// whether a column is displayed or merely loaded. Carrying the origin keeps that choice with the consumer:
+/// take the rendered set, the loaded set, or the union under its own fidelity rules. Omitted when the columns
+/// did not come from the section schema (the entity-default fallback).
+/// </param>
 public sealed record ClassicListColumnInfo(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("caption")]
-	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Caption);
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Caption,
+	[property: JsonPropertyName("origin")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string Origin = null);
 
 /// <summary>Response returned by <c>get-classic-list-columns</c>.</summary>
 public sealed class GetClassicListColumnsResponse {
@@ -87,9 +99,16 @@ public class GetClassicListColumnsCommand(IClassicListColumnResolver resolver, I
 	/// <inheritdoc />
 	public override int Execute(GetClassicListColumnsOptions options) {
 		bool success = TryResolve(options, out GetClassicListColumnsResponse response);
-		// Notes can carry an inner exception message from the designer call, which routinely holds a
+		// Notes and Error can both carry an inner exception message from the pipeline, which routinely holds a
 		// host:port or a full request URI. The MCP tool redacts before returning; the CLI writes the
 		// serialized response straight to stdout, so it has to redact here too.
+		// Error is the rawer of the two — it is exception.Message verbatim from TryResolve's catch, so it
+		// catches every exception in the pipeline (the ESQ call, the designer JSON parse, the entity metadata
+		// read), not just the one GetDesignPackageUId message that reaches Notes. The redactor returns already
+		// clean text unchanged, so the caller-actionable messages survive intact.
+		if (!string.IsNullOrEmpty(response?.Error)) {
+			response.Error = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(response.Error);
+		}
 		if (response?.Notes is {Count: > 0}) {
 			response.Notes = Clio.Command.McpServer.SensitiveErrorTextRedactor.RedactAll(response.Notes);
 		}

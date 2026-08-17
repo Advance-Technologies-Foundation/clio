@@ -19,10 +19,34 @@ using Acornima.Ast;
 /// because the two need different wording: "could not be parsed as JavaScript" is an affirmatively wrong
 /// statement about a body that parsed fine, and it points a consumer at the wrong problem.
 /// </param>
+/// <param name="ColumnOrigins">
+/// Which method declared each path in <paramref name="Columns"/>, keyed case-insensitively:
+/// <c>getGridDataColumns</c>, <c>initColumnsConfig</c>, or <c>both</c>. The two are NOT interchangeable in
+/// Classic — <c>initColumnsConfig</c> describes what the grid RENDERS, <c>getGridDataColumns</c> what the
+/// section LOADS — and the flattened merge cannot express that on its own. Carrying the origin lets a
+/// consumer take the rendered set, the loaded set, or the union under its own fidelity rules instead of
+/// inheriting this parser's merge order as if it were a ruling.
+/// </param>
+/// <param name="DeclaresBothColumnMethods">
+/// <see langword="true"/> when the hierarchy declares both column methods, which is exactly the case where
+/// the flattened list is an approximation: overlapping paths take their order from <c>getGridDataColumns</c>,
+/// and a full <c>initColumnsConfig</c> override does not suppress ancestor <c>getGridDataColumns</c> columns.
+/// The resolver turns this into a response note so the approximation is visible at runtime, not only in the doc.
+/// </param>
+/// <param name="SubtractiveLayerCount">
+/// How many effective layers compose their parent and then <c>delete</c> a key off the composed object. The
+/// composition here is additive only, so such a layer contributes no literal of its own and the column it
+/// removes SURVIVES in the reported set. Counting it lets the resolver say so at runtime instead of
+/// presenting a confidently wrong set under <c>source: "schema-default"</c>. Subtraction is not applied —
+/// see the composition section of clio/docs/commands/get-classic-list-columns.md.
+/// </param>
 public sealed record ClassicListColumnParseResult(
 	IReadOnlyList<string> Columns,
 	int UnparsedLayerCount,
-	int UnanchoredLayerCount = 0);
+	int UnanchoredLayerCount = 0,
+	IReadOnlyDictionary<string, string> ColumnOrigins = null,
+	bool DeclaresBothColumnMethods = false,
+	int SubtractiveLayerCount = 0);
 
 /// <summary>Extracts static list-column and entity metadata from Classic section JavaScript bodies.</summary>
 public interface IClassicListColumnParser {
@@ -47,6 +71,9 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 	// ParseColumns_ShouldMergeGridDataColumnsFirst_WhenOneSchemaDeclaresBothMethods.
 	private static readonly string[] ColumnMethodNames = ["getGridDataColumns", "initColumnsConfig"];
 
+	/// <summary>Origin recorded for a path that BOTH column methods declare.</summary>
+	internal const string BothColumnMethods = "both";
+
 	// Markers that identify a Classic section schema object. Deliberately a separate list from
 	// ColumnMethodNames: adding a column method must not widen what counts as a schema object, or
 	// FindDefineFactorySchemaObject / FindClassicSchemaObject could anchor on a different object in the same
@@ -60,6 +87,9 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 		ArgumentNullException.ThrowIfNull(schemaBodies);
 		var columns = new List<string>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var origins = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		int declaringMethodCount = 0;
+		int subtractiveLayerCount = 0;
 		LayerParse[] parsed = schemaBodies
 			.Where(body => !string.IsNullOrWhiteSpace(body))
 			.Select(ParseLayer)
@@ -76,15 +106,30 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 			if (methods.Length == 0) {
 				continue;
 			}
+			declaringMethodCount++;
 			int firstEffectiveBody = methods.Length - 1;
 			while (firstEffectiveBody > 0 && CallsParent(methods[firstEffectiveBody])) {
 				firstEffectiveBody--;
 			}
 			for (int methodIndex = firstEffectiveBody; methodIndex < methods.Length; methodIndex++) {
-				columns.AddRange(FindStaticColumnPaths(methods[methodIndex]).Where(seen.Add));
+				if (RemovesComposedColumns(methods[methodIndex])) {
+					subtractiveLayerCount++;
+				}
+				foreach (string path in FindStaticColumnPaths(methods[methodIndex])) {
+					// Order and membership stay exactly as before — first declaration wins, getGridDataColumns
+					// first. What changes is that a path the SECOND method also declares is still recorded here
+					// rather than dropped with the duplicate, so `both` is distinguishable from `loaded only`.
+					if (seen.Add(path)) {
+						columns.Add(path);
+					}
+					origins[path] = origins.TryGetValue(path, out string existing) && existing != methodName
+						? BothColumnMethods
+						: methodName;
+				}
 			}
 		}
-		return new ClassicListColumnParseResult(columns, unparsedLayerCount, unanchoredLayerCount);
+		return new ClassicListColumnParseResult(columns, unparsedLayerCount, unanchoredLayerCount, origins,
+			declaringMethodCount == ColumnMethodNames.Length, subtractiveLayerCount);
 	}
 
 	/// <inheritdoc />
@@ -202,6 +247,21 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 			MemberExpression { Property: Identifier { Name: "callParent" }, Computed: false } => true,
 			_ => false
 		});
+
+	// Detects a SUBTRACTIVE override — `var c = this.callParent(arguments); delete c.StartDate; return c;`. The
+	// composition in ParseColumns is additive only, so such a layer declares no literal of its own and the
+	// removed column survives in the reported set. Subtraction is deliberately NOT applied: the shape is
+	// attested in a real Classic DETAIL schema, but whether a Classic SECTION uses it is unverified, and
+	// teaching the walk to subtract is a behaviour change on unverified need. Counting it instead makes the
+	// degradation visible through a note rather than silent.
+	//
+	// Any `delete` on a member expression inside an effective column method counts. Narrowing it to the exact
+	// identifier that received callParent's result would need alias tracking, and would quietly stop counting
+	// the shapes it fails to follow — over-counting produces a cautious note, under-counting produces the
+	// silence this exists to remove.
+	private static bool RemovesComposedColumns(Node method) => DescendantsSkippingNestedFunctions(method)
+		.OfType<UnaryExpression>()
+		.Any(expression => expression.Operator == Operator.Delete && expression.Argument is MemberExpression);
 
 	private static Property FindDirectProperty(ObjectExpression expression, string name) => expression.Properties
 		.OfType<Property>()
