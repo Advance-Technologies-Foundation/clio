@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Clio.Common;
 using CommandLine;
@@ -8,12 +9,12 @@ namespace Clio.Command.Branding;
 
 /// <summary>
 /// Options for the <c>set-logo</c> command. <see cref="Logo"/> brands every slot at once from one file;
-/// each slot option brands that slot alone and overrides <see cref="Logo"/> for it. At least one of them is
-/// required. Every applied logo is also bound into <see cref="PackageName"/> as package data so it ships
-/// with an install.
+/// each slot option brands that slot alone and overrides <see cref="Logo"/> for it. At least one image
+/// option is required. Everything applied is also bound into <see cref="PackageName"/> as package data.
 /// </summary>
 [Verb("set-logo",
-	HelpText = "Apply the product logos from local image files and bind them into a package as data bindings")]
+	HelpText = "Apply the product logos and the browser-tab favicon from local image files and bind them " +
+		"into a package as data bindings")]
 public class SetLogoOptions : RemoteCommandOptions {
 
 	/// <summary>
@@ -47,25 +48,31 @@ public class SetLogoOptions : RemoteCommandOptions {
 			"on the dark panel.")]
 	public string DarkLogo { get; set; }
 
-	/// <summary>Package that receives the logo data bindings.</summary>
+	/// <summary>Local image file for the browser-tab icon.</summary>
+	[Option("favicon", Required = false,
+		HelpText = "Local image file for the browser-tab icon (FaviconImage). Pass a square icon; accepted " +
+			"formats: " + SetLogoCommand.FaviconImageFormats + ". Not taken from --logo.")]
+	public string Favicon { get; set; }
+
+	/// <summary>Package that receives the branding data bindings.</summary>
 	[Option("package", Required = false,
-		HelpText = "Package that receives the logo data bindings. When omitted, the package from the " +
+		HelpText = "Package that receives the branding data bindings. When omitted, the package from the " +
 			"environment's CurrentPackageId system setting is used.")]
 	public string PackageName { get; set; }
 }
-
-/// <summary>One requested logo slot: its user-facing label, target sys-setting code, and source file.</summary>
-internal sealed record LogoSlot(string Label, string Code, string File);
 
 /// <summary>
 /// Outcome of applying and binding the product logos.
 /// </summary>
 public sealed record SetLogoResult {
 
-	/// <summary>Whether every requested logo was applied and bound.</summary>
+	/// <summary>
+	/// Whether every requested image was applied and bound, and every setting an applied image depends on to
+	/// take effect is on.
+	/// </summary>
 	public bool Success { get; private init; }
 
-	/// <summary>Labels of the logo slots that were applied, in request order.</summary>
+	/// <summary>Labels of the branding images that were applied, in request order.</summary>
 	public IReadOnlyList<string> Applied { get; private init; } = [];
 
 	/// <summary>
@@ -76,7 +83,7 @@ public sealed record SetLogoResult {
 	public IReadOnlyList<string> Bound { get; private init; } = [];
 
 	/// <summary>
-	/// The package the logo data was bound into; null only when the run never got as far as resolving one.
+	/// The package the branding data was bound into; null only when the run never got as far as resolving one.
 	/// Populated on a partial failure too, because the slots that did apply were bound into it.
 	/// </summary>
 	public string Package { get; private init; }
@@ -115,51 +122,14 @@ public sealed record SetLogoResult {
 			Bound = bound ?? []
 		};
 	}
-
-	internal static SetLogoResult FromSlots(
-		IReadOnlyList<LogoSlot> appliedSlots,
-		IReadOnlyList<(LogoSlot Slot, string Error)> failedSlots,
-		string package = null,
-		IReadOnlyList<string> bound = null,
-		IReadOnlyList<string> warnings = null,
-		string error = null) {
-		List<string> applied = appliedSlots.Select(slot => slot.Label).ToList();
-		string slotFailures = failedSlots.Count == 0
-			? null
-			: DescribeFailedSlots(appliedSlots.Count, failedSlots);
-		if (error is not null) {
-			return Failure(
-				slotFailures is null ? error : $"{slotFailures} {error}", applied, warnings, package, bound);
-		}
-		if (slotFailures is null) {
-			return Successful(applied, package, warnings, bound);
-		}
-		return Failure($"{slotFailures}{DescribeDelivery(package, bound)}", applied, warnings, package, bound);
-	}
-
-	private static string DescribeFailedSlots(
-		int appliedCount, IReadOnlyList<(LogoSlot Slot, string Error)> failedSlots) {
-		string details = string.Join("; ", failedSlots.Select(failure =>
-			$"{failure.Slot.Label} ({failure.Slot.Code}) from '{failure.Slot.File}': {failure.Error}"));
-		return $"Applying {failedSlots.Count} of {appliedCount + failedSlots.Count} logo slot(s) failed: {details}.";
-	}
-
-	private static string DescribeDelivery(string package, IReadOnlyList<string> bound) {
-		if (package is null) {
-			return string.Empty;
-		}
-		return bound is { Count: > 0 }
-			? $" Settings bound into package '{package}': {string.Join(", ", bound)}."
-			: $" No setting could be bound into package '{package}'; the warnings name the reason for each.";
-	}
 }
 
 /// <summary>
 /// Applies the product logos from local image files — one Binary sys-setting per slot — and binds the
 /// applied values into a package as Creatio data bindings, so the logos ship with the package instead of
 /// living only on this environment. Also sets <c>HideSplashScreenLogoImage</c> so the stock splash logo
-/// does not flash during load. Re-running with a new file refreshes both the environment and the
-/// packaged snapshot.
+/// does not flash during load, and applies the browser-tab favicon when one is passed. Re-running with a
+/// new file refreshes both the environment and the packaged snapshot.
 /// </summary>
 public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 
@@ -178,10 +148,39 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 	/// <summary>The Boolean setting that suppresses the stock splash-screen logo.</summary>
 	internal const string HideSplashLogoCode = "HideSplashScreenLogoImage";
 
-	/// <summary>Error text shared by the CLI and MCP surfaces when no logo file is passed.</summary>
-	internal const string NoLogoError =
-		"Pass at least one logo file: logo (every slot at once), login-logo, menu-logo, configuration-logo, " +
-		"or dark-logo.";
+	/// <summary>The Binary setting holding the browser-tab icon.</summary>
+	internal const string FaviconCode = "FaviconImage";
+
+	/// <summary>The Boolean gate; while it is off the platform ignores <see cref="FaviconCode"/>.</summary>
+	internal const string UseFaviconCode = "UseFaviconFromSysSettings";
+
+	/// <summary>How the favicon names itself in <see cref="SetLogoResult.Applied"/>, next to the slot labels.</summary>
+	internal const string FaviconLabel = "favicon";
+
+	/// <summary>Error text shared by the CLI and MCP surfaces when no image file is passed.</summary>
+	internal const string NoImageError =
+		"Pass at least one image file: logo (every slot at once), login-logo, menu-logo, configuration-logo, " +
+		"dark-logo, or favicon.";
+
+	/// <summary>Comma-separated list of the image file extensions the logo slots accept.</summary>
+	internal const string LogoImageFormats = "png, jpg, jpeg, gif, bmp, webp, svg";
+
+	/// <summary>Comma-separated list of the image file extensions the favicon accepts.</summary>
+	internal const string FaviconImageFormats = LogoImageFormats + ", ico";
+
+	private static readonly BrandingImageFormat LogoFormat = new(LogoImageFormats.Split(", "));
+
+	private static readonly BrandingImageFormat FaviconFormat = new(FaviconImageFormats.Split(", "));
+
+	private static readonly BrandingCompanion SplashSuppression = new(HideSplashLogoCode,
+		$"The logos were applied, but setting {HideSplashLogoCode} failed, so the stock splash logo may still " +
+		"flash during load",
+		RequiredForEffect: false);
+
+	private static readonly BrandingCompanion FaviconGate = new(UseFaviconCode,
+		$"The favicon image was written, but turning {UseFaviconCode} on failed, so the platform ignores the " +
+		"image and keeps the stock icon",
+		RequiredForEffect: true);
 
 	private readonly SysSettingsCommand _sysSettingsCommand;
 	private readonly IPackageDataBinder _packageDataBinder;
@@ -199,112 +198,267 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 	}
 
 	/// <summary>
-	/// Applies every logo file in <paramref name="options"/> to its sys-setting slot, suppresses the stock
-	/// splash logo, and delivers the applied values into the target package so they ship with it. At least
-	/// one logo option is required.
+	/// Applies every image file in <paramref name="options"/> to its sys-setting, suppresses the stock splash
+	/// logo, turns the favicon gate on when a favicon is passed, and delivers everything applied into the
+	/// target package. At least one image option is required.
 	/// </summary>
 	/// <remarks>
-	/// A slot the environment refuses does not abandon the slots that already succeeded: as long as one slot
-	/// applied, the run still suppresses the splash logo and delivers the applied slots into the package, so
-	/// the environment and the package never drift apart. The result is a failure naming every refused slot,
-	/// because the caller asked for more than the run produced — read <see cref="SetLogoResult.Applied"/> to
-	/// see what did land before re-running with the refused slots fixed.
+	/// A refused image — one whose file is not a supported image format, or one the environment rejects —
+	/// does not abandon the images that already succeeded: as long as one applied, the run still suppresses
+	/// the splash logo and delivers what applied into the package, so the environment and the package never
+	/// drift apart. The result is a failure naming every refused image, because the caller asked for more
+	/// than the run produced — read <see cref="SetLogoResult.Applied"/> to see what did land before
+	/// re-running with the refused images fixed.
 	/// </remarks>
-	/// <param name="options">Command options carrying the per-slot files, target package, and connection settings.</param>
-	/// <returns>The outcome, carrying the applied slots, the bound package, and any warnings.</returns>
+	/// <param name="options">Command options carrying the per-slot files, the favicon, target package, and connection settings.</param>
+	/// <returns>The outcome, carrying what was applied, the bound package, and any warnings.</returns>
 	public virtual SetLogoResult ApplyLogos(SetLogoOptions options) {
-		IReadOnlyList<LogoSlot> slots = ResolveSlots(options);
-		if (slots.Count == 0) {
-			return SetLogoResult.Failure(NoLogoError);
+		var requestedImages = ResolveRequestedImages(options);
+		if (requestedImages.Count == 0) {
+			return SetLogoResult.Failure(NoImageError);
 		}
-		LogoSlot missingFile = slots.FirstOrDefault(slot => !_fileSystem.ExistsFile(slot.File));
-		if (missingFile is not null) {
-			return SetLogoResult.Failure($"File not found: '{missingFile.File}' (passed for {missingFile.Label}).");
-		}
-		List<LogoSlot> appliedSlots = [];
-		List<(LogoSlot Slot, string Error)> failedSlots = [];
-		foreach (LogoSlot slot in slots) {
-			SysSettingUpdateResult update = _sysSettingsCommand.TryUpdateSysSetting(
-				new UpdateSysSettingArgs(options.Environment ?? string.Empty, slot.Code, ValueFilePath: slot.File));
-			if (update.Success) {
-				appliedSlots.Add(slot);
-			} else {
-				failedSlots.Add((slot, update.Error));
-			}
-		}
-		if (appliedSlots.Count == 0) {
-			return SetLogoResult.FromSlots(appliedSlots, failedSlots);
+		var missingFileError = FindMissingFileError(requestedImages);
+		if (missingFileError is not null) {
+			return SetLogoResult.Failure(missingFileError);
 		}
 
-		List<string> warnings = [];
-		List<string> appliedCodes = appliedSlots.Select(slot => slot.Code).ToList();
-		SysSettingUpdateResult splash = _sysSettingsCommand.TryUpdateSysSetting(
-			new UpdateSysSettingArgs(options.Environment ?? string.Empty, HideSplashLogoCode, Value: "true"));
-		if (splash.Success) {
-			appliedCodes.Add(HideSplashLogoCode);
-		} else {
-			warnings.Add($"The logos were applied, but setting {HideSplashLogoCode} failed, so the stock splash " +
-				$"logo may still flash during load: {splash.Error}");
+		var (supportedImages, formatRefusals) = PartitionBySupportedFormat(requestedImages);
+		var (appliedImages, applyRefusals) = ApplyImages(supportedImages, options.Environment);
+		var refusedImages = formatRefusals.Concat(applyRefusals).ToList();
+		if (appliedImages.Count == 0) {
+			return SetLogoResult.Failure(DescribeRefusedImages(refusedImages));
 		}
-		return BindLogos(appliedSlots, failedSlots, appliedCodes, options.PackageName, warnings);
+		var (companionCodes, companionFailures) = TurnCompanionsOn(appliedImages, options.Environment);
+		var packageDelivery = BindAppliedImages(appliedImages, companionCodes, options.PackageName);
+		return BuildResult(appliedImages, refusedImages, companionFailures, packageDelivery);
 	}
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(SetLogoOptions options) {
-		SetLogoResult result = ApplyLogos(options);
+		var result = ApplyLogos(options);
 		if (result.Applied.Count > 0) {
-			Logger.WriteInfo($"Applied: {string.Join(", ", result.Applied)}. Users see the new logos after a page refresh.");
+			var refreshNotice = result.Applied.Any(label => label != FaviconLabel)
+				? " Users see the new branding after a page refresh."
+				: string.Empty;
+			Logger.WriteInfo($"Applied: {string.Join(", ", result.Applied)}.{refreshNotice}");
 		}
+		if (result.Applied.Contains(FaviconLabel)) {
+			Logger.WriteInfo("A favicon change is never visible on an open session: users must sign out and back " +
+				"in, and an already-open browser tab may keep the old icon until it is closed and reopened.");
+		}
+		if (result.Package is not null) {
+			Logger.WriteInfo(result.Bound.Count > 0
+				? $"Branding data bound into package '{result.Package}': {string.Join(", ", result.Bound)}."
+				: $"No branding data could be bound into package '{result.Package}'.");
+		}
+		Logger.WriteWarnings(result.Warnings);
 		if (!result.Success) {
-			Logger.WriteWarnings(result.Warnings);
 			CommandSuccess = false;
 			Logger.WriteError(result.Error);
-			return;
 		}
-		Logger.WriteInfo(result.Bound.Count > 0
-			? $"Logo data bound into package '{result.Package}': {string.Join(", ", result.Bound)}."
-			: $"No logo data could be bound into package '{result.Package}'; the warnings name the reason for each.");
-		Logger.WriteWarnings(result.Warnings);
 	}
 
-	private SetLogoResult BindLogos(List<LogoSlot> appliedSlots, List<(LogoSlot Slot, string Error)> failedSlots,
-		IReadOnlyList<string> appliedCodes, string packageName, List<string> warnings) {
-		string package = null;
-		List<string> bound = [];
+	private string FindMissingFileError(IReadOnlyList<BrandingImage> requestedImages) {
+		var missing = requestedImages
+			.Where(image => !_fileSystem.ExistsFile(image.File))
+			.ToList();
+		if (missing.Count == 0) {
+			return null;
+		}
+		var details = string.Join("; ",
+			missing.Select(image => $"'{image.File}' (passed for {image.Label})"));
+		return $"Files not found: {details}.";
+	}
+
+	private (List<BrandingImage> Applied, List<RefusedBrandingImage> Refused) ApplyImages(
+		IReadOnlyList<BrandingImage> requestedImages, string environment) {
+		var (applied, refused) = WriteSysSettings(requestedImages, image =>
+			new UpdateSysSettingArgs(environment ?? string.Empty, image.Code, ValueFilePath: image.File));
+		var refusedImages = refused
+			.Select(refusal => new RefusedBrandingImage(refusal.Item, refusal.Error))
+			.ToList();
+		return (applied, refusedImages);
+	}
+
+	private (List<string> Codes, List<BrandingCompanionFailure> Failures) TurnCompanionsOn(
+		IReadOnlyList<BrandingImage> appliedImages, string environment) {
+		var companions = appliedImages
+			.Select(image => image.Companion)
+			.Where(companion => companion is not null)
+			.Distinct();
+		var (turnedOn, refused) = WriteSysSettings(companions, companion =>
+			new UpdateSysSettingArgs(environment ?? string.Empty, companion.Code, Value: "true"));
+		var codes = turnedOn
+			.Select(companion => companion.Code)
+			.ToList();
+		var failures = new List<BrandingCompanionFailure>();
+		foreach (var refusal in refused) {
+			if (ReadCompanionIsOn(refusal.Item, environment)) {
+				codes.Add(refusal.Item.Code);
+			} else {
+				failures.Add(new BrandingCompanionFailure(refusal.Item.RequiredForEffect,
+					$"{refusal.Item.FailureMessage}: {refusal.Error}"));
+			}
+		}
+		return (codes, failures);
+	}
+
+	private bool ReadCompanionIsOn(BrandingCompanion companion, string environment) {
+		var current = _sysSettingsCommand.TryGetSysSetting(
+			new GetSysSettingArgs(environment ?? string.Empty, companion.Code));
+		return current.Success && bool.TryParse(current.Value, out var parsed) && parsed;
+	}
+
+	private PackageDelivery BindAppliedImages(IReadOnlyList<BrandingImage> appliedImages,
+		IReadOnlyList<string> companionCodes, string packageName) {
+		var warnings = new List<string>();
+		var package = default(string);
+		var boundCodes = new List<string>();
 		try {
 			package = _packageDataBinder.UsePackage(packageName);
-			foreach (string code in appliedCodes) {
-				PackageDataBindingOutcome outcome = _packageDataBinder.BindSysSettingsValue(code);
+			var codesToBind = appliedImages.Select(image => image.Code).Concat(companionCodes);
+			foreach (var code in codesToBind) {
+				var outcome = _packageDataBinder.BindSysSettingsValue(code);
 				warnings.AddRange(outcome.Warnings);
 				if (outcome.Bound) {
-					bound.Add(code);
+					boundCodes.Add(code);
 				}
 			}
-			return SetLogoResult.FromSlots(appliedSlots, failedSlots, package, bound, warnings);
+			return new PackageDelivery(package, boundCodes, warnings, null);
 		} catch (Exception exception) {
-			string into = package is null ? string.Empty : $" into package '{package}'";
-			string kept = bound.Count == 0
-				? string.Empty
-				: $" Already bound and left in place: {string.Join(", ", bound)}.";
-			return SetLogoResult.FromSlots(appliedSlots, failedSlots, package, bound, warnings,
-				error: $"The applied logos could not be bound{into}: {exception.Message}{kept}");
+			return new PackageDelivery(package, boundCodes, warnings, exception);
 		}
 	}
 
-	private static IReadOnlyList<LogoSlot> ResolveSlots(SetLogoOptions options) {
-		(string Label, string Code, string File)[] candidates = [
-			("login-logo", LoginLogoCode, ResolveSlotFile(options.LoginLogo, options.Logo)),
-			("menu-logo", MenuLogoCode, ResolveSlotFile(options.MenuLogo, options.Logo)),
-			("configuration-logo", ConfigurationLogoCode, ResolveSlotFile(options.ConfigurationLogo, options.Logo)),
-			("dark-logo", DarkLogoCode, ResolveSlotFile(options.DarkLogo, options.Logo))
-		];
+	private (List<T> Written, List<(T Item, string Error)> Refused) WriteSysSettings<T>(
+		IEnumerable<T> items, Func<T, UpdateSysSettingArgs> buildArgs) {
+		var written = new List<T>();
+		var refused = new List<(T Item, string Error)>();
+		foreach (var item in items) {
+			var update = _sysSettingsCommand.TryUpdateSysSetting(buildArgs(item));
+			if (update.Success) {
+				written.Add(item);
+			} else {
+				refused.Add((item, update.Error));
+			}
+		}
+		return (written, refused);
+	}
+
+	private static (List<BrandingImage> Supported, List<RefusedBrandingImage> Refused) PartitionBySupportedFormat(
+		IReadOnlyList<BrandingImage> requestedImages) {
+		var supported = new List<BrandingImage>();
+		var refused = new List<RefusedBrandingImage>();
+		foreach (var image in requestedImages) {
+			var formatError = FindUnsupportedFormatError(image);
+			if (formatError is null) {
+				supported.Add(image);
+			} else {
+				refused.Add(new RefusedBrandingImage(image, formatError));
+			}
+		}
+		return (supported, refused);
+	}
+
+	private static string FindUnsupportedFormatError(BrandingImage image) {
+		string extension = Path.GetExtension(image.File).TrimStart('.');
+		if (extension.Length == 0) {
+			return $"the file has no extension, so it cannot be verified as an image ({image.Label} accepts: {image.Format.DisplayList})";
+		}
+		if (!image.Format.Accepts(extension)) {
+			return $"'.{extension}' is not a supported image format ({image.Label} accepts: {image.Format.DisplayList})";
+		}
+		return null;
+	}
+
+	private static IReadOnlyList<BrandingImage> ResolveRequestedImages(SetLogoOptions options) {
+		var candidates = new BrandingImage[] {
+			new("login-logo", LoginLogoCode, ResolveSlotFile(options.LoginLogo, options.Logo), LogoFormat,
+				SplashSuppression),
+			new("menu-logo", MenuLogoCode, ResolveSlotFile(options.MenuLogo, options.Logo), LogoFormat,
+				SplashSuppression),
+			new("configuration-logo", ConfigurationLogoCode,
+				ResolveSlotFile(options.ConfigurationLogo, options.Logo), LogoFormat, SplashSuppression),
+			new("dark-logo", DarkLogoCode, ResolveSlotFile(options.DarkLogo, options.Logo), LogoFormat,
+				SplashSuppression),
+			new(FaviconLabel, FaviconCode, options.Favicon, FaviconFormat, FaviconGate)
+		};
 		return candidates
 			.Where(candidate => !string.IsNullOrWhiteSpace(candidate.File))
-			.Select(candidate => new LogoSlot(candidate.Label, candidate.Code, candidate.File))
 			.ToList();
 	}
 
 	private static string ResolveSlotFile(string slotOverride, string allSlotsFile) {
 		return string.IsNullOrWhiteSpace(slotOverride) ? allSlotsFile : slotOverride;
 	}
+
+	private static SetLogoResult BuildResult(
+		IReadOnlyList<BrandingImage> appliedImages,
+		IReadOnlyList<RefusedBrandingImage> refusedImages,
+		IReadOnlyList<BrandingCompanionFailure> companionFailures,
+		PackageDelivery packageDelivery) {
+		var appliedLabels = appliedImages.Select(image => image.Label).ToList();
+		var warnings = companionFailures
+			.Where(failure => !failure.Fatal)
+			.Select(failure => failure.Message)
+			.Concat(packageDelivery.Warnings)
+			.ToList();
+		var errors = new List<string>();
+		if (refusedImages.Count > 0) {
+			errors.Add(DescribeRefusedImages(refusedImages));
+		}
+		errors.AddRange(companionFailures
+			.Where(failure => failure.Fatal)
+			.Select(failure => failure.Message));
+		if (packageDelivery.Failure is not null) {
+			errors.Add(DescribeDeliveryFailure(packageDelivery));
+		}
+		if (errors.Count == 0) {
+			return SetLogoResult.Successful(appliedLabels, packageDelivery.Package, warnings,
+				packageDelivery.BoundCodes);
+		}
+		return SetLogoResult.Failure(string.Join(" ", errors),
+			appliedLabels, warnings, packageDelivery.Package, packageDelivery.BoundCodes);
+	}
+
+	private static string DescribeDeliveryFailure(PackageDelivery packageDelivery) {
+		var into = packageDelivery.Package is null
+			? string.Empty
+			: $" into package '{packageDelivery.Package}'";
+		return $"The applied branding could not be bound{into}: {packageDelivery.Failure.Message}";
+	}
+
+	private static string DescribeRefusedImages(IReadOnlyList<RefusedBrandingImage> refusedImages) {
+		var details = string.Join("; ", refusedImages.Select(refusal =>
+			$"{refusal.Image.Label} ({refusal.Image.Code}) from '{refusal.Image.File}': {refusal.Error}"));
+		return $"Applying {refusedImages.Count} image(s) failed: {details}.";
+	}
+
+	private sealed record BrandingCompanion(string Code, string FailureMessage, bool RequiredForEffect);
+
+	private sealed record BrandingCompanionFailure(bool Fatal, string Message);
+
+	private sealed record BrandingImageFormat(string[] Extensions) {
+
+		public string DisplayList { get; } = string.Join(", ", Extensions);
+
+		public bool Accepts(string extension) {
+			return Extensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+		}
+	}
+
+	private sealed record BrandingImage(
+		string Label,
+		string Code,
+		string File,
+		BrandingImageFormat Format,
+		BrandingCompanion Companion = null);
+
+	private sealed record RefusedBrandingImage(BrandingImage Image, string Error);
+
+	private sealed record PackageDelivery(
+		string Package,
+		List<string> BoundCodes,
+		List<string> Warnings,
+		Exception Failure);
 }

@@ -745,11 +745,12 @@ What an external AI can practically do here:
 Companion surfaces:
 
 - `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
-- `get-guidance name=branding` — the rest of the branding surface: product logos and the shell background image.
+- `get-guidance name=branding` — the rest of the branding surface: product logos, the browser-tab favicon, and the shell background image.
 
 ### 13. Branding
 
-These tools brand a Creatio app: the product logos and the shell background image. Each apply tool
+These tools brand a Creatio app: the product logos, the browser-tab favicon, and the shell
+background image. Each apply tool
 also binds the applied branding into a package (data bindings) so it travels with an install.
 All act on a registered environment (`environment-name`). Applying branding requires the
 `CanCustomizeBranding` license (precheck with `check-theming-access`); the binding side additionally
@@ -771,18 +772,27 @@ take a single `args` object with kebab-case fields.
   snapshot. The `warnings` entries on the result are where delivery gaps (a `SecureText` setting, a
   customized gallery tag, a feature state that is not confirmed off) are surfaced.
 - `set-logo`
-  Apply the product logos from local image files and bind them into a package. `logo` brands **every**
-  slot from one file; a slot argument gives that slot its own file and overrides `logo` for it —
+  Apply the product logos and the browser-tab favicon from local image files and bind them into a
+  package. `logo` brands **every** slot from one file; a slot argument gives that slot its own file
+  and overrides `logo` for it —
   `login-logo` (login page), `menu-logo` (main menu), `configuration-logo` (configuration page),
   `dark-logo` (the Freedom UI top panel — a dark surface, pass the white/light variant). At least one
   of them is required, and passing `logo` alone brands all four slots, not just the login page.
   The stock splash logo is suppressed automatically. A confirmed write (`Destructive=true`: the
   logos change for all users and cannot be automatically reverted; re-issued through
   `clio-run-destructive` on the lazy surface). Idempotent — re-applying the same files converges.
-  Only the slots this run applied are bound, so a slot nobody branded stays out of the package. When
-  the environment refuses one slot and accepts another, the result is `success: false` naming the
-  refused slot — but the accepted slots are already written and already bound, so read `applied` and
-  `bound` before retrying and re-run only the refused slot.
+  Only the images this run applied are bound, so a slot nobody branded stays out of the package. When
+  the environment refuses one image and accepts another, the result is `success: false` naming the
+  refused image — but the accepted ones are already written and already bound, so read `applied` and
+  `bound` before retrying and re-run only what was refused.
+
+  `favicon` is the fifth image argument, never taken from `logo`: it writes `FaviconImage` plus the
+  `UseFaviconFromSysSettings` gate, without which the platform keeps the stock icon, and binds both —
+  the gate only once it reads as on, since the binding snapshots the value it will force onto the
+  install target. A gate that can neither be turned on nor already reads as on fails the run.
+  Pass a square icon — clio uploads it as it is, with no resizing or conversion. A refused favicon
+  fails the run exactly like a refused logo slot. Unlike the logos, the change needs a sign-out rather
+  than a refresh.
 
   On both tools the `package` field on the result names the resolved delivery target. It is present as
   soon as the run resolved one — including on a failure — and absent only when the run never got that
@@ -820,10 +830,12 @@ What an external AI can practically do here:
   logo data lands in the target package in the same call; the slot list and rules live in the
   `branding` guidance, including the package-notification contract (name the target package to the
   user)
+- brand the browser tab in the same call: `set-logo` with `favicon` pointing at a square icon — the
+  icon and its gate land in the target package too
 
 Companion surfaces:
 
-- `get-guidance name=branding` — the logo slots, the background flow, and the license gate.
+- `get-guidance name=branding` — the logo slots, the favicon, the background flow, and the license gate.
 - `get-guidance name=theming` — colours, fonts, and custom themes.
 
 ### 13. Knowledge And Reference-Example Discovery
