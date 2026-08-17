@@ -74,14 +74,6 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("viewConfigTemplates")]
 	public IReadOnlyList<ViewConfigTemplateGroup> ViewConfigTemplates { get; init; } = [];
 
-	/// <summary>
-	/// Group: what a MOBILE property accepts, keyed by the target that declares it. "A list row's title takes a
-	/// text column" is a fact about <c>crt.ListItem.title</c> — not about the grid that happens to feed it — so
-	/// stating it here makes it hold for every source, present and future, instead of once per mapping.
-	/// </summary>
-	[JsonPropertyName("componentValueConstraints")]
-	public IReadOnlyList<ComponentValueConstraintRule> ComponentValueConstraints { get; init; } = [];
-
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -397,49 +389,6 @@ public sealed class ViewConfigTemplateGroup {
 	public IReadOnlyList<ViewConfigTemplateRule> Templates { get; init; } = [];
 }
 
-/// <summary>
-/// What a mobile component's property accepts, and how to read that from a source entry. Used to choose which
-/// entry a templated structure should lead with: a template addresses the lead by POSITION, so the choice is
-/// made by arranging the entries it sees.
-/// </summary>
-public sealed class ComponentValueConstraintRule {
-
-	/// <summary>Mobile component type that declares the property (e.g. <c>"crt.ListItem"</c>).</summary>
-	[JsonPropertyName("type")]
-	public string Type { get; init; }
-
-	/// <summary>The constrained property (e.g. <c>"title"</c>).</summary>
-	[JsonPropertyName("property")]
-	public string Property { get; init; }
-
-	/// <summary>
-	/// Property of a SOURCE entry holding its value type (e.g. a grid column's <c>"dataValueType"</c>). Absent
-	/// switches the constraint off — an entry whose type cannot be read is never rejected for it.
-	/// </summary>
-	[JsonPropertyName("valueTypeFrom")]
-	public string ValueTypeFrom { get; init; }
-
-	/// <summary>
-	/// Creatio <c>DataValueType</c> ids the property accepts (see <c>CreatioDataValueType</c> for the full map).
-	/// The mobile designer offers only TEXT columns for a list row's title — a lookup binds to nothing and
-	/// renders an empty Title column while the body rows still look correct — so the lead is the first entry
-	/// whose value type is listed here, NOT simply the first entry.
-	/// <para>
-	/// The shipped list is the DISPLAY-text subset of <c>CreatioDataValueKind.Text</c>: 1 Text, 19
-	/// LocalizableString, 27 ShortText, 28 MediumText, 29 MaxSizeText, 30 LongText, 42 PhoneText, 44 WebText,
-	/// 45 EmailText. Deliberately excluded although that kind also covers them: 23 HashText and 24 SecureText
-	/// (surfacing a hash or a secret as the row's headline is wrong, not merely unhelpful), 18 Color and 36
-	/// MetadataText (not a value a reader reads), and 43 RichText (markup, not a single-line headline).
-	/// </para>
-	/// <para>
-	/// An entry whose type the source does not declare is ELIGIBLE, not rejected: requiring a declared type
-	/// would make a PARTLY typed source behave worse than a wholly untyped one — one typed sibling would be
-	/// enough to disqualify the untyped display column.
-	/// </para>
-	/// </summary>
-	[JsonPropertyName("acceptsDataValueTypes")]
-	public IReadOnlyList<int> AcceptsDataValueTypes { get; init; }
-}
 
 /// <summary>Matches a source element. Only the component type is matched today.</summary>
 public sealed class ElementFilterRule {

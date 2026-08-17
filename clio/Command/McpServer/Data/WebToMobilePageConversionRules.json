@@ -145,14 +145,6 @@
       ]
     }
   ],
-  "componentValueConstraints": [
-    {
-      "type": "crt.ListItem",
-      "property": "title",
-      "valueTypeFrom": "dataValueType",
-      "acceptsDataValueTypes": [1, 19, 27, 28, 29, 30, 42, 44, 45]
-    }
-  ],
   "componentPropertyOverrides": [
     {
       "type": "crt.GridContainer",

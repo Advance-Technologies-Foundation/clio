@@ -84,23 +84,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ENG-95046: what a row's title accepts is declared against crt.ListItem, not against the grid that feeds it — so it holds for every present and future source instead of being restated per mapping.")]
-	public void LoadBundled_TitleConstraintIsDeclaredAgainstTheTargetComponent() {
-		// Arrange & Act
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		// Assert
-		ComponentValueConstraintRule title = rules.ComponentValueConstraints
-			.Single(c => c.Type == "crt.ListItem" && c.Property == "title");
-		title.ValueTypeFrom.Should().Be("dataValueType",
-			because: "a grid column declares its type there, and the lead is chosen by reading it");
-		title.AcceptsDataValueTypes.Should().BeEquivalentTo(new[] { 1, 19, 27, 28, 29, 30, 42, 44, 45 },
-			because: "a row title accepts text columns, and this is the DISPLAY-text subset of "
-				+ "CreatioDataValueKind.Text — leaving out PhoneText/WebText/EmailText would give a contacts "
-				+ "detail no title AND a note claiming the source had no acceptable column, which would be false");
-	}
-
-	[Test]
 	[Description("ENG-94230: the bundled rules carry the metric style override — extra-small text and a hidden border nested under config, merging — using the registry's real property paths, not the ticket's prose (there is no top-level size/hideBorder input).")]
 	public void LoadBundled_ReturnsSeededMetricStyleOverride() {
 		// Arrange & Act
