@@ -455,6 +455,13 @@ public class BindingsModule {
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
+		// H-1 (ENG-95262): the cross-process gate for .clio-pages/{schema}. Registered explicitly as a
+		// SINGLETON because the intent is one gate per host: RegisterAssemblyInterfaceTypes would otherwise
+		// pick the type up as a transient and which registration wins would depend on declaration order
+		// rather than on intent. Correctness does not rest on the lifetime — the monitor table inside the
+		// gate is static, precisely so a second instance cannot become a second lock domain — but the
+		// lifetime should still say what it means.
+		services.AddSingleton<IInterprocessFileGate, InterprocessFileGate>();
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<CreateRelatedPageAddonCommand>();
 		services.AddTransient<GetRelatedPageAddonCommand>();
@@ -1022,6 +1029,24 @@ public class BindingsModule {
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				? new Common.IIS.WindowsIISSiteDetector(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISSiteDetector());
+		// ENG-95262 Stage 2 — the MCP worker execution boundary's process supervisor.
+		// Containment is chosen by an explicit runtime OS check, not by the assembly auto-scan: the scan
+		// would register BOTH implementations against IProcessContainment and let declaration order pick
+		// the winner, which on macOS or Linux would silently hand the caller the Windows job-object path.
+		// The whole Clio.Common.McpWorker interface namespace is excluded from the auto-scan for that
+		// reason and for the lifetimes below — see RegisterAssemblyInterfaceTypes.
+		services.AddSingleton<Common.McpWorker.IProcessContainment>(_ =>
+			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+				? new Common.McpWorker.WindowsJobObjectContainment()
+				: new Common.McpWorker.UnixProcessGroupContainment());
+		services.AddSingleton<Common.McpWorker.IClioExecutablePathProvider,
+			Common.McpWorker.ClioExecutablePathProvider>();
+		services.AddSingleton<Common.McpWorker.IStaleWorkerRegistry, Common.McpWorker.StaleWorkerRegistry>();
+		// SINGLETON because the concurrency cap IS the instance: the semaphore, the resource accounting and
+		// the recorded owner identity all live in it, so a transient supervisor would give every call its
+		// own cap and bound nothing at all.
+		services.AddSingleton<Common.McpWorker.IWorkerProcessSupervisor,
+			Common.McpWorker.WorkerProcessSupervisor>();
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
 		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
@@ -1311,6 +1336,15 @@ public class BindingsModule {
 					// Knowledge services use explicit singleton registrations because they retain immutable
 					// runtime snapshots, source locks, and transport clients across MCP requests.
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
+					// The MCP worker execution boundary (ENG-95262 Stage 2) registers its whole namespace
+					// explicitly, and every reason is a correctness one rather than a preference:
+					// IProcessContainment has two implementations and the scan would let declaration order
+					// decide which platform's containment a host gets; the supervisor must be a SINGLETON or
+					// its concurrency cap bounds nothing; and the per-worker handle, lease and contained-worker
+					// types take runtime-only constructor arguments (streams and delegates over one live
+					// process), so auto-registering them would fail ValidateOnBuild and stop the host from
+					// starting at all.
+					|| implementedInterface.Namespace == typeof(Common.McpWorker.IProcessContainment).Namespace
 					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
 					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
 					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {

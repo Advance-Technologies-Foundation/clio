@@ -518,14 +518,50 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 			msFileSystem.File.WriteAllText(filePath, contents, Utf8NoBom);
 			return;
 		}
-		var opts = new System.IO.FileStreamOptions {
-			Mode = System.IO.FileMode.Create,
-			Access = System.IO.FileAccess.Write,
+		var opts = new FileStreamOptions {
+			Mode = FileMode.Create,
+			Access = FileAccess.Write,
 			UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite
 		};
-		using var fs = new System.IO.FileStream(filePath, opts);
-		using var w = new System.IO.StreamWriter(fs, Utf8NoBom);
+		// Routed through the injected abstraction rather than a direct System.IO.FileStream so a
+		// substituted file system can observe the owner-only write; the Windows branch above already went
+		// through msFileSystem, and the asymmetry made this branch provable only end to end.
+		using var fs = msFileSystem.FileStream.New(filePath, opts);
+		using var w = new StreamWriter(fs, Utf8NoBom);
 		w.Write(contents);
+	}
+
+	public void WriteOwnerOnlyTextToFileAtomic(string filePath, string contents) {
+		string directory = Path.GetDirectoryName(filePath);
+		string temporary = Path.Combine(
+			string.IsNullOrEmpty(directory) ? "." : directory,
+			$".{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.tmp");
+		try {
+			var opts = new FileStreamOptions {
+				Mode = FileMode.CreateNew,
+				Access = FileAccess.Write,
+				Share = FileShare.None
+			};
+			if (!OperatingSystem.IsWindows()) {
+				// Mandatory: without this the temp file is created world-readable and the move publishes
+				// those permissions, reopening the window WriteOwnerOnlyTextToFile exists to close.
+				// The property is Unix-only and throws when set on Windows, where the per-user profile ACL
+				// is the security boundary instead.
+				opts.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+			}
+			using (var stream = msFileSystem.FileStream.New(temporary, opts)) {
+				using var writer = new StreamWriter(stream, Utf8NoBom, leaveOpen: true);
+				writer.Write(contents);
+				writer.Flush();
+				stream.Flush();
+			}
+			msFileSystem.File.Move(temporary, filePath, overwrite: true);
+		}
+		finally {
+			if (msFileSystem.File.Exists(temporary)) {
+				msFileSystem.File.Delete(temporary);
+			}
+		}
 	}
 
 	#endregion

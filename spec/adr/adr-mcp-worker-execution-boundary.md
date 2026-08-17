@@ -180,12 +180,19 @@ reach `initialize` — purely queued behind CPU, with a perfectly healthy backen
 the call is admitted**, and the concurrency cap is derived from `Environment.ProcessorCount`. Otherwise the
 supervisor kills healthy calls for being busy, which is a new failure mode invented by the fix.
 
-**NativeAOT (Stage 8 gate) — the substantive half passes; the native link is blocked by the host.** The
-managed compile of `ClioRing.Ipc`, `ClioRing` and `ClioRing.Desktop` succeeded and emitted **zero
-IL2026/IL3050/IL2104/IL3053 warnings**, which is the part of the Ring policy that says something about our
-code. `dotnet publish -r win-x64 -p:PublishAot=true` then failed at `Platform linker not found` —
-ts1-core-dev04 has no "Desktop Development for C++" workload. That is a machine prerequisite, not a code
-defect, so the AOT-hostile-pattern check is green and only the final link remains unproven.
+**NativeAOT (Stage 8 gate) — CLOSED, green.** `dotnet publish -r win-x64 --self-contained -p:PublishAot=true`
+exits **0** in 53.3 s with **zero IL2026/IL3050/IL2104/IL3053 warnings** and zero errors, and produces a
+genuine native image: `clio-ring.exe`, 30.8 MB, with **no managed `clio-ring.dll` beside it** — the check that
+separates real AOT from an apphost wrapping IL, which a bare exit code would not.
+
+Run on a second Windows host (`A_KRAVCHUK2`, Windows 11 Pro, 32 cores), not on ts1-core-dev04, because
+**ts1 cannot install the MSVC toolchain at all**: an ESET TLS filter there re-signs HTTPS with its own CA
+(`CN=ESET SSL Filter CA`), the chain does not validate, and the VS installer therefore fails at
+`Failed to download the catalog` when reaching `vsblob.vsassets.io`. Not a TLS-version problem — TLS 1.3 was
+negotiated and `SchUseStrongCrypto` is already set. Working around it would mean trusting an AV root CA or
+excluding Microsoft domains from filtering on a shared stand, which is a security-configuration change and
+was deliberately not made. Anything on ts1 that fetches from Azure Edge with a validating client will fail
+the same way; run this gate on a host that already carries the C++ workload.
 
 ### 2.3 What this deletes
 
@@ -238,24 +245,66 @@ rule 12 is new, from the relay spike.
 12. **(New, from the relay spike.) Notifications must not be forwarded through the SDK's client
     notification handlers.** See §3.2.
 
-### 3.1 Relay properties — measured on SDK 1.4.1, which clio NO LONGER SHIPS
+### 3.1 Relay properties — RE-MEASURED on SDK 2.2.0 (2026-08-17)
 
-> **Evidence expiry, found 2026-08-17.** Every measurement in §3.1 and §3.2 was taken against
-> `ModelContextProtocol` **1.4.1**. `Directory.Packages.props` now pins **2.2.0** (commit `e6c95ec9c`,
-> "Upgrade MCP SDK to 2.2 hybrid transport") — a major bump that explicitly changed transports. So the two
-> PASSes below are *encouraging but stale*, and **rule 12 rests on a FAIL observed in a version we do not
-> use**: the concurrent-dispatch reordering may be fixed in 2.2.0, or the API that would let a relay own the
-> read loop may have moved. Stage 4 must **re-run all three measurements on 2.2.0 first** and land them as
-> standing tests. If the reordering no longer reproduces, rule 12 is retired on evidence rather than kept
-> out of caution; if it does, it is kept with a current citation. Until then no relay code is written.
+The earlier §3.1/§3.2 numbers were taken on `ModelContextProtocol` 1.4.1, which clio no longer ships. All
+three properties were re-run on **2.2.0** (the version `Directory.Packages.props:20` pins), on both target
+frameworks, with the 1.4.1 harness as a control. Results:
 
+| Property | 1.4.1 | 2.2.0 | Verdict |
+|---|---|---|---|
+| Sampling relays to the real client | PASS | **PASS** (121/121 runs) | holds — but see the deprecation below |
+| `_meta.clioStageEvent` + `progressToken` fidelity | PASS | **PASS**, byte-identical; a numeric token stays a JSON number | holds |
+| Notification ordering through the SDK handler path | FAIL | **FAIL** | **rule 12 stands** |
 
-- **Server→client requests relay correctly — PASS.** The child's `sampling/createMessage` reached the
-  parent's `SamplingHandler`, was forwarded via `parentServer.SampleAsync(...)` to the **real** client, and
-  the client's answer came back into the child's tool result. This was the single biggest risk to the
-  architecture; it is cleared.
-- **`_meta` and progress-token fidelity — PASS.** Nested `_meta.clioStageEvent` content and the exact
-  `progressToken` survive the round trip byte-identically — what ClioRing correlates on.
+**Rule 12 is kept on current evidence, not out of caution.** The reordering still reproduces on 2.2.0.
+
+**And the implementation is much cheaper than feared.** Owning the child read loop does **not** require
+hand-rolling JSON-RPC or forking the SDK — it is reachable through the public API:
+
+1. `IClientTransport.ConnectAsync(ct)` → `ITransport` (implemented by `StdioClientTransport`)
+2. `ITransport.MessageReader` — a `ChannelReader<JsonRpcMessage>`, i.e. the messages in pipe order
+3. `ITransport.SendMessageAsync(JsonRpcMessage, ct)`
+4. the pattern-matchable `JsonRpcNotification` / `JsonRpcRequest` / `JsonRpcResponse` / `JsonRpcError`
+5. `McpJsonUtilities.DefaultOptions` for the payload types, and `McpServer.SampleAsync` to forward upward
+
+The relay therefore **keeps** `StdioClientTransport`'s process spawn, newline framing and serialization, and
+skips only `McpClient.CreateAsync` — which is precisely what installs the concurrent notification-dispatch
+layer that reorders. What it takes on: the handshake, request-id correlation, and answering child→parent
+requests off the read loop. Measured as ~120 lines and **30/30 clean on 2.2.0, 10/10 on 1.4.1**.
+
+This seam is also **byte-identical between 1.4.1 and 2.2.0** in the public API dumps, so it is stable across
+the bump rather than a 2.2.0 novelty.
+
+### 3.1a Sampling is deprecated in 2.2.0 — rule 1 now rests on a feature the SDK may remove
+
+Compiling the unchanged harness against 2.2.0 emits four **MCP9005** warnings (zero against 1.4.1):
+`ClientCapabilities.Sampling`, `SamplingCapability`, `McpClientHandlers.SamplingHandler` and
+`McpServer.SampleAsync` are all `[Obsolete]` — *"the Sampling feature is deprecated as of specification
+version 2026-07-28 and may be removed in a future version (SEP-2577)"*.
+
+It still works (121/121 relayed), so rule 1 is implementable today. But the semantic review in `update-page`
+/ `sync-pages` is now built on deprecated ground, and the SDK's successor surface already exists:
+`InputRequest` / `InputResponse` / `InputRequiredResult` / `InputRequiredException` plus
+`McpClient.ResolveInputRequestsAsync`. Carried as **OQ-6**.
+
+### 3.1b The `server/discover` probe, and a trap worth 5 seconds per call
+
+2.2.0 clients probe `server/discover` **before** `initialize` (protocol revision 2026-07-28, SEP-2575).
+Measured failure mode: a child that answers the probe with a **success** result of the wrong shape stalls the
+handshake for the full `DiscoverProbeTimeout` (default 5 s) and then **hard-fails** with a `JsonException` —
+it does **not** fall back to `initialize`. A child answering `-32601` falls back in ~0.05 s.
+
+clio's own worker is a 2.2.0 server and answers the probe correctly, so the happy path is unaffected. The
+trap matters for any relay wrapping a non-2.2 child, and it means a malformed discover response is worth
+5 s of dead time per call — inside the very budget the parent enforces.
+
+Two more 2.2.0 facts that touch this design:
+
+- **MCP Tasks are gone** (`tasks/get`, `tasks/list`, `tasks/cancel`, the capability family). §2.1 rejected
+  them as an option; they are now removed outright, so that decision needs no revisiting.
+- **`ping` is not served on protocol 2026-07-28.** A worker liveness probe must not use it. ClioRing already
+  moved its health probe to `tools/list` in the same upgrade commit.
 
 ### 3.2 Notification ordering — the one FAIL, and the rule it produces
 
@@ -427,6 +476,7 @@ no-toggle decision above replaces. Each of these remains a separate, later decis
 | OQ-3 | Cost on a machine where the curated-knowledge bootstrap actually runs its budgeted startup path | 3 |
 | OQ-4 | Whether `create-app-section` gets a real operation registry or only a private completion signal | 7 |
 | OQ-5 | Whether master ships this default-on or gated — decided at merge proposal, on evidence from this branch | merge |
+| OQ-6 | Migration off deprecated sampling (MCP9005 / SEP-2577) onto `InputRequest` / `ResolveInputRequestsAsync` — rule 1 works today but on a feature the SDK may remove | 4 |
 
 ## 9. Relationship to adjacent ADRs
 

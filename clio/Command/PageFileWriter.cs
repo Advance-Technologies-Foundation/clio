@@ -1,5 +1,6 @@
 using System;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -47,13 +48,22 @@ public sealed class PageFileWriter : IPageFileWriter {
 		new("^[A-Za-z0-9_]+$", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	private readonly IFileSystem _fileSystem;
+	private readonly IInterprocessFileGate _fileGate;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="PageFileWriter"/> class.
 	/// </summary>
 	/// <param name="fileSystem">File-system abstraction used to write the page files.</param>
-	public PageFileWriter(IFileSystem fileSystem) {
+	/// <param name="fileGate">
+	/// Interprocess gate that serialises the destructive prepare-and-write of one schema's page
+	/// directory against other clio processes in the same workspace, so a concurrent update-page cannot
+	/// read a <c>meta.json</c> that this get-page is in the middle of deleting and rewriting. Optional
+	/// with a <c>null</c> default only so the existing target-typed test instantiations across the
+	/// page-tool fixtures keep compiling; in production the container always supplies it.
+	/// </param>
+	public PageFileWriter(IFileSystem fileSystem, IInterprocessFileGate fileGate = null) {
 		_fileSystem = fileSystem;
+		_fileGate = fileGate;
 	}
 
 	/// <inheritdoc />
@@ -83,6 +93,34 @@ public sealed class PageFileWriter : IPageFileWriter {
 		}
 		string rootDir = _fileSystem.Path.Combine(anchor, ClioPagesDirectoryName);
 		string schemaDir = _fileSystem.Path.Combine(rootDir, schemaName);
+		// H-1 (ENG-95262): the recursive delete plus the three writes below are one indivisible unit of
+		// work on files another clio process (a CLI update-page, a second MCP call, a worker child) may be
+		// reading or rewriting at the same instant. Hold the schema's interprocess gate across the whole
+		// sequence — the sentinel lives in a sibling `.locks` directory precisely because the delete below
+		// would otherwise remove the lock file from under its own holder.
+		string lockFilePath = _fileGate is null
+			? null
+			: PageBaselineStore.ResolveSchemaLockFilePath(_fileSystem, rootDir, schemaName);
+		try {
+			return lockFilePath is null
+				? WritePageFilesUnderLock(response, schemaName, environmentName, uri, rootDir, schemaDir)
+				: _fileGate.Enter(lockFilePath,
+					() => WritePageFilesUnderLock(response, schemaName, environmentName, uri, rootDir, schemaDir));
+		} catch (TimeoutException ex) {
+			return new PageGetResponse {
+				Success = false,
+				Error = $"Failed to write page files: another clio operation is still using '{schemaDir}' ({ex.Message})."
+			};
+		}
+	}
+
+	private PageGetResponse WritePageFilesUnderLock(
+		PageGetResponse response,
+		string schemaName,
+		string environmentName,
+		string uri,
+		string rootDir,
+		string schemaDir) {
 		try {
 			if (_fileSystem.Directory.Exists(schemaDir)) {
 				_fileSystem.Directory.Delete(schemaDir, recursive: true);
@@ -103,11 +141,13 @@ public sealed class PageFileWriter : IPageFileWriter {
 		try {
 			_fileSystem.File.WriteAllText(bodyFile, response.Raw.Body);
 			_fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
-			_fileSystem.File.WriteAllText(metaFile, System.Text.Json.JsonSerializer.Serialize(new PageMetaFileModel {
+			// meta.json is the file every other page path reads, so it is written atomically: a reader
+			// outside this gate (an older clio, a foreign tool) must never observe a truncated prefix.
+			PageBaselineStore.WriteMetaAtomically(_fileSystem, metaFile, new PageMetaFileModel {
 				FetchedAt = fetchedAt,
 				Page = response.Page,
 				Baseline = baseline
-			}));
+			});
 		} catch (Exception ex) {
 			return new PageGetResponse {
 				Success = false,

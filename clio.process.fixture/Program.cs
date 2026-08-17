@@ -1,9 +1,12 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Clio.ProcessFixture;
 
 const string holdPipesArgument = "--hold-inherited-pipes";
 const string spawnDescendantArgument = "--spawn-inherited-handle-descendant";
+const string selfPromotingWorkerArgument = "--self-promote-and-spawn-descendant";
+const string spawnSelfPromotingWorkerArgument = "--spawn-self-promoting-worker";
 const string growDirectoryArgument = "--grow-directory-with-inherited-pipes";
 const string spawnGrowingDescendantArgument = "--spawn-growing-inherited-handle-descendant";
 const string overflowOutputArgument = "--overflow-output-with-inherited-handle-descendant";
@@ -21,6 +24,32 @@ if (args.Length == 2 && string.Equals(args[0], growDirectoryArgument, StringComp
 	Directory.CreateDirectory(args[1]);
 	await File.WriteAllBytesAsync(Path.Combine(args[1], "late-growth.bin"), new byte[4096]);
 	await Task.Delay(TimeSpan.FromSeconds(30));
+	return 0;
+}
+
+// Stands in for a contained MCP worker (ENG-95262 Stage 2). It does, in this order, exactly what a real
+// worker does at startup: promote itself to its own process-group leader, arm parent-death signalling,
+// and only then spawn a descendant. The descendant is spawned as the FIRST observable act so a Windows
+// containment that assigned the job AFTER the process was already running would leak it, and the test
+// would see that leak instead of passing around it.
+if (args.Length == 3 && string.Equals(args[0], selfPromotingWorkerArgument, StringComparison.Ordinal)) {
+	PromoteToOwnProcessGroup();
+	ArmParentDeathContainment();
+	using Process contained = StartPipeHoldingDescendant();
+	await WriteProcessIdentityAsync(args[1], Process.GetCurrentProcess());
+	await WriteProcessIdentityAsync(args[2], contained);
+	await WriteOutputAsync("worker-ready");
+	await Task.Delay(TimeSpan.FromSeconds(60));
+	return 0;
+}
+
+// The intermediate parent for the parent-death case: it starts a self-promoting worker and then does
+// nothing, so a test can force-kill it and watch whether the worker and the worker's own descendant go
+// with it. It is deliberately dumb — the containment being proven lives in the worker, not here.
+if (args.Length == 3 && string.Equals(args[0], spawnSelfPromotingWorkerArgument, StringComparison.Ordinal)) {
+	using Process worker = StartPipeHoldingDescendant(selfPromotingWorkerArgument, args[1], args[2]);
+	await WriteOutputAsync("intermediate-ready");
+	await Task.Delay(TimeSpan.FromSeconds(60));
 	return 0;
 }
 
@@ -89,3 +118,49 @@ static async Task WriteOutputAsync(string output) {
 
 static string GetCurrentExecutablePath() => Environment.ProcessPath
 	?? throw new InvalidOperationException("The fixture executable path is unavailable.");
+
+// setpgid(0, 0) makes this process its own group leader, so every descendant it starts from now on
+// inherits that group and one kill(-pid) reaches all of them. Without it the process would still be in
+// the LAUNCHING shell's group, and a group kill would hit the shell and its siblings.
+static void PromoteToOwnProcessGroup() {
+	if (OperatingSystem.IsWindows()) {
+		return;
+	}
+	NativeMethods.setpgid(0, 0);
+}
+
+// Parent-death containment, the half a parent cannot install for itself: a SIGKILLed parent runs no
+// code at all. getppid is polled rather than using PR_SET_PDEATHSIG because that call does not exist on
+// macOS, and the comparison is against the ORIGINAL parent rather than against 1, because on Linux a
+// reparented orphan is adopted by the nearest subreaper (a container init, a service manager) and never
+// reaches process 1. The reaction is a group kill, not a self-kill: this process has children of its
+// own, and "both disappear" is the requirement.
+static void ArmParentDeathContainment() {
+	if (OperatingSystem.IsWindows()) {
+		return;
+	}
+	int originalParent = NativeMethods.getppid();
+	Thread watcher = new(() => {
+		while (NativeMethods.getppid() == originalParent) {
+			Thread.Sleep(100);
+		}
+		NativeMethods.killpg(0, NativeMethods.SignalKill);
+	}) {
+		IsBackground = true
+	};
+	watcher.Start();
+}
+
+internal static class NativeMethods {
+
+	internal const int SignalKill = 9;
+
+	[DllImport("libc", SetLastError = true)]
+	internal static extern int setpgid(int pid, int pgid);
+
+	[DllImport("libc", SetLastError = true)]
+	internal static extern int getppid();
+
+	[DllImport("libc", SetLastError = true)]
+	internal static extern int killpg(int pgrp, int sig);
+}

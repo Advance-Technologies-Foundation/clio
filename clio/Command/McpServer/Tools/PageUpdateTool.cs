@@ -68,7 +68,8 @@ public sealed class PageUpdateTool(
 				cancellationToken);
 		if (earlyFailure != null)
 			return earlyFailure;
-		(string metaFilePath, bool baselineArmed) = pageBaselineGuard.TryArm(options, args.OutputDirectory);
+		(string metaFilePath, bool baselineArmed, string baselineWarning) =
+			pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -81,12 +82,17 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
-		if (baselineArmed && response.Success && !options.DryRun)
-			pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
+		// A failed baseline refresh must never fail a save that already landed on the server, so both the
+		// discovery and the refresh diagnostics travel on the response's warning channel (ENG-95262 AC-02).
+		string refreshWarning = baselineArmed && response.Success && !options.DryRun
+			? pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response)
+			: null;
 		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
-			MergeWarnings(validationWarnings, response.Warnings),
-			lintWarnings);
+			MergeWarnings(
+				MergeWarnings(validationWarnings, response.Warnings),
+				lintWarnings),
+			BaselineWarnings(baselineWarning, refreshWarning));
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
 	}
@@ -281,6 +287,20 @@ public sealed class PageUpdateTool(
 			.Select(PageBodyAstLinter.FormatFinding)
 			.ToArray();
 		return (null, warnings);
+	}
+
+	// Collects the non-empty baseline diagnostics (discovery + post-save refresh) into the shape the
+	// warning merge expects. They are warnings and not errors on purpose: the Creatio save has already
+	// succeeded by the time either can fail, so failing the response would misreport a landed write.
+	private static IReadOnlyList<string> BaselineWarnings(string discoveryWarning, string refreshWarning) {
+		List<string> warnings = [];
+		if (!string.IsNullOrWhiteSpace(discoveryWarning)) {
+			warnings.Add(discoveryWarning);
+		}
+		if (!string.IsNullOrWhiteSpace(refreshWarning)) {
+			warnings.Add(refreshWarning);
+		}
+		return warnings;
 	}
 
 	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {

@@ -26,7 +26,11 @@ a budget expiry never leaves a half-installed environment
 ## Acceptance Criteria
 - [ ] AC-01 — Bounded by terminal stage; a mid-deploy budget expiry never leaves a half-installed environment (TC-E-801).
 - [ ] AC-02 — ClioRing contract suite green; byte/schema parity on the committed stage-event fixture; unknown-field tolerance and ordered replay preserved.
-- [ ] AC-03 — `dotnet publish clio-ring/ClioRing.Desktop -r win-x64 -p:PublishAot=true` green; no new IL2026/IL3050 (TC-C-801).
+- [x] AC-03 — **DONE 2026-08-17** (ADR §2.4): publish exits 0 in 53.3 s, zero IL2026/IL3050/IL2104/IL3053,
+      and the output is a real native image — `clio-ring.exe` 30.8 MB with no managed `clio-ring.dll` beside it.
+      Re-run this whenever the contract changes; it is cheap and it is the only check that sees source-generated
+      serialization paths. Note the host requirement: it needs the MSVC toolchain, which ts1-core-dev04 cannot
+      install (ESET TLS interception breaks the VS catalog download).
 - [ ] AC-04 — No agent, test, probe, watcher, retry or startup path performs a real deploy/uninstall without an explicit user gesture and a disposable target.
 - [ ] AC-05 — **Lost child:** a child killed mid-deploy, and one silent past the stage-event timeout, each produce an explicit indeterminate error naming the last stage reached — never a success, never an automatic retry (TC-E-802).
 - [ ] AC-06 — **Post-terminal grace:** a child that emits its terminal stage then hangs is killed after the grace window and the tool result is the terminal stage, not an error (TC-E-803).
