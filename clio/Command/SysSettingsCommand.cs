@@ -105,8 +105,7 @@ namespace Clio.Command
 		private void EnsureExistingSettingIsBinary(string code){
 			(_, string existingType) = _sysSettingsManager.GetAllUsersDefaultWithType(code);
 			if (existingType is null) {
-				throw new ArgumentException(
-					$"Sys-setting '{code}' was not found. Create it as a Binary setting before uploading a file.");
+				throw new ArgumentException(DescribeUnreadableBinaryTarget(code));
 			}
 			if (!string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal)) {
 				throw new ArgumentException(
@@ -289,8 +288,7 @@ namespace Clio.Command
 			string value;
 			if (hasFilePath) {
 				if (existingType is null) {
-					throw new ArgumentException(
-						$"Sys-setting '{args.Code}' was not found. Create it as a Binary setting before uploading a file.");
+					throw new ArgumentException(DescribeUnreadableBinaryTarget(args.Code));
 				}
 				if (!targetIsBinary) {
 					throw new ArgumentException(
@@ -525,6 +523,11 @@ namespace Clio.Command
 				InvalidOperationException invEx => invEx.Message,
 				_ => $"Failed {operationLabel}."
 			};
+		}
+
+		private static string DescribeUnreadableBinaryTarget(string code) {
+			return $"Sys-setting '{code}' was not found or is not readable by the current user. Uploading a " +
+				"file requires an existing, readable Binary setting.";
 		}
 	}
 }

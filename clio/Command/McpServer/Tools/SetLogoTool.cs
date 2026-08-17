@@ -11,10 +11,10 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool that applies the product logos from local image files — one Binary sys-setting per slot —
-/// and binds the applied values into a package as Creatio data bindings so the logos ship with the
-/// package. Changes the look for all users, so it is annotated <c>Destructive=true</c>; re-running with
-/// the same files converges to the same state (<c>Idempotent=true</c>).
+/// MCP tool that applies the product logos and the browser-tab favicon from local image files — one Binary
+/// sys-setting per slot — and binds the applied values into a package as Creatio data bindings. Changes the
+/// look for all users, so it is annotated <c>Destructive=true</c>; re-running with the same files converges
+/// to the same state (<c>Idempotent=true</c>).
 /// </summary>
 public class SetLogoTool(
 	SetLogoCommand command,
@@ -33,42 +33,49 @@ public class SetLogoTool(
 			["configuration_logo"] = "configuration-logo",
 			["darkLogo"] = "dark-logo",
 			["dark_logo"] = "dark-logo",
+			["faviconImage"] = "favicon",
+			["favicon_image"] = "favicon",
 			["packageName"] = "package",
 			["package_name"] = "package",
 			["package-name"] = "package"
 		};
 
-	/// <summary>Applies the requested logo slots, binds them into the package, and returns a structured result.</summary>
+	/// <summary>Applies the requested images, binds them into the package, and returns a structured result.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
-	 Description("Apply the product logos on a registered environment from local image files and bind them " +
-		"into a package as data bindings so they ship with the package. Pass at least one of: logo (one file " +
-		"for every slot at once), login-logo (login page), menu-logo (main menu), configuration-logo " +
-		"(configuration page), dark-logo (the Freedom UI top panel — a dark surface, pass the light logo " +
-		"variant). A slot argument overrides logo for that slot, so one call can brand every slot and still " +
-		"give the dark panel its own file. The stock splash logo is suppressed automatically. When package is " +
+	 Description("Apply the product logos and the browser-tab favicon on a registered environment from local " +
+		"image files and bind them into a package as data bindings. Pass at " +
+		"least one of: logo (one file for every slot at once), login-logo (login page), menu-logo (main menu), " +
+		"configuration-logo (configuration page), dark-logo (the Freedom UI top panel — a dark surface, pass " +
+		"the light logo variant), favicon (the browser tab). A slot argument overrides logo for that slot, so " +
+		"one call can brand every slot and still give the dark panel its own file. The stock splash logo is " +
+		"suppressed automatically, and a favicon also turns on its UseFaviconFromSysSettings gate. " +
+		"Every file must be a supported image format (" + SetLogoCommand.LogoImageFormats + "; the favicon " +
+		"also accepts ico) — a file with another extension is refused before anything is written to that slot. " +
+		"When package is " +
 		"omitted, the environment's CurrentPackageId system setting decides where the bindings land. The logos " +
-		"change for all users and cannot be automatically reverted — warn the user first. A refused slot " +
-		"returns success: false even though the accepted slots stayed applied and bound, so read applied " +
+		"change for all users and cannot be automatically reverted — warn the user first. A refused image " +
+		"returns success: false even though the accepted ones stayed applied and bound, so read applied " +
 		"and bound before retrying. Read get-guidance branding first.")]
 	public SetLogoToolResult SetLogo(
-		[Description("Parameters: environment-name (required); at least one of logo (all slots), login-logo, menu-logo, configuration-logo, dark-logo (local image paths); package (optional, the environment's CurrentPackageId when omitted).")]
+		[Description("Parameters: environment-name (required); at least one of logo (all slots), login-logo, menu-logo, configuration-logo, dark-logo, favicon (local image paths); package (optional, the environment's CurrentPackageId when omitted).")]
 		[Required] SetLogoArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, logo, login-logo, menu-logo, configuration-logo, dark-logo, package.");
+			"Valid: environment-name, logo, login-logo, menu-logo, configuration-logo, dark-logo, favicon, package.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return SetLogoToolResult.Failure(aliasError);
 		}
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return SetLogoToolResult.Failure("environment-name is required and cannot be empty.");
 		}
-		bool anySlot = !string.IsNullOrWhiteSpace(args.Logo)
+		bool anyImage = !string.IsNullOrWhiteSpace(args.Logo)
 			|| !string.IsNullOrWhiteSpace(args.LoginLogo)
 			|| !string.IsNullOrWhiteSpace(args.MenuLogo)
 			|| !string.IsNullOrWhiteSpace(args.ConfigurationLogo)
-			|| !string.IsNullOrWhiteSpace(args.DarkLogo);
-		if (!anySlot) {
-			return SetLogoToolResult.Failure(SetLogoCommand.NoLogoError);
+			|| !string.IsNullOrWhiteSpace(args.DarkLogo)
+			|| !string.IsNullOrWhiteSpace(args.Favicon);
+		if (!anyImage) {
+			return SetLogoToolResult.Failure(SetLogoCommand.NoImageError);
 		}
 		SetLogoOptions options = new() {
 			Environment = args.EnvironmentName,
@@ -77,6 +84,7 @@ public class SetLogoTool(
 			MenuLogo = args.MenuLogo,
 			ConfigurationLogo = args.ConfigurationLogo,
 			DarkLogo = args.DarkLogo,
+			Favicon = args.Favicon,
 			PackageName = args.Package
 		};
 		return Execute(options);
@@ -127,8 +135,12 @@ public sealed record SetLogoArgs(
 	[property: Description("Local image file for the logo on the dark Freedom UI top panel (CrtAppToolbarLogo). Pass the light variant of the logo here — a logo drawn for a white background is hard to read on the dark panel.")]
 	string? DarkLogo = null,
 
+	[property: JsonPropertyName("favicon")]
+	[property: Description("Local image file for the browser-tab icon (FaviconImage). Pass a square icon — clio uploads the file as it is, without resizing or converting it. Accepted formats: " + SetLogoCommand.FaviconImageFormats + "; another extension is refused. Never taken from logo.")]
+	string? Favicon = null,
+
 	[property: JsonPropertyName("package")]
-	[property: Description("Package that receives the logo data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.")]
+	[property: Description("Package that receives the branding data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.")]
 	string? Package = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
