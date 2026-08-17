@@ -86,7 +86,8 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 	public ClassicListColumnParseResult ParseColumns(IEnumerable<string> schemaBodies) {
 		ArgumentNullException.ThrowIfNull(schemaBodies);
 		var columns = new List<string>();
-		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		// Doubles as the seen-set: every path recorded in `columns` gets an origin entry and vice versa, so a
+		// separate HashSet would only be a second copy of the same key set kept in step by hand.
 		var origins = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		int declaringMethodCount = 0;
 		int subtractiveLayerCount = 0;
@@ -99,37 +100,49 @@ internal sealed class ClassicListColumnParser : IClassicListColumnParser {
 		int unparsedLayerCount = parsed.Length - schemas.Length;
 		int unanchoredLayerCount = parsed.Count(layer => layer.Schema is null && !layer.SyntaxError);
 		foreach (string methodName in ColumnMethodNames) {
-			Node[] methods = schemas
-				.Select(schema => FindFunctionProperty(schema, methodName))
-				.Where(method => method is not null)
-				.ToArray();
+			Node[] methods = FindEffectiveColumnMethods(schemas, methodName);
 			if (methods.Length == 0) {
 				continue;
 			}
 			declaringMethodCount++;
-			int firstEffectiveBody = methods.Length - 1;
-			while (firstEffectiveBody > 0 && CallsParent(methods[firstEffectiveBody])) {
-				firstEffectiveBody--;
-			}
-			for (int methodIndex = firstEffectiveBody; methodIndex < methods.Length; methodIndex++) {
-				if (RemovesComposedColumns(methods[methodIndex])) {
-					subtractiveLayerCount++;
-				}
-				foreach (string path in FindStaticColumnPaths(methods[methodIndex])) {
-					// Order and membership stay exactly as before — first declaration wins, getGridDataColumns
-					// first. What changes is that a path the SECOND method also declares is still recorded here
-					// rather than dropped with the duplicate, so `both` is distinguishable from `loaded only`.
-					if (seen.Add(path)) {
-						columns.Add(path);
-					}
-					origins[path] = origins.TryGetValue(path, out string existing) && existing != methodName
-						? BothColumnMethods
-						: methodName;
-				}
-			}
+			subtractiveLayerCount += methods.Count(RemovesComposedColumns);
+			RecordColumnPaths(methods, methodName, columns, origins);
 		}
 		return new ClassicListColumnParseResult(columns, unparsedLayerCount, unanchoredLayerCount, origins,
 			declaringMethodCount == ColumnMethodNames.Length, subtractiveLayerCount);
+	}
+
+	// The effective slice of one column method's overrides: the walk down stops at the most-derived layer that
+	// does NOT compose its parent, because a full override makes everything below it unreachable.
+	private static Node[] FindEffectiveColumnMethods(ObjectExpression[] schemas, string methodName) {
+		Node[] methods = schemas
+			.Select(schema => FindFunctionProperty(schema, methodName))
+			.Where(method => method is not null)
+			.ToArray();
+		if (methods.Length == 0) {
+			return [];
+		}
+		int firstEffectiveBody = methods.Length - 1;
+		while (firstEffectiveBody > 0 && CallsParent(methods[firstEffectiveBody])) {
+			firstEffectiveBody--;
+		}
+		return methods[firstEffectiveBody..];
+	}
+
+	// Order and membership stay exactly as before — first declaration wins, getGridDataColumns first. What the
+	// origin map adds is that a path the SECOND method also declares is still recorded rather than dropped with
+	// the duplicate, so `both` is distinguishable from `loaded only`.
+	private static void RecordColumnPaths(IEnumerable<Node> methods, string methodName, List<string> columns,
+		IDictionary<string, string> origins) {
+		foreach (Node method in methods) {
+			foreach (string path in FindStaticColumnPaths(method)) {
+				bool alreadyDeclared = origins.TryGetValue(path, out string existing);
+				if (!alreadyDeclared) {
+					columns.Add(path);
+				}
+				origins[path] = alreadyDeclared && existing != methodName ? BothColumnMethods : methodName;
+			}
+		}
 	}
 
 	/// <inheritdoc />
