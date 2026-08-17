@@ -56,6 +56,12 @@ public sealed class TelemetryService : ITelemetryService
 	/// <summary>Canonical session-start event; anchors every elapsed-time measurement for a run.</summary>
 	internal const string WorkflowStartedEvent = "workflow_started";
 
+	/// <summary>Developer approval of the presented plan; the span a build is measured from.</summary>
+	private const string PlanApprovedEvent = "plan_approved";
+
+	/// <summary>Start of execution; the narrowest span a terminal stage prefers to report.</summary>
+	private const string BuildStartedEvent = "build_started";
+
 	/// <summary>
 	/// Version of the persisted event payload shape. Bump when attributes are added or renamed
 	/// so downstream consumers can parse events without relying on their creation date.
@@ -113,8 +119,8 @@ public sealed class TelemetryService : ITelemetryService
 		"plan_skipped",
 		"plan_blocked",
 		"plan_changes_requested",
-		"plan_approved",
-		"build_started",
+		PlanApprovedEvent,
+		BuildStartedEvent,
 		"work_item_completed",
 		"workflow_completed",
 		"workflow_failed",
@@ -374,11 +380,9 @@ public sealed class TelemetryService : ITelemetryService
 		foreach (char character in value.Trim()) {
 			if (char.IsAsciiLetterOrDigit(character)) {
 				slug.Append(char.ToLowerInvariant(character));
-			} else if (character is '.' or '_' or '-' or ' ') {
+			} else if (character is ('.' or '_' or '-' or ' ') && slug.Length > 0 && slug[^1] != '-') {
 				// Collapse runs of separators so "GitHub  Copilot-CLI" and "github-copilot-cli" agree.
-				if (slug.Length > 0 && slug[^1] != '-') {
-					slug.Append('-');
-				}
+				slug.Append('-');
 			}
 		}
 		return slug.ToString().TrimEnd('-');
@@ -545,13 +549,13 @@ public sealed class TelemetryService : ITelemetryService
 			// produce, how long the developer took to approve it, and how long the build then ran.
 			"plan_presented" => WorkflowStartedEvent,
 			"plan_blocked" => WorkflowStartedEvent,
-			"plan_approved" => FirstKnown(sessionState, "plan_presented"),
-			"build_started" => FirstKnown(sessionState, "plan_approved"),
+			PlanApprovedEvent => FirstKnown(sessionState, "plan_presented"),
+			BuildStartedEvent => FirstKnown(sessionState, PlanApprovedEvent),
 			// Terminal events report the NARROWEST span available, so a run that failed during the build
 			// reports the build duration rather than the whole session (total elapsed is carried
 			// separately as duration_since_session_start_ms).
-			"workflow_completed" => PreferredKnown(sessionState, "build_started", "plan_approved", WorkflowStartedEvent),
-			"workflow_failed" => PreferredKnown(sessionState, "build_started", "plan_approved", WorkflowStartedEvent),
+			"workflow_completed" => PreferredKnown(sessionState, BuildStartedEvent, PlanApprovedEvent, WorkflowStartedEvent),
+			"workflow_failed" => PreferredKnown(sessionState, BuildStartedEvent, PlanApprovedEvent, WorkflowStartedEvent),
 			"changes_applied" => FirstKnown(sessionState, "changes_requested"),
 			_ => null
 		};
