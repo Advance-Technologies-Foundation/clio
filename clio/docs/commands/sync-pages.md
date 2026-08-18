@@ -35,9 +35,7 @@ When `validate` is `true` (the default), the body is checked client-side before 
     it for the missing required `values`.
   - **Warned** — no type anywhere while `values` carries element properties; two DIFFERENT types (the
     element still renders, as the `values` copy); an operation whose letter case does not match the
-    differ's exact-case dispatch; and a `crt.Button` inserted into `parentName: "Scaffold"`,
-    `propertyName: "actions"`, which saves but never renders (ENG-95429) — place it in a page container's
-    `items` with a `layoutConfig` instead.
+    differ's exact-case dispatch.
   - **Not enforced** — the same type-placement defect breaks **web** pages identically and is not checked
     there, and `validate: false` skips these checks along with every other one, re-opening the
     silent-persist path; do not use it to get past a rejection.

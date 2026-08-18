@@ -71,14 +71,6 @@ name instead of trying to edit a non-existent local `insert`.
     renders, as the `values` copy. Two identical types are accepted silently.
   - **Warned — an operation whose letter case does not match** the differ's exact-case dispatch
     (`"Insert"`): the whole operation is discarded, so it authors nothing.
-  - **Warned — a `crt.Button` inserted into the Scaffold `actions` slot** (`parentName: "Scaffold"`,
-    `propertyName: "actions"`). ENG-95429: the write succeeds and the catalog describes the slot as holding
-    action items, but the button never appears in the Creatio Mobile app — verified on a stand, where in the
-    same page fields in a container's `items` rendered and buttons in `Scaffold`/`actions` did not. Place it
-    as an item of a page container instead (`propertyName: "items"`, on a container the page or its template
-    actually declares — confirm the name with `get-page`) and give it a `layoutConfig`; that is what the
-    Freedom UI mobile designer emits. Advisory rather than blocking because it is not yet settled whether
-    the slot is a guidance defect or a rendering one, and a hard block would mask the latter.
   - If an offending entry came back from `get-page`, the page already carries the defect — correct it in the
     body you send back.
   - **Not enforced:** the same type-placement defect breaks **web** pages identically and is not checked

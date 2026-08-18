@@ -32,11 +32,6 @@ public static class SchemaValidationService
 	private const string PathPropertyName = "path";
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
-	private const string ParentNamePropertyName = "parentName";
-	private const string PropertyNamePropertyName = "propertyName";
-	private const string ScaffoldElementName = "Scaffold";
-	private const string ScaffoldActionsSlot = "actions";
-	private const string ButtonComponentType = "crt.Button";
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -306,9 +301,6 @@ public static class SchemaValidationService
 		SchemaValidationResult typePlacementResult = ValidateMobileInsertTypePlacement(body);
 		if (!typePlacementResult.IsValid) errors.AddRange(typePlacementResult.Errors);
 		warnings.AddRange(typePlacementResult.Warnings);
-
-		SchemaValidationResult buttonSlotResult = ValidateMobileButtonSlotPlacement(body);
-		warnings.AddRange(buttonSlotResult.Warnings);
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
@@ -787,80 +779,6 @@ public static class SchemaValidationService
 				+ "render and the element stays invisible even though the write reports success. Add "
 				+ $"\"{TypePropertyName}\" to \"values\" (use get-component-info schema-type=mobile to pick the component).");
 		}
-	}
-
-	/// <summary>
-	/// Warns when a mobile page inserts a <c>crt.Button</c> into the Scaffold's <c>actions</c> slot — the placement
-	/// that persists successfully and then does not render (ENG-95429).
-	/// </summary>
-	/// <remarks>
-	/// <para>
-	/// This rule is EMPIRICAL, not derived from the differ. The catalog describes <c>Scaffold.actions</c> as
-	/// "right-side action items (save button, search button)" and every mobile template declares the slot, so the
-	/// shape looks valid on paper and no structural check fires on it — which is exactly why the failure was
-	/// mis-triaged. Verified on a stand instead: in ONE page body, fields inserted into a container's <c>items</c>
-	/// render while buttons inserted into <c>Scaffold</c>/<c>actions</c> do not, and a button added through the
-	/// Freedom UI mobile designer lands in a page container's <c>items</c> with a <c>layoutConfig</c>. Two
-	/// independent coding agents chose the non-rendering slot unprompted, because the catalog wording steers them
-	/// there.
-	/// </para>
-	/// <para>
-	/// It is a WARNING, deliberately. Two readings of the evidence are still open: either the catalog/guidance is
-	/// misleading (and the slot never renders an authored button), or the template's own inherited Save button DOES
-	/// render from <c>actions</c> while an inserted one does not — which would be a rendering defect that a hard
-	/// block would mask rather than fix. Steering the author is safe under both readings; refusing the write is not.
-	/// Scope is <c>insert</c> only: a <c>set</c> may legitimately patch an element the template already owns in that
-	/// slot, and nothing has been verified about that case.
-	/// </para>
-	/// </remarks>
-	/// <param name="body">Plain-JSON mobile page body.</param>
-	/// <returns>A <see cref="SchemaValidationResult"/> that is always valid and carries one warning per offending insert.</returns>
-	public static SchemaValidationResult ValidateMobileButtonSlotPlacement(string body) =>
-		ScanMobileViewConfigDiffEntries(body, ValidateMobileButtonSlotPlacementEntry);
-
-	/// <summary>
-	/// Applies the button-slot rule to one <c>viewConfigDiff</c> entry. Every comparison — operation, parent alias,
-	/// slot key and component type — is <see cref="StringComparison.Ordinal"/>, matching the differ: it dispatches
-	/// operations on an exact-case switch, resolves the parent through an ordinal alias store, and reads the slot
-	/// through a Newtonsoft <c>JObject</c> indexer. A differently-cased spelling never reaches the slot at all, so
-	/// it is a different defect and not this rule's to report.
-	/// </summary>
-	private static void ValidateMobileButtonSlotPlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
-		// Exact-case operation, matching the differ's switch and the type-placement rule. Going through the
-		// case-INsensitive IsOperation here would contradict the sibling rule: a mis-cased operation is discarded
-		// wholesale, so telling its author where to move the button is advice that cannot change the outcome.
-		if (entry.ValueKind != JsonValueKind.Object
-			|| !string.Equals(
-				TryGetStringProperty(entry, OperationPropertyName, out string operation) ? operation : null,
-				InsertOperationName, StringComparison.Ordinal)) {
-			return;
-		}
-		// The type is read from `values` ONLY — the copy the differ actually applies. Resolving it through the
-		// lenient GetMobileEntryType (which falls back to entry.type) would make this rule fire on the very body
-		// the type-placement rule already blocks, warning about the placement of a button the differ never creates.
-		// One defect, one diagnostic — and on the write path warnings are dropped when errors exist, so the
-		// duplicate would be invisible there anyway and would resurface only after the author fixed the type.
-		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values)
-			|| values.ValueKind != JsonValueKind.Object
-			|| !TryGetStringProperty(values, TypePropertyName, out string valuesType)
-			|| !string.Equals(valuesType, ButtonComponentType, StringComparison.Ordinal)) {
-			return;
-		}
-		if (!TryGetStringProperty(entry, ParentNamePropertyName, out string parentName)
-			|| !string.Equals(parentName, ScaffoldElementName, StringComparison.Ordinal)
-			|| !TryGetStringProperty(entry, PropertyNamePropertyName, out string slot)
-			|| !string.Equals(slot, ScaffoldActionsSlot, StringComparison.Ordinal)) {
-			return;
-		}
-		result.Warnings.Add(
-			$"{DescribeViewConfigDiffEntry(entry, index)} inserts a {ButtonComponentType} into "
-			+ $"\"{ParentNamePropertyName}\": \"{ScaffoldElementName}\", \"{PropertyNamePropertyName}\": \"{ScaffoldActionsSlot}\". "
-			+ "An inserted button does NOT render there on the Creatio Mobile app even though the write succeeds "
-			+ "(ENG-95429). Place it as an item of a page container instead — "
-			+ $"\"{PropertyNamePropertyName}\": \"items\" on a container THIS page or its template actually declares "
-			+ "(confirm the name with get-page; inserting into a parent that does not exist is silently dropped by "
-			+ "the differ and fails the same way) — and give it a \"layoutConfig\", which is what the Freedom UI "
-			+ "mobile designer emits.");
 	}
 
 	/// <summary>
