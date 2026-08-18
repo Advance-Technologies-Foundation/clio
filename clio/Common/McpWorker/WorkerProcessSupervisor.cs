@@ -458,12 +458,25 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 			// The ceiling is checked BEFORE the slot, so a refusal never disturbs the pool. Both are then
 			// released together on every failure path below — a counter that drifts out of step with the
 			// semaphore either leaks capacity or refuses forever, and neither shows up in a green suite.
+			//
+			// The two rejections are DIFFERENT conditions and must not share an exception. The ceiling being
+			// full means every long operation this host supports is already running: that clears in minutes
+			// to an hour, so queueing could only spend the caller's patience on the way to the same answer,
+			// and WorkerStickyCapacityExceededException says so with a number the caller can act on. The
+			// shared pool being full means ORDINARY per-call reads are momentarily using every slot, which
+			// clears in seconds and has nothing to do with the sticky limit — reporting it as "all N long
+			// operations are in use" would assert a condition a snapshot taken at that instant flatly
+			// contradicts, and tell the operator to wait for something that does not exist. So it queues
+			// under the ordinary bound instead, and only a wait that outlasts the bound is refused, with the
+			// exception whose text is actually true.
 			if (!TryReserveStickySlot()) {
 				throw new WorkerStickyCapacityExceededException(StickyConcurrencyCap, ConcurrencyCap);
 			}
-			if (!pool.TryAcquireImmediately()) {
+			try {
+				await pool.AcquireAsync(QueueWaitBound, cancellationToken).ConfigureAwait(false);
+			} catch {
 				ReleaseStickySlot();
-				throw new WorkerStickyCapacityExceededException(StickyConcurrencyCap, ConcurrencyCap);
+				throw;
 			}
 		} else {
 			await pool.AcquireAsync(QueueWaitBound, cancellationToken).ConfigureAwait(false);

@@ -183,6 +183,18 @@ internal sealed class TerminalStageWatch {
 		}
 	}
 
+	// A terminal event is only terminal if its outcome is one this contract defines. ClioRunCompleted.Outcome
+	// is declared non-nullable, but System.Text.Json does not enforce that — an emitter that omits the field
+	// deserialises to null, and a null is not "failure", so an unvalidated read would answer success:true for
+	// a deploy whose outcome is genuinely unknown. The same holds for any token a newer or buggier emitter
+	// invents. §3.3 makes "there is no cancelled outcome" load-bearing, which makes an out-of-vocabulary
+	// value exactly the case that must NOT be mapped to success: it is evidence of life, not of completion,
+	// so the run stays unterminated and resolves through the indeterminate path.
+	private static bool IsKnownRunOutcome(string outcome) =>
+		outcome is ClioStageEventContract.RunOutcomes.Success
+			or ClioStageEventContract.RunOutcomes.Failure
+			or ClioStageEventContract.RunOutcomes.SuccessWithWarnings;
+
 	private static string DescribeAbsentStage(bool manifestObserved) =>
 		manifestObserved
 			? "none — the run announced its stage manifest but no stage ever started"
@@ -224,7 +236,8 @@ internal sealed class TerminalStageWatch {
 					_lastStageDescription = Describe(stage);
 					break;
 				case ClioStageEventContract.EventTypes.RunCompleted
-					when stageEvent.RunCompleted is { } completed && stageEvent.RunId == _rootRunId:
+					when stageEvent.RunCompleted is { } completed && stageEvent.RunId == _rootRunId
+						&& IsKnownRunOutcome(completed.Outcome):
 					if (_terminalObserved) {
 						// A second terminal event for the same run cannot make the first one less true, and
 						// re-arming the grace would let a chatty child extend it indefinitely.

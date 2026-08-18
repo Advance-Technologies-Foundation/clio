@@ -62,8 +62,22 @@ public sealed class WorkerTerminalStageProtocolTests {
 	/// </summary>
 	private static readonly TimeSpan AssertionTimeout = TimeSpan.FromSeconds(30);
 
-	/// <summary>The silence bound the fixture runs with — the 300 s default, scaled down to a test.</summary>
-	private static readonly TimeSpan SilenceBound = TimeSpan.FromMilliseconds(400);
+	/// <summary>
+	/// The silence bound for every test whose subject is NOT expiry — deliberately generous.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="TerminalStageWatch"/> starts its silence clock when it is CONSTRUCTED, which is before
+	/// the transport is connected and the relay opened. So this bound is charged the SDK client
+	/// construction, the initialize round trip, the tools/call dispatch and the child's first emit — none
+	/// of which this fixture is measuring. At the tight expiry value that budget is a coin flip on a cold
+	/// assembly under three-way fixture parallelism, and it would flip the HAPPY-PATH tests into spurious
+	/// indeterminates. The shipped default is 300 s and swallows the handshake completely; only a test
+	/// that scales it down can be bitten, so only the tests about expiry take that risk.
+	/// </remarks>
+	private static readonly TimeSpan SilenceBound = TimeSpan.FromSeconds(20);
+
+	/// <summary>The scaled-down bound used ONLY by the tests whose subject is the silence timer expiring.</summary>
+	private static readonly TimeSpan ExpirySilenceBound = TimeSpan.FromMilliseconds(400);
 
 	/// <summary>The post-terminal exit grace the fixture runs with — the 30 s default, scaled down.</summary>
 	private static readonly TimeSpan ExitGrace = TimeSpan.FromMilliseconds(400);
@@ -147,10 +161,12 @@ public sealed class WorkerTerminalStageProtocolTests {
 	[Category("Unit")]
 	[Description("A child that goes silent past the stage-event bound produces an explicit INDETERMINATE error naming the last stage reached — never a success, never the retry-safe timeout class, and never an automatic retry.")]
 	public async Task DispatchAsync_ShouldReportIndeterminateNamingTheLastStage_WhenTheChildGoesSilent() {
-		// Arrange
-		using StageStreamingWorkerChild worker = ArrangeWorker(ChildBehaviour.FallsSilentThenBurstsAgain);
+		// Arrange — expiry IS the subject here, so the scaled-down bound is used on both the dispatcher and
+		// the child. Everywhere else it is generous; see SilenceBound.
+		using StageStreamingWorkerChild worker =
+			ArrangeWorker(ChildBehaviour.FallsSilentThenBurstsAgain, ExpirySilenceBound);
 		RecordingClientSession client = new();
-		McpWorkerCallDispatcher sut = CreateSut();
+		McpWorkerCallDispatcher sut = CreateSut(silenceBound: ExpirySilenceBound);
 
 		// Act
 		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
@@ -181,10 +197,11 @@ public sealed class WorkerTerminalStageProtocolTests {
 	[Category("Unit")]
 	[Description("On silence-timer expiry the indeterminate error is composed and reported BEFORE the child is killed, so the last stage it reached is captured — killing first would close the pipes and answer with a relay failure that names no stage at all.")]
 	public async Task DispatchAsync_ShouldReportBeforeKilling_WhenTheSilenceBoundExpires() {
-		// Arrange
-		using StageStreamingWorkerChild worker = ArrangeWorker(ChildBehaviour.FallsSilentThenBurstsAgain);
+		// Arrange — expiry IS the subject here; see the sibling test above for why the bound is paired.
+		using StageStreamingWorkerChild worker =
+			ArrangeWorker(ChildBehaviour.FallsSilentThenBurstsAgain, ExpirySilenceBound);
 		RecordingClientSession client = new();
-		McpWorkerCallDispatcher sut = CreateSut();
+		McpWorkerCallDispatcher sut = CreateSut(silenceBound: ExpirySilenceBound);
 
 		// Act
 		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
@@ -353,6 +370,52 @@ public sealed class WorkerTerminalStageProtocolTests {
 	}
 
 	[Test]
+	[Description("A run-completed carrying a DIFFERENT runId is a NESTED run finishing, not this one: the parent must keep waiting and ultimately report indeterminate, never answer a deploy that is still installing.")]
+	public async Task DispatchAsync_ShouldNotTreatANestedRunsTerminalEventAsItsOwn_WhenTheRunIdDiffers() {
+		// Arrange — expiry is the subject once the nested event is correctly ignored, so the bound is the
+		// scaled-down one on both sides.
+		using StageStreamingWorkerChild worker =
+			ArrangeWorker(ChildBehaviour.EmitsANestedTerminalEventThenFallsSilent, ExpirySilenceBound);
+		RecordingClientSession client = new();
+		McpWorkerCallDispatcher sut = CreateSut(silenceBound: ExpirySilenceBound);
+
+		// Act
+		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
+
+		// Assert
+		JsonNode structured = ReadStructured(result);
+		structured?["outcome"]?.GetValue<string>().Should().Be("indeterminate",
+			because: "the terminal event belonged to another run, so this deploy never reported its own outcome and the honest answer is that we do not know — accepting a nested run's completion would answer a deploy that is still installing");
+		result.IsError.Should().BeTrue(
+			because: "an unknown outcome on a possibly half-installed environment must not reach the caller as a success");
+		structured?["last-stage-reached"]?.GetValue<string>().Should().Contain(
+			StageStreamingWorkerChild.LastStageBeforeSilence,
+			because: "the caller needs the last stage THIS run actually reached, which is the stage before it went quiet — not anything the nested run reported");
+	}
+
+	[Test]
+	[Description("An outcome outside the contract's three values is evidence of life, not of completion: it must never be scored as a success, because 'not failure' is not the same as 'succeeded' and the contract deliberately has no cancelled outcome.")]
+	public async Task DispatchAsync_ShouldNotReportSuccess_WhenTheTerminalOutcomeIsOutsideTheContract() {
+		// Arrange — expiry decides the answer once the malformed terminal event is correctly ignored.
+		using StageStreamingWorkerChild worker =
+			ArrangeWorker(ChildBehaviour.EmitsAnUnknownOutcomeThenDies, ExpirySilenceBound);
+		RecordingClientSession client = new();
+		McpWorkerCallDispatcher sut = CreateSut(silenceBound: ExpirySilenceBound);
+
+		// Act
+		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
+
+		// Assert
+		JsonNode structured = ReadStructured(result);
+		structured?["success"]?.GetValue<bool>().Should().BeFalse(
+			because: "the run's outcome is unknown, and an unvalidated comparison against only 'failure' would answer success:true for a deploy nobody can vouch for");
+		structured?["outcome"]?.GetValue<string>().Should().Be("indeterminate",
+			because: "an out-of-vocabulary outcome leaves the run unterminated, which is exactly what the indeterminate path is for");
+		result.IsError.Should().BeTrue(
+			because: "a possibly half-installed environment must not reach the caller as a successful result");
+	}
+
+	[Test]
 	[Category("Unit")]
 	[Description("The stage-event silence bound falls back to its 300 s default for a missing, blank, non-numeric or out-of-range override, and honours a valid one — parsed in invariant culture so a host locale cannot change the bound.")]
 	public void ResolveStageEventSilenceBound_ShouldFallBackToTheDefault_WhenTheOverrideIsUnusable() {
@@ -425,9 +488,15 @@ public sealed class WorkerTerminalStageProtocolTests {
 			? JsonNode.Parse(structured.GetRawText())
 			: null;
 
-	private McpWorkerCallDispatcher CreateSut(TimeSpan? ordinaryBudget = null, TimeSpan? silenceBound = null) =>
-		new(_supervisor, new WorkerChildTransportOwner(), new WorkerMcpRelay(_logger), _settingsRepository,
-			_logger, ordinaryBudget ?? TimeSpan.FromSeconds(30), silenceBound ?? SilenceBound, ExitGrace);
+	private McpWorkerCallDispatcher CreateSut(TimeSpan? ordinaryBudget = null, TimeSpan? silenceBound = null) {
+		StickyWorkerRegistry stickyWorkers = new(_logger);
+		SharedResourceReservation reservations = new();
+		return new McpWorkerCallDispatcher(_supervisor, new WorkerChildTransportOwner(),
+			new WorkerMcpRelay(_logger), _settingsRepository, stickyWorkers,
+			new StickyWorkerPoll(_supervisor, stickyWorkers, _logger), reservations,
+			Substitute.For<Clio.Command.McpServer.Tools.IToolCommandResolver>(), _logger,
+			ordinaryBudget ?? TimeSpan.FromSeconds(30), silenceBound ?? SilenceBound, ExitGrace);
+	}
 
 	private static async Task<CallToolResult> DispatchAsync(
 		McpWorkerCallDispatcher sut, IParentMcpSession client, string callerProgressToken) {
@@ -460,8 +529,10 @@ public sealed class WorkerTerminalStageProtocolTests {
 	/// </remarks>
 	/// <param name="behaviour">What the scripted child does once it is asked to run the tool.</param>
 	/// <returns>The scripted child, so a test can state what it saw and what it emitted.</returns>
-	private StageStreamingWorkerChild ArrangeWorker(ChildBehaviour behaviour) {
-		StageStreamingWorkerChild worker = new(behaviour, SilenceBound);
+	private StageStreamingWorkerChild ArrangeWorker(ChildBehaviour behaviour, TimeSpan? silenceBound = null) {
+		// The child's own silence is measured against the SAME bound the dispatcher runs with; passing them
+		// separately is how a test would accidentally arrange a child that never out-waits the timer.
+		StageStreamingWorkerChild worker = new(behaviour, silenceBound ?? SilenceBound);
 		_supervisor
 			.SpawnContainedAsync(Arg.Any<WorkerSpawnRequest>(), Arg.Any<CancellationToken>())
 			.Returns(_ => {
@@ -489,6 +560,18 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 		/// <summary>Streams two stages, goes quiet past the silence bound, then tries to stream again.</summary>
 		FallsSilentThenBurstsAgain,
+
+		/// <summary>
+		/// Streams two stages, then emits a run-completed carrying a DIFFERENT runId — a nested run
+		/// finishing inside the deploy — and then goes silent without ever completing its own run.
+		/// </summary>
+		EmitsANestedTerminalEventThenFallsSilent,
+
+		/// <summary>
+		/// Streams two stages, then emits a run-completed whose outcome is NOT one of the three the
+		/// contract defines, then dies without answering — a version-skewed or malformed emitter.
+		/// </summary>
+		EmitsAnUnknownOutcomeThenDies,
 
 		/// <summary>Streams to a successful run-completed, then never answers and never exits.</summary>
 		HangsAfterTerminalStage,
@@ -735,6 +818,26 @@ public sealed class WorkerTerminalStageProtocolTests {
 						ClioStageEventContract.RunOutcomes.Success).ConfigureAwait(false);
 					await AnswerCallAsync(toParent, requestId).ConfigureAwait(false);
 					return;
+				case ChildBehaviour.EmitsANestedTerminalEventThenFallsSilent:
+					await EmitManifestAsync(toParent, progressToken).ConfigureAwait(false);
+					await EmitStageAsync(toParent, progressToken, FirstStage, 0).ConfigureAwait(false);
+					await EmitStageAsync(toParent, progressToken, LastStageBeforeSilence, 1)
+						.ConfigureAwait(false);
+					// A run-completed for a DIFFERENT run. The parent must not treat somebody else's terminal
+					// event as its own, so this child never completes and must be reported indeterminate.
+					await EmitRunCompletedAsync(toParent, progressToken,
+						ClioStageEventContract.RunOutcomes.Success, Guid.NewGuid()).ConfigureAwait(false);
+					await Task.Delay(_silenceBound * 6).ConfigureAwait(false);
+					return;
+				case ChildBehaviour.EmitsAnUnknownOutcomeThenDies:
+					await EmitManifestAsync(toParent, progressToken).ConfigureAwait(false);
+					await EmitStageAsync(toParent, progressToken, FirstStage, 0).ConfigureAwait(false);
+					await EmitStageAsync(toParent, progressToken, LastStageBeforeSilence, 1)
+						.ConfigureAwait(false);
+					// Not one of success / failure / success-with-warnings. Deliberately the shape a newer or
+					// buggier emitter produces, which an unvalidated read would score as "not failure".
+					await EmitRunCompletedAsync(toParent, progressToken, "cancelled").ConfigureAwait(false);
+					return;
 				case ChildBehaviour.FallsSilentThenBurstsAgain:
 					await EmitManifestAsync(toParent, progressToken).ConfigureAwait(false);
 					await EmitStageAsync(toParent, progressToken, FirstStage, 0).ConfigureAwait(false);
@@ -810,11 +913,15 @@ public sealed class WorkerTerminalStageProtocolTests {
 						ClioStageEventContract.StageStatuses.Running, Message: $"{stageId} is running")));
 
 		private Task EmitRunCompletedAsync(StreamWriter toParent, JsonNode progressToken, string outcome) =>
+			EmitRunCompletedAsync(toParent, progressToken, outcome, _runId);
+
+		private Task EmitRunCompletedAsync(
+			StreamWriter toParent, JsonNode progressToken, string outcome, Guid runId) =>
 			EmitAsync(toParent, progressToken, ClioStageEventContract.EventTypes.RunCompleted,
 				new ClioStageEvent(
 					ClioStageEventContract.SchemaVersion,
 					ClioStageEventContract.EventTypes.RunCompleted,
-					_runId,
+					runId,
 					Interlocked.Increment(ref _sequence) - 1,
 					ClioStageEventContract.Operations.Deploy,
 					RunCompleted: new ClioRunCompleted(outcome, $"The run ended with {outcome}.")));

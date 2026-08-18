@@ -393,4 +393,32 @@ public sealed class WorkerAdmissionCapacityTests {
 		atTheCeiling.Should().Be(WorkerProcessSupervisor.MaximumConfigurableConcurrencyCap,
 			because: "the documented range is inclusive at its upper end, so the largest accepted value must be accepted");
 	}
+
+	[Test]
+	[Description("A sticky spawn blocked only because ORDINARY reads momentarily hold every slot must not be told the long-operation limit is exhausted: that condition is transient, a snapshot at that instant reports zero sticky workers, and 'wait for one to finish' would name nothing to wait for.")]
+	public async Task SpawnContainedAsync_ShouldNotBlameTheStickyCeiling_WhenOnlyPerCallWorkHoldsTheSlots() {
+		// Arrange — every slot taken by PER-CALL work, so the sticky ceiling is entirely unconsumed.
+		FakeContainment containment = new();
+		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
+		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
+			concurrencyCap: 2, queueWaitBound: TimeSpan.FromMilliseconds(150));
+		WorkerSpawnRequest perCall = new() { Budget = TimeSpan.FromMinutes(5) };
+		IWorkerLease first = await sut.SpawnContainedAsync(perCall, CancellationToken.None);
+		IWorkerLease second = await sut.SpawnContainedAsync(perCall, CancellationToken.None);
+		sut.GetSnapshot().ActiveStickyWorkers.Should().Be(0,
+			because: "the arrangement must leave the sticky ceiling untouched, or this test would not be about the shared pool at all");
+
+		// Act
+		Func<Task> stickySpawn = async () => await sut.SpawnContainedAsync(
+			new WorkerSpawnRequest { Budget = TimeSpan.FromMinutes(5), Lifetime = WorkerLifetime.Sticky },
+			CancellationToken.None);
+
+		// Assert
+		await stickySpawn.Should().ThrowAsync<WorkerQueueWaitExpiredException>(
+			because: "the slots are held by ordinary reads that clear in seconds, so this is the ordinary saturation the queue-wait bound exists to report — not the long-operation ceiling, which is empty");
+		sut.GetSnapshot().ActiveStickyWorkers.Should().Be(0,
+			because: "a sticky reservation taken before the slot wait must be given back when that wait fails, or the ceiling would leak a place nobody holds and refuse forever");
+		first.Dispose();
+		second.Dispose();
+	}
 }
