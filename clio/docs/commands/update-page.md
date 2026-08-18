@@ -64,6 +64,15 @@ name instead of trying to edit a non-existent local `insert`.
   it in the body you send back. Two residual gaps, deliberate for now: the same shape breaks **web** pages
   identically but is **not yet enforced** there, and `sync-pages` with `validate: false` skips the check
   entirely. Call `clio get-guidance --name mobile-page-modification` for details.
+- **Mobile: a button inserted into the Scaffold `actions` slot does not render.** An
+  `operation:"insert"` of `crt.Button` with `parentName: "Scaffold"`, `propertyName: "actions"` is reported
+  as a **warning** (ENG-95429). The write succeeds and the catalog describes the slot as holding action
+  items, but the button never appears on the Creatio Mobile app — verified on a stand, where fields in a
+  container's `items` rendered and buttons in `Scaffold`/`actions` did not, in the same page. Place the
+  button as an item of a page container instead — `parentName: "MainContainer"` (or a `crt.GridContainer`),
+  `propertyName: "items"` — and give it a `layoutConfig`; that is what the Freedom UI mobile designer emits.
+  It is advisory rather than blocking because it is not yet settled whether the slot is a guidance defect or
+  a rendering one; a hard block would mask the latter.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid

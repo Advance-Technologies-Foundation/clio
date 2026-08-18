@@ -32,6 +32,11 @@ public static class SchemaValidationService
 	private const string PathPropertyName = "path";
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
+	private const string ParentNamePropertyName = "parentName";
+	private const string SlotPropertyName = "propertyName";
+	private const string ScaffoldElementName = "Scaffold";
+	private const string ScaffoldActionsSlot = "actions";
+	private const string ButtonComponentType = "crt.Button";
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -301,6 +306,9 @@ public static class SchemaValidationService
 		SchemaValidationResult typePlacementResult = ValidateMobileInsertTypePlacement(body);
 		if (!typePlacementResult.IsValid) errors.AddRange(typePlacementResult.Errors);
 		warnings.AddRange(typePlacementResult.Warnings);
+
+		SchemaValidationResult buttonSlotResult = ValidateMobileButtonSlotPlacement(body);
+		warnings.AddRange(buttonSlotResult.Warnings);
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
@@ -767,6 +775,85 @@ public static class SchemaValidationService
 				+ "render and the element stays invisible even though the write reports success. Add "
 				+ $"\"{TypePropertyName}\" to \"values\" (use get-component-info schema-type=mobile to pick the component).");
 		}
+	}
+
+	/// <summary>
+	/// Warns when a mobile page inserts a <c>crt.Button</c> into the Scaffold's <c>actions</c> slot — the placement
+	/// that persists successfully and then does not render (ENG-95429).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// This rule is EMPIRICAL, not derived from the differ. The catalog describes <c>Scaffold.actions</c> as
+	/// "right-side action items (save button, search button)" and every mobile template declares the slot, so the
+	/// shape looks valid on paper and no structural check fires on it — which is exactly why the failure was
+	/// mis-triaged. Verified on a stand instead: in ONE page body, fields inserted into a container's <c>items</c>
+	/// render while buttons inserted into <c>Scaffold</c>/<c>actions</c> do not, and a button added through the
+	/// Freedom UI mobile designer lands in a page container's <c>items</c> with a <c>layoutConfig</c>. Two
+	/// independent coding agents chose the non-rendering slot unprompted, because the catalog wording steers them
+	/// there.
+	/// </para>
+	/// <para>
+	/// It is a WARNING, deliberately. Two readings of the evidence are still open: either the catalog/guidance is
+	/// misleading (and the slot never renders an authored button), or the template's own inherited Save button DOES
+	/// render from <c>actions</c> while an inserted one does not — which would be a rendering defect that a hard
+	/// block would mask rather than fix. Steering the author is safe under both readings; refusing the write is not.
+	/// Scope is <c>insert</c> only: a <c>set</c> may legitimately patch an element the template already owns in that
+	/// slot, and nothing has been verified about that case.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is always valid and carries one warning per offending insert.</returns>
+	public static SchemaValidationResult ValidateMobileButtonSlotPlacement(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch (JsonException) {
+			return result; // JSON errors reported by ValidateMobileBody
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Object
+				|| !document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)
+				|| viewConfigDiff.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			int index = 0;
+			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+				ValidateMobileButtonSlotPlacementEntry(entry, index, result);
+				index++;
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Applies the button-slot rule to one <c>viewConfigDiff</c> entry. Names are compared with
+	/// <see cref="StringComparison.Ordinal"/> to match the differ, which resolves both the parent alias and the slot
+	/// key case-sensitively — a differently-cased spelling never reaches the slot in the first place.
+	/// </summary>
+	private static void ValidateMobileButtonSlotPlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !IsOperation(entry, InsertOperationName)
+			|| !string.Equals(GetMobileEntryType(entry), ButtonComponentType, StringComparison.Ordinal)) {
+			return;
+		}
+		if (!TryGetStringProperty(entry, ParentNamePropertyName, out string parentName)
+			|| !string.Equals(parentName, ScaffoldElementName, StringComparison.Ordinal)
+			|| !TryGetStringProperty(entry, SlotPropertyName, out string slot)
+			|| !string.Equals(slot, ScaffoldActionsSlot, StringComparison.Ordinal)) {
+			return;
+		}
+		result.Warnings.Add(
+			$"{DescribeViewConfigDiffEntry(entry, index)} inserts a {ButtonComponentType} into "
+			+ $"\"{ParentNamePropertyName}\": \"{ScaffoldElementName}\", \"{SlotPropertyName}\": \"{ScaffoldActionsSlot}\". "
+			+ "An inserted button does NOT render there on the Creatio Mobile app, even though the write succeeds and "
+			+ "the catalog describes the slot as holding action items — this is the ENG-95429 failure mode. Place the "
+			+ $"button as an item of a page container instead (\"{ParentNamePropertyName}\": \"MainContainer\" or a "
+			+ $"crt.GridContainer, \"{SlotPropertyName}\": \"items\") and give it a \"layoutConfig\", which is what the "
+			+ "Freedom UI mobile designer emits.");
 	}
 
 	/// <summary>

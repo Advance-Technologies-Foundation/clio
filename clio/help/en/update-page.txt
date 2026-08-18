@@ -54,6 +54,12 @@ DESCRIPTION
       does not match the differ's exact-case dispatch. Residual gaps: the
       same shape breaks web pages too but is not yet enforced there, and
       sync-pages validate=false skips the check entirely.
+    - Mobile: a crt.Button inserted with parentName "Scaffold" and
+      propertyName "actions" is warned about (ENG-95429). The write
+      succeeds but the button does not render in the Creatio Mobile app.
+      Place it as an item of a page container instead (parentName
+      "MainContainer" or a crt.GridContainer, propertyName "items") with a
+      layoutConfig — the shape the mobile designer emits.
     - User-visible text (label, caption, title, tooltip, placeholder) in
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's

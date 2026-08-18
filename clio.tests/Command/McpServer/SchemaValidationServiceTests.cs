@@ -7549,6 +7549,144 @@ public sealed class SchemaValidationServiceTests
 
 	#endregion
 
+	#region ValidateMobileButtonSlotPlacement
+
+	[Test]
+	[Description("ENG-95429 symptom: a crt.Button inserted into Scaffold/actions on a mobile page warns — verified on a stand, an inserted button does not render there even though the write succeeds and the catalog describes the slot as holding action items.")]
+	public void ValidateMobileButtonSlotPlacement_WhenButtonInsertedIntoScaffoldActions_ReturnsWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"RunProcessButton","parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"type":"crt.Button","clicked":{"request":"crt.RunBusinessProcessRequest"}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileButtonSlotPlacement(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the evidence supports steering the author, not refusing a write that may expose a rendering defect");
+		result.Warnings.Should().ContainSingle(
+			w => w.Contains("RunProcessButton") && w.Contains("items") && w.Contains("layoutConfig"),
+			because: "the warning must name the element and point at the placement the mobile designer actually emits");
+	}
+
+	[Test]
+	[Description("The working placement — a button in a page container's items — produces no warning, so the rule cannot fire on the shape it tells authors to use.")]
+	public void ValidateMobileButtonSlotPlacement_WhenButtonInsertedIntoContainerItems_ReturnsNoWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"RunProcessButton","parentName":"MainContainer","propertyName":"items",
+		                   "values":{"type":"crt.Button","layoutConfig":{"column":1,"row":1,"colSpan":1,"rowSpan":1}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileButtonSlotPlacement(body);
+
+		// Assert
+		result.Warnings.Should().BeEmpty(
+			because: "warning on the recommended placement would push authors away from the one shape known to render");
+	}
+
+	[Test]
+	[Description("The rule is scoped to crt.Button: nothing has been verified about other component types in that slot, so it must not invent findings for them.")]
+	public void ValidateMobileButtonSlotPlacement_WhenNonButtonInsertedIntoScaffoldActions_ReturnsNoWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"SearchBox","parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"type":"crt.Input"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileButtonSlotPlacement(body);
+
+		// Assert
+		result.Warnings.Should().BeEmpty(
+			because: "only the button case is backed by stand evidence; widening it would be speculation");
+	}
+
+	[Test]
+	[Description("The rule is scoped to insert: a 'set' may legitimately patch an element the template already owns in that slot, and nothing has been verified about that case.")]
+	public void ValidateMobileButtonSlotPlacement_WhenSetTargetsScaffoldActions_ReturnsNoWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"set","name":"SaveButton","parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"type":"crt.Button","caption":"$Resources.Strings.Save"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileButtonSlotPlacement(body);
+
+		// Assert
+		result.Warnings.Should().BeEmpty(
+			because: "patching a template-owned button in that slot is not the verified failure mode");
+	}
+
+	[Test]
+	[Description("Names are matched case-sensitively, mirroring the differ: a differently-cased slot key never resolves to the actions array, so it is a different defect and not this rule's to report.")]
+	public void ValidateMobileButtonSlotPlacement_WhenSlotCaseDiffers_ReturnsNoWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Btn","parentName":"Scaffold","propertyName":"Actions",
+		                   "values":{"type":"crt.Button"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileButtonSlotPlacement(body);
+
+		// Assert
+		result.Warnings.Should().BeEmpty(
+			because: "the differ resolves the slot key case-sensitively, so 'Actions' never reaches the actions array");
+	}
+
+	[Test]
+	[Description("The check is wired into ValidateMobilePage: the slot advisory reaches the caller's warnings and never blocks the write.")]
+	public void ValidateMobilePage_WhenButtonInsertedIntoScaffoldActions_AddsNonBlockingWarning() {
+		// Arrange — the exact ENG-95429 body as re-verified on the stand: well-formed hybrid, type inside values.
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"RunProcessButton","parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"type":"crt.Button","clicked":{"request":"crt.RunBusinessProcessRequest"}}}
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		(List<string> errors, List<string> warnings) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		// Assert
+		warnings.Should().Contain(w => w.Contains("RunProcessButton") && w.Contains("layoutConfig"),
+			because: "the pipeline must surface the placement advisory that the type-placement rule cannot catch");
+		errors.Should().NotContain(e => e.Contains("Scaffold"),
+			because: "the placement rule must stay advisory while the rendering-vs-guidance question is open");
+	}
+
+	#endregion
+
 	#region ValidateMobileFieldBindings
 
 	[Test]
