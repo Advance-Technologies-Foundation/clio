@@ -537,8 +537,11 @@ Linux:
     streaming stages is never truncated, however long it takes. Two bounds apply, and
     neither is a total:
       - stage-event silence: 300 s with no stage event of any kind. Every stage event
-        restarts it. Override with CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS (seconds,
-        0 < n <= 3600) on a host whose stages legitimately go quiet for longer.
+        restarts it, and a stage that is still working re-announces itself as running
+        every 30 s, so a long stage (a database restore, a large file copy) keeps the
+        stream alive and silence means the worker itself stopped talking. Override with
+        CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS (seconds, 0 < n <= 3600); lowering it below
+        a few of those 30 s refreshes puts healthy long stages back at risk.
       - post-terminal exit grace: 30 s between "run-completed" and the worker exiting.
         A worker that hangs afterwards is terminated and the tool result is the
         terminal outcome, not an error.

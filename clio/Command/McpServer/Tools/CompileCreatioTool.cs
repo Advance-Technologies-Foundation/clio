@@ -71,7 +71,14 @@ public sealed class CompileCreatioTool(
 		// every unrelated same-tenant tool for the multi-minute (past-deadline detached) compile duration.
 		// Reserved BEFORE registry.Begin so a rejected duplicate creates no tracked record (also curbs the
 		// unbounded-record growth a bogus-env loop could cause).
-		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation))
+		// TARGET key for the RESERVATION, tenant key for the REGISTRY — deliberately two keys, because they
+		// answer different questions (cross-call-state §3). The registry answers "whose operation is this"
+		// and stays per-tenant; the configuration build is server-wide, so its reservation must exclude
+		// across principals AND must match the key the worker-routed path reserves under. When compile is
+		// routed to a worker and install-process-builder is not, a tenant-keyed reservation here would stop
+		// excluding it entirely.
+		string buildKey = commandResolver.GetTargetKey(new EnvironmentOptions { Environment = args.EnvironmentName });
+		if (!McpToolExecutionLock.TryReserveConfigurationBuild(buildKey, out McpToolExecutionLock.BuildReservation reservation))
 		{
 			return new CommandExecutionResult(1, [
 				new ErrorMessage(CompileAlreadyInProgressMessage(args.EnvironmentName))
@@ -110,7 +117,7 @@ public sealed class CompileCreatioTool(
 						// heartbeat work delegate, so it runs on the (possibly detached, past-deadline)
 						// continuation — spanning the real compile duration — and covers a resolution throw too
 						// (which happens before Execute's own try/finally is ever entered).
-						McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
+						McpToolExecutionLock.ReleaseConfigurationBuild(buildKey, reservation);
 					}
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
 					// The PRIVATE completion signal (ADR rule 5). compile-creatio DOES have an operation

@@ -461,6 +461,8 @@ public sealed class WorkerProcessSupervisorTests {
 			WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist;
 
 		// Assert
+		allowlist.Should().Contain("SSL_CERT_FILE",
+			because: "an installation trusting a private Creatio CA configures the PARENT through this path, and a worker without it fails certificate validation on every call while the parent succeeds — which presents as an unreachable environment rather than as a trust problem");
 		allowlist.Should().Contain(required,
 			because: "the variable that tells an apphost where the shared runtime lives is architecture-specific — measured on arm64 macOS only DOTNET_ROOT_ARM64 was set — and a frozen environment missing it makes every worker die at startup with \"You must install or update .NET\"");
 	}
@@ -477,6 +479,12 @@ public sealed class WorkerProcessSupervisorTests {
 			"CLIO_CREATE_SECTION_TIMEOUT_SECONDS",
 			"CLIO_COMPONENT_REGISTRY_CDN_BASE_URL",
 			"CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
+			"CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE",
+			"CLIO_REQUEST_REGISTRY_LOCAL_FILE",
+			"CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE",
+			"CLIO_WEB_TO_MOBILE_PAGE_CONVERSION_RULES_LOCAL_FILE",
+			"SSL_CERT_FILE",
+			"SSL_CERT_DIR",
 			"PATHEXT"
 		];
 

@@ -168,6 +168,15 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		"http_proxy",
 		"https_proxy",
 		"no_proxy",
+		// TLS trust roots. Same argument the proxy spellings won, one layer down: an installation that
+		// trusts a private Creatio CA through SSL_CERT_FILE / SSL_CERT_DIR (the OpenSSL convention .NET
+		// honours on Linux) configures the PARENT that way. Clearing the child's environment and copying
+		// only this list removes that trust, so the parent connects and every worker-routed call fails
+		// certificate validation instead — a failure that reads as "the environment is unreachable" while
+		// the CLI against the same stand works. Neither variable carries a secret: they are paths to
+		// public certificates.
+		"SSL_CERT_FILE",
+		"SSL_CERT_DIR",
 		"CLIO_MCP_RESPECT_AMBIENT_PROXY",
 		"CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS",
 		"CLIO_CREATE_SECTION_TIMEOUT_SECONDS",

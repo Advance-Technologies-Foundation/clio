@@ -847,11 +847,199 @@ public sealed class StickyWorkerSupervisionTests {
 	}
 
 	// ---------------------------------------------------------------------------------------------
+	// The live call shape: every sticky tool is NON-RESIDENT, so the caller reaches it through clio-run
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("A sticky call wrapped by clio-run derives the SAME sticky key as the identical call named directly, so a compile started through the executor and a compile-status polled through it land in one bucket instead of an unresolved one.")]
+	public void ReadTargetOptions_ShouldDeriveTheSameStickyKeyAsTheDirectCall_WhenTheCallArrivesThroughClioRun() {
+		// Arrange — the three shapes one target can arrive in. The direct one is what a resident tool
+		// sends; the other two are what clio-run sends, and every stage-7 tool is non-resident, so those
+		// two ARE the live vector rather than an edge case.
+		CallToolRequestParams direct = DirectCallParams(CompileToolName, EnvironmentName);
+		CallToolRequestParams executor = ExecutorCallParams(CompileToolName, EnvironmentName);
+		CallToolRequestParams wrappedExecutor = WrappedExecutorCallParams(CompileToolName, EnvironmentName);
+
+		// Act
+		StickyWorkerKey directKey = DeriveStickyKey(direct, CompileToolName);
+		StickyWorkerKey executorKey = DeriveStickyKey(executor, CompileToolName);
+		StickyWorkerKey wrappedKey = DeriveStickyKey(wrappedExecutor, CompileToolName);
+
+		// Assert
+		directKey.TenantKey.Should().Be($"tenant|{EnvironmentName}",
+			because: "the direct shape must resolve the environment it names, or the two comparisons below would be agreeing on an unresolved key rather than on the right one");
+		executorKey.Should().Be(directKey,
+			because: "clio-run's own call shape puts the target one object deeper, and a key derived from the wrapper instead of from the target is what makes a status poll miss the worker holding the operation");
+		wrappedKey.Should().Be(directKey,
+			because: "the wrapped shape {\"args\":{\"command\":…,\"args\":{…}}} is what an agent habituated to the single-args-record convention actually sends, and clio-run itself accepts it — so the sticky key must recover the same target from it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Two clio-run calls naming DIFFERENT environments derive different sticky keys, so one environment's compile can never refuse another's by colliding on a single unresolved key.")]
+	public void ReadTargetOptions_ShouldDeriveDistinctStickyKeys_WhenTwoClioRunCallsNameDifferentEnvironments() {
+		// Arrange
+		CallToolRequestParams first = WrappedExecutorCallParams(CompileToolName, EnvironmentName);
+		CallToolRequestParams second = WrappedExecutorCallParams(CompileToolName, "another-environment");
+
+		// Act
+		StickyWorkerKey firstKey = DeriveStickyKey(first, CompileToolName);
+		StickyWorkerKey secondKey = DeriveStickyKey(second, CompileToolName);
+
+		// Assert
+		firstKey.Should().NotBe(secondKey,
+			because: "an unresolved target puts every wrapped call in one bucket, and now that a colliding starter is REFUSED that collision lets one environment's compile refuse another environment's");
+		firstKey.TenantKey.Should().Be($"tenant|{EnvironmentName}",
+			because: "each key must name the environment its call named — two keys can also differ by both being wrong, and this is what tells the two apart");
+		secondKey.TenantKey.Should().Be("tenant|another-environment",
+			because: "the second key must likewise name its own environment rather than a shared placeholder");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A compile started through clio-run and a compile-status polled through clio-run are answered by the SAME sticky worker while the sticky pool is saturated — the live vector end to end, since both tools are non-resident and cannot be called by name.")]
+	public async Task DispatchAsync_ShouldAnswerAStatusPollFromTheSameStickyWorker_WhenBothCallsArriveThroughClioRun() {
+		// Arrange — a total of two admits exactly one sticky worker, so the compile saturates the sticky
+		// pool and the poll cannot resolve by taking a slot of its own.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2);
+		CallToolResult compile = await fixture.DispatchWithParamsAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild),
+			WrappedExecutorCallParams(CompileToolName, EnvironmentName));
+		int launchesAfterCompile = fixture.Containment.LaunchCount;
+
+		// Act
+		CallToolResult status = await fixture.DispatchWithParamsAsync(
+			CompileStatusToolName, PollerMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild),
+			WrappedExecutorCallParams(CompileStatusToolName, EnvironmentName));
+
+		// Assert
+		compile.IsError.Should().NotBeTrue(
+			because: "the scripted worker answered the starting call, so a failure here would mean the poll was measuring a dead worker rather than a live one");
+		status.IsError.Should().NotBeTrue(
+			because: "the poll must be answered rather than refused: through clio-run it is the ONLY way this tool can be called at all");
+		fixture.Containment.LaunchCount.Should().Be(launchesAfterCompile,
+			because: "a poll whose key missed the compile's key falls back to an ordinary per-call worker, and that second launch is exactly what 'answered from an empty registry' looks like");
+		fixture.Children.Should().ContainSingle(
+			because: "one worker must serve both calls; two children means the poll reached a process that never saw the compile");
+		fixture.Children[0].CallCount.Should().Be(2,
+			because: "the compile and the poll must both have been answered by the SAME child process, which is what 'reaches the worker holding the operation' means");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Two environments compiling concurrently through clio-run neither refuse each other nor share a worker, and each status poll is answered by its OWN environment's worker — the collision an unresolved key produces once a colliding starter is refused.")]
+	public async Task DispatchAsync_ShouldKeepTwoClioRunEnvironmentsApart_WhenBothAreCompilingConcurrently() {
+		// Arrange — a total of four admits two sticky workers, so capacity can never be what refuses the
+		// second compile; only a shared key can be.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 4);
+
+		// Act
+		CallToolResult firstCompile = await fixture.DispatchWithParamsAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild),
+			WrappedExecutorCallParams(CompileToolName, EnvironmentName));
+		CallToolResult secondCompile = await fixture.DispatchWithParamsAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild),
+			WrappedExecutorCallParams(CompileToolName, "another-environment"));
+		CallToolResult secondStatus = await fixture.DispatchWithParamsAsync(
+			CompileStatusToolName, PollerMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild),
+			WrappedExecutorCallParams(CompileStatusToolName, "another-environment"));
+
+		// Assert
+		firstCompile.IsError.Should().NotBeTrue(
+			because: "the first compile has nothing to collide with, so a failure here would be a broken arrangement rather than the defect");
+		secondCompile.IsError.Should().NotBeTrue(
+			because: "these are two DIFFERENT environments: an unresolved key files both under one bucket, and the configuration-build reservation then refuses the second environment's compile because the first environment is compiling");
+		fixture.Containment.LaunchCount.Should().Be(2,
+			because: "each environment must get its own worker; one launch means the second compile was refused and never started");
+		fixture.Reservations.HeldCount.Should().Be(2,
+			because: "the configuration-build reservation is keyed by normalised TARGET, so two targets must hold two reservations — one held reservation is the shared-key collision stated as a number");
+		fixture.Children[1].CallCount.Should().Be(2,
+			because: "the second environment's poll must be answered by the second environment's worker: the compile plus the poll is two calls on that child");
+		fixture.Children[0].CallCount.Should().Be(1,
+			because: "the first environment's worker must have seen only its own compile — answering another environment's status poll is what a shared key does");
+		secondStatus.IsError.Should().NotBeTrue(
+			because: "the poll must be answered rather than refused, or the routing assertions above would be describing a call that never happened");
+	}
+
+
+	// ---------------------------------------------------------------------------------------------
 	// Helpers
 	// ---------------------------------------------------------------------------------------------
 
 	private static string Target(EnvironmentOptions options) =>
 		options?.Environment ?? options?.Uri ?? "default";
+
+	/// <summary>
+	/// Builds the params a RESIDENT tool is called with: the SDK binds a single complex args record under
+	/// its parameter name, so the target sits one object below <c>Arguments</c>.
+	/// </summary>
+	/// <param name="toolName">The tool being called.</param>
+	/// <param name="environmentName">The environment the call names.</param>
+	/// <returns>The params.</returns>
+	private static CallToolRequestParams DirectCallParams(string toolName, string environmentName) =>
+		new() {
+			Name = toolName,
+			Arguments = new Dictionary<string, JsonElement> {
+				["args"] = JsonSerializer.SerializeToElement(
+					new Dictionary<string, string> { ["environment-name"] = environmentName })
+			}
+		};
+
+	/// <summary>
+	/// Builds clio-run's OWN call shape — <c>{"command":"&lt;tool&gt;","args":{…}}</c> — which is what
+	/// the executor declares and what its two top-level parameters bind to.
+	/// </summary>
+	/// <param name="toolName">The inner tool.</param>
+	/// <param name="environmentName">The environment the inner call names.</param>
+	/// <returns>The params, named for the executor rather than for the inner tool.</returns>
+	private static CallToolRequestParams ExecutorCallParams(string toolName, string environmentName) =>
+		new() {
+			Name = "clio-run",
+			Arguments = new Dictionary<string, JsonElement> {
+				["command"] = JsonSerializer.SerializeToElement(toolName),
+				["args"] = JsonSerializer.SerializeToElement(
+					new Dictionary<string, string> { ["environment-name"] = environmentName })
+			}
+		};
+
+	/// <summary>
+	/// Builds the WRAPPED clio-run shape — <c>{"args":{"command":"&lt;tool&gt;","args":{…}}}</c> — the one
+	/// an agent habituated to the single-args-record convention sends and that
+	/// <c>ClioRunExecutor.RecoverWrappedCall</c> accepts. Here the target is TWO object levels below
+	/// <c>Arguments</c>.
+	/// </summary>
+	/// <param name="toolName">The inner tool.</param>
+	/// <param name="environmentName">The environment the inner call names.</param>
+	/// <returns>The params, named for the executor rather than for the inner tool.</returns>
+	private static CallToolRequestParams WrappedExecutorCallParams(string toolName, string environmentName) =>
+		new() {
+			Name = "clio-run",
+			Arguments = new Dictionary<string, JsonElement> {
+				["args"] = JsonSerializer.SerializeToElement(new Dictionary<string, object> {
+					["command"] = toolName,
+					["args"] = new Dictionary<string, string> { ["environment-name"] = environmentName }
+				})
+			}
+		};
+
+	/// <summary>
+	/// Derives the sticky key exactly as the dispatcher does: read the target off the raw call, then fold
+	/// it through the resolver stub that stands in for <c>IToolCommandResolver.GetTenantKey</c>.
+	/// </summary>
+	/// <param name="parameters">The caller's params.</param>
+	/// <param name="dispatchedToolName">The tool the route resolved to — the INNER tool for an executor call.</param>
+	/// <returns>The key the dispatcher would file this call under.</returns>
+	private static StickyWorkerKey DeriveStickyKey(CallToolRequestParams parameters, string dispatchedToolName) {
+		EnvironmentOptions options =
+			McpWorkerCallDispatcher.ReadTargetOptions(parameters, dispatchedToolName);
+		return new StickyWorkerKey(McpToolOperationFamily.ConfigurationBuild, $"tenant|{Target(options)}");
+	}
 
 	private static McpToolExecutionMetadata StarterMetadata(McpToolOperationFamily family,
 		McpToolSharedFileResource resource) =>
@@ -942,6 +1130,23 @@ public sealed class StickyWorkerSupervisionTests {
 							new Dictionary<string, string> { ["environment-name"] = environmentName })
 					}
 				},
+				Client,
+				CancellationToken.None);
+
+		/// <summary>
+		/// Dispatches a routed call with params the test built itself, so a call shape other than the
+		/// resident one can be driven end to end.
+		/// </summary>
+		/// <param name="toolName">The tool the ROUTE resolved to (the inner tool for an executor call).</param>
+		/// <param name="metadata">The declared execution metadata for that tool.</param>
+		/// <param name="parameters">The params exactly as the client sent them.</param>
+		/// <returns>The dispatch result.</returns>
+		internal async Task<CallToolResult> DispatchWithParamsAsync(string toolName,
+			McpToolExecutionMetadata metadata, CallToolRequestParams parameters) =>
+			await _dispatcher.DispatchAsync(
+				new McpExecutionRoute(toolName, McpToolExecutionLocation.Worker,
+					McpExecutionDisposition.Worker, metadata),
+				parameters,
 				Client,
 				CancellationToken.None);
 

@@ -177,8 +177,11 @@ public sealed class InstallProcessBuilderTool(
 	private CommandExecutionResult RunInstall(
 		InstallProcessBuilderOptions options, StrongBox<bool> callerAlreadyAnswered,
 		global::ModelContextProtocol.Server.McpServer server) {
-		string tenantKey = ResolveTenantLockKey(options);
-		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation)) {
+		// TARGET key, not tenant: the configuration build is server-wide, so this must exclude across
+		// principals too — and it must use the SAME key the worker-routed path reserves under, or the two
+		// stop excluding each other the moment one of them is routed to a worker and the other is not.
+		string buildKey = ResolveTargetResourceKey(options);
+		if (!McpToolExecutionLock.TryReserveConfigurationBuild(buildKey, out McpToolExecutionLock.BuildReservation reservation)) {
 			// Caller-actionable refusal (exit 1), not a clio failure: waiting fixes it. Deliberately fails
 			// fast — a second install would rebuild and restart an instance that is already being rebuilt.
 			return CommandExecutionResult.FromValidationError(
@@ -197,7 +200,7 @@ public sealed class InstallProcessBuilderTool(
 			return result;
 		}
 		finally {
-			McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
+			McpToolExecutionLock.ReleaseConfigurationBuild(buildKey, reservation);
 			// The PRIVATE completion signal (ADR rule 5), sent from where the REAL work ends — this finally
 			// runs on the detached, past-deadline continuation. install-process-builder has no operation
 			// registry at all, so without it the parent has no way to learn that this sticky worker has

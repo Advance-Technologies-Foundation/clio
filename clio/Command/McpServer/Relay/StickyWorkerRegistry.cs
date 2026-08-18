@@ -300,12 +300,16 @@ public sealed class StickyWorkerEntry {
 	public bool MarkCompleted(TimeSpan linger) {
 		DateTimeOffset lingerUntil = DateTimeOffset.UtcNow + (linger > TimeSpan.Zero ? linger : TimeSpan.Zero);
 		lock (_expiryGate) {
-			if (lingerUntil >= _expiresAtUtc) {
-				// Never upwards: a completion arriving near the lifetime bound must not buy the worker more
-				// time than the bound allows it.
-				return false;
+			// CLAMPED, never extended. The earlier version RETURNED here when the linger reached or passed
+			// the hard bound — and returning meant the worker was never marked completed and, worse, never
+			// released its shared-resource reservation. An operation finishing inside the last linger-width
+			// of its lifetime therefore went on refusing every new build for that target, and went on
+			// holding an admission slot, until hard expiry — for a build that had already finished. The
+			// bound is a ceiling on how long the worker may LIVE; it was never a reason to keep the
+			// environment locked after the work was done.
+			if (lingerUntil < _expiresAtUtc) {
+				_expiresAtUtc = lingerUntil;
 			}
-			_expiresAtUtc = lingerUntil;
 		}
 		Volatile.Write(ref _completed, 1);
 		_reservations.Release(Reservation);

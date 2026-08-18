@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -78,6 +79,21 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 	/// <summary>The scaled-down bound used ONLY by the tests whose subject is the silence timer expiring.</summary>
 	private static readonly TimeSpan ExpirySilenceBound = TimeSpan.FromMilliseconds(400);
+
+	/// <summary>
+	/// The silence bound the LONG-STAGE test runs with, and the one number it is really about.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately far above <see cref="ExpirySilenceBound"/>: this test's subject is a HEALTHY run, so
+	/// the handshake that <see cref="TerminalStageWatch"/> charges to the first window must never be able
+	/// to expire it. The child's single stage then runs for <see cref="LongStageDuration"/> — three times
+	/// this bound — which is what makes the test discriminating: nothing but an in-stage liveness refresh
+	/// can carry a run across that gap.
+	/// </remarks>
+	private static readonly TimeSpan LongStageSilenceBound = TimeSpan.FromSeconds(1);
+
+	/// <summary>How long the child's one long stage takes: three silence windows.</summary>
+	private static readonly TimeSpan LongStageDuration = TimeSpan.FromSeconds(3);
 
 	/// <summary>The post-terminal exit grace the fixture runs with — the 30 s default, scaled down.</summary>
 	private static readonly TimeSpan ExitGrace = TimeSpan.FromMilliseconds(400);
@@ -467,6 +483,40 @@ public sealed class WorkerTerminalStageProtocolTests {
 			because: "everything else the caller put in _meta rides through untouched, exactly as ADR rule 1 requires");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A single stage that runs three times longer than the whole silence bound is carried by the emitter's in-stage liveness refresh: the healthy worker answers for itself and is never killed, so a long database restore can no longer be reported as a possibly half-installed environment.")]
+	public async Task DispatchAsync_ShouldReturnTheWorkersOwnAnswer_WhenOneStageOutlastsTheSilenceBound() {
+		// Arrange — the child drives the PRODUCTION StageEventEmitter over the pipe, so what keeps this run
+		// alive is the shipped emitter rather than a beat the fixture scripted for itself. Its one long
+		// stage sleeps for three silence windows while the worker is perfectly healthy.
+		using StageStreamingWorkerChild worker =
+			ArrangeWorker(ChildBehaviour.RunsOneLongStageThroughTheProductionEmitter, LongStageSilenceBound);
+		RecordingClientSession client = new();
+		McpWorkerCallDispatcher sut = CreateSut(silenceBound: LongStageSilenceBound);
+
+		// Act
+		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
+
+		// Assert
+		result.IsError.Should().NotBeTrue(
+			because: "the deploy was healthy throughout; an error here is the parent reporting a working run as INDETERMINATE because one of its stages was long");
+		ReadStructured(result)?["answered-by"]?.GetValue<string>().Should().Be("worker",
+			because: "the worker answered its own call, and a result composed by the parent instead means the call was resolved by the silence bound rather than by the run");
+		ReadStructured(result)?["outcome"]?.GetValue<string>().Should()
+			.NotBe(McpWorkerCallDispatcher.IndeterminateOutcome,
+				because: "'possibly half-installed, do not retry' is the most damaging thing clio can say about an environment, and saying it about a deploy that simply took its time manufactures the very damage this protocol exists to prevent");
+		_supervisor.DidNotReceive().KillContained(Arg.Any<IWorkerLease>());
+		worker.StageDuration.Should().BeGreaterThan(LongStageSilenceBound,
+			because: "the stage must genuinely have outlasted the bound, or this test would be asserting nothing about the silence timer at all");
+		worker.RunningEventsForTheLongStage.Should().BeGreaterThan(1,
+			because: "the refresh is what carried the run across that gap; one running event for the whole stage is precisely the silence the parent cannot tell apart from a dead child");
+		client.StageEventTypes.Should().Contain(ClioStageEventContract.EventTypes.RunCompleted,
+			because: "the caller supplied its own progress token, so every event of the run — refreshes included — must reach it unchanged (ADR rule 1)");
+		_spawnCount.Should().Be(1,
+			because: "a killed-and-retried deploy also finishes eventually, and the spawn count is what tells the two apart");
+	}
+
 	// ---------------------------------------------------------------------------------------------
 	// Helpers
 	// ---------------------------------------------------------------------------------------------
@@ -557,6 +607,12 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 		/// <summary>Streams while sleeping far longer than a tiny ordinary budget, then completes.</summary>
 		StreamsPastTheOrdinaryBudget,
+
+		/// <summary>
+		/// Runs a real manifest through the PRODUCTION <see cref="StageEventEmitter"/>, one of whose
+		/// stages takes three silence windows, then answers the call.
+		/// </summary>
+		RunsOneLongStageThroughTheProductionEmitter,
 
 		/// <summary>Streams two stages, goes quiet past the silence bound, then tries to stream again.</summary>
 		FallsSilentThenBurstsAgain,
@@ -681,6 +737,8 @@ public sealed class WorkerTerminalStageProtocolTests {
 		private int _callCount;
 		private int _sequence;
 		private int _killed;
+		private int _runningEventsForTheLongStage;
+		private TimeSpan _stageDuration;
 
 		internal StageStreamingWorkerChild(ChildBehaviour behaviour, TimeSpan silenceBound) {
 			_behaviour = behaviour;
@@ -712,6 +770,15 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 		/// <summary>Gets how many <c>tools/call</c> requests the child answered.</summary>
 		internal int CallCount => Volatile.Read(ref _callCount);
+
+		/// <summary>
+		/// Gets how many <c>running</c> transitions the production emitter produced for the long stage —
+		/// one for the stage itself plus one per liveness refresh.
+		/// </summary>
+		internal int RunningEventsForTheLongStage => Volatile.Read(ref _runningEventsForTheLongStage);
+
+		/// <summary>Gets how long the long stage's action actually took, as the child measured it.</summary>
+		internal TimeSpan StageDuration => _stageDuration;
 
 		/// <summary>
 		/// Gets the stage ids (and the <c>manifest</c> / <c>run-completed</c> discriminators) the child
@@ -818,6 +885,10 @@ public sealed class WorkerTerminalStageProtocolTests {
 						ClioStageEventContract.RunOutcomes.Success).ConfigureAwait(false);
 					await AnswerCallAsync(toParent, requestId).ConfigureAwait(false);
 					return;
+				case ChildBehaviour.RunsOneLongStageThroughTheProductionEmitter:
+					RunProductionEmitterScript(toParent, progressToken);
+					await AnswerCallAsync(toParent, requestId).ConfigureAwait(false);
+					return;
 				case ChildBehaviour.EmitsANestedTerminalEventThenFallsSilent:
 					await EmitManifestAsync(toParent, progressToken).ConfigureAwait(false);
 					await EmitStageAsync(toParent, progressToken, FirstStage, 0).ConfigureAwait(false);
@@ -870,6 +941,68 @@ public sealed class WorkerTerminalStageProtocolTests {
 					// every pending request faults.
 					SimulateKill();
 					return;
+			}
+		}
+
+		/// <summary>
+		/// Runs a real three-stage manifest through the PRODUCTION emitter, wired to this child's pipe the
+		/// way <see cref="StageEventProgressForwarder"/> wires it inside a real worker.
+		/// </summary>
+		/// <remarks>
+		/// The refresh interval is scaled to a third of the silence bound — the same RATIO the shipped
+		/// numbers hold (30 s inside 300 s) at a size a unit test can wait out. Nothing else about the
+		/// emitter is arranged: if the shipped emitter stops refreshing, this child falls silent for three
+		/// whole silence windows and the parent kills it.
+		/// </remarks>
+		/// <param name="toParent">The child's output.</param>
+		/// <param name="progressToken">The token the call carried.</param>
+		private void RunProductionEmitterScript(StreamWriter toParent, JsonNode progressToken) {
+			StageEventEmitter emitter = new() { LivenessRefreshInterval = _silenceBound / 3 };
+			emitter.Begin(ClioStageEventContract.Operations.Deploy, [
+				new StageDescriptor(FirstStage, "Unpack", false),
+				new StageDescriptor(LastStageBeforeSilence, "Restore database", false),
+				new StageDescriptor(StageAfterSilence, "Configure site", false)
+			], stageEvent => Emit(toParent, progressToken, stageEvent));
+			emitter.RunStage(FirstStage, () => { });
+			Stopwatch stageClock = Stopwatch.StartNew();
+			emitter.RunStage(LastStageBeforeSilence, () => Thread.Sleep(LongStageDuration));
+			stageClock.Stop();
+			_stageDuration = stageClock.Elapsed;
+			emitter.RunStage(StageAfterSilence, () => { });
+			emitter.CompleteSuccess("The deploy completed.");
+		}
+
+		/// <summary>
+		/// Writes one emitter-produced event to the pipe. Synchronous because the emitter's sink is, and
+		/// safe because that sink is invoked under the emitter's own sequencing lock — the stage thread and
+		/// the refresh thread never reach this writer together.
+		/// </summary>
+		/// <param name="toParent">The child's output.</param>
+		/// <param name="progressToken">The token the call carried.</param>
+		/// <param name="stageEvent">The event the production emitter raised.</param>
+		private void Emit(StreamWriter toParent, JsonNode progressToken, ClioStageEvent stageEvent) {
+			if (progressToken is null) {
+				return;
+			}
+			if (stageEvent.Stage is { } stage
+				&& stage.StageId == LastStageBeforeSilence
+				&& stage.Status == ClioStageEventContract.StageStatuses.Running) {
+				Interlocked.Increment(ref _runningEventsForTheLongStage);
+			}
+			toParent.WriteLine(new JsonObject {
+				["jsonrpc"] = "2.0",
+				["method"] = NotificationMethods.ProgressNotification,
+				["params"] = new JsonObject {
+					["progressToken"] = progressToken.DeepClone(),
+					["progress"] = stageEvent.Sequence,
+					["_meta"] = new JsonObject {
+						["clioStageEvent"] =
+							JsonSerializer.SerializeToNode(stageEvent, ClioStageEventContract.SerializerOptions)
+					}
+				}
+			}.ToJsonString());
+			lock (_emittedLock) {
+				_emitted.Add(stageEvent.EventType);
 			}
 		}
 

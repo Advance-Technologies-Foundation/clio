@@ -24,7 +24,7 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// <remarks>
 	/// The parent reads this off the raw call rather than resolving the tool's own arguments record,
 	/// because it has no instance of that record and no binder for it. One convention covers the whole
-	/// catalog — see <see cref="TryReadEnvironmentName"/> for the two shapes it appears in.
+	/// catalog — see <see cref="TryReadStringArgument"/> for the two shapes it appears in.
 	/// </remarks>
 	internal const string EnvironmentNameArgument = "environment-name";
 
@@ -40,6 +40,16 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// wait nothing can reach. Only the url is read; the credentials themselves are never touched here.
 	/// </remarks>
 	internal const string UrlArgument = "url";
+
+	/// <summary>The <c>clio-run</c> executor's own argument naming the tool it is to run.</summary>
+	/// <remarks>
+	/// Read rather than assumed because the executor's params are relayed to the worker VERBATIM, so the
+	/// envelope the client sent is the envelope this parent has to derive a key from.
+	/// </remarks>
+	internal const string ExecutorCommandArgument = "command";
+
+	/// <summary>The <c>clio-run</c> executor's own argument carrying the inner call's arguments.</summary>
+	internal const string ExecutorArgumentsArgument = "args";
 
 	/// <summary>Machine-readable error class emitted when a shared, target-wide resource is already held.</summary>
 	/// <remarks>
@@ -174,7 +184,7 @@ public sealed partial class McpWorkerCallDispatcher {
 		CallToolRequestParams parameters,
 		IParentMcpSession parentSession,
 		CancellationToken cancellationToken) {
-		EnvironmentOptions options = ReadTargetOptions(parameters);
+		EnvironmentOptions options = ReadTargetOptions(parameters, toolName);
 		string environmentName = options.Environment ?? options.Uri;
 
 		// FIRST, before any reservation is taken or reached: retire sticky workers that have exited or
@@ -516,7 +526,12 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// Reads the target a raw tool call names: its registered environment name, or failing that its
 	/// explicit url.
 	/// </summary>
-	/// <param name="parameters">The caller's params.</param>
+	/// <param name="parameters">The caller's params, exactly as the client sent them.</param>
+	/// <param name="dispatchedToolName">
+	/// The tool the ROUTE resolved to. For a call that arrived through <c>clio-run</c> this is the INNER
+	/// tool, while <see cref="CallToolRequestParams.Name"/> is still the executor — which is one of the
+	/// two signals <see cref="TryReadEffectiveArguments"/> unwraps on.
+	/// </param>
 	/// <returns>
 	/// Options naming the target. Both fields are null when the call names neither, which the key
 	/// derivations answer with a stable unresolved key rather than by throwing.
@@ -527,17 +542,183 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// present costs nothing and reading neither would put every credentials-started restart in one
 	/// bucket.
 	/// </remarks>
-	internal static EnvironmentOptions ReadTargetOptions(CallToolRequestParams parameters) {
-		string environmentName = TryReadStringArgument(parameters, EnvironmentNameArgument);
+	internal static EnvironmentOptions ReadTargetOptions(
+		CallToolRequestParams parameters, string dispatchedToolName) {
+		IDictionary<string, JsonElement> arguments = ReadEffectiveArguments(parameters, dispatchedToolName);
+		string environmentName = TryReadStringArgument(arguments, EnvironmentNameArgument);
 		return environmentName is null
-			? new EnvironmentOptions { Uri = TryReadStringArgument(parameters, UrlArgument) }
+			? new EnvironmentOptions { Uri = TryReadStringArgument(arguments, UrlArgument) }
 			: new EnvironmentOptions { Environment = environmentName };
 	}
 
 	/// <summary>
-	/// Reads one string argument out of a raw tool call.
+	/// Returns the arguments the TARGET tool was called with, unwrapping the <c>clio-run</c> envelope
+	/// when the call arrived through the executor.
 	/// </summary>
 	/// <param name="parameters">The caller's params.</param>
+	/// <param name="dispatchedToolName">The tool the route resolved to.</param>
+	/// <returns>The target's own arguments, or the caller's arguments when there was nothing to unwrap.</returns>
+	/// <remarks>
+	/// <b>This is not an optimisation; without it the sticky key is derived from the WRAPPER.</b> Every
+	/// long-running tool is NON-RESIDENT, so the live caller reaches it through <c>clio-run</c> — and the
+	/// executor's params are relayed to the worker verbatim (see <see cref="IMcpWorkerCallDispatcher"/>),
+	/// which is right for the relay and wrong for a key read off them. In the wrapped shape the target
+	/// sits two object levels below <c>Arguments</c>, so an un-unwrapped read finds nothing: the compile
+	/// and its own <c>compile-status</c> poll file under one UNRESOLVED key, and — worse, now that a
+	/// colliding starter is refused — two different environments collide on that same key, so one
+	/// environment's compile refuses another's.
+	/// </remarks>
+	private static IDictionary<string, JsonElement> ReadEffectiveArguments(
+		CallToolRequestParams parameters, string dispatchedToolName) {
+		IDictionary<string, JsonElement> arguments = parameters?.Arguments;
+		if (arguments is null) {
+			return null;
+		}
+		return TryReadEffectiveArguments(parameters, arguments, dispatchedToolName,
+			out IDictionary<string, JsonElement> inner)
+			? inner
+			: arguments;
+	}
+
+	/// <summary>
+	/// Recovers the inner call's arguments from an executor envelope.
+	/// </summary>
+	/// <param name="parameters">The caller's params, for the name the client dialled.</param>
+	/// <param name="arguments">Those params' arguments.</param>
+	/// <param name="dispatchedToolName">The tool the route resolved to.</param>
+	/// <param name="inner">The target tool's own arguments when this was an executor call.</param>
+	/// <returns><see langword="true"/> when an envelope was unwrapped.</returns>
+	/// <remarks>
+	/// <para>
+	/// <b>Two signals, because neither alone is safe.</b> The name is the primary one — the executor's
+	/// own <c>clio-run</c> / <c>clio-run-destructive</c>, matched the way the invoker registry matches
+	/// (trimmed, case-insensitive). The second is that the route resolved to a DIFFERENT tool than the
+	/// client named, which is true of an executor call whatever the wrapper is called, and false of every
+	/// direct call. Both are then confirmed by the payload actually carrying a <c>command</c> string, so
+	/// an ordinary tool that happens to take an argument called <c>args</c> is never unwrapped.
+	/// </para>
+	/// <para>
+	/// <b>The recovery mirrors <c>ClioRunExecutor.RecoverWrappedCall</c> exactly</b> — inner <c>args</c>
+	/// wins when present, otherwise the wrapper minus its <c>command</c> key is the flat target args —
+	/// because a second convention for the same envelope is a second thing to keep in step, and the one
+	/// that drifts is the one nothing dispatches through.
+	/// </para>
+	/// </remarks>
+	internal static bool TryReadEffectiveArguments(
+		CallToolRequestParams parameters,
+		IDictionary<string, JsonElement> arguments,
+		string dispatchedToolName,
+		out IDictionary<string, JsonElement> inner) {
+		inner = null;
+		if (arguments is null || !LooksLikeExecutorCall(parameters, dispatchedToolName)) {
+			return false;
+		}
+		// clio-run's OWN shape: its two declared parameters bind as {"command":"<tool>","args":{…}}.
+		if (TryReadString(arguments, ExecutorCommandArgument) is not null) {
+			inner = TryReadObject(arguments, ExecutorArgumentsArgument, out JsonElement targetArguments)
+				? ToArguments(targetArguments)
+				: WithoutCommandKey(arguments);
+			return true;
+		}
+		// The WRAPPED shape an agent habituated to the single-args-record convention sends:
+		// {"args":{"command":"<tool>", …}} — the target is one level deeper again.
+		if (!TryReadObject(arguments, ExecutorArgumentsArgument, out JsonElement wrapper)
+			|| !TryReadStringProperty(wrapper, ExecutorCommandArgument, out string _)) {
+			return false;
+		}
+		inner = TryReadObjectProperty(wrapper, ExecutorArgumentsArgument, out JsonElement wrappedTarget)
+			? ToArguments(wrappedTarget)
+			: WithoutCommandKey(ToArguments(wrapper));
+		return true;
+	}
+
+	// The name the client dialled is an executor's, or the route resolved somewhere else entirely — both
+	// mean the params on hand belong to a wrapper rather than to the tool being dispatched. The name check
+	// matches McpToolInvokerRegistry's own resolution (trimmed, case-insensitive) so a differently-cased
+	// alias cannot slip past it.
+	private static bool LooksLikeExecutorCall(CallToolRequestParams parameters, string dispatchedToolName) {
+		string callName = parameters?.Name?.Trim();
+		if (string.Equals(callName, Tools.ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(callName, Tools.ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+		return callName is not null && dispatchedToolName is not null
+			&& !string.Equals(callName, dispatchedToolName, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static IDictionary<string, JsonElement> ToArguments(JsonElement element) {
+		Dictionary<string, JsonElement> arguments = new(StringComparer.Ordinal);
+		foreach (JsonProperty property in element.EnumerateObject()) {
+			arguments[property.Name] = property.Value;
+		}
+		return arguments;
+	}
+
+	private static IDictionary<string, JsonElement> WithoutCommandKey(
+		IDictionary<string, JsonElement> arguments) {
+		Dictionary<string, JsonElement> stripped = new(StringComparer.Ordinal);
+		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
+			if (!string.Equals(argument.Key, ExecutorCommandArgument, StringComparison.OrdinalIgnoreCase)) {
+				stripped[argument.Key] = argument.Value;
+			}
+		}
+		return stripped;
+	}
+
+	private static string TryReadString(IDictionary<string, JsonElement> arguments, string name) {
+		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
+			if (string.Equals(argument.Key, name, StringComparison.OrdinalIgnoreCase)
+				&& argument.Value.ValueKind == JsonValueKind.String) {
+				return argument.Value.GetString();
+			}
+		}
+		return null;
+	}
+
+	private static bool TryReadObject(
+		IDictionary<string, JsonElement> arguments, string name, out JsonElement value) {
+		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
+			if (string.Equals(argument.Key, name, StringComparison.OrdinalIgnoreCase)
+				&& argument.Value.ValueKind == JsonValueKind.Object) {
+				value = argument.Value;
+				return true;
+			}
+		}
+		value = default;
+		return false;
+	}
+
+	private static bool TryReadStringProperty(JsonElement element, string name, out string value) {
+		foreach (JsonProperty property in element.EnumerateObject()) {
+			if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)
+				&& property.Value.ValueKind == JsonValueKind.String) {
+				value = property.Value.GetString();
+				return true;
+			}
+		}
+		value = null;
+		return false;
+	}
+
+	private static bool TryReadObjectProperty(JsonElement element, string name, out JsonElement value) {
+		foreach (JsonProperty property in element.EnumerateObject()) {
+			if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)
+				&& property.Value.ValueKind == JsonValueKind.Object) {
+				value = property.Value;
+				return true;
+			}
+		}
+		value = default;
+		return false;
+	}
+
+	/// <summary>
+	/// Reads one string argument out of a tool call's arguments.
+	/// </summary>
+	/// <param name="arguments">
+	/// The TARGET tool's arguments — for an executor call, the ones
+	/// <see cref="TryReadEffectiveArguments"/> recovered, never the wrapper's.
+	/// </param>
 	/// <param name="argumentName">The argument to read.</param>
 	/// <returns>The value, or <see langword="null"/> when the call carries none.</returns>
 	/// <remarks>
@@ -547,8 +728,8 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// the search goes exactly ONE level deep — deeper would start matching an unrelated nested
 	/// <c>environment-name</c> inside some other payload.
 	/// </remarks>
-	internal static string TryReadStringArgument(CallToolRequestParams parameters, string argumentName) {
-		IDictionary<string, JsonElement> arguments = parameters?.Arguments;
+	internal static string TryReadStringArgument(
+		IDictionary<string, JsonElement> arguments, string argumentName) {
 		if (arguments is null) {
 			return null;
 		}

@@ -33,18 +33,37 @@ namespace Clio.Common.McpWorker;
 /// asks for.
 /// </para>
 /// <para>
+/// <b>Why the child inherits exactly three handles and not "whatever was open".</b>
+/// <c>bInheritHandles: true</c> on its own hands the child EVERY inheritable handle the parent holds at
+/// that instant — not only the three named in <c>STARTUPINFO</c>. With workers launched concurrently that
+/// means one child keeps a SIBLING's stdout/stderr pipe WRITE end alive. The relay treats the pipe
+/// closing as the completion signal (<c>RunReadLoopAsync</c> ends on EOF and fails the pending calls), so
+/// a retained write end means the sibling's reader never sees EOF and the parent waits on a worker that
+/// is already dead until an unrelated child happens to exit — a hang whose cause points at the wrong
+/// process. The fix is <c>STARTUPINFOEX</c> with a <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> naming the
+/// three pipe client handles: <c>bInheritHandles</c> stays <see langword="true"/> (the list only applies
+/// when it is), and the list narrows the inheritance to exactly that set.
+/// </para>
+/// <para>
+/// <b>Why a failed attribute list fails the spawn instead of falling back.</b> Falling back to
+/// unrestricted inheritance would silently reintroduce the cross-worker retention above, which is the
+/// hang class this whole feature exists to remove — and it would do so on the rare path nobody is
+/// watching. <c>InitializeProcThreadAttributeList</c> has shipped in every supported Windows version, so
+/// the only realistic trigger is an allocation failure, and a loud, correctly attributed spawn error is
+/// strictly better than a wait that blames an unrelated process. The decision is therefore: no fallback.
+/// </para>
+/// <para>
 /// <b>Verification status.</b> The sequence implemented here is the one measured green in ADR §2.4;
 /// this code path cannot be executed on macOS or Linux, so its end-to-end test declares a Windows
 /// requirement and skips elsewhere with an explicit reason rather than passing silently. Requirement
-/// R-8b closes on a Windows run, not on a green Unix suite.
+/// R-8b closes on a Windows run, not on a green Unix suite. The handle-list narrowing is in the same
+/// position: its composition is asserted everywhere (see <see cref="WindowsWorkerStartup"/> and the
+/// substituted attribute-list lifecycle), but that the kernel actually withholds the sibling handles is
+/// a Windows-only observation.
 /// </para>
 /// </remarks>
 public sealed class WindowsJobObjectContainment : IProcessContainment {
 
-	private const uint CreateSuspended = 0x00000004;
-	private const uint CreateUnicodeEnvironment = 0x00000400;
-	private const uint CreateNoWindow = 0x08000000;
-	private const uint StartFlagUseStdHandles = 0x00000100;
 	private const int ExtendedLimitInformationClass = 9;
 	private const uint LimitKillOnJobClose = 0x00002000;
 	private const uint WaitObjectZero = 0x00000000;
@@ -143,8 +162,11 @@ public sealed class WindowsJobObjectContainment : IProcessContainment {
 		public int? ExitCode => HasExited ? TryReadExitCode() : null;
 
 		public static WindowsJobContainedWorker Create(WorkerLaunchRequest request) {
-			// Server ends stay private to this process; only the client ends are inheritable, so the
-			// child receives exactly three handles and no more.
+			// Server ends stay private to this process; only the client ends are inheritable. That is
+			// necessary but NOT sufficient on its own: at this instant the parent may also hold another
+			// concurrently launching worker's inheritable client handles, and bInheritHandles would hand
+			// this child those too. The PROC_THREAD_ATTRIBUTE_HANDLE_LIST built below is what makes
+			// "exactly three handles and no more" actually true.
 			AnonymousPipeServerStream input = new(PipeDirection.Out, HandleInheritability.Inheritable);
 			AnonymousPipeServerStream output = new(PipeDirection.In, HandleInheritability.Inheritable);
 			AnonymousPipeServerStream error = new(PipeDirection.In, HandleInheritability.Inheritable);
@@ -156,35 +178,52 @@ public sealed class WindowsJobObjectContainment : IProcessContainment {
 				job = CreateKillOnCloseJob();
 				// Sonar S3869 is suppressed for exactly these three reads: STARTUPINFO is a native struct whose
 				// hStdInput/hStdOutput/hStdError fields ARE raw HANDLEs, so CreateProcessW cannot be given a
-				// SafeHandle here. The lifetime is not dangerous in practice: the three
-				// AnonymousPipeServerStream instances are locals owned by this method and their client handles
-				// are only released by DisposeLocalCopyOfClientHandle AFTER the process has been created, so no
-				// handle can be closed while CreateProcessW is reading the struct.
+				// SafeHandle here, and the inherited-handle list is likewise an array of raw HANDLEs. The
+				// lifetime is not dangerous in practice: the three AnonymousPipeServerStream instances are
+				// locals owned by this method and their client handles are only released by
+				// DisposeLocalCopyOfClientHandle AFTER the process has been created, so no handle can be
+				// closed while CreateProcessW is reading the struct or the attribute list.
 #pragma warning disable S3869
-				StartupInformation startupInformation = new() {
-					cb = Marshal.SizeOf<StartupInformation>(),
-					dwFlags = StartFlagUseStdHandles,
-					hStdInput = input.ClientSafePipeHandle.DangerousGetHandle(),
-					hStdOutput = output.ClientSafePipeHandle.DangerousGetHandle(),
-					hStdError = error.ClientSafePipeHandle.DangerousGetHandle()
-				};
+				IntPtr standardInputHandle = input.ClientSafePipeHandle.DangerousGetHandle();
+				IntPtr standardOutputHandle = output.ClientSafePipeHandle.DangerousGetHandle();
+				IntPtr standardErrorHandle = error.ClientSafePipeHandle.DangerousGetHandle();
 #pragma warning restore S3869
 				environmentBlock = BuildEnvironmentBlock(request);
 				string commandLine = WindowsCommandLine.Build(request.Executable, request.Arguments);
 
-				bool created = NativeMethods.CreateProcessW(
-					lpApplicationName: request.Executable,
-					lpCommandLine: commandLine,
-					lpProcessAttributes: IntPtr.Zero,
-					lpThreadAttributes: IntPtr.Zero,
-					bInheritHandles: true,
-					dwCreationFlags: CreateSuspended | CreateUnicodeEnvironment | CreateNoWindow,
-					lpEnvironment: environmentBlock,
-					lpCurrentDirectory: request.WorkingDirectory,
-					lpStartupInfo: ref startupInformation,
-					lpProcessInformation: out processInformation);
+				// Every handle named here is inheritable because all three pipes were created with
+				// HandleInheritability.Inheritable above. That is a hard dependency, not a nicety: a handle in
+				// the list that is NOT inheritable, or a handle named in STARTUPINFO that is missing from the
+				// list, makes CreateProcessW fail with ERROR_INVALID_PARAMETER (87).
+				IntPtr[] inheritedHandles = WindowsWorkerStartup.BuildInheritedHandleList(
+					standardInputHandle, standardOutputHandle, standardErrorHandle);
+				bool created;
+				int createError;
+				using (ProcThreadAttributeList attributeList =
+					ProcThreadAttributeList.CreateForInheritedHandles(inheritedHandles)) {
+					StartupInformationEx startupInformation = WindowsWorkerStartup.BuildStartupInformation(
+						attributeList.Handle, standardInputHandle, standardOutputHandle, standardErrorHandle);
+
+					// bInheritHandles stays true ON PURPOSE: the handle list narrows inheritance only while
+					// inheritance is enabled at all. With it false the child would receive nothing, including
+					// its own three pipes.
+					created = NativeMethods.CreateProcessW(
+						lpApplicationName: request.Executable,
+						lpCommandLine: commandLine,
+						lpProcessAttributes: IntPtr.Zero,
+						lpThreadAttributes: IntPtr.Zero,
+						bInheritHandles: true,
+						dwCreationFlags: WindowsWorkerStartup.CreationFlags,
+						lpEnvironment: environmentBlock,
+						lpCurrentDirectory: request.WorkingDirectory,
+						lpStartupInfo: ref startupInformation,
+						lpProcessInformation: out processInformation);
+					// Read before the attribute list is disposed: its teardown issues native calls of its own,
+					// which would overwrite the thread's last-error value.
+					createError = Marshal.GetLastWin32Error();
+				}
 				if (!created) {
-					throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(),
+					throw new System.ComponentModel.Win32Exception(createError,
 						$"Unable to create the worker process '{request.Executable}'.");
 				}
 				// Owned from here on, so every failure path below closes it exactly once.
@@ -394,6 +433,307 @@ internal static class WindowsCommandLine {
 	}
 }
 
+/// <summary>
+/// Pure composition of what <c>CreateProcessW</c> is told about a worker: the creation flags, the
+/// extended startup structure, and the exact set of handles the child is allowed to inherit.
+/// </summary>
+/// <remarks>
+/// Separated from <see cref="WindowsJobObjectContainment"/> precisely so it can be asserted on macOS and
+/// Linux, where not one line of the surrounding native path can execute. Every constant carries the
+/// header expression it comes from so a reviewer can re-derive it rather than trust it.
+/// </remarks>
+internal static class WindowsWorkerStartup {
+
+	/// <summary><c>CREATE_SUSPENDED</c> — the child is in the job before its first instruction (ADR §2.4).</summary>
+	internal const uint CreateSuspended = 0x00000004;
+
+	/// <summary><c>CREATE_UNICODE_ENVIRONMENT</c> — the environment block built here is UTF-16.</summary>
+	internal const uint CreateUnicodeEnvironment = 0x00000400;
+
+	/// <summary><c>CREATE_NO_WINDOW</c> — a worker is a console application with no console.</summary>
+	internal const uint CreateNoWindow = 0x08000000;
+
+	/// <summary><c>EXTENDED_STARTUPINFO_PRESENT</c> — <c>lpStartupInfo</c> is a <c>STARTUPINFOEX</c>.</summary>
+	internal const uint ExtendedStartupInfoPresent = 0x00080000;
+
+	/// <summary><c>STARTF_USESTDHANDLES</c> — the three <c>hStd*</c> fields are meaningful.</summary>
+	internal const uint StartFlagUseStdHandles = 0x00000100;
+
+	/// <summary>
+	/// <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c>, that is
+	/// <c>ProcThreadAttributeValue(ProcThreadAttributeHandleList = 2, thread: FALSE, input: TRUE,
+	/// additive: FALSE)</c> = <c>2 | PROC_THREAD_ATTRIBUTE_INPUT (0x00020000)</c>.
+	/// </summary>
+	internal const int ProcThreadAttributeHandleList = 0x00020002;
+
+	/// <summary>The creation flags every worker is created with.</summary>
+	/// <remarks>
+	/// <c>CREATE_SUSPENDED</c> is load-bearing for containment (ADR §2.4) and
+	/// <c>EXTENDED_STARTUPINFO_PRESENT</c> is load-bearing for handle narrowing; dropping either while
+	/// editing the other is the realistic regression, which is why a test asserts both bits.
+	/// </remarks>
+	internal const uint CreationFlags =
+		CreateSuspended | CreateUnicodeEnvironment | CreateNoWindow | ExtendedStartupInfoPresent;
+
+	private static readonly IntPtr InvalidHandleValue = new(-1);
+
+	/// <summary>
+	/// Builds the set of handles the child is permitted to inherit — the three standard streams and
+	/// nothing else.
+	/// </summary>
+	/// <param name="standardInput">Inheritable client handle of the child's standard input pipe.</param>
+	/// <param name="standardOutput">Inheritable client handle of the child's standard output pipe.</param>
+	/// <param name="standardError">Inheritable client handle of the child's standard error pipe.</param>
+	/// <returns>Distinct handles in standard-stream order.</returns>
+	/// <remarks>
+	/// A duplicate is collapsed because one list entry covers however many <c>STARTUPINFO</c> slots point
+	/// at it, while a DISTINCT handle is never dropped: a handle named in <c>STARTUPINFO</c> but absent
+	/// from the list fails the spawn with <c>ERROR_INVALID_PARAMETER</c>.
+	/// </remarks>
+	/// <exception cref="ArgumentException">A handle is null or <c>INVALID_HANDLE_VALUE</c>.</exception>
+	internal static IntPtr[] BuildInheritedHandleList(IntPtr standardInput, IntPtr standardOutput,
+		IntPtr standardError) {
+		List<IntPtr> handles = new(3);
+		AppendHandle(handles, standardInput, "standard input");
+		AppendHandle(handles, standardOutput, "standard output");
+		AppendHandle(handles, standardError, "standard error");
+		return handles.ToArray();
+	}
+
+	/// <summary>Builds the extended startup structure for a worker.</summary>
+	/// <param name="attributeList">The initialized <c>PROC_THREAD_ATTRIBUTE_LIST</c>.</param>
+	/// <param name="standardInput">Handle placed in <c>hStdInput</c>.</param>
+	/// <param name="standardOutput">Handle placed in <c>hStdOutput</c>.</param>
+	/// <param name="standardError">Handle placed in <c>hStdError</c>.</param>
+	/// <returns>A <c>STARTUPINFOEX</c> ready to hand to <c>CreateProcessW</c>.</returns>
+	internal static StartupInformationEx BuildStartupInformation(IntPtr attributeList, IntPtr standardInput,
+		IntPtr standardOutput, IntPtr standardError) {
+		return new StartupInformationEx {
+			StartupInfo = new StartupInformation {
+				// With EXTENDED_STARTUPINFO_PRESENT, cb describes the EXTENDED structure. Leaving it at
+				// sizeof(STARTUPINFO) fails EVERY spawn with ERROR_INVALID_PARAMETER (87).
+				cb = Marshal.SizeOf<StartupInformationEx>(),
+				dwFlags = StartFlagUseStdHandles,
+				hStdInput = standardInput,
+				hStdOutput = standardOutput,
+				hStdError = standardError
+			},
+			lpAttributeList = attributeList
+		};
+	}
+
+	private static void AppendHandle(List<IntPtr> handles, IntPtr handle, string streamName) {
+		if (handle == IntPtr.Zero || handle == InvalidHandleValue) {
+			throw new ArgumentException(
+				$"The worker's {streamName} handle is not a valid handle, so the child's inherited handle list cannot be built.",
+				nameof(handle));
+		}
+		if (!handles.Contains(handle)) {
+			handles.Add(handle);
+		}
+	}
+}
+
+/// <summary>
+/// The native operations a <c>PROC_THREAD_ATTRIBUTE_LIST</c> needs, plus the unmanaged allocation that
+/// holds it.
+/// </summary>
+/// <remarks>
+/// A seam rather than direct calls to <c>kernel32</c>, because the property worth testing here is a
+/// lifecycle — buffer sized by the deliberately failing first call, destroyed before it is freed, freed
+/// on every failure path — and that lifecycle is identical on a host with no <c>kernel32</c> at all.
+/// Deliberately NOT a DI service: it is private plumbing of one containment implementation and has no
+/// consumer outside this file.
+/// </remarks>
+internal interface IProcThreadAttributeListNative {
+
+	/// <summary>Gets the calling thread's last native error code.</summary>
+	int LastError { get; }
+
+	/// <summary>Wraps <c>InitializeProcThreadAttributeList</c>.</summary>
+	/// <param name="attributeList">The buffer, or <see cref="IntPtr.Zero"/> to query the required size.</param>
+	/// <param name="attributeCount">Number of attributes the list must hold.</param>
+	/// <param name="size">In/out required size in bytes.</param>
+	/// <returns><see langword="true"/> on success; the sizing call returns <see langword="false"/> by design.</returns>
+	bool Initialize(IntPtr attributeList, int attributeCount, ref IntPtr size);
+
+	/// <summary>Wraps <c>UpdateProcThreadAttribute</c>.</summary>
+	/// <param name="attributeList">An initialized list.</param>
+	/// <param name="attribute">The attribute identifier.</param>
+	/// <param name="value">Pointer to the attribute value; it is stored, not copied.</param>
+	/// <param name="valueSize">Size of the value in BYTES.</param>
+	/// <returns><see langword="true"/> on success.</returns>
+	bool Update(IntPtr attributeList, IntPtr attribute, IntPtr value, IntPtr valueSize);
+
+	/// <summary>Wraps <c>DeleteProcThreadAttributeList</c>; must precede <see cref="Free"/>.</summary>
+	/// <param name="attributeList">An initialized list.</param>
+	void Delete(IntPtr attributeList);
+
+	/// <summary>Allocates unmanaged memory for the list.</summary>
+	/// <param name="byteCount">Size reported by the sizing call.</param>
+	/// <returns>The allocated buffer.</returns>
+	IntPtr Allocate(int byteCount);
+
+	/// <summary>Releases memory obtained from <see cref="Allocate"/>.</summary>
+	/// <param name="buffer">The buffer to release.</param>
+	void Free(IntPtr buffer);
+}
+
+/// <summary>The production <see cref="IProcThreadAttributeListNative"/>, backed by <c>kernel32</c>.</summary>
+internal sealed class Kernel32ProcThreadAttributeListNative : IProcThreadAttributeListNative {
+
+	/// <summary>The single instance; the type is stateless.</summary>
+	internal static readonly IProcThreadAttributeListNative Instance = new Kernel32ProcThreadAttributeListNative();
+
+	private Kernel32ProcThreadAttributeListNative() { }
+
+	/// <inheritdoc />
+	public int LastError => Marshal.GetLastWin32Error();
+
+	/// <inheritdoc />
+	public bool Initialize(IntPtr attributeList, int attributeCount, ref IntPtr size) =>
+		NativeMethods.InitializeProcThreadAttributeList(attributeList, attributeCount, 0, ref size);
+
+	/// <inheritdoc />
+	public bool Update(IntPtr attributeList, IntPtr attribute, IntPtr value, IntPtr valueSize) =>
+		NativeMethods.UpdateProcThreadAttribute(attributeList, 0, attribute, value, valueSize, IntPtr.Zero,
+			IntPtr.Zero);
+
+	/// <inheritdoc />
+	public void Delete(IntPtr attributeList) => NativeMethods.DeleteProcThreadAttributeList(attributeList);
+
+	/// <inheritdoc />
+	public IntPtr Allocate(int byteCount) => Marshal.AllocHGlobal(byteCount);
+
+	/// <inheritdoc />
+	public void Free(IntPtr buffer) => Marshal.FreeHGlobal(buffer);
+}
+
+/// <summary>
+/// A <c>PROC_THREAD_ATTRIBUTE_LIST</c> carrying one <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> attribute:
+/// the exhaustive set of handles a child created with <c>bInheritHandles: true</c> may inherit.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The lifecycle is unmanaged on three counts and each one has an ordering rule:
+/// </para>
+/// <list type="number">
+/// <item><description>
+/// The buffer is sized by a call that DELIBERATELY FAILS — <c>InitializeProcThreadAttributeList</c> with
+/// a null list returns <see langword="false"/> and sets <c>ERROR_INSUFFICIENT_BUFFER</c> while reporting
+/// the size through its out parameter. The reported size, not the boolean, is the success signal; do not
+/// "fix" this by testing the return value.
+/// </description></item>
+/// <item><description>
+/// <c>UpdateProcThreadAttribute</c> stores a POINTER to the handle array rather than copying it, so the
+/// array is pinned and stays pinned until after the list is destroyed — which is strictly later than the
+/// <c>CreateProcess</c> call that reads it.
+/// </description></item>
+/// <item><description>
+/// Teardown is <c>Delete</c> then <c>Free</c>, never the reverse, and it runs on every path including an
+/// exception thrown between the two initialization calls — where <c>Delete</c> must be SKIPPED, because
+/// destroying a list that was never initialized is undefined.
+/// </description></item>
+/// </list>
+/// </remarks>
+internal sealed class ProcThreadAttributeList : IDisposable {
+
+	private const int AttributeCount = 1;
+
+	private readonly IProcThreadAttributeListNative _native;
+	private readonly int _handleCount;
+	private GCHandle _pinnedHandles;
+	private IntPtr _buffer;
+	private bool _initialized;
+	private int _disposed;
+
+	private ProcThreadAttributeList(IProcThreadAttributeListNative native, IntPtr[] handles) {
+		_native = native;
+		_handleCount = handles.Length;
+		_pinnedHandles = GCHandle.Alloc(handles, GCHandleType.Pinned);
+	}
+
+	/// <summary>Gets the initialized list, for <c>STARTUPINFOEX.lpAttributeList</c>.</summary>
+	internal IntPtr Handle => _buffer;
+
+	/// <summary>Gets a value indicating whether the handle array is still pinned.</summary>
+	/// <remarks>Exists so a test can observe that the pin outlives the list and is then released.</remarks>
+	internal bool HandlesPinned => _pinnedHandles.IsAllocated;
+
+	/// <summary>Builds a list restricting inheritance to <paramref name="handles"/>.</summary>
+	/// <param name="handles">The handles the child may inherit; each must already be inheritable.</param>
+	/// <returns>An initialized list the caller owns and must dispose.</returns>
+	internal static ProcThreadAttributeList CreateForInheritedHandles(IntPtr[] handles) =>
+		CreateForInheritedHandles(handles, Kernel32ProcThreadAttributeListNative.Instance);
+
+	/// <summary>Builds a list restricting inheritance to <paramref name="handles"/>.</summary>
+	/// <param name="handles">The handles the child may inherit; each must already be inheritable.</param>
+	/// <param name="native">The native operations to use; substituted in tests.</param>
+	/// <returns>An initialized list the caller owns and must dispose.</returns>
+	/// <exception cref="System.ComponentModel.Win32Exception">The list could not be built. The spawn is
+	/// failed rather than retried without a handle list — see <see cref="WindowsJobObjectContainment"/>.</exception>
+	internal static ProcThreadAttributeList CreateForInheritedHandles(IntPtr[] handles,
+		IProcThreadAttributeListNative native) {
+		ArgumentNullException.ThrowIfNull(handles);
+		ArgumentNullException.ThrowIfNull(native);
+		if (handles.Length == 0) {
+			throw new ArgumentException(
+				"A child created with handle inheritance needs at least one inheritable handle; an empty list would deny it its own standard streams.",
+				nameof(handles));
+		}
+		ProcThreadAttributeList attributeList = new(native, handles);
+		try {
+			attributeList.Build();
+		} catch {
+			attributeList.Dispose();
+			throw;
+		}
+		return attributeList;
+	}
+
+	/// <inheritdoc />
+	public void Dispose() {
+		if (Interlocked.Exchange(ref _disposed, 1) != 0) {
+			return;
+		}
+		// Order is the whole point: destroy the list, then release the memory that held it, then release
+		// the pin on the array the list pointed at.
+		if (_initialized) {
+			_native.Delete(_buffer);
+			_initialized = false;
+		}
+		if (_buffer != IntPtr.Zero) {
+			_native.Free(_buffer);
+			_buffer = IntPtr.Zero;
+		}
+		if (_pinnedHandles.IsAllocated) {
+			_pinnedHandles.Free();
+		}
+	}
+
+	private void Build() {
+		IntPtr requiredSize = IntPtr.Zero;
+		// Expected to return false with ERROR_INSUFFICIENT_BUFFER: this call exists to report the size.
+		_native.Initialize(IntPtr.Zero, AttributeCount, ref requiredSize);
+		long byteCount = requiredSize.ToInt64();
+		if (byteCount <= 0) {
+			throw new System.ComponentModel.Win32Exception(_native.LastError,
+				"Unable to determine the size of the worker's inherited-handle attribute list.");
+		}
+		_buffer = _native.Allocate(checked((int)byteCount));
+		if (!_native.Initialize(_buffer, AttributeCount, ref requiredSize)) {
+			throw new System.ComponentModel.Win32Exception(_native.LastError,
+				"Unable to initialize the worker's inherited-handle attribute list.");
+		}
+		_initialized = true;
+		if (!_native.Update(_buffer, WindowsWorkerStartup.ProcThreadAttributeHandleList,
+				_pinnedHandles.AddrOfPinnedObject(), (IntPtr)(_handleCount * IntPtr.Size))) {
+			throw new System.ComponentModel.Win32Exception(_native.LastError,
+				"Unable to restrict the worker's inherited handles to its own standard streams.");
+		}
+	}
+}
+
 /// <summary>A kernel handle closed with <c>CloseHandle</c>.</summary>
 internal sealed class SafeKernelHandle : SafeHandleZeroOrMinusOneIsInvalid {
 
@@ -435,6 +775,16 @@ internal struct StartupInformation {
 	internal IntPtr hStdInput;
 	internal IntPtr hStdOutput;
 	internal IntPtr hStdError;
+}
+
+/// <summary>
+/// <c>STARTUPINFOEX</c>: a <c>STARTUPINFO</c> followed by the attribute list pointer. Required whenever
+/// <c>EXTENDED_STARTUPINFO_PRESENT</c> is passed, and the inner <c>cb</c> must describe THIS structure.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct StartupInformationEx {
+	internal StartupInformation StartupInfo;
+	internal IntPtr lpAttributeList;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -482,8 +832,21 @@ internal static class NativeMethods {
 	internal static extern bool CreateProcessW(string lpApplicationName, string lpCommandLine,
 		IntPtr lpProcessAttributes, IntPtr lpThreadAttributes,
 		[MarshalAs(UnmanagedType.Bool)] bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment,
-		string lpCurrentDirectory, ref StartupInformation lpStartupInfo,
+		string lpCurrentDirectory, ref StartupInformationEx lpStartupInfo,
 		out ProcessInformation lpProcessInformation);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	internal static extern bool InitializeProcThreadAttributeList(IntPtr lpAttributeList,
+		int dwAttributeCount, int dwFlags, ref IntPtr lpSize);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	internal static extern bool UpdateProcThreadAttribute(IntPtr lpAttributeList, uint dwFlags,
+		IntPtr attribute, IntPtr lpValue, IntPtr cbSize, IntPtr lpPreviousValue, IntPtr lpReturnSize);
+
+	[DllImport("kernel32.dll")]
+	internal static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
 
 	[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 	internal static extern IntPtr CreateJobObjectW(IntPtr lpJobAttributes, string lpName);
