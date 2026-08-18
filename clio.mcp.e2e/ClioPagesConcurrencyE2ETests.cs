@@ -191,17 +191,24 @@ public sealed class ClioPagesConcurrencyE2ETests {
 	[AllureName("Concurrent read during reg-web-app yields a whole catalog")]
 	[AllureDescription("Runs real clio reg-web-app processes against an isolated clio home while reading appsettings.json in a loop, then reads the catalog back with clio list-environments; every successful read must parse and the final catalog must contain every registered environment.")]
 	public async Task AppSettings_Should_YieldAWholeCatalog_When_ReadDuringRegWebAppWrites() {
-		// Arrange — an ISOLATED clio home. Without it this test would race real reg-web-app writes against
-		// the developer's own environment catalog on a machine where other work runs concurrently.
+		// Arrange — an ISOLATED clio home, redirected through CLIO_HOME. Setting HOME/LOCALAPPDATA alone
+		// does NOT isolate: TestConfiguration.Load puts the suite-owned CLIO_HOME into every spawned
+		// process and CLIO_HOME wins outright, so the six registrations below would land in the SHARED
+		// catalog that every other fixture resolves environments against — beside fixtures that
+		// deliberately install an unresolvable ActiveEnvironmentKey there. See IsolatedClioHome.
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string home = CreateTemporaryDirectory("clio-appsettings-concurrency-e2e");
-		string homeVariable = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
-		settings.ProcessEnvironmentVariables[homeVariable] = home;
+		string home = IsolatedClioHome.CreateAndRedirect(settings, "clio-appsettings-concurrency-e2e");
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(10));
 		try {
 			string appSettingsPath = TemporaryClioSettingsOverride.GetClioAppSettingsPath(
 				settings.ClioProcessPath, settings.ProcessEnvironmentVariables);
+			// Ask clio itself where it will write, and refuse to run unless that is inside this test's own
+			// home. Without this guard the isolation can regress to inert and the only symptom is six junk
+			// environments appearing in the shared catalog — which reads as an unrelated failure, in a
+			// different fixture, much later in the run.
+			appSettingsPath.Should().StartWith(home,
+				because: "clio must resolve its settings inside this test's private home; a path outside it means the redirect is inert and these registrations would damage the catalog the rest of the suite depends on");
 			string[] environmentNames = ["cat-a", "cat-b", "cat-c", "cat-d", "cat-e", "cat-f"];
 
 			ConcurrentBag<string> unparseableReads = [];

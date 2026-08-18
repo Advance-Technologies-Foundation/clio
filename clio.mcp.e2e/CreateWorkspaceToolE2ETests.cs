@@ -71,17 +71,26 @@ public sealed class CreateWorkspaceToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureDescription("Starts the real clio MCP server with a stale ActiveEnvironmentKey, invokes create-workspace with an explicit absolute directory, and verifies that the bootstrap repair still allows the local workspace flow to succeed.")]
-	[AllureName("Create Workspace Tool succeeds after bootstrap repairs an invalid active environment key")]
+	// The name used to say "bootstrap repairs an invalid active environment key". It does not:
+	// SettingsBootstrapService records an `invalid-active-environment` issue and leaves
+	// CanExecuteEnvTools = false, and no repair rewrites the key. What this test really proves is that a
+	// workspace-local command still works with that catalog, because CreateWorkspaceCommandOptions
+	// declares RequiredEnvironment => false. The old wording was unfalsifiable until this fixture got a
+	// private clio home — the override previously landed in the runner's own settings file and the server
+	// under test never read it.
+	[AllureDescription("Starts the real clio MCP server on a catalog whose ActiveEnvironmentKey does not resolve, invokes create-workspace with an explicit absolute directory, and verifies that the workspace-local flow still succeeds because the command requires no environment.")]
+	[AllureName("Create Workspace Tool succeeds despite an unresolvable active environment key")]
 	public async Task CreateWorkspace_Should_Create_Empty_Workspace_When_Active_Environment_Key_Is_Invalid() {
 		// Arrange
+		// The factory receives the fixture's OWN settings, so the deliberately broken catalog is written
+		// into this fixture's private clio home and is actually read by the server started below. Building
+		// a fresh environment dictionary here instead would drop CLIO_HOME, and the override would land in
+		// the runner's real per-user settings file while the server read a different one entirely.
 		await using CreateWorkspaceArrangeContext arrangeContext = await ArrangeAsync(
 			createMissingDirectory: false,
-			settingsOverrideFactory: () => TemporaryClioSettingsOverride.SetWrongActiveEnvironmentKey(
-				TestConfiguration.ResolveFreshClioProcessPath(),
-				new Dictionary<string, string?> {
-					["HOME"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-				}));
+			settingsOverrideFactory: fixtureSettings => TemporaryClioSettingsOverride.SetWrongActiveEnvironmentKey(
+				fixtureSettings.ClioProcessPath,
+				fixtureSettings.ProcessEnvironmentVariables));
 
 		// Act
 		CreateWorkspaceActResult actResult = await ActAsync(arrangeContext);
@@ -118,10 +127,20 @@ public sealed class CreateWorkspaceToolE2ETests {
 	private static async Task<CreateWorkspaceArrangeContext> ArrangeAsync(
 		bool createMissingDirectory,
 		bool configureWorkspacesRoot = false,
-		Func<TemporaryClioSettingsOverride>? settingsOverrideFactory = null) {
+		Func<McpE2ESettings, TemporaryClioSettingsOverride>? settingsOverrideFactory = null) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		settings.ProcessEnvironmentVariables["HOME"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+		// A PRIVATE clio home, never the suite-shared one. This fixture rewrites appsettings.json in two of
+		// its four tests (a workspaces-root value, and a deliberately unresolvable ActiveEnvironmentKey)
+		// through TemporaryClioSettingsOverride's plain File.WriteAllText, which takes none of the
+		// cross-process locks a real clio writer takes. Pointed at the shared catalog that write races every
+		// other clio process in the run and loses on Windows with "the process cannot access the file …
+		// because it is being used by another process" — the observed failure of the workspaces-root test.
+		// The previous `ProcessEnvironmentVariables["HOME"] = <user profile>` line bought no isolation from
+		// that: CLIO_HOME outranks HOME/LOCALAPPDATA outright and TestConfiguration.Load puts the
+		// suite-owned CLIO_HOME into every spawned process, so HOME was inert. IsolatedClioHome sets the
+		// variable that actually decides, plus HOME/USERPROFILE, so the whole fixture is self-contained.
+		string clioHome = IsolatedClioHome.CreateAndRedirect(settings, "clio-create-workspace-home");
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-create-workspace-e2e-{Guid.NewGuid():N}");
 		if (!createMissingDirectory) {
 			Directory.CreateDirectory(rootDirectory);
@@ -130,14 +149,32 @@ public sealed class CreateWorkspaceToolE2ETests {
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		TemporaryClioSettingsOverride? settingsOverride = configureWorkspacesRoot
-			? TemporaryClioSettingsOverride.SetWorkspacesRoot(
-				rootDirectory,
-				settings.ClioProcessPath,
-				settings.ProcessEnvironmentVariables)
-			: settingsOverrideFactory?.Invoke();
+			? SetWorkspacesRootInPrivateHome(settings, rootDirectory)
+			: settingsOverrideFactory?.Invoke(settings);
+		settingsOverride?.AppSettingsPath.Should().StartWith(clioHome,
+			because: "the settings file this fixture rewrites must be its own, so the write cannot collide with another clio process on the suite-shared catalog and cannot leak a broken catalog into the rest of the run");
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new CreateWorkspaceArrangeContext(rootDirectory, workspaceName, workspacePath, session, cancellationTokenSource, settingsOverride);
+		return new CreateWorkspaceArrangeContext(rootDirectory, workspaceName, workspacePath, session, cancellationTokenSource, settingsOverride, clioHome);
+	}
+
+	// SetWorkspacesRoot reads the existing settings file to preserve the rest of the catalog, so it needs
+	// one to exist. A freshly created private home has none until some clio process writes it, and relying
+	// on the path probe's side effect would make this arrangement depend on a detail of another command.
+	private static TemporaryClioSettingsOverride SetWorkspacesRootInPrivateHome(
+		McpE2ESettings settings,
+		string workspacesRoot) {
+		string appSettingsPath = TemporaryClioSettingsOverride.GetClioAppSettingsPath(
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+		if (!File.Exists(appSettingsPath)) {
+			Directory.CreateDirectory(Path.GetDirectoryName(appSettingsPath)!);
+			File.WriteAllText(appSettingsPath, "{}");
+		}
+		return TemporaryClioSettingsOverride.SetWorkspacesRoot(
+			workspacesRoot,
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
 	}
 
 	[AllureStep("Act by invoking create-workspace through MCP")]
@@ -278,7 +315,8 @@ public sealed class CreateWorkspaceToolE2ETests {
 		string WorkspacePath,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		TemporaryClioSettingsOverride? SettingsOverride) : IAsyncDisposable {
+		TemporaryClioSettingsOverride? SettingsOverride,
+		string ClioHome) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
@@ -286,6 +324,17 @@ public sealed class CreateWorkspaceToolE2ETests {
 
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
+			}
+
+			// The private home is this fixture's own scratch, so it goes with the test. A leftover home is
+			// not worth failing a passing assertion over — on Windows the server child can still be
+			// releasing handles when the directory delete runs.
+			if (Directory.Exists(ClioHome)) {
+				try {
+					Directory.Delete(ClioHome, recursive: true);
+				} catch (IOException) {
+				} catch (UnauthorizedAccessException) {
+				}
 			}
 		}
 	}

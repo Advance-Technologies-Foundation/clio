@@ -334,7 +334,9 @@ public sealed class ReadResponseDeadlineToolE2ETests {
 			Directory.CreateDirectory(path);
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			settings.ProcessEnvironmentVariables[OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME"] = path;
+			// CLIO_HOME too, not just HOME/LOCALAPPDATA: the suite-injected CLIO_HOME outranks them, so
+			// without this the stall-port catalog below would replace the SHARED one. See IsolatedClioHome.
+			IsolatedClioHome.Redirect(settings, path);
 			foreach (KeyValuePair<string, string> variable in extraEnvironmentVariables) {
 				// Read by the fresh clio MCP process at startup, so the static defaults pick the override up.
 				settings.ProcessEnvironmentVariables[variable.Key] = variable.Value;
