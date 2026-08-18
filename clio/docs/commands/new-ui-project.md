@@ -13,6 +13,15 @@ clio new-ui-project <Name> [options]
 
 Create a new Freedom UI (Angular) project.
 
+The package named by `--package` is created when it is missing. If
+`packages/<package-name>` already contains a valid Creatio `descriptor.json` whose package name and
+UId are valid, the command reuses that package without changing its descriptor, schemas, data,
+bindings, or other existing files. A directory without a valid matching package descriptor is
+rejected instead of being overwritten.
+
+The target `projects/<name>` path must not already exist as either a file or directory. Project
+replacement and in-place updates are not supported.
+
 When run inside a workspace, the command also wires the generated Angular project into
 `MainSolution.slnx` via an MSBuild `.esproj` wrapper, so that a single `dotnet build` produces
 both the C# package assembly and the Angular client bundle. Specifically it:
