@@ -47,7 +47,7 @@ clio delete-theme --id <id> [options]
 
 ```bash
 clio delete-theme --id d53a816b-65ed-4b5b-ad3b-f739280add45 -e myapp
-delete the theme 'ocean-theme' from the environment registered as myapp
+delete the theme with that id from the environment registered as myapp
 ```
 
 ## Notes

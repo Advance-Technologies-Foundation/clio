@@ -142,7 +142,7 @@ internal static class ThemeParameterValidator {
 			return false;
 		}
 		if (!Guid.TryParse(id, out _)) {
-			error = $"Theme id must be a GUID — the server parses it as one. Received: '{id}'.";
+			error = $"Theme id must be a GUID. Received: '{id}'.";
 			return false;
 		}
 		return true;

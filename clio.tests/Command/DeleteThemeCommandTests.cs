@@ -74,16 +74,16 @@ public sealed class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOption
 	}
 
 	[Test, Category("Unit")]
-	[Description("Fails fast without any HTTP call when the id violates the format rule.")]
-	public void DeleteTheme_ShouldFailFastWithoutHttp_WhenIdInvalid() {
+	[Description("Fails fast without any HTTP call when the id is not a GUID — a readable slug was valid under the pre-ENG-91018 rule, so this pins the tightened contract on the delete path.")]
+	public void DeleteTheme_ShouldFailFastWithoutHttp_WhenIdIsNotAGuid() {
 		// Act
-		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "bad id" });
+		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "ocean-theme" });
 
 		// Assert
-		exitCode.Should().Be(1, because: "an invalid id is rejected before any service call");
+		exitCode.Should().Be(1, because: "a non-GUID id is rejected before any service call");
 		_applicationClient.DidNotReceive().ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("id")));
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("GUID")));
 	}
 
 	[Test, Category("Unit")]
