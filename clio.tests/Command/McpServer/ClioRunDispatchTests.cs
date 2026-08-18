@@ -31,7 +31,17 @@ public sealed class ClioRunDispatchTests {
 		_registry = Substitute.For<IMcpToolInvokerRegistry>();
 		// An inert catalog substitute: TryResolveAlias defaults to false, so alias resolution never
 		// interferes with the direct-name dispatch behavior these tests pin.
-		_sut = new ClioRunExecutor(_registry, Substitute.For<IMcpToolCompatibilityCatalog>());
+		// The real execution router over the real declared metadata (ENG-95262 Stage 4b). NOTE the reader's
+		// public constructor scans the EXECUTING assembly — clio.dll — so this is the full PRODUCTION
+		// metadata map, not an empty one, and some names used below are real worker-classified tools. What
+		// keeps the dispatch behaviour pinned here unchanged is the router's SHAPE: the DI constructor
+		// leaves workerPathWired false, so every name — real, synthetic, classified or not — resolves to an
+		// in-process disposition and no site ever takes its refusal branch.
+		_sut = new ClioRunExecutor(
+			_registry,
+			Substitute.For<IMcpToolCompatibilityCatalog>(),
+			new McpExecutionRouter(
+				new McpToolExecutionMetadataReader(Substitute.For<IMcpToolCompatibilityCatalog>())));
 	}
 
 	// A real SDK-built tool over a static echo method, so InvokeAsync executes without a live server.

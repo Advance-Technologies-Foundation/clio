@@ -182,13 +182,12 @@ public class BindingsModule {
 				Command.McpServer.Tools.McpToolInvokerRegistry>();
 			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
 				Command.McpServer.McpToolCompatibilityCatalog>();
-			// Execution-metadata reader (ENG-95262 Stage 1): the single authority that answers "how and where
-			// does this tool execute" for a tool NAME, after unwrapping clio-run and canonicalising aliases.
-			// A singleton for the same reason as the registry above — it reflects the whole tool catalog — and
-			// subject to the same ORDERING DEPENDENCY note: it is also auto-registered as a transient by the
-			// reflection interface-scan inside RegisterInto, so this line must stay after it.
-			services.AddSingleton<Command.McpServer.IMcpToolExecutionMetadataReader,
-				Command.McpServer.McpToolExecutionMetadataReader>();
+			// The execution-metadata reader and the execution router are deliberately NOT registered here.
+			// "One routing authority per host" must hold on BOTH transports, and this block runs for the
+			// stdio host only — mcp-http builds its graph from RegisterInto + RegisterMcpServer and never
+			// enters it. Both live in RegisterInto (transport-neutral) and are skip-listed out of the
+			// assembly auto-scan, so neither host can end up with a per-resolution transient copy of the
+			// routing rule (ENG-95262 Stage 4b, ADR §9).
 		}
 		additionalRegistrations?.Invoke(services);
 		ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
@@ -204,9 +203,14 @@ public class BindingsModule {
 			provider.GetRequiredService<Command.McpServer.IMcpToolCompatibilityCatalog>();
 			provider.GetRequiredService<Command.McpServer.Tools.IMcpToolInvokerRegistry>();
 			// Warms the reflected execution-metadata map once at host startup rather than on the first
-			// routing question, and is the resolution that keeps the registration above from reading as dead
-			// (CLIO005) while Stage 1 has no routing consumer yet.
+			// routing question, and is the resolution that keeps the RegisterInto registration from reading
+			// as dead (CLIO005) while Stage 1 has no routing consumer yet.
 			provider.GetRequiredService<Command.McpServer.IMcpToolExecutionMetadataReader>();
+			// Resolving the router at STARTUP rather than on the first dispatch: it is the authority three
+			// dispatch sites depend on, so a mis-declared route (a missing metadata-reader registration, a
+			// wrong lifetime) must abort host startup instead of surfacing as a failed tool call mid-session.
+			// Constructing it also warms the reflected metadata map it reads.
+			provider.GetRequiredService<Command.McpServer.IMcpExecutionRouter>();
 		}
 		return provider;
 	}
@@ -1053,6 +1057,23 @@ public class BindingsModule {
 		// own cap and bound nothing at all.
 		services.AddSingleton<Common.McpWorker.IWorkerProcessSupervisor,
 			Common.McpWorker.WorkerProcessSupervisor>();
+		// ENG-95262 Stage 4b — the execution-metadata reader and the single execution-routing authority.
+		// TRANSPORT-NEUTRAL on purpose: the property is "one routing authority per host", and a host is not
+		// only the stdio one. mcp-http builds its graph from RegisterInto + RegisterMcpServer and never runs
+		// the registerMcpHost block in Register(), so a registration made there would leave HTTP reaching the
+		// router through the assembly auto-scan's TRANSIENT — a fresh copy of the routing rule per
+		// resolution, which is precisely the drift ADR §9 forbids. Registering here covers stdio, mcp-http
+		// and the per-request tenant containers with one line.
+		// Both interfaces are ALSO in the RegisterAssemblyInterfaceTypes skip-list rather than relying on
+		// last-registration-wins: the scan CAN construct both, so without the skip the lifetime would depend
+		// on declaration order rather than on intent (same reasoning as IBundledPackageCatalog and
+		// ICompileOperationRegistry above).
+		// SINGLETON because both wrap a reflected map of the whole tool catalog; construction stays lazy, so
+		// a non-MCP CLI build that never resolves them pays nothing.
+		services.AddSingleton<Command.McpServer.IMcpToolExecutionMetadataReader,
+			Command.McpServer.McpToolExecutionMetadataReader>();
+		services.AddSingleton<Command.McpServer.IMcpExecutionRouter,
+			Command.McpServer.McpExecutionRouter>();
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
 		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
@@ -1384,6 +1405,14 @@ public class BindingsModule {
 					// into dispatch registers this namespace explicitly, the way the supervisor namespace above
 					// already does.
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Relay.IWorkerMcpRelay).Namespace
+					// The execution-routing authority and the metadata reader it wraps (ENG-95262 Stage 4b)
+					// are registered explicitly as SINGLETONS in RegisterInto. Their constructors resolve
+					// cleanly, so the scan WOULD register them — as transients, and every dispatch site would
+					// then get its own copy of the routing rule on whichever transport did not override the
+					// lifetime. Skipping them here makes "one authority per host" a property of the
+					// registration rather than of declaration order.
+					|| implementedInterface == typeof(Command.McpServer.IMcpToolExecutionMetadataReader)
+					|| implementedInterface == typeof(Command.McpServer.IMcpExecutionRouter)
 					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
 					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
 					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {

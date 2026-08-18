@@ -67,7 +67,8 @@ public interface IClioRunExecutor {
 /// <inheritdoc />
 public sealed class ClioRunExecutor(
 	IMcpToolInvokerRegistry toolRegistry,
-	IMcpToolCompatibilityCatalog compatibilityCatalog) : IClioRunExecutor {
+	IMcpToolCompatibilityCatalog compatibilityCatalog,
+	IMcpExecutionRouter executionRouter) : IClioRunExecutor {
 
 	/// <inheritdoc />
 	public ValueTask<CallToolResult> RunAsync(
@@ -164,6 +165,23 @@ public sealed class ClioRunExecutor(
 		}
 		catch (ArgumentException ex) {
 			return Error(SensitiveErrorTextRedactor.Redact($"Error: {ex.Message}"));
+		}
+
+		// ENG-95262 dispatch site (c) of three — the CLIO-RUN INNER path, and the only place ADR rule 7 can
+		// be satisfied: `toolName` here is the UNWRAPPED, alias-canonicalised inner command, so a long-tail
+		// tool reached through the executor routes exactly as it would when named directly. Keying on the
+		// wrapper's own name instead would give the entire long tail clio-run's in-process row.
+		// The resolved name is passed EXPLICITLY rather than read off callContext, because DispatchAsync
+		// below retargets that context in place (and restores it in a finally, sometimes late).
+		// DispatchAsync is the single funnel for BOTH long-tail paths — this one and the durable handler's
+		// InvokeResolvedAsync — but the routing decision cannot be folded into it: site (b) must route right
+		// after its write-capability confirmation gate, and that gate refuses the call long before any
+		// dispatch happens, so a decision made inside DispatchAsync would never run for a refused write.
+		McpExecutionRoute route = executionRouter.Resolve(toolName, innerCommand: null);
+		if (!route.ExecutesInProcess) {
+			// Fail-closed seam, unreachable while no worker path is wired (Stage 6 replaces this branch with
+			// the relay). Everything below dispatches in the host process, exactly as before.
+			return McpExecutionRouter.WorkerPathNotWiredResult(route);
 		}
 
 		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) inner dispatch by the

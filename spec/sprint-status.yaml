@@ -2906,3 +2906,75 @@ stories:
     status_note: "Folded in, independent of every stage. Two defects in one call site: the tool takes GetLock(SharedFallbackKey) at three places (MobilePageConversionGuideTool.cs:111, :339, :531) after it has already resolved a real tenant — so it serializes unrelated tenants — and never calls the balancing MarkAvailable. GetLock PINS the lock-provider mapping in-use and is documented as 'balanced by MarkAvailable' (McpToolExecutionLock.cs:157-159), so unbalanced the mapping is pinned permanently. Fix by using the ExecuteUnderTenantLock helper, which balances by construction, instead of a hand-rolled lock."
     depends_on: []
     blocks: []
+
+  # Stories 14-18 record what Stage 4a (the full-duplex relay, commit 6299b4f63) deliberately left open.
+  # Each is a gap in shipped relay code, not a plan item: the relay exists with zero consumers, so none of
+  # them is reachable in production yet — and every one of them becomes reachable the moment routing starts.
+  # The sixth finding of that set is a CONTRACT question, not a task, and is carried as ADR OQ-9 instead.
+  - id: story-mcp-worker-execution-boundary-14
+    title: "A cancelled tools/call never tells the worker"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-14.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap, deferred to Stage 7 on purpose rather than guessed. Cancelling a call runs TakePending(key)?.TrySetCanceled (WorkerMcpRelay.cs:279-283) — the LOCAL pending slot is dropped and the awaiter released — and nothing is written on the child leg; the worker's late answer then hits TakePending on a missing key (:471-473) and is discarded silently. A per-call worker is reclaimed by the supervisor kill, so the abandoned work dies with the process; a STICKY worker keeps executing the abandoned tool, keeps its Creatio session, and is then handed the next call on the same transport. Sending notifications/cancelled is one SendMessageAsync; what is undecided is the contract around it — whether a cancelled sticky worker is reusable or retired, what a cancelled STARTER means for the three families with no operation registry (rule 5), and how it composes with the terminal-stage protocol (ADR 3.3), where a cancelled deploy must still produce an explicit indeterminate outcome. Do not emit it from inside the cancellation callback: that runs on the canceller's thread under the token registration. TC-E-404 is satisfied today in the per-call sense only, by the kill — the test plan row now says so."
+    depends_on:
+      - story-mcp-worker-execution-boundary-7
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-15
+    title: "The liveness probe never returns for a mute-but-live worker"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-15.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap. ProbeLivenessAsync (WorkerMcpRelay.cs:240-252) documents its return as 'false when the worker failed or closed', but it is ListToolsAsync in a catch and that path completes only on an answer, on the pipe closing, or on the CALLER's token — there is no timer in it. So the one condition a probe exists to catch, a worker whose pipe is open and which answers nothing (the wedge one process down), makes the probe itself hang. No production caller exists yet — the only reference is the unit test at WorkerMcpRelayTests.cs:405 and the relay namespace is excluded from DI auto-registration (BindingsModule.cs:1381-1386) — and its first real caller is Stage 7 sticky reuse, which is why the stage is 7 and not 2. The two exits must stay distinguishable: a fired caller token keeps throwing OperationCanceledException (a cancelled probe learned nothing), while the new internal bound returns false. Bound belongs to the probe with a caller override, sized against the measured 2.76s Windows spawn cost — a probe dearer than a spawn has no reason to exist. Fix it INSIDE Stage 7 and ahead of the reuse decision that calls it — story 14's AC-03 (return a cancelled sticky worker to the pool only after a bounded liveness confirmation) has no meaning until this bound exists."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-16
+    title: "The McpClient structural guard inspects signatures only"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-16.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap in the guard for binding rule 12. TC-U-401's structural case (WorkerMcpRelayTests.cs:43-69) feeds every relay type to SignatureTypes (:698-717), which yields field, property, return and parameter types — so 'var child = await McpClient.CreateAsync(...)' written as a method-body LOCAL, the precise regression the rule exists to prevent, passes it green. Nothing the test's signature-level reflection looks at can see it: the local's type is compiler-emitted debug info and the call is a member reference inside the IL body. Hence a story, not a two-line fix — it needs System.Reflection.Metadata over the relay types' method bodies, or runtime IL reflection (GetMethodBody().GetILAsByteArray() plus Module.ResolveMethod on the call operands). Keep the existing signature assertion (cheap, catches the stored-client shape) and keep the forbidden set and the inspected namespace narrow, or the guard becomes a repo-wide ban somebody suppresses. Prove it fails first on a planted offender, the way TC-U-102 proves the metadata gate is not vacuous."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-17
+    title: "Nobody reads the worker's standard error"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-17.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a finding, but the stream belongs to the SUPERVISOR, not the relay: WorkerProcessSupervisor redirects it (WorkerProcessSupervisor.cs:339) and exposes it on the lease (IWorkerProcessSupervisor.cs:126), while IWorkerChildTransportOwner.ConnectAsync deliberately takes stdin/stdout only (WorkerChildTransportOwner.cs:51). Nothing in clio/ reads it. Two consequences: a worker that dies at startup produces only 'The worker closed its transport before answering' (WorkerMcpRelay.cs:480-482), the same sentence for every startup failure there is; and an undrained redirected pipe has a finite OS buffer, so a chatty worker BLOCKS on the write and goes silent — the documented .NET Process deadlock — which ADR 3.3's stage-event silence timer then reports as a lost child with the blame pointing at the environment. Redaction is not optional: TC-U-505 already requires that no secret marker survives 'worker-stderr passthrough', so that row presumes this drain exists. Drain continuously (capturing after exit is the deadlocking case), keep a bounded tail, and never route it to the parent's stdout, which IS the parent's MCP transport. Encoded one-sided (blocks story 6) so no existing row is reshaped."
+    depends_on:
+      - story-mcp-worker-execution-boundary-2
+    blocks:
+      - story-mcp-worker-execution-boundary-6
+  - id: story-mcp-worker-execution-boundary-18
+    title: "Concurrent sends to one child transport are unverified"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-18.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap, and the only one of the five whose status is UNKNOWN rather than wrong. The relay writes to the child from the caller's thread (WorkerMcpRelay.cs:285-288), from the handshake (:428, :448-451) and from the off-loop request answerer (:556-559, :575-579, dispatched at :469 so a slow client cannot stall notification forwarding). The READ side is documented single-consumer and asserted; the WRITE side has no equivalent statement, and whether the SDK's StreamClientSessionTransport serialises writes was assumed, never checked. Interleaved writes corrupt newline-delimited framing, so the worker either fails to parse or drops a request — which reads as a sick environment, not as a client bug. Reachability, stated honestly: per-call traffic does not overlap by construction (one tools/call, then an await during which the only other write is a sampling answer), so the overlap becomes ordinary at Stage 7 — a second tools/call on a sticky worker while a sampling answer is being written — and story 14 adds a fifth writer. Verify first, then branch: pin the SDK's guarantee with an interleaving test, or add an async send gate (never a lock across an await) and pin the same test. Encoded one-sided (blocks story 7) so no existing row is reshaped."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks:
+      - story-mcp-worker-execution-boundary-7

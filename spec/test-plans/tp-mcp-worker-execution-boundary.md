@@ -82,6 +82,7 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 |---|---|---|
 | TC-U-201 | Unit | Concurrency cap admits N, queues N+1, and never drops a call |
 | TC-U-202 | Unit | Stale-worker cleanup is **identity-checked** — a reused PID belonging to a stranger is not killed |
+| TC-U-203 | Unit | **The worker's standard error is drained** (story 17). It is redirected and exposed on the lease (`IWorkerProcessSupervisor.cs:126`) and nothing reads it: a worker that fails at startup yields only "the worker closed its transport before answering", and a worker that fills the pipe buffer BLOCKS on the write and goes silent — which ADR §3.3's silence timer then reports as a lost child. Assert: a worker writing more than one buffer is drained without blocking, its tail reaches the failure, and TC-U-505's secret marker does not survive redaction |
 | TC-E-201 | E2E | **SIGKILL the parent while a worker has a descendant of its own; both disappear** — Linux and macOS (R4, **R-8a**) |
 | TC-E-203 | E2E | The same containment on **Windows**, via Job Object kill-on-close (**R-8b**). Blocked on OQ-1; until it passes, no cohort ships on Windows and any delivery is scoped to R-8a only |
 | TC-E-202 | E2E | Budget expiry kills the worker and its descendants; the parent answers with a bounded error |
@@ -107,8 +108,10 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-E-401 | E2E | **Sampling actually executes** — `update-page` under the relay produces a real semantic review, not `Skipped=true`; a marker planted in the client's sampling answer appears in the tool result (R2) |
 | TC-E-402 | E2E | `_meta.clioStageEvent` and `progressToken` are **byte/schema identical** to the committed contract fixture |
 | TC-E-403 | E2E | **Monotonic sequence delivery under concurrency** — sequences arrive in order; a reordered delivery fails (R3) |
-| TC-E-404 | E2E | Cancellation propagates parent → child and the child stops issuing backend requests |
+| TC-E-404 | E2E | Cancellation propagates parent → child and the child stops issuing backend requests. **Scope note (Stage 4a):** for a PER-CALL worker this holds by the supervisor kill, not by protocol — the relay drops the local pending slot and sends nothing to the child (`WorkerMcpRelay.cs:279-283`). The STICKY case is not covered here; it is story 14 / TC-E-702, and the two records must not be read as one |
 | TC-U-401 | Unit | The relay does not forward notifications through `McpClientHandlers.NotificationHandlers` (rule 12) — structural assertion, since the reordering is not deterministic enough to test by observation alone |
+| TC-U-404 | Unit | **The structural guard sees method bodies** (story 16). TC-U-401 inspects member SIGNATURES only (`WorkerMcpRelayTests.cs:698-717`), so `var child = await McpClient.CreateAsync(…)` as a local passes it — the exact regression rule 12 exists to prevent. Assert with an IL / `System.Reflection.Metadata` scan, and prove it fails first on a planted offender the way TC-U-102 proves the metadata gate is not vacuous |
+| TC-U-405 | Unit | **Concurrent writes to one child transport produce two whole messages** (story 18). The relay writes from the caller's thread (`:285-288`) and from the off-loop request answerer (`:556-559`, `:575-579`); whether the SDK's `StreamClientSessionTransport` serialises writes is unverified, and interleaved writes corrupt newline-delimited framing. Either pin the SDK's guarantee or pin the relay's own send gate — the test is the same either way |
 | TC-U-403 | Unit | **Router ordering (rule 9, AC-06):** an unmatched write tool routed through the worker still hits the destructive-confirmation gate **first**, and a refused confirmation prevents dispatch — asserted on the call order and on the child never being spawned, not by inspection |
 | TC-U-402 | Unit | **Both** dispatch seams route and agree: a tool reached as a matched name and the same tool reached through a deprecated alias (unmatched, via `McpDurableCallToolHandler`) resolve to the same execution location |
 | TC-C-401 | ClioRing | `ClioRing.Tests` green against the changed contract; unknown-field tolerance and ordered replay preserved |
@@ -142,6 +145,9 @@ behaviour — the backend genuinely is not answering. D returning 0 requests is 
 | TC-U-701 | Unit | Private completion signal reaps a worker for the three families with **no** operation registry (`install-process-builder`, `create-app-section`, `restart-by-credentials`) |
 | TC-U-702 | Unit | Parent-owned `configuration-build` reservation excludes compile ↔ install-process-builder across **processes**, keyed by normalised tenant + resource |
 | TC-U-703 | Unit | Sticky lifetime bounded by credential validity, with an explicit maximum (T-8) |
+| TC-U-704 | Unit | **A cancelled call tells the worker** (story 14): cancelling a `tools/call` emits `notifications/cancelled` carrying the id the relay used, and a late response for that id is still discarded without faulting the session |
+| TC-E-702 | E2E | **The sticky half of TC-E-404** (story 14): after a cancelled call on a sticky worker, the stub's `/counters` stop advancing — a sticky worker is not reclaimed by a kill, so nothing else stops the abandoned tool |
+| TC-U-705 | Unit | **The liveness probe is bounded** (story 15): a worker whose pipe stays open and which never answers makes `ProbeLivenessAsync` return `false` inside the probe's own bound, while a fired caller token still throws `OperationCanceledException` — the two exits must stay distinguishable |
 
 ### Stage 8 — long synchronous / streaming commands
 

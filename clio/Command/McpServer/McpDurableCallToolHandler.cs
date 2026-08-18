@@ -48,7 +48,8 @@ public interface IMcpDurableCallToolHandler {
 public sealed class McpDurableCallToolHandler(
 	IMcpToolInvokerRegistry toolRegistry,
 	IMcpToolCompatibilityCatalog compatibilityCatalog,
-	IClioRunExecutor executor) : IMcpDurableCallToolHandler {
+	IClioRunExecutor executor,
+	IMcpExecutionRouter executionRouter) : IMcpDurableCallToolHandler {
 
 	// Stable machine-readable outcome codes (mirrored in StructuredContent, never only prose) so an
 	// agent — or a downstream harness — can branch on the outcome without parsing English.
@@ -87,6 +88,20 @@ public sealed class McpDurableCallToolHandler(
 		// tool OUTCOME. Only expected outcomes are returned as structured results; a broken precondition
 		// stays a fail-fast programming error.
 		ArgumentNullException.ThrowIfNull(request);
+		// The "unmatched only" property this handler is built on — and which the execution router now
+		// DEPENDS on, because it is what makes the alias resolution below the authoritative canonical name —
+		// was SDK behaviour documented in prose (see the type remarks and the alias comment below) and
+		// enforced nowhere in code. A router that depends on an invariant must assert it rather than inherit
+		// it: a matched primitive here would mean the SDK invoked the unmatched seam for an advertised tool,
+		// which would route the call twice (dispatch site (a) already decided it) on a name this handler is
+		// about to re-resolve. Same class as the null-request throw above: a broken precondition, not a tool
+		// OUTCOME, so it fails fast instead of returning a structured result.
+		if (request.MatchedPrimitive is not null) {
+			throw new InvalidOperationException(
+				"McpDurableCallToolHandler was invoked for a MATCHED primitive "
+				+ $"('{request.MatchedPrimitive.Id}'). The SDK invokes this handler only on a tool-collection "
+				+ "miss; a matched call is routed and bounded by McpToolErrorFilter instead.");
+		}
 		string correlationId = Guid.NewGuid().ToString();
 		// Sanitized for prose reflection: an arbitrary caller-supplied name is later interpolated into
 		// model-visible Content, so control characters are stripped and the length capped — a
@@ -124,6 +139,19 @@ public sealed class McpDurableCallToolHandler(
 				request.Params?.Arguments,
 				toolRegistry.IsDestructive(canonicalName),
 				correlationId);
+		}
+
+		// ENG-95262 dispatch site (b) of three — the UNMATCHED path, and the only one of the three with a
+		// real ordering constraint (ADR rule 9). It sits AFTER alias/registry resolution, so the router keys
+		// on the canonical name rather than on the alias the caller happened to use, and AFTER the
+		// write-capability gate above, which IS the destructive-confirmation seam rule 9 names — it keys on
+		// readOnlyHint, not destructiveHint (issue #953), so an additive write such as odata-create is gated
+		// too. Routing before it would hand a write to a worker and bypass host gating entirely.
+		McpExecutionRoute route = executionRouter.Resolve(canonicalName, innerCommand: null);
+		if (!route.ExecutesInProcess) {
+			// Fail-closed seam, unreachable while no worker path is wired (Stage 6 replaces this branch with
+			// the relay). Everything below runs the call in the host process, exactly as before.
+			return McpExecutionRouter.WorkerPathNotWiredResult(route);
 		}
 
 		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) long-tail dispatch by

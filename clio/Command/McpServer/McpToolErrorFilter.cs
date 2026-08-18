@@ -36,6 +36,14 @@ public static class McpToolErrorFilter
 				return hintResult;
 			}
 			try {
+				// ENG-95262 dispatch site (a) of three — the MATCHED path. The routing question is asked here,
+				// inside the try, so anything unexpected it raises still leaves through the redacted catch
+				// below rather than reaching the SDK's default handler as raw text (threat model R-7 — the same
+				// reason a SECOND call-tool filter is not added: filter composition order is SDK-defined and
+				// unverified, so a router outside this catch could emit unredacted text into the transcript).
+				if (TryCreateWorkerRouteRefusal(context, out CallToolResult? routeRefusal)) {
+					return routeRefusal;
+				}
 				// ENG-93373: bound retry-safe (read-only, or the get-page local-write read; never idempotent server writes) tools by a wall-clock
 				// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
 				// returns a structured error-class=creatio-timeout result telling the agent the call is safe to
@@ -72,6 +80,65 @@ public static class McpToolErrorFilter
 	private static bool IsRetrySafeMatchedTool(RequestContext<CallToolRequestParams> context) =>
 		context.MatchedPrimitive is McpServerTool tool
 		&& McpReadDeadlineGate.IsRetrySafe(tool.ProtocolTool.Name, tool.ProtocolTool.Annotations);
+
+	/// <summary>
+	/// Asks the single execution-routing authority where this MATCHED call executes, and refuses the call
+	/// when it routes to a worker this seam cannot reach (ENG-95262, ADR §9).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Two named branches, neither of them an implicit fallthrough:
+	/// </para>
+	/// <list type="number">
+	/// <item><description>
+	/// <b>Unmatched name.</b> <c>MatchedPrimitive</c> is <c>null</c>, deliberately left alone: at filter
+	/// time such a name has no canonical yet (alias resolution runs later, in the durable handler) and the
+	/// write-capability confirmation gate has not run, so routing here would key on an unresolved alias and
+	/// miss. Dispatch site (b) routes it, after both. This is the ONLY branch that continues without
+	/// consulting the authority, and it continues because another site consults it.
+	/// </description></item>
+	/// <item><description>
+	/// <b>No router reachable.</b> FAIL-CLOSED, deliberately — this seam used to continue in-process here,
+	/// which made it the one asymmetric site: its two siblings take the router by constructor injection and
+	/// simply cannot exist without it. A silent in-process continuation is harmless only for as long as
+	/// nothing routes to a worker; the moment the relay is wired it becomes "run the whole worker cohort in
+	/// the host process", invisibly — the exact wedge this work removes. Refusing instead makes the wiring
+	/// defect say its own name. It is unreachable in a healthy process: the router is registered on the
+	/// transport-neutral <c>BindingsModule.RegisterInto</c> path, so stdio, mcp-http and the per-request
+	/// tenant containers all resolve it; only a hand-built fixture reaches this branch.
+	/// </description></item>
+	/// </list>
+	/// <para>
+	/// Keyed on <c>tool.ProtocolTool.Name</c> and NOT on the inner command of a <c>clio-run</c> call: the
+	/// wrapper itself runs in-process, and its inner tool is routed at dispatch site (c), the only place the
+	/// unwrapped name exists (ADR rule 7).
+	/// </para>
+	/// </remarks>
+	private static bool TryCreateWorkerRouteRefusal(
+		RequestContext<CallToolRequestParams> context,
+		out CallToolResult? result) {
+		result = null;
+		if (context.MatchedPrimitive is not McpServerTool tool) {
+			return false;
+		}
+		if (context.Services?.GetService(typeof(IMcpExecutionRouter)) is not IMcpExecutionRouter router) {
+			// Do NOT turn this back into `return false`. That reads as harmless today (nothing routes to a
+			// worker, so continuing and routing agree byte for byte) and stops being harmless the moment the
+			// relay is wired, at which point it silently runs the worker cohort in the host process. See the
+			// remarks above and McpExecutionRouter.RoutingAuthorityUnreachableResult.
+			result = McpExecutionRouter.RoutingAuthorityUnreachableResult(tool.ProtocolTool.Name);
+			return true;
+		}
+		McpExecutionRoute route = router.Resolve(tool.ProtocolTool.Name, innerCommand: null);
+		if (route.ExecutesInProcess) {
+			// The in-process branch, taken by every call today. THIS is the line Stage 6 replaces with the
+			// relay invocation for the worker cohort — it is explicit rather than a fallthrough so the
+			// replacement has one obvious place to happen.
+			return false;
+		}
+		result = McpExecutionRouter.WorkerPathNotWiredResult(route);
+		return true;
+	}
 
 	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with the nested clio-run
 	// dispatcher so both MCP error paths surface the same text (ENG-93365).

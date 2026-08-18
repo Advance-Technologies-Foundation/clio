@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NUnit.Framework;
@@ -433,7 +434,7 @@ public sealed class McpToolErrorFilterTests
 		};
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
 			McpToolErrorFilter.HandleCallToolErrors((_, _) => new ValueTask<CallToolResult>(expected));
-		RequestContext<CallToolRequestParams> context = CreateContext("fake-read-tool");
+		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool"));
 		context.MatchedPrimitive = CreateRetrySafeTool();
 
 		// Act
@@ -452,7 +453,7 @@ public sealed class McpToolErrorFilterTests
 		InvalidOperationException executionException = new("Environment with key 'NoSuchEnv' not found.");
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
 			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw executionException);
-		RequestContext<CallToolRequestParams> context = CreateContext("fake-read-tool");
+		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool"));
 		context.MatchedPrimitive = CreateRetrySafeTool();
 
 		// Act
@@ -466,6 +467,20 @@ public sealed class McpToolErrorFilterTests
 			because: "the real cause must survive the deadline wrapper so the agent can self-correct");
 		text.Should().NotContain("timed out",
 			because: "an immediate exception is not a deadline timeout and must not be mislabeled");
+	}
+
+	// The matched dispatch site is FAIL-CLOSED on an unreachable routing authority (ENG-95262 Stage 4b), so
+	// a context that carries a MatchedPrimitive and continues into the pipeline must also carry the router —
+	// exactly as every real host does. The real router over the real declared metadata is used rather than a
+	// stub: these tools are unclassified, so it answers in-process and the behaviour pinned here is the
+	// pre-router behaviour.
+	private static RequestContext<CallToolRequestParams> WithRoutingAuthority(
+		RequestContext<CallToolRequestParams> context) {
+		context.Services = new ServiceCollection()
+			.AddSingleton<IMcpExecutionRouter>(
+				new McpExecutionRouter(new McpToolExecutionMetadataReader(new McpToolCompatibilityCatalog())))
+			.BuildServiceProvider();
+		return context;
 	}
 
 	private static McpServerTool CreateRetrySafeTool() =>
