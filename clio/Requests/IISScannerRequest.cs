@@ -449,8 +449,26 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		}
 		XElement[] siteApps = [.. apps.Where(app => string.Equals(app.Attribute("SITE.NAME")!.Value, siteName,
 			StringComparison.OrdinalIgnoreCase))];
-		return siteApps.Length == 1 && string.Equals(siteApps[0].Attribute("APP.NAME")!.Value, $"{siteName}/",
-			StringComparison.OrdinalIgnoreCase);
+		XElement rootApp = siteApps.FirstOrDefault(app => string.Equals(app.Attribute("APP.NAME")!.Value,
+			$"{siteName}/", StringComparison.OrdinalIgnoreCase));
+		if (rootApp is null) {
+			return false;
+		}
+		string targetAppPoolName = rootApp.Attribute("APPPOOL.NAME")!.Value;
+
+		// The target is exclusive when its application pool serves exactly this site's applications
+		// and nothing else, rather than when the site has a single application. Creatio registers TWO
+		// applications per site - the root loader "<site>/" and the nested "<site>/0" - both in the
+		// same pool, so a single-application requirement rejected every Creatio environment and made
+		// uninstall-creatio unable to remove any Creatio IIS site. What must still be refused is a
+		// foreign application that would be deleted with the site, or a pool shared with another site
+		// whose Windows profile must survive.
+		return siteApps.All(app => string.Equals(app.Attribute("APPPOOL.NAME")!.Value, targetAppPoolName,
+				StringComparison.OrdinalIgnoreCase))
+			&& !apps.Any(app => string.Equals(app.Attribute("APPPOOL.NAME")!.Value, targetAppPoolName,
+					StringComparison.OrdinalIgnoreCase)
+				&& !string.Equals(app.Attribute("SITE.NAME")!.Value, siteName,
+					StringComparison.OrdinalIgnoreCase));
 	}
 
 	internal static bool IsIisTargetAbsent(string appsXml, string siteName) {
