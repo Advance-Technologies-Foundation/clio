@@ -96,7 +96,7 @@ public sealed class ClioExecutablePathProvider : IClioExecutablePathProvider {
 			"Unable to resolve how to re-launch clio: neither the process path nor the assembly location is available.");
 	}
 
-	private string ResolveAssemblyPath() {
+	private static string ResolveAssemblyPath() {
 		// Assembly.Location is an EMPTY string (never null) in a single-file host, which is why this is
 		// a string check and not a null check.
 		string location = typeof(ClioExecutablePathProvider).Assembly.Location;

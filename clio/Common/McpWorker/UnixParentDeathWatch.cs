@@ -89,9 +89,11 @@ public static class UnixParentDeathWatch {
 	private const int InitProcessId = 1;
 
 	// Kept for the process lifetime on purpose: disposing the registration would restore the default SIGTERM
-	// disposition and silently disarm the watch.
+	// disposition and silently disarm the watch. Never read back, and Sonar S4487 is suppressed for exactly
+	// that reason: the field IS the GC root, so removing it would let the finalizer disarm SIGTERM handling.
+#pragma warning disable S4487
 	private static IDisposable _signalRegistration;
-	private static Thread _kqueueWatcher;
+#pragma warning restore S4487
 
 	/// <summary>
 	/// Promotes this process to its own process group and arms parent-death signalling.
@@ -154,10 +156,9 @@ public static class UnixParentDeathWatch {
 	/// </remarks>
 	public static void TerminateSelfAndDescendants() {
 		int self = Environment.ProcessId;
-		if (TryGetProcessGroupId(self, out int groupId) && groupId == self) {
-			if (TryNativeCall(() => UnixNativeMethods.kill(-self, SignalKill))) {
-				return;
-			}
+		if (TryGetProcessGroupId(self, out int groupId) && groupId == self
+			&& TryNativeCall(() => UnixNativeMethods.kill(-self, SignalKill))) {
+			return;
 		}
 		TryNativeCall(() => UnixNativeMethods.kill(self, SignalKill));
 	}
@@ -242,11 +243,11 @@ public static class UnixParentDeathWatch {
 
 		// Background thread: it blocks in kevent for the process's whole life, and a foreground thread doing
 		// that would keep the worker alive after its work finished.
-		_kqueueWatcher = new Thread(() => WaitForParentExit(queue, handler)) {
+		Thread watcher = new(() => WaitForParentExit(queue, handler)) {
 			IsBackground = true,
 			Name = "clio-mcp-worker-parent-death-watch"
 		};
-		_kqueueWatcher.Start();
+		watcher.Start();
 		return ParentDeathSignallingMode.KqueueProcessExit;
 	}
 

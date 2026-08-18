@@ -323,7 +323,7 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 				+ "the worker had already emitted, so a stage event — possibly the terminal one a caller waits "
 				+ "on — did not reach it.");
 		}
-		_lifetime.Cancel();
+		await _lifetime.CancelAsync().ConfigureAwait(false);
 		FailAllPending(new WorkerRelayException("The relay session was disposed."));
 		if (_readLoop is null) {
 			_lifetime.Dispose();
@@ -380,7 +380,7 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 		if (!ReferenceEquals(finished, work)) {
 			return false;
 		}
-		timer.Cancel();
+		await timer.CancelAsync().ConfigureAwait(false);
 		try {
 			await expiry.ConfigureAwait(false);
 		}

@@ -367,7 +367,7 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	// Every operation on the System.Diagnostics.Process object is captured here, inside the one class
 	// this feature allows to name that type, and handed out as delegates. The containment
 	// implementations and the registry therefore work with a plain interface and stay free of it.
-	private IWorkerProcessHandle CreateHandle(Process process, string fallbackExecutablePath,
+	private static IWorkerProcessHandle CreateHandle(Process process, string fallbackExecutablePath,
 		Stream standardInput, Stream standardOutput, Stream standardError) {
 		int processId = process.Id;
 		DateTime startTimeUtc = ReadStartTimeUtc(process);

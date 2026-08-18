@@ -1045,10 +1045,7 @@ public class BindingsModule {
 		// the winner, which on macOS or Linux would silently hand the caller the Windows job-object path.
 		// The whole Clio.Common.McpWorker interface namespace is excluded from the auto-scan for that
 		// reason and for the lifetimes below — see RegisterAssemblyInterfaceTypes.
-		services.AddSingleton<Common.McpWorker.IProcessContainment>(_ =>
-			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? new Common.McpWorker.WindowsJobObjectContainment()
-				: new Common.McpWorker.UnixProcessGroupContainment());
+		services.AddSingleton<Common.McpWorker.IProcessContainment>(_ => CreateProcessContainment());
 		services.AddSingleton<Common.McpWorker.IClioExecutablePathProvider,
 			Common.McpWorker.ClioExecutablePathProvider>();
 		services.AddSingleton<Common.McpWorker.IStaleWorkerRegistry, Common.McpWorker.StaleWorkerRegistry>();
@@ -1114,6 +1111,14 @@ public class BindingsModule {
 		RegisterFluentValidators(services);
 		return settingsRepository;
 	}
+
+	// Extracted from RegisterInto rather than left as an inline factory lambda: the OS branch is the only
+	// conditional the containment registration needs, and keeping it out of that already very long
+	// registration body is what holds RegisterInto inside its cognitive-complexity budget.
+	private static Common.McpWorker.IProcessContainment CreateProcessContainment() =>
+		RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+			? new Common.McpWorker.WindowsJobObjectContainment()
+			: new Common.McpWorker.UnixProcessGroupContainment();
 
 	/// <summary>
 	/// Builds the feature-toggle service this process must run on: the live settings-backed one for an

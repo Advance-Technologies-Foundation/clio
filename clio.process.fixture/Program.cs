@@ -14,12 +14,12 @@ const string carriageReturnOutputArgument = "--write-carriage-return-output";
 const string invocationMarkerFileName = "invoked.marker";
 const string descendantIdentityFileName = "descendant.identity";
 
-if (args.Length == 1 && string.Equals(args[0], holdPipesArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, holdPipesArgument, 1)) {
 	await Task.Delay(TimeSpan.FromSeconds(30));
 	return 0;
 }
 
-if (args.Length == 2 && string.Equals(args[0], growDirectoryArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, growDirectoryArgument, 2)) {
 	await Task.Delay(TimeSpan.FromMilliseconds(300));
 	Directory.CreateDirectory(args[1]);
 	await File.WriteAllBytesAsync(Path.Combine(args[1], "late-growth.bin"), new byte[4096]);
@@ -32,7 +32,7 @@ if (args.Length == 2 && string.Equals(args[0], growDirectoryArgument, StringComp
 // and only then spawn a descendant. The descendant is spawned as the FIRST observable act so a Windows
 // containment that assigned the job AFTER the process was already running would leak it, and the test
 // would see that leak instead of passing around it.
-if (args.Length == 3 && string.Equals(args[0], selfPromotingWorkerArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, selfPromotingWorkerArgument, 3)) {
 	PromoteToOwnProcessGroup();
 	ArmParentDeathContainment();
 	using Process contained = StartPipeHoldingDescendant();
@@ -46,35 +46,35 @@ if (args.Length == 3 && string.Equals(args[0], selfPromotingWorkerArgument, Stri
 // The intermediate parent for the parent-death case: it starts a self-promoting worker and then does
 // nothing, so a test can force-kill it and watch whether the worker and the worker's own descendant go
 // with it. It is deliberately dumb — the containment being proven lives in the worker, not here.
-if (args.Length == 3 && string.Equals(args[0], spawnSelfPromotingWorkerArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, spawnSelfPromotingWorkerArgument, 3)) {
 	using Process worker = StartPipeHoldingDescendant(selfPromotingWorkerArgument, args[1], args[2]);
 	await WriteOutputAsync("intermediate-ready");
 	await Task.Delay(TimeSpan.FromSeconds(60));
 	return 0;
 }
 
-if (args.Length == 2 && string.Equals(args[0], spawnDescendantArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, spawnDescendantArgument, 2)) {
 	using Process descendant = StartPipeHoldingDescendant();
 	await WriteProcessIdentityAsync(args[1], descendant);
 	await WriteOutputAsync("parent-exited");
 	return 0;
 }
 
-if (args.Length == 3 && string.Equals(args[0], spawnGrowingDescendantArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, spawnGrowingDescendantArgument, 3)) {
 	using Process descendant = StartPipeHoldingDescendant(growDirectoryArgument, args[2]);
 	await WriteProcessIdentityAsync(args[1], descendant);
 	await WriteOutputAsync("parent-exited");
 	return 0;
 }
 
-if (args.Length == 2 && string.Equals(args[0], overflowOutputArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, overflowOutputArgument, 2)) {
 	using Process descendant = StartPipeHoldingDescendant();
 	await WriteProcessIdentityAsync(args[1], descendant);
 	await WriteOutputAsync(new string('x', 8192));
 	return 0;
 }
 
-if (args.Length == 1 && string.Equals(args[0], carriageReturnOutputArgument, StringComparison.Ordinal)) {
+if (IsCommand(args, carriageReturnOutputArgument, 1)) {
 	await WriteOutputAsync("first\r");
 	await Task.Delay(TimeSpan.FromSeconds(1));
 	await WriteOutputAsync("second");
@@ -88,6 +88,12 @@ using Process gitDescendant = StartPipeHoldingDescendant();
 await WriteProcessIdentityAsync(Path.Combine(fixtureDirectory, descendantIdentityFileName), gitDescendant);
 await WriteOutputAsync("fake-git-parent-exited");
 return 1;
+
+// One guard for every dispatch branch below: the fixture's contract is "verb plus exactly N arguments",
+// and spelling that out inline eight times is what pushed the top-level file over the complexity budget.
+static bool IsCommand(string[] commandArguments, string verb, int expectedLength) =>
+	commandArguments.Length == expectedLength
+	&& string.Equals(commandArguments[0], verb, StringComparison.Ordinal);
 
 static Process StartPipeHoldingDescendant(params string[] arguments) {
 	ProcessStartInfo descendantStartInfo = new(GetCurrentExecutablePath()) {
@@ -151,16 +157,19 @@ static void ArmParentDeathContainment() {
 	watcher.Start();
 }
 
-internal static class NativeMethods {
+namespace Clio.ProcessFixture {
 
-	internal const int SignalKill = 9;
+	internal static class NativeMethods {
 
-	[DllImport("libc", SetLastError = true)]
-	internal static extern int setpgid(int pid, int pgid);
+		internal const int SignalKill = 9;
 
-	[DllImport("libc", SetLastError = true)]
-	internal static extern int getppid();
+		[DllImport("libc", SetLastError = true)]
+		internal static extern int setpgid(int pid, int pgid);
 
-	[DllImport("libc", SetLastError = true)]
-	internal static extern int killpg(int pgrp, int sig);
+		[DllImport("libc", SetLastError = true)]
+		internal static extern int getppid();
+
+		[DllImport("libc", SetLastError = true)]
+		internal static extern int killpg(int pgrp, int sig);
+	}
 }

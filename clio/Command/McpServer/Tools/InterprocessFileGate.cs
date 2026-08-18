@@ -86,6 +86,12 @@ public sealed class InterprocessFileGate : IInterprocessFileGate {
 	[ThreadStatic]
 	private static HashSet<string> _heldLocks;
 
+	// Static rather than inlined into Enter: the set is [ThreadStatic] state, so it is initialized once per
+	// thread and never from instance state — writing it from an instance member is what Sonar S2696 warns
+	// about, and doing it here keeps the write where it belongs.
+	private static HashSet<string> EnsureThreadHeldLocks() =>
+		_heldLocks ??= new HashSet<string>(StringComparer.Ordinal);
+
 	private readonly IFileSystem _fileSystem;
 	private readonly TimeSpan _timeout;
 
@@ -134,17 +140,17 @@ public sealed class InterprocessFileGate : IInterprocessFileGate {
 				$"Timed out waiting for the file lock '{lockFilePath}'. Another operation in this clio process is still using the guarded file.");
 		}
 		try {
-			_heldLocks ??= new HashSet<string>(StringComparer.Ordinal);
-			if (_heldLocks.Contains(key)) {
+			HashSet<string> heldLocks = EnsureThreadHeldLocks();
+			if (heldLocks.Contains(key)) {
 				// Already held by this thread — the outer Enter owns the handle and its release.
 				return action();
 			}
 			using FileSystemStream lockStream = AcquireLockHandle(lockFilePath);
-			_heldLocks.Add(key);
+			heldLocks.Add(key);
 			try {
 				return action();
 			} finally {
-				_heldLocks.Remove(key);
+				heldLocks.Remove(key);
 			}
 		} finally {
 			Monitor.Exit(processLock);
