@@ -436,7 +436,7 @@ public sealed class ApplicationToolE2ETests {
 		// Wait for all three markers instead of asserting on whatever the sink held when the call returned:
 		// tool completion and notification dispatch use independent SDK continuations, so the final marker
 		// can still be in flight at that instant — which is how 'loading application metadata' went missing
-		// on a loaded stand (issue #1103). Waiting on the CONJUNCTION means the timeout message names every
+		// (issue #1103). Waiting on the CONJUNCTION means the timeout message names every
 		// marker that did arrive, so a genuinely missing marker is still reported precisely.
 		Func<Task> awaitAllMarkers = async () => await progress.WaitForMessagesAsync(
 			messages => PerPhaseMarkers.All(
@@ -558,12 +558,13 @@ public sealed class ApplicationToolE2ETests {
 		// environment is visible in the run output even if a later step throws while parsing.
 		TestContext.Out.WriteLine($"[create payload] {DescribeCallResult(createResult.CallResult)}");
 		// The create precondition is asserted HERE, immediately after the create and BEFORE sync-schemas,
-		// because everything downstream only makes sense once the application exists. When creation fails on
-		// a contended stand, sync-schemas then fails too and the readback poll below burns its full timeout
-		// waiting for an entity that will never appear — so the run used to report "success is False" minutes
-		// late, with no create-app error to act on. That is exactly how a contended-stand failure read as an
-		// unexplained flake (issue #1103). The raw payload is inlined in the reason on purpose: create-app
-		// reports WHY it failed in `error`, and without it the failure message is only "found False".
+		// because everything downstream only makes sense once the application exists. When creation fails,
+		// sync-schemas then fails too and the readback poll below burns its full timeout waiting for an
+		// entity that will never appear — so the run used to report "success is False" minutes late, with no
+		// create-app error to act on. That is exactly how this failure read as an unexplained flake
+		// (issue #1103). The raw payload is inlined in the reason on purpose: create-app reports WHY it
+		// failed in `error`, and without it the failure message is only "found False" — which is precisely
+		// what CI showed: an ~11s failure on a freshly deployed, dedicated stand with no error text at all.
 		createResult.Result.Success.Should().BeTrue(
 			because: "the regression scenario requires a successfully created application before sync-schemas "
 				+ "mutates the canonical main entity. "

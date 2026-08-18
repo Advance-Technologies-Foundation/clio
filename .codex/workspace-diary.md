@@ -8760,3 +8760,30 @@ Impact: Gives the e2e project a reusable bounded wait for typed progress asserti
 notifications/progress test should use it instead of asserting on the post-call snapshot. Also records that
 a muted `whenFixed` test reports a GREEN build whether or not a fix works, so validating a flake fix means
 reading per-test status, not build status.
+
+## 2026-08-18 15:55 – e2e job DOES isolate the stand per build (corrects issue #1103)
+Context: Issue #1103 blamed the flaky application e2e tests on 10+ concurrent builds contending for one
+shared Creatio sandbox, and proposed serialising the job or provisioning an isolated stand per build.
+Alex asked why that regressed, since a per-run site was the original design.
+Discovery: it did NOT regress — isolation is in place and working. `teamcity api
+/app/rest/builds/id:<id>/resulting-properties` on the three builds cited in the issue shows
+`DeployedUrl=http://ts1-agent<N>:88/studioenu_<buildId>_<MMDD>`, matching `DeployedDatabaseName` and
+`ApplicationPoolName`, with `DeployCreatioBuild=true`, `env.ApplicationAlreadyDeployed=False`,
+`PublishServerName=%env.COMPUTERNAME%`, `UseSharingDBMS/UseSharingIIS=false`. Concurrent builds were each
+on a different agent (ts1-agent06/18/27/37/45/51/54/60).
+Discovery: what makes this LOOK like a shared stand — (a) at buildType level `DeployedUrl`,
+`DeployedDatabaseName` and `BuildPath` are EMPTY (auto-derived per run), so reading
+`/app/rest/buildTypes/<id>/parameters` suggests nothing is configured; you must read a build's
+`resulting-properties`. (b) `env.McpE2E__Sandbox__EnvironmentName=dev` is a constant, but it is only the
+clio ENV NAME, registered against the per-build URL.
+Discovery: intra-build contention is ruled out too — `clio.mcp.e2e.runsettings` sets
+`NumberOfTestWorkers=2`, but only 25 of 135 fixtures are `[Parallelizable]` and both application fixtures
+are `[NonParallelizable]`.
+Discovery: consequently `ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync` is UNEXPLAINED —
+build 15893413 shows an ~11.2s `create-app` failure with `found False` and no error text, on a fresh
+dedicated stand. Post-deploy warm-up is a guess, not verified.
+Files: (no code change) — issue #1103 body + comment, PR #1104 body, test comments in
+clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionToolE2ETests.cs
+Impact: Do NOT attribute a clio.mcp.e2e failure to other builds on the stand, and do not propose job
+serialisation for it. Read `resulting-properties` of a build, never the buildType `/parameters`, when
+checking how a TeamCity job provisions its environment.

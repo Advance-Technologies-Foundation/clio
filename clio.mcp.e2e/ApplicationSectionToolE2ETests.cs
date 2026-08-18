@@ -781,7 +781,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		// Wait for the beat instead of asserting on whatever the sink happened to hold when the call
 		// returned: tool completion and notification dispatch use independent SDK continuations, so the
 		// server can have sent the beat while the typed IProgress handler has not run yet. Asserting
-		// immediately made this test fail on roughly half of the loaded-stand runs (issue #1103).
+		// immediately made this test fail on roughly half of the recent CI runs (issue #1103).
 		Func<Task> awaitFirstBeat = async () => await progress.WaitForCountAsync(
 			minimumCount: 1, ProgressDeliveryTimeout, cancellationTokenSource.Token);
 		await awaitFirstBeat.Should().NotThrowAsync(
