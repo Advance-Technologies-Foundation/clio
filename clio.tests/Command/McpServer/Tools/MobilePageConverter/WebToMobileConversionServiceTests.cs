@@ -1552,6 +1552,27 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the preserved scope container is still non-converting");
 	}
 
+	[Test]
+	[Description("The BUNDLED rules convert a MainHeader crt.Button into a FloatingActionButton.menuItems crt.MenuItem end to end — the only test that reads the SHIPPED FAB rule, so a typo in its path/filters/placement/value is caught here.")]
+	public void Analyze_ViewConfigTemplate_BundledRules_ConvertHeaderButtonToFab() {
+		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, shipped);
+
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert", because: "the shipped FAB rule converts a supported header action");
+		order.MobileType.Should().Be("crt.MenuItem", because: "the shipped template retypes it to a menu item");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the shipped rule retargets it into the FAB");
+		order.PropertyName.Should().Be("menuItems");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+			because: "MainHeader is a non-converting scope in the shipped rules");
+	}
+
 	#endregion
 
 	#region ConvertPageBusinessRules
