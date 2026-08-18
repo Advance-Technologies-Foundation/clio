@@ -125,8 +125,13 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 
 			// Explicit DataService failure envelope: 'success' is present but not true
 			// (false, or any non-true shape such as a string/number).
+			// REDACTED, like the parse-failure path below. Both of the returns here hand the caller a
+			// DataService error body — which routinely carries the request URI and host, and can carry a
+			// connection string — and this file already redacts the same `json` in its catch block. The
+			// asymmetry was not a decision: found 2026-08-18 by story 21's R-7 sweep, which asked whether
+			// any other untrusted text reaches a caller past the redactor.
 			if (hasSuccess && !successIsTrue) {
-				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) ?? Truncate(json));
+				return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ExtractErrorMessage(root) ?? Truncate(json)));
 			}
 
 			bool hasRowsArray = root.TryGetProperty("rows", out JsonElement rowsEl)
@@ -142,7 +147,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 					|| root.TryGetProperty("errorInfo", out _)
 					|| root.TryGetProperty("ExceptionMessage", out _)
 					|| root.TryGetProperty("Message", out _))) {
-				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) ?? Truncate(json));
+				return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ExtractErrorMessage(root) ?? Truncate(json)));
 			}
 
 			if (hasRowsArray) {

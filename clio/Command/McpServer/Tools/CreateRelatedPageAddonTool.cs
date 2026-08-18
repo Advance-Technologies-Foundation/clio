@@ -73,7 +73,10 @@ public sealed class CreateRelatedPageAddonTool(
 			Password = args.Password
 		};
 
-		return ExecuteWithCleanLog(() => {
+		// Story 19 (ENG-95262), AC-04: the OPTIONS-AWARE overload — same defect as the sibling read tool.
+		// The environment-less overload keys on McpToolExecutionLock.SharedFallbackKey, which this write's
+		// Creatio round-trip would hold against every other tenant.
+		return ExecuteWithCleanLog(options, () => {
 			CreateRelatedPageAddonCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<CreateRelatedPageAddonCommand>(options);

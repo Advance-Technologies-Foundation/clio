@@ -15,7 +15,7 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class CreateEntityBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string BusinessRuleCreateToolName = "create-entity-business-rules";
 
@@ -620,7 +620,7 @@ public sealed record PageMakeOptionalBusinessRuleActionMcpContract : PageElement
 public sealed class CreatePageBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string BusinessRuleCreateToolName = "create-page-business-rules";
 
@@ -720,6 +720,15 @@ internal static class BusinessRuleToolExecutor {
 	/// (ENG-91830 / ENG-91825). A failure inside <paramref name="execute"/> is turned into a response by
 	/// <paramref name="requestError"/> — the tool decides whether that is a request-level error or a
 	/// per-item batch failure.
+	/// <para>
+	/// Story 19 (ENG-95262): every caller must already be inside the OPTIONS-AWARE
+	/// <c>BaseTool.ExecuteWithCleanLog(EnvironmentOptions, …)</c> for the SAME environment name, and must
+	/// pass <c>commandResolver</c> to its <c>BaseTool</c> base constructor. This method resolves and calls
+	/// a real per-tenant service, so running it under
+	/// <see cref="McpToolExecutionLock.SharedFallbackKey"/> — which is what both the environment-less
+	/// overload and a base constructor with no resolver produce — would serialize every unrelated tenant
+	/// behind one business-rule call.
+	/// </para>
 	/// </summary>
 	internal static object Execute<TService>(
 		IToolCommandResolver commandResolver,
@@ -750,7 +759,7 @@ internal static class BusinessRuleToolExecutor {
 public sealed class ReadEntityBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string ToolName = "read-entity-business-rules";
 
@@ -771,12 +780,13 @@ public sealed class ReadEntityBusinessRuleTool(
 		[Description("environment-name, package-name, entity-schema-name (all required).")]
 		[Required]
 		ReadEntityBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => BusinessRuleToolExecutor.Execute<IEntityBusinessRuleService>(
-			commandResolver,
-			args.EnvironmentName,
-			service => BusinessRulesReadResponse.From(service.Read(
-				new BusinessRulesReadRequest(args.PackageName, args.EntitySchemaName))),
-			BusinessRulesReadResponse.RequestError));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName },
+			() => BusinessRuleToolExecutor.Execute<IEntityBusinessRuleService>(
+				commandResolver,
+				args.EnvironmentName,
+				service => BusinessRulesReadResponse.From(service.Read(
+					new BusinessRulesReadRequest(args.PackageName, args.EntitySchemaName))),
+				BusinessRulesReadResponse.RequestError));
 }
 
 public sealed record ReadEntityBusinessRulesArgs {
@@ -801,7 +811,7 @@ public sealed record ReadEntityBusinessRulesArgs {
 public sealed class ReadPageBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string ToolName = "read-page-business-rules";
 
@@ -821,12 +831,13 @@ public sealed class ReadPageBusinessRuleTool(
 		[Description("environment-name, package-name, page-schema-name (all required).")]
 		[Required]
 		ReadPageBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
-			commandResolver,
-			args.EnvironmentName,
-			service => BusinessRulesReadResponse.From(service.Read(
-				new BusinessRulesReadRequest(args.PackageName, args.PageSchemaName))),
-			BusinessRulesReadResponse.RequestError));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName },
+			() => BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
+				commandResolver,
+				args.EnvironmentName,
+				service => BusinessRulesReadResponse.From(service.Read(
+					new BusinessRulesReadRequest(args.PackageName, args.PageSchemaName))),
+				BusinessRulesReadResponse.RequestError));
 }
 
 public sealed record ReadPageBusinessRulesArgs {
@@ -851,7 +862,7 @@ public sealed record ReadPageBusinessRulesArgs {
 public sealed class UpdateEntityBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string ToolName = "update-entity-business-rules";
 
@@ -873,7 +884,7 @@ public sealed class UpdateEntityBusinessRuleTool(
 		[Description("environment-name, package-name, entity-schema-name, rules (all required; every rule requires name).")]
 		[Required]
 		UpdateEntityBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => UpdateRules(args));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => UpdateRules(args));
 
 	private object UpdateRules(UpdateEntityBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {
@@ -918,7 +929,7 @@ public sealed record UpdateEntityBusinessRulesArgs {
 public sealed class UpdatePageBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string ToolName = "update-page-business-rules";
 
@@ -940,7 +951,7 @@ public sealed class UpdatePageBusinessRuleTool(
 		[Description("environment-name, package-name, page-schema-name, rules (all required; every rule requires name).")]
 		[Required]
 		UpdatePageBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => UpdateRules(args));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => UpdateRules(args));
 
 	private object UpdateRules(UpdatePageBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {
@@ -985,7 +996,7 @@ public sealed record UpdatePageBusinessRulesArgs {
 public sealed class DeleteEntityBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string ToolName = "delete-entity-business-rules";
 
@@ -1006,7 +1017,7 @@ public sealed class DeleteEntityBusinessRuleTool(
 		[Description("environment-name, package-name, entity-schema-name, rule-names (all required).")]
 		[Required]
 		DeleteEntityBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => DeleteRules(args));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => DeleteRules(args));
 
 	private object DeleteRules(DeleteEntityBusinessRulesArgs args) {
 		if (args.RuleNames is not { Count: > 0 }) {
@@ -1052,7 +1063,7 @@ public sealed record DeleteEntityBusinessRulesArgs {
 public sealed class DeletePageBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<EnvironmentNameOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string ToolName = "delete-page-business-rules";
 
@@ -1073,7 +1084,7 @@ public sealed class DeletePageBusinessRuleTool(
 		[Description("environment-name, package-name, page-schema-name, rule-names (all required).")]
 		[Required]
 		DeletePageBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => DeleteRules(args));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => DeleteRules(args));
 
 	private object DeleteRules(DeletePageBusinessRulesArgs args) {
 		if (args.RuleNames is not { Count: > 0 }) {

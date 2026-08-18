@@ -49,7 +49,11 @@ public sealed class GetRelatedPageAddonTool(
 			Password = args.Password
 		};
 
-		return ExecuteWithCleanLog(() => {
+		// Story 19 (ENG-95262): the OPTIONS-AWARE overload, like every sibling in this cohort
+		// (page-get, page-list, get-schema). The environment-less overload keys the execution lock on
+		// McpToolExecutionLock.SharedFallbackKey, so holding it across this Creatio round-trip would make
+		// every OTHER environment wait behind this one tenant's read.
+		return ExecuteWithCleanLog(options, () => {
 			GetRelatedPageAddonCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetRelatedPageAddonCommand>(options);

@@ -120,12 +120,16 @@ public class RestartTool(
 		};
 		return await ExecuteWithReadinessWait(
 			options, waitReady,
-			// No registered environment name on the credentials path. The wait is still TRACKED (so the
-			// registry's lifecycle/eviction invariants hold uniformly), but it is NOT pollable: the record
-			// lands under a URI-derived tenant key, while restart-status derives its key from a required
-			// environment name — BuildCacheKey uses `Environment ?? Uri`, so the two key spaces are
-			// disjoint and a lookup can never match. The in-progress notice says so rather than sending
-			// the agent to a poll target that always answers not-found.
+			// No registered environment name on the credentials path, so the wait is TRACKED (the
+			// registry's lifecycle/eviction invariants hold uniformly) but not ADVERTISED as pollable.
+			// Corrected 2026-08-18, story 7 AC-00: the old reasoning here said the two key spaces were
+			// structurally disjoint because BuildCacheKey used `Environment ?? Uri`. That is no longer
+			// true — the name branch and the URI branch now converge on one normalised target, so a
+			// credentials-path record and an environment-named lookup DO collide when they mean the same
+			// target with the same credentials. The behaviour is deliberately unchanged and is now merely
+			// conservative rather than structural: at this point we cannot tell whether these credentials
+			// correspond to a registered environment, so promising a poll target would be a guess. An
+			// honest notice beats sending the agent to a target that may answer not-found.
 			new RestartWaitContext(RestartByCredentialsToolName, $"'{url}'", waitTimeoutSeconds, null),
 			server, requestContext, cancellationToken).ConfigureAwait(false);
 	}
@@ -246,12 +250,15 @@ public class RestartTool(
 		+ BuildPollGuidance(operationId, environmentName)
 		+ $" Typical warm-up is 1-10 minutes; do NOT retry {toolName}.";
 
-	// restart-status resolves its tenant key from a REQUIRED environment-name, and
-	// ToolCommandResolver.BuildCacheKey builds that key from `options.Environment ?? settings.Uri`. The
-	// credentials path has no environment name, so its operation is recorded under a URI-derived key that
-	// an environment-named lookup can never equal — not "only when the instance is also registered", but
-	// never, for a structurally different key. Promising a poll target there would send the agent into a
-	// guaranteed not-found loop, so that path gets honest guidance instead.
+	// restart-status resolves its tenant key from a REQUIRED environment name; the credentials path has
+	// none. Corrected 2026-08-18, story 7 AC-00: this comment used to claim the two keys could NEVER be
+	// equal because BuildCacheKey derived them from `options.Environment ?? settings.Uri`. Convergence
+	// removed that guarantee — one resolved target now yields one key from either branch, so the two
+	// agree whenever the target AND the credentials agree. What survives is the reason that actually
+	// matters: from here we cannot tell whether these credentials belong to a registered environment, so
+	// any poll target we named would be a guess. Withholding it is now a conservative choice rather than
+	// a structural certainty, and it is still the right one — an agent sent into a not-found loop learns
+	// nothing.
 	private static string BuildPollGuidance(string operationId, string environmentName) =>
 		string.IsNullOrWhiteSpace(environmentName)
 			? "This restart was started by credentials, not by environment name, so restart-status "
