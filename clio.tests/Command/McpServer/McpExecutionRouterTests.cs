@@ -401,7 +401,7 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every name in the shipped Stage 6 cohort is a real tool whose declared metadata actually supports being relayed today: worker-classified, per-call, bounded by the parent kill.")]
+	[Description("Every name in the shipped cohort is a real tool whose declared metadata actually supports being relayed today: worker-classified, per-call, and bounded by a policy the dispatcher implements — the parent kill for the Stage 6 reads, the terminal stage for the Stage 8 deploy family.")]
 	public void ShippedCohort_ShouldNameOnlyToolsWhoseDeclaredMetadataSupportsRelayingToday() {
 		// Arrange
 		IReadOnlySet<string> cohortNames = new McpWorkerCohort().Names;
@@ -413,26 +413,31 @@ public sealed class McpExecutionRouterTests {
 		})];
 
 		// Assert
-		cohortNames.Should().HaveCount(7,
-			because: "the Stage 6 cohort is the seven retry-safe stdio reads story 6 names; a changed count is a rollout decision and must be made deliberately, not drift in");
+		cohortNames.Should().HaveCount(9,
+			because: "the shipped cohort is story 6's seven retry-safe stdio reads plus story 8's two terminal-stage deploy tools; a changed count is a rollout decision and must be made deliberately, not drift in");
 		declared.Should().NotContainNulls(
 			because: "a cohort name with no declared metadata would be routed on a guess — or, worse, silently fall through the reader's fail-closed unclassified branch and never relay at all");
 		declared.Should().OnlyContain(metadata => metadata.Location == McpToolExecutionLocation.Worker,
 			because: "the cohort may only name tools the metadata already classifies as worker-bound; naming an in-process tool would make the cohort override the classification instead of scoping it");
 		declared.Should().OnlyContain(metadata => metadata.Lifetime == McpToolExecutionLifetime.PerCall,
 			because: "a sticky worker is story 7 and the parent has no private completion signal yet, so a sticky member would leak the child");
-		declared.Should().OnlyContain(metadata => metadata.BudgetPolicy == McpToolBudgetPolicy.ParentKillDefault,
-			because: "the parent kill is the only bound implemented today; a terminal-stage member would be killed mid-deploy, which is exactly what ADR rule 4 forbids");
+		declared.Should().OnlyContain(metadata =>
+				metadata.BudgetPolicy == McpToolBudgetPolicy.ParentKillDefault
+				|| metadata.BudgetPolicy == McpToolBudgetPolicy.TerminalStage,
+			because: "those are the two bounds the dispatcher implements; a member declaring anything else would be relayed with no bound the parent knows how to apply");
+		declared.Where(metadata => metadata.BudgetPolicy == McpToolBudgetPolicy.TerminalStage)
+			.Should().OnlyContain(metadata => metadata.OperationFamily == McpToolOperationFamily.Deploy,
+			because: "terminal-stage bounding waits on a run-completed stage event, and only the deploy family emits one — a non-deploy member declaring it would stream nothing and be reported indeterminate after the silence bound");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("The shipped Stage 6 cohort is exactly the seven tools story 6 names, pinned as LITERAL names — so changing membership has to change a test on purpose instead of passing because the assertion and the router read the same source.")]
-	public void ShippedCohort_ShouldBeExactlyTheSevenNamesStorySixPromises() {
-		// Arrange — literals, transcribed from spec/stories/story-mcp-worker-execution-boundary-6.md, NOT
-		// from Tools.*.ToolName constants. Every other cohort assertion in this fixture compares the router
-		// against `new McpWorkerCohort().Names`, i.e. against the very data the router just read, so
-		// swapping one member for another worker-classified tool leaves them all green. A constant here
+	[Description("The shipped cohort is exactly the seven tools story 6 names plus the two story 8 names, pinned as LITERAL names — so changing membership has to change a test on purpose instead of passing because the assertion and the router read the same source.")]
+	public void ShippedCohort_ShouldBeExactlyTheNamesStoriesSixAndEightPromise() {
+		// Arrange — literals, transcribed from spec/stories/story-mcp-worker-execution-boundary-6.md and
+		// -8.md, NOT from Tools.*.ToolName constants. Every other cohort assertion in this fixture compares
+		// the router against `new McpWorkerCohort().Names`, i.e. against the very data the router just read,
+		// so swapping one member for another worker-classified tool leaves them all green. A constant here
 		// would re-read the same source and be exactly as unfalsifiable.
 		string[] storySixNames = [
 			"get-page",
@@ -443,13 +448,51 @@ public sealed class McpExecutionRouterTests {
 			"execute-esq",
 			"odata-read"
 		];
+		// Story 8's promise, and the reason this test changed: these two are bounded by their own terminal
+		// stage rather than by the parent kill, so they could not be here until that protocol shipped.
+		string[] storyEightNames = [
+			"deploy-creatio",
+			"uninstall-creatio"
+		];
 
 		// Act
 		IReadOnlySet<string> shipped = new McpWorkerCohort().Names;
 
 		// Assert
-		shipped.Should().BeEquivalentTo(storySixNames,
-			because: "story 6 promises these seven retry-safe stdio reads and no others — the commands agents were forced off MCP onto the CLI; adding, dropping or swapping one is a rollout decision that must be argued for here rather than discovered in production");
+		shipped.Should().BeEquivalentTo([.. storySixNames, .. storyEightNames],
+			because: "story 6 promises the seven retry-safe stdio reads agents were forced off MCP onto the CLI, and story 8 adds exactly the two terminal-stage deploy tools; adding, dropping or swapping one is a rollout decision that must be argued for here rather than discovered in production");
+		McpWorkerCohort.StageSixNames.Should().BeEquivalentTo(storySixNames,
+			because: "story 8 expanded the cohort by ADDING a list, not by editing story 6's — keeping them separate is what lets each stage's promise stay independently falsifiable");
+		McpWorkerCohort.StageEightNames.Should().BeEquivalentTo(storyEightNames,
+			because: "the deploy family is exactly two tools, and the Deploy ⇒ Worker + TerminalStage cross-field invariant is what keeps it that way");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The shipped router hands the dispatcher non-null metadata declaring TerminalStage for both Stage 8 cohort members — by raw name AND through the clio-run executor, which is the only vector that actually reaches them, because the dispatcher's terminal-stage branch keys on that metadata and a null or downgraded row would silently put a deploy back on the generic kill budget.")]
+	public void Resolve_ShouldCarryTerminalStageMetadata_ForEveryStageEightCohortMember() {
+		// Arrange
+		IReadOnlyList<string> deployFamily = McpWorkerCohort.StageEightNames;
+
+		// Act
+		IReadOnlyList<McpExecutionRoute> routes = [.. deployFamily.Select(name => _sut.Resolve(name, innerCommand: null))];
+		// The LIVE vector: both tools are non-resident and write-capable, so the unmatched handler refuses
+		// them at its confirmation gate and ClioRing reaches them through clio-run. If the executor form
+		// resolved clio-run's OWN row instead of the inner tool's, every real deploy would take the generic
+		// 120 s kill branch — and no assertion on the raw name could see it.
+		IReadOnlyList<McpExecutionRoute> throughExecutor =
+			[.. deployFamily.Select(name => _sut.Resolve(ExecutorToolName, name))];
+
+		// Assert
+		routes.Should().OnlyContain(route => route.Disposition == McpExecutionDisposition.Worker,
+			because: "the whole protocol lives in the worker dispatcher, so a deploy that stayed in the host would run under no bound at all");
+		routes.Should().OnlyContain(route => route.Metadata != null,
+			because: "the dispatcher reads BudgetPolicy off route.Metadata, and a null row there falls through to the ordinary parent-kill branch — a deploy killed at 120 s, which is exactly what ADR rule 4 forbids");
+		routes.Should().OnlyContain(route => route.Metadata.BudgetPolicy == McpToolBudgetPolicy.TerminalStage,
+			because: "the branch is keyed on the DECLARED policy rather than on a name list precisely so the declaration and the behaviour cannot drift apart");
+		throughExecutor.Should().OnlyContain(route => route.Metadata != null
+				&& route.Metadata.BudgetPolicy == McpToolBudgetPolicy.TerminalStage,
+			because: "the executor form is the ONLY way a caller reaches these two tools, so the whole protocol is inert unless the unwrapped inner command carries its own terminal-stage row through the dispatch site");
 	}
 
 	[Test]

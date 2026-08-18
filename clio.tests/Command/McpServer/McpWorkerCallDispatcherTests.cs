@@ -27,12 +27,19 @@ namespace Clio.Tests.Command.McpServer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What is NOT covered here, and why.</b> The happy path and the budget kill both require a live
-/// <c>WorkerRelaySession</c> — a sealed type over a real transport that no container and no substitute can
-/// produce — so they are proven end to end (TC-E-601…604) rather than here. Pretending otherwise with a
-/// mock relay would assert the mock. What this fixture pins is everything reachable WITHOUT a child: the
-/// budget parse, the caller-defect guard, the spawn-failure path, and the wire shape of the two error
-/// envelopes an agent branches on.
+/// <b>What is NOT covered here, and why.</b> The happy path and the budget kill both need a live
+/// <c>WorkerRelaySession</c>, which is a sealed type over a real transport, so a mock relay could only
+/// assert the mock. What this fixture pins is everything reachable WITHOUT a child: the budget parse, the
+/// caller-defect guard, the spawn-failure path, and the wire shape of the two error envelopes an agent
+/// branches on. The budget kill is proven end to end (TC-E-601…604).
+/// </para>
+/// <para>
+/// <b>The happy path IS covered, one fixture over.</b> An earlier version of this remark said no substitute
+/// could produce a live session; that reads as "the happy path is unreachable in a unit test", and it is
+/// not — <c>WorkerProgressStreamingTests</c> drives the real dispatcher, transport owner, relay and SDK
+/// stream transport against a scripted child speaking JSON-RPC over an ordinary pipe pair. It needs no
+/// substitute for the session, only a pipe. Recorded here because the earlier sentence was load-bearing
+/// enough to have kept the progress-streaming regression out of the unit suite.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -609,6 +616,81 @@ public sealed class McpWorkerCallDispatcherTests {
 			because: "redaction is surgical by design — the key stays so the message still reads sensibly, and its presence proves the secret was removed rather than the whole line never arriving");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Story 21 (T-6/R-7): a bound that cuts the word 'password' in half must not hand the caller the value behind it. The redactor's credential pattern needs the KEY, so a tail beginning 'word=<value>' matches nothing and would otherwise be copied verbatim onto the failure envelope the client reads.")]
+	public async Task DispatchAsync_ShouldNotLeakACredential_WhenTheBoundCutItsKeyInHalf() {
+		// Arrange
+		string standardErrorText = StandardErrorTextCutInsideACredentialKey();
+		string boundedTail = standardErrorText[^McpWorkerCallDispatcher.StandardErrorTailLimit..];
+		boundedTail.Should().StartWith(OrphanedCredentialValueFragment,
+			because: "the orphan has to be MANUFACTURED — a payload padded so the cut lands in filler is exactly how this hole stayed invisible, so the fixture asserts its own precondition instead of assuming it");
+		SensitiveErrorTextRedactor.Redact(boundedTail).Should().Contain(OrphanedSecretMarker,
+			because: "the premise of the test is that the redactor alone cannot save a value whose key was trimmed away; if it could, the drain would have nothing left to guarantee");
+		ArrangeWorkerWritingStandardError(standardErrorText);
+		McpWorkerCallDispatcher sut = CreateSut(TimeSpan.FromSeconds(30));
+
+		// Act
+		CallToolResult result = await DispatchAndAwaitTheAnswer(sut);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetRawText().Should().NotContain(OrphanedSecretMarker,
+			because: "R-7 is a claim about the whole envelope, and truncation upstream of the redactor must not be able to defeat it");
+		string renderedText = string.Join(
+			"\n", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		renderedText.Should().NotContain(OrphanedSecretMarker,
+			because: "the text block is what a human and a model both read, so a secret surviving there leaks by the shortest possible route");
+		structured.GetProperty("worker-stderr").GetString().Should().Contain(OrphanedTailSurvivingPhrase,
+			because: "only the partial FIRST line may be paid for the guarantee — a fix that discarded the whole tail would trade a leak for a blind operator");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Story 21 design call, stated as behaviour: when the bound leaves not one complete line, the tail is withheld behind an explicit notice rather than surfaced or silently dropped — the caller still learns that clio kept something it would not show.")]
+	public async Task DispatchAsync_ShouldWithholdTheTailBehindANotice_WhenNoCompleteLineSurvivedTheBound() {
+		// Arrange
+		string standardErrorText = UnbrokenStandardErrorTextCutInsideACredentialKey();
+		standardErrorText.Should().NotContain("\n",
+			because: "a worker emitting one unbroken line is the case where dropping the partial first line drops everything, and that is the case under test");
+		ArrangeWorkerWritingStandardError(standardErrorText);
+		McpWorkerCallDispatcher sut = CreateSut(TimeSpan.FromSeconds(30));
+
+		// Act
+		CallToolResult result = await DispatchAndAwaitTheAnswer(sut);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetRawText().Should().NotContain(OrphanedSecretMarker,
+			because: "an unbroken line cut mid-key is the same leak as the line-oriented one, and withholding it is why the notice exists");
+		structured.GetProperty("worker-stderr").GetString()
+			.Should().Be(McpWorkerCallDispatcher.StandardErrorNoCompleteLineNotice,
+			because: "an empty string here would take worker-stderr, the truncation marker and the caveat sentence off the envelope together, telling the reader the worker said nothing when clio in fact withheld what it kept");
+		structured.GetProperty("worker-stderr-truncated").ValueKind.Should().Be(JsonValueKind.True,
+			because: "the notice describes a tail that WAS trimmed, and the marker is the only thing that tells the reader the worker wrote more than this");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The story 21 drop is keyed on truncation, not applied unconditionally: a worker whose whole standard error fits inside the bound reaches the caller with its first line intact — that line is usually the one naming the cause.")]
+	public async Task DispatchAsync_ShouldKeepTheFirstLine_WhenTheWholeStandardErrorFitsInsideTheBound() {
+		// Arrange
+		const string firstLine = "Unhandled exception. Clio.Worker.StartupException: the frozen feature map was empty";
+		ArrangeWorkerWritingStandardError(
+			firstLine + "\n   " + StandardErrorFramePhrase + "\n   at Clio.Worker.Program.Main()\n");
+		McpWorkerCallDispatcher sut = CreateSut(TimeSpan.FromSeconds(30));
+
+		// Act
+		CallToolResult result = await DispatchAndAwaitTheAnswer(sut);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetProperty("worker-stderr").GetString().Should().StartWith(firstLine,
+			because: "nothing was cut, so no line can be partial and there is nothing for the guarantee to protect the reader from");
+		structured.TryGetProperty("worker-stderr-truncated", out JsonElement _).Should().BeFalse(
+			because: "a diagnosis that arrived whole must not be marked as trimmed, or the reader discounts evidence that is complete");
+	}
+
 	// ---------------------------------------------------------------------------------------------
 	// Helpers
 	// ---------------------------------------------------------------------------------------------
@@ -633,6 +715,51 @@ public sealed class McpWorkerCallDispatcherTests {
 	/// <summary>The part of a scripted stack frame that must SURVIVE redaction and reach the caller.</summary>
 	private const string StandardErrorFramePhrase = "at Clio.Worker.Startup.Run()";
 
+	/// <summary>A credential value story 21 requires to be absent even when the bound cut its key in half.</summary>
+	private const string OrphanedSecretMarker = "ORPHANED-TAIL-MARKER-DO-NOT-LEAK";
+
+	/// <summary>
+	/// What the bound leaves of <c>password=&lt;value&gt;</c> when it cuts between <c>pass</c> and
+	/// <c>word</c>: a value with no key in front of it, which every redaction pattern misses.
+	/// </summary>
+	private const string OrphanedCredentialValueFragment = "word=" + OrphanedSecretMarker;
+
+	/// <summary>The frame that must SURVIVE the drop of the partial first line, proving the drop is minimal.</summary>
+	private const string OrphanedTailSurvivingPhrase = "at Clio.Worker.Session.Open()";
+
+	/// <summary>
+	/// Builds scripted worker standard error whose bound cuts the word <c>password</c> in half, so the
+	/// kept tail begins <c>word=&lt;marker&gt;</c> — a credential value with its key on the other side of
+	/// the cut.
+	/// </summary>
+	/// <returns>The scripted text.</returns>
+	/// <remarks>
+	/// The last <see cref="McpWorkerCallDispatcher.StandardErrorTailLimit"/> characters are laid out
+	/// EXACTLY: the orphaned fragment, a line break, and one complete surviving line padded to fill the
+	/// rest. Everything before them ends in <c>pass</c>, so the full stream carries an ordinary
+	/// <c>password=…</c> pair that the redactor would have caught had nothing been cut. The tail is sized
+	/// from the dispatcher's own constant rather than from a literal, so a change to the bound moves the
+	/// cut with it instead of quietly padding the orphan back into filler.
+	/// </remarks>
+	private static string StandardErrorTextCutInsideACredentialKey() {
+		int limit = McpWorkerCallDispatcher.StandardErrorTailLimit;
+		string orphanedLine = OrphanedCredentialValueFragment + " while opening the worker session\n";
+		string survivingLine =
+			("   " + OrphanedTailSurvivingPhrase + " ").PadRight(limit - orphanedLine.Length - 1, '.') + "\n";
+		return "   at Clio.Worker.Session.Bind() frame 0000 pass" + orphanedLine + survivingLine;
+	}
+
+	/// <summary>
+	/// Builds the same mid-key cut over standard error containing NO line break at all — the case where
+	/// dropping the partial first line drops the whole tail.
+	/// </summary>
+	/// <returns>The scripted text.</returns>
+	private static string UnbrokenStandardErrorTextCutInsideACredentialKey() {
+		int limit = McpWorkerCallDispatcher.StandardErrorTailLimit;
+		string keptTail = (OrphanedCredentialValueFragment + " ").PadRight(limit, '.');
+		return "   at Clio.Worker.Session.Bind() wrote one unbroken line pass" + keptTail;
+	}
+
 	/// <summary>
 	/// Builds scripted worker standard error as <paramref name="chunkCount"/> blocks of exactly
 	/// <see cref="ScriptedStandardErrorStream.ChunkSize"/> ASCII characters.
@@ -640,19 +767,28 @@ public sealed class McpWorkerCallDispatcherTests {
 	/// <param name="chunkCount">How many blocks to write.</param>
 	/// <returns>The scripted text.</returns>
 	/// <remarks>
-	/// Every block ENDS with the frame and the credential pair, and is padded in front. Two properties fall
-	/// out of that and both are load-bearing: whatever the bound cuts, the surviving tail still contains at
-	/// least one COMPLETE <c>password=…</c> pair, so a content assertion cannot pass or fail on where the
-	/// cut happened; and the cut can never leave a bare secret whose key was trimmed away, which would be
-	/// a redaction hole this fixture must not manufacture for itself.
+	/// <para>
+	/// Every block is ONE line: padding, then the frame and the credential pair, then a line break. Two
+	/// properties fall out of that and both are load-bearing: whatever the bound cuts, the surviving tail
+	/// still contains at least one COMPLETE <c>password=…</c> pair, so a content assertion cannot pass or
+	/// fail on where the cut happened; and the cut can never leave a bare secret whose key was trimmed
+	/// away, which would be a redaction hole this fixture must not manufacture for itself. The fixture
+	/// that DOES manufacture it deliberately is
+	/// <see cref="StandardErrorTextCutInsideACredentialKey"/> — read the two together.
+	/// </para>
+	/// <para>
+	/// <b>The line breaks are not decoration.</b> Real worker standard error is line-oriented, and the
+	/// drain now drops the partial FIRST line of a trimmed tail (story 21). A payload with no line breaks
+	/// at all would exercise the withheld-notice path instead of the ordinary flood these tests describe.
+	/// </para>
 	/// </remarks>
 	private static string ScriptedStandardErrorText(int chunkCount) {
 		StringBuilder text = new(chunkCount * ScriptedStandardErrorStream.ChunkSize);
 		for (int ordinal = 0; ordinal < chunkCount; ordinal++) {
 			string frame = "   " + StandardErrorFramePhrase + " frame "
 				+ ordinal.ToString("D4", CultureInfo.InvariantCulture)
-				+ " password=" + StandardErrorSecretMarker + " ";
-			text.Append(frame.PadLeft(ScriptedStandardErrorStream.ChunkSize, '.'));
+				+ " password=" + StandardErrorSecretMarker;
+			text.Append(frame.PadLeft(ScriptedStandardErrorStream.ChunkSize - 1, '.')).Append('\n');
 		}
 		return text.ToString();
 	}
@@ -663,8 +799,17 @@ public sealed class McpWorkerCallDispatcherTests {
 	/// </summary>
 	/// <param name="chunkCount">How many blocks the child writes before the stream ends.</param>
 	/// <returns>The scripted standard-error stream, so a test can state how much was written.</returns>
-	private ScriptedStandardErrorStream ArrangeWorkerThatFloodsStandardError(int chunkCount) {
-		ScriptedStandardErrorStream standardError = new(ScriptedStandardErrorText(chunkCount));
+	private ScriptedStandardErrorStream ArrangeWorkerThatFloodsStandardError(int chunkCount) =>
+		ArrangeWorkerWritingStandardError(ScriptedStandardErrorText(chunkCount));
+
+	/// <summary>
+	/// Arranges the same dying worker as <see cref="ArrangeWorkerThatFloodsStandardError"/> over an
+	/// explicit standard-error payload, so a test can state exactly where the bound will cut.
+	/// </summary>
+	/// <param name="text">The scripted standard error the child writes before its stream ends.</param>
+	/// <returns>The scripted standard-error stream.</returns>
+	private ScriptedStandardErrorStream ArrangeWorkerWritingStandardError(string text) {
+		ScriptedStandardErrorStream standardError = new(text);
 		IWorkerLease lease = Substitute.For<IWorkerLease>();
 		lease.ProcessId.Returns(4242);
 		lease.StandardInput.Returns(Stream.Null);

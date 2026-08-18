@@ -602,6 +602,9 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 	/// <param name="notification">The worker's notification.</param>
 	/// <returns>A task that completes when the client has been given the notification.</returns>
 	private async Task ForwardNotificationAsync(JsonRpcNotification notification) {
+		if (!MayForward(notification)) {
+			return;
+		}
 		try {
 			await _parentSession.SendMessageAsync(
 				new JsonRpcNotification { Method = notification.Method, Params = notification.Params },
@@ -610,6 +613,34 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 		catch (Exception) {
 			// A disconnected client must never tear down a running worker mid-deploy; the same rule the
 			// stage-event forwarder, the log notifier and the progress heartbeat already follow.
+		}
+	}
+
+	/// <summary>
+	/// Runs <see cref="WorkerRelayOptions.NotificationTap"/>, if one was supplied, and reports whether the
+	/// notification may travel upward.
+	/// </summary>
+	/// <remarks>
+	/// Called from INSIDE the read loop, so the tap sees the worker's own order — which is the whole reason
+	/// the terminal-stage protocol can key on it (ADR §3.3). It defaults to FORWARDING on any failure: a
+	/// tap that threw has learned nothing about this notification, and a relay that dropped client traffic
+	/// because an observer misbehaved would turn a diagnostic defect into a silent protocol one.
+	/// </remarks>
+	/// <param name="notification">The worker's notification.</param>
+	/// <returns><c>true</c> when the relay may forward it.</returns>
+	private bool MayForward(JsonRpcNotification notification) {
+		Func<JsonRpcNotification, bool> tap = _options.NotificationTap;
+		if (tap is null) {
+			return true;
+		}
+		try {
+			return tap(notification);
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(
+				"The MCP worker relay's notification tap failed, so the notification was forwarded "
+				+ $"unobserved: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
+			return true;
 		}
 	}
 

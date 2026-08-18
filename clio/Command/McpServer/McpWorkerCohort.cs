@@ -57,8 +57,8 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	/// Adding a name here is a deliberate cohort expansion and must come with the supervision its
 	/// <see cref="McpToolExecutionMetadata"/> asks for. Everything below is
 	/// <see cref="McpToolExecutionLifetime.PerCall"/> + <see cref="McpToolBudgetPolicy.ParentKillDefault"/>,
-	/// which is the only combination the parent can bound today: sticky lifetimes are story 7 and
-	/// terminal-stage bounding is story 8.
+	/// which was the only combination the parent could bound at Stage 6: sticky lifetimes are story 7 and
+	/// terminal-stage bounding is story 8 (<see cref="StageEightNames"/>).
 	/// </remarks>
 	public static readonly IReadOnlyList<string> StageSixNames = [
 		Tools.PageGetTool.ToolName,                // get-page
@@ -70,14 +70,38 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 		Tools.ODataReadTool.ToolName               // odata-read   — the OData read
 	];
 
+	/// <summary>
+	/// The Stage 8 addition: the two <see cref="McpToolBudgetPolicy.TerminalStage"/> tools — the whole
+	/// deploy family, since the cross-field invariant pins <c>Deploy ⇒ Worker + TerminalStage</c>.
+	/// </summary>
+	/// <remarks>
+	/// <b>These names could not be added before the protocol existed.</b> The dispatcher kills an ordinary
+	/// worker at its budget unconditionally, and a deploy killed at a stopwatch can leave a half-installed
+	/// environment — the one place where terminating the process is the wrong tool (ADR rule 4). They are
+	/// here only because <c>McpWorkerCallDispatcher</c> now bounds them by the run's own
+	/// <c>run-completed</c> stage event, by a stage-event SILENCE timer that every stage restarts, and by a
+	/// post-terminal exit grace (ADR §3.3).
+	/// </remarks>
+	public static readonly IReadOnlyList<string> StageEightNames = [
+		Tools.InstallerCommandTool.DeployCreatioToolName, // deploy-creatio
+		Tools.UninstallCreatioTool.UninstallCreatioToolName // uninstall-creatio
+	];
+
+	/// <summary>
+	/// The membership this build actually ships: <see cref="StageSixNames"/> plus
+	/// <see cref="StageEightNames"/>. The two are kept as separate lists rather than merged into one so
+	/// that each stage's promise stays independently readable — and independently pinnable by a test.
+	/// </summary>
+	public static readonly IReadOnlyList<string> ShippedNames = [.. StageSixNames, .. StageEightNames];
+
 	private readonly IReadOnlySet<string> _names;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="McpWorkerCohort"/> class over the shipped
-	/// <see cref="StageSixNames"/>. Used by DI.
+	/// <see cref="ShippedNames"/>. Used by DI.
 	/// </summary>
 	public McpWorkerCohort()
-		: this(StageSixNames) {
+		: this(ShippedNames) {
 	}
 
 	/// <summary>

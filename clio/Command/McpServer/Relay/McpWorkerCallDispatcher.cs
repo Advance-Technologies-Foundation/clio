@@ -15,7 +15,12 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Command.McpServer.Relay;
 
 /// <inheritdoc cref="IMcpWorkerCallDispatcher"/>
-public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
+/// <remarks>
+/// The <c>terminal-stage</c> half of this class — the deploy/uninstall family bounded by the worker's own
+/// <c>run-completed</c> stage event rather than by a stopwatch (ADR §3.3) — lives in
+/// <c>McpWorkerCallDispatcher.TerminalStage.cs</c>.
+/// </remarks>
+public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 
 	/// <summary>
 	/// Environment variable overriding <see cref="DefaultBudget"/>, in seconds (invariant culture,
@@ -67,12 +72,30 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// </remarks>
 	internal const int StandardErrorTailLimit = 2000;
 
+	/// <summary>
+	/// Stands in for the worker's standard error when the bound cut so late that not one COMPLETE line
+	/// survived it, so the tail that remains cannot be surfaced.
+	/// </summary>
+	/// <remarks>
+	/// A trimmed tail begins at an arbitrary offset and its first, partial line is dropped before anything
+	/// is surfaced — see <c>WorkerStandardErrorDrain.WithoutOrphanedFirstLine</c> for why that is a
+	/// security rule rather than tidiness. When that partial line was the WHOLE tail (a worker emitting one
+	/// unbroken line), the alternative to this notice is an empty string, which would take
+	/// <c>worker-stderr</c>, <c>worker-stderr-truncated</c> and the caveat sentence off the envelope
+	/// together and read as "the worker said nothing" instead of "clio withheld what it kept".
+	/// </remarks>
+	internal const string StandardErrorNoCompleteLineNotice =
+		"[clio withheld the worker's standard-error tail: the bound cut mid-line and no complete line "
+		+ "survived it, so nothing here could be shown without risking an unredacted fragment]";
+
 	private readonly IWorkerProcessSupervisor _supervisor;
 	private readonly IWorkerChildTransportOwner _transportOwner;
 	private readonly IWorkerMcpRelay _relay;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger _logger;
 	private readonly TimeSpan _budget;
+	private readonly TimeSpan _stageEventSilenceBound;
+	private readonly TimeSpan _postTerminalExitGrace;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="McpWorkerCallDispatcher"/> class.
@@ -90,7 +113,9 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		ISettingsRepository settingsRepository,
 		ILogger logger)
 		: this(supervisor, transportOwner, relay, settingsRepository, logger,
-			ResolveBudget(System.Environment.GetEnvironmentVariable(BudgetOverrideEnvVar))) {
+			ResolveBudget(System.Environment.GetEnvironmentVariable(BudgetOverrideEnvVar)),
+			ResolveStageEventSilenceBound(
+				System.Environment.GetEnvironmentVariable(StageEventSilenceOverrideEnvVar))) {
 	}
 
 	/// <summary>
@@ -103,6 +128,16 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// <param name="settingsRepository">Source of the feature generation frozen into the worker.</param>
 	/// <param name="logger">Host logger.</param>
 	/// <param name="budget">Wall-clock budget measured from SPAWN.</param>
+	/// <param name="stageEventSilenceBound">
+	/// How long a <c>terminal-stage</c> call tolerates NO stage event of any kind before it declares the
+	/// child lost. Defaults to <see cref="DefaultStageEventSilenceBound"/>. It is not an operation timer:
+	/// every stage event restarts it, so a healthy deploy that streams may run for as long as it likes.
+	/// </param>
+	/// <param name="postTerminalExitGrace">
+	/// How long a <c>terminal-stage</c> call waits for the worker AFTER its <c>run-completed</c> event
+	/// before killing it and answering with the terminal outcome. Defaults to
+	/// <see cref="DefaultPostTerminalExitGrace"/>.
+	/// </param>
 	/// <exception cref="ArgumentNullException">A dependency is missing.</exception>
 	internal McpWorkerCallDispatcher(
 		IWorkerProcessSupervisor supervisor,
@@ -110,7 +145,9 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		IWorkerMcpRelay relay,
 		ISettingsRepository settingsRepository,
 		ILogger logger,
-		TimeSpan budget) {
+		TimeSpan budget,
+		TimeSpan? stageEventSilenceBound = null,
+		TimeSpan? postTerminalExitGrace = null) {
 		ArgumentNullException.ThrowIfNull(supervisor);
 		ArgumentNullException.ThrowIfNull(transportOwner);
 		ArgumentNullException.ThrowIfNull(relay);
@@ -122,6 +159,8 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		_settingsRepository = settingsRepository;
 		_logger = logger;
 		_budget = budget;
+		_stageEventSilenceBound = stageEventSilenceBound ?? DefaultStageEventSilenceBound;
+		_postTerminalExitGrace = postTerminalExitGrace ?? DefaultPostTerminalExitGrace;
 	}
 
 	/// <summary>
@@ -156,6 +195,17 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 				+ "in-process route reaching here is a dispatch-site defect.");
 		}
 		string toolName = route.RoutingKey ?? parameters.Name;
+
+		// The deploy family is bounded by its own authoritative terminal stage, never by the generic kill
+		// below: killing a deploy at a stopwatch can leave a half-installed environment, which is the one
+		// place where terminating the process is the wrong tool (ADR rule 4 / §3.3). The branch reads the
+		// DECLARED policy rather than a name list, so the two are one decision — and it is deliberately
+		// NOT fail-open to terminal-stage for an unclassified route: McpExecutionRouterTests pins that the
+		// shipped router hands both cohort members their metadata, which is where that could regress.
+		if (route.Metadata is { BudgetPolicy: McpToolBudgetPolicy.TerminalStage }) {
+			return await DispatchTerminalStageAsync(toolName, parameters, parentSession, cancellationToken)
+				.ConfigureAwait(false);
+		}
 
 		// Composed BEFORE the spawn: the supervisor clears the inherited environment, so this delta plus its
 		// own allowlist is everything the worker sees. An ordinary worker gets NO read-deadline override —
@@ -486,8 +536,8 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		}
 		return text
 			+ " The worker wrote more to standard error than clio keeps, so worker-stderr below holds only"
-			+ $" its LAST {StandardErrorTailLimit} characters: it starts mid-stream, and the first line of the"
-			+ " failure — usually the one that names the cause — is not in it.";
+			+ $" the COMPLETE LINES within its last {StandardErrorTailLimit} characters: it starts mid-stream,"
+			+ " and the first line of the failure — usually the one that names the cause — is not in it.";
 	}
 
 	private static void AttachWorkerDiagnostics(JsonObject payload, WorkerStandardErrorTail standardErrorTail) {
@@ -511,7 +561,11 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// One bounded snapshot of a worker's standard error: the text that was kept, and whether keeping it
 	/// meant dropping anything.
 	/// </summary>
-	/// <param name="Text">The kept text — the LAST <see cref="StandardErrorTailLimit"/> characters at most.</param>
+	/// <param name="Text">
+	/// The kept text — at most the LAST <see cref="StandardErrorTailLimit"/> characters, and when that
+	/// bound actually cut, only the COMPLETE lines within them (or
+	/// <see cref="StandardErrorNoCompleteLineNotice"/> when there were none).
+	/// </param>
 	/// <param name="Truncated">
 	/// <see langword="true"/> when the worker wrote more than the bound, so <paramref name="Text"/> starts
 	/// mid-stream and the first line of the failure is not in it.
@@ -591,10 +645,76 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 
 		internal WorkerStandardErrorTail Tail() {
 			lock (_tailLock) {
-				return _tail.Length == 0
-					? null
-					: new WorkerStandardErrorTail(_tail.ToString().Trim(), _observedCharacters > _limit);
+				if (_tail.Length == 0) {
+					return null;
+				}
+				bool truncated = _observedCharacters > _limit;
+				// An UNTRIMMED buffer reaches the caller byte for byte: nothing was cut, so no line can be
+				// partial and there is nothing to protect the reader from.
+				return truncated
+					? new WorkerStandardErrorTail(WithoutOrphanedFirstLine(_tail.ToString()), Truncated: true)
+					: new WorkerStandardErrorTail(_tail.ToString().Trim(), Truncated: false);
 			}
+		}
+
+		/// <summary>
+		/// Drops the leading PARTIAL line of a trimmed tail, returning
+		/// <see cref="StandardErrorNoCompleteLineNotice"/> when no complete line survived the bound.
+		/// </summary>
+		/// <param name="trimmedTail">The kept tail, which begins wherever the bound happened to cut.</param>
+		/// <returns>The text safe to hand to the redactor and then to the caller.</returns>
+		/// <remarks>
+		/// <para>
+		/// <b>This is a SECURITY rule, not tidiness.</b> The bound trims from the front at an arbitrary
+		/// offset — wherever the buffer stood when the next chunk arrived — so the tail routinely begins
+		/// mid-token. <c>SensitiveErrorTextRedactor</c>'s credential pattern needs the KEY
+		/// (<c>password</c>, <c>token</c>, …) in order to redact the value that follows it, so a cut
+		/// landing inside <c>password=</c> leaves <c>word=&lt;secret&gt;</c>, which matches no pattern and
+		/// is copied verbatim onto the failure envelope the client reads. Truncation is an upstream
+		/// transformation that can UN-redact text the redactor would otherwise have caught, and the only
+		/// place to fix it is before the redactor runs.
+		/// </para>
+		/// <para>
+		/// <b>The design call: drop the first partial line, unconditionally, whenever anything was
+		/// trimmed.</b> It costs at most one line, and that line is one the reader could not have
+		/// interpreted anyway — it starts mid-sentence, mid-frame or mid-token. The cheaper-looking
+		/// alternative, "drop it only when the cut really landed mid-token", would put the redactor's
+		/// pattern list into the drain and would then have to be kept in step with it forever; the
+		/// alternative of remembering whether the character before the cut was a line break would add
+		/// pump state to recover, on the rare aligned cut, a line we are content to pay.
+		/// </para>
+		/// <para>
+		/// <b>Nothing is dropped silently.</b> A tail with no line break at all is one unbroken partial
+		/// line, so there is nothing left after the drop — and returning an empty string there would make
+		/// <c>worker-stderr</c>, the truncation marker AND the caveat sentence all disappear, telling the
+		/// reader "the worker said nothing" when the truth is "clio withheld what it kept". The explicit
+		/// notice keeps that distinction, and keeps the envelope's own rule — an absent marker means the
+		/// diagnosis is whole — true.
+		/// </para>
+		/// <para>
+		/// <b>Residual, so nobody reads this as more than it is.</b> A line break is a boundary no pattern
+		/// can be cut INSIDE, but it is not one the patterns cannot SPAN: <c>CredentialPairRegex</c>
+		/// separates key from value with <c>\s*</c>, and <c>\s</c> includes the line break. A key that ends
+		/// the dropped partial line with its value beginning the surviving one is therefore still orphaned
+		/// — recorded in the credential threat model under T-6/R-7, not fixed here, because once the key is
+		/// on the discarded side of the cut nothing local can recover it.
+		/// </para>
+		/// <para>
+		/// Applied at SNAPSHOT time rather than in the pump: <see cref="Tail"/> is called on paths that run
+		/// before <see cref="StopAsync"/>, so the buffer may still be growing, and making the drop a
+		/// property of the snapshot keeps it correct under that concurrency while leaving the hot path
+		/// allocation-free. It is not the weaker placement — the trim runs after every append, so the
+		/// buffer holds the last <see cref="_limit"/> characters regardless of where the chunks fell.
+		/// </para>
+		/// </remarks>
+		private static string WithoutOrphanedFirstLine(string trimmedTail) {
+			// IndexOf('\n') is correct for both line endings: on CRLF the '\r' belongs to the dropped
+			// partial line, and a cut landing between '\r' and '\n' leaves the '\n' as the first break.
+			int firstLineBreak = trimmedTail.IndexOf('\n', StringComparison.Ordinal);
+			string survivingLines = firstLineBreak < 0
+				? string.Empty
+				: trimmedTail[(firstLineBreak + 1)..].Trim();
+			return survivingLines.Length == 0 ? StandardErrorNoCompleteLineNotice : survivingLines;
 		}
 
 		internal async Task StopAsync() {

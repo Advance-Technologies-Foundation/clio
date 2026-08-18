@@ -160,6 +160,34 @@ public sealed record WorkerRelayOptions {
 	/// </para>
 	/// </remarks>
 	public TimeSpan LivenessProbeTimeout { get; init; } = TimeSpan.FromSeconds(2);
+
+	/// <summary>
+	/// Gets the read-loop tap: called for every notification the worker sends, INSIDE the single read loop
+	/// and BEFORE the forward, returning whether the relay may pass it to the real client. Absent by
+	/// default, which is the raw pass-through ADR rule 1 requires.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>It exists for one caller and one exception.</b> The <c>terminal-stage</c> family (ADR §3.3) is
+	/// bounded by the worker's own <c>run-completed</c> stage event rather than by a stopwatch, so the
+	/// parent must SEE that event — which means observing the stream at the only place it passes through
+	/// serially. And when the caller supplied no progress token the parent injects a synthetic one on the
+	/// child leg so the child streams at all; the resulting notifications are CONSUMED here rather than
+	/// forwarded, because the only client that reaches that path is one that explicitly declined progress.
+	/// That suppression is the single deliberate exception to rule 1 and is recorded as such in ADR §3.3.
+	/// </para>
+	/// <para>
+	/// <b>A tap observes; it never decides the call's fate.</b> The relay runs it inside a
+	/// <c>try</c>/<c>catch</c> that defaults to FORWARDING, so a faulty tap can neither stall the read loop
+	/// nor silently swallow a client's traffic.
+	/// </para>
+	/// <para>
+	/// A delegate rather than an interface on purpose: the implementation is per-call mutable state over
+	/// one run, no container can supply it, and a <c>Clio.*</c> interface would be picked up by the
+	/// assembly interface scan in <c>BindingsModule</c> and fail <c>ValidateOnBuild</c>.
+	/// </para>
+	/// </remarks>
+	public Func<JsonRpcNotification, bool> NotificationTap { get; init; }
 }
 
 /// <summary>
