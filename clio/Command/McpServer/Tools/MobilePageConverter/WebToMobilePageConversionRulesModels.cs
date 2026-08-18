@@ -21,7 +21,14 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("templates")]
 	public IReadOnlyList<TemplateMappingRule> Templates { get; init; } = [];
 
-	/// <summary>Group: equivalent components — web↔mobile mappings that are not a same-type match.</summary>
+	/// <summary>
+	/// Group: equivalent components. An entry is EITHER a type-equivalence (web↔mobile mapping that is not a
+	/// same-type match, e.g. crt.Checkbox→crt.Toggle) OR a template group (<c>filters</c> naming the source
+	/// elements it applies to plus the <c>viewConfigTemplates</c> that produce their mobile values, e.g. the
+	/// grid→list row). Both shapes live in one array because they answer the same question — "what does this
+	/// web component become on mobile" — and a template group also carries its own target type in
+	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair.
+	/// </summary>
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentEquivalenceRule> Components { get; init; } = [];
 
@@ -64,15 +71,6 @@ public sealed class WebToMobilePageConversionRules {
 	/// </summary>
 	[JsonPropertyName("emptyContainerRemoval")]
 	public EmptyContainerRemovalRule EmptyContainerRemoval { get; init; }
-
-	/// <summary>
-	/// Group: what a converted element's mobile view config LOOKS LIKE, as data. Each group names the source
-	/// elements it applies to and the templates that produce their values. Deliberately NOT part of a component
-	/// mapping: a mapping answers "which mobile type", a template answers "which shape", and the two change for
-	/// different reasons. Empty or absent switches the pass off.
-	/// </summary>
-	[JsonPropertyName("viewConfigTemplates")]
-	public IReadOnlyList<ViewConfigTemplateGroup> ViewConfigTemplates { get; init; } = [];
 
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
@@ -371,22 +369,23 @@ public sealed class ComponentEquivalenceRule {
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
-}
 
-/// <summary>
-/// One set of view-config templates and the source elements they apply to. Carries no web/mobile pair: the
-/// FILTERS identify the source, and each template's own <c>value.type</c> declares the target — which is also
-/// what gates it, since a template is applied only when the element actually resolved to that mobile type.
-/// </summary>
-public sealed class ViewConfigTemplateGroup {
-
-	/// <summary>Source elements this group applies to. A node matches when ANY filter matches it.</summary>
+	/// <summary>
+	/// Template-group entries only: the source elements the <see cref="ViewConfigTemplates"/> apply to. A node
+	/// matches when ANY filter matches it. Empty on a plain type-equivalence entry (which matches by
+	/// <see cref="Web"/> instead).
+	/// </summary>
 	[JsonPropertyName("filters")]
 	public IReadOnlyList<ElementFilterRule> Filters { get; init; } = [];
 
-	/// <summary>The values produced for a matching element.</summary>
-	[JsonPropertyName("templates")]
-	public IReadOnlyList<ViewConfigTemplateRule> Templates { get; init; } = [];
+	/// <summary>
+	/// Template-group entries only: the mobile values produced for a matching element, as data. Each template's
+	/// own <c>value.type</c> declares the target mobile type — which is also what gates it and, for an entry with
+	/// no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a plain
+	/// type-equivalence entry.
+	/// </summary>
+	[JsonPropertyName("viewConfigTemplates")]
+	public IReadOnlyList<ViewConfigTemplateRule> ViewConfigTemplates { get; init; } = [];
 }
 
 
@@ -443,6 +442,18 @@ public sealed class ViewConfigTemplateRule {
 	/// </summary>
 	[JsonPropertyName("value")]
 	public JsonElement? Value { get; init; }
+
+	/// <summary>
+	/// Opt-in carry switch. When true, EVERY source property is copied first (only the element's <c>name</c> and
+	/// its resolved <c>type</c> aside) and the template's <see cref="Value"/> is laid OVER them — so the mobile
+	/// element keeps all its source properties except the ones the template explicitly names, without enumerating
+	/// them (e.g. crt.Checkbox → crt.Toggle keeps <c>control</c>/<c>value</c>/<c>label</c>/… and just retypes;
+	/// a grid → list keeps its <c>dataSourceName</c>/columns). Default (false) is AUTHORITATIVE: the values are
+	/// formed EXCLUSIVELY from what the template declares (over the element's type). Either way
+	/// <c>layoutConfig</c> is always copied — it is layout placement, not a component property.
+	/// </summary>
+	[JsonPropertyName("preserveSourceProperties")]
+	public bool PreserveSourceProperties { get; init; }
 }
 
 

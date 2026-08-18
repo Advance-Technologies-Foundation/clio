@@ -109,19 +109,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					+ "the list arrived with no title and no body");
 			row!["type"]?.GetValue<string>().Should().Be("crt.ListItem",
 				because: $"'{list.WebName}' must carry the mobile row element the list renders each record with");
-			// A title is present only when the grid HAS a column the mobile row accepts (text types); a grid of
-			// lookups and dates legitimately ships without one, and then the element's reason says so. So the
-			// shape is asserted only when a title exists — asserting unconditionally is what made this fail
-			// against a seeded page whose grid had no text column at all.
+			// The row leads with the FIRST column whatever its type (title-type selection was removed by
+			// decision), so a title is present whenever the grid has any column at all — a title is absent only
+			// for a column-less grid. The shape is asserted only when a title exists: asserting unconditionally
+			// is what made this fail against a seeded page whose grid had no columns.
 			if (row["title"] is { } title) {
 				title.GetValueKind().Should().Be(JsonValueKind.String,
 					because: $"the registry declares crt.ListItem.title as a string binding, and on '{list.WebName}' "
 						+ "an object wrapper would render an empty Title column while the body rows still looked fine");
-			} else {
-				list.Reason.Should().Contain("no title",
-					because: $"'{list.WebName}' shipped without a title, and an empty Title column in the designer is "
-						+ "indistinguishable from a converter failure unless the guide says the source had nothing "
-						+ "to put there");
 			}
 			// Deliberately NOT asserted non-empty: a single-column grid legitimately yields a title and no body
 			// rows, and this runs against whichever page the sandbox happens to seed.

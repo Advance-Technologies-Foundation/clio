@@ -32,26 +32,44 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		rules.Version.Should().Be("latest");
 		rules.Templates.Should().Contain(t => t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
 		rules.Components.Should().Contain(c =>
-			c.Web.Contains("crt.Checkbox") && c.Mobile.Contains("crt.Toggle") && c.Category == "AlternativeAvailable");
-		rules.Components.Should().Contain(c =>
-			c.Web.Contains("crt.DataGrid") && c.Mobile.Contains("crt.List") && c.Category == "AlternativeAvailable");
+			c.Filters.Any(f => f.Type == "crt.DataGrid") && c.ViewConfigTemplates.Count > 0,
+			because: "the grid mapping now lives in components as a filters + viewConfigTemplates group "
+				+ "(the root viewConfigTemplates section was folded in)");
 	}
 
 	[Test]
-	[Description("ENG-95046: the grid mapping carries ONLY the type correspondence — no template, no selection, no prose. What a converted element looks like is a separate section, because a mapping answers 'which mobile type' and a template answers 'which shape', and the two change for different reasons.")]
-	public void LoadBundled_GridMappingCarriesTheTypeCorrespondenceOnly() {
+	[Description("ENG-95046: the grid mapping is a components entry carrying filters + viewConfigTemplates (the root viewConfigTemplates section was folded in). It carries NO web/mobile pair: the filters identify the source and the template's own value.type declares the target — which is also what the converter derives the element's mobile type from.")]
+	public void LoadBundled_GridEntryCarriesFiltersAndViewConfigTemplate() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Web.Contains("crt.DataGrid"));
-		grid.Mobile.Should().Contain("crt.List").And.Contain("crt.ListItem",
-			because: "every entry here is looked up in the mobile registry and shipped as a mobileComponentContracts "
-				+ "entry, so naming the row component is what gives the caller its allowed properties and example — "
-				+ "the only contract available on the merge-twin path, where the row stays theirs to configure");
-		grid.Note.Should().BeNull(
-			because: "the rules file is a DATA channel resolved at runtime; caller-facing prose belongs to the "
-				+ "guide's own constraints and to the element's elementMap reason, which can say which path applied");
+		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Filters.Any(f => f.Type == "crt.DataGrid"));
+		grid.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.DataGrid", "crt.DataTable" },
+			because: "a filter naming only crt.DataGrid would leave a crt.DataTable list without a row");
+		grid.Web.Should().BeEmpty(
+			because: "a template group carries no web/mobile pair — its target is the template's value.type");
+		grid.Mobile.Should().BeEmpty(
+			because: "the mobile type is derived from viewConfigTemplates[].value.type, not a mobile list");
+	}
+
+	[Test]
+	[Description("The bundled type-swap components (crt.Checkbox → crt.Toggle, crt.HtmlEditor → crt.RichTextEditor) use the same filter format as the grid, with preserveSourceProperties: filters identify the source, value.type declares the target, and every source property except the named type is copied across (so the caller rebuilds nothing).")]
+	public void LoadBundled_TypeSwapComponentsPreserveSourceAndRetype() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		void AssertTypeSwap(string webType, string mobileType) {
+			ComponentEquivalenceRule entry = rules.Components.Single(c => c.Filters.Any(f => f.Type == webType));
+			entry.Web.Should().BeEmpty(because: $"{webType} is now a filter-based template entry, not a web/mobile pair");
+			ViewConfigTemplateRule template = entry.ViewConfigTemplates.Should().ContainSingle().Subject;
+			template.PreserveSourceProperties.Should().BeTrue(
+				because: "a like-for-like field conversion keeps its source properties and only retypes");
+			template.Value!.Value.GetProperty("type").GetString().Should().Be(mobileType,
+				because: "the template's value.type is what the converter resolves the element to");
+		}
+
+		AssertTypeSwap("crt.Checkbox", "crt.Toggle");
+		AssertTypeSwap("crt.HtmlEditor", "crt.RichTextEditor");
 	}
 
 	[Test]
@@ -61,10 +79,10 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		ViewConfigTemplateGroup group = rules.ViewConfigTemplates.Single();
-		group.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.DataGrid", "crt.DataTable" },
+		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Filters.Any(f => f.Type == "crt.DataGrid"));
+		grid.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.DataGrid", "crt.DataTable" },
 			because: "a filter naming only crt.DataGrid would leave a crt.DataTable list without a row");
-		ViewConfigTemplateRule template = group.Templates.Single();
+		ViewConfigTemplateRule template = grid.ViewConfigTemplates.Single();
 		template.ParentName.Should().Be("{{ diff.parentName }}",
 			because: "placement is READ-ONLY: a rules file that could set parentName would reparent an element "
 				+ "behind the element map's back, desynchronizing it from every other parentName");
@@ -174,19 +192,6 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "the web AttachmentList maps to the mobile AttachmentFileList element");
 		attachments.CarryProperties.Should().BeEmpty(
 			because: "it is the same component on both sides (crt.FileList) — a name-only twin carries the page's delta over the web-template baseline, no whitelist needed");
-	}
-
-	[Test]
-	[Description("The bundled grid → list component rule maps a web grid to [crt.List, crt.ListItem]. It explains nothing: how the row is built is DATA in the view-config template section, and what the caller must do arrives per element in its elementMap reason.")]
-	public void LoadBundled_GridRuleMapsToListAndListItem() {
-		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-
-		ComponentEquivalenceRule grid = rules.Components.First(c => c.Web.Contains("crt.DataGrid"));
-		grid.Mobile.Should().Contain("crt.List");
-		grid.Mobile.Should().Contain("crt.ListItem");
-		grid.Note.Should().BeNull(
-			because: "the rules file is resolved at runtime and is a DATA channel — prose there cannot be verified "
-				+ "against the binary that ships it, and this note had already gone stale twice");
 	}
 
 	[Test]
@@ -316,7 +321,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = await catalog.GetRulesAsync("latest");
 
 		rules.Should().NotBeNull();
-		rules.Components.Should().Contain(c => c.Web.Contains("crt.Checkbox"),
+		rules.Components.Should().Contain(c => c.Filters.Any(f => f.Type == "crt.DataGrid"),
 			because: "the bundled rules are the fallback source today");
 	}
 
