@@ -885,12 +885,14 @@ public static class WebToMobileAnalysisService {
 	/// <c>value.type</c> that then gates the template in <see cref="ApplyConversionTemplates"/>. Null when no
 	/// template-group entry matches.
 	/// </summary>
-	private static string ResolveTemplateTargetType(WebToMobilePageConversionRules rules, JObject node) {
+	private static string ResolveTemplateTargetType(WebToMobilePageConversionRules rules, JObject node,
+		IReadOnlyList<string> sourceAncestors) {
 		if (rules?.Components is null) {
 			return null;
 		}
 		foreach (ComponentEquivalenceRule entry in rules.Components) {
-			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates || !MatchesAnyFilter(entry.Filters, node)) {
+			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates
+				|| !MatchesAnyFilter(entry.Filters, node) || !MatchesPath(entry.Path, sourceAncestors)) {
 				continue;
 			}
 			foreach (ViewConfigTemplateRule template in templates) {
@@ -1638,7 +1640,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
-		string parentPropertyName = ItemsPropertyName) {
+		string parentPropertyName = ItemsPropertyName, IReadOnlyList<string> sourceAncestors = null) {
 		// Positional siblings: when this array holds a positional anchor container (e.g. CardContentWrapper),
 		// each sibling ABOVE it is placed above the mobile anchor (Tabs) — inserted into the anchor's parent
 		// (MainContainer) with an ascending index from 0 — and each sibling BELOW it is appended after.
@@ -1651,10 +1653,11 @@ public static class WebToMobileAnalysisService {
 			string type = node["type"]?.ToString();
 			JArray items = node["items"] as JArray;
 
-			// Anonymous wrapper: no entry, but recurse preserving the parent context.
+			// Anonymous wrapper: no entry, but recurse preserving the parent context (and the ancestor chain — a
+			// nameless wrapper contributes no ancestor name).
 			if (string.IsNullOrEmpty(name)) {
 				if (items is not null) {
-					WalkElements(ctx, items, mobileParentName);
+					WalkElements(ctx, items, mobileParentName, sourceAncestors: sourceAncestors);
 				}
 				continue;
 			}
@@ -1688,7 +1691,7 @@ public static class WebToMobileAnalysisService {
 					Reason = TwinReason(name)
 				});
 				if (items is not null) {
-					WalkElements(ctx, items, twinMobileName);
+					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name));
 				}
 				continue;
 			}
@@ -1724,7 +1727,7 @@ public static class WebToMobileAnalysisService {
 					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null)
 				});
 				if (items is not null) {
-					WalkElements(ctx, items, compRule.Mobile);
+					WalkElements(ctx, items, compRule.Mobile, sourceAncestors: Append(sourceAncestors, name));
 				}
 				continue;
 			}
@@ -1770,7 +1773,7 @@ public static class WebToMobileAnalysisService {
 						Reason = $"container type '{type}' has no mobile equivalent — its children are placed in {target}"
 					});
 					if (items is not null) {
-						WalkElements(ctx, items, target);
+						WalkElements(ctx, items, target, sourceAncestors: Append(sourceAncestors, name));
 					}
 					continue;
 				}
@@ -1786,7 +1789,7 @@ public static class WebToMobileAnalysisService {
 				// shape it declares can be read in place, and echoing needs the value the entry will carry.
 				string containerParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
-					containerParent, parentPropertyName);
+					containerParent, parentPropertyName, sourceAncestors);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
 					ParentName = containerParent, PropertyName = parentPropertyName,
@@ -1797,10 +1800,11 @@ public static class WebToMobileAnalysisService {
 						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 						: "container; mobile-supported"
 				});
+				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
-					WalkElements(ctx, items, name);
+					WalkElements(ctx, items, name, sourceAncestors: containerChildAncestors);
 				}
-				RecurseChildArrays(ctx, node, name, type);
+				RecurseChildArrays(ctx, node, name, type, containerChildAncestors);
 				continue;
 			}
 
@@ -1816,7 +1820,7 @@ public static class WebToMobileAnalysisService {
 			// template path then builds the values inside BuildMobileValues. Only a component with no matching
 			// template falls back: kept as-is when the mobile registry supports it, else mapped by a
 			// type-equivalence rule (rule.Mobile[0], e.g. crt.Checkbox→crt.Toggle), else dropped.
-			string leafMobileType = ResolveTemplateTargetType(ctx.Rules, node)
+			string leafMobileType = ResolveTemplateTargetType(ctx.Rules, node, sourceAncestors)
 				?? (leafSupported ? type : FindRule(ctx.Rules, type)?.Mobile?.FirstOrDefault());
 			if (string.IsNullOrEmpty(leafMobileType)) {
 				ctx.Out.Add(Drop(name, type, $"type '{type}' not in mobile registry"));
@@ -1825,7 +1829,7 @@ public static class WebToMobileAnalysisService {
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			string leafParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
-				leafParent, parentPropertyName);
+				leafParent, parentPropertyName, sourceAncestors);
 			string leafReason = isPositional
 				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 				: "field/leaf; mobile-supported";
@@ -1839,7 +1843,7 @@ public static class WebToMobileAnalysisService {
 			});
 			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
 			// components are converted rather than carried verbatim inside the leaf's values.
-			RecurseChildArrays(ctx, node, name, leafMobileType);
+			RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name));
 		}
 	}
 
@@ -1852,15 +1856,28 @@ public static class WebToMobileAnalysisService {
 	/// walked with the node's own mobile name as parent and the property name as the slot, so its components become
 	/// their own element-map entries under the right <c>propertyName</c>.
 	/// </summary>
-	private static void RecurseChildArrays(ElementMapContext ctx, JObject node, string mobileParentName, string mobileType) {
+	private static void RecurseChildArrays(ElementMapContext ctx, JObject node, string mobileParentName,
+		string mobileType, IReadOnlyList<string> childAncestors) {
 		foreach (JProperty prop in node.Properties()) {
 			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
 				continue;
 			}
 			if (IsChildElementArray(ctx, mobileType, prop.Name, prop.Value)) {
-				WalkElements(ctx, (JArray)prop.Value, mobileParentName, prop.Name);
+				WalkElements(ctx, (JArray)prop.Value, mobileParentName, prop.Name, childAncestors);
 			}
 		}
+	}
+
+	/// <summary>
+	/// The source-ancestor chain (outer→inner web element names) for the children of <paramref name="name"/>, i.e.
+	/// the node's own ancestors plus its name. A nameless node contributes nothing. Used to scope <c>path</c> rules.
+	/// </summary>
+	private static IReadOnlyList<string> Append(IReadOnlyList<string> ancestors, string name) {
+		if (string.IsNullOrEmpty(name)) {
+			return ancestors ?? [];
+		}
+		var result = new List<string>(ancestors ?? []) { name };
+		return result;
 	}
 
 	/// <summary>
@@ -2250,7 +2267,8 @@ public static class WebToMobileAnalysisService {
 	/// <c>label</c> is synthesized. Returns null for an unknown mobile type.
 	/// </summary>
 	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName,
-		string mobileType, CaptionResource caption, string parentName, string propertyName) {
+		string mobileType, CaptionResource caption, string parentName, string propertyName,
+		IReadOnlyList<string> sourceAncestors) {
 		if (string.IsNullOrEmpty(mobileType)) {
 			return null;
 		}
@@ -2258,9 +2276,10 @@ public static class WebToMobileAnalysisService {
 		var roots = new TemplateRoots(
 			new JObject { ["name"] = mobileName, ["parentName"] = parentName, ["propertyName"] = propertyName },
 			node);
-		// The conversion templates that govern this element (matched by filters + declared target type + placement
-		// echo). Resolved up front because whether — and how much of — the source is carried depends on them.
-		IReadOnlyList<ViewConfigTemplateRule> templates = MatchingConversionTemplates(ctx, node, mobileType, roots);
+		// The conversion templates that govern this element (matched by filters + path scope + declared target type +
+		// placement echo). Resolved up front because whether — and how much of — the source is carried depends on them.
+		IReadOnlyList<ViewConfigTemplateRule> templates =
+			MatchingConversionTemplates(ctx, node, mobileType, roots, sourceAncestors);
 		bool hasTemplate = templates.Count > 0;
 		bool preserve = templates.Any(t => t.PreserveSourceProperties);
 		// Carry the source properties when there is NO template (a registry-supported leaf or a type-equivalence
@@ -2366,13 +2385,15 @@ public static class WebToMobileAnalysisService {
 	/// while ignoring where it asked to go would ship a shape the rules file believes it placed elsewhere.
 	/// </remarks>
 	private static IReadOnlyList<ViewConfigTemplateRule> MatchingConversionTemplates(
-		ElementMapContext ctx, JObject node, string mobileType, TemplateRoots roots) {
+		ElementMapContext ctx, JObject node, string mobileType, TemplateRoots roots,
+		IReadOnlyList<string> sourceAncestors) {
 		if (ctx.Rules?.Components is not { Count: > 0 } components) {
 			return [];
 		}
 		var matches = new List<ViewConfigTemplateRule>();
 		foreach (ComponentEquivalenceRule entry in components) {
-			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates || !MatchesAnyFilter(entry.Filters, node)) {
+			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates
+				|| !MatchesAnyFilter(entry.Filters, node) || !MatchesPath(entry.Path, sourceAncestors)) {
 				continue;
 			}
 			foreach (ViewConfigTemplateRule template in templates) {
@@ -2551,6 +2572,27 @@ public static class WebToMobileAnalysisService {
 		string type = node["type"]?.ToString();
 		return filters.Any(f => !string.IsNullOrWhiteSpace(f?.Type)
 			&& string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>
+	/// True when a rule's <c>path</c> scope is satisfied for a node. Empty (or null) path = no scoping (matches
+	/// anywhere), mirroring <see cref="MatchesAnyFilter"/>. Otherwise the path names must appear, by name and IN
+	/// ORDER, as a SUBSEQUENCE of the node's source ancestors (outer→inner) — at any depth, so intermediate
+	/// containers or child-arrays between two path elements are allowed. Single element <c>["MainHeader"]</c> means
+	/// "the node has an ancestor named MainHeader anywhere above it".
+	/// </summary>
+	private static bool MatchesPath(IReadOnlyList<string> rulePath, IReadOnlyList<string> ancestors) {
+		if (rulePath is not { Count: > 0 }) {
+			return true;
+		}
+		int matched = 0;
+		foreach (string ancestor in ancestors ?? []) {
+			if (matched < rulePath.Count
+				&& string.Equals(ancestor, rulePath[matched], StringComparison.OrdinalIgnoreCase)) {
+				matched++;
+			}
+		}
+		return matched == rulePath.Count;
 	}
 
 	/// <summary>
