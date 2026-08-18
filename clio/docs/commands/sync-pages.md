@@ -32,9 +32,11 @@ When `validate` is `true` (the default), the body is checked client-side before 
   builds the element from `values` alone, so the type is discarded and the element never renders even
   though the save succeeds. A missing type, a type-only-at-operation-level entry with no `values` object,
   and two conflicting types are reported as **warnings**. Note this validates the WHOLE body, so a page
-  that already stores the defective shape fails until it is corrected. The same shape breaks web pages
-  identically but is **not yet enforced** there. Call `clio get-guidance --name mobile-page-modification`
-  for details.
+  that already stores the defective shape fails until it is corrected.
+  Two residual gaps, deliberate for now: the same shape breaks **web** pages identically but is **not yet
+  enforced** there, and `validate: false` skips this check with every other one — the silent-persist path
+  is re-opened for that call, so do not use it to get past this error. Call
+  `clio get-guidance --name mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid

@@ -61,8 +61,9 @@ name instead of trying to edit a non-existent local `insert`.
   Reported as a non-blocking **warning** instead: an entry with no type anywhere, an entry whose type is
   only at the operation level with no `values` object at all, and an entry that declares two different
   types. If the offending entry came back from `get-page`, the page already carries the defect — correct
-  it in the body you send back. The same shape breaks web pages identically but is **not yet enforced**
-  there. Call `clio get-guidance --name mobile-page-modification` for details.
+  it in the body you send back. Two residual gaps, deliberate for now: the same shape breaks **web** pages
+  identically but is **not yet enforced** there, and `sync-pages` with `validate: false` skips the check
+  entirely. Call `clio get-guidance --name mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid

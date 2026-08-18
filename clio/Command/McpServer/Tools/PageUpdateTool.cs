@@ -328,7 +328,12 @@ public sealed class PageUpdateTool(
 		}
 	}
 
-	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
+	/// <summary>
+	/// Runs the client-side body validation that gates the save. Exposed as an internal seam (same pattern as
+	/// <see cref="ValidateRunProcessButtons"/>) so a test can prove a blocking validation error really aborts the
+	/// write instead of only proving the validator returns an error.
+	/// </summary>
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
 		PageUpdateOptions options, string? requestedVersion) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
 			// Mobile body validation requires async catalogs (CDN+cache) AND the

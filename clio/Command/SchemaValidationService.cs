@@ -634,11 +634,13 @@ public static class SchemaValidationService
 	/// </remarks>
 	/// <param name="body">Plain-JSON mobile page body.</param>
 	/// <returns>
-	/// A <see cref="SchemaValidationResult"/> that is invalid only for the unambiguous hybrid — a <c>values</c> object
-	/// present AND the type sitting outside it — and that otherwise warns. The warning cases are deliberately
-	/// non-blocking: the FLAT shape (no <c>values</c> object at all) is tolerated elsewhere in this file
-	/// (<c>GetMobileEntryType</c>, <c>ValidateMobileInsertedFieldLabels</c>), which suggests real bodies use it, and a
-	/// missing type is not provably a misplacement. Blocking either would risk refusing a write that succeeds today.
+	/// A <see cref="SchemaValidationResult"/> that is invalid whenever an operation-level type would be discarded:
+	/// the hybrid (a <c>values</c> object present AND the type outside it) and the FLAT <c>insert</c> (an
+	/// operation-level type with no <c>values</c> object — the differ declares no required parameters for
+	/// <c>insert</c>, so it silently persists a typeless element). A flat <c>set</c> is left to the differ, which
+	/// rejects it for the missing required <c>values</c>. The remaining cases only warn: a type absent everywhere is
+	/// not provably a misplacement, two conflicting types still render (as the <c>values</c> copy), and an operation
+	/// whose CASE does not match the differ's exact-case dispatch is discarded wholesale rather than mis-typed.
 	/// </returns>
 	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -672,7 +674,23 @@ public static class SchemaValidationService
 	/// </summary>
 	private static void ValidateMobileInsertTypePlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
 		if (entry.ValueKind != JsonValueKind.Object
-			|| (!IsOperation(entry, InsertOperationName) && !IsOperation(entry, SetOperationName))) {
+			|| !TryGetStringProperty(entry, OperationPropertyName, out string operation)) {
+			return;
+		}
+		bool isInsert = string.Equals(operation, InsertOperationName, StringComparison.Ordinal);
+		bool isSet = string.Equals(operation, SetOperationName, StringComparison.Ordinal);
+		if (!isInsert && !isSet) {
+			// Case matters: the differ dispatches on an exact-case switch with no default branch, so an
+			// operation that only case-insensitively matches is not "an insert with a bad type" — the WHOLE
+			// operation is discarded and nothing is authored at all. Report that instead of type advice the
+			// author could follow without changing the outcome.
+			if (string.Equals(operation, InsertOperationName, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(operation, SetOperationName, StringComparison.OrdinalIgnoreCase)) {
+				result.Warnings.Add(
+					$"{DescribeViewConfigDiffEntry(entry, index)} declares \"{OperationPropertyName}\": \"{operation}\". The "
+					+ "Creatio differ dispatches operations case-sensitively, so this entry is silently discarded and "
+					+ $"authors nothing. Use the exact lowercase form (\"{operation.ToLowerInvariant()}\").");
+			}
 			return;
 		}
 		bool hasEntryType = TryGetStringProperty(entry, TypePropertyName, out string entryType);
@@ -680,14 +698,19 @@ public static class SchemaValidationService
 			entry.TryGetProperty(ValuesPropertyName, out JsonElement values) && values.ValueKind == JsonValueKind.Object;
 		string subject = DescribeViewConfigDiffEntry(entry, index);
 		if (!hasValuesObject) {
-			// FLAT shape: everything at operation level. The differ clones only `values`, so this element is typeless
-			// too — but two sibling validators deliberately accept this shape, so warn instead of blocking.
-			if (hasEntryType) {
-				result.Warnings.Add(
+			// FLAT shape: everything at operation level, no `values` object. `insert` declares no required
+			// parameters, so the differ does NOT reject it — it clones nothing, stamps the alias and persists a
+			// typeless element: the same unrenderable outcome as the hybrid, so it blocks the same way. That two
+			// sibling validators READ `entry.type` says only that they can classify the shape, not that the differ
+			// renders it. `set` is excluded: it requires `values`, so the differ rejects a flat `set` itself and
+			// MobileDiffApplyValidator surfaces that — reporting it here too would double-report one defect.
+			if (hasEntryType && isInsert) {
+				result.IsValid = false;
+				result.Errors.Add(
 					$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object and carries no "
 					+ "\"values\" object. The Creatio differ builds the element from \"values\" only, so the type is discarded "
-					+ $"and the element cannot render. Move the component properties into \"values\": {{ \"{TypePropertyName}\": "
-					+ $"\"{entryType}\", ... }}.");
+					+ "and the element cannot render even though the write reports success. Move the component properties "
+					+ $"into \"values\": {{ \"{TypePropertyName}\": \"{entryType}\", ... }}.");
 			}
 			return;
 		}

@@ -7235,8 +7235,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("The FLAT shape — type on the operation object with no 'values' object at all — warns rather than blocks. The differ drops the type here too, but GetMobileEntryType and ValidateMobileInsertedFieldLabels deliberately accept this shape, so blocking it would risk refusing writes that succeed today.")]
-	public void ValidateMobileInsertTypePlacement_WhenFlatShape_ReturnsWarningNotError() {
+	[Description("PR #1086 review: the FLAT insert — type on the operation object with no 'values' object at all — blocks like the hybrid. 'insert' declares no required parameters, so the differ does not reject it: it clones nothing, stamps the alias, and persists a typeless element. That two sibling validators READ entry.type only means they can classify the shape, not that the differ renders it.")]
+	public void ValidateMobileInsertTypePlacement_WhenFlatInsert_ReturnsError() {
 		// Arrange
 		string body = """
 		              {
@@ -7250,10 +7250,99 @@ public sealed class SchemaValidationServiceTests
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertTypePlacement(body);
 
 		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a flat insert persists a typeless element exactly like the hybrid, so it must block the same way");
+		result.Errors.Should().ContainSingle(e => e.Contains("Btn") && e.Contains("values"),
+			because: "the error must name the element and point at where the component properties belong");
+	}
+
+	[Test]
+	[Description("PR #1086 review: a FLAT 'set' is left to the differ, which rejects it for the missing required 'values' — reporting it here as well would double-report one defect.")]
+	public void ValidateMobileInsertTypePlacement_WhenFlatSet_IsLeftToTheDiffer() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"set","name":"Btn","type":"crt.Button","parentName":"Scaffold","propertyName":"actions"}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertTypePlacement(body);
+
+		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "two sibling validators tolerate the flat shape, so this rule must not be the one that blocks it");
-		result.Warnings.Should().ContainSingle(w => w.Contains("Btn") && w.Contains("values"),
-			because: "the author must still learn the type will not survive the differ");
+			because: "the differ's own required-parameter check owns the flat-set case ('set' requires 'values')");
+		result.Warnings.Should().BeEmpty(because: "one defect must produce one diagnostic, not two");
+	}
+
+	[Test]
+	[Description("PR #1086 review: the differ dispatches operations case-sensitively, so 'Insert' is discarded wholesale rather than mis-typed. Reporting a type-placement error there would hand the author advice that cannot change the outcome.")]
+	public void ValidateMobileInsertTypePlacement_WhenOperationCaseDiffersFromApplier_WarnsAboutDroppedOperation() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"Insert","name":"Btn","type":"crt.Button","values":{"caption":"$Resources.Strings.X"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertTypePlacement(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the type placement is not what breaks this entry — the whole operation is discarded");
+		result.Warnings.Should().ContainSingle(w => w.Contains("Insert") && w.Contains("case-sensitively"),
+			because: "the author must be told the operation itself never runs, not to move the type");
+		result.Errors.Should().BeEmpty(because: "type-placement advice here would be misleading");
+	}
+
+	[Test]
+	[Description("PR #1086 review nit: every offending entry in one diff is reported, not just the first.")]
+	public void ValidateMobileInsertTypePlacement_WhenTwoOffendingEntries_ReportsBoth() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"BtnA","type":"crt.Button","values":{"clicked":{}}},
+		                  {"operation":"set","name":"BtnB","type":"crt.Label","values":{"caption":"$Resources.Strings.X"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertTypePlacement(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "both entries would persist unrenderable elements");
+		result.Errors.Should().HaveCount(2, because: "a per-entry rule must not stop at the first offender");
+		result.Errors.Should().Contain(e => e.Contains("BtnA"), because: "the insert offender must be named");
+		result.Errors.Should().Contain(e => e.Contains("BtnB"), because: "the set offender must be named");
+	}
+
+	[Test]
+	[Description("PR #1086 review nit: a whitespace-only operation-level type is not a declared type, so it does not turn the entry into the blocking hybrid.")]
+	public void ValidateMobileInsertTypePlacement_WhenOperationLevelTypeIsWhitespace_DoesNotBlock() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Btn","type":"   ","values":{"caption":"$Resources.Strings.X"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertTypePlacement(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a blank operation-level type is nothing to move, so there is no misplacement to block");
+		result.Warnings.Should().ContainSingle(w => w.Contains("Btn"),
+			because: "the entry still declares no usable type and stays invisible, which is the advisory case");
 	}
 
 	[Test]
@@ -7404,6 +7493,31 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		errors.Should().Contain(e => e.Contains("RunProcessButton") && e.Contains("values"),
 			because: "update-page must refuse a write that would persist an unrenderable button");
+	}
+
+	[Test]
+	[Description("PR #1086 review: the 'set' block is pinned through the real ValidateMobilePage pipeline, not only by calling the validator directly.")]
+	public void ValidateMobilePage_WhenSetTypeIsOnOperationObject_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"set","name":"RunProcessButton","type":"crt.Button",
+		                   "parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"clicked":{"request":"crt.RunBusinessProcessRequest"}}}
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		// Assert
+		errors.Should().Contain(e => e.Contains("RunProcessButton") && e.Contains("values"),
+			because: "set replaces the element through the same values-only build, so the pipeline must block it too");
 	}
 
 	[Test]

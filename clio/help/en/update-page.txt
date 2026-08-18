@@ -42,13 +42,18 @@ DESCRIPTION
     - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.RequiredValidator).
     - Mobile: an authored component's type must sit inside values. In a
-      mobile viewConfigDiff, an operation:"insert" or "set" that supplies a
-      values object but puts "type" on the operation object instead of
-      inside it is rejected — the Creatio differ builds the element from
-      "values" only, so the type is dropped and the element never renders
-      even though the write succeeds. A missing type, a type-only entry
-      with no values object, and two conflicting types are warnings. The
-      same shape breaks web pages too but is not yet enforced there.
+      mobile viewConfigDiff, an operation:"insert" or "set" that puts
+      "type" on the operation object instead of inside "values" is
+      rejected — the Creatio differ builds the element from "values"
+      only, so the type is dropped and the element never renders even
+      though the write succeeds. A flat "insert" (type at operation level,
+      no values object at all) is rejected for the same reason: insert
+      declares no required parameters, so the differ persists a typeless
+      element rather than refusing it. Warnings, not errors: no type
+      anywhere, two conflicting types, and an operation whose letter case
+      does not match the differ's exact-case dispatch. Residual gaps: the
+      same shape breaks web pages too but is not yet enforced there, and
+      sync-pages validate=false skips the check entirely.
     - User-visible text (label, caption, title, tooltip, placeholder) in
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's
