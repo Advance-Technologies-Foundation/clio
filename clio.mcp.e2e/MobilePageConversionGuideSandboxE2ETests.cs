@@ -88,6 +88,29 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				+ "non-primary page data source must convert — the drop used to remove whole detail sections and, "
 				+ "because emptiness cascades, their wrapper containers with them");
 		AssertConvertedListsCarryTheirRow(response.Guide!);
+		AssertHeaderActionsConvertToFab(response.Guide!);
+	}
+
+	/// <summary>
+	/// Any element retargeted into <c>FloatingActionButton.menuItems</c> — a converted MainHeader action
+	/// (ENG-93152) — must be a <c>crt.MenuItem</c> insert carrying no visual properties (style/color/icon): the
+	/// header-button → FAB denylist. A page with no header actions passes vacuously — the seeded page set is not
+	/// guaranteed to carry a header button, so this asserts the contract only when one actually converted.
+	/// </summary>
+	private static void AssertHeaderActionsConvertToFab(MobilePageConversionGuide guide) {
+		foreach (ElementMapEntry entry in guide.ElementMap.Where(e =>
+			e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems")) {
+			entry.MobileType.Should().Be("crt.MenuItem",
+				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
+			if (entry.MobileValues is JsonObject values) {
+				values.ContainsKey("style").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+				values.ContainsKey("icon").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+				values.ContainsKey("color").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+			}
+		}
 	}
 
 	/// <summary>
