@@ -174,3 +174,33 @@ different cause and this section is wrong.
 Both stand, and one is now sharper: whatever else is true, **a branch whose own test can corrupt the
 settings file for the remainder of the suite does not merge.** That is independent of how the three
 regressions above are eventually explained.
+
+
+## Final numbers, and what they are worth
+
+Run 15893259 finished: **46 failed, 470 passed, 98 ignored** (614 recorded).
+Master baseline 15892347: **4 failed, 585 passed, 10 ignored** (599 recorded).
+
+The ignored count is the tell. Ten became ninety-eight. Tests do not skip because a feature regressed;
+they skip because the environment they need is unreachable. Together with the "clio settings bootstrap
+is broken" message, that is the signature of a run whose settings file died partway through and never
+recovered.
+
+**So this run cannot be read as a per-test delta, and it should not be quoted as one.** Forty-six is
+not a count of defects; most of it is one root cause propagating, and the ninety-eight skips are the
+same cause in a different disguise. Anyone comparing 46 against the baseline's 4 will draw a
+conclusion the evidence does not support.
+
+What the run DID establish, and it is worth more than the delta would have been:
+
+- The settings file can be damaged during a run, with a first-class error message proving it.
+- The branch's own gate test for concurrent registration writes fails.
+- Three named tests that pass on master fail here, observed before the collapse and therefore not
+  explained by it: the progress-streaming case, `CreateWorkspace` with the directory omitted, and the
+  application-info read after a schema sync.
+
+What it did NOT establish: anything about the tools that ran after the collapse. Their results are
+void — neither evidence of a regression nor evidence of health.
+
+The next run must not start until the concurrent-write question is settled, or it will spend an hour
+producing another uninterpretable number.
