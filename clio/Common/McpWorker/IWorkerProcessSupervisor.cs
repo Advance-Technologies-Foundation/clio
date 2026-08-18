@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -155,7 +156,10 @@ public interface IWorkerLease : IDisposable {
 /// </summary>
 /// <param name="ConcurrencyCap">Maximum workers allowed to run at once.</param>
 /// <param name="ActiveWorkers">Workers running right now.</param>
-/// <param name="QueuedRequests">Callers waiting for a slot. None of them has been dropped.</param>
+/// <param name="QueuedRequests">
+/// Callers waiting for a slot right now. A queued caller is admitted as soon as a slot frees; it is
+/// refused only if it outlasts the queue-wait bound (<see cref="WorkerQueueWaitExpiredException"/>).
+/// </param>
 /// <param name="PeakActiveWorkers">Highest <paramref name="ActiveWorkers"/> observed in this process.</param>
 /// <param name="TotalSpawned">Workers spawned since the supervisor was created.</param>
 /// <param name="TotalTerminated">Workers this supervisor had to kill (budget, cancellation or dispose).</param>
@@ -168,6 +172,87 @@ public sealed record WorkerSupervisorSnapshot(
 	long TotalSpawned,
 	long TotalTerminated,
 	long TotalStaleReaped);
+
+/// <summary>
+/// Thrown when a call waited for a worker concurrency slot for longer than the supervisor's queue-wait
+/// bound. Nothing was spawned, and no request reached Creatio.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Why the queue wait is bounded at all.</b> The cap is
+/// <see cref="IWorkerProcessSupervisor.ConcurrencyCap"/> workers, so on a four-core host the fifth
+/// concurrent call queues. An UNBOUNDED queue wait reproduces the exact signature this whole feature
+/// exists to remove — a call that returns nothing, issues zero requests to Creatio, and does so for an
+/// arbitrarily long time — with the one difference that it eventually clears. "Eventually" is not a
+/// bound, and a client that never cancels waits for ever, so the wait is bounded and the expiry is
+/// named.
+/// </para>
+/// <para>
+/// <b>Deliberately neither <see cref="TimeoutException"/> nor
+/// <see cref="OperationCanceledException"/>.</b> Both would be MISREAD: the first says the backend was
+/// slow, when in fact clio never spoke to it; the second says the caller gave up, when the caller was
+/// still waiting. This is a third thing — clio itself is saturated — and it is the only one of the
+/// three whose remedy is to reduce concurrency rather than to retry harder or to blame the stand.
+/// </para>
+/// <para>
+/// <b>It is not the budget.</b> The budget bounds a worker that IS running (measured from spawn, see
+/// <see cref="IWorkerLease.BudgetExpiresAtUtc"/>); this bounds the wait BEFORE one exists. Keeping the
+/// two apart is what lets a caller tell "the environment is slow" from "this clio host is full".
+/// </para>
+/// </remarks>
+public sealed class WorkerQueueWaitExpiredException : Exception {
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="WorkerQueueWaitExpiredException"/> class.
+	/// </summary>
+	/// <param name="waitEndured">How long this call actually waited before it was refused.</param>
+	/// <param name="configuredBound">The queue-wait bound in force when it was refused.</param>
+	/// <param name="concurrencyCap">The concurrency cap of the pool it was waiting on.</param>
+	/// <param name="queueDepth">
+	/// Callers waiting on that pool at the moment the wait expired, INCLUDING this one — so the minimum
+	/// meaningful value is 1 and the number reads as "how many calls are stacked up", not "how many
+	/// others".
+	/// </param>
+	public WorkerQueueWaitExpiredException(TimeSpan waitEndured, TimeSpan configuredBound,
+		int concurrencyCap, int queueDepth)
+		: base(BuildMessage(waitEndured, configuredBound, concurrencyCap, queueDepth)) {
+		WaitEndured = waitEndured;
+		ConfiguredBound = configuredBound;
+		ConcurrencyCap = concurrencyCap;
+		QueueDepth = queueDepth;
+	}
+
+	/// <summary>Gets how long this call actually waited before it was refused.</summary>
+	public TimeSpan WaitEndured { get; }
+
+	/// <summary>Gets the queue-wait bound in force when this call was refused.</summary>
+	public TimeSpan ConfiguredBound { get; }
+
+	/// <summary>Gets the concurrency cap of the pool this call was waiting on.</summary>
+	public int ConcurrencyCap { get; }
+
+	/// <summary>
+	/// Gets the number of callers waiting on that pool when the wait expired, including this one.
+	/// </summary>
+	/// <remarks>
+	/// Reported because it is the one number that separates "briefly busy" from "structurally
+	/// saturated": a depth of 1 against a full cap is a burst, a depth several times the cap is a host
+	/// that will not recover by waiting.
+	/// </remarks>
+	public int QueueDepth { get; }
+
+	private static string BuildMessage(TimeSpan waitEndured, TimeSpan configuredBound, int concurrencyCap,
+		int queueDepth) =>
+		$"No MCP worker slot became available within {FormatSeconds(configuredBound)} s "
+		+ $"(waited {FormatSeconds(waitEndured)} s): all {concurrencyCap} worker slot(s) were in use "
+		+ $"and {queueDepth} call(s) were queued. The call was not executed and issued no request to "
+		+ "Creatio.";
+
+	// Invariant, because this text is read by an agent and compared across machines: a decimal comma
+	// from a host locale would make the same condition look like two different numbers.
+	private static string FormatSeconds(TimeSpan value) =>
+		value.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+}
 
 /// <summary>
 /// Spawns, contains, bounds and reaps the short-lived child processes that execute MCP tool calls.
@@ -202,6 +287,17 @@ public interface IWorkerProcessSupervisor : IProcessExecutor {
 	/// <see cref="Environment.ProcessorCount"/>: wall time grows linearly past the core count, so a
 	/// larger cap buys no throughput and only inflates per-call latency (ADR §2.4).
 	/// </summary>
+	/// <remarks>
+	/// <b>The cap is a shared, held resource, not a rate.</b> A slot is taken when the worker is spawned
+	/// and returned only when the lease is disposed, so a worker whose LIFETIME outlives the answer it
+	/// produced consumes one slot for its whole life, not for the duration of its response. On a
+	/// four-core host that is four holders away from a fully occupied cap, and everything else queues
+	/// behind them — bounded by
+	/// <see cref="WorkerProcessSupervisor.DefaultQueueWaitBound"/> rather than for ever, but queued.
+	/// This is a property of the design today, for any long call; it is stated here because a lifetime
+	/// longer than one response (a worker kept alive across calls) makes it the ordinary case rather
+	/// than the slow one.
+	/// </remarks>
 	int ConcurrencyCap { get; }
 
 	/// <summary>
@@ -210,10 +306,19 @@ public interface IWorkerProcessSupervisor : IProcessExecutor {
 	/// </summary>
 	/// <param name="request">What to run and with what budget.</param>
 	/// <param name="cancellationToken">
-	/// The ONLY thing that ends the wait for a slot early. There is deliberately no queue timeout: a
-	/// call is never dropped for being busy (AC-01).
+	/// Ends the wait for a slot early. A queued call is never DROPPED for being busy (AC-01) — it is
+	/// admitted as soon as a slot frees — but the wait is bounded: see
+	/// <see cref="WorkerQueueWaitExpiredException"/> for why an unbounded queue wait is the wedge in
+	/// another shape.
 	/// </param>
 	/// <returns>The lease; dispose it to kill the worker and return the slot.</returns>
+	/// <exception cref="WorkerQueueWaitExpiredException">
+	/// No slot became available within the supervisor's queue-wait bound. Nothing was spawned and no
+	/// request reached Creatio.
+	/// </exception>
+	/// <exception cref="OperationCanceledException">
+	/// <paramref name="cancellationToken"/> was cancelled while queued or while spawning.
+	/// </exception>
 	Task<IWorkerLease> SpawnContainedAsync(WorkerSpawnRequest request, CancellationToken cancellationToken);
 
 	/// <summary>

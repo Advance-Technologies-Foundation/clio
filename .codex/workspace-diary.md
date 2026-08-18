@@ -8809,3 +8809,25 @@ Files: clio/Command/McpServer/Relay/{WorkerMcpRelay,IWorkerMcpRelay,WorkerChildT
 clio.tests/Command/McpServer/WorkerMcpRelayTests.cs
 Impact: the reuse rule and the SDK write guarantee are now written where the code is, and the McpClient guard
 can actually fail -- proven by inserting one line, watching it go red naming the member, and removing it.
+
+## 2026-08-18 17:40 – Supervisor: the queue wait gets a bound, and the http gate stops being silent
+Context: an adversarial pass over stage 6 found that routing now runs BEFORE the read-deadline wrapper, so a
+cohort call waiting for a concurrency slot had no clio-side bound at all -- on master the same call was bounded
+at 120 s. The observable signature was the wedge's own: nothing returned, zero requests to Creatio.
+Decision: bound the queue wait (60 s, overridable) and fail with a NAMED exception carrying the wait endured,
+the bound, the cap and the queue depth -- not TimeoutException and not OperationCanceledException, either of
+which a caller would misread. The budget clock still starts at spawn; queue wait and budget stay separate
+numbers because a caller needs to know which one it hit.
+Discovery: the child environment allowlist claimed to carry "every spelling the host may have used" and
+dropped HTTP_PROXY/HTTPS_PROXY/NO_PROXY in both cases -- so behind a mandated inspecting proxy the child either
+cannot reach Creatio or bypasses the policy, and both present as "the environment is broken". It still drops
+CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS, which is story 20's leading hypothesis and is deliberately left alone
+until the cause there is proven.
+Also: on mcp-http every cohort tool runs in the host process with the wedge fully intact and returns an
+ordinary successful result. That is correct while story 5 is deferred, but the silence was not; the host now
+says so once per session.
+Files: clio/Common/McpWorker/{WorkerProcessSupervisor,IWorkerProcessSupervisor}.cs,
+clio/Command/McpServer/{IMcpWorkerPathGate,IMcpExecutionRouter}.cs,
+clio.tests/Command/McpServer/{WorkerProcessSupervisorTests,McpExecutionRouterTests}.cs
+Impact: the cohort's seven names are now pinned as literals against what story 6 promises, so changing the
+cohort has to change a test on purpose rather than silently agreeing with itself.

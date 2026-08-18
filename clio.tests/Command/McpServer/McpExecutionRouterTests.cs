@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -237,6 +238,62 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("THE GATED HOST SAYS SO: an HTTP host states ONCE that the worker execution boundary is inactive and that the stalled-request defect is therefore not mitigated there — once per process however many cohort calls arrive, because per call it would be noise.")]
+	public void Resolve_ShouldStateTheInactiveBoundaryExactlyOnce_WhenHostTransportIsHttp() {
+		// Arrange — the notice is process-scoped, so the claim is reset here rather than assumed unclaimed.
+		McpWorkerPathGate.ResetInactiveNoticeForTests();
+		ILogger logger = Substitute.For<ILogger>();
+		McpExecutionRouter httpHostRouter = new(_reader, new McpWorkerCohort(),
+			new McpWorkerPathGate(logger, () => McpHostTransportKind.Http, () => false),
+			workerPathWired: true);
+
+		// Act — three cohort calls, which is what a live mcp-http deployment does all day.
+		McpExecutionRoute first = httpHostRouter.Resolve(CohortToolName, innerCommand: null);
+		httpHostRouter.Resolve(CohortToolName, innerCommand: null);
+		httpHostRouter.Resolve(CohortToolName, innerCommand: null);
+
+		// Assert
+		first.Disposition.Should().Be(McpExecutionDisposition.InProcessTransportGated,
+			because: "the gate must still refuse: Stage 5's credential channel does not exist, and relaying would run the call under a different identity");
+		// Exactly once, across three calls: silence hides that every cohort tool still runs in-process with
+		// the original defect intact, while a per-call statement on a long-lived server is noise nobody
+		// reads. Both halves of that are asserted — the text, and the count.
+		logger.Received(1).WriteWarning(McpWorkerPathGate.WorkerBoundaryInactiveOnHttpNotice);
+		logger.ReceivedWithAnyArgs(1).WriteWarning(default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A host that may relay, and a host whose transport was never declared, both stay SILENT — the notice is for the HTTP host only, because the fail-closed Unknown value also covers a stdio host whose standard output is the protocol channel.")]
+	public void Resolve_ShouldStateNothing_WhenHostIsStdioOrItsTransportWasNeverDeclared() {
+		// Arrange
+		McpWorkerPathGate.ResetInactiveNoticeForTests();
+		ILogger stdioLogger = Substitute.For<ILogger>();
+		ILogger undeclaredLogger = Substitute.For<ILogger>();
+		McpExecutionRouter stdioRouter = new(_reader, new McpWorkerCohort(),
+			new McpWorkerPathGate(stdioLogger, () => McpHostTransportKind.Stdio, () => false),
+			workerPathWired: true);
+		McpExecutionRouter undeclaredRouter = new(_reader, new McpWorkerCohort(),
+			new McpWorkerPathGate(undeclaredLogger, () => McpHostTransportKind.Unknown, () => false),
+			workerPathWired: true);
+
+		// Act
+		McpExecutionRoute relayed = stdioRouter.Resolve(CohortToolName, innerCommand: null);
+		McpExecutionRoute gated = undeclaredRouter.Resolve(CohortToolName, innerCommand: null);
+
+		// Assert
+		relayed.Disposition.Should().Be(McpExecutionDisposition.Worker,
+			because: "an ordinary stdio host relays, so there is no inactive boundary to announce");
+		stdioLogger.DidNotReceiveWithAnyArgs().WriteWarning(default);
+		gated.Disposition.Should().Be(McpExecutionDisposition.InProcessTransportGated,
+			because: "an undeclared transport is fail-closed and must still refuse to relay");
+		// Unknown also covers a mis-wired STDIO host, whose standard output IS the JSON-RPC channel the
+		// logger writes to — a notice there would corrupt the frames it is trying to explain.
+		undeclaredLogger.DidNotReceiveWithAnyArgs().WriteWarning(default);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("THE RECURSION GUARD: a cohort tool resolved INSIDE a worker process stays in-process, because the child receives the very call the parent relayed and would otherwise spawn a worker of its own without end.")]
 	public void Resolve_ShouldRefuseToRelay_WhenThisProcessIsItselfAWorker() {
 		// Arrange — a worker serves stdio too, so a transport-only check would have passed here.
@@ -366,6 +423,33 @@ public sealed class McpExecutionRouterTests {
 			because: "a sticky worker is story 7 and the parent has no private completion signal yet, so a sticky member would leak the child");
 		declared.Should().OnlyContain(metadata => metadata.BudgetPolicy == McpToolBudgetPolicy.ParentKillDefault,
 			because: "the parent kill is the only bound implemented today; a terminal-stage member would be killed mid-deploy, which is exactly what ADR rule 4 forbids");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The shipped Stage 6 cohort is exactly the seven tools story 6 names, pinned as LITERAL names — so changing membership has to change a test on purpose instead of passing because the assertion and the router read the same source.")]
+	public void ShippedCohort_ShouldBeExactlyTheSevenNamesStorySixPromises() {
+		// Arrange — literals, transcribed from spec/stories/story-mcp-worker-execution-boundary-6.md, NOT
+		// from Tools.*.ToolName constants. Every other cohort assertion in this fixture compares the router
+		// against `new McpWorkerCohort().Names`, i.e. against the very data the router just read, so
+		// swapping one member for another worker-classified tool leaves them all green. A constant here
+		// would re-read the same source and be exactly as unfalsifiable.
+		string[] storySixNames = [
+			"get-page",
+			"list-pages",
+			"list-app-sections",
+			"get-schema",
+			"get-related-page-addon",
+			"execute-esq",
+			"odata-read"
+		];
+
+		// Act
+		IReadOnlySet<string> shipped = new McpWorkerCohort().Names;
+
+		// Assert
+		shipped.Should().BeEquivalentTo(storySixNames,
+			because: "story 6 promises these seven retry-safe stdio reads and no others — the commands agents were forced off MCP onto the CLI; adding, dropping or swapping one is a rollout decision that must be argued for here rather than discovered in production");
 	}
 
 	[Test]
@@ -580,6 +664,48 @@ public sealed class McpExecutionRouterTests {
 		// Assert
 		TextOf(result).Should().Contain("no worker path wired",
 			because: "the unmatched seam must refuse a worker-routed call for the same reason the other two do");
+		await harness.Executor.DidNotReceiveWithAnyArgs()
+			.InvokeResolvedAsync(default, default, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("THE get-schema ASYMMETRY, stated rather than left as folklore: a cohort member that declares ReadOnly=false is stopped by the unmatched site's write-capability gate BEFORE routing, so a raw-name call comes back confirmation-required and never reaches the router — it reaches a worker only through clio-run.")]
+	public async Task HandleAsync_ShouldReturnConfirmationRequiredWithoutRouting_WhenACohortToolIsWriteCapable() {
+		// Arrange — the two premises are read from the SHIPPED sources, not restated, so this test stops
+		// being true the moment either changes: get-schema is in the cohort, and its own [McpServerTool]
+		// declares ReadOnly=false (output-file writes the schema body to disk).
+		const string writeCapableCohortTool = "get-schema";
+		McpServerToolAttribute declaredAnnotations = typeof(Clio.Command.McpServer.Tools.GetSchemaTool)
+			.GetMethod(nameof(Clio.Command.McpServer.Tools.GetSchemaTool.GetSchema))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+		// A router that would relay ANYTHING: if the gate ever moved after the routing question, this call
+		// would come back as the worker-path refusal instead, and the assertions below would say so.
+		DurableHandlerHarness harness = new(WorkerRouterStub());
+		harness.RegisterTool(writeCapableCohortTool, readOnly: false);
+
+		// Act — the RAW name arriving unmatched, which is how a non-resident tool is reached without
+		// clio-run.
+		CallToolResult result = await harness.Handler.HandleAsync(
+			CallContext(writeCapableCohortTool), CancellationToken.None);
+
+		// Assert
+		new McpWorkerCohort().Contains(writeCapableCohortTool).Should().BeTrue(
+			because: "the asymmetry is only interesting for a COHORT member: a non-member would stay in-process for an entirely different reason");
+		declaredAnnotations.ReadOnly.Should().BeFalse(
+			because: "this is the premise of the whole behaviour — get-schema advertises write capability because output-file writes to disk, and the unmatched site gates on readOnlyHint rather than on destructiveHint (issue #953)");
+		_sut.Resolve(writeCapableCohortTool, innerCommand: null).Disposition
+			.Should().Be(McpExecutionDisposition.Worker,
+			because: "the production router WOULD relay this tool — which is what makes the refusal below an ordering statement rather than a routing one");
+		TextOf(result).Should().Contain("writes durable state to the target (additive)",
+			because: "the raw-name call comes back as the write-capability refusal, so a cohort member can be unreachable under its own name — surprising, and previously undocumented");
+		TextOf(result).Should().Contain(Clio.Command.McpServer.Tools.ClioRunTool.ToolName,
+			because: "the refusal must name the one route that does reach a worker for this tool, or the caller is told 'no' with nowhere to go");
+		TextOf(result).Should().NotContain("no worker path wired",
+			because: "the call must not have reached the routing branch at all: routing before the gate would hand a write to a worker and bypass host gating (ADR rule 9)");
+		harness.Router.DidNotReceiveWithAnyArgs().Resolve(default, default);
 		await harness.Executor.DidNotReceiveWithAnyArgs()
 			.InvokeResolvedAsync(default, default, default, default);
 	}

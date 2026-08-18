@@ -41,6 +41,17 @@ public enum McpExecutionDisposition {
 	/// all: it serves a transport other than stdio, so the credential channel a child would need does not
 	/// exist (Stage 5 deferred). See <see cref="IMcpWorkerPathGate"/>.
 	/// </summary>
+	/// <remarks>
+	/// This value is how a reader tells "ran in the host because HTTP" from "ran in the host because the
+	/// tool has not moved yet" (<see cref="InProcessOutsideCohort"/>) — the two are separate values
+	/// precisely so the answer is not one anonymous in-process. Note the ordering the router applies:
+	/// cohort membership is tested BEFORE the process gate, so on an HTTP host only a COHORT tool reads
+	/// as gated; everything else still reads as outside-the-cohort, on every transport. That is
+	/// deliberate (it keeps the AC-05 statement transport-independent), not an oversight. The host also
+	/// states the gated disposition once per process — see
+	/// <see cref="McpWorkerPathGate.WorkerBoundaryInactiveOnHttpNotice"/> — because a per-call reader
+	/// cannot see a disposition that never leaves the router.
+	/// </remarks>
 	InProcessTransportGated,
 
 	/// <summary>
@@ -108,6 +119,19 @@ public sealed record McpExecutionRoute(
 /// <para>
 /// The router is a PURE DECISION: it reads declared metadata and answers. It never dispatches, never
 /// spawns anything, and holds no state. The dispatch site acts on the answer.
+/// </para>
+/// <para>
+/// <b>One site applies a gate BEFORE it asks (surprising, and load-bearing).</b> The unmatched durable
+/// handler refuses every WRITE-CAPABLE tool — <c>readOnlyHint == false</c>, not
+/// <c>destructiveHint</c> — with <c>confirmation-required</c> before it ever calls
+/// <see cref="Resolve"/> (ADR rule 9: routing a write to a worker would bypass host gating). A cohort
+/// member can therefore be write-capable and still never reach a worker by its raw name.
+/// <c>get-schema</c> is exactly that case: it declares <c>ReadOnly = false</c> because
+/// <c>output-file</c> writes to disk, it is not resident in <c>tools/list</c>, and so a raw-name call
+/// lands on this site and comes back confirmation-required — it reaches a worker only through
+/// <c>clio-run</c>, whose site routes what the executor resolved. Nothing executes in the host process
+/// on that path, so this is not the wedge; it is an asymmetry worth knowing before concluding the
+/// cohort did not move.
 /// </para>
 /// <para>
 /// The resolved name is PASSED IN rather than read off the <c>RequestContext</c>, because

@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using Clio.Common;
 using Clio.Common.McpWorker;
 
 namespace Clio.Command.McpServer;
@@ -69,6 +71,15 @@ public enum McpWorkerPathAvailability {
 /// <b>Reviving <c>mcp-http</c> (OQ-9) means building the credential channel and then lifting this gate
 /// deliberately</b> — never deleting the check because the tests went green.
 /// </para>
+/// <para>
+/// <b>The refusal is stated, not silent.</b> A gated host serves every cohort tool in-process and
+/// returns ordinary successful results, so nothing about a call reveals that the boundary is off. The
+/// implementation therefore says so once per process, on the first gated evaluation
+/// (<see cref="McpWorkerPathGate.WorkerBoundaryInactiveOnHttpNotice"/>) — once, because a per-call
+/// statement on a long-lived server is noise, and only on HTTP, because the fail-closed
+/// <see cref="McpHostTransportKind.Unknown"/> value also covers a mis-wired stdio host whose standard
+/// output is the protocol channel.
+/// </para>
 /// </remarks>
 public interface IMcpWorkerPathGate {
 
@@ -82,28 +93,71 @@ public interface IMcpWorkerPathGate {
 /// <inheritdoc cref="IMcpWorkerPathGate"/>
 public sealed class McpWorkerPathGate : IMcpWorkerPathGate {
 
+	/// <summary>
+	/// The statement an HTTP host makes, once, the first time it refuses to relay a cohort call.
+	/// </summary>
+	/// <remarks>
+	/// It says what is INACTIVE and what that costs, not merely that a gate fired: on this transport a
+	/// cohort tool executes exactly as it did before the worker boundary existed, so the stalled-request
+	/// defect the boundary removes is still present here. Without it the gated disposition is completely
+	/// silent — every cohort call runs in the host process, returns an ordinary successful result, and
+	/// nothing anywhere says the mitigation is off.
+	/// </remarks>
+	internal const string WorkerBoundaryInactiveOnHttpNotice =
+		"MCP worker execution boundary is INACTIVE on this host: it serves the HTTP transport, and the "
+		+ "credential channel a child worker would need does not exist yet, so every tool call runs in "
+		+ "this process. The stalled-request defect the boundary removes (a call that returns nothing "
+		+ "and issues no request to Creatio, permanently, for that environment) is therefore NOT "
+		+ "mitigated here. Use the stdio host (clio mcp-server) where that matters.";
+
+	// Process-wide, because "once per server session" is a process-scoped statement and the gate is not
+	// the only instance a session can build: mcp-http keeps a container per tenant, so an instance-level
+	// flag would restate this per environment. Claimed only by a gate that was given a logger, so a
+	// test-built gate (null logger) can never consume the claim from a host that would have used it.
+	private static int _inactiveNoticeStated;
+
 	private readonly Func<McpHostTransportKind> _transportReader;
 	private readonly Func<bool> _workerProcessReader;
+	private readonly ILogger _logger;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="McpWorkerPathGate"/> class reading the ambient process
 	/// state: the transport declared by the host entry point and clio's own worker-mode flag.
 	/// </summary>
-	public McpWorkerPathGate()
-		: this(() => McpHostTransport.Current, () => McpWorkerEnvironment.IsWorkerProcess) {
+	/// <param name="logger">
+	/// Host logger, used ONCE per process to state that the worker boundary is inactive on an HTTP host.
+	/// </param>
+	/// <exception cref="ArgumentNullException"><paramref name="logger"/> is <see langword="null"/>.</exception>
+	public McpWorkerPathGate(ILogger logger)
+		: this(logger, () => McpHostTransport.Current, () => McpWorkerEnvironment.IsWorkerProcess) {
+		ArgumentNullException.ThrowIfNull(logger);
 	}
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="McpWorkerPathGate"/> class over explicit readers, so a
 	/// test can state a transport and a worker-mode flag without mutating process-wide state (which would
-	/// leak across a parallel fixture).
+	/// leak across a parallel fixture). States nothing: with no logger the gate is a pure decision.
 	/// </summary>
 	/// <param name="transportReader">Reads the transport this host serves.</param>
 	/// <param name="workerProcessReader">Reads whether this process is itself a worker.</param>
 	/// <exception cref="ArgumentNullException">A reader is missing.</exception>
-	internal McpWorkerPathGate(Func<McpHostTransportKind> transportReader, Func<bool> workerProcessReader) {
+	internal McpWorkerPathGate(Func<McpHostTransportKind> transportReader, Func<bool> workerProcessReader)
+		: this(null, transportReader, workerProcessReader) {
+	}
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="McpWorkerPathGate"/> class over explicit readers AND a
+	/// logger, so the one-time notice is assertable without a running host.
+	/// </summary>
+	/// <param name="logger">Host logger, or <see langword="null"/> to state nothing.</param>
+	/// <param name="transportReader">Reads the transport this host serves.</param>
+	/// <param name="workerProcessReader">Reads whether this process is itself a worker.</param>
+	/// <exception cref="ArgumentNullException">A reader is missing.</exception>
+	internal McpWorkerPathGate(ILogger logger, Func<McpHostTransportKind> transportReader,
+		Func<bool> workerProcessReader) {
 		ArgumentNullException.ThrowIfNull(transportReader);
 		ArgumentNullException.ThrowIfNull(workerProcessReader);
+		_logger = logger;
 		_transportReader = transportReader;
 		_workerProcessReader = workerProcessReader;
 	}
@@ -116,10 +170,35 @@ public sealed class McpWorkerPathGate : IMcpWorkerPathGate {
 		if (_workerProcessReader()) {
 			return McpWorkerPathAvailability.ProcessIsWorker;
 		}
-		return _transportReader() == McpHostTransportKind.Stdio
-			? McpWorkerPathAvailability.Available
-			: McpWorkerPathAvailability.HostTransportNotStdio;
+		McpHostTransportKind transport = _transportReader();
+		if (transport == McpHostTransportKind.Stdio) {
+			return McpWorkerPathAvailability.Available;
+		}
+		StateInactiveBoundaryOnce(transport);
+		return McpWorkerPathAvailability.HostTransportNotStdio;
 	}
+
+	// Said once, on the FIRST gated call rather than per call: per call it would repeat on every tool
+	// invocation of a long-lived server and become noise nobody reads.
+	private void StateInactiveBoundaryOnce(McpHostTransportKind transport) {
+		// HTTP only, deliberately. Unknown is the fail-closed zero value, and one of the processes it
+		// covers is a mis-wired STDIO host — whose standard output IS the JSON-RPC channel that
+		// ConsoleLogger writes to, so a notice there would corrupt the protocol frames it is trying to
+		// explain. The enum already names Unknown a wiring defect; it is not made louder by breaking the
+		// transport.
+		if (transport != McpHostTransportKind.Http || _logger is null) {
+			return;
+		}
+		if (Interlocked.Exchange(ref _inactiveNoticeStated, 1) == 0) {
+			_logger.WriteWarning(WorkerBoundaryInactiveOnHttpNotice);
+		}
+	}
+
+	/// <summary>
+	/// Forgets that the one-time notice was stated, so a test can assert the once-per-session behaviour
+	/// deterministically whatever else ran first in the same process.
+	/// </summary>
+	internal static void ResetInactiveNoticeForTests() => Interlocked.Exchange(ref _inactiveNoticeStated, 0);
 }
 
 /// <summary>
