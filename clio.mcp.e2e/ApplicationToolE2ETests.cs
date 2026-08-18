@@ -539,8 +539,11 @@ public sealed class ApplicationToolE2ETests {
 		// it did not, the readback poll below spends its full timeout waiting for an entity that will never
 		// appear and the run then reports the arrange failure three minutes late, with no per-operation error
 		// to act on — which is exactly how a `success: false` here read as an unexplained flake.
+		// The raw create-app envelope is inlined for the same reason the sync-schemas payload is below:
+		// without it this assertion reports only "found False" and the run gives no create-app error to act on.
 		createResult.Result.Success.Should().BeTrue(
-			because: "the regression scenario requires a successfully created application before sync-schemas mutates the canonical main entity");
+			because: "the regression scenario requires a successfully created application before sync-schemas mutates the canonical main entity. "
+				+ $"Actual create-app result: {DescribeCallResult(createResult.CallResult)}");
 		schemaSyncCallResult.IsError.Should().NotBeTrue(
 			because: $"sync-schemas should return a structured payload for the canonical-main-entity regression scenario. Actual result: {DescribeCallResult(schemaSyncCallResult)}");
 		// The raw payload is inlined in the reason on purpose: sync-schemas reports WHY it failed per
