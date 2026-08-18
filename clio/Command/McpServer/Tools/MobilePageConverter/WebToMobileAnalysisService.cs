@@ -1637,7 +1637,8 @@ public static class WebToMobileAnalysisService {
 		return ctx.Out;
 	}
 
-	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName) {
+	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
+		string parentPropertyName = ItemsPropertyName) {
 		// Positional siblings: when this array holds a positional anchor container (e.g. CardContentWrapper),
 		// each sibling ABOVE it is placed above the mobile anchor (Tabs) — inserted into the anchor's parent
 		// (MainContainer) with an ascending index from 0 — and each sibling BELOW it is appended after.
@@ -1785,10 +1786,10 @@ public static class WebToMobileAnalysisService {
 				// shape it declares can be read in place, and echoing needs the value the entry will carry.
 				string containerParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
-					containerParent, ItemsPropertyName);
+					containerParent, parentPropertyName);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
-					ParentName = containerParent, PropertyName = ItemsPropertyName,
+					ParentName = containerParent, PropertyName = parentPropertyName,
 					Index = isPositional ? place.Index : null,
 					CaptionResource = containerCaption,
 					MobileValues = containerValues,
@@ -1799,6 +1800,7 @@ public static class WebToMobileAnalysisService {
 				if (items is not null) {
 					WalkElements(ctx, items, name);
 				}
+				RecurseChildArrays(ctx, node, name, type);
 				continue;
 			}
 
@@ -1823,19 +1825,74 @@ public static class WebToMobileAnalysisService {
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			string leafParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
-				leafParent, ItemsPropertyName);
+				leafParent, parentPropertyName);
 			string leafReason = isPositional
 				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 				: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
-				ParentName = leafParent, PropertyName = ItemsPropertyName,
+				ParentName = leafParent, PropertyName = parentPropertyName,
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
 				Reason = leafReason
 			});
+			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
+			// components are converted rather than carried verbatim inside the leaf's values.
+			RecurseChildArrays(ctx, node, name, leafMobileType);
 		}
+	}
+
+	/// <summary>
+	/// Descend the node's child-element arrays OTHER than <c>items</c> (which the branch that owns the node recurses
+	/// itself, with its own parent context). A child-element array is recognised by SHAPE — see
+	/// <see cref="IsChildElementArray"/> — not by a hardcoded property-name list, so this generically covers
+	/// <c>menuItems</c> (crt.Button/crt.MenuItem), <c>tools</c> (crt.ExpansionPanel) and any future nested-component
+	/// property, while leaving data arrays (grid columns, a data source's sort/filter) alone. Each such array is
+	/// walked with the node's own mobile name as parent and the property name as the slot, so its components become
+	/// their own element-map entries under the right <c>propertyName</c>.
+	/// </summary>
+	private static void RecurseChildArrays(ElementMapContext ctx, JObject node, string mobileParentName, string mobileType) {
+		foreach (JProperty prop in node.Properties()) {
+			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			if (IsChildElementArray(ctx, mobileType, prop.Name, prop.Value)) {
+				WalkElements(ctx, (JArray)prop.Value, mobileParentName, prop.Name);
+			}
+		}
+	}
+
+	/// <summary>
+	/// True when a property value is a nested array of child VIEW ELEMENTS — a <see cref="JArray"/> holding at
+	/// least one object whose <c>type</c> is a component type (a string starting with <c>crt.</c>). This is how the
+	/// walk recognises a child-element collection (<c>items</c>, <c>menuItems</c>, <c>tools</c>, …) generically,
+	/// without a hardcoded property-name list: a DATA array (grid column objects keyed by <c>code</c>, a grid
+	/// container's <c>columns</c> track-sizing strings, a data source's sort/filter) holds no <c>crt.*</c>-typed
+	/// object and is left to be carried as a value, and a string binding (<c>items: "$Attr"</c>) is not an array at
+	/// all. A property the mobile registry declares as a single <c>object</c> (e.g. <c>crt.List.itemLayout</c>,
+	/// whose web array wrapper is coerced to an object) is a nested CONFIG, not a collection to walk, so it is
+	/// excluded even though it holds a <c>crt.*</c> object. NOTE: only <c>crt.*</c> is recognised — a custom
+	/// <c>usr.*</c> component nested in such an array is not descended into (it is carried verbatim, as before).
+	/// </summary>
+	private static bool IsChildElementArray(ElementMapContext ctx, string mobileType, string propName, JToken value) {
+		if (value is not JArray array) {
+			return false;
+		}
+		// A registry-declared single-object slot (itemLayout, …) is carried and shape-coerced, never walked.
+		if (!string.IsNullOrEmpty(mobileType)
+			&& ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry) && entry is not null
+			&& ResolveExpectedShape(entry, propName) == JsonValueKind.Object) {
+			return false;
+		}
+		foreach (JToken element in array) {
+			if (element is JObject obj
+				&& obj["type"]?.Type == JTokenType.String
+				&& obj["type"].ToString().StartsWith("crt.", StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -2215,10 +2272,13 @@ public static class WebToMobileAnalysisService {
 		if (!hasTemplate || preserve) {
 			HashSet<string> excluded = preserve ? PreserveExcludedProps : ExcludedSourceProps;
 			foreach (JProperty prop in node.Properties()) {
-				// `items` as an ARRAY is the child view-element collection — structural, emitted by the tree
-				// walk, not a value. `items` as a STRING is a real collection binding (e.g. "$Attr") and is
+				// A child-element array (items, menuItems, tools, … — recognised by shape, see IsChildElementArray)
+				// is the child view-element collection: structural, emitted by the tree walk, never carried as a
+				// value. `items` is also skipped by name so an EMPTY items array (no crt.* member to detect) is not
+				// carried either. The SAME key as a STRING is a real collection binding (e.g. items: "$Attr") and is
 				// carried like any other property below.
-				if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+				if ((prop.Value is JArray && string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase))
+					|| IsChildElementArray(ctx, mobileType, prop.Name, prop.Value)) {
 					continue;
 				}
 				if (excluded.Contains(prop.Name)) {
@@ -3165,10 +3225,11 @@ public static class WebToMobileAnalysisService {
 	/// <para>
 	/// Template protection is structural, not name-based: a template merge twin is <c>merge</c> (never
 	/// <c>insert</c>) and carries no parentName, and the tab-area layers are synthesized AFTER this pass
-	/// (only for tabs that survived it), so neither is ever a candidate. crt.ExpansionPanel is judged on
-	/// items only by AGREED DECISION (2026-08-03): a panel whose items emptied is removed even when its
-	/// <c>tools</c> zone carries buttons — the discarded tools are called out in the drop reason so the
-	/// loss stays visible in the conversion report.
+	/// (only for tabs that survived it), so neither is ever a candidate. A container is judged on ALL its
+	/// surviving children, in any slot: an ExpansionPanel whose <c>tools</c> buttons converted (structural
+	/// child-array traversal) is occupied by them and kept, so it is removed only when nothing — items OR
+	/// tools — survived. (This supersedes the earlier items-only decision of 2026-08-03, made when tools were
+	/// discarded rather than converted.)
 	/// </para>
 	/// <para>
 	/// Removal is IN PLACE (each removed entry is replaced by a drop at the same position, so the report
@@ -3210,7 +3271,7 @@ public static class WebToMobileAnalysisService {
 				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
 					continue;
 				}
-				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason(entry));
+				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason());
 				removed.Add(entry.WebName);
 				removedMobileNames.Add(entry.MobileName);
 				anyRemovedThisRound = true;
@@ -3233,16 +3294,13 @@ public static class WebToMobileAnalysisService {
 		&& (entry.MobileValues is not JsonObject values || values["items"] is null);
 
 	/// <summary>
-	/// The drop reason for a removed empty container. When the container carried a non-empty <c>tools</c>
-	/// zone (an ExpansionPanel with header buttons but no items — removed by the items-only decision), the
-	/// discarded tools are named so the silent removal stays visible in the conversion report.
+	/// The drop reason for a removed empty container. A container's <c>tools</c>/<c>menuItems</c> buttons are now
+	/// converted as their OWN child entries (structural child-array traversal), so a panel is empty here only when
+	/// none of its children — items OR tools — survived; each discarded child already carries its own drop entry, so
+	/// the loss is visible without naming it again on the parent.
 	/// </summary>
-	private static string EmptyContainerDropReason(ElementMapEntry entry) {
-		const string basis = "empty container — no mobile content survived conversion";
-		return entry.MobileValues is JsonObject values && values["tools"] is JsonArray { Count: > 0 }
-			? basis + "; its tools content is discarded with it"
-			: basis;
-	}
+	private static string EmptyContainerDropReason() =>
+		"empty container — no mobile content survived conversion";
 
 	/// <summary>
 	/// Re-compacts positional insert indexes after the drop passes: <c>:top</c> siblings of an anchor are
