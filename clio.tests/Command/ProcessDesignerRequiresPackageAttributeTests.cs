@@ -41,12 +41,10 @@ namespace Clio.Tests
                 ? System.Array.Find(attrs, a => string.Equals(a.Name, BundledPackages.ProcessBuilderPackageName, System.StringComparison.OrdinalIgnoreCase))
                 : null;
 
-        [TestCase(typeof(CreateBusinessProcessOptions))]
-        [TestCase(typeof(ModifyBusinessProcessOptions))]
         [TestCase(typeof(DescribeProcessOptions))]
         [TestCase(typeof(ListUserTasksOptions))]
         [Test]
-        [Description("Each process-designer command options class that actually calls ProcessDesignService must be gated on the bundled package NAME, and the requirement must be presence-only, because none of these commands needs an operation introduced in a particular version. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
+        [Description("The READ-side process-designer options classes are gated on the bundled package NAME presence-only: no operation they call was introduced in a particular version, and an older server merely degrades their read-back. Create/Modify are deliberately NOT here any more — their email operation shipped in the 1.2.0.1 archive, so this test's original premise expired for them; see the versioned-requirement test below. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
         public void OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand(
             Type optionsType)
         {
@@ -64,6 +62,25 @@ namespace Clio.Tests
                     + "archive; a literal here would restate that policy in a place that cannot track it");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
+        }
+
+        [TestCase(typeof(CreateBusinessProcessOptions))]
+        [TestCase(typeof(ModifyBusinessProcessOptions))]
+        [Test]
+        [Description("Create and Modify declare a VERSIONED requirement: their email block ships in the 1.2.0.1 archive, and an older server has no email member and silently discards the block while answering success — presence alone cannot express that. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsTheEmailOperation(
+            Type optionsType)
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(optionsType);
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
+            requirement!.Version.Should().Be("1.2.0.1",
+                because: "the email operation these commands send was introduced in the 1.2.0.1 archive — an older "
+                    + "server ignores the block and still answers success, so the literal is what fails closed; "
+                    + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 
         [Test]
@@ -143,8 +160,10 @@ namespace Clio.Tests
             IRequiredPackageChecker checker = new RequiredPackageChecker(packages,
                 new BundledPackageConvergence(catalog, Substitute.For<ILogger>()));
 
-            // Act - the SHIPPED options type, so the test cannot pass if the gate is ever removed from it
-            Action act = () => checker.EnsureRequirements(new ModifyBusinessProcessOptions());
+            // Act - a SHIPPED options type that is presence-only BY DESIGN (see the split above): this test pins
+            // the CONVERGENCE mechanism, and its own description says the refusal cannot be a version literal —
+            // driving it through Modify, which now carries the 1.2.0.1 email literal, would test the literal instead.
+            Action act = () => checker.EnsureRequirements(new DescribeProcessOptions());
 
             // Assert
             PackageRequirementException refusal = act.Should().Throw<PackageRequirementException>(
@@ -181,8 +200,8 @@ namespace Clio.Tests
             IRequiredPackageChecker checker = new RequiredPackageChecker(packages,
                 new BundledPackageConvergence(catalog, Substitute.For<ILogger>()));
 
-            // Act
-            Action act = () => checker.EnsureRequirements(new ModifyBusinessProcessOptions());
+            // Act - presence-only shipped type, same reason as the refuse test above.
+            Action act = () => checker.EnsureRequirements(new DescribeProcessOptions());
 
             // Assert
             act.Should().NotThrow(
