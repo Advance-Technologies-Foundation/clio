@@ -738,10 +738,47 @@ namespace Clio
 				: (null, System.IO.File.GetUnixFileMode(AppSettingsFile));
 		}
 
+		// Publishing the finished temp file over appsettings.json is rename(2) on Unix and
+		// MoveFileEx / ReplaceFile on Windows. Only the second can be REFUSED by a reader that already holds
+		// the destination open: it needs DELETE access there, and File.ReadAllText opens with FileShare.Read,
+		// a share mode that denies exactly that.
+		//
+		// This is the same defect, and the same measurement, as FileSystem.PublishAtomicReplacement — six
+		// concurrent writers against one reader loop failed 108-113 of 180 publishes on Windows 11 with a
+		// bare move and 0 of 180 with this retry, while the identical probe on macOS failed 0 of 180 either
+		// way. It surfaced here only after story 20 fixed the e2e fixture's inert isolation: while those
+		// registrations were landing in the SHARED suite catalog, the failure was attributed to fixtures
+		// fighting each other, and the test could not show that clio's own writer has the same exposure.
+		//
+		// Bounded by a DEADLINE rather than an attempt count, for the reason measured there: an earlier
+		// 12-attempt version was observed needing 13, 15 and 16. Only contention shapes are retried, so a
+		// genuine ACL error still surfaces unchanged, and SettingsFileChangedException — the optimistic
+		// concurrency signal — is deliberately NOT caught: it means another writer won, which is a real
+		// answer the caller must see rather than something to spin on.
+		private static readonly TimeSpan SettingsPublishRetryWindow = TimeSpan.FromSeconds(2.5);
+
+		private static void PublishSettingsFile(Action publish) {
+			const int backoffStepMilliseconds = 15;
+			const int backoffCapMilliseconds = 100;
+			long startedAt = Stopwatch.GetTimestamp();
+			for (int attempt = 1; ; attempt++) {
+				try {
+					publish();
+					return;
+				}
+				catch (Exception e) when (Stopwatch.GetElapsedTime(startedAt) < SettingsPublishRetryWindow
+					&& e is not SettingsFileChangedException
+					&& (e is UnauthorizedAccessException || (e is IOException && e is not FileNotFoundException
+						&& e is not DirectoryNotFoundException))) {
+					Thread.Sleep(Math.Min(backoffStepMilliseconds * attempt, backoffCapMilliseconds));
+				}
+			}
+		}
+
 		private static void CommitSettingsFile(IFileSystem fileSystem, string tempFilePath, string expectedContent,
 			bool verifyExpectedContent, bool isRealFileSystem) {
 			if (!verifyExpectedContent) {
-				fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+				PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true));
 				return;
 			}
 			if (expectedContent == null) {
@@ -757,12 +794,12 @@ namespace Clio
 					throw new SettingsFileChangedException();
 				}
 				if (isRealFileSystem) {
-					fileSystem.File.Replace(tempFilePath, AppSettingsFile, destinationBackupFileName: null,
-						ignoreMetadataErrors: true);
+					PublishSettingsFile(() => fileSystem.File.Replace(tempFilePath, AppSettingsFile,
+						destinationBackupFileName: null, ignoreMetadataErrors: true));
 					return;
 				}
 			}
-			fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+			PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true));
 		}
 
 		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath) {
