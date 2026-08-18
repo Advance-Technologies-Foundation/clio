@@ -105,23 +105,35 @@ public sealed class InterprocessFileGateTests {
 		InterprocessFileGate gate = CreateGate();
 		int concurrent = 0;
 		int observedOverlap = 0;
+		int started = 0;
 		using ManualResetEventSlim firstInside = new(false);
+		using ManualResetEventSlim secondStarted = new(false);
+		using ManualResetEventSlim releaseFirst = new(false);
 
-		void Body() =>
+		void Body() {
+			if (Interlocked.Increment(ref started) == 2) {
+				secondStarted.Set();
+			}
 			gate.Enter(lockPath, () => {
 				int current = Interlocked.Increment(ref concurrent);
 				if (current > 1) {
 					Interlocked.Exchange(ref observedOverlap, 1);
 				}
 				firstInside.Set();
-				Thread.Sleep(120);
+				// Signalled rather than slept: the first caller holds the guarded region until the test has
+				// confirmed the second caller reached the gate, so the contention is OBSERVED instead of
+				// being assumed to fit inside a fixed delay.
+				releaseFirst.Wait(Generous);
 				Interlocked.Decrement(ref concurrent);
 			});
+		}
 
 		// Act
 		Task first = Task.Run(Body);
 		firstInside.Wait(Generous).Should().BeTrue(because: "the first caller must reach the guarded region");
 		Task second = Task.Run(Body);
+		secondStarted.Wait(Generous).Should().BeTrue(because: "the contending caller must reach the gate");
+		releaseFirst.Set();
 		Task.WaitAll([first, second], Generous).Should().BeTrue(
 			because: "both callers must eventually complete; neither may be dropped");
 

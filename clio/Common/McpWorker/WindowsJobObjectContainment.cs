@@ -154,6 +154,13 @@ public sealed class WindowsJobObjectContainment : IProcessContainment {
 			ProcessInformation processInformation = default;
 			try {
 				job = CreateKillOnCloseJob();
+				// Sonar S3869 is suppressed for exactly these three reads: STARTUPINFO is a native struct whose
+				// hStdInput/hStdOutput/hStdError fields ARE raw HANDLEs, so CreateProcessW cannot be given a
+				// SafeHandle here. The lifetime is not dangerous in practice: the three
+				// AnonymousPipeServerStream instances are locals owned by this method and their client handles
+				// are only released by DisposeLocalCopyOfClientHandle AFTER the process has been created, so no
+				// handle can be closed while CreateProcessW is reading the struct.
+#pragma warning disable S3869
 				StartupInformation startupInformation = new() {
 					cb = Marshal.SizeOf<StartupInformation>(),
 					dwFlags = StartFlagUseStdHandles,
@@ -161,6 +168,7 @@ public sealed class WindowsJobObjectContainment : IProcessContainment {
 					hStdOutput = output.ClientSafePipeHandle.DangerousGetHandle(),
 					hStdError = error.ClientSafePipeHandle.DangerousGetHandle()
 				};
+#pragma warning restore S3869
 				environmentBlock = BuildEnvironmentBlock(request);
 				string commandLine = WindowsCommandLine.Build(request.Executable, request.Arguments);
 

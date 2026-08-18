@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Clio.Command;
 
@@ -38,10 +39,8 @@ public sealed class FrozenFeatureToggleService : IFeatureToggleService
 	public FrozenFeatureToggleService(IReadOnlyDictionary<string, bool> features) {
 		ArgumentNullException.ThrowIfNull(features);
 		Dictionary<string, bool> copy = new(StringComparer.OrdinalIgnoreCase);
-		foreach (KeyValuePair<string, bool> feature in features) {
-			if (!string.IsNullOrWhiteSpace(feature.Key)) {
-				copy[feature.Key] = feature.Value;
-			}
+		foreach (KeyValuePair<string, bool> feature in features.Where(f => !string.IsNullOrWhiteSpace(f.Key))) {
+			copy[feature.Key] = feature.Value;
 		}
 		_features = copy;
 	}

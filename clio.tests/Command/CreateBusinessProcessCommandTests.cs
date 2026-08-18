@@ -1,5 +1,6 @@
 using System;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -15,14 +16,18 @@ public sealed class CreateBusinessProcessCommandTests {
 		"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[]}";
 
 	private ICreateBusinessProcessService _createBusinessProcessService;
+	private IProcessDescriber _processDescriber;
 	private ILogger _logger;
 	private CreateBusinessProcessCommand _command;
 
 	[SetUp]
 	public void Setup() {
 		_createBusinessProcessService = Substitute.For<ICreateBusinessProcessService>();
+		// The command reads the saved process back to catch a server that discarded an email block while
+		// answering success. These descriptors carry no email block, so the substitute is never consulted.
+		_processDescriber = Substitute.For<IProcessDescriber>();
 		_logger = Substitute.For<ILogger>();
-		_command = new CreateBusinessProcessCommand(_createBusinessProcessService, _logger);
+		_command = new CreateBusinessProcessCommand(_createBusinessProcessService, _processDescriber, _logger);
 	}
 
 	[TearDown]

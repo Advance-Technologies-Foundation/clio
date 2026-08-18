@@ -864,8 +864,8 @@ public sealed class PageSyncTool(
 	// This is the FOURTH meta.json read-modify-write in clio (after PageBaselineStore's read, refresh and
 	// delete) and the one the earlier design notes omitted: the read below feeds the merge that produces
 	// the bytes written, so the whole method body is ONE gate acquisition. Splitting the read and the
-	// write into two acquisitions would leave exactly the lost-merge window the gate exists to close;
-	// the gate admits the nested gated read on the same thread rather than deadlocking on it.
+	// write into two acquisitions would leave exactly the lost-merge window that the gate exists to close.
+	// The gate admits the nested gated read on the same thread rather than deadlocking on it.
 	private string? WriteFreshMetaAfterVerify(
 		string schemaDir, string schemaName, string? environmentName, PageGetResponse getResponse) {
 		string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");

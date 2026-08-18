@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using ATF.Repository.Providers;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -156,6 +158,74 @@ public sealed class ServerProcessDescriberTests {
 			because: "the element-level background-mode flag must be deserialized, not dropped by the clio DTO");
 		result.Value.Elements[1].UseBackgroundMode.Should().BeNull(
 			because: "an omitted flag stays null so it serializes away (WhenWritingNull) for an older server");
+	}
+
+	[Test]
+	[Description("Deserializes a Send email element's email configuration (mode, sender, subject, hasBody, importance, ignoreErrors, recipients, manual-mode performer) from the server response into the DescribedEmail DTO, so describe read-back surfaces the email block instead of dropping it.")]
+	public void Describe_ShouldReadSendEmailConfiguration_WhenServerReportsIt() {
+		// Arrange — the shape a runtime-verified CrtProcessBuilder DescribeProcess returns for a configured element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"manual\",\"sender\":\"[#Lookup.5e487721-02e2-48ee-b755-dfa5160f5315.11111111-2222-3333-4444-555555555555#]\",\"senderDisplay\":\"sales@example.com\","
+			+ "\"subject\":\"After modify\",\"hasBody\":true,\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"to\":[{\"name\":\"Recipient1\",\"uid\":\"p1\",\"type\":\"MaxSizeText\",\"source\":\"ConstValue\",\"value\":\"to@example.com\"}],"
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"[#Lookup.84f44b9a-4bc3-4cbf-a1a8-cec02c1c029c.a29a3ba5-4b0d-de11-9a51-005056c00008#]\",\"roleDisplay\":\"All employees\",\"showPage\":true}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.Should().NotBeNull(because: "the email block must be deserialized, not dropped by the clio DTO");
+		email.Mode.Should().Be("manual", because: "the send-mode token maps to the DTO's mode property");
+		email.SenderDisplay.Should().Be("sales@example.com",
+			because: "senderDisplay carries the human-readable mailbox identity alongside the sender formula");
+		email.Subject.Should().Be("After modify", because: "the subject constant survives the read-back");
+		email.HasBody.Should().BeTrue(
+			because: "hasBody flags a custom-message body without echoing the HTML itself");
+		email.Importance.Should().Be("high", because: "the importance token maps to the DTO");
+		email.IgnoreErrors.Should().BeTrue(because: "the ignore-sending-errors flag maps to the DTO");
+		email.To.Should().ContainSingle(because: "the recipient list must survive read-back")
+			.Which.Value.Should().Be("to@example.com",
+				because: "the recipient's constant address is carried on the parameter's value");
+		email.Performer.Type.Should().Be("role",
+			because: "the manual-mode performer kind maps to the nested performer DTO");
+		email.Performer.RoleDisplay.Should().Be("All employees",
+			because: "roleDisplay carries the resolved role name for a human reader");
+		email.Performer.ShowPage.Should().BeTrue(
+			because: "the show-execution-page flag is part of the performer block");
+	}
+
+	[Test]
+	[Description("Leaves the email block's hasBody unset (null) when an older server omits it, so the absent flag serializes away instead of defaulting to false and reading as a verified 'no body'.")]
+	public void Describe_ShouldLeaveEmailHasBodyNull_WhenServerOmitsIt() {
+		// Arrange — an older CrtProcessBuilder that reports an email block without the hasBody flag
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"auto\",\"subject\":\"After modify\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.Should().NotBeNull(because: "the email block itself is still reported by an older server");
+		email.HasBody.Should().BeNull(
+			because: "an omitted hasBody stays null rather than defaulting to false, which would be indistinguishable "
+				+ "from a server that reported 'this element has no custom-message body'. DEFENSIVE only: the server "
+				+ "declares hasBody as a non-nullable bool introduced in the same commit as the email block, so no "
+				+ "shipped build reports the block without the flag");
+		email.IgnoreErrors.Should().BeNull(
+			because: "ignoreErrors is genuinely optional on the server (a nullable bool there), so it is the flag that "
+				+ "really does arrive absent — hasBody is modelled the same way for safety, not from a known gap");
 	}
 
 	[Test]
@@ -460,6 +530,52 @@ public sealed class ServerProcessDescriberTests {
 		element.WritesConnectionsAtRuntime.Should().BeNull(
 			because: "null means NOT ESTABLISHED, which is exactly what an older package can say about it");
 		element.Deprecated.Should().BeNull(because: "same reason — an omitted fact must not read as false");
+	}
+
+	[Test]
+	[Description("A field a NEWER server reports that this build does not declare — at the graph root, on an element and inside the email block — survives the clio DTO round trip through [JsonExtensionData] under the command's own serializer options, so clio does not structurally lag the server by a release.")]
+	public void Describe_ShouldPreserveUnknownServerFields_WhenReserializingTheGraph() {
+		// Arrange — a root fact, an element block and an email-block field the DTOs do not declare. Without an
+		// overflow bag each is dropped without a trace, the silent-loss failure the connections DTO calls out.
+		// The email case is the one that matters most: that block is where the next email feature lands.
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"futureRootFact\":\"kept\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\","
+			+ "\"email\":{\"mode\":\"auto\",\"futureEmailFact\":\"kept\"},"
+			+ "\"futureBlock\":{\"setting\":42}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act — re-serialize with the SAME options DescribeProcessCommand uses for its output (WriteIndented +
+		// WhenWritingNull), so this asserts what a caller actually reads rather than a default-options shape.
+		JsonSerializerOptions commandOutputOptions = new() {
+			WriteIndented = true,
+			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+		};
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, commandOutputOptions);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "an undeclared member must not fail the read");
+		result.Value.AdditionalData.Should().ContainKey("futureRootFact",
+			because: "the root overflow bag is what keeps an undeclared server field addressable at all");
+		result.Value.Elements[0].AdditionalData.Should().ContainKey("futureBlock",
+			because: "an element-level block needs the same protection — that is where a new email/signal-shaped "
+				+ "feature lands first");
+		result.Value.Elements[0].Email.AdditionalData.Should().ContainKey("futureEmailFact",
+			because: "the email block is the feature under active development, so a field a newer server adds there "
+				+ "(a template selection, a body format) must not be the one thing that still vanishes");
+
+		// Re-parse rather than string-match: under WriteIndented the exact spacing is a formatting detail, and
+		// asserting on it would make this test pass or fail for the wrong reason.
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["futureRootFact"]!.GetValue<string>().Should().Be("kept",
+			because: "capturing it is only half the fix: the describe output is what the caller reads, so the "
+				+ "field has to come back out on re-serialization");
+		output["elements"]![0]!["futureBlock"]!["setting"]!.GetValue<int>().Should().Be(42,
+			because: "the element block must survive verbatim, nesting included, not be flattened or stringified");
+		output["elements"]![0]!["email"]!["futureEmailFact"]!.GetValue<string>().Should().Be("kept",
+			because: "the email block's unknown field has to reach the output too, not just the in-memory bag");
 	}
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).
