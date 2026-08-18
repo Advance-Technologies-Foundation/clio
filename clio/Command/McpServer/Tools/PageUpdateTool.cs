@@ -27,11 +27,11 @@ public sealed class PageUpdateTool(
 	ISettingsRepository? settingsRepository = null)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
-	// Own references to the two dependencies BaseTool takes but does not expose. Reading the primary-constructor
-	// parameters from the body instead would make the compiler capture them a second time alongside the base
-	// class's own copy (CS9107/CS9124) — same object either way, but two extra fields and a confusing read.
+	// BaseTool takes these two and exposes neither, so read them from fields: reading the primary-constructor
+	// parameters in the body instead makes the compiler capture them again alongside the base's copy (CS9107/CS9124).
 	private readonly ILogger _logger = logger;
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	private readonly IPageBodySamplingService _samplingService = samplingService;
 
 	internal const string ToolName = "update-page";

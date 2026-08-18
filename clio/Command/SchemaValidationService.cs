@@ -631,7 +631,7 @@ public static class SchemaValidationService
 	/// </remarks>
 	/// <param name="body">Plain-JSON mobile page body.</param>
 	/// <returns>
-	/// A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending entry; see the outcome table in
+	/// A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending entry; see the outcome list in
 	/// the remarks for which shapes block and which only warn.
 	/// </returns>
 	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) =>

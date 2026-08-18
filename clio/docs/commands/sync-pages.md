@@ -28,13 +28,13 @@ When `validate` is `true` (the default), the body is checked client-side before 
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
 - **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
   WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
-  - **Rejected** — an `operation:"insert"`/`"set"` that supplies a `values` object but puts `"type"` on the
-    operation object; and a flat `insert` (a `"type"` on the operation object with no `values` object at
+  - **Rejected** — an `operation:"insert"`/`"set"` whose `values` object carries no usable `"type"` while a
+    `"type"` sits on the operation object (a type in both places is fine when they agree); and a flat `insert` (a `"type"` on the operation object with no `values` object at
     all). The Creatio differ builds the element from `values` alone, so the type is discarded and the
     element never renders even though the save succeeds. A flat `set` is left to the differ, which refuses
     it for the missing required `values`.
   - **Warned** — no type anywhere while `values` carries element properties; two DIFFERENT types (the
-    element still renders, as the `values` copy); an operation whose letter case does not match the
+    element still renders, as the `values` copy); and an operation whose letter case does not match the
     differ's exact-case dispatch.
   - **Not enforced** — the same type-placement defect breaks **web** pages identically and is not checked
     there, and `validate: false` skips these checks along with every other one, re-opening the

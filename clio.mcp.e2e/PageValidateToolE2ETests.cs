@@ -718,6 +718,40 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("A mobile body whose insert declares no component type anywhere passes validation but comes back with the advisory. This is the only end-to-end proof that a warning raised by ValidateMobilePage reaches Validation.Warnings on a MOBILE body — the other warning e2e cases here use web bodies, and the mobile warning e2e that used to cover this wire went with the reverted Scaffold/actions rule.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page surfaces a mobile warning without blocking")]
+	[AllureDescription("Sends a mobile body with an insert that carries element properties but no type, and verifies validate-page returns valid=true with the typeless-element warning present.")]
+	public async Task PageValidateTool_Should_Surface_Mobile_Warning_Without_Blocking() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithTypelessInsert = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "MysteryElement",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "visible": true } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithTypelessInsert);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a missing type is advisory — it is not provably a misplacement, so it must not block the write");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().Contain(w => w.Contains("MysteryElement"),
+			because: "the mobile warning wire must be proven end to end, not only in unit scope");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "nothing in this body is a blocking defect");
+	}
+
+	[Test]
 	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]

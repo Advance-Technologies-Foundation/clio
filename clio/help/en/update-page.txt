@@ -44,8 +44,9 @@ DESCRIPTION
     MOBILE RULES (MCP update-page / sync-pages / validate-page only --
     the CLI verb below does NOT run them; it checks a mobile body only
     for disallowed sections):
-    - Rejected: an operation:"insert"/"set" that supplies a values object
-      but puts "type" on the operation object; and a flat "insert" (type
+    - Rejected: an operation:"insert"/"set" whose values object carries no
+      usable "type" while a "type" sits on the operation object (a type in
+      both places is fine when they agree); and a flat "insert" (type
       on the operation object, no values object at all). The Creatio
       differ builds the element from "values" alone, so the type is
       dropped and the element never renders even though the write

@@ -56,8 +56,9 @@ name instead of trying to edit a non-existent local `insert`.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.
   - **Rejected — an authored component's `type` outside `values`.** In `viewConfigDiff`, an
-    `operation:"insert"` or `operation:"set"` that supplies a `values` object but puts `"type"` on the
-    operation object is refused. The Creatio differ builds the element from `values` alone, so the type is
+    `operation:"insert"` or `operation:"set"` that supplies a `values` object carrying no usable `"type"`,
+    while putting `"type"` on the operation object, is refused. (A type present in BOTH places is fine when the
+    two agree — the `values` copy is the one that applies.) The Creatio differ builds the element from `values` alone, so the type is
     discarded and the page would persist an element the mobile runtime cannot render — the write would
     otherwise succeed and the component would simply never appear. (`set` is included because it is
     `remove` + `insert` on the same payload.)
