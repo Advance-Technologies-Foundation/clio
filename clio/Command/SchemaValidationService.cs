@@ -565,30 +565,12 @@ public static class SchemaValidationService
 	/// A <see cref="SchemaValidationResult"/> that is invalid when entries are missing
 	/// required structural properties.
 	/// </returns>
-	public static SchemaValidationResult ValidateMobileViewConfigDiffStructure(string body) {
-		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrWhiteSpace(body)) {
-			return result;
-		}
-		JsonDocument document;
-		try {
-			document = JsonDocument.Parse(body);
-		} catch {
-			return result;
-		}
-		using (document) {
-			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
-				vcd.ValueKind != JsonValueKind.Array) {
-				return result;
-			}
-			int index = 0;
-			foreach (JsonElement entry in vcd.EnumerateArray()) {
-				ValidateViewConfigDiffEntry(entry, index, result);
-				index++;
-			}
-		}
-		return result;
-	}
+	public static SchemaValidationResult ValidateMobileViewConfigDiffStructure(string body) =>
+		// Routed through the shared scaffolding, which additionally guards the root kind: the previous inline copy
+		// called TryGetProperty straight on the root, and that throws InvalidOperationException on a non-object
+		// element — verified: a body such as `[1,2]` took down the whole ValidateMobilePage pass with "requires an
+		// element of type 'Object'" instead of returning the error ValidateMobileBody had already produced.
+		ScanMobileViewConfigDiffEntries(body, ValidateViewConfigDiffEntry);
 
 	private static void ValidateViewConfigDiffEntry(JsonElement entry, int index, SchemaValidationResult result) {
 		if (entry.ValueKind != JsonValueKind.Object) {
@@ -650,7 +632,22 @@ public static class SchemaValidationService
 	/// not provably a misplacement, two conflicting types still render (as the <c>values</c> copy), and an operation
 	/// whose CASE does not match the differ's exact-case dispatch is discarded wholesale rather than mis-typed.
 	/// </returns>
-	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) {
+	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileInsertTypePlacementEntry);
+
+	/// <summary>
+	/// Shared scaffolding for the per-entry <c>viewConfigDiff</c> rules: parse the body, locate the array, and hand
+	/// each entry with its position to <paramref name="inspectEntry"/>, which accumulates into the shared result.
+	/// </summary>
+	/// <remarks>
+	/// A body that is not parseable, is not a JSON object, or carries no <c>viewConfigDiff</c> array yields an empty
+	/// valid result — those shapes are reported by <see cref="ValidateMobileBody"/>, and duplicating the diagnostic
+	/// here would bury it. The root-kind guard also matters mechanically: <c>JsonElement.TryGetProperty</c> throws
+	/// <see cref="InvalidOperationException"/> on a non-object element, so a body such as <c>[1,2]</c> would take the
+	/// whole validation pass down rather than return the malformed-body error.
+	/// </remarks>
+	private static SchemaValidationResult ScanMobileViewConfigDiffEntries(
+		string body, Action<JsonElement, int, SchemaValidationResult> inspectEntry) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrWhiteSpace(body)) {
 			return result;
@@ -669,7 +666,7 @@ public static class SchemaValidationService
 			}
 			int index = 0;
 			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
-				ValidateMobileInsertTypePlacementEntry(entry, index, result);
+				inspectEntry(entry, index, result);
 				index++;
 			}
 		}
@@ -803,31 +800,8 @@ public static class SchemaValidationService
 	/// </remarks>
 	/// <param name="body">Plain-JSON mobile page body.</param>
 	/// <returns>A <see cref="SchemaValidationResult"/> that is always valid and carries one warning per offending insert.</returns>
-	public static SchemaValidationResult ValidateMobileButtonSlotPlacement(string body) {
-		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrWhiteSpace(body)) {
-			return result;
-		}
-		JsonDocument document;
-		try {
-			document = JsonDocument.Parse(body);
-		} catch (JsonException) {
-			return result; // JSON errors reported by ValidateMobileBody
-		}
-		using (document) {
-			if (document.RootElement.ValueKind != JsonValueKind.Object
-				|| !document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)
-				|| viewConfigDiff.ValueKind != JsonValueKind.Array) {
-				return result;
-			}
-			int index = 0;
-			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
-				ValidateMobileButtonSlotPlacementEntry(entry, index, result);
-				index++;
-			}
-		}
-		return result;
-	}
+	public static SchemaValidationResult ValidateMobileButtonSlotPlacement(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileButtonSlotPlacementEntry);
 
 	/// <summary>
 	/// Applies the button-slot rule to one <c>viewConfigDiff</c> entry. Names are compared with

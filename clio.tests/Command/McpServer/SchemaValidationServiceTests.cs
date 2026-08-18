@@ -7547,6 +7547,24 @@ public sealed class SchemaValidationServiceTests
 			because: "the caller must still be told the element will not render");
 	}
 
+	[Test]
+	[Description("A body whose ROOT is not a JSON object does not take the validation pass down. JsonElement.TryGetProperty throws on a non-object element, so the per-entry viewConfigDiff scanners must check the root kind before reaching for the array — the caller still gets ValidateMobileBody's 'must be a JSON object' error instead of an exception.")]
+	public void ValidateMobilePage_WhenRootIsNotAnObject_ReportsTheErrorInsteadOfThrowing() {
+		// Arrange
+		string body = "[1,2]";
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		Action act = () => SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a malformed body must produce a validation error, never an unhandled exception in the pipeline");
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+		errors.Should().Contain(e => e.Contains("must be a JSON object"),
+			because: "the malformed-root diagnostic is the one the caller needs, and it must survive the scan");
+	}
+
 	#endregion
 
 	#region ValidateMobileButtonSlotPlacement
