@@ -76,7 +76,7 @@ public sealed class ThemeRequestBuilderTests
 	[Description("Passes validation for a well-formed id/caption/cssClassName/cssContent set.")]
 	public void TryValidateRequest_ShouldSucceed_WhenAllFieldsValid() {
 		// Arrange
-		ThemeRequest request = new() { Id = "ocean-theme", Caption = "Ocean", CssClassName = "ocean-theme", CssContent = ".ocean-theme{}" };
+		ThemeRequest request = new() { Id = "d53a816b-65ed-4b5b-ad3b-f739280add45", Caption = "Ocean", CssClassName = "ocean-theme", CssContent = ".ocean-theme{}" };
 
 		// Act
 		bool ok = ThemeRequestBuilder.TryValidateRequest(request, out string error);
@@ -89,9 +89,10 @@ public sealed class ThemeRequestBuilderTests
 	[Test]
 	[Category("Unit")]
 	[TestCase("", "cap", "cls", ".x{}", TestName = "TryValidateRequest rejects empty id")]
-	[TestCase("id", "", "cls", ".x{}", TestName = "TryValidateRequest rejects empty caption")]
-	[TestCase("id", "cap", "", ".x{}", TestName = "TryValidateRequest rejects empty cssClassName")]
-	[TestCase("id", "cap", "1bad", ".x{}", TestName = "TryValidateRequest rejects cssClassName not starting with a letter")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", "", "cls", ".x{}", TestName = "TryValidateRequest rejects empty caption")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", "cap", "", ".x{}", TestName = "TryValidateRequest rejects empty cssClassName")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", "cap", "1bad", ".x{}", TestName = "TryValidateRequest rejects cssClassName not starting with a letter")]
+	[TestCase("not-a-guid", "cap", "cls", ".x{}", TestName = "TryValidateRequest rejects a non-GUID id")]
 	[Description("Fails validation when a required field is missing or a format rule is violated.")]
 	public void TryValidateRequest_ShouldFail_WhenFieldInvalid(string id, string caption, string cssClassName, string cssContent) {
 		// Arrange
@@ -110,7 +111,7 @@ public sealed class ThemeRequestBuilderTests
 	[Description("Rejects an explicitly empty CSS content string.")]
 	public void TryValidateRequest_ShouldFail_WhenCssContentIsEmptyString() {
 		// Arrange
-		ThemeRequest request = new() { Id = "id", Caption = "Caption", CssClassName = "css-cls", CssContent = string.Empty };
+		ThemeRequest request = new() { Id = "d53a816b-65ed-4b5b-ad3b-f739280add45", Caption = "Caption", CssClassName = "css-cls", CssContent = string.Empty };
 
 		// Act
 		bool ok = ThemeRequestBuilder.TryValidateRequest(request, out string error);
@@ -126,7 +127,7 @@ public sealed class ThemeRequestBuilderTests
 	public void TryValidateRequest_ShouldFail_WhenCssContentExceedsOneMebibyte() {
 		// Arrange
 		string oversized = new('a', ThemeParameterValidator.MaxCssContentBytes + 1);
-		ThemeRequest request = new() { Id = "id", Caption = "Caption", CssClassName = "css-cls", CssContent = oversized };
+		ThemeRequest request = new() { Id = "d53a816b-65ed-4b5b-ad3b-f739280add45", Caption = "Caption", CssClassName = "css-cls", CssContent = oversized };
 
 		// Act
 		bool ok = ThemeRequestBuilder.TryValidateRequest(request, out string error);

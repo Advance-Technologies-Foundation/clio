@@ -1877,7 +1877,23 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[AllureStep("Assert command execution succeeded")]
 	private static void AssertCommandSucceeded(CommandExecutionEnvelope execution, string because) {
-		execution.ExitCode.Should().Be(0, because: because);
+		execution.ExitCode.Should().Be(0, because: $"{because}.{DescribeExecution(execution)}");
+	}
+
+	/// <summary>
+	/// Renders the execution log and log-file path carried by <paramref name="execution"/> so a non-zero
+	/// exit code reports what the tool actually said. Without it a CI failure reads only
+	/// "expected 0, found 1", which cannot distinguish a loaded stand from a real defect.
+	/// </summary>
+	private static string DescribeExecution(CommandExecutionEnvelope execution) {
+		string separator = System.Environment.NewLine;
+		string diagnostics = execution.Output is { Count: > 0 }
+			? string.Join(separator, execution.Output.Select(message => $"[{message.MessageType}] {message.Value}"))
+			: "(the tool returned no execution-log-messages)";
+		string logFile = string.IsNullOrWhiteSpace(execution.LogFilePath)
+			? "(none reported)"
+			: execution.LogFilePath!;
+		return $"{separator}Execution log:{separator}{diagnostics}{separator}Log file: {logFile}";
 	}
 
 	[AllureStep("Assert execution includes Info message")]
