@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Xml;
@@ -79,6 +80,50 @@ public class UiProjectCreatorIntegrationTests {
 		if (Directory.Exists(_tempDir)) {
 			Directory.Delete(_tempDir, true);
 		}
+	}
+
+	[Test]
+	[Description("Preserves the complete existing package tree while scaffolding a UI project that targets it.")]
+	public void Create_ShouldPreserveExistingPackageContent_WhenPackageIsReused() {
+		// Arrange
+		string packagePath = Path.Combine(_tempDir, "packages", PackageName);
+		string descriptorPath = Path.Combine(packagePath, CreatioPackage.DescriptorName);
+		string descriptorContent =
+			$"{{\"Descriptor\":{{\"Name\":\"{PackageName}\",\"UId\":\"{Guid.NewGuid()}\",\"PackageVersion\":\"1.2.3\"}}}}";
+		Dictionary<string, byte[]> originalPackageFiles = new() {
+			[descriptorPath] = System.Text.Encoding.UTF8.GetBytes(descriptorContent),
+			[Path.Combine(packagePath, "Schemas", "ExistingSchema", "schema.json")] =
+				System.Text.Encoding.UTF8.GetBytes("{\"existing\":true}"),
+			[Path.Combine(packagePath, "Data", "ExistingData", "data.json")] =
+				System.Text.Encoding.UTF8.GetBytes("{\"rows\":[1]}"),
+			[Path.Combine(packagePath, "DataBinding", "ExistingBinding", "binding.json")] =
+				System.Text.Encoding.UTF8.GetBytes("{\"bound\":true}"),
+			[Path.Combine(packagePath, "Files", "existing.bin")] = [0x00, 0xFF, 0x10, 0x80]
+		};
+		foreach ((string path, byte[] content) in originalPackageFiles) {
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+			File.WriteAllBytes(path, content);
+		}
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, true, string.Empty, _ => false);
+
+		// Assert
+		string[] actualPackageFiles = Directory.GetFiles(packagePath, "*", SearchOption.AllDirectories);
+		actualPackageFiles.Should().BeEquivalentTo(originalPackageFiles.Keys,
+			because: "reusing a package must neither add nor remove package content");
+		foreach ((string path, byte[] content) in originalPackageFiles) {
+			File.ReadAllBytes(path).Should().Equal(content,
+				because: "every existing package file must remain byte-for-byte equivalent");
+		}
+		File.Exists(Path.Combine(_tempDir, "projects", ProjectName, "package.json")).Should().BeTrue(
+			because: "the Angular project should still be scaffolded when its host package already exists");
+		string angularJsonPath = Path.Combine(_tempDir, "projects", ProjectName, "angular.json");
+		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(angularJsonPath)).AsObject();
+		string outputPath = angularJson["projects"]?[ProjectName]?["architect"]?["build"]?["options"]?
+			["outputPath"]?.GetValue<string>();
+		outputPath.Should().Be($"../../packages/{PackageName}/Files/src/js/{ProjectName}",
+			because: "the empty project must emit its bundle into the reused package");
 	}
 
 	[Test]

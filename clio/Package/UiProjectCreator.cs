@@ -21,6 +21,17 @@ namespace Clio.Package
 
 		#region Methods: Public
 
+		/// <summary>
+		/// Creates a Freedom UI project and creates or reuses its local Creatio host package.
+		/// </summary>
+		/// <param name="projectName">Snake-case Angular project name.</param>
+		/// <param name="packageName">Creatio package that receives the compiled bundle.</param>
+		/// <param name="vendorPrefix">Lowercase Creatio vendor prefix.</param>
+		/// <param name="isEmpty">Whether to use the empty UI project template.</param>
+		/// <param name="creatioVersion">Optional Creatio version used to select a compatible template.</param>
+		/// <param name="enableDownloadPackage">
+		/// Callback that decides whether an environment package should be downloaded when no local package exists.
+		/// </param>
 		void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty, string creatioVersion,
 			Func<string, bool> enableDownloadPackage);
 
@@ -51,6 +62,22 @@ namespace Clio.Package
 
 		private const string globalJsonFileName = "global.json";
 		private const string esprojTemplateName = "esproj";
+		private const string ExistingProjectMessage =
+			"UI project path '{0}' already exists. Choose a different project name or remove the existing project explicitly.";
+		private const string InvalidExistingPackageMessage =
+			"Directory '{0}' exists but is not a valid Creatio package: {1}.";
+		private const string MissingDescriptorReason = "'{0}' is missing";
+		private const string MalformedDescriptorReason = "'{0}' is malformed";
+		private const string MissingPackageDescriptorReason = "'{0}' does not contain a package descriptor";
+		private const string DescriptorNameMismatchReason = "descriptor name '{0}' does not match '{1}'";
+		private const string EmptyDescriptorUIdReason = "descriptor UId is empty";
+		private const string PackagePathIsFileReason = "the package path is a file";
+		private const string PackageDirectoryCaseMismatchReason =
+			"package directory name '{0}' does not match the requested casing '{1}'";
+		private const string LinkedDescriptorReason = "linked package descriptors are not supported";
+		private const string OversizedDescriptorReason = "package descriptor exceeds the {0}-byte size limit";
+		private const string StagingCleanupFailureDataKey = "UiProjectStagingCleanupFailure";
+		private const long MaxPackageDescriptorBytes = 1024 * 1024;
 
 		#endregion
 
@@ -58,6 +85,9 @@ namespace Clio.Package
 
 		private static string[] _templateExtensions = new[] {
 			".json", ".js", ".ts", ".conf", ".config", ".scss", ".css"
+		};
+		private static readonly JsonSerializerOptions _descriptorJsonOptions = new() {
+			PropertyNameCaseInsensitive = true
 		};
 
 		private readonly EnvironmentSettings _environmentSettings;
@@ -143,21 +173,125 @@ namespace Clio.Package
 		/// </summary>
 		private static string BuildDistPath(string packageName, string projectName) =>
 			Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/", "js/", projectName);
+
+		private void CheckProjectDoesNotExist(string projectName) {
+			string projectPath = Path.Combine(ProjectsPath, projectName);
+			if (_fileSystem.ExistsDirectory(projectPath) || _fileSystem.ExistsFile(projectPath)) {
+				throw new InvalidOperationException(string.Format(
+					CultureInfo.InvariantCulture, ExistingProjectMessage, projectPath));
+			}
+		}
+
 		private void CreatePackage(string packageName) {
 			_packageCreator.Create(PackagesPath, packageName);
 		}
 
+		private bool ReuseLocalPackageIfValid(string packageName) {
+			string packagePath = Path.Combine(PackagesPath, packageName);
+			if (_fileSystem.ExistsFile(packagePath)) {
+				throw InvalidExistingPackage(packagePath, PackagePathIsFileReason);
+			}
+			if (_fileSystem.ExistsDirectory(PackagesPath)) {
+				string[] packageDirectories = _fileSystem.GetDirectories(PackagesPath);
+				bool hasExactMatch = packageDirectories.Any(path =>
+					string.Equals(Path.GetFileName(path), packageName, StringComparison.Ordinal));
+				if (!hasExactMatch) {
+					string casingMismatchPath = packageDirectories.FirstOrDefault(path =>
+						string.Equals(Path.GetFileName(path), packageName, StringComparison.OrdinalIgnoreCase));
+					if (casingMismatchPath is not null) {
+						throw InvalidExistingPackage(casingMismatchPath, string.Format(CultureInfo.InvariantCulture,
+							PackageDirectoryCaseMismatchReason, Path.GetFileName(casingMismatchPath), packageName));
+					}
+				}
+			}
+			if (!_fileSystem.ExistsDirectory(packagePath)) {
+				return false;
+			}
+			string descriptorPath = Path.Combine(packagePath, CreatioPackage.DescriptorName);
+			if (!_fileSystem.ExistsFile(descriptorPath)) {
+				throw InvalidExistingPackage(packagePath, string.Format(
+					CultureInfo.InvariantCulture, MissingDescriptorReason, CreatioPackage.DescriptorName));
+			}
+			if ((_fileSystem.GetFilesInfos(descriptorPath).Attributes & FileAttributes.ReparsePoint) != 0) {
+				throw InvalidExistingPackage(packagePath, LinkedDescriptorReason);
+			}
+			if (_fileSystem.GetFileSize(descriptorPath) > MaxPackageDescriptorBytes) {
+				throw InvalidExistingPackage(packagePath, string.Format(CultureInfo.InvariantCulture,
+					OversizedDescriptorReason, MaxPackageDescriptorBytes));
+			}
+
+			PackageDescriptorDto descriptor;
+			try {
+				descriptor = ReadPackageDescriptor(descriptorPath, packagePath);
+			} catch (JsonException exception) {
+				throw InvalidExistingPackage(packagePath, string.Format(
+					CultureInfo.InvariantCulture, MalformedDescriptorReason, CreatioPackage.DescriptorName), exception);
+			}
+
+			if (descriptor?.Descriptor is null) {
+				throw InvalidExistingPackage(packagePath, string.Format(
+					CultureInfo.InvariantCulture, MissingPackageDescriptorReason, CreatioPackage.DescriptorName));
+			}
+			if (!string.Equals(descriptor.Descriptor.Name, packageName, StringComparison.Ordinal)) {
+				throw InvalidExistingPackage(packagePath, string.Format(
+					CultureInfo.InvariantCulture, DescriptorNameMismatchReason, descriptor.Descriptor.Name, packageName));
+			}
+			if (descriptor.Descriptor.UId == Guid.Empty) {
+				throw InvalidExistingPackage(packagePath, EmptyDescriptorUIdReason);
+			}
+
+			return true;
+		}
+
+		private PackageDescriptorDto ReadPackageDescriptor(string descriptorPath, string packagePath) {
+			using Stream descriptorStream = _fileSystem.OpenReadStream(descriptorPath);
+			using MemoryStream descriptorBytes = new();
+			byte[] buffer = new byte[81920];
+			int bytesRead;
+			while ((bytesRead = descriptorStream.Read(buffer, 0, buffer.Length)) > 0) {
+				if (descriptorBytes.Length + bytesRead > MaxPackageDescriptorBytes) {
+					throw InvalidExistingPackage(packagePath, string.Format(CultureInfo.InvariantCulture,
+						OversizedDescriptorReason, MaxPackageDescriptorBytes));
+				}
+				descriptorBytes.Write(buffer, 0, bytesRead);
+			}
+			byte[] content = descriptorBytes.ToArray();
+			ReadOnlySpan<byte> json = content;
+			if (json.Length >= 3 && json[0] == 0xEF && json[1] == 0xBB && json[2] == 0xBF) {
+				json = json[3..];
+			}
+			return JsonSerializer.Deserialize<PackageDescriptorDto>(json, _descriptorJsonOptions);
+		}
+
+		private static InvalidOperationException InvalidExistingPackage(string packagePath, string reason,
+			Exception innerException = null) =>
+			new(string.Format(CultureInfo.InvariantCulture, InvalidExistingPackageMessage, packagePath, reason),
+				innerException);
+
 		private void CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty,
 			string creatioVersion) {
 			_fileSystem.CreateDirectoryIfNotExists(ProjectsPath);
-			var projectPath = Path.Combine(ProjectsPath, projectName);
+			string projectPath = Path.Combine(ProjectsPath, projectName);
+			string stagingPath = Path.Combine(ProjectsPath, $".{projectName}.{Guid.NewGuid():N}.tmp");
 			string templateFolderName = isEmpty ? "ui-project-Empty" : "ui-project";
-			if(string.IsNullOrWhiteSpace(creatioVersion)) {
-				_templateProvider.CopyTemplateFolder(templateFolderName, projectPath);
-			}else {
-				_templateProvider.CopyTemplateFolder(templateFolderName, projectPath, creatioVersion, "ui");
+			try {
+				if(string.IsNullOrWhiteSpace(creatioVersion)) {
+					_templateProvider.CopyTemplateFolder(templateFolderName, stagingPath);
+				}else {
+					_templateProvider.CopyTemplateFolder(templateFolderName, stagingPath, creatioVersion, "ui");
+				}
+				UpdateTemplateInfo(stagingPath, projectName, packageName, vendorPrefix);
+				_fileSystem.GetDirectoryInfo(stagingPath).MoveTo(projectPath);
+			} catch (Exception exception) {
+				try {
+					if (_fileSystem.ExistsDirectory(stagingPath)) {
+						_fileSystem.DeleteDirectory(stagingPath, true);
+					}
+				} catch (Exception cleanupException) {
+					exception.Data[StagingCleanupFailureDataKey] = cleanupException.Message;
+				}
+				throw;
 			}
-			UpdateTemplateInfo(projectPath, projectName, packageName, vendorPrefix);
 		}
 
 		/// <summary>
@@ -240,13 +374,18 @@ namespace Clio.Package
 		public void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
 			string creatioVersion, Func<string, bool> enableDownloadPackage) {
 			CheckCorrectProjectName(projectName);
-			var package = FindExistingPackage(packageName);
-			if (package != null && enableDownloadPackage(packageName)) {
-				_packageDownloader.DownloadPackage(packageName, _environmentSettings,
-					_workspacePathBuilder.PackagesFolderPath);
+			CheckProjectDoesNotExist(projectName);
+			if (ReuseLocalPackageIfValid(packageName)) {
 				_workspace.AddPackageIfNeeded(packageName);
 			} else {
-				CreatePackage(packageName);
+				var package = FindExistingPackage(packageName);
+				if (package != null && enableDownloadPackage(packageName)) {
+					_packageDownloader.DownloadPackage(packageName, _environmentSettings,
+						_workspacePathBuilder.PackagesFolderPath);
+					_workspace.AddPackageIfNeeded(packageName);
+				} else {
+					CreatePackage(packageName);
+				}
 			}
 			CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion);
 			IntegrateEsprojIntoSolution(projectName, packageName);

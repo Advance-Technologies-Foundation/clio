@@ -1,0 +1,38 @@
+COMMAND TYPE
+    Development
+
+NAME
+    new-ui-project - create a Freedom UI Angular project
+
+DESCRIPTION
+    Creates projects/<Name> and configures its bundle output under the Creatio
+    package selected with --package.
+
+    The package is created when missing. An existing package is reused without
+    changing its files when it has a valid matching descriptor.json and a
+    non-empty UId. An existing directory that is not a valid matching package
+    is rejected. The projects/<Name> path must not already exist as a file or
+    directory.
+
+SYNOPSIS
+    clio new-ui-project <Name> --package <PACKAGE_NAME> --vendor-prefix <PREFIX> [options]
+
+OPTIONS
+    Name (pos. 0)          Project name in snake_case. Required.
+
+    --package              Package name. Required.
+
+    -v, --vendor-prefix    Lowercase vendor prefix. Required.
+
+    --empty                Create an empty UI project.
+
+    --version              Creatio version used to select a compatible template.
+
+    --silent               Use default behavior without user interaction.
+
+EXAMPLE
+    clio new-ui-project rss_reader --package UsrRssReader --vendor-prefix usr --empty --silent
+        create rss_reader and create or reuse the UsrRssReader package
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -13,6 +13,7 @@ spec:
       labels:
         app: clio-pgadmin
     spec:
+      automountServiceAccountToken: false
       initContainers:
         - name: hack
           image: busybox
@@ -34,6 +35,7 @@ spec:
             limits:
               cpu: "0.5"
               memory: "512Mi"
+              ephemeral-storage: "1Gi"
           livenessProbe:
             httpGet:
               path: /misc/ping
