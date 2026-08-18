@@ -2742,7 +2742,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-1.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2755,7 +2755,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-2.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2768,7 +2768,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-3.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2781,7 +2781,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: XL
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-4.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2807,7 +2807,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-6.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2847,7 +2847,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-9.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2875,7 +2875,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-11.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2887,7 +2887,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-13.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2899,7 +2899,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-12.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2916,7 +2916,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-14.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2929,7 +2929,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-15.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2942,7 +2942,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-16.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2955,7 +2955,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-17.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2969,7 +2969,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-18.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md

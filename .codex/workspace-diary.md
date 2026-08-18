@@ -8760,3 +8760,15 @@ Decision: Preflight file and directory project collisions, atomically publish a 
 Discovery: The package collision originated in `UiProjectCreator.Create` calling `PackageCreator.Create` unconditionally. Template copying also cleared its destination, so collision safety requires a same-parent staged directory and atomic move rather than a check followed by a direct copy. Valid package directories can be Windows junctions in the documented FSM layout and must remain reusable; descriptor reads are bounded without rejecting that package link. The MCP contract already described the intended create-or-reuse behavior, so no MCP schema change was required.
 Files: clio/Package/UiProjectCreator.cs, clio.tests/Package/UiProjectCreatorTests.cs, clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/docs/commands/new-ui-project.md, clio/help/en/new-ui-project.txt
 Impact: Package-first workspaces can add a Freedom UI project without rewriting existing package metadata or content, while invalid package paths and existing project directories fail before mutation.
+
+## 2026-08-18 14:20 – get-page-hierarchy: a broken read stops looking like an answer
+Context: ENG-95262 story 13; a bare catch let get-page-hierarchy exit 0 with a chain anchored on the wrong package.
+Decision: story 11's three-state idiom, one hop up — propagate QuerySysSchemaRow's classified error; the design-package
+fallback survives ONLY for an answered rejection (InvalidOperationException, not NonJsonServiceResponseException).
+Discovery: GetDesignPackageUId and GetParentSchemas are DIFFERENT endpoints, so a per-endpoint failure previously
+produced a plausible-but-truncated chain with success:true. Also: get-page already returns `success ? 0 : 1`
+(PageGetOptions.cs:283, Program.cs:665) — the story's exit-0 premise does not reproduce from source.
+Files: clio/Command/GetPageHierarchyCommand.cs, clio.tests/Command/GetPageHierarchyCommandTests.cs,
+clio.tests/Command/McpServer/PageHierarchyGetToolTests.cs, clio.mcp.e2e/PageHierarchyGetToolE2ETests.cs
+Impact: the same split applies verbatim to PageGetOptions.ResolveDesignPackageUId and
+GetClassicPageSourcesCommand.ResolveHierarchyBaseToTop, which still carry the defect.
