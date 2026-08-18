@@ -2978,3 +2978,21 @@ stories:
       - story-mcp-worker-execution-boundary-4
     blocks:
       - story-mcp-worker-execution-boundary-7
+
+  - id: story-mcp-worker-execution-boundary-19
+    title: "A cohort member serializes every tenant on the shared fallback lock"
+    feature: "mcp-worker-execution-boundary"
+    status: ready-for-dev
+    file: spec/stories/story-mcp-worker-execution-boundary-19.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Found 2026-08-18 by the classification adversary. PRE-EXISTING, not caused by this feature, but it affects get-related-page-addon, which stage 6 already ships in the worker cohort. Same defect class as story 12, which this branch fixed: per-tenant options are built and then the ENVIRONMENT-LESS ResolveCommand overload is called, so the shared fallback key is held across a Creatio round trip and every tenant queues behind it. The discriminating test asserts WHICH key was taken, not that a lock was taken."
+    depends_on: []
+  - id: story-mcp-worker-execution-boundary-20
+    title: "A cohort tool stopped streaming progress"
+    feature: "mcp-worker-execution-boundary"
+    status: ready-for-dev
+    file: spec/stories/story-mcp-worker-execution-boundary-20.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "REGRESSION from stage 6, confirmed against the master baseline: TeamCity 15893259 fails ApplicationTool_Should_Stream_Progress_For_LongRunning_Call with 0 progress notifications, and run 15892347 on master passes it. The test drives list-app-sections, a cohort member declaring RequiresClientRequests=Progress. Leading hypothesis is that the child environment allowlist drops CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS so the child never beats -- but that must be PROVEN, because the alternative is that worker progress does not reach the client at all, which would contradict four passing unit tests. Do not fix before the cause is established."
+    depends_on:
+      - story-mcp-worker-execution-boundary-6

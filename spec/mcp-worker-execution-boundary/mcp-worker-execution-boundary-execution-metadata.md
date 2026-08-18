@@ -513,3 +513,80 @@ The tables above are now a **record**, not a proposal — the attribute in the s
 instead of silently. Regenerate after any change to the tool catalog. Two things this reconciliation did NOT
 resolve, both handed to Stage 7 / Stage 9 rather than papered over: the nine `in-process` tools that no budget
 will bound (§5.4) and the two shared local artifacts that `McpToolSharedFileResource` cannot name (§5.3).
+
+## Ground-truth audit of the classification (2026-08-18)
+
+The `Location` column was seeded from a file-level heuristic, and section 4 above admitted it
+over-assigns. Two adversarial passes then established ground truth independently of the declarations —
+by following the code, not by reading the attribute. Results, so nobody has to redo it.
+
+### The count is right; the sentence explaining it was not
+
+189 declarations across 122 files, zero duplicate names, all six fields present on every one. Derived
+by a brace-scoped parse with comments and string literals blanked and per-class `const string`
+resolution. Every aggregate reproduces: 153/36 by `Location`, 144/36/7/2 by `BudgetPolicy`,
+172/15/2 by `RequiresClientRequests`.
+
+The earlier claim that a naive grep over-counts "by roughly 16" does not reproduce. Measured:
+`\[McpServerTool(` gives +3, `\[McpServerTool(\(|\])` gives +23, and a bare `\[McpServerTool` gives
++134 because it collides with the `McpServerToolType` prefix. No variant lands on 205. All 23 extra
+hits of the middle form are doc comments or string literals. There are no `[McpServerTool]`
+declarations anywhere in `clio/` outside `clio/Command/McpServer/`, so the reader's assembly scan sees
+everything.
+
+### The severe direction is clean — all 36 hand-checked, zero defects
+
+Every tool declared `InProcess` was checked at four levels: method body, class constructor, the
+delegated `Command<T>`, and each injected service. None reaches Creatio. The two that looked live
+resolve correctly:
+
+- `add-data-binding-row` — the only HTTP path is explicitly disabled at the call
+  (`allowRemoteDisplayValueResolution: false`); the `IApplicationClient` in that file belongs to a
+  resolver neither method calls.
+- `new-test-project` — passes an environment through, so it does take the resolving path, but its
+  options carry neither `[RequiresPackage]` nor `[RequiresCreatioVersion]` (the only gates that force
+  a round trip), the command holds no client, and container construction is lazy.
+
+`clio-run` is `InProcess` by design and fail-closed: the router keys on the unwrapped, alias-canonical
+inner name, and `clio-run` refuses any verb absent from the registry — and the registry is a subset of
+what the metadata reader scans, so an unclassified inner verb cannot exist.
+
+### The other direction — four rows are Worker without ever reaching Creatio
+
+Not defects in the wedge sense; each costs one needless process spawn per call.
+
+- `clear-browser-session` — the whole body is a local cache delete and a completed task. Its sibling
+  `get-browser-session` does authenticate, so only the clear side is affected.
+- `stop-creatio`, `stop-all-creatio` and its alias — stop a local application pool, OS service and
+  process. Zero HTTP references in the command.
+- `uninstall-creatio` — local-only, as its own remark says. But `Worker` is right here for a different
+  reason than reachability: it is a long destructive operation that wants containment. Do not
+  "correct" this one.
+
+`restore-db-*` (three rows) speak to PostgreSQL, SQL Server and Kubernetes but never to Creatio over
+HTTP. They still block on external input and output, so `Worker` is defensible; the point is that the
+justification is containment, not reachability.
+
+`compile-status` and `restart-status` do no Creatio work at all, yet must be `Worker` + `Sticky`:
+they read an in-process registry owned by whichever process ran the operation, so the poll has to
+reach that same worker. `restart-status` documents this; `compile-status` carries the same shape with
+no comment, which is worth adding.
+
+### Five of the six fields have no runtime consumer yet
+
+Only `Location` is read at runtime, by `McpExecutionRouter`. `OperationFamily`, `Lifetime`,
+`RequiresClientRequests` and `SharedFileResource` have zero consumers, and `BudgetPolicy` is read by
+nothing — every relayed call is bounded by the single 120-second dispatcher budget regardless of what
+it declares. That is expected while stages 7 and 8 are unbuilt, but it means a wrong value in those
+five degrades nothing today and will degrade something later, without a test noticing. The coverage
+test asserts presence, not correctness, and cannot close this.
+
+`RequiresClientRequests` was nonetheless verified correct: exactly one production sampling call site,
+consumed by exactly the two tools that declare `Sampling`; and the fifteen `Progress` declarations map
+onto exactly the emit sites, including the two that call the notification API directly rather than
+through the heartbeat, and the two that forward stage events.
+
+### One live defect the audit surfaced
+
+`get-related-page-addon`, a shipped cohort member, holds the SHARED fallback lock across a Creatio
+round trip — see story 19.
