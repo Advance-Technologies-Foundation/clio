@@ -379,6 +379,16 @@ public sealed class ComponentEquivalenceRule {
 	public IReadOnlyList<ElementFilterRule> Filters { get; init; } = [];
 
 	/// <summary>
+	/// Template-group entries only: ancestor-NAME scope. Empty (default) = the entry applies wherever its
+	/// <see cref="Filters"/> match. Non-empty = it applies only to a node whose SOURCE ancestor chain (outer→inner)
+	/// contains these names as an ORDERED SUBSEQUENCE at any depth — e.g. <c>["MainHeader"]</c> restricts the entry
+	/// to elements located anywhere under a container named <c>MainHeader</c>, and <c>["A","B"]</c> to a node under
+	/// an <c>A</c> that itself (any depth) contains a <c>B</c> above the node. AND-combined with <see cref="Filters"/>.
+	/// </summary>
+	[JsonPropertyName("path")]
+	public IReadOnlyList<string> Path { get; init; } = [];
+
+	/// <summary>
 	/// Template-group entries only: the mobile values produced for a matching element, as data. Each template's
 	/// own <c>value.type</c> declares the target mobile type — which is also what gates it and, for an entry with
 	/// no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a plain

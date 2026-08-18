@@ -115,12 +115,13 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
 		JObject webTemplateResources = null,
-		IReadOnlySet<string> mobileTypes = null) =>
+		IReadOnlySet<string> mobileTypes = null,
+		WebToMobilePageConversionRules rules = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, mobileTypes ?? MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType,
-			Rules, templateRule,
+			rules ?? Rules, templateRule,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: containerNameMap,
 			templateComponentNames: templateComponentNames,
@@ -1387,6 +1388,100 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry field = Element(guide, "Rating");
 		field.MobileValues!.AsObject()["options"]!.AsArray().Count.Should().Be(2,
 			because: "the data array is carried verbatim as a value, exactly as before the traversal change");
+	}
+
+	#endregion
+
+	#region Path scoping (components[].path)
+
+	/// <summary>A template-group rule that retypes <paramref name="filterType"/> to <paramref name="toType"/>,
+	/// scoped to the ancestor-name <paramref name="path"/>.</summary>
+	private static WebToMobilePageConversionRules PathScopedRetypeRules(string[] path, string filterType, string toType) =>
+		new() {
+			Components = [
+				new ComponentEquivalenceRule {
+					Path = path,
+					Filters = [new ElementFilterRule { Type = filterType }],
+					ViewConfigTemplates = [
+						new ViewConfigTemplateRule {
+							PreserveSourceProperties = true,
+							ParentName = "{{ diff.parentName }}",
+							PropertyName = "{{ diff.propertyName }}",
+							Value = JsonDocument.Parse("{ \"type\": \"" + toType + "\" }").RootElement.Clone()
+						}
+					]
+				}
+			]
+		};
+
+	[Test]
+	[Description("path scopes a template-group rule by ancestor name: a crt.Button under a MainHeader container is retyped by the path-scoped rule, while an identical button under a different container is not matched and keeps its own registry type.")]
+	public void Analyze_Path_ScopesRuleToNamedAncestor_InVsOut() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#" } ] },
+			  { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "OtherBtn", "type": "crt.Button", "caption": "#ResourceString(OtherBtn_caption)#" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+		WebToMobilePageConversionRules rules = PathScopedRetypeRules(["MainHeader"], "crt.Button", "crt.MenuItem");
+
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: rules);
+
+		Element(guide, "OrderBtn").MobileType.Should().Be("crt.MenuItem",
+			because: "the button is under MainHeader, so the path-scoped rule matches and retypes it");
+		Element(guide, "OtherBtn").MobileType.Should().Be("crt.Button",
+			because: "the identical button is outside MainHeader, so the path scope excludes it and it keeps its registry type");
+	}
+
+	[Test]
+	[Description("path matches at ANY depth and composes with child-array traversal: a crt.MenuItem nested inside a button's menuItems, itself under MainHeader, is still matched by path:[MainHeader] + filter crt.MenuItem.")]
+	public void Analyze_Path_MatchesAnyDepth_ThroughMenuItems() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "menuItems": [ { "name": "SubItem", "type": "crt.MenuItem",
+					"caption": "#ResourceString(SubItem_caption)#" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+		WebToMobilePageConversionRules rules = PathScopedRetypeRules(["MainHeader"], "crt.MenuItem", "crt.Toggle");
+
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: rules);
+
+		ElementMapEntry subItem = Element(guide, "SubItem");
+		subItem.MobileType.Should().Be("crt.Toggle",
+			because: "the menu item is reached by child-array traversal and has MainHeader as an ancestor, so the path-scoped rule applies at depth 2");
+		subItem.ParentName.Should().Be("OrderBtn",
+			because: "the converted item stays under its button");
+		subItem.PropertyName.Should().Be("menuItems",
+			because: "it keeps the menuItems slot it was descended from");
+	}
+
+	[Test]
+	[Description("A multi-element path must appear as an ORDERED subsequence of ancestors: [Outer, Inner] matches a node under Outer->Inner, but the reversed rule [Inner, Outer] does not match the same node.")]
+	public void Analyze_Path_MultiElement_IsOrderSensitive() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Outer", "type": "crt.FlexContainer", "items": [
+				{ "name": "Inner", "type": "crt.FlexContainer", "items": [
+				  { "name": "Btn", "type": "crt.Button", "caption": "#ResourceString(Btn_caption)#" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+
+		MobilePageConversionGuide ordered = Analyze(bundle, mobileTypes: mobileTypes,
+			rules: PathScopedRetypeRules(["Outer", "Inner"], "crt.Button", "crt.MenuItem"));
+		Element(ordered, "Btn").MobileType.Should().Be("crt.MenuItem",
+			because: "the ancestors [Outer, Inner] contain the path in order, so the rule matches");
+
+		MobilePageConversionGuide reversed = Analyze(bundle, mobileTypes: mobileTypes,
+			rules: PathScopedRetypeRules(["Inner", "Outer"], "crt.Button", "crt.MenuItem"));
+		Element(reversed, "Btn").MobileType.Should().Be("crt.Button",
+			because: "the reversed path [Inner, Outer] is not an ordered subsequence of [Outer, Inner], so the scope excludes the node");
 	}
 
 	#endregion
