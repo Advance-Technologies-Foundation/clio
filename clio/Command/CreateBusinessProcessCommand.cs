@@ -14,7 +14,11 @@ namespace Clio.Command;
 /// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName,
+// The version literal states what THIS command's code needs: the email block ships in the 1.2.0.1
+// bundle, and an older server has no email member and silently discards the block while answering
+// success. Presence alone cannot express that. The guard fixture asserts the shipped archive
+// satisfies this literal, so clio can never demand a version it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
