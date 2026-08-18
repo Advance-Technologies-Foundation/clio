@@ -180,8 +180,8 @@ public sealed class WorkerProcessSupervisorTests {
 	}
 
 	[Test]
-	[Description("The queue wait and the response budget are separate bounds: a call that spent most of the queue-wait bound waiting still receives its FULL budget, measured from the instant its worker was spawned.")]
-	public async Task SpawnContainedAsync_ShouldGrantTheFullBudget_WhenTheCallSpentMostOfTheQueueBoundWaiting() {
+	[Description("The queue wait and the response budget are separate bounds: a call that spent real time queued still receives its FULL budget, measured from the instant its worker was spawned rather than from when it was admitted.")]
+	public async Task SpawnContainedAsync_ShouldGrantTheFullBudget_WhenTheCallSpentTimeQueued() {
 		// Arrange
 		FakeContainment containment = new();
 		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
