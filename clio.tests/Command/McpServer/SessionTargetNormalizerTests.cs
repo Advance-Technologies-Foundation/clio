@@ -234,4 +234,21 @@ public sealed class SessionTargetNormalizerTests {
 			because: "the IPv4 rejection keys off a numeric or 0x-prefixed LAST label, so an ordinary "
 				+ "hostname made of hex characters is still a hostname");
 	}
+
+	[Test]
+	[Description("The opaque safety valve must be incapable of colliding with a normalised identity: 'raw' is a syntactically valid scheme, so a plain 'raw:' marker made //x and raw://x the same key — two distinct targets sharing one session, which on a sticky worker is a credential crossover rather than a cache miss.")]
+	public void Normalize_ShouldNotCollide_WhenTheInputLooksLikeTheOpaqueMarkersOwnScheme() {
+		// Arrange — the schemeless form takes the opaque branch; the explicit one is a normal absolute URI
+		// whose scheme happens to be the same word the marker used.
+		const string schemeless = "//collision.creatio.com";
+		const string explicitRawScheme = "raw://collision.creatio.com";
+
+		// Act
+		string opaque = _normalizer.Normalize(schemeless);
+		string normalised = _normalizer.Normalize(explicitRawScheme);
+
+		// Assert
+		opaque.Should().NotBe(normalised,
+			because: "these are two different targets and must never share a session key — the marker has to use a character no RFC 3986 scheme may contain, or the valve that exists to be over-cautious becomes the one thing that merges targets");
+	}
 }

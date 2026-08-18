@@ -62,10 +62,20 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 	/// <summary>
 	/// Marker for an input that is not an absolute hierarchical URI and therefore cannot be decomposed
 	/// into the T-5 components. The value is carried byte-exact behind this prefix: strictly more
-	/// distinguishing than the raw input (a normalised identity never starts with it), so the safety
-	/// valve can only ever cost an extra worker, never merge two targets.
+	/// distinguishing than the raw input, so the safety valve can only ever cost an extra worker, never
+	/// merge two targets.
 	/// </summary>
-	private const string OpaqueTargetPrefix = "raw:";
+	/// <remarks>
+	/// <b>The prefix contains a character no URI scheme may contain, and that is load-bearing.</b> An
+	/// earlier version used the plain text <c>raw:</c> and claimed "a normalised identity never starts
+	/// with it" — which was false, because <c>raw</c> is a syntactically valid scheme name. So
+	/// <c>//x</c> (schemeless, opaque) and <c>raw://x</c> (scheme <c>raw</c>, normalised) both produced
+	/// <c>raw://x</c>: two distinct targets sharing one session key, which on a sticky worker is the
+	/// credential crossover T-5 exists to prevent rather than a cache miss. RFC 3986 restricts a scheme
+	/// to ALPHA / DIGIT / "+" / "-" / "." — a control character can never appear in one, so no normalised
+	/// identity can collide with this marker and the invariant the summary states is now actually true.
+	/// </remarks>
+	private const string OpaqueTargetPrefix = "\u0000raw:";
 
 	private static readonly char[] AuthorityTerminators = ['/', '?', '#'];
 

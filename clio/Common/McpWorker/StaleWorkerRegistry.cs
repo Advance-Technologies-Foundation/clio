@@ -222,10 +222,24 @@ public sealed class StaleWorkerRegistry : IStaleWorkerRegistry {
 		int strangers = 0;
 		int liveOwners = 0;
 		int currentProcessId = System.Environment.ProcessId;
+		// The FULL identity, not just the pid — see the own-entry branch below for why.
+		ProcessIdentitySnapshot currentIdentity = inspector.TryCaptureIdentity(currentProcessId);
 
 		foreach (WorkerRegistrationEntry entry in entries) {
-			if (entry.OwnerProcessId == currentProcessId) {
+			if (entry.OwnerProcessId == currentProcessId
+				&& (currentIdentity is null
+					|| currentIdentity.StartTimeUtcTicks == entry.OwnerStartTimeUtcTicks)) {
 				// Written by this very process; it is a live lease, not a leftover.
+				//
+				// The START TIME is compared too, unlike every earlier version of this branch. A pid alone
+				// is not an identity — every other comparison in this file uses the full triple for exactly
+				// that reason. Without it, a parent that is SIGKILLed leaving an entry behind, followed by a
+				// reboot or a pid-space wrap that hands a new clio the same pid, makes that entry look like
+				// the new process's own live lease: never inspected, never killed, and never dropped, by the
+				// same reasoning on every subsequent reap. Immortal by arithmetic.
+				//
+				// A null identity means this process could not describe itself, which is not evidence the
+				// entry is stale — so the pid match still wins and the entry survives, as before.
 				survivors.Add(entry);
 				continue;
 			}

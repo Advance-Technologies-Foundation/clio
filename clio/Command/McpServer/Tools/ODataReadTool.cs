@@ -186,11 +186,18 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// Single-entity response (no value wrapper)
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
 		} catch (Exception ex) {
-			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json;
+			// Redacted BEFORE the 500-character cut, not after: a head cut inside a JWT leaves fewer than
+			// three segments so JwtRegex stops matching, and a cut short of an authority slips past
+			// UriRegex — the surviving prefix then goes out verbatim. Nothing here needs the bound applied
+			// first, so the order is inverted rather than left positionally safe (story 21, T-6).
+			string preview = string.IsNullOrWhiteSpace(json)
+				? "<empty>"
+				: SensitiveErrorTextRedactor.Redact(json);
 			if (preview.Length > 500) {
 				preview = preview[..500] + "...";
 			}
-			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
+			return ODataReadResponse.Failure(
+				$"Failed to parse OData response: {SensitiveErrorTextRedactor.Redact(ex.Message)} | Response: {preview}");
 		}
 	}
 

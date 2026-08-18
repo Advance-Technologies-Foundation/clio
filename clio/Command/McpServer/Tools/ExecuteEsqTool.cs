@@ -131,7 +131,9 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			// asymmetry was not a decision: found 2026-08-18 by story 21's R-7 sweep, which asked whether
 			// any other untrusted text reaches a caller past the redactor.
 			if (hasSuccess && !successIsTrue) {
-				return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ExtractErrorMessage(root) ?? Truncate(json)));
+				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) is { } errorMessage
+					? SensitiveErrorTextRedactor.Redact(errorMessage)
+					: TruncateRedacted(json));
 			}
 
 			bool hasRowsArray = root.TryGetProperty("rows", out JsonElement rowsEl)
@@ -147,7 +149,9 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 					|| root.TryGetProperty("errorInfo", out _)
 					|| root.TryGetProperty("ExceptionMessage", out _)
 					|| root.TryGetProperty("Message", out _))) {
-				return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ExtractErrorMessage(root) ?? Truncate(json)));
+				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) is { } errorMessage
+					? SensitiveErrorTextRedactor.Redact(errorMessage)
+					: TruncateRedacted(json));
 			}
 
 			if (hasRowsArray) {
@@ -166,7 +170,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			// Succeeded but no rows array (e.g. a non-standard projection): return the whole body.
 			return new ExecuteEsqResponse(true, null, null, root.Clone());
 		} catch (Exception ex) {
-			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse SelectQuery response: {ex.Message} | Response: {Truncate(json)}"));
+			return ExecuteEsqResponse.Failure($"Failed to parse SelectQuery response: {SensitiveErrorTextRedactor.Redact(ex.Message)} | Response: {TruncateRedacted(json)}");
 		}
 	}
 
@@ -259,6 +263,14 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		}
 		return null;
 	}
+
+	// REDACT FIRST, then truncate — the rule story 21 produced, applied where it is free to apply. Cutting
+	// first can strip the context a pattern needs: a head cut inside a JWT leaves fewer than three segments
+	// so JwtRegex stops matching, and a cut short of an authority slips past UriRegex, leaving the surviving
+	// prefix verbatim. Unlike the worker stderr drain there is no liveness reason to bound before redacting
+	// here — the body is already fully in memory — so the order is simply inverted and the class is closed
+	// rather than made positionally safe.
+	private static string TruncateRedacted(string value) => Truncate(SensitiveErrorTextRedactor.Redact(value));
 
 	private static string Truncate(string value) =>
 		value.Length > 500 ? value[..500] + "..." : value;

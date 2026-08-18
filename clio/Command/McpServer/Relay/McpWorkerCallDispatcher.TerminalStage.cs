@@ -202,6 +202,17 @@ public sealed partial class McpWorkerCallDispatcher {
 				await AwaitTerminalStageAsync(call, watch, cancellationToken).ConfigureAwait(false);
 			switch (waited) {
 				case TerminalStageWaitOutcome.SilenceExpired: {
+					// LAST LOOK BEFORE GIVING UP. The wait decides "answered" and "expired" at two different
+					// instants, and nothing re-read the call in between. A worker that stayed quiet through a
+					// legitimately long stage and then answered in the microseconds between those two checks
+					// would have its REAL result — possibly a success — thrown away, replaced by
+					// "possibly half-installed, do not retry", and be killed. The re-check costs nothing and
+					// only ever converts a discarded answer into the answer.
+					if (call.IsCompleted) {
+						// Break, not return: the code after this switch is the answered path, and reusing it
+						// keeps one place that decides what a worker's own answer means.
+						break;
+					}
 					// The error is composed and REPORTED FIRST and the child killed after, so the last stage it
 					// reached is captured: killing first closes the pipes, ends the read loop, and the answer
 					// would then be a relay failure with no stage named in it.

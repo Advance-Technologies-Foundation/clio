@@ -510,7 +510,12 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	/// <inheritdoc />
 	public IWorkerChannel ReachExisting(IWorkerLease lease) {
 		ArgumentNullException.ThrowIfNull(lease);
-		if (lease is not SupervisedWorkerLease ownLease) {
+		if (lease is not SupervisedWorkerLease ownLease || !ownLease.IssuedBy(this)) {
+			// The instance check is the point, not the type check. Comparing only the TYPE would accept a
+			// lease minted by ANOTHER supervisor while the message claims otherwise — and each supervisor
+			// carries its own caps and its own registry, so this guard is exactly what the multi-consumer
+			// wiring leans on. Not exploitable while SupervisedWorkerLease is private and nested, which is
+			// why it is worth closing now, as one comparison, rather than after something depends on it.
 			throw new ArgumentException("The lease was not issued by this supervisor.", nameof(lease));
 		}
 		// No pool is touched, on either branch, and there is nothing to await. That is the whole point:
@@ -547,7 +552,12 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	/// <inheritdoc />
 	public WorkerTerminationOutcome KillContained(IWorkerLease lease) {
 		ArgumentNullException.ThrowIfNull(lease);
-		if (lease is not SupervisedWorkerLease ownLease) {
+		if (lease is not SupervisedWorkerLease ownLease || !ownLease.IssuedBy(this)) {
+			// The instance check is the point, not the type check. Comparing only the TYPE would accept a
+			// lease minted by ANOTHER supervisor while the message claims otherwise — and each supervisor
+			// carries its own caps and its own registry, so this guard is exactly what the multi-consumer
+			// wiring leans on. Not exploitable while SupervisedWorkerLease is private and nested, which is
+			// why it is worth closing now, as one comparison, rather than after something depends on it.
 			throw new ArgumentException("The lease was not issued by this supervisor.", nameof(lease));
 		}
 		return ownLease.Terminate();
@@ -785,7 +795,18 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 					return null;
 				}
 			},
-			waitForExitAsync: token => process.WaitForExitAsync(token),
+			waitForExitAsync: token => {
+				// Guarded like HasExited and ExitCode beside it, and for the same stated reason: a reach that
+				// threw on a dead worker would only move the race somewhere less convenient to handle. This
+				// one was NOT guarded, and it is the member a status poll is most likely to await — the
+				// owner disposing its lease mid-poll would surface ObjectDisposedException (an
+				// InvalidOperationException) from a channel documented never to throw on a dead worker.
+				try {
+					return process.WaitForExitAsync(token);
+				} catch (Exception exception) when (IsProcessInspectionFailure(exception)) {
+					return Task.CompletedTask;
+				}
+			},
 			killProcessTree: () => process.Kill(entireProcessTree: true),
 			dispose: process.Dispose);
 	}
@@ -1028,6 +1049,9 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 			}
 			return outcome;
 		}
+
+		internal bool IssuedBy(WorkerProcessSupervisor supervisor) =>
+			ReferenceEquals(_supervisor, supervisor);
 
 		public void Dispose() {
 			if (Interlocked.Exchange(ref _disposed, 1) != 0) {

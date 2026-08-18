@@ -119,7 +119,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 				return new ODataRowResult {
 					Index = index,
 					Success = false,
-					Error = SensitiveErrorTextRedactor.Redact($"OData create did not return a record Id. Response: {Truncate(json)}")
+					Error = $"OData create did not return a record Id. Response: {Truncate(SensitiveErrorTextRedactor.Redact(json))}"
 				};
 			}
 			return new ODataRowResult { Index = index, Success = true, Id = id };
