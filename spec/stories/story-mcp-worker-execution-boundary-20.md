@@ -362,8 +362,13 @@ alone.
 
 ## AC-03 ANSWERED 2026-08-19 by TeamCity 15895074 — and it found the defect underneath
 
-**3 failed / 496 passed / 9 ignored**, against this branch's previous 46 / 470 / 98 and the master
-baseline's 4 / 585 / 10.
+**3 failed / 595 passed / 12 ignored** (615 recorded, 5 muted), against this branch's previous
+46 / 470 / 98 and the master baseline's 4 / 585 / 10.
+
+*Correction: an earlier reading of this run reported 496 passed / 9 ignored. That was taken while the
+build showed 100 percent complete but had not finished, and `testOccurrences` lags by tens of minutes —
+the exact trap the runbook warns about. The final figures are above; the conclusion is unchanged and
+slightly stronger, since the failure count is now BELOW the master baseline's four.*
 
 The ignored count was always the tell, and it is the one that settles this story: **ninety-eight became
 nine**. Tests do not skip because a feature regressed; they skip because the environment they need is
