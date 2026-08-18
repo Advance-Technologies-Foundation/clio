@@ -82,15 +82,15 @@ public sealed class ToolContractGetTool {
 			// since it hard-crashes on the index shape and cannot be patched. Every other client is
 			// unaffected — this only flips the no-names/non-full-detail branch inside GetContracts.
 			//
-			// Load-bearing SDK assumption (pinned to ModelContextProtocol 1.4.1, see Directory.Packages.props):
+			// Load-bearing SDK assumption (verified against ModelContextProtocol 2.2.0, see Directory.Packages.props):
 			// Server.ClientInfo is captured while the SDK handles the `initialize` REQUEST, independent of the
 			// `notifications/initialized` notification. This is what makes detection work for the real CAADT
 			// 1.4.0 client, which deliberately never sends `notifications/initialized`: ClientInfo is already
 			// populated by the time any `tools/call` (including this one) is dispatched. If a future SDK bump
 			// ever moved ClientInfo capture onto the `initialized` notification, requestContext.Server.ClientInfo
 			// would be null here for that client and IsLegacyStdioClient(null) => false would silently re-break
-			// it (no exception, every shipped test still passes). If you upgrade the SDK, re-verify this
-			// initialize-time capture behavior against the real client before trusting it.
+			// it (no exception, ordinary modern-client tests still pass). The SDK-upgrade gate therefore
+			// re-verifies initialize-time capture against the real CAADT 1.4 client before every MCP bump.
 			bool legacyNoNamesFullShape = IsLegacyStdioClient(requestContext?.Server?.ClientInfo);
 			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
 			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
@@ -642,6 +642,7 @@ internal static class ToolContractCatalog {
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
 			[InstallGateTool.InstallGateToolName] = BuildInstallGate(),
+			[InstallProcessBuilderTool.InstallProcessBuilderToolName] = BuildInstallProcessBuilder(),
 			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
@@ -3747,7 +3748,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageSync() {
 		return new ToolContractDefinition(
 			PageSyncTool.ToolName,
-			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
+			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance. " +
+			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
@@ -4685,7 +4687,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
+			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior. " +
+			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -5189,6 +5192,7 @@ internal static class ToolContractCatalog {
 					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
 			],
 			Preconditions: [
+				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
@@ -5225,6 +5229,40 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"A gate-dependent tool reported \"you need to install the cliogate package version ... or higher\", or this is a freshly deployed instance that has not yet had cliogate installed."
+			]);
+	}
+
+	private static ToolContractDefinition BuildInstallProcessBuilder() {
+		return new ToolContractDefinition(
+			InstallProcessBuilderTool.InstallProcessBuilderToolName,
+			"Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio environment, making ProcessDesignService reachable there. The package ships as source and the TARGET compiles it during installation, so the call is substantially slower than a plain package install - how much depends entirely on the target environment, so do not quote a duration to the user. A restart does happen (the platform recycles itself on .NET Framework, the installer issues it on .NET) but you never trigger it yourself - the tool waits for the instance to answer its health check before judging the result. It checks the outcome rather than the install call: it asks the package's own service whether it is serving (Ping, ungated) and fails unless it answers. So it reports \"installed but never compiled\" instead of looking like success - which list-packages cannot distinguish, because the recorded version moves when the archive is accepted whether or not anything compiled. The check is liveness, not identity: on an UPGRADE a stale assembly that still answers will pass. It installs in every case but two, and re-running is otherwise safe (one configuration build on the target). Both exceptions exist to stop an environment moving BACKWARDS, both report exit code 1, and neither is retryable. The override is the same for both and is deliberately NOT available to you - it is a command-line flag a human runs after deciding the rollback is what they want, so do not reach for a shell to get around either one. (1) It REFUSES when the environment already carries a NEWER version than this clio ships, because installing would move that environment's recorded version backwards for everyone using it; say the fix is to update clio. (2) It REFUSES when this clio's OWN bundled version carries a pre-release suffix, which would make such a move undetectable - nothing about the target environment is wrong, so say the fix is to reinstall or update clio. Reinstalling the SAME version is not a downgrade and is allowed - that is the repair path when a package installed but never compiled. Take the gated tool's refusal as the signal to call this rather than comparing versions yourself: the gate checks the version the environment recorded against the version clio bundles.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install the process-builder package after a process-designer tool refused",
+					new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					})
+			],
+			Flow(
+				[
+					InstallProcessBuilderTool.InstallProcessBuilderToolName
+				],
+				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one would point at a tool this server may not expose. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app).",
+				"A process-designer tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) are feature-gated and may be absent from this server's tool list; this one never is, so it stays reachable as the remedy.",
+				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
 			]);
 	}
 

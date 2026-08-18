@@ -73,13 +73,10 @@ public sealed class RequiredArgValidationTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = BindingsModule.CreateMcpSerializerOptions() });
 
-	// RequestContext's constructor rejects a null server, so build an uninitialized instance and set only
-	// Params/MatchedPrimitive before InvokeAsync — the same shape the ClioRun executor uses in its tests.
 	private static async Task<CallToolResult> InvokeAsync(McpServerTool tool, Dictionary<string, JsonElement> arguments) {
-		RequestContext<CallToolRequestParams> context =
-			(RequestContext<CallToolRequestParams>)System.Runtime.CompilerServices.RuntimeHelpers
-				.GetUninitializedObject(typeof(RequestContext<CallToolRequestParams>));
-		context.Params = new CallToolRequestParams { Name = ProbeToolType.ToolName, Arguments = arguments };
+		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
+			ProbeToolType.ToolName,
+			arguments);
 		context.MatchedPrimitive = tool;
 		return await tool.InvokeAsync(context, CancellationToken.None);
 	}

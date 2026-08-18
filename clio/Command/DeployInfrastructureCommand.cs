@@ -46,6 +46,7 @@ public class DeployInfrastructureCommand(IProcessExecutor processExecutor, ILogg
 	#endregion
 
 	internal int CleanupOrphanedPersistentVolumesMaxAttempts = 5;
+	internal int OrphanedPersistentVolumeStabilizationDelay = 2_000;
 	internal int PodDelay = 5_000;
 	internal int RetryDelay = 1000;
 	internal int VerifyPostgresConnectionDelaySeconds = 3;
@@ -67,7 +68,7 @@ public class DeployInfrastructureCommand(IProcessExecutor processExecutor, ILogg
 				// Always check for orphaned PersistentVolumes
 				// They can appear after namespace deletion and prevent new PVC binding
 				// Wait a moment for Released PV status to stabilize
-				Thread.Sleep(2000);
+				Thread.Sleep(OrphanedPersistentVolumeStabilizationDelay);
 				logger.WriteInfo("Checking for orphaned PersistentVolumes...");
 				CleanupOrphanedPersistentVolumes();
 

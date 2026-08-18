@@ -202,17 +202,12 @@ public sealed class ClioRunExecutor(
 		// ({"args":{"args":{…}}}) and break deserialization. Protocol `_meta` (incl. the progress token,
 		// which RequestParams exposes as a read-only view over Meta["progressToken"]) is NOT copied here:
 		// DispatchAsync is the single owner of Meta forwarding for BOTH callers, so it carries the caller's
-		// Meta onto childParams just before dispatch. Task-augmentation metadata is copied here because
-		// DispatchAsync does not touch it.
+		// Meta onto childParams just before dispatch. The SDK 2.x Tasks extension is intentionally not
+		// registered by clio, so no Tasks-specific request state exists to forward here.
 		CallToolRequestParams originalParams = callContext.Params;
 		CallToolRequestParams childParams = new() {
 			Name = canonicalName,
-			Arguments = originalParams?.Arguments,
-#pragma warning disable MCPEXP001 // Task-augmentation metadata is SDK-experimental; copied verbatim so a
-			// task-augmented direct call keeps its task identity through the forgiving dispatch. If the SDK
-			// removes/renames the property this assignment is the single line to update.
-			Task = originalParams?.Task
-#pragma warning restore MCPEXP001
+			Arguments = originalParams?.Arguments
 		};
 		CallToolResult result = await DispatchAsync(tool, canonicalName, childParams, callContext, cancellationToken)
 			.ConfigureAwait(false);
@@ -238,7 +233,7 @@ public sealed class ClioRunExecutor(
 		// This is the SINGLE owner of _meta forwarding for BOTH callers (the clio-run entry path and
 		// InvokeResolvedAsync) — do not delete it, and do not re-add a Meta copy at either call site.
 		// clio-run builds childParams via BuildChildParams, which constructs a fresh CallToolRequestParams
-		// (Name + Arguments only) with a null Meta; InvokeResolvedAsync builds it with Name/Arguments/Task
+		// (Name + Arguments only) with a null Meta; InvokeResolvedAsync also builds Name/Arguments only
 		// but deliberately leaves Meta to this line. Without it the caller's ProgressToken — which
 		// RequestParams exposes as a read-only view over Meta["progressToken"] — is dropped, and any
 		// notifications/progress a dispatched tool emits (e.g. deploy-creatio / uninstall-creatio typed stage
@@ -264,7 +259,7 @@ public sealed class ClioRunExecutor(
 			// (mirrors McpToolErrorFilter; SensitiveErrorTextRedactor is the single redaction rule).
 			// A fatal/programming-defect exception (OOM/NRE/…) is NOT masked as a tool failure here — it
 			// propagates to the top-level request boundary (McpToolErrorFilter).
-			return Error($"Error: tool '{toolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
+			return Error($"Error: tool '{toolName}' failed: {SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(ex))}");
 		}
 		finally {
 			callContext.Params = originalParams;
@@ -453,15 +448,10 @@ public sealed class ClioRunExecutor(
 
 	private static bool IsErrorFieldName(string key) => FailureFieldNames.Contains(key);
 
-	// Unwraps to the inner-most exception's message so the surfaced detail is the actual failure cause
-	// rather than a generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.
-	private static string GetInnermostMessage(Exception ex) {
-		Exception current = ex;
-		while (current.InnerException is not null) {
-			current = current.InnerException;
-		}
-		return current.Message;
-	}
+	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with McpToolErrorFilter so a
+	// nested clio-run dispatch surfaces exactly the same text as a direct tool call (ENG-93365).
+	private static string GetSurfacedMessage(Exception ex) =>
+		Clio.Common.SurfacedExceptionMessage.Resolve(ex);
 
 	// Recovers the real (command, args) pair from the WRAPPED call shape an agent sends when it treats
 	// clio-run like a single-`args`-record tool. Two wrapped variants are handled:

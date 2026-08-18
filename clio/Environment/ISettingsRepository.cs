@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using System;
 using Clio.Common.db;
 using Clio.Common.DbHub;
 using Clio.Command.McpServer.Knowledge;
@@ -7,10 +8,44 @@ using Clio.Command.McpServer.Knowledge;
 namespace Clio.UserEnvironment
 {
 	/// <summary>
+	/// Outcome of an explicit <see cref="ISettingsRepository.Reload"/> call.
+	/// </summary>
+	/// <param name="Reloaded">
+	/// <c>true</c> when the in-memory settings were replaced with the file content;
+	/// <c>false</c> when the file could not be read and the previously loaded settings remain in use.
+	/// </param>
+	/// <param name="Report">
+	/// The bootstrap report produced while reading the file, or <c>null</c> when reading threw.
+	/// Callers that need a fresh report should use this value instead of asking
+	/// <see cref="ISettingsBootstrapService"/> again — that would read the file a second time.
+	/// </param>
+	/// <param name="Warning">
+	/// A human- and agent-readable explanation of why the reload was skipped, or <c>null</c> on success.
+	/// </param>
+	public sealed record SettingsReloadResult(bool Reloaded, SettingsBootstrapReport? Report, string? Warning);
+
+	/// <summary>
 	/// Provides access to persisted clio settings and registered environment definitions.
 	/// </summary>
 	public interface ISettingsRepository
 	{
+		/// <summary>
+		/// Re-reads <c>appsettings.json</c> and replaces the in-memory settings snapshot taken when this
+		/// repository was constructed.
+		/// </summary>
+		/// <remarks>
+		/// Reads on this repository are served from the snapshot, so a long-lived host (the MCP server)
+		/// otherwise answers with the environment list as it was at process start. Reloading is an
+		/// EXPLICIT step rather than a side effect of every read: each reload takes the cross-process
+		/// settings file lock and deserializes the whole file, which must not be charged to every
+		/// settings getter of every command. Call it where a stale environment list is observable —
+		/// the <c>list-environments</c> tool and the MCP environment-resolution path.
+		/// A corrupt, unreadable or missing file never throws here: the previously loaded settings stay
+		/// in use and the reason is returned as <see cref="SettingsReloadResult.Warning"/>.
+		/// </remarks>
+		/// <returns>The reload outcome, including a warning when the file could not be read.</returns>
+		SettingsReloadResult Reload();
+
 		/// <summary>
 		/// Gets the path to the clio appsettings file.
 		/// </summary>
@@ -271,6 +306,20 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <param name="defaults">The defaults to persist, or <c>null</c>/empty to clear them.</param>
 		void SetDeployCreatioDefaults(DeployCreatioDefaults defaults);
+
+		/// <summary>Gets a detached snapshot of the configured agent knowledge-feedback policy.</summary>
+		/// <returns>The configured policy, or safe ask/sanitized defaults when absent.</returns>
+		KnowledgeFeedbackSettings GetKnowledgeFeedbackSettings();
+
+		/// <summary>Atomically persists the agent knowledge-feedback policy and standing approval.</summary>
+		/// <param name="settings">The complete validated policy to persist.</param>
+		void SetKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings);
+
+		/// <summary>Atomically updates the latest knowledge-feedback policy under the settings lock.</summary>
+		/// <param name="mutation">Mutation applied to a detached latest snapshot.</param>
+		/// <returns>The persisted detached snapshot.</returns>
+		KnowledgeFeedbackSettings UpdateKnowledgeFeedbackSettings(
+			Func<KnowledgeFeedbackSettings, KnowledgeFeedbackSettings> mutation);
 
 		/// <summary>Gets the preferred LocalMachine/My certificate thumbprint for IIS HTTPS deployment.</summary>
 		/// <returns>The normalized thumbprint, or <c>null</c> when no preference is configured.</returns>

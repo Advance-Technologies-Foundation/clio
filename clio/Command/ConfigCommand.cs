@@ -10,9 +10,9 @@ namespace Clio.Command;
 /// <summary>
 /// Options for the <c>config</c> command, which views and sets clio-wide defaults that are applied when a
 /// command is run without the matching option. Currently manages the <c>deploy-creatio</c> defaults used by
-/// the Windows Explorer context-menu action.
+/// the Windows Explorer context-menu action and the knowledge-feedback standing approval used by agents.
 /// </summary>
-[Verb("config", HelpText = "View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)")]
+[Verb("config", HelpText = "View and set deploy-creatio defaults and agent knowledge-feedback approval")]
 public class ConfigOptions {
 
 	/// <summary>
@@ -54,6 +54,21 @@ public class ConfigOptions {
 		HelpText = "Default deployment method for deploy-creatio: auto|iis|dotnet.")]
 	public string DeployDeployment { get; set; }
 
+	/// <summary>Gets or sets agent feedback mode: <c>ask</c>, <c>auto</c>, or <c>off</c>.</summary>
+	[Option("knowledge-feedback-mode", Required = false,
+		HelpText = "Knowledge-feedback mode: ask|auto|off. Setting auto approves the current reporting-policy guidance hash.")]
+	public string KnowledgeFeedbackMode { get; set; }
+
+	/// <summary>Gets or sets the exact GitHub repository URL used for knowledge-feedback issues.</summary>
+	[Option("knowledge-feedback-destination", Required = false,
+		HelpText = "Exact credential-free HTTPS GitHub repository URL for knowledge-feedback issues.")]
+	public string KnowledgeFeedbackDestination { get; set; }
+
+	/// <summary>Gets or sets feedback report detail: <c>full</c> or <c>sanitized</c>.</summary>
+	[Option("knowledge-feedback-reporting-scope", Required = false,
+		HelpText = "Knowledge-feedback report detail: full|sanitized.")]
+	public string KnowledgeFeedbackReportingScope { get; set; }
+
 	/// <summary>
 	/// Gets or sets a value indicating whether the stored deploy-creatio defaults should be cleared.
 	/// </summary>
@@ -78,6 +93,7 @@ public class ConfigCommand : Command<ConfigOptions> {
 	private const int MaxSitePort = 65535;
 
 	private readonly ISettingsRepository _settingsRepository;
+	private readonly IKnowledgeFeedbackPolicyService _feedbackPolicyService;
 	private readonly ILogger _logger;
 
 	/// <summary>
@@ -85,8 +101,13 @@ public class ConfigCommand : Command<ConfigOptions> {
 	/// </summary>
 	/// <param name="settingsRepository">The settings repository backing the configuration defaults.</param>
 	/// <param name="logger">The logger used for all command output.</param>
-	public ConfigCommand(ISettingsRepository settingsRepository, ILogger logger) {
+	/// <param name="feedbackPolicyService">Resolves and persists knowledge-feedback policy.</param>
+	public ConfigCommand(
+		ISettingsRepository settingsRepository,
+		IKnowledgeFeedbackPolicyService feedbackPolicyService,
+		ILogger logger) {
 		_settingsRepository = settingsRepository;
+		_feedbackPolicyService = feedbackPolicyService;
 		_logger = logger;
 	}
 
@@ -114,20 +135,42 @@ public class ConfigCommand : Command<ConfigOptions> {
 			return 1;
 		}
 
-		DeployCreatioDefaults defaults = _settingsRepository.GetDeployCreatioDefaults();
-		ApplySetArguments(defaults, options);
-		_settingsRepository.SetDeployCreatioDefaults(defaults);
-		_logger.WriteInfo("Deploy-creatio defaults were updated.");
+		try {
+			if (HasKnowledgeFeedbackSetArguments(options)) {
+				_feedbackPolicyService.Configure(new KnowledgeFeedbackPolicyUpdate(
+					options.KnowledgeFeedbackMode,
+					options.KnowledgeFeedbackDestination,
+					options.KnowledgeFeedbackReportingScope));
+				_logger.WriteInfo("Knowledge-feedback policy was updated.");
+			}
+			if (HasDeploySetArguments(options)) {
+				DeployCreatioDefaults defaults = _settingsRepository.GetDeployCreatioDefaults();
+				ApplySetArguments(defaults, options);
+				_settingsRepository.SetDeployCreatioDefaults(defaults);
+				_logger.WriteInfo("Deploy-creatio defaults were updated.");
+			}
+		} catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) {
+			_logger.WriteError(exception.Message);
+			return 1;
+		}
 		ShowDefaults();
 		return 0;
 	}
 
 	private static bool HasSetArguments(ConfigOptions options) =>
+		HasDeploySetArguments(options) || HasKnowledgeFeedbackSetArguments(options);
+
+	private static bool HasDeploySetArguments(ConfigOptions options) =>
 		!string.IsNullOrWhiteSpace(options.DeployDbServerName)
 		|| !string.IsNullOrWhiteSpace(options.DeployRedisServerName)
 		|| !string.IsNullOrWhiteSpace(options.DeploySiteName)
 		|| options.DeploySitePort.HasValue
 		|| !string.IsNullOrWhiteSpace(options.DeployDeployment);
+
+	private static bool HasKnowledgeFeedbackSetArguments(ConfigOptions options) =>
+		!string.IsNullOrWhiteSpace(options.KnowledgeFeedbackMode)
+		|| options.KnowledgeFeedbackDestination is not null
+		|| options.KnowledgeFeedbackReportingScope is not null;
 
 	private bool TryValidateDeploymentMethod(string deploymentMethod) {
 		if (string.IsNullOrWhiteSpace(deploymentMethod)) {
@@ -177,18 +220,29 @@ public class ConfigCommand : Command<ConfigOptions> {
 		DeployCreatioDefaults defaults = _settingsRepository.GetDeployCreatioDefaults();
 		if (defaults.IsEmpty) {
 			_logger.WriteInfo("No deploy-creatio defaults are configured.");
-			return;
+		} else {
+			ConsoleTable table = new() {
+				Columns = { "Deploy-creatio default", "Value" },
+			};
+			table.Rows.Add(["db-server-name", defaults.DbServerName ?? string.Empty]);
+			table.Rows.Add(["redis-server-name", defaults.RedisServerName ?? string.Empty]);
+			table.Rows.Add(["site-name", defaults.SiteName ?? string.Empty]);
+			table.Rows.Add(["site-port", defaults.SitePort?.ToString() ?? string.Empty]);
+			table.Rows.Add(["deployment", defaults.DeploymentMethod ?? string.Empty]);
+			_logger.PrintTable(table);
 		}
 
-		ConsoleTable table = new() {
-			Columns = { "Deploy-creatio default", "Value" },
+		KnowledgeFeedbackPolicy feedback = _feedbackPolicyService.GetPolicy();
+		ConsoleTable feedbackTable = new() {
+			Columns = { "Knowledge-feedback setting", "Value" },
 		};
-		table.Rows.Add(["db-server-name", defaults.DbServerName ?? string.Empty]);
-		table.Rows.Add(["redis-server-name", defaults.RedisServerName ?? string.Empty]);
-		table.Rows.Add(["site-name", defaults.SiteName ?? string.Empty]);
-		table.Rows.Add(["site-port", defaults.SitePort?.ToString() ?? string.Empty]);
-		table.Rows.Add(["deployment", defaults.DeploymentMethod ?? string.Empty]);
-		_logger.PrintTable(table);
+		feedbackTable.Rows.Add(["configured-mode", feedback.ConfiguredMode]);
+		feedbackTable.Rows.Add(["effective-mode", feedback.EffectiveMode]);
+		feedbackTable.Rows.Add(["destination", feedback.Destination]);
+		feedbackTable.Rows.Add(["reporting-scope", feedback.ReportingScope]);
+		feedbackTable.Rows.Add(["reporting-policy-hash", feedback.ReportingPolicyHash ?? string.Empty]);
+		feedbackTable.Rows.Add(["approval-state", feedback.ApprovalState]);
+		_logger.PrintTable(feedbackTable);
 	}
 
 }

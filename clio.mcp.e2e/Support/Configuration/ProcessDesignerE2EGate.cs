@@ -11,7 +11,7 @@ namespace Clio.Mcp.E2E.Support.Configuration;
 /// (<c>create</c>/<c>modify</c>/<c>describe-business-process</c>, <c>list-user-tasks</c>,
 /// <c>validate-process-graph</c>) are <c>[FeatureToggle("process-designer")]</c>-gated, so the clio MCP
 /// server does NOT advertise them while the feature is off — which is the default until the
-/// clioprocessbuilder package ships. These fixtures therefore <see cref="Assert.Ignore(string)"/> (skip)
+/// CrtProcessBuilder package ships. These fixtures therefore <see cref="Assert.Ignore(string)"/> (skip)
 /// rather than fail when the feature is disabled, exactly like the reachable-environment gate. Enable the
 /// feature (<c>clio experimental --name process-designer --enable</c>) on the stand's clio settings to run them.
 /// </summary>
@@ -20,7 +20,7 @@ internal static class ProcessDesignerE2EGate {
 
 	/// <summary>
 	/// NUnit category carried by every process-designer E2E fixture. CI lanes that must not even discover
-	/// these tests (the feature ships with the clioprocessbuilder package, not the default stand) exclude
+	/// these tests (the feature ships with the CrtProcessBuilder package, not the default stand) exclude
 	/// them at the runner level: <c>dotnet test --filter "TestCategory!=McpE2E.ProcessDesigner"</c>.
 	/// </summary>
 	public const string CategoryName = "McpE2E.ProcessDesigner";

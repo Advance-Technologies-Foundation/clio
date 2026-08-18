@@ -2501,6 +2501,107 @@ stories:
       - story-sync-schemas-verify-resume-2
     blocks: []
 
+  # --- deliver-process-builder-package stories (ENG-94385) - added 2026-08-05 ---
+  # SPEC route (< 5 stories, see the AGENTS.md routing table), so there are no per-story files:
+  # spec/prd/spec-deliver-process-builder-package.md carries the FRs/ACs, the ADR carries the decision,
+  # and spec/deliver-process-builder-package/deliver-process-builder-package-plan.md carries the
+  # experiment log, cost ledger and the four dead hypotheses. Same shape as story-mcp-resident-tool-flag-1.
+  # Status review as of 2026-08-06: the pre-PR review gate ran a full 3-lens fan-out over the complete
+  # diff against master (no Blocker; 3 High, all in the MCP wrapper, all fixed in e1681a38), the full unit
+  # suite is green, and both PRs are open — clio on feature/ENG-94385-bundle-process-builder-package and the
+  # package side at https://creatio.ghe.com/engineering/cli-process-builder/pull/18. The clio PR pins the
+  # archive produced from that branch by SHA-256, so the two land together.
+  # Test plan: spec/test-plans/tp-deliver-process-builder-package.md (written after implementation — it maps
+  # the delivered coverage and states the gaps rather than forecasting).
+  # Status review as of 2026-08-10 (SUPERSEDED by the line below, kept for the record): still `review`. Reviewer findings on the open PR drove four further
+  # commits, and TWO of them fixed defects introduced by the fix before them — the bundled-version suffix
+  # rule was placed wrongly twice (first in the reader, which blinded the downgrade guard; then in the
+  # install command alone, which let convergence dead-end every gated tool). Both wrong placements passed
+  # their own tests and a full 3-lens round, so a second review round was run explicitly and is what caught
+  # them. See the 2026-08-10 diary entry for the generalisation. Full unit suite green (8715).
+  # NOT done and deliberately out of scope, recorded so they are not mistaken for oversights: the
+  # install-application path installs any .gz with no version comparison at all (pre-existing, but it hands
+  # an agent an unguarded equivalent of the override install-process-builder withholds); the two DLLs in the
+  # archive have no per-file content pin, and the whole-archive SHA is refreshed by the rebundle script
+  # itself; and untrusted version text is sanitised at each consumer rather than at the RequiredPackageChecker
+  # boundary where it enters.
+  # MERGED 2026-08-10: clio#1012 -> master as cc14f635, and the package side cli-process-builder#18 -> main
+  # thirteen seconds apart, so the archive and the commit its SHA pin names landed together. The four rows
+  # below therefore read `done` per the AGENTS.md rule; the narrative above predates the merge.
+  # A FOLLOW-UP is in flight on feature/ENG-94385-post-merge-review-followup: the pre-merge three-lens gate
+  # produced findings that were not applied before merging, and it applies them on top of master — an
+  # allowlist pinning what the bundled archive may contain (nothing that EXECUTES on install), both refusals
+  # no longer handing an agent the --force literal, help/docs no longer presenting five MCP-only tools as CLI
+  # commands, a guard against reintroducing the deleted version constant, and a ceiling so a stuck
+  # configuration-build reservation cannot wedge a tenant for the life of the MCP server process. The stories
+  # stay `done` — their scope shipped — but do not read `done` as "nothing outstanding here".
+
+  - id: story-deliver-process-builder-package-1
+    title: "Bundle the source-only CrtProcessBuilder archive into the clio distribution"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: M
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-01, FR-02]
+    ac: [AC-02]
+    status_note: "BundledPackages.cs as the single source of truth; CrtProcessBuilder.gz (190,195 bytes) committed with a csproj Content glob and *.gz marked binary. guard tests pin the archive SHA-256, the descriptor identity (UId/name/version/ModifiedOnUtc side by side, so a hand edit that moves the version without the date fails here) with the version read through the production BundledPackageCatalog, the compile-marker SCHEMA descriptor's own ModifiedOnUtc (the one field that has actually shipped wrong - local time in a UTC-labelled field - and set-pkg-version does not touch it), the load-bearing compile-marker schema, the absence of any compiled assembly, the sources, the Ping operation and its wire envelope (PingResult / Name=\"success\" / BodyStyle - the whole install verdict rests on these two tokens), an EXACT [OperationContract] count plus an explicit ungated allowlist (a gate-count floor cannot see a new ungated endpoint arriving), the authorization gate inside the shipped code (operation AND connection-type halves), and the friend-assembly condition. Package version reset to 1.0.0.0 for its first release. Package renamed clioprocessbuilder -> CrtProcessBuilder in the ProcessBuilder repo with the UId preserved. Rebundling goes through rebundle-process-builder.ps1, which also verifies the archive INVENTORY (both compile references present, own assembly absent, exactly two dlls) - the one property the byte-level pins here structurally cannot check, because filenames are UTF-16 in the container."
+    depends_on: []
+    blocks:
+      - story-deliver-process-builder-package-2
+
+  - id: story-deliver-process-builder-package-2
+    title: "install-process-builder command and MCP tool, verifying the outcome not the install call"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: M
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-03, FR-04, FR-05, FR-06, FR-07, FR-09, FR-10, FR-11]
+    ac: [AC-03, AC-04]
+    status_note: "The check is LIVENESS, not identity: the command calls the package's ungated Ping and fails unless it answers. A version-reporting operation was built, shipped for a day and DROPPED - every carrier was eliminated by measurement (the platform stamps its own assembly version over the csproj's; descriptor.json is absent from the target's build directory; a before/after delta reports failure on a normal re-install). So a failed UPGRADE, where the previously built assembly still answers, is NOT caught - an accepted limit disclosed on every caller-facing surface. Verified live on a .NET Framework stand against the current archive: install exit 0, list-packages records 1.0.0.0, Ping returns success, and the pre-rename GetApiVersion route 404s. The earlier two-runtime verification predates the rename and several repacks and is NOT re-proven. No duration is quoted anywhere: elapsed time belongs to the target, and a range on the MCP surface was read out and repeated to a user as a promise. The restart comes from a different place on each runtime and outlives the install call, so IServerReadinessWaiter sits between installing and probing. command tests covering every exit path, including the downgrade guard added later (refuse, --force, same-version repair, and the three fail-open branches) + 11 verifier tests + 8 tool tests, including the post-deadline stderr report, which is the sole failure signal once the caller has been answered."
+    depends_on:
+      - story-deliver-process-builder-package-1
+    blocks:
+      - story-deliver-process-builder-package-3
+
+  - id: story-deliver-process-builder-package-3
+    title: "Detect the missing-or-stale package and name the remediation on both surfaces"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: S
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-08, FR-12]
+    ac: [AC-01, AC-05, AC-06]
+    status_note: "5 presence-only [RequiresPackage] sites with a Hint naming both the CLI verb and the MCP tool, plus a separate IBundledPackageConvergence rule that refuses an environment behind the shipped archive (adr-bundled-package-version-source-of-truth); BaseTool now returns FromValidationError (exit 1) for PackageRequirementException instead of FromError (-1); process-modeling guidance carries the ORDER OF CHECKS rule so an agent never proposes an install before establishing the buildable slice; clio info reports the bundled version, and both info doc surfaces now show that line - command output is a mandatory doc-review trigger and it had been missed."
+    depends_on:
+      - story-deliver-process-builder-package-2
+    blocks:
+      - story-deliver-process-builder-package-4
+
+  - id: story-deliver-process-builder-package-4
+    title: "Docs, MCP contract and stand-free MCP E2E coverage"
+    feature: "deliver-process-builder-package"
+    repo: "clio"
+    size: S
+    status: done
+    jira: ENG-94385
+    prd: spec/prd/spec-deliver-process-builder-package.md
+    adr: spec/adr/adr-deliver-process-builder-package.md
+    fr: [FR-11]
+    ac: [AC-05]
+    status_note: "help/en + docs/commands + Commands.md + WikiAnchors + McpCapabilityMap hand-written because clio __generate-help-artifacts is broken (it rewrote ~130 files, deleted 7, and mangles verb aliases - chip filed). 3 stand-free E2E tests; a real-install fixture was deliberately NOT shipped, see SPEC section 7. The reachability test now also pins WHICH path applies (the tool is deliberately non-resident, so it is reached through the curated contract index rather than tools/list) - asserting only that the name is reachable was satisfied by the index union and would have stayed green if the tool were feature-gated. The curated contract's flow note had reasserted the removed version comparison past two guards that banned a PHRASE rather than a CLAIM; both guards now ban the capability verb AND require the limit to be stated."
+    depends_on:
+      - story-deliver-process-builder-package-3
+    blocks: []
+
   - id: story-process-executor-stream-drain-timeout-1
     title: "Bound redirected stream draining by the process operation timeout"
     feature: "process-executor-stream-drain-timeout"
@@ -2513,4 +2614,107 @@ stories:
     adr: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-adr.md
     test_plan: spec/process-executor-stream-drain-timeout/process-executor-stream-drain-timeout-test-plan.md
     depends_on: []
+    blocks: []
+
+  # --- process-element-connections (activity "Connected to") ---
+  # Analysis complete; every research fact closed. 10 decisions taken (D1, D1a, D2, D3, D6, D7, D8, D9, D10, D11)
+  # — see spec/adr/adr-process-element-connections.md. D8 was taken during story 4. Still open and NOT blocking
+  # any shipped story: D4, D5, D12.
+  # Key measured premise: the shipped `addMapping` already writes a connection end to end (plan §5.1), so this
+  # feature is enforcement + ergonomics + read-back, not new capability. Per D1, stories 1-3 are ONE delivery.
+  - id: story-process-element-connections-1
+    title: "The connections knowledge layer — catalog, capability rule, deprecation predicate"
+    feature: "process-element-connections"
+    repo: "ProcessBuilder"
+    size: M
+    status: done
+    jira: ENG-91845
+    pr: engineering/crt-process-builder#21
+    file: spec/stories/story-process-element-connections-1.md
+    prd: spec/process-element-connections/process-element-connections-plan.md
+    adr: spec/adr/adr-process-element-connections.md
+    status_note: "EntityConnection* names, not ActivityConnection* (D2); host entity is an internal seam defaulting to Activity and the tag is DERIVED, never the literal (Activity has a column of that exact name). ConnectionCapability owns both the allow-list and the D3 effectiveness rule — manual-send email must evaluate EFFECTIVE (ManualEmailUserTaskSender has no gate). UserTaskDeprecationPolicy lives OUTSIDE ConnectionCapability and needs the metadata fallback (FindInstanceByUId ?? FindInstanceFromMetaData): without it the predicate silently returns Advanced for everything. Unit layer is writable (mock lookup columns carry non-empty UId/ReferenceSchemaUId) but Caption is EMPTY — no test may assert caption content."
+    depends_on: []
+    blocks:
+      - story-process-element-connections-2
+      - story-process-element-connections-3
+
+  - id: story-process-element-connections-2
+    title: "Read side — the hybrid connection reader and the describe projection"
+    feature: "process-element-connections"
+    repo: "ProcessBuilder"
+    size: M
+    status: done
+    jira: ENG-91845
+    pr: engineering/crt-process-builder#21
+    file: spec/stories/story-process-element-connections-2.md
+    prd: spec/process-element-connections/process-element-connections-plan.md
+    adr: spec/adr/adr-process-element-connections.md
+    status_note: "D11 hybrid: emit BOTH the raw persisted value and a decoded source in exactly the shape setConnections accepts. Cross-reference by uid works for the two [Parameter:…] dialects but is INAPPLICABLE to [#Lookup.{schemaUId}.{recordId}#] — neither GUID appears anywhere in the payload, and there is no displayValue to fall back on. Decoder never fails and never half-decodes; unknown macros degrade to expression. New pinned acceptance: describe -> setConnections -> describe round-trip PER DIALECT plus one unrecognised-macro case. Mirror FilterDescriptorReader."
+    depends_on:
+      - story-process-element-connections-1
+    blocks:
+      - story-process-element-connections-4
+
+  - id: story-process-element-connections-3
+    title: "Write side — setConnections / clearConnections, guards, three-state diagnosis"
+    feature: "process-element-connections"
+    repo: "ProcessBuilder"
+    size: L
+    status: done
+    jira: ENG-91845
+    pr: engineering/crt-process-builder#21
+    file: spec/stories/story-process-element-connections-3.md
+    prd: spec/process-element-connections/process-element-connections-plan.md
+    adr: spec/adr/adr-process-element-connections.md
+    status_note: "D1a: setConnections is an UPSERT keyed on `column` — columns absent from the request are left untouched; clearing is only ever explicit. Replace semantics were rejected because a caller sending only Account would silently clear Contact, and a cleared connection (Source = None) is filtered out of describe, so the damage would be invisible in the artefact meant to verify it. Changing an existing connection, including across dialects, is the same call with a new source (the platform's SourceValue setter replaces by FindByTargetUId, so no duplicate accumulates). Guards refuse rather than ignore, and none may reach describe. The `expression` escape hatch gets the type check it currently lacks (BuildSourceValue stores it verbatim). D6: no Activity column is created here — refuse with state (1) and name story 5."
+    depends_on:
+      - story-process-element-connections-1
+    blocks:
+      - story-process-element-connections-4
+
+  - id: story-process-element-connections-4
+    title: "clio surface — MCP contract, guidance, rebundle, E2E"
+    feature: "process-element-connections"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-91845
+    pr: 1027
+    file: spec/stories/story-process-element-connections-4.md
+    prd: spec/process-element-connections/process-element-connections-plan.md
+    adr: spec/adr/adr-process-element-connections.md
+    status_note: "Wire field is `connections`, never activityConnections and no host member (D2) — that is what keeps a future host entity ADDITIVE. D8 detector is MANDATORY, not defensive: measured on a live stand, a request carrying a future-shaped connections array is answered normally with the member SILENTLY IGNORED (no IExtensibleDataObject across all DataContract types (25 when measured, 27 after this feature)), and [RequiresPackage] is presence-only with a pin test asserting the ABSENCE of a version literal. Guidance is guidance/mcp/guides/processes/process-modeling.md (316 lines at the time of analysis, reachable via gh api not WebFetch); it said NOTHING about connections, and clio-knowledge#50 is the PR that fixes that — seven passages pinned to lines, incl. 289 where the article itself states you cannot guess the Lookup ids. E2E: the process-designer surface is 43 tests across 9 files; Describe has only 2 today and gains six round-trip cases."
+    depends_on:
+      - story-process-element-connections-2
+      - story-process-element-connections-3
+    blocks: []
+
+  - id: story-process-element-connections-5
+    title: "Making a section connectable — the registration recipe and the cache-reset artifact"
+    feature: "process-element-connections"
+    repo: "clio"
+    size: M
+    status: in-progress
+    jira: ENG-91845
+    file: spec/stories/story-process-element-connections-5.md
+    prd: spec/process-element-connections/process-element-connections-plan.md
+    adr: spec/adr/adr-process-element-connections.md
+    status_note: "Deliberately independent of stories 1-4: D6 puts data-model mutation outside CrtProcessBuilder. Mostly COMPOSITION of capabilities clio already ships — update-entity-schema (adds the lookup column, publishes, rebuilds OData) + add-package-dependency (CrtCoreBase) + create-data-binding/add-data-binding-row (registry row, byte-equivalent to the 7.x wizard's artefact). Believed at analysis time to be the ONLY genuinely new code: cache invalidation (RE-SCOPED during story 5 — the runtime write channel never reads the registry, so this is ergonomics for the designer, not correctness; the shipped new code is the AC-02 cross-package pre-check) (ProcessUserTaskSchemaManager.reset): without it the designer shows the old list even after a compile, which is why the unofficial add-column-INSERT-compile recipe fails in practice. Needs a same-name pre-check — a colliding column breaks Activity for the WHOLE environment via a codegen ValidateException. One thing to verify once: that update-entity-schema cleanly ADDS a column to Activity (its docs cover inherited-column edits, which is a different operation). Carries its own AC-08 (the gap story 4 could not close; note story 4 has a DIFFERENT AC-08, the E2E-budget one): this is the first point at which the CREATED-parameter runtime tail can be verified at all, because ResolveColumn refuses a host column that is neither registered nor element-declared, so the created path needs a registered-but-undeclared column and this recipe is what produces one."
+    depends_on: []
+    blocks: []
+
+  - id: story-process-element-connections-6
+    title: "SysVariable connections — the write-time refusal, its rebundle and the E2E that can only follow it"
+    feature: "process-element-connections"
+    repo: "ProcessBuilder+clio"
+    size: S
+    status: in-progress
+    jira: ENG-91845
+    file: spec/stories/story-process-element-connections-6.md
+    prd: spec/process-element-connections/process-element-connections-plan.md
+    adr: spec/adr/adr-process-element-connections.md
+    status_note: "Follow-up found by reviewing a real session, not by planning: setConnections accepted any [#...#] token, so a SUCCESSFUL write told the caller nothing and the caller hedged. The package now refuses a [#SysVariable...#] whose name does not resolve through SystemValueManager or whose value type is not Guid (crt-process-builder, EntityConnectionBinder.EnsureCompatibleSystemVariable) — checkable, unlike the [#SysSettings...#] residual, because the vocabulary is compiled into the platform and an unknown name breaks CODE GENERATION rather than merely writing nothing. Docs/guidance for the three usable variables shipped first and deliberately describe BOTH behaviours, since an older CrtProcessBuilder on the environment keeps the unchecked one. OPEN AND MANDATORY: clio.mcp.e2e coverage for the two refusals (unknown name, non-record type) CANNOT be written until the rebundle lands — the bundled package is resolved from the BUILD OUTPUT, so the E2E would exercise the old assembly and pass vacuously. Sequence is fixed: merge the package PR, rebundle from the merged sources (never from a working tree), re-pin ExpectedArchiveSha256 + ExpectedDescriptorModifiedOnUtc, THEN add the E2E. Also open, deliberately deferred pending measurement: the variable-to-entity check (a Contact variable on an Account column), which needs a table the platform exposes only client-side — until it exists AutoGuid/SequentialGuid pass the type check while generating a value rather than referencing a record."
+    depends_on:
+      - story-process-element-connections-3
     blocks: []

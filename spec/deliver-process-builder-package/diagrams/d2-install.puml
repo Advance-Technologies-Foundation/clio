@@ -1,0 +1,46 @@
+@startuml
+title install-process-builder - install and verify the outcome
+autonumber
+skinparam shadowing false
+
+actor "Developer / agent" as Dev
+participant "InstallProcessBuilderCommand" as Cmd
+participant "Bundled archive (.gz)" as FS
+participant "IPackageInstaller" as Inst
+participant "Creatio" as Crt
+participant "IServerReadinessWaiter" as Wait
+participant "ProcessDesignServiceOutcomeVerifier" as Ver
+
+Dev -> Cmd : install-process-builder -e env
+Cmd -> FS : is the archive present?
+alt archive missing
+  FS --> Cmd : no
+  Cmd --> Dev : "this clio distribution carries no archive,\nretrying will not help" (exit 1)
+end
+Cmd -> Inst : Install(gz, createBackup = true)
+note right of Cmd
+  DeveloperModeEnabled = false:
+  otherwise the unlock step routes
+  through cliogate and fails
+end note
+Inst -> Crt : upload + install package
+Crt -> Crt : configuration build\n(the package ships SOURCE ONLY)
+Crt --> Inst : archive accepted
+note over Crt
+  the platform restarts itself:
+  .NET Framework - workspace assembly changed
+  .NET - the installer issues the restart
+end note
+Cmd -> Wait : WaitForReady (health check, 600 s budget)
+Wait --> Cmd : the instance is back
+Cmd -> Ver : IsPackageOperational("CrtProcessBuilder")
+Ver -> Crt : POST /rest/ProcessDesignService/Ping
+note right of Ver
+  3 attempts, 5 s apart, 15 s timeout.
+  The operation is UNGATED - it proves
+  the build, not the caller's permissions
+end note
+Crt --> Ver : version of the assembly actually serving
+Ver --> Cmd : operational / diagnosis
+Cmd --> Dev : "Done" (exit 0) or diagnosis (exit 1)
+@enduml

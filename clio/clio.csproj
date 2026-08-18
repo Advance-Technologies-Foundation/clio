@@ -87,6 +87,17 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
+		<!-- The bundled process-builder package, installed by `install-process-builder`, which resolves it
+		     as <ExecutingDirectory>/CrtProcessBuilder/CrtProcessBuilder.gz. CopyToOutputDirectory places it
+		     in tools/{tfm}/any/ of the packed dotnet tool, which is where ExecutingDirectory points at
+		     runtime. Pack="false" suppresses the additional content/ and contentFiles/ copies that default
+		     Content packing would add — measured: without it the payload lands in five places instead of
+		     the two tools/ copies the install code actually reads. -->
+		<None Include="CrtProcessBuilder\**"/>
+		<Content Include="CrtProcessBuilder\**" Pack="false">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+
 		<Compile Remove="Wiki\**" />
 		<Content Include="Wiki\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -151,7 +162,15 @@
 		<PackageReference Include="YamlDotNet" />
 		<PackageReference Include="SharpZipLib" />
 		<PackageReference Include="JsonhCs" />
+		<!-- Keep the complete IdentityModel runtime family explicit so central version alignment
+		     applies to recursive dependencies from JwtBearer and Microsoft.Data.SqlClient too. -->
+		<PackageReference Include="Microsoft.IdentityModel.Abstractions" />
+		<PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+		<PackageReference Include="Microsoft.IdentityModel.Logging" />
+		<PackageReference Include="Microsoft.IdentityModel.Protocols" />
+		<PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" />
 		<PackageReference Include="Newtonsoft.Json" />
 		<PackageReference Include="Acornima" />
 		<PackageReference Include="Tomlyn" />

@@ -56,7 +56,6 @@ public interface IToolCommandResolver {
 public class ToolCommandResolver(
 	ISettingsRepository settingsRepository,
 	ISettingsBootstrapService settingsBootstrapService,
-	IInteractiveConsole interactiveConsole,
 	ICredentialContextAccessor credentialContextAccessor,
 	ITargetUrlValidator targetUrlValidator,
 	ISessionContainerCache sessionContainerCache) : IToolCommandResolver {
@@ -122,7 +121,7 @@ public class ToolCommandResolver(
 		(EnvironmentSettings settings, string cacheKey) = ResolveSettingsAndKey(options);
 		_lastResolvedTenantKey.Value = cacheKey;
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings));
+			() => new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer));
 		return container.GetRequiredService<TCommand>();
 	}
 
@@ -155,7 +154,15 @@ public class ToolCommandResolver(
 	// failures (settings.Fill, BindingsModule.Register, GetRequiredService) stay plain exceptions →
 	// exit code -1, so a real DI/wiring bug remains distinguishable from a bad environment name.
 	private (EnvironmentSettings Settings, string CacheKey) ResolveSettingsAndKey(EnvironmentOptions options) {
-		SettingsBootstrapReport bootstrapReport = settingsBootstrapService.GetReport();
+		// Re-read the settings file before matching the environment name. The host is long-lived, so the
+		// repository's constructor-time snapshot would otherwise reject an environment registered after
+		// process start (ENG-94529) — and it would keep routing to the OLD uri of an environment that was
+		// re-pointed since. This costs no extra file read: the bootstrap report below was already produced
+		// by a full disk read on every resolve, and the reload returns that same report. A file that
+		// cannot be read keeps the previous snapshot and reports status "broken" through the report, which
+		// the CanExecuteEnvTools checks below already handle.
+		SettingsReloadResult reload = settingsRepository.Reload();
+		SettingsBootstrapReport bootstrapReport = reload?.Report ?? settingsBootstrapService.GetReport();
 		EnvironmentSettings settings;
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
 			if (!bootstrapReport.CanExecuteEnvTools) {
@@ -167,10 +174,15 @@ public class ToolCommandResolver(
 			}
 			settings = settingsRepository.FindEnvironment(options.Environment)
 				?? throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
-			settings = settings.Fill(options, interactiveConsole);
+			// MCP command resolution is NEVER interactive (see ForceNonInteractiveConsole): Fill must use a
+		// non-interactive console too, or a Safe-flagged environment resolved over an mcp-http host started
+		// at a TTY would still deadlock on Console.ReadKey inside Fill (review RC-5). NonInteractiveConsole
+		// fails closed, so a Safe environment surfaces SafeEnvironmentConfirmationRequiredException instead.
+		settings = settings.Fill(options, NonInteractiveConsole.Shared);
 		}
 		else {
-			settings = new EnvironmentSettings().Fill(options, interactiveConsole);
+			// Non-interactive for the same reason as the other Fill sites (review RC-5).
+			settings = new EnvironmentSettings().Fill(options, NonInteractiveConsole.Shared);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
 					throw new EnvironmentResolutionException(
@@ -232,7 +244,7 @@ public class ToolCommandResolver(
 		// startup (BindingsModule.ValidateEnvironmentScopedGraph), so re-validating the full ~455-registration
 		// graph on every near-continuous rotating-token cache miss is pure startup-grade cost.
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings, validateGraph: false));
+			() => new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer, validateGraph: false));
 		return container.GetRequiredService<TCommand>();
 	}
 
@@ -333,8 +345,12 @@ public class ToolCommandResolver(
 				?? new EnvironmentSettings {
 					Login = DefaultIdentifier
 				};
-		settings = settings.Fill(options, interactiveConsole);
-		IServiceProvider container = new BindingsModule().Register(settings);
+		// MCP command resolution is NEVER interactive (see ForceNonInteractiveConsole): Fill must use a
+		// non-interactive console too, or a Safe-flagged environment resolved over an mcp-http host started
+		// at a TTY would still deadlock on Console.ReadKey inside Fill (review RC-5). NonInteractiveConsole
+		// fails closed, so a Safe environment surfaces SafeEnvironmentConfirmationRequiredException instead.
+		settings = settings.Fill(options, NonInteractiveConsole.Shared);
+		IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
 		return container.GetRequiredService<TCommand>();
 	}
 
@@ -343,9 +359,14 @@ public class ToolCommandResolver(
 	// distinct containers instead of colliding on a shared authenticated session. Secret material is
 	// SHA-256 hashed via the shared helper and never placed raw in the key (FR-11).
 	internal static string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
-		string identity = options.Environment
-			?? settings.Uri
-			?? DefaultIdentifier;
+		// The uri belongs in the identity, not just the name. An environment re-pointed to a new uri in
+		// appsettings.json keeps its name, so a name-only identity handed back the cached container whose
+		// IApplicationClient is still bound to the OLD uri — the settings reload would be undone by the
+		// cache (ENG-94529). Adding the uri only makes the key finer-grained: identical settings still
+		// share one authenticated session.
+		string identity = string.Concat(
+			options.Environment ?? DefaultIdentifier, "|",
+			settings.Uri ?? string.Empty);
 		string credentials = string.Concat(
 			settings.Login ?? string.Empty, "|",
 			settings.Password ?? string.Empty, "|",

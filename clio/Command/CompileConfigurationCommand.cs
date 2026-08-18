@@ -44,9 +44,19 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ICompilationHistoryPoller _compilationHistoryPoller;
 	private readonly ILogger _logger;
+	private readonly IInteractiveConsole _interactiveConsole;
 
 	private const string OdataProjName = "Terrasoft.Configuration.ODataEntities.csproj";
 	private const string DevProjName = "Terrasoft.Configuration.Dev.csproj";
+
+	/// <summary>
+	/// Heavy-operation warning shown on the interactive CLI before a site compilation (ENG-93157). Paired
+	/// with the <c>[Y/N]</c> prompt so the user can proceed now or postpone.
+	/// </summary>
+	internal const string SiteCompilationWarning =
+		"WARNING: Compilation is a heavy operation. It recompiles the site configuration and forces a " +
+		"runtime reload that may disrupt every user currently connected to this environment.";
+
 	private bool _compileAll;
 
 	private bool _isSuccess = false;
@@ -55,11 +65,13 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 
 	public CompileConfigurationCommand(IApplicationClient applicationClient,
 		EnvironmentSettings settings, IServiceUrlBuilder serviceUrlBuilder,
-		ICompilationHistoryPoller compilationHistoryPoller, ILogger logger)
+		ICompilationHistoryPoller compilationHistoryPoller, ILogger logger,
+		IInteractiveConsole interactiveConsole)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_compilationHistoryPoller = compilationHistoryPoller;
 		_logger = logger;
+		_interactiveConsole = interactiveConsole;
 	}
 
 	#endregion
@@ -69,6 +81,12 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		: _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Compile);
 
 	public override int Execute(CompileConfigurationOptions options) {
+		if (!_interactiveConsole.ConfirmHeavyOperation(options.IsSilent, SiteCompilationWarning, _logger, BuildPostponeHint(options))) {
+			// The user chose to postpone: nothing is compiled. Return the distinct DeclinedExitCode (not 0)
+			// so in-process callers (push-package --force-compilation) and shell chains can tell it apart
+			// from a successful compile. Only reachable on an interactive, non-silent terminal.
+			return InteractiveConsoleExtensions.DeclinedExitCode;
+		}
 		CompilationHistory baseline = _compilationHistoryPoller.GetBaseline();
 		_compileAll = options.All;
 		options.TimeOut = Timeout.Infinite;
@@ -95,6 +113,18 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			_logger.WriteLine("=================================================================================");
 		}
 		return _isSuccess ? execResult : 1;
+	}
+
+	/// <summary>
+	/// Builds the "how to run it later" hint shown when the user postpones the compilation, echoing the
+	/// exact <c>clio cc</c> invocation (with environment and <c>--all</c>) that reproduces the request.
+	/// </summary>
+	private static string BuildPostponeHint(CompileConfigurationOptions options) {
+		string environmentPart = string.IsNullOrWhiteSpace(options.Environment)
+			? string.Empty
+			: $" -e {options.Environment}";
+		string allPart = options.All ? " --all" : string.Empty;
+		return $"Compilation postponed. Nothing was compiled. Run it later with: clio cc{environmentPart}{allPart}";
 	}
 
 	private void LogRecord(CompilationHistory record) {

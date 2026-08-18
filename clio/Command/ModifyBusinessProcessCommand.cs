@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
+using ErrorOr;
 
 namespace Clio.Command;
 
@@ -11,7 +14,12 @@ namespace Clio.Command;
 /// Options for editing an existing business process via the ProcessDesignService package.
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
+// The version literal states what THIS command's code needs: the email block ships in the 1.2.0.1
+// bundle, and an older server has no email member and silently discards the block while answering
+// success. Presence alone cannot express that. The guard fixture asserts the shipped archive
+// satisfies this literal, so clio can never demand a version it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
+	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
 	public string ProcessName { get; set; } = string.Empty;
@@ -95,7 +103,8 @@ public sealed class ModifyBusinessProcessService(
 			throw new InvalidOperationException(result.ErrorMessage ?? "ModifyProcess failed.");
 		}
 
-		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations);
+		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
+			result.Warnings);
 	}
 
 	private static JsonArray ParseOperations(string operationsJson) {
@@ -133,6 +142,14 @@ public sealed class ModifyBusinessProcessService(
 
 		[JsonPropertyName("errorMessage")]
 		public string? ErrorMessage { get; set; }
+
+		// Declared because an UNDECLARED member is dropped without a trace, and what travels here is precisely
+		// the class of outcome a caller cannot otherwise see: a connection written to a column with no registry
+		// row (invisible in the designer and to every registry-reading feature), and a cleared binding, which
+		// vanishes from the read-back so that "cleared" and "never bound" become indistinguishable afterwards.
+		// Absent on an older CrtProcessBuilder, which is why it stays nullable rather than defaulting to empty.
+		[JsonPropertyName("warnings")]
+		public List<string>? Warnings { get; set; }
 	}
 
 	#endregion
@@ -143,6 +160,7 @@ public sealed class ModifyBusinessProcessService(
 /// </summary>
 public class ModifyBusinessProcessCommand(
 	IModifyBusinessProcessService modifyBusinessProcessService,
+	IProcessDescriber processDescriber,
 	ILogger logger)
 	: Command<ModifyBusinessProcessOptions> {
 	/// <inheritdoc />
@@ -170,10 +188,45 @@ public class ModifyBusinessProcessCommand(
 				new ModifyBusinessProcessRequest(options.ProcessName, options.ProcessUid, options.OperationsJson));
 			logger.WriteInfo(
 				$"Process '{result.SchemaName}' edited ({result.AppliedOperations} operation(s) applied; UId: {result.SchemaUId}).");
+			// Written as WARNINGS on a SUCCESSFUL edit, deliberately. These are outcomes that applied and are not
+			// what a caller would assume, so folding them into the success line (or dropping them, which is what
+			// happened before) leaves the caller believing something that is not quite true.
+			foreach (string warning in result.Warnings ?? []) {
+				logger.WriteWarning(warning);
+			}
+			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
+		}
+	}
+
+	// Same silent-drop guard as the build path: a server predating sendEmail discards an email block and still
+	// answers success, so an edit can report an applied operation whose email configuration never landed. Read the
+	// process back and say so. Only runs when the operations actually carried a block; a failed read-back is never
+	// escalated, since it is not evidence of a drop. See EmailBlockExpectation for why this is not version-based.
+	private void WarnOnDiscardedEmailBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
+		IReadOnlyList<string> expected = EmailBlockExpectation.FromOperations(options.OperationsJson);
+		if (expected.Count == 0) {
+			return;
+		}
+
+		string identity = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
+		if (string.IsNullOrWhiteSpace(identity)) {
+			return;
+		}
+
+		ErrorOr<DescribeProcessResult> described =
+			processDescriber.Describe(new ProcessIdentity(identity, null, null), null);
+		if (described.IsError) {
+			return;
+		}
+
+		string? warning = EmailBlockExpectation.BuildWarning(
+			EmailBlockExpectation.Missing(described.Value, expected));
+		if (warning is not null) {
+			logger.WriteWarning(warning);
 		}
 	}
 }
@@ -192,4 +245,10 @@ public sealed record ModifyBusinessProcessRequest(string ProcessName, string Pro
 /// <param name="SchemaName">Name (code) of the edited process schema.</param>
 /// <param name="SchemaUId">UId of the edited process schema.</param>
 /// <param name="AppliedOperations">Number of operations applied.</param>
-public sealed record ModifyBusinessProcessResult(string? SchemaName, string? SchemaUId, int AppliedOperations);
+/// <param name="Warnings">
+/// Notices the applied operations raised — outcomes that SUCCEEDED but the caller has to know about, so a
+/// successful edit is never silently different from what was asked for. <c>null</c> when there are none, or when
+/// the target environment carries a package that does not report them.
+/// </param>
+public sealed record ModifyBusinessProcessResult(string? SchemaName, string? SchemaUId, int AppliedOperations,
+	IReadOnlyList<string>? Warnings = null);

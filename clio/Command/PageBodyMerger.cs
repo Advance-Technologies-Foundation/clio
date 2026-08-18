@@ -17,22 +17,76 @@ internal static class PageBodyMerger {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	/// <summary>
-	/// Actionable message emitted when a WEB page body uses the full-config form
-	/// (<c>SCHEMA_VIEW_MODEL_CONFIG</c> / <c>SCHEMA_MODEL_CONFIG</c> markers) that append merge cannot process.
-	/// Shared between the merge-time throw (current server body) and the up-front pre-execution guard (incoming body).
+	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the
+	/// correct actor. The corrective advice differs by role: the caller can convert an <see cref="Incoming"/>
+	/// body they authored, but a <see cref="Current"/> (server-side) body is not theirs to convert — for that
+	/// one the only path is <c>--mode replace</c> (ENG-94422). Append is not supported against a full-config
+	/// current body by design: a <c>*_DIFF</c> is a list of operations relative to a base and cannot be
+	/// losslessly derived from an already-resolved full-config body without that base — the same reason
+	/// ENG-93090 rejected auto-converting a full-config body on append.
 	/// </summary>
-	internal const string WebFullConfigNotSupportedMessage =
-		"Web append merge does not support bodies that use the full 'SCHEMA_VIEW_MODEL_CONFIG' or 'SCHEMA_MODEL_CONFIG' form. " +
-		"Use 'replace' mode, or convert the body to the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) before append.";
+	internal enum PageBodyRole {
+
+		/// <summary>The fragment the caller passed to append (authored by the caller, convertible by the caller).</summary>
+		Incoming,
+
+		/// <summary>The schema's existing body fetched from the server (not authored by the caller).</summary>
+		Current
+	}
 
 	/// <summary>
-	/// Actionable message emitted when a MOBILE page body uses the full-config form
-	/// (<c>viewModelConfig</c> / <c>modelConfig</c>) that append merge cannot process.
-	/// Shared between the merge-time throw (current server body) and the up-front pre-execution guard (incoming body).
+	/// Thrown by <see cref="Merge"/> when an append merge is rejected because one of the two bodies uses the
+	/// full-config form rather than the diff form. Carrying a dedicated type (rather than a bare
+	/// <see cref="InvalidOperationException"/>) lets a caller that wraps the failure classify it by TYPE instead
+	/// of re-parsing <see cref="Exception.Message"/> against the four rejection constants: the CLI wrapper uses
+	/// this to suppress the generic "body must contain valid marker pairs" hint, which does not apply to a
+	/// full-config body — it HAS valid markers, it is simply the wrong form (ENG-94422). Derives from
+	/// <see cref="InvalidOperationException"/> so existing <c>catch (InvalidOperationException)</c> sites are
+	/// unaffected. The <see cref="Exception.Message"/> is still one of the four full-config rejection constants.
 	/// </summary>
-	internal const string MobileFullConfigNotSupportedMessage =
-		"Mobile append merge does not support bodies that use the full 'viewModelConfig' or 'modelConfig' form. " +
-		"Use 'replace' mode, or convert the body to the diff form (viewModelConfigDiff / modelConfigDiff) before append.";
+	internal sealed class FullConfigAppendNotSupportedException : InvalidOperationException {
+
+		/// <summary>Creates the exception with one of the four full-config rejection messages.</summary>
+		/// <param name="message">The role- and surface-specific full-config rejection message.</param>
+		public FullConfigAppendNotSupportedException(string message) : base(message) { }
+	}
+
+	/// <summary>
+	/// Actionable message emitted when the caller's <em>incoming</em> WEB body uses the full-config form
+	/// (<c>SCHEMA_VIEW_MODEL_CONFIG</c> / <c>SCHEMA_MODEL_CONFIG</c> markers) that append merge cannot process.
+	/// The caller authored this body, so converting it to the diff form is a valid corrective action.
+	/// </summary>
+	internal const string WebIncomingFullConfigNotSupportedMessage =
+		"Web append merge does not support an incoming body that uses the full 'SCHEMA_VIEW_MODEL_CONFIG' or 'SCHEMA_MODEL_CONFIG' form. " +
+		"Use 'replace' mode, or convert the incoming body to the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) before append.";
+
+	/// <summary>
+	/// Actionable message emitted when the <em>current</em> server-side WEB body uses the full-config form
+	/// (<c>SCHEMA_VIEW_MODEL_CONFIG</c> / <c>SCHEMA_MODEL_CONFIG</c> markers) — e.g. every page
+	/// <c>create-app-section</c> generates. The caller did not author this body and cannot convert it, so the
+	/// message points at <c>--mode replace</c> instead of telling them to convert their own body (ENG-94422).
+	/// </summary>
+	internal const string WebCurrentFullConfigNotSupportedMessage =
+		"Web append merge cannot run because the page on the server is stored in the full 'SCHEMA_VIEW_MODEL_CONFIG' or 'SCHEMA_MODEL_CONFIG' form. " +
+		"Use 'replace' mode — the server-side body is not authored by the caller, so it cannot be converted to the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) from here.";
+
+	/// <summary>
+	/// Actionable message emitted when the caller's <em>incoming</em> MOBILE body uses the full-config form
+	/// (<c>viewModelConfig</c> / <c>modelConfig</c>) that append merge cannot process. The caller authored this
+	/// body, so converting it to the diff form is a valid corrective action.
+	/// </summary>
+	internal const string MobileIncomingFullConfigNotSupportedMessage =
+		"Mobile append merge does not support an incoming body that uses the full 'viewModelConfig' or 'modelConfig' form. " +
+		"Use 'replace' mode, or convert the incoming body to the diff form (viewModelConfigDiff / modelConfigDiff) before append.";
+
+	/// <summary>
+	/// Actionable message emitted when the <em>current</em> server-side MOBILE body uses the full-config form
+	/// (<c>viewModelConfig</c> / <c>modelConfig</c>). The caller did not author this body and cannot convert it,
+	/// so the message points at <c>--mode replace</c> instead of telling them to convert their own body (ENG-94422).
+	/// </summary>
+	internal const string MobileCurrentFullConfigNotSupportedMessage =
+		"Mobile append merge cannot run because the page on the server is stored in the full 'viewModelConfig' or 'modelConfig' form. " +
+		"Use 'replace' mode — the server-side body is not authored by the caller, so it cannot be converted to the diff form (viewModelConfigDiff / modelConfigDiff) from here.";
 
 	/// <summary>
 	/// Detects whether <paramref name="body"/> uses the full-config form that append merge cannot process
@@ -43,8 +97,8 @@ internal static class PageBodyMerger {
 	/// </summary>
 	/// <param name="body">The page body to inspect (incoming fragment or current server body).</param>
 	/// <param name="message">
-	/// On <see langword="true"/>, the surface-specific corrective message
-	/// (<see cref="WebFullConfigNotSupportedMessage"/> or <see cref="MobileFullConfigNotSupportedMessage"/>);
+	/// On <see langword="true"/>, the surface-specific corrective message for an <see cref="PageBodyRole.Incoming"/>
+	/// body (<see cref="WebIncomingFullConfigNotSupportedMessage"/> or <see cref="MobileIncomingFullConfigNotSupportedMessage"/>);
 	/// otherwise <see langword="null"/>.
 	/// </param>
 	/// <returns>
@@ -52,7 +106,27 @@ internal static class PageBodyMerger {
 	/// (<see langword="false"/>) for a null/blank body or an unparseable mobile JSON body — those cases are
 	/// left to the downstream <see cref="Merge"/> call, which surfaces the precise parse/empty-body error.
 	/// </returns>
-	public static bool UsesUnsupportedFullConfigForm(string body, out string message) {
+	/// <remarks>
+	/// This overload assumes the <see cref="PageBodyRole.Incoming"/> role (the body the caller authored), which
+	/// is the correct default for the up-front MCP guard that only ever inspects the incoming body. Use the
+	/// <see cref="UsesUnsupportedFullConfigForm(string, PageBodyRole, out string)"/> overload to get a message
+	/// tailored to a <see cref="PageBodyRole.Current"/> server-side body (ENG-94422).
+	/// </remarks>
+	public static bool UsesUnsupportedFullConfigForm(string body, out string message) =>
+		UsesUnsupportedFullConfigForm(body, PageBodyRole.Incoming, out message);
+
+	/// <summary>
+	/// Role-aware overload of <see cref="UsesUnsupportedFullConfigForm(string, out string)"/>: the emitted
+	/// message names the correct actor and corrective action for <paramref name="role"/>. An
+	/// <see cref="PageBodyRole.Incoming"/> body can be converted by the caller; a <see cref="PageBodyRole.Current"/>
+	/// (server-side) body cannot, so its message points at <c>--mode replace</c> rather than telling the caller
+	/// to convert a body they did not author (ENG-94422).
+	/// </summary>
+	/// <param name="body">The page body to inspect.</param>
+	/// <param name="role">Whether <paramref name="body"/> is the caller's incoming fragment or the server's current body.</param>
+	/// <param name="message">On <see langword="true"/>, the role- and surface-specific corrective message; otherwise <see langword="null"/>.</param>
+	/// <returns>Same detection semantics as <see cref="UsesUnsupportedFullConfigForm(string, out string)"/>.</returns>
+	public static bool UsesUnsupportedFullConfigForm(string body, PageBodyRole role, out string message) {
 		message = null;
 		if (string.IsNullOrWhiteSpace(body)) {
 			return false;
@@ -62,7 +136,9 @@ internal static class PageBodyMerger {
 		// heuristic — and always label the finding with the web message (ENG-93090 RC-4).
 		if (ReadRawSection(body, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
 			ReadRawSection(body, "SCHEMA_MODEL_CONFIG") != null) {
-			message = WebFullConfigNotSupportedMessage;
+			message = role == PageBodyRole.Current
+				? WebCurrentFullConfigNotSupportedMessage
+				: WebIncomingFullConfigNotSupportedMessage;
 			return true;
 		}
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
@@ -80,7 +156,9 @@ internal static class PageBodyMerger {
 			// past detection and get silently dropped by the merge (ENG-93090 RC-8).
 			if (IsPresentFullConfigToken(parsed["viewModelConfig"]) ||
 				IsPresentFullConfigToken(parsed["modelConfig"])) {
-				message = MobileFullConfigNotSupportedMessage;
+				message = role == PageBodyRole.Current
+					? MobileCurrentFullConfigNotSupportedMessage
+					: MobileIncomingFullConfigNotSupportedMessage;
 				return true;
 			}
 		}
@@ -126,11 +204,11 @@ internal static class PageBodyMerger {
 		//     tool also guards the incoming body up front (no fetch); this is the surface-agnostic backstop.
 		//   - CURRENT: append merge supports only a diff-form server body; the full-config form cannot be
 		//     merged without producing a mixed full-config/*Diff output.
-		if (UsesUnsupportedFullConfigForm(incomingBody, out string incomingFullConfigMessage)) {
-			throw new InvalidOperationException(incomingFullConfigMessage);
+		if (UsesUnsupportedFullConfigForm(incomingBody, PageBodyRole.Incoming, out string incomingFullConfigMessage)) {
+			throw new FullConfigAppendNotSupportedException(incomingFullConfigMessage);
 		}
-		if (UsesUnsupportedFullConfigForm(currentBody, out string currentFullConfigMessage)) {
-			throw new InvalidOperationException(currentFullConfigMessage);
+		if (UsesUnsupportedFullConfigForm(currentBody, PageBodyRole.Current, out string currentFullConfigMessage)) {
+			throw new FullConfigAppendNotSupportedException(currentFullConfigMessage);
 		}
 		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
 			? MergeMobile(currentBody, incomingBody)

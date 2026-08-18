@@ -171,7 +171,7 @@ internal static class PassthroughToolClassificationRegistry {
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
 	/// <see cref="PassthroughToolClassificationGuardTests"/>). 162 tools at authoring time (2026-07-19):
 	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
-	/// 30 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit
+	/// 32 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit
 	/// plus global knowledge-source management, matched to CURRENT tool names), and 117
 	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
 	/// </summary>
@@ -205,6 +205,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["send-telemetry"] = PassthroughClassification.NotEnvironmentSensitive,
 			["withdraw-telemetry-consent"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-guidance"] = PassthroughClassification.NotEnvironmentSensitive,
+			["get-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
+			["configure-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-tool-contract"] = PassthroughClassification.NotEnvironmentSensitive,
 			["assert-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["show-passing-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
@@ -314,6 +316,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["install-application"] = PassthroughClassification.NotApplicable,
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
+			["install-process-builder"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
 			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,

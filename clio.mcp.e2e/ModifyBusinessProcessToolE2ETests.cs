@@ -11,6 +11,7 @@ using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -31,6 +32,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	private const string ToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
+	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	[Test]
 	[Description("Starts the real clio MCP server and verifies modify-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
@@ -86,6 +88,97 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		describeJson.Should().Contain("signalstart",
 			because: "the edit added a signalStart element, which must appear in the read-back structured graph");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, setElement's sendEmail recipient semantics are MATCH-OR-APPEND against a real server: re-sending an address the line already carries is a no-op (no duplicate), while a genuinely new address appends. Unit tests assert only that the operation JSON is passed through, so this is the only coverage that can catch the merge behaviour drifting.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process match-or-appends sendEmail recipients")]
+	public async Task ModifyBusinessProcess_Should_MatchOrAppendSendEmailRecipients() {
+		// Arrange — a sendEmail element that already carries one To address.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailRcptE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSendEmailWithRecipientDescriptor(processName)
+		});
+
+		// Act 1 — re-send the SAME address. Match-or-append means this must change nothing.
+		CallToolResult repeat = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildRecipientOperations("first@example.com")
+		});
+		repeat.IsError.Should().NotBeTrue(because: "re-applying an identical recipient is a valid no-op, not an error");
+
+		DescribedEmail afterRepeat = await ReadEmailAsync(context, processName);
+		afterRepeat.To.Should().NotBeNull().And.HaveCount(1,
+			because: "an entry whose resolved source and value the line already carries must NOT be appended again — "
+				+ "a duplicate would make the process email that address twice, and there is no removal path to undo it");
+
+		// Act 2 — send a genuinely different address. That must append rather than replace.
+		CallToolResult appended = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildRecipientOperations("second@example.com")
+		});
+		appended.IsError.Should().NotBeTrue(because: "adding a new recipient through setElement is supported");
+
+		// Assert
+		DescribedEmail afterAppend = await ReadEmailAsync(context, processName);
+		afterAppend.To.Should().NotBeNull().And.HaveCount(2,
+			because: "a new address APPENDS to the existing line — it must not replace what was already there");
+		afterAppend.To!.Select(recipient => recipient.Value).Should()
+			.Contain("first@example.com").And.Contain("second@example.com",
+				because: "both addresses must survive: append semantics, not overwrite");
+	}
+
+	// Reads the process back and returns the sendEmail element's email block, so a recipient assertion can be made
+	// against typed fields instead of substring-matching the escaped MCP envelope.
+	private static async Task<DescribedEmail> ReadEmailAsync(ArrangeContext context, string processName) {
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value)
+				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+		return graph.Elements.Single(element => element.Name == "SendEmail1").Email!;
+	}
+
+	// A sendEmail element seeded with exactly one To recipient, so the modify calls that follow are measured against
+	// a known starting count.
+	private static string BuildSendEmailWithRecipientDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Email Recipients E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail",
+		      "email": { "mode": "manual", "subject": "Recipient merge probe",
+		        "to": [ { "value": "first@example.com" } ] } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A setElement op whose email block carries a single To recipient — the same shape for both the duplicate and the
+	// genuinely-new case, so the only variable between the two acts is the address itself.
+	private static string BuildRecipientOperations(string address) =>
+		$$"""
+		[ { "op": "setElement", "elementName": "SendEmail1",
+		    "elementUpdate": { "email": { "to": [ { "value": "{{address}}" } ] } } } ]
+		""";
 
 	[Test]
 	[Description("Over the real MCP path, builds a process then adds process parameters via addParameter, including a Lookup referenceSchema; identifies the process by name only (exercises the optional processUid path).")]
@@ -224,7 +317,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: setFilter with a date-only `equal` on a DateTime column (Contact.CreatedOn), then describe reads the value back as the BARE date (2026-05-01), not a full ISO midnight. Proves the whole-day-trim round-trip fix end-to-end. Self-diagnosing: a full-ISO (…T00:00:00) read-back means an older clioprocessbuilder package is deployed on the stand.")]
+	[Description("Over the real MCP path: setFilter with a date-only `equal` on a DateTime column (Contact.CreatedOn), then describe reads the value back as the BARE date (2026-05-01), not a full ISO midnight. Proves the whole-day-trim round-trip fix end-to-end. Self-diagnosing: a full-ISO (…T00:00:00) read-back means an older CrtProcessBuilder package is deployed on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process setFilter date-only equal round-trips as a bare date")]
 	public async Task ModifyBusinessProcess_Should_RoundTripDateOnlyFilterAsBareDate() {
@@ -254,7 +347,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		afterSet.Should().Contain("2026-05-01",
 			because: "the date-only filter value round-trips through describe");
 		afterSet.Should().NotContain("2026-05-01T00:00:00",
-			because: "a whole-day-trimmed date-only equal reads back as the BARE date (2026-05-01), NOT a full ISO midnight — proving today's reader round-trip fix is on the stand; a full-ISO read-back means an older clioprocessbuilder package is deployed");
+			because: "a whole-day-trimmed date-only equal reads back as the BARE date (2026-05-01), NOT a full ISO midnight — proving today's reader round-trip fix is on the stand; a full-ISO read-back means an older CrtProcessBuilder package is deployed");
 	}
 
 	[Test]
@@ -826,6 +919,300 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	// Extracts the described graph from the MCP tool result and deserializes it into the typed DescribeProcessResult,
 	// so a test can assert a parameter's fields (direction/source/value) directly instead of substring-matching the
 	// serialized envelope. The graph is the Info log-message value inside the clio command envelope.
+	// --- Connections ("Connected to") -------------------------------------------------------------------
+	// These are the rows of the feature's verification matrix that only a real stand can answer. Everything
+	// below the wire is unit-tested in the package; what these prove is that the operations are reachable
+	// over the real MCP path, that the platform accepts the shape we write, and that the read-back a caller
+	// gets is re-appliable.
+	//
+	// Every assertion here goes through the TYPED describe model rather than a substring of the serialized
+	// envelope, and that is deliberate: a `Contain("AccountRef")` passes on the process-parameter list alone,
+	// before any connection exists, and a `Contain("record")` matches the word in an unrelated error. Both
+	// were written that way first and both were green for the wrong reason. Every modify call is also checked
+	// for success, because a refusal that goes unchecked turns "the operation left the sibling alone" into
+	// "the operation never ran".
+	//
+	// A perform task is used because it is the one connection-capable user task with no CreateActivity gate,
+	// so a failure here can never be the effectiveness rule.
+
+	[Test]
+	[Description("Over the real MCP path: setConnections binds a connection on a perform task, and describe-business-process reads it back with BOTH the raw persisted macro and a decoded source in the shape setConnections accepts.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setConnections binds a connection that describe reads back decoded")]
+	public async Task ModifyBusinessProcess_Should_BindConnection_AndDescribeShouldDecodeIt() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpConnBindE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act — ONE describe, so the connection and the element-level verdict below are read from the same
+		// snapshot. Two round trips would look like one to a reader and would put live I/O in the Assert block.
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetAccountConnectionFromProcessParameterOperations());
+		DescribedElement task = await ReadTaskAsync(context, processName);
+		DescribedConnection connection = (task.Connections ?? []).Single(c => c.Column == "Account");
+
+		// Assert
+		connection.ProcessParameter.Should().Be("AccountRef",
+			because: "the decoded source names the PROCESS PARAMETER, not a platform metapath — that decode is the whole point of the hybrid read-back, and it is what makes the output re-appliable");
+		connection.Value.Should().Contain("Parameter:",
+			because: "the raw persisted macro travels alongside the decoded form, which is what lets an unrecognised future macro survive a round trip");
+		connection.Registered.Should().BeTrue(
+			because: "Account carries a shipped connection-registry row, so the connection is a full citizen rather than the invisible half-citizen case");
+		// The element-level capability verdict, asserted on the wire rather than in the package. Its own unit
+		// tests prove the RULE; only a real describe proves the answer survives serialization at all — and a
+		// silently dropped member is exactly the failure this feature already shipped once, where four new
+		// fields were promised by the tool description and dropped by clio's DTO. `true` is the only correct
+		// answer for a perform task: it has no CreateActivity gate, so the connection cannot be inert.
+		task.WritesConnectionsAtRuntime.Should().BeTrue(
+			because: "a perform task writes its connections unconditionally, and null here would mean the verdict never reached the caller who is told to read it before trusting a binding");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a fixed-record connection needs NO entity-schema UId — the caller sends a bare recordId and the platform macro is synthesised from the target column's own reference entity.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setConnections synthesises the lookup macro from a bare recordId")]
+	public async Task ModifyBusinessProcess_Should_SynthesiseLookupMacro_FromBareRecordId() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpConnRecordE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+		Guid recordId = Guid.NewGuid();
+
+		// Act
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Account", recordId));
+		DescribedConnection connection = await ReadConnectionAsync(context, processName, "Account");
+
+		// Assert
+		Guid.Parse(connection.RecordId!).Should().Be(recordId,
+			because: "the record the caller named must be the record that was bound (parsed, so a casing or brace difference in the round trip is not read as a behavioural failure)");
+		connection.ReferenceSchema.Should().Be("Account",
+			because: "the entity-schema half of the macro is composed server-side and read back as a NAME, so the decoded source is re-appliable as-is");
+		// On Activity every connection column is named after the entity it references, so the assertion above
+		// cannot by itself distinguish a resolved entity from the requested column echoed back. What discriminates
+		// is the macro: its first half must be a GUID the caller never sent — the reference-entity UId the server
+		// looked up — and it must not be the record id. (The package's own unit tests pin the resolution itself,
+		// with an entity deliberately named unlike its column.)
+		string[] macroParts = connection.Value!.Replace("[#Lookup.", string.Empty).Replace("#]", string.Empty)
+			.Split('.');
+		macroParts.Should().HaveCount(2,
+			because: "the fixed-record macro is exactly [#Lookup.<entitySchemaUId>.<recordId>#]");
+		Guid.TryParse(macroParts[0], out Guid macroSchemaUId).Should().BeTrue(
+			because: "the entity half is a schema UId the server composed from the target column, and the caller sent no UId at all");
+		macroSchemaUId.Should().NotBe(recordId,
+			because: "the two halves must be different values, or the 'synthesised from the column' claim would hold for a macro that just repeated the record id");
+		connection.Value.Should().StartWith("[#Lookup.",
+			because: "the persisted form is the platform's lookup macro, which the caller never had to write");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: setConnections is an UPSERT keyed on column — setting one connection leaves another already-bound one intact. Replace semantics would silently clear the sibling, and a cleared connection is filtered out of describe, so the damage would be invisible in the artefact meant to verify it.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setConnections leaves an unlisted connection alone")]
+	public async Task ModifyBusinessProcess_Should_LeaveUnlistedConnectionAlone_WhenSettingAnother() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpConnUpsertE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+		Guid contactRecordId = Guid.NewGuid();
+		Guid accountRecordId = Guid.NewGuid();
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Contact", contactRecordId));
+
+		// Act — a second call that names ONLY Account
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Account", accountRecordId));
+
+		// Assert — both columns, because "the sibling survived" is only meaningful if the listed one was written
+		IReadOnlyList<DescribedConnection> connections = await ReadConnectionsAsync(context, processName);
+		Guid.Parse(connections.Single(c => c.Column == "Contact").RecordId!).Should().Be(contactRecordId,
+			because: "a column absent from the request must be left exactly as it was — the one behaviour a replace reading of set* would break, invisibly");
+		Guid.Parse(connections.Single(c => c.Column == "Account").RecordId!).Should().Be(accountRecordId,
+			because: "and the column that WAS listed must have been written, or the test would pass for a request that did nothing");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: clearConnections unbinds a connection, the connection then DISAPPEARS from describe, and the operation reports that it cleared something — which is the only way a caller can tell 'cleared' from 'never bound' afterwards.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process clearConnections unbinds and reports it")]
+	public async Task ModifyBusinessProcess_Should_ClearConnection_AndReportIt() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpConnClearE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+		Guid recordId = Guid.NewGuid();
+		await ModifyExpectingSuccessAsync(context, processName,
+			SetConnectionFromRecordIdOperations("Account", recordId));
+		// Positive control: without it, "the connection is gone" is equally satisfied by "it was never bound".
+		(await ReadConnectionsAsync(context, processName)).Should().ContainSingle(c => c.Column == "Account",
+			because: "the connection must be present BEFORE the clear, or its later absence proves nothing");
+
+		// Act
+		CallToolResult clearResult = await ModifyExpectingSuccessAsync(context, processName,
+			ClearConnectionOperations("Account"));
+
+		// Assert
+		SerializeToolText(clearResult).Should().Contain("CLEARED",
+			because: "the result is the only place a caller learns the unbind happened, since the read-back can only show what remains");
+		(await ReadConnectionsAsync(context, processName)).Should().NotContain(c => c.Column == "Account",
+			because: "an unbound connection is filtered out of the read-back");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: a column the host entity does not have is REFUSED with the data-model diagnosis rather than written, and the refusal says the change belongs outside this operation.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setConnections refuses a column the host entity lacks")]
+	public async Task ModifyBusinessProcess_Should_RefuseConnection_WhenHostHasNoSuchColumn() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpConnNoColumnE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = SetConnectionFromRecordIdOperations("UsrClioNoSuchSection", Guid.NewGuid())
+		});
+
+		// Assert
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("UsrClioNoSuchSection",
+			because: "the refusal must name the column the caller asked for");
+		text.Should().Contain("has no",
+			because: "the diagnosis has to say WHICH precondition failed — the host entity lacking the column needs a data-model change this operation deliberately does not make");
+		(await ReadConnectionsAsync(context, processName)).Should().BeEmpty(
+			because: "a refused operation aborts the whole edit, so nothing may have been written");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: an expression whose macro family cannot hold a record reference is refused. Without this the platform stores it verbatim, the process compiles, and the column is silently never written.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setConnections refuses a mistyped macro family")]
+	public async Task ModifyBusinessProcess_Should_RefuseConnection_WhenMacroFamilyCannotHoldARecord() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpConnBadMacroE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = SetAccountConnectionFromDateConstantOperations()
+		});
+
+		// Assert
+		string text = SerializeToolText(callResult);
+		text.Should().Contain("DateValue",
+			because: "the refusal quotes the offending macro family, which is what makes it actionable rather than a generic rejection");
+		(await ReadConnectionsAsync(context, processName)).Should().BeEmpty(
+			because: "the named failure mode is a value that persists and writes nothing, so proving the refusal means proving nothing was written");
+	}
+
+	/// <summary>
+	/// Creates the process and asserts the create itself succeeded. An unchecked create turns every later
+	/// assertion into a statement about a process that does not exist.
+	/// </summary>
+	private static async Task CreateProcessAsync(ArrangeContext context, string processName, string descriptor) {
+		CallToolResult result = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+		result.IsError.Should().NotBeTrue(
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+	}
+
+	/// <summary>Applies operations and asserts the edit succeeded, returning the result so a caller can read its notices.</summary>
+	private static async Task<CallToolResult> ModifyExpectingSuccessAsync(ArrangeContext context,
+			string processName, string operations) {
+		CallToolResult result = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = operations
+		});
+		result.IsError.Should().NotBeTrue(because: "the platform must accept the shape this package writes");
+		SerializeToolText(result).Should().Contain("edited (",
+			because: "the success line is what distinguishes an applied edit from a refusal the test would otherwise read as success");
+		return result;
+	}
+
+	/// <summary>Reads the perform task itself through the TYPED describe model.</summary>
+	private static async Task<DescribedElement> ReadTaskAsync(ArrangeContext context, string processName) {
+		CallToolResult callResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName
+		});
+		DescribeProcessResult described = ParseDescribeResult(callResult);
+		return described.Elements.Single(element => element.Name == "Task1");
+	}
+
+	/// <summary>Reads the perform task's connections through the TYPED describe model.</summary>
+	private static async Task<IReadOnlyList<DescribedConnection>> ReadConnectionsAsync(ArrangeContext context,
+			string processName) {
+		return (await ReadTaskAsync(context, processName)).Connections ?? [];
+	}
+
+	private static async Task<DescribedConnection> ReadConnectionAsync(ArrangeContext context, string processName,
+			string column) {
+		IReadOnlyList<DescribedConnection> connections = await ReadConnectionsAsync(context, processName);
+		return connections.Single(connection => connection.Column == column);
+	}
+
+	/// <summary>
+	/// Concatenates the tool result's text blocks. Serializing the whole result escapes the payload, so a literal
+	/// with quotes in it can never match — which is how three of these assertions were unfalsifiable at first.
+	/// </summary>
+	private static string SerializeToolText(CallToolResult callResult) =>
+		string.Join("\n", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+	/// <summary>
+	/// A process whose single task is a PERFORM TASK — the one connection-capable user task with no
+	/// CreateActivity gate, so a connections failure here can never be the effectiveness rule — plus a Guid
+	/// process parameter to bind from.
+	/// </summary>
+	private static string BuildPerformTaskDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Connections E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "Task1", "type": "performTask", "caption": "Perform task" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "Task1" },
+		    { "source": "Task1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "AccountRef", "type": "Guid", "direction": "Variable" }
+		  ]
+		}
+		""";
+
+	private static string SetAccountConnectionFromProcessParameterOperations() =>
+		"""
+		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "Account", "processParameter": "AccountRef" } ] } ]
+		""";
+
+	private static string SetConnectionFromRecordIdOperations(string column, Guid recordId) =>
+		$$"""
+		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "{{column}}", "recordId": "{{recordId}}" } ] } ]
+		""";
+
+	private static string ClearConnectionOperations(string column) =>
+		$$"""
+		[ { "op": "clearConnections", "elementName": "Task1", "connections": [ { "column": "{{column}}" } ] } ]
+		""";
+
+	private static string SetAccountConnectionFromDateConstantOperations() =>
+		"""
+		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "Account", "expression": "[#DateValue.2026-01-01#]" } ] } ]
+		""";
+
 	private static DescribeProcessResult ParseDescribeResult(CallToolResult callResult) {
 		JsonSerializerOptions options = new() { PropertyNameCaseInsensitive = true };
 		JsonElement content = JsonSerializer.SerializeToElement(callResult.Content);

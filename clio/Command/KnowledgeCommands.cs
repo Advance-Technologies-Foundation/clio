@@ -409,7 +409,29 @@ internal sealed class UpdateKnowledgeCommand(IKnowledgeSourceManagementService s
 		if (!InstallKnowledgeCommand.TryNormalizeOptionalSource(options.Source, logger, out string? sourceAlias)) {
 			return 1;
 		}
-		return InstallKnowledgeCommand.Report(logger, service.Update(sourceAlias), options.Json);
+		KnowledgeSourceBatchResult result = service.Update(sourceAlias);
+		if (options.Json) {
+			logger.WriteLine(KnowledgeCommandJson.Serialize(result));
+		}
+		else {
+			PrintUpdate(logger, result);
+		}
+		return result.Success ? 0 : 1;
+	}
+
+	private static void PrintUpdate(ILogger logger, KnowledgeSourceBatchResult result) {
+		logger.WriteInfo("Knowledge update");
+		logger.WriteLine($"  Result: {(result.Success ? "succeeded" : "failed")}");
+		logger.WriteLine($"  Message: {result.Message}");
+		logger.WriteLine();
+		logger.WriteInfo($"Sources ({result.Sources.Count})");
+		for (int index = 0; index < result.Sources.Count; index++) {
+			KnowledgeSourceOperationResult source = result.Sources[index];
+			logger.WriteLine();
+			logger.WriteInfo($"{index + 1}. {source.SourceAlias}");
+			logger.WriteLine($"  Status: {source.Status}");
+			logger.WriteLine($"  Message: {source.Message}");
+		}
 	}
 }
 
@@ -434,12 +456,39 @@ internal sealed class InfoKnowledgeCommand(IKnowledgeSourceManagementService ser
 	}
 
 	private static void PrintInfo(ILogger logger, KnowledgeSourceInfoResult result) {
-		ConsoleTable location = new() { Columns = { "Knowledge property", "Value" } };
-		location.Rows.Add(["settings-file", result.SettingsFilePath]);
-		location.Rows.Add(["root-path", result.RootPath]);
-		location.Rows.Add(["diagnostic", result.Diagnostic ?? string.Empty]);
-		logger.PrintTable(location);
-		KnowledgeSourceTable.Print(logger, result.Sources, includeInstallation: true);
+		logger.WriteInfo("Knowledge");
+		logger.WriteLine($"  Settings file: {result.SettingsFilePath}");
+		logger.WriteLine($"  Root path: {result.RootPath}");
+		WriteOptional(logger, "Diagnostic", result.Diagnostic);
+		logger.WriteLine();
+		logger.WriteInfo($"Sources ({result.Sources.Count})");
+		for (int index = 0; index < result.Sources.Count; index++) {
+			KnowledgeSourceInfo source = result.Sources[index];
+			logger.WriteLine();
+			logger.WriteInfo($"{index + 1}. {source.Alias}");
+			logger.WriteLine($"  Library: {source.LibraryId}");
+			logger.WriteLine($"  Transport: {source.TransportType}");
+			logger.WriteLine($"  Enabled: {YesNo(source.Enabled)}");
+			logger.WriteLine($"  Priority: {source.Priority}");
+			logger.WriteLine($"  Participation: {source.Participation}");
+			logger.WriteLine($"  Installed: {YesNo(source.IsInstalled)}");
+			logger.WriteLine($"  Valid: {YesNo(source.IsValid)}");
+			WriteOptional(logger, "Library version", source.ActiveLibraryVersion);
+			WriteOptional(logger, "Sequence", source.ActiveSequence?.ToString());
+			WriteOptional(logger, "Bundle digest", source.BundleDigest);
+			WriteOptional(logger, "Revision", source.ResolvedRevision);
+			WriteOptional(logger, "Active path", source.ActiveContentPath);
+			WriteOptional(logger, "Update", source.UpdateAvailability);
+			WriteOptional(logger, "Diagnostic", source.Diagnostic);
+		}
+	}
+
+	private static string YesNo(bool value) => value ? "yes" : "no";
+
+	private static void WriteOptional(ILogger logger, string label, string? value) {
+		if (!string.IsNullOrWhiteSpace(value)) {
+			logger.WriteLine($"  {label}: {value}");
+		}
 	}
 }
 
@@ -695,7 +744,7 @@ internal sealed class ListKnowledgeSourcesCommand(IKnowledgeSourceManagementServ
 			logger.WriteLine(KnowledgeCommandJson.Serialize(result));
 		}
 		else {
-			KnowledgeSourceTable.Print(logger, result.Sources, includeInstallation: false);
+			KnowledgeSourceTable.Print(logger, result.Sources);
 			if (!string.IsNullOrWhiteSpace(result.Diagnostic)) {
 				if (result.Success) {
 					logger.WriteInfo(result.Diagnostic);
@@ -759,39 +808,17 @@ internal sealed class ListKnowledgeExamplesCommand(IKnowledgeReferenceExampleSer
 }
 
 internal static class KnowledgeSourceTable {
-	internal static void Print(ILogger logger, IReadOnlyList<KnowledgeSourceInfo> sources, bool includeInstallation) {
-		ConsoleTable table = includeInstallation
-			? new ConsoleTable("Alias", "Library", "Type", "Enabled", "Priority", "Participation", "Installed", "Valid", "Library version", "Sequence", "Bundle digest", "Revision", "Active path", "Update", "Diagnostic")
-			: new ConsoleTable("Alias", "Library", "Type", "Enabled", "Priority", "Participation", "Location");
+	internal static void Print(ILogger logger, IReadOnlyList<KnowledgeSourceInfo> sources) {
+		ConsoleTable table = new("Alias", "Library", "Type", "Enabled", "Priority", "Participation", "Location");
 		foreach (KnowledgeSourceInfo source in sources) {
-			if (includeInstallation) {
-				table.AddRow(
+			table.AddRow(
 				source.Alias,
 				source.LibraryId,
 				source.TransportType,
 				source.Enabled,
 				source.Priority,
 				source.Participation,
-				source.IsInstalled,
-				source.IsValid,
-				source.ActiveLibraryVersion ?? string.Empty,
-				source.ActiveSequence?.ToString() ?? string.Empty,
-				source.BundleDigest ?? string.Empty,
-				source.ResolvedRevision ?? string.Empty,
-				source.ActiveContentPath ?? string.Empty,
-				source.UpdateAvailability ?? string.Empty,
-				source.Diagnostic ?? string.Empty);
-			}
-			else {
-				table.AddRow(
-					source.Alias,
-					source.LibraryId,
-					source.TransportType,
-					source.Enabled,
-					source.Priority,
-					source.Participation,
-					source.Location);
-			}
+				source.Location);
 		}
 		logger.PrintTable(table);
 	}

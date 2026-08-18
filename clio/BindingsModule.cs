@@ -463,6 +463,7 @@ public class BindingsModule {
 		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
+		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -635,7 +636,9 @@ public class BindingsModule {
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 1, 0),
 			new HashSet<string>(StringComparer.Ordinal) {
+				KnowledgeFeedbackPolicyTools.ConfigureToolName,
 				GuidanceGetTool.ToolName,
+				KnowledgeFeedbackPolicyTools.GetToolName,
 				KnowledgeManagementTools.ListKnowledgeExamplesToolName
 			}));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
@@ -689,6 +692,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
+		services.AddTransient<InstallProcessBuilderTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<GetCreatioInfoTool>();
@@ -748,6 +752,7 @@ public class BindingsModule {
 		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
+		services.AddTransient<InstallProcessBuilderCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<ReferenceCommand>();
 		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
@@ -1014,6 +1019,13 @@ public class BindingsModule {
 				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
+		// Singleton so the descriptor is decompressed out of the bundled archive once rather than once per
+		// gated call: the archive cannot change under a running container, and on the MCP path this sits on
+		// the hot path of every gated tool invocation. It is excluded from RegisterAssemblyInterfaceTypes for
+		// the reason recorded there — an auto-registered transient would win or lose on declaration order.
+		// IBundledPackageConvergence is NOT registered here: it is stateless, so the auto-scan's transient
+		// is correct for it.
+		services.AddSingleton<IBundledPackageCatalog, BundledPackageCatalog>();
 		services.AddTransient<IRequiredPackageChecker, RequiredPackageChecker>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
@@ -1137,7 +1149,11 @@ public class BindingsModule {
 		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
 		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
 					options.Capabilities ??= new();
+					// MCP9005: advertise the deprecated Logging capability for legacy initialize clients
+					// retained by the hybrid HTTP transport. Modern discovery-first clients do not depend on it.
+#pragma warning disable MCP9005
 					options.Capabilities.Logging = new();
+#pragma warning restore MCP9005
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithRequestFilters(filters => {
@@ -1221,6 +1237,12 @@ public class BindingsModule {
 			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
 				continue;
 			}
+			// An exception is never a service. Registering one (they carry a marker interface such as
+			// IAuthoritativeErrorMessage) makes DI try to construct it, and its `string message` ctor cannot be
+			// resolved — ValidateOnBuild then fails and the whole host, mcp-server included, refuses to start.
+			if (typeof(Exception).IsAssignableFrom(type)) {
+				continue;
+			}
 			foreach (Type implementedInterface in type.GetInterfaces()) {
 				if (implementedInterface.Namespace is null
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
@@ -1270,6 +1292,11 @@ public class BindingsModule {
 					// registered explicitly as a SINGLETON; the auto-scan would give restart-by-environment-name
 					// and restart-status each their own empty table and silently break status polling.
 					|| implementedInterface == typeof(IRestartOperationRegistry)
+					// The bundled-package catalog is registered explicitly as a SINGLETON so the archive's
+					// descriptor is decompressed once instead of on every gated call. Its ctor resolves
+					// cleanly, so the auto-scan WOULD register it — as a transient, and which registration
+					// won would then depend on declaration order rather than on intent.
+					|| implementedInterface == typeof(IBundledPackageCatalog)
 					// Knowledge services use explicit singleton registrations because they retain immutable
 					// runtime snapshots, source locks, and transport clients across MCP requests.
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
