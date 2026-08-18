@@ -83,6 +83,39 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards a sendEmail body carrying the friendly process-macro placeholders ([[param:…]], [[element:…]]) verbatim — the tool is an opaque pass-through, so the server (crt-process-builder) resolves the macros; the tool must not touch or mangle the placeholder syntax on the way through.")]
+	[Category("Unit")]
+	public void CreateBusinessProcess_Should_Forward_BodyMacros_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string macroBodyDescriptor =
+			"{\"name\":\"UsrMacroBodyProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"SendEmail1\","
+			+ "\"type\":\"sendEmail\",\"email\":{\"mode\":\"manual\",\"subject\":\"Order\","
+			+ "\"body\":\"<p>Hello [[param:ContactName]], order [[element:Read Order.ResultEntity.Number]]</p>\","
+			+ "\"bodyFormat\":\"html\"}}],\"flows\":[]}";
+		FakeCreateBusinessProcessCommand defaultCommand = new();
+		FakeCreateBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", macroBodyDescriptor, null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a descriptor whose body carries process-macro placeholders is a valid opaque payload to forward");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded descriptor");
+		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(macroBodyDescriptor,
+			because: "the [[param:…]] / [[element:…]] body placeholders must ride through byte-for-byte — clio never "
+				+ "resolves or rewrites them; the server does");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a failed result without resolving any command when the environment name is empty.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Fail_When_Environment_Is_Empty() {
