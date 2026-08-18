@@ -204,7 +204,7 @@ public sealed record CreateThemeArgs(
 	string? Caption = null,
 
 	[property: JsonPropertyName("id")]
-	[property: Description("Theme id (^[A-Za-z0-9_-]+$, max 100); an auto-generated UUID is used and returned when omitted.")]
+	[property: Description("Theme id — must be a GUID; an auto-generated UUID is used and returned when omitted.")]
 	string? Id = null,
 
 	[property: JsonPropertyName("package-name")]

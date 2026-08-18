@@ -360,6 +360,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
+<a id="get-classic-list-columns"></a>
+- [`get-classic-list-columns`](docs/commands/get-classic-list-columns.md) - Resolve the effective default columns of a Classic section list without changing Creatio data
 <a id="get-classic-page-sources"></a>
 <a id="classic-page-sources"></a>
 <a id="get-classic-migration-bundle"></a>
