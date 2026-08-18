@@ -52,7 +52,12 @@ DESCRIPTION
     remote call, so a warm start performs no network request at all. A missing
     generation gets a five-second startup installation budget before the MCP handshake
     completes, so mandatory first-request guidance is available whenever that bounded
-    bootstrap succeeds. An entry left by an earlier version under a different alias or
+    bootstrap succeeds. Because a warm start never contacts the publisher, one
+    that serves a generation activated more than 3 days ago logs a warning naming the
+    served library version and the refresh call, so a bundle left behind by a newer
+    release stops being silent; the cache is still served, never rejected. get-guidance
+    also reports the served libraryVersion on every article, so an agent session can
+    read it without calling info-knowledge. An entry left by an earlier version under a different alias or
     the former Git transport is migrated in place, preserving an operator's
     enabled=false kill switch. The built-in source cannot be removed; disable it with
     clio disable-knowledge-source --alias creatio-curated. Disabled state survives

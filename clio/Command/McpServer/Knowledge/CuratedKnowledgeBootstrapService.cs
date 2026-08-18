@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Clio.Command.McpServer.Tools;
@@ -49,6 +50,17 @@ internal static class CuratedKnowledgeSourceDefaults {
 	internal const int Priority = 100;
 	internal const int StartupInstallDeadlineMilliseconds = 5_000;
 
+	/// <summary>
+	/// How long a locally cached generation may stay active before a warm start reports it as stale.
+	/// </summary>
+	/// <remarks>
+	/// A warm artifact-backed start never contacts the publisher, so the age of the activation marker
+	/// is the only staleness signal available without giving up the offline guarantee. Three days is
+	/// short enough to surface a missed release on the next working day and long enough that a bundle
+	/// which simply has not been republished does not warn on every start.
+	/// </remarks>
+	internal const int StaleCacheThresholdDays = 3;
+
 	internal static KnowledgeSourceConfiguration CreateConfiguration() => new() {
 		LibraryId = LibraryId,
 		Type = KnowledgeSourceType.GitHubRelease,
@@ -81,11 +93,21 @@ internal static class CuratedKnowledgeSourceDefaults {
 /// <summary>
 /// Describes the outcome of ensuring the built-in curated knowledge source is configured and installed.
 /// </summary>
+/// <param name="Success">Whether the phase completed without a fault.</param>
+/// <param name="Enabled">Whether the built-in source is enabled.</param>
+/// <param name="Installed">Whether local content is available to activate.</param>
+/// <param name="Message">The diagnostic text for the phase.</param>
+/// <param name="StalenessWarning">
+/// Set when the served cache is older than <see cref="CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays"/>,
+/// so a successful warm start still reports that its guidance may be behind the published release.
+/// Trailing and optional: a caller that does not care about staleness is unaffected.
+/// </param>
 public sealed record CuratedKnowledgeBootstrapResult(
 	bool Success,
 	bool Enabled,
 	bool Installed,
-	string Message);
+	string Message,
+	string? StalenessWarning = null);
 
 /// <summary>
 /// Ensures Clio's built-in curated knowledge source is configured and installed before MCP serves requests.
@@ -245,7 +267,8 @@ internal sealed class CuratedKnowledgeBootstrapService(
 					true,
 					true,
 					true,
-					$"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' is ready from its local cache.");
+					$"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' is ready from its local cache.",
+					DescribeStaleCache());
 			}
 
 			TimeSpan remainingBeforeInstall = Remaining;
@@ -326,6 +349,41 @@ internal sealed class CuratedKnowledgeBootstrapService(
 		&& string.Equals(candidate.Location, CuratedKnowledgeSourceDefaults.GitRepositoryLocation, StringComparison.Ordinal)
 		&& candidate.Priority == CuratedKnowledgeSourceDefaults.Priority
 		&& candidate.Participation == KnowledgeSourceParticipation.Authoritative;
+
+	/// <summary>
+	/// Describes the served cache when it is older than the staleness threshold.
+	/// </summary>
+	/// <remarks>
+	/// The whole point of this check is that it stays on the offline warm-start path: it reads the same
+	/// activation marker the install probe already relies on and compares its activation timestamp with
+	/// the injected clock, so it makes no transport call and adds no measurable time to the startup
+	/// budget. It is a report, never a decision — nothing here refreshes, deactivates, or rejects a
+	/// cache, because an operator with no network must keep serving the bundle they have. An unreadable
+	/// or absent marker yields no warning: the age of the cache is then simply unknown, and inventing a
+	/// warning from a failed read would train operators to ignore it.
+	/// </remarks>
+	/// <returns>The warning text, or <see langword="null"/> when the cache is fresh or its age is unknown.</returns>
+	private string? DescribeStaleCache() {
+		KnowledgeSourceGenerationPointer? active =
+			installationStore.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias);
+		if (active is null) {
+			return null;
+		}
+		TimeSpan age = timeProvider.GetUtcNow() - active.ActivatedAtUtc;
+		if (age < TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays)) {
+			return null;
+		}
+		return string.Format(
+			CultureInfo.InvariantCulture,
+			"Built-in knowledge source '{0}' is serving library version {1} (sequence {2}), activated {3:yyyy-MM-dd} "
+			+ "and {4} day(s) old; a warm start never checks the publisher, so this guidance may be behind the "
+			+ "current release. Refresh with update-knowledge --source {0}.",
+			CuratedKnowledgeSourceDefaults.Alias,
+			active.LibraryVersion,
+			active.Sequence,
+			active.ActivatedAtUtc.UtcDateTime,
+			(int)age.TotalDays);
+	}
 
 	/// <summary>
 	/// Reports whether the alias already has content on disk that activation could serve.

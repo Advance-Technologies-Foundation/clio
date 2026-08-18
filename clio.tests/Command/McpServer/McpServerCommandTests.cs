@@ -36,6 +36,48 @@ public class McpServerCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A successful warm start whose cache is stale is reported as a warning, not hidden in debug output.")]
+	public void ReportCuratedKnowledgeBootstrap_ShouldWarn_WhenTheServedCacheIsStale() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		CuratedKnowledgeBootstrapResult stale = new(
+			true,
+			true,
+			true,
+			"ready from its local cache",
+			"serving library version 1.12.0 (sequence 7); refresh with update-knowledge");
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = McpServerCommand.ReportCuratedKnowledgeBootstrap(stale, logger);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a stale cache is a usable cache and must not turn a working start into a failure");
+		string[] warnings = logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => call.GetArguments()[0]?.ToString() ?? string.Empty)
+			.ToArray();
+		warnings.Should().ContainSingle(message => message.Contains("1.12.0", StringComparison.Ordinal),
+			because: "reporting the stale version at debug level would keep exactly the silence issue #1100 reports");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A successful warm start with a fresh cache emits no warning at all.")]
+	public void ReportCuratedKnowledgeBootstrap_ShouldNotWarn_WhenTheServedCacheIsFresh() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		CuratedKnowledgeBootstrapResult fresh = new(true, true, true, "ready from its local cache");
+
+		// Act
+		McpServerCommand.ReportCuratedKnowledgeBootstrap(fresh, logger);
+
+		// Assert
+		logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Curated knowledge bootstrap failures are logged as warnings while the MCP host remains free to start.")]
 	public void BootstrapCuratedKnowledge_ShouldWarnAndReturn_WhenBootstrapFails() {
 		// Arrange

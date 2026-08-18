@@ -275,6 +275,10 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 			because: "the stable synthetic guide identity must survive disk delivery");
 		Digest(response.Article.Text).Should().Be(evidence.SelectedGuideDigest,
 			because: $"the {label} bytes must match the generated synthetic package");
+		response.Article.LibraryVersion.Should().Be(evidence.PackageVersion,
+			because: "a warm MCP start never contacts the publisher, so get-guidance must name the library "
+				+ $"version it actually served — here the {label} — for a consumer to detect a stale bundle "
+				+ "without shelling out to info-knowledge");
 	}
 
 	private static string Digest(string text) =>

@@ -28,7 +28,10 @@ Before the endpoint starts accepting requests, Clio bootstraps the same built-in
 `https://github.com/Advance-Technologies-Foundation/clio-knowledge.git` when missing and otherwise
 uses the validated local checkout without a remote update check. A missing checkout gets a five-second
 startup installation budget before HTTP startup completes, so mandatory first-request guidance is
-available whenever that bounded bootstrap succeeds.
+available whenever that bounded bootstrap succeeds. A reused local generation that was activated more
+than **3 days** ago is logged as a warning naming the served `libraryVersion` and the
+`update-knowledge --source creatio-curated` call that refreshes it — a warm start never contacts the
+publisher, so this is the only staleness signal available; the cache is still served, never rejected.
 The source cannot be removed;
 disable it with `clio disable-knowledge-source --alias creatio-curated`. A bootstrap retrieval
 failure or timeout is logged as a warning and does not prevent the HTTP host from starting.

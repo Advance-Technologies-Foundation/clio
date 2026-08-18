@@ -23,7 +23,10 @@ DESCRIPTION
     A valid local checkout is reused without a remote update check. A missing
     checkout gets a five-second startup installation budget before HTTP startup
     completes, so mandatory first-request guidance is available whenever that
-    bounded bootstrap succeeds.
+    bounded bootstrap succeeds. A reused local generation activated more than
+    3 days ago is logged as a warning naming the served library version and the
+    refresh call, since a warm start never contacts the publisher; the cache is
+    still served.
     The source
     cannot be removed; use disable-knowledge-source --alias creatio-curated.
     A failed or timed-out initial clone is logged as a warning and does not block HTTP startup.

@@ -96,12 +96,39 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		ILogger logger) {
 		if (result.Success) {
 			logger.WriteDebug(result.Message);
+			if (!string.IsNullOrWhiteSpace(result.StalenessWarning)) {
+				// A stale cache is a successful start, so it is reported as a warning rather than a
+				// failure: the guidance being served is verified and usable, only possibly behind the
+				// published release. WriteDebug would keep the very silence this reports.
+				WarnDuringStartup(result.StalenessWarning, logger);
+			}
 		} else {
-			logger.WriteWarning(
+			WarnDuringStartup(
 				$"MCP is starting without built-in curated knowledge: {result.Message} "
-				+ $"Retry with install-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}.");
+				+ $"Retry with install-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}.",
+				logger);
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Emits one startup warning so it is visible on the stdio transport as well as in the log sinks.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="ConsoleLogger"/> suppresses every console write in MCP server mode, because stdout is
+	/// the JSON-RPC channel and a stray line there corrupts the protocol. That leaves an operator with
+	/// no startup diagnostic at all unless a log file happens to be configured — the silence reported in
+	/// issue #1100. Standard error is not part of the transport, so a warning written there reaches the
+	/// host's captured log without touching the protocol stream; it is the channel MCP hosts read.
+	/// The logger call is kept as well so the log file and any additional sinks still receive the line.
+	/// </remarks>
+	/// <param name="message">The warning text.</param>
+	/// <param name="logger">The host logger.</param>
+	private static void WarnDuringStartup(string message, ILogger logger) {
+		logger.WriteWarning(message);
+		if (Program.IsMcpServerMode) {
+			Console.Error.WriteLine($"[WAR] {message}");
+		}
 	}
 
 	/// <summary>

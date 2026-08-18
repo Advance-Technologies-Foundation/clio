@@ -492,6 +492,55 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 			because: "absence of backward-compatible replay metadata is not storage corruption");
 	}
 
+	[Test]
+	[Description("The startup-safe generation probe returns the recorded active pointer for a published generation.")]
+	public void TryReadActiveGeneration_ShouldReturnActivePointer_WhenAGenerationIsPublished() {
+		// Arrange
+		byte[] bundle = Bundle(("guidance/alpha.md", "# alpha"));
+		Publish("alpha", "com.example.alpha", 1, bundle);
+
+		// Act
+		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration("alpha");
+
+		// Assert
+		active.Should().NotBeNull(
+			because: "a warm start must be able to learn which generation it would serve without any reconciliation");
+		active!.LibraryVersion.Should().Be("1.0.0",
+			because: "the served library version is what a staleness report and an agent session need to name");
+		active.Sequence.Should().Be(1,
+			because: "the recorded sequence identifies the generation the marker points at");
+		active.ActivatedAtUtc.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5),
+			because: "cache age is computed from this timestamp, so it must reflect the publication just made");
+	}
+
+	[Test]
+	[Description("The startup-safe generation probe reports nothing when the source has no activation marker.")]
+	public void TryReadActiveGeneration_ShouldReturnNull_WhenNothingIsInstalled() {
+		// Act
+		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration("alpha");
+
+		// Assert
+		active.Should().BeNull(
+			because: "an absent marker means the age of the cache is unknown, not that a stale cache exists");
+	}
+
+	[Test]
+	[Description("The startup-safe generation probe swallows a corrupt activation marker instead of faulting startup.")]
+	public void TryReadActiveGeneration_ShouldReturnNull_WhenActivationMarkerIsCorrupt() {
+		// Arrange
+		byte[] bundle = Bundle(("guidance/alpha.md", "# alpha"));
+		Publish("alpha", "com.example.alpha", 1, bundle);
+		string sourceRoot = Path.GetDirectoryName(_store.GetGitRepositoryPath("alpha", createSourceRoot: false))!;
+		File.WriteAllText(Path.Combine(sourceRoot, "current.json"), "{ not json");
+
+		// Act
+		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration("alpha");
+
+		// Assert
+		active.Should().BeNull(
+			because: "a probe on the bounded startup path must never surface a parse failure to its caller");
+	}
+
 	private KnowledgeInstallationResult Publish(
 		string alias,
 		string libraryId,

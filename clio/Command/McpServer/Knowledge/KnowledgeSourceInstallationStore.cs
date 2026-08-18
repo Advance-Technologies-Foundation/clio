@@ -99,6 +99,22 @@ internal interface IKnowledgeSourceInstallationStore {
 	/// <returns><see langword="true"/> when an activation marker is present.</returns>
 	bool IsBundleGenerationInstalled(string sourceAlias);
 
+	/// <summary>
+	/// Reads the activation pointer of <paramref name="sourceAlias"/> without any reconciliation.
+	/// </summary>
+	/// <remarks>
+	/// The staleness-reporting counterpart of <see cref="IsBundleGenerationInstalled"/>: it answers
+	/// "which generation would be activated, and when was it activated", not "is that generation
+	/// valid". Like that probe it is safe on the bounded startup path — it takes no mutation lock,
+	/// runs no interrupted-publication recovery, opens no bundle archive, and decisively performs no
+	/// network call. It reads and parses one small marker file and returns <see langword="null"/> on
+	/// any storage or parse failure rather than surfacing an error to a startup caller. Callers that
+	/// need the reconciled state must use <see cref="ReadCurrent"/>, which is not startup-safe.
+	/// </remarks>
+	/// <param name="sourceAlias">The configured knowledge source alias.</param>
+	/// <returns>The recorded active generation pointer, or <see langword="null"/> when none can be read.</returns>
+	KnowledgeSourceGenerationPointer? TryReadActiveGeneration(string sourceAlias);
+
 	bool TryMigrateGitRepository(string sourceAlias, string targetAlias);
 
 	bool MigrateGitRepository(string sourceAlias, string targetAlias);
@@ -220,6 +236,21 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			// A probe that cannot read the marker reports "nothing to activate" and lets the caller
 			// take the installing path; it must not surface a storage error on the startup budget.
 			return false;
+		}
+	}
+
+	public KnowledgeSourceGenerationPointer? TryReadActiveGeneration(string sourceAlias) {
+		KnowledgeSourceConfigurationValidator.ValidateAlias(sourceAlias);
+		try {
+			string sourceRoot = ResolveSourceRoot(sourceAlias, create: false);
+			KnowledgeSourceCurrentState? state = ReadCurrentMarker(sourceAlias, sourceRoot, out string? diagnostic);
+			return diagnostic is null ? state?.Active : null;
+		} catch (Exception exception) when (IsStorageException(exception)) {
+			// A probe that cannot read the marker reports "nothing is known about the active
+			// generation" so a startup caller stays silent instead of failing on a storage error.
+			// A corrupt marker lands here too: JsonException is a storage exception by this store's
+			// classification, and recovering from one is ReadCurrent's job, not this probe's.
+			return null;
 		}
 	}
 
