@@ -59,7 +59,7 @@ public sealed record DeleteThemeArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("id")]
-	[property: Description("Id of the theme to delete.")]
+	[property: Description("Id (a GUID) of the theme to delete.")]
 	[property: Required]
 	string? Id = null
 ) {
