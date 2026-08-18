@@ -36,6 +36,7 @@
         { "web": "CardContentWrapper:top", "mobile": "Tabs:top", "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)." },
         { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom", "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs." }
       ],
+      "nonConvertingContainers": [ "MainHeader" ],
       "components": [
         { "web": "AttachmentList", "mobile": "AttachmentFileList", "note": "Attachments detail. Same component on both sides (crt.FileList) under a different template name, so the page's delta over the web-template baseline — the object-specific link column recordColumnName included — merges onto the template-provided AttachmentFileList; an unchanged property is omitted so the mobile default (e.g. RecordId) stands." }
       ]
@@ -47,7 +48,8 @@
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" },
         { "web": "CardContentWrapper", "mobile": "MainContainer" }
-      ]
+      ],
+      "nonConvertingContainers": [ "MainHeader" ]
     },
     {
       "web": "BlankPageTemplate",
@@ -63,7 +65,8 @@
       "note": "Base page template; maps to the mobile base record page. Universal fallback container is MainContainer.",
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" }
-      ]
+      ],
+      "nonConvertingContainers": [ "MainHeader" ]
     },
     {
       "web": "BaseTemplate",
@@ -153,6 +156,20 @@
       "crt.TabContainer",
       "crt.ExpansionPanel"
     ]
+  },
+  "fabConversion": {
+    "sourceContainers": [ "MainHeader" ],
+    "sourceButtonType": "crt.Button",
+    "menuItemType": "crt.MenuItem",
+    "scaffoldName": "Scaffold",
+    "floatActionProperty": "floatAction",
+    "defaultFab": {
+      "name": "FloatingActionButton",
+      "type": "crt.FloatingActionButton",
+      "icon": "more-vertical-button-icon",
+      "visible": "$CardState | crt.IsEqual : 'edit'"
+    },
+    "note": "Page-added crt.Button components of a non-converting header are converted into FAB menu items INSERTED into the template FAB's menuItems (parentName = the FAB's name) so the template's own items are inherited, never re-emitted; a floatAction merge through the Scaffold is emitted ONLY when the template provides no floatAction (its first definition — the diff applier silently drops the merged property otherwise). Everything else in the header stays excluded. defaultFab mirrors BaseMobilePageTemplate's FAB skeleton: its name is the assumed insert target when the template bundle is unreadable, and it seeds the fallback merge when the template genuinely has no FAB."
   },
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },

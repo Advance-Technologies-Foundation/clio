@@ -115,6 +115,49 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("Every record-page template a web page can be parented at declares MainHeader as a non-converting container (nothing from the web header lands in the mobile body — its page-added buttons go to the FAB instead). The rule is resolved by exact match on the page's own effective template and is never inherited, so each of them declares it in its own right. The list, blank, and root templates deliberately declare none, keeping the FAB pass scoped by data: the mobile list template has a header of its own to map into, the blank template has no MainHeader at all, and the shared root is the ancestor of the list chain too.")]
+	public void LoadBundled_RecordPageTemplatesDeclareMainHeaderNonConverting() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		foreach (string web in new[] {
+			"PageWithTabsFreedomTemplate", "BasePageFreedomTemplate", "BasePageTemplate" }) {
+			rules.Templates.First(t => t.Web == web).NonConvertingContainers
+				.Should().BeEquivalentTo(["MainHeader"],
+					because: $"a page whose effective template is {web} must exclude the web header from the " +
+						"mobile body — the rule of an ancestor template is never consulted for it");
+		}
+		foreach (string web in new[] { "ListPageV3Template", "BlankPageTemplate", "BaseTemplate" }) {
+			rules.Templates.First(t => t.Web == web).NonConvertingContainers.Should().BeEmpty(
+				because: $"the {web} template declares no header exclusion, so the FAB pass never triggers for it");
+		}
+	}
+
+	[Test]
+	[Description("The bundled rules carry the fabConversion group: page-added MainHeader crt.Button components become crt.MenuItem entries inserted into the template FAB's menuItems, with a defaultFab skeleton mirroring BaseMobilePageTemplate (its name is the assumed insert target when the template bundle is unreadable; no baseline items are carried — inserts inherit the real template items).")]
+	public void LoadBundled_FabConversion_CarriesMainHeaderButtonRule() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		FabConversionRule fab = rules.FabConversion;
+		fab.Should().NotBeNull(because: "header buttons need the FAB rule to survive the header exclusion");
+		fab.SourceContainers.Should().BeEquivalentTo(["MainHeader"]);
+		fab.SourceButtonType.Should().Be("crt.Button");
+		fab.MenuItemType.Should().Be("crt.MenuItem");
+		fab.ScaffoldName.Should().Be("Scaffold");
+		fab.FloatActionProperty.Should().Be("floatAction");
+		fab.DefaultFab.Should().ContainKey("name")
+			.WhoseValue.GetString().Should().Be("FloatingActionButton",
+				because: "the skeleton's name is the assumed insert target when the template bundle is unreadable");
+		fab.DefaultFab.Should().ContainKey("type")
+			.WhoseValue.GetString().Should().Be("crt.FloatingActionButton",
+				because: "the skeleton must mirror BaseMobilePageTemplate's FAB");
+		fab.DefaultFab.Should().ContainKey("icon");
+		fab.DefaultFab.Should().ContainKey("visible");
+		fab.DefaultFab.Should().NotContainKey("menuItems",
+			because: "no baseline items are carried anywhere — inserts inherit the real template items by " +
+				"construction, and the merge fallback for a template with no FAB must not invent any");
+	}
+
+	[Test]
 	[Description("Bundled tabbed template maps the attachments detail as a name-only, same-component twin: web AttachmentList -> mobile AttachmentFileList (both crt.FileList) with no carryProperties whitelist, so the page's delta over the web-template baseline — recordColumnName included — merges onto the template-provided element instead of being pruned as chrome.")]
 	public void LoadBundled_TabbedTemplateMapsAttachmentListTwin() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

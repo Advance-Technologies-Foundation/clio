@@ -33,6 +33,37 @@ public sealed class SourceComponentInfo {
 }
 
 /// <summary>
+/// A source-page component that was NOT converted because it lives inside one of the web template's
+/// non-converting containers (declared per template as <c>nonConvertingContainers</c> — e.g. a header
+/// container holding the page title, back button, AND an action bar with buttons). The mobile template
+/// already provides the equivalent header/scaffold chrome, so this component is intentionally dropped.
+/// Because the prune runs before
+/// inherited-chrome subtraction, the list mixes chrome the mobile template replaces (page title, back button)
+/// with page-added components — use <see cref="IsContainer"/> / <see cref="Container"/> to tell them apart.
+/// It is reported HERE (never in <see cref="MobilePageConversionGuide.ElementMap"/>, which only lists converted
+/// survivors) so the caller can confirm nothing needed was lost — do NOT re-add these. Carve-out is name-keyed:
+/// a descendant whose NAME is a template twin (a container name in <c>containerMap</c> or a mapped component
+/// name, e.g. nested tabs) is kept and still converts, so it never appears here.
+/// </summary>
+public sealed class ExcludedComponent {
+	[JsonPropertyName("name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Name { get; init; }
+
+	[JsonPropertyName("type")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Type { get; init; }
+
+	/// <summary>The declared non-converting container (its ancestor in <c>nonConvertingContainers</c>) this component lived under.</summary>
+	[JsonPropertyName("container")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Container { get; init; }
+
+	[JsonPropertyName("isContainer")]
+	public bool IsContainer { get; init; }
+}
+
+/// <summary>
 /// A web→mobile container-name correspondence from the matched template pair. The model uses it
 /// to set each component's <c>parentName</c> to the correct mobile container.
 /// </summary>
@@ -312,6 +343,13 @@ public sealed class SectionRegistrationInfo {
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
 /// </summary>
+/// <remarks>
+/// PUBLISHED CONTRACT: consumed field-by-field by the CAADT <c>creatio-mobile-page-conversion</c> skill
+/// (<c>references/page-to-mobile-conversion.md</c>). Adding / renaming / removing / repurposing a field here
+/// REQUIRES a matching skill update (the conversion plan + the step-8 report) in the same PR pair — otherwise
+/// the model never surfaces the new field to the user. See <c>clio/Command/McpServer/AGENTS.md</c> →
+/// "Consumer-facing tool outputs are a cross-repo contract".
+/// </remarks>
 public sealed class MobilePageConversionGuide {
 	// ── Source analysis ───────────────────────────────────────────────
 	[JsonPropertyName("sourcePage")]
@@ -329,6 +367,23 @@ public sealed class MobilePageConversionGuide {
 	/// <summary>Full resolved component tree (incl. inherited template components).</summary>
 	[JsonPropertyName("sourceStructure")]
 	public IReadOnlyList<SourceComponentInfo> SourceStructure { get; init; } = [];
+
+	/// <summary>
+	/// Components dropped from conversion because they live inside the web template's non-converting
+	/// container(s) (<c>nonConvertingContainers</c> — e.g. a whole header container, not just its action
+	/// bar). The mobile template already provides the equivalent header/scaffold chrome, so these are
+	/// intentionally excluded. The prune runs before inherited-chrome subtraction, so the list mixes chrome
+	/// the mobile template replaces (page title, back button) with page-added components (e.g. Order/print
+	/// buttons) — a consumer should split on <c>isContainer</c> / <c>container</c> and present the former as
+	/// replaced-by-template, not as a loss. Enumerated HERE (not in <see cref="ElementMap"/>) so the caller
+	/// can confirm nothing needed was lost; do NOT re-add them. A nested subtree whose name is a template
+	/// twin (e.g. tabs) is carved out and still converts, so it is absent from this list. Null when the
+	/// matched template declares no non-converting containers, or when none of their descendants were
+	/// present on the source page.
+	/// </summary>
+	[JsonPropertyName("excludedComponents")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ExcludedComponent> ExcludedComponents { get; init; }
 
 	/// <summary>
 	/// Diagnostic set only when the converted layout came back empty despite the source page having
@@ -488,6 +543,38 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("tabAreaLayers")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<TabAreaLayerGroup> TabAreaLayers { get; init; }
+
+	// ── Header buttons converted into FAB menu items ───────────────────
+	/// <summary>
+	/// Page-added <c>crt.Button</c> components of the web template's non-converting header container,
+	/// converted into mobile floating-action-button (FAB) menu items. The ACTIONABLE payload is already in
+	/// <see cref="ElementMap"/> as synthesized entries (no <c>webName</c>): normally one <c>insert</c> per
+	/// converted item into the template FAB's <c>menuItems</c> (parentName = the FAB's name), so the
+	/// template's own items (Copy/Delete) are inherited and come first — they are never re-emitted; only
+	/// when the template provides no <c>floatAction</c> does the map carry ONE Scaffold <c>merge</c> with
+	/// the complete FAB (its first definition). Apply exactly the shape the map contains, verbatim — never
+	/// author a <c>floatAction</c> merge yourself: when the template already owns <c>floatAction</c>, the
+	/// platform diff applier silently drops that merged property and the items never reach the compiled page.
+	/// The FAB lives in page METADATA only (<c>floatAction</c> is a Scaffold property, not an element), so it
+	/// is not visible in the Mobile Designer — expected, not an error. This section is the advisory summary:
+	/// which shape was emitted and where it landed (<c>emission</c> / <c>targetName</c> / <c>targetAssumed</c>
+	/// — read those rather than parsing the note), which buttons became items (a button with its own
+	/// <c>menuItems</c> is discarded and its entries are flattened, recursively, with their own captions —
+	/// each carrying the discarded opener's <c>visible</c> gate, so a converted item is never visible where
+	/// the web menu was hidden), and which candidates were dropped with the reason (unsupported
+	/// <c>clicked</c> request — a dead menu item is not shipped — no caption, no action, or an own gate the
+	/// inherited one cannot be composed with).
+	/// Dropped candidates appear HERE, not in <see cref="ExcludedComponents"/>; the header's non-button
+	/// content stays reported there. When EVERY candidate was dropped this section carries no items and the
+	/// element map carries no FAB entry at all — there is then nothing to apply, and a constraint says so.
+	/// Null when the pass reports nothing: no fabConversion rules section, the template excludes no header,
+	/// no button was found (or none yielded a candidate — such a button stays in <see cref="ExcludedComponents"/>,
+	/// which never lets one go unreported), or the web-template baseline was unavailable and no page-added
+	/// button was recovered from the page's own-body operations (a constraint then explains the exclusion).
+	/// </summary>
+	[JsonPropertyName("fabConversion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public FabConversionInfo FabConversion { get; init; }
 
 	// ── Spacing normalized on inserted containers ──────────────────────
 	/// <summary>
@@ -774,6 +861,107 @@ public sealed class TabAreaLayerGroup {
 	/// </summary>
 	[JsonPropertyName("movedChildren")]
 	public IReadOnlyList<string> MovedChildren { get; init; } = [];
+}
+
+/// <summary>
+/// Advisory summary of the header-buttons → FAB-menu-items conversion. The ACTIONABLE payload lives in the
+/// element map — <see cref="MobilePageConversionGuide.FabConversion"/> states that emission contract and why
+/// it is shaped the way it is; this section explains what happened, so the caller can present it at the
+/// conversion gate and in the final report, and says WHERE the payload was targeted
+/// (<see cref="Emission"/> / <see cref="TargetName"/> / <see cref="TargetAssumed"/>) without parsing prose.
+/// </summary>
+public sealed class FabConversionInfo {
+	/// <summary>Caller-facing summary of the pass outcome, composed from the actual counts.</summary>
+	[JsonPropertyName("note")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Note { get; init; }
+
+	/// <summary>
+	/// How the payload was emitted into the element map: <c>"insert"</c> — the default — is one entry per
+	/// converted item into <see cref="TargetName"/>'s <c>menuItems</c>; <c>"merge"</c> is the fallback for a
+	/// template with no targetable FAB, ONE entry carrying the complete <c>floatAction</c> onto the Scaffold.
+	/// Null when nothing was emitted (every candidate was dropped) — there is no payload to apply then.
+	/// </summary>
+	[JsonPropertyName("emission")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Emission { get; init; }
+
+	/// <summary>
+	/// The element the payload targets: the mobile template's own FAB for an <c>insert</c> emission (the
+	/// entries' <c>parentName</c>), the Scaffold for a <c>merge</c> one (its <c>mobileName</c>). Null when
+	/// nothing was emitted.
+	/// </summary>
+	[JsonPropertyName("targetName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string TargetName { get; init; }
+
+	/// <summary>
+	/// True when <see cref="TargetName"/> is the rules' STANDARD FAB name rather than one read off the
+	/// template — the template's own FAB could not be resolved, so the inserts assume it. They stay additive
+	/// (a wrong assumption can never erase the template's own items), but the result is worth verifying at
+	/// runtime. False whenever the target was actually read.
+	/// </summary>
+	[JsonPropertyName("targetAssumed")]
+	public bool TargetAssumed { get; init; }
+
+	/// <summary>The converted items, in the order they were appended after the template's own items.</summary>
+	[JsonPropertyName("items")]
+	public IReadOnlyList<FabMenuItemInfo> Items { get; init; } = [];
+
+	/// <summary>Candidates that produced NO item, each with the reason (report them to the user).</summary>
+	[JsonPropertyName("droppedItems")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<DroppedFabMenuItem> DroppedItems { get; init; }
+}
+
+/// <summary>One converted FAB menu item and the header button (or its menu entry) it came from.</summary>
+public sealed class FabMenuItemInfo {
+	/// <summary>Generated mobile element name of the menu item (unique on the page).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The item's caption — the resolved en-US text, or the literal/binding carried verbatim.</summary>
+	[JsonPropertyName("caption")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Caption { get; init; }
+
+	/// <summary>Name of the source header button the item came from.</summary>
+	[JsonPropertyName("sourceButton")]
+	public string SourceButton { get; init; }
+
+	/// <summary>
+	/// Name of the source menu entry when the item was flattened out of the button's own <c>menuItems</c>
+	/// (the button itself was discarded). Null when the button itself became the item.
+	/// </summary>
+	[JsonPropertyName("sourceMenuItem")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SourceMenuItem { get; init; }
+
+	/// <summary>Web request of the source <c>clicked</c> binding.</summary>
+	[JsonPropertyName("webRequest")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string WebRequest { get; init; }
+
+	/// <summary>Mobile request the item dispatches (remapped when the mobile name differs).</summary>
+	[JsonPropertyName("mobileRequest")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string MobileRequest { get; init; }
+}
+
+/// <summary>A FAB candidate that produced no menu item (a dead menu item is not shipped).</summary>
+public sealed class DroppedFabMenuItem {
+	/// <summary>Name of the source header button.</summary>
+	[JsonPropertyName("sourceButton")]
+	public string SourceButton { get; init; }
+
+	/// <summary>Name of the source menu entry, when the candidate was one (null for the button itself).</summary>
+	[JsonPropertyName("sourceMenuItem")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SourceMenuItem { get; init; }
+
+	/// <summary>Why no item was produced (e.g. the request is not supported on the Creatio Mobile app).</summary>
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
 }
 
 /// <summary>

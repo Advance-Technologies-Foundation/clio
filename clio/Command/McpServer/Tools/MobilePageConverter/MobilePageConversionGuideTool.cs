@@ -190,6 +190,7 @@ public sealed class MobilePageConversionGuideTool {
 		TemplateMappingRule templateRule = ResolveTemplateRule(rules, effectiveTemplate);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
+		IReadOnlySet<string> nonConvertingContainers = BuildNonConvertingContainers(templateRule);
 		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
 
 		// Best-effort read of the mobile template's own bundle. Used for three independent probes: the
@@ -200,7 +201,7 @@ public sealed class MobilePageConversionGuideTool {
 		// the template's natives and each template-owned collection can be split into focused targeted merges
 		// instead of the mobile diff engine's array-replace root merge silently dropping one side (see
 		// WebToMobileAnalysisService.SplitRootMergeIntoTargetedMerges).
-		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args);
+		MobileTemplateProbe mobileTemplateProbe = LoadMobileTemplateProbe(templateRule?.Mobile, args, rules.FabConversion);
 		IReadOnlyDictionary<string, string> mobileContainerParents = positionalPlacements is { Count: > 0 }
 			? mobileTemplateProbe.ContainerParents
 			: null;
@@ -246,6 +247,10 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateViewModelConfig: mobileTemplateProbe.ViewModelConfig,
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
 				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
+				nonConvertingContainers: nonConvertingContainers,
+				ownBodyViewConfigOps: pageResponse.Page?.OwnBodySummary?.ViewConfigDiffOps,
+				mobileTemplateFloatAction: mobileTemplateProbe.FloatAction,
+				mobileTemplateFabProbed: mobileTemplateProbe.FabProbed,
 				mobileTemplateTypesByName: mobileTemplateProbe.TypesByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateUnavailable: webTemplateBaseline.Unavailable,
@@ -459,6 +464,24 @@ public sealed class MobilePageConversionGuideTool {
 	}
 
 	/// <summary>
+	/// Builds the set of the template's non-converting container names (declared as
+	/// <c>nonConvertingContainers</c>) — the components inside them are excluded from conversion.
+	/// Returns null when there is no rule or the list is empty. Case-insensitive.
+	/// </summary>
+	internal static IReadOnlySet<string> BuildNonConvertingContainers(TemplateMappingRule rule) {
+		if (rule?.NonConvertingContainers is null || rule.NonConvertingContainers.Count == 0) {
+			return null;
+		}
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (string name in rule.NonConvertingContainers) {
+			if (!string.IsNullOrWhiteSpace(name)) {
+				set.Add(name.Trim());
+			}
+		}
+		return set.Count > 0 ? set : null;
+	}
+
+	/// <summary>
 	/// Parses the positional container entries of a template rule. A positional entry has the form
 	/// <c>{ "web": "&lt;anchor&gt;:top|bottom", "mobile": "&lt;mobileAnchor&gt;:top|bottom" }</c>: content
 	/// that is a sibling of the web <c>&lt;anchor&gt;</c> container is placed above/below the mobile
@@ -495,12 +518,18 @@ public sealed class MobilePageConversionGuideTool {
 	/// environment, read failure) — the caller surfaces that as an explicit guide constraint instead of
 	/// silently falling back to a single root merge that may replace the template's arrays wholesale.
 	/// </summary>
+	/// <param name="FabProbed">True only when the template's Scaffold was actually inspected, so
+	/// <paramref name="FloatAction"/> being null MEANS the template carries no FAB. False in every state
+	/// where nothing was learned (no schema name, unreadable bundle, no viewConfig, no Scaffold node, no
+	/// fabConversion rule to search with) — the FAB pass must not read those as "no FAB".</param>
 	private sealed record MobileTemplateProbe(
 		IReadOnlyDictionary<string, string> ContainerParents,
 		JsonNode ViewModelConfig,
 		JsonNode ModelConfig,
 		bool Unavailable,
-		IReadOnlyDictionary<string, string> TypesByName);
+		IReadOnlyDictionary<string, string> TypesByName,
+		JsonNode FloatAction = null,
+		bool FabProbed = false);
 
 	/// <summary>
 	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle: maps each mobile
@@ -512,7 +541,8 @@ public sealed class MobilePageConversionGuideTool {
 	/// merged bundle and never throws. Returns a null base (and <c>Unavailable = false</c>) when no template
 	/// name is known; <c>Unavailable = true</c> when a name was known but the read failed.
 	/// </summary>
-	private MobileTemplateProbe LoadMobileTemplateProbe(string mobileSchemaName, MobilePageConversionGuideArgs args) {
+	private MobileTemplateProbe LoadMobileTemplateProbe(
+		string mobileSchemaName, MobilePageConversionGuideArgs args, FabConversionRule fabRule) {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
@@ -542,7 +572,13 @@ public sealed class MobilePageConversionGuideTool {
 					parents = WebToMobileAnalysisService.CollectParentByName(viewConfig);
 					types = WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig);
 				}
-				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig, Unavailable: false, TypesByName: types);
+				// The template's OWN resolved FAB configuration (Scaffold.floatAction) — the base the FAB
+				// pass appends the converted header buttons to. A null floatAction only means "this template
+				// has no FAB" when the Scaffold was found, which is what fabProbed reports.
+				bool fabProbed = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+					bundle.ViewConfig, fabRule?.ScaffoldName, fabRule?.FloatActionProperty, out JsonNode floatAction);
+				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig,
+					Unavailable: false, TypesByName: types, FloatAction: floatAction, FabProbed: fabProbed);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.

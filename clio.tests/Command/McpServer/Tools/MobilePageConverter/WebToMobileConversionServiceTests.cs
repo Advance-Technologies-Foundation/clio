@@ -85,6 +85,11 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
 		bool mobileTemplateUnavailable = false,
+		IReadOnlySet<string> nonConvertingContainers = null,
+		IReadOnlyList<PageOperationInfo> ownBodyViewConfigOps = null,
+		WebToMobilePageConversionRules rules = null,
+		JsonNode mobileTemplateFloatAction = null,
+		bool mobileTemplateFabProbed = false,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
@@ -93,7 +98,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType,
-			Rules, templateRule,
+			rules ?? Rules, templateRule,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: containerNameMap,
 			templateComponentNames: templateComponentNames,
@@ -101,6 +106,10 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateViewModelConfig: mobileTemplateViewModelConfig,
 			mobileTemplateModelConfig: mobileTemplateModelConfig,
 			mobileTemplateUnavailable: mobileTemplateUnavailable,
+			nonConvertingContainers: nonConvertingContainers,
+			ownBodyViewConfigOps: ownBodyViewConfigOps,
+			mobileTemplateFloatAction: mobileTemplateFloatAction,
+			mobileTemplateFabProbed: mobileTemplateFabProbed,
 			mobileTemplateTypesByName: mobileTemplateTypesByName,
 			webTemplateBaselineNodes: webTemplateBaselineNodes,
 			webTemplateUnavailable: webTemplateUnavailable,
@@ -2265,6 +2274,1448 @@ public sealed class WebToMobileConversionServiceTests {
 
 		guide.Constraints.Should().NotContain(c => c.Contains("degrades to an ADVISORY merge"),
 			because: "no name-mapped twin exists, so nothing degraded to advisory");
+	}
+
+	#endregion
+
+	#region Non-converting containers (rule-driven per-template exclusion with carve-out)
+
+	[Test]
+	[Description("A non-converting container excludes all its descendants (recursively, including child containers), but a descendant with its own conversion rule (a containerMap twin) is carved out and still converts.")]
+	public void Analyze_NonConvertingContainer_ExcludesDescendantsButCarvesOutMappedSubtree() {
+		// Arrange: MainHeader (non-converting) holds an action bar (dropped) and a tab panel (rule-mapped → kept).
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "OrderButton", "type": "crt.Button" } ] },
+				{ "name": "CardToggleTabPanel", "type": "crt.Tabs", "items": [
+					{ "name": "UsrAmount", "type": "crt.Input" } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Tabs", true), ("crt.Input", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["CardToggleTabPanel"] = "Tabs" };
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			nonConvertingContainers: Names("MainHeader"));
+
+		// Assert: the excluded header and its action bar are gone from both the structure and the element map.
+		foreach (string excluded in new[] { "MainHeader", "ActionButtonsContainer", "OrderButton" }) {
+			guide.SourceStructure.Should().NotContain(s => s.Name == excluded,
+				because: $"{excluded} is inside a non-converting container");
+			guide.ElementMap.Should().NotContain(e => e.WebName == excluded,
+				because: $"{excluded} must not be converted");
+		}
+		// The rule-mapped tab panel is carved out (hoisted up) and converts as a merge onto mobile Tabs.
+		guide.SourceStructure.Should().Contain(s => s.Name == "CardToggleTabPanel",
+			because: "it has its own conversion rule, so it is carved out of the exclusion");
+		guide.ElementMap.Should().Contain(e => e.WebName == "CardToggleTabPanel" && e.Operation == "merge" && e.MobileName == "Tabs",
+			because: "the carved-out panel merges onto the mobile Tabs");
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrAmount" && e.Operation == "insert",
+			because: "the carved-out subtree re-enters normal conversion, so its field is inserted");
+		guide.Constraints.Should().Contain(c => c.Contains("non-converting container"),
+			because: "the guide announces the declarative exclusion");
+		// The dropped components inside the excluded container are enumerated (so the caller can confirm the loss);
+		// the declared container itself and the carved-out subtree are NOT listed.
+		guide.ExcludedComponents.Should().NotBeNull();
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "ActionButtonsContainer" && e.IsContainer && e.Container == "MainHeader",
+			because: "a dropped child container inside MainHeader is reported with its excluding container");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "OrderButton" && !e.IsContainer && e.Type == "crt.Button" && e.Container == "MainHeader",
+			because: "a dropped leaf inside MainHeader is reported with its type and excluding container");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "MainHeader",
+			because: "the declared non-converting container itself is already named in the constraint, not re-listed as a dropped child");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "CardToggleTabPanel" || e.Name == "UsrAmount",
+			because: "the carved-out (rule-mapped) subtree converts, so it is not reported as excluded");
+	}
+
+	[Test]
+	[Description("Carve-out also honors a component twin (componentMap), not only a container twin: a mapped content element inside a non-converting container still converts.")]
+	public void Analyze_NonConvertingContainer_CarvesOutComponentTwin() {
+		// Arrange: DataTable is a component twin the template maps web→mobile.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PrintButton", "type": "crt.Button" },
+				{ "name": "DataTable", "type": "crt.DataTable" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.DataTable", false));
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List" }
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, componentNameMap: componentNameMap,
+			nonConvertingContainers: Names("MainHeader"));
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.WebName == "PrintButton",
+			because: "a non-mapped leaf inside the non-converting container is dropped");
+		guide.ElementMap.Should().Contain(e => e.WebName == "DataTable" && e.Operation == "merge" && e.MobileName == "List",
+			because: "a component-twin descendant is carved out and merges onto its mapped mobile element");
+	}
+
+	[Test]
+	[Description("Even a leaf that would normally convert (has a component-equivalence rule) is dropped when it sits inside a non-converting container with no rule of its own.")]
+	public void Analyze_NonConvertingContainer_DropsOtherwiseConvertibleLeaf() {
+		// Arrange: crt.Checkbox → crt.Toggle is a supported conversion, but it is inside the excluded header.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "UsrFlag", "type": "crt.Checkbox" } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Checkbox", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"));
+
+		// Assert
+		guide.SourceStructure.Should().NotContain(s => s.Name == "UsrFlag",
+			because: "exclusion is by container position, regardless of whether the leaf type is convertible");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "UsrFlag",
+			because: "a convertible leaf is still dropped inside a non-converting container");
+	}
+
+	[Test]
+	[Description("The non-converting pass runs BEFORE inherited-chrome subtraction, so a page-added leaf (absent from the template baseline) inside the excluded container is still dropped rather than hoisted out and converted.")]
+	public void Analyze_NonConvertingContainer_RunsBeforeChromeSubtraction_PageAddedLeafDropped() {
+		// Arrange: the baseline knows the header containers but NOT the page-added OrderButton.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "OrderButton", "type": "crt.Button" } ] } ] },
+			  { "name": "ContentContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+
+		// Act: both exclusion and chrome subtraction are active.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web,
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "ActionButtonsContainer"));
+
+		// Assert: OrderButton is dropped by the exclusion (it would have been hoisted+converted if chrome ran first).
+		guide.SourceStructure.Should().NotContain(s => s.Name == "OrderButton",
+			because: "the page-added button inside the non-converting container is excluded, not hoisted out");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "OrderButton",
+			because: "the exclusion runs before chrome subtraction so the button is not re-surfaced");
+		// The page's real content outside the excluded container still converts.
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName" && e.Operation == "insert",
+			because: "content outside the non-converting container is unaffected");
+	}
+
+	[Test]
+	[Description("With no non-converting containers declared the tree is untouched (backward-compatible): a would-be-excluded element is still surfaced and no exclusion constraint is added.")]
+	public void Analyze_NoNonConvertingContainers_LeavesTreeUnchanged() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderButton", "type": "crt.Button" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: web, nonConvertingContainers: null);
+
+		// Assert
+		guide.SourceStructure.Should().Contain(s => s.Name == "OrderButton",
+			because: "no exclusion was declared, so the tree is unchanged");
+		guide.Constraints.Should().NotContain(c => c.Contains("non-converting container"),
+			because: "the exclusion constraint is only added when the pass runs");
+		guide.ExcludedComponents.Should().BeNull(
+			because: "nothing was excluded, so the report omits the excludedComponents list");
+	}
+
+	[Test]
+	[Description("An anonymous (nameless) wrapper inside a non-converting container is itself not reported (it has no name), but its named descendants are still dropped and reported in excludedComponents under the TOP-level declared container — the excluding container propagates through the nameless level.")]
+	public void Analyze_NonConvertingContainer_AnonymousWrapperInside_ReportsNamedDescendantsOnly() {
+		// Arrange: MainHeader → (nameless FlexContainer wrapper) → OrderButton.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "type": "crt.FlexContainer", "items": [
+					{ "name": "OrderButton", "type": "crt.Button" } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"));
+
+		// Assert: the named leaf is dropped and reported; the anonymous wrapper contributes no entry.
+		guide.SourceStructure.Should().NotContain(s => s.Name == "OrderButton",
+			because: "a named leaf under a nameless wrapper inside the excluded container is still dropped");
+		guide.ExcludedComponents.Should().ContainSingle(
+			because: "only the named descendant is reportable; the nameless wrapper cannot be named")
+			.Which.Should().Match<ExcludedComponent>(e =>
+				e.Name == "OrderButton" && e.Container == "MainHeader" && !e.IsContainer,
+			because: "the excluding container propagates through the nameless level to the leaf");
+	}
+
+	private static PageOperationInfo Op(string operation, string name, string type = null, string parentName = null) =>
+		new() { Operation = operation, Name = name, Type = type, ParentName = parentName };
+
+	[Test]
+	[Description("A page-ADDED insert whose declared parentName targets a container nested under a non-converting container is excluded even when the merge orphaned it to the tree root (failed parentName resolution). The position-based prune misses it; the own-body parentName chain recovers it.")]
+	public void Analyze_NonConvertingContainer_OrphanedPageInsert_ExcludedByDeclaredParentChain() {
+		// Arrange: the merged tree carries MainHeader's template chrome, but the page-added Button_f1g6row was
+		// orphaned to the root because its parentName (ActionButtonsContainer) could not be resolved at merge.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [
+						{ "name": "AddButton", "type": "crt.Button" } ] } ] } ] },
+			  { "name": "Button_f1g6row", "type": "crt.Button" },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+		// The source page's OWN body: the button is an insert into ActionButtonsContainer (inside MainHeader).
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "Button_f1g6row", "crt.Button", parentName: "ActionButtonsContainer"),
+			Op("insert", "UsrName", "crt.Input", parentName: "MainContainer")
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"),
+			ownBodyViewConfigOps: ownBody);
+
+		// Assert: the orphaned button is excluded (gone from structure + element map) and reported with MainHeader.
+		guide.SourceStructure.Should().NotContain(s => s.Name == "Button_f1g6row",
+			because: "its declared parent chain (ActionButtonsContainer -> MainHeader) is non-converting");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Button_f1g6row",
+			because: "an orphaned insert into a non-converting container must not leak into the element map");
+		guide.ExcludedComponents.Should().Contain(e =>
+			e.Name == "Button_f1g6row" && e.Container == "MainHeader" && e.Type == "crt.Button" && !e.IsContainer,
+			because: "the orphan recovery reports it like any other excluded component, resolved to MainHeader");
+		// Content outside the excluded container still converts.
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName" && e.Operation == "insert",
+			because: "an orphan whose parent chain is NOT excluded is unaffected");
+	}
+
+	[Test]
+	[Description("Orphan recovery walks the declared-parent chain multiple levels: a page-added button under a page-added container under MainHeader is excluded, and the dropped container's whole subtree is reported.")]
+	public void Analyze_NonConvertingContainer_OrphanedInsert_MultiLevelDeclaredChain() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [] },
+			  { "name": "CustomHeaderGroup", "type": "crt.FlexContainer", "items": [
+				{ "name": "Button_z", "type": "crt.Button" } ] },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrKeep", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "CustomHeaderGroup", "crt.FlexContainer", parentName: "MainHeader"),
+			Op("insert", "Button_z", "crt.Button", parentName: "CustomHeaderGroup")
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"),
+			ownBodyViewConfigOps: ownBody);
+
+		guide.ElementMap.Should().NotContain(e => e.WebName == "CustomHeaderGroup" || e.WebName == "Button_z",
+			because: "the whole page-added header group resolves to MainHeader through the declared chain");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "CustomHeaderGroup" && e.Container == "MainHeader" && e.IsContainer);
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "Button_z" && e.Container == "MainHeader" && !e.IsContainer,
+			because: "a dropped orphan container still lists its children");
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrKeep" && e.Operation == "insert");
+	}
+
+	[Test]
+	[Description("An orphan whose declared parent chain does NOT lead into a non-converting container is left alone (converts) - the recovery must not over-exclude root-level page content.")]
+	public void Analyze_NonConvertingContainer_OrphanOutsideExcluded_StillConverts() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [] },
+			  { "name": "UsrLooseField", "type": "crt.Input" } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Input", false));
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "UsrLooseField", "crt.Input", parentName: "MainContainer")
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, nonConvertingContainers: Names("MainHeader"),
+			ownBodyViewConfigOps: ownBody);
+
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrLooseField" && e.Operation == "insert",
+			because: "its declared parent (MainContainer) is not a non-converting container");
+		guide.ExcludedComponents.Should().BeNull(
+			because: "nothing resolved as excluded");
+		guide.Constraints.Should().NotContain(c => c.Contains("non-converting container("),
+			because: "the constraint must not claim components were dropped into excludedComponents when it stayed null");
+	}
+
+	[Test]
+	[Description("An orphan whose declared parent chain passes through a carved-out twin is NOT excluded - the carved-out subtree converts.")]
+	public void Analyze_NonConvertingContainer_OrphanUnderCarveOut_StillConverts() {
+		// CardToggleTabPanel is a container twin (carve-out) nested under MainHeader; a page insert targeting it converts.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CardToggleTabPanel", "type": "crt.Tabs", "items": [] } ] },
+			  { "name": "UsrTabField", "type": "crt.Input" } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Tabs", true), ("crt.Input", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["CardToggleTabPanel"] = "Tabs" };
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "UsrTabField", "crt.Input", parentName: "CardToggleTabPanel")
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			nonConvertingContainers: Names("MainHeader"), ownBodyViewConfigOps: ownBody);
+
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrTabField",
+			because: "its declared parent CardToggleTabPanel is a carved-out twin, so the field converts");
+		guide.ExcludedComponents.Should().BeNull(
+			because: "a carve-out ancestor short-circuits the exclusion, so nothing is excluded");
+	}
+
+	#endregion
+
+	#region Header buttons → FAB menu items (fabConversion)
+
+	/// <summary>Rules with the FAB group enabled for MainHeader (plus one explicitly unsupported request).</summary>
+	private static WebToMobilePageConversionRules FabRules() => new() {
+		Templates = Rules.Templates,
+		Components = Rules.Components,
+		Requests = [
+			new RequestMappingRule { Web = "crt.PrintReportRequest", Mobile = "", Category = "Unsupported" },
+			new RequestMappingRule {
+				Web = "crt.WebNavigateRequest", Mobile = "crt.OpenCustomWebViewPageRequest",
+				Category = "WithAdaptation",
+				ParamMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["url"] = "uri" }
+			}
+		],
+		FabConversion = new FabConversionRule {
+			SourceContainers = ["MainHeader"],
+			SourceButtonType = "crt.Button",
+			MenuItemType = "crt.MenuItem",
+			ScaffoldName = "Scaffold",
+			FloatActionProperty = "floatAction",
+			DefaultFab = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""
+				{ "name": "FloatingActionButton", "type": "crt.FloatingActionButton",
+				  "icon": "more-vertical-button-icon", "visible": "$CardState | crt.IsEqual : 'edit'" }
+				""")
+		}
+	};
+
+	/// <summary>The mobile template's resolved floatAction (Copy + Delete), as the template probe hands it over.</summary>
+	private static JsonNode TemplateFloatAction() => JsonNode.Parse("""
+		{ "name": "FloatingActionButton", "type": "crt.FloatingActionButton",
+		  "icon": "more-vertical-button-icon", "visible": "$CardState | crt.IsEqual : 'edit'",
+		  "menuItems": [
+		    { "name": "FloatingActionButtonCopyMenuItem", "type": "crt.MenuItem",
+		      "caption": "#ResourceString(CopyMenuItem_caption)#", "clicked": { "request": "crt.CopyRecordRequest" } },
+		    { "name": "FloatingActionButtonDeleteMenuItem", "type": "crt.MenuItem",
+		      "caption": "#ResourceString(DeleteMenuItem_caption)#", "clicked": { "request": "crt.DeleteRecordRequest" } } ] }
+		""");
+
+	private static ElementMapEntry ScaffoldMerge(MobilePageConversionGuide guide) =>
+		guide.ElementMap.Single(e => e.WebName == null && e.Operation == "merge" && e.MobileName == "Scaffold");
+
+	/// <summary>The synthesized FAB menu-item inserts, in element-map (web document) order.</summary>
+	private static List<ElementMapEntry> FabInserts(MobilePageConversionGuide guide) =>
+		guide.ElementMap.Where(e => e.WebName == null && e.Operation == "insert"
+			&& e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems").ToList();
+
+	[Test]
+	[Description("A page-added MainHeader button becomes ONE crt.MenuItem emitted as a synthesized INSERT into the template FAB's menuItems (appended after the template's own items, which are inherited and never re-emitted — a floatAction merge through the Scaffold would be silently dropped by the diff applier); the button itself reaches neither sourceStructure nor excludedComponents, and its re-keyed caption is registered in resourceStrings.")]
+	public void Analyze_FabConversion_PageAddedButton_BecomesMenuItemAppendedAfterTemplateItems() {
+		// Arrange: the header carries chrome (in the baseline) and one page-added button with a supported request.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "CreateOrderButton", "type": "crt.Button",
+					  "caption": "#ResourceString(CreateOrderButton_caption)#", "color": "accent", "icon": "add-icon",
+					  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "UsrOrder_FormPage" } } } ] } ] },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "ActionButtonsContainer"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert: one synthesized insert targets the template FAB's menuItems — the template's own items
+		// are inherited, never re-emitted, and appear nowhere in the payload.
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle().Which;
+		insert.MobileName.Should().Be("CreateOrderButtonFabMenuItem",
+			because: "the generated name derives from the source button name");
+		insert.MobileType.Should().Be("crt.MenuItem");
+		insert.Index.Should().BeNull(because: "no index appends the item AFTER the template's own items");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold",
+			because: "a floatAction merge through the Scaffold is silently dropped by the diff applier when " +
+				"the template already owns floatAction — the insert shape is the only one that survives");
+		guide.ElementMap.Should().NotContain(
+			e => e.MobileName == "FloatingActionButtonCopyMenuItem" || e.MobileName == "FloatingActionButtonDeleteMenuItem",
+			because: "the template's own items are inherited and must never be re-emitted");
+		JsonObject converted = insert.MobileValues!.AsObject();
+		converted.Should().NotContainKey("name",
+			because: "the insert operation carries the name itself; a duplicate inside values is noise");
+		converted["type"]!.GetValue<string>().Should().Be("crt.MenuItem");
+		converted["caption"]!.GetValue<string>().Should().Be("#ResourceString(CreateOrderButtonFabMenuItem_caption)#",
+			because: "the caption is re-keyed to a per-item key so it cannot collide with a template-owned key");
+		converted["clicked"]!["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
+			because: "a supported request is carried (this one needs no rename)");
+		converted["clicked"]!["params"]!["schemaName"]!.GetValue<string>().Should().Be("UsrOrder_FormPage",
+			because: "request params are carried verbatim when the rule has no paramMap");
+		converted.Select(p => p.Key).Should().NotContain(["color", "icon"],
+			because: "style, color, and icon are ignored by design — only caption, clicked, and visible are carried");
+		// The advisory section mirrors the payload.
+		guide.FabConversion.Should().NotBeNull();
+		guide.FabConversion.Emission.Should().Be("insert",
+			because: "the template owns a targetable FAB, so the payload is additive inserts, not a merge");
+		guide.FabConversion.TargetName.Should().Be("FloatingActionButton",
+			because: "targetName names the element the inserts land in, so the caller need not parse the note");
+		guide.FabConversion.TargetAssumed.Should().BeFalse(
+			because: "the target was read off the template's own floatAction, not assumed");
+		FabMenuItemInfo item = guide.FabConversion.Items.Single();
+		item.Name.Should().Be("CreateOrderButtonFabMenuItem");
+		item.Caption.Should().Be("Create order", because: "the advisory caption is the resolved en-US text");
+		item.SourceButton.Should().Be("CreateOrderButton");
+		item.SourceMenuItem.Should().BeNull(because: "the button itself became the item, not one of its menu entries");
+		item.WebRequest.Should().Be("crt.OpenPageRequest");
+		item.MobileRequest.Should().Be("crt.OpenPageRequest");
+		guide.FabConversion.DroppedItems.Should().BeNull(because: "every candidate converted");
+		// The source button vanishes from every other surface.
+		guide.ElementMap.Should().NotContain(e => e.WebName == "CreateOrderButton",
+			because: "the button must not be re-created as a page element");
+		guide.SourceStructure.Should().NotContain(s => s.Name == "CreateOrderButton");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "CreateOrderButton",
+			because: "a button reported under fabConversion is not 'lost' and leaves the excluded list");
+		// The re-keyed caption resource is registered with the web caption's own text.
+		guide.ResourceStrings.Should().ContainKey("CreateOrderButtonFabMenuItem_caption")
+			.WhoseValue.Should().Be("Create order");
+		// The guide announces the mandatory structure and the designer invisibility.
+		guide.Constraints.Should().Contain(c => c.Contains("fabConversion is MANDATORY"),
+			because: "the model must never treat the FAB merge as optional");
+		guide.NextSteps.Should().Contain(s => s.Contains("guide.fabConversion"),
+			because: "the build flow must point at the FAB payload the same way tabAreaLayers does");
+	}
+
+	[Test]
+	[Description("A header button that carries its own menuItems (a '3 dots' menu) is itself discarded: only its entries become FAB items — flattened recursively through nested submenu groups, each keeping its OWN caption, in document order.")]
+	public void Analyze_FabConversion_MenuButton_FlattensEntriesRecursively_ButtonItselfDropped() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "menuItems": [
+					{ "name": "OrderMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(OrderMenuItem_caption)#",
+					  "clicked": { "request": "crt.OpenPageRequest" } },
+					{ "name": "MoreGroup", "type": "crt.MenuItem", "caption": "#ResourceString(MoreGroup_caption)#",
+					  "items": [
+						{ "name": "DeepMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(DeepMenuItem_caption)#",
+						  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "OrderMenuItem_caption": { "en-US": "Order" },
+			  "MoreGroup_caption": { "en-US": "More" }, "DeepMenuItem_caption": { "en-US": "Deep action" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		List<ElementMapEntry> inserts = FabInserts(guide);
+		inserts.Should().HaveCount(2, because: "only the two flattened entries convert — the button and the submenu group contribute none themselves");
+		inserts[0].MobileName.Should().Be("OrderMenuItemFabMenuItem");
+		inserts[1].MobileName.Should().Be("DeepMenuItemFabMenuItem",
+			because: "a nested submenu entry is flattened into the same flat list, in document order");
+		inserts[1].MobileValues!.AsObject()["caption"]!.GetValue<string>().Should().Be("#ResourceString(DeepMenuItemFabMenuItem_caption)#",
+			because: "a flattened entry keeps its OWN caption, never a parent prefix");
+		guide.FabConversion.Items.Should().HaveCount(2);
+		guide.FabConversion.Items.Should().OnlyContain(i => i.SourceButton == "ActionsButton",
+			because: "both items came from the same menu button");
+		guide.FabConversion.Items.Select(i => i.SourceMenuItem).Should().Equal("OrderMenuItem", "DeepMenuItem");
+		guide.FabConversion.Items.Should().NotContain(i => i.SourceMenuItem == null,
+			because: "the menu button itself never becomes an item");
+	}
+
+	[Test]
+	[Description("A button whose request the rules file explicitly clears for mobile produces NO item (a dead menu item is not shipped): it is reported in droppedItems with the request named, and with no surviving item nothing FAB-related is emitted at all — the template FAB stays untouched.")]
+	public void Analyze_FabConversion_UnsupportedRequest_DropsCandidateWithReason() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PrintButton", "type": "crt.Button", "caption": "#ResourceString(PrintButton_caption)#",
+				  "clicked": { "request": "crt.PrintReportRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "PrintButton_caption": { "en-US": "Print" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Should().NotBeNull(because: "a dropped candidate must still be reported");
+		guide.FabConversion.Items.Should().BeEmpty();
+		DroppedFabMenuItem droppedItem = guide.FabConversion.DroppedItems.Should().ContainSingle().Which;
+		droppedItem.SourceButton.Should().Be("PrintButton");
+		droppedItem.Reason.Should().Contain("crt.PrintReportRequest",
+			because: "the reason names the unsupported request");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold",
+			because: "with no surviving item there is nothing to add — the template's own FAB must stay untouched");
+		FabInserts(guide).Should().BeEmpty(
+			because: "with no surviving item there is no menu-item insert to emit either");
+	}
+
+	[Test]
+	[Description("A button with an UNKNOWN request (absent from the rules map AND the offline supported set) is dropped exactly like the walk's dead-button rule — never kept-and-flagged the way surviving components' bindings are.")]
+	public void Analyze_FabConversion_UnknownRequest_DropsCandidate() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CustomButton", "type": "crt.Button", "caption": "#ResourceString(CustomButton_caption)#",
+				  "clicked": { "request": "usr.MyCustomRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "CustomButton_caption": { "en-US": "Custom" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Items.Should().BeEmpty();
+		guide.FabConversion.DroppedItems.Should().ContainSingle()
+			.Which.Reason.Should().Contain("usr.MyCustomRequest");
+	}
+
+	[Test]
+	[Description("A page-supplied caption (via its resource string) and a page-supplied unsupported request are both untrusted, unbounded page-authored text: an over-length value carrying CR/LF is stripped of control characters and capped before it reaches the advisory FabMenuItemInfo.Caption / DroppedFabMenuItem.Reason that the FAB constraint mandates relaying into the agent's context — CR/LF in either could otherwise forge or overwrite lines around it. The applied mobileValues caption is NOT touched (it must paste verbatim).")]
+	public void Analyze_FabConversion_UnsanitizedCaptionAndRequest_StrippedAndCappedInAdvisoryOutput() {
+		// Arrange: WeirdButton's resolved caption text carries an embedded CR/LF and exceeds the 60-char cap;
+		// BadRequestButton's clicked.request is unknown AND carries the same CR/LF-plus-overlength shape.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "WeirdButton", "type": "crt.Button", "caption": "#ResourceString(WeirdButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } },
+				{ "name": "BadRequestButton", "type": "crt.Button",
+				  "caption": "#ResourceString(BadRequestButton_caption)#",
+				  "clicked": { "request": "usr.Injected\r\nRequestNameThatIsDefinitelyLongEnoughToExceedSixtyCharactersForSureXYZ" } }
+			  ] } ]
+			""",
+			resourcesJson: """
+			{ "WeirdButton_caption": { "en-US": "Bad caption\r\nwith an injected newline that keeps going and going and going and going" },
+			  "BadRequestButton_caption": { "en-US": "Bad request button" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert: the converted item's advisory caption is stripped and capped.
+		FabMenuItemInfo item = guide.FabConversion.Items.Should().ContainSingle(
+			because: "only WeirdButton's request is supported — BadRequestButton is dropped").Which;
+		item.Caption.Should().NotContainAny(["\r", "\n"],
+			because: "a page-authored caption reaches the agent's context as advisory text, so a raw CR/LF must " +
+				"not survive into it (it could forge or overwrite lines around it)");
+		item.Caption.Should().HaveLength(63, because: "SanitizeForDisplay caps at 60 chars plus a 3-char ellipsis")
+			.And.EndWith("...", because: "the resolved caption exceeds the cap and must be visibly truncated")
+			.And.StartWith("Bad caption", because: "the caption must still be recognizable, only bounded");
+		JsonObject applied = FabInserts(guide).Single(e => e.MobileName == "WeirdButtonFabMenuItem")
+			.MobileValues!.AsObject();
+		applied["caption"]!.GetValue<string>().Should().Be("#ResourceString(WeirdButtonFabMenuItem_caption)#",
+			because: "the applied page value is a resource-string token, not the raw text — sanitizing the " +
+				"advisory summary must never touch what actually gets pasted onto the page");
+
+		// Assert: the dropped candidate's reason is stripped and capped, but still names the request.
+		DroppedFabMenuItem dropped = guide.FabConversion.DroppedItems.Should().ContainSingle().Which;
+		dropped.SourceButton.Should().Be("BadRequestButton");
+		dropped.Reason.Should().NotContainAny(["\r", "\n"],
+			because: "the reason is relayed to the agent per the fabConversion constraint, so page-authored " +
+				"control characters must not survive into it");
+		dropped.Reason.Should().Contain("usr.Injected", because: "the reason must still name the unsupported request")
+			.And.Contain("...", because: "the over-length request must be visibly truncated, not silently cut")
+			.And.Contain("not supported on the Creatio Mobile app");
+	}
+
+	[Test]
+	[Description("A supported request whose mobile name differs is remapped and its params renamed per the rule's paramMap — the same conversion every event binding gets.")]
+	public void Analyze_FabConversion_RenamedRequest_RemappedWithParamMap() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "SiteButton", "type": "crt.Button", "caption": "#ResourceString(SiteButton_caption)#",
+				  "clicked": { "request": "crt.WebNavigateRequest", "params": { "url": "https://creatio.com" } } } ] } ]
+			""",
+			resourcesJson: """{ "SiteButton_caption": { "en-US": "Site" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		JsonObject converted = FabInserts(guide).Single().MobileValues!.AsObject();
+		converted["clicked"]!["request"]!.GetValue<string>().Should().Be("crt.OpenCustomWebViewPageRequest",
+			because: "the rules file renames the request for mobile");
+		converted["clicked"]!["params"]!["uri"]!.GetValue<string>().Should().Be("https://creatio.com",
+			because: "the paramMap renames url → uri");
+		guide.FabConversion.Items.Single().MobileRequest.Should().Be("crt.OpenCustomWebViewPageRequest");
+	}
+
+	[Test]
+	[Description("A caption-less (icon-only) button and a button with no clicked request both produce NO item, each reported with its own reason — the transparency invariant covers every dropped candidate.")]
+	public void Analyze_FabConversion_CaptionlessOrActionlessButton_Dropped() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "IconOnlyButton", "type": "crt.Button", "icon": "settings-icon",
+				  "clicked": { "request": "crt.OpenPageRequest" } },
+				{ "name": "DeadButton", "type": "crt.Button", "caption": "#ResourceString(DeadButton_caption)#" } ] } ]
+			""",
+			resourcesJson: """{ "DeadButton_caption": { "en-US": "Dead" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Items.Should().BeEmpty();
+		guide.FabConversion.DroppedItems.Should().HaveCount(2);
+		guide.FabConversion.DroppedItems.Should().Contain(d => d.SourceButton == "IconOnlyButton" && d.Reason.Contains("caption"),
+			because: "an icon-only button has nothing to label the menu item with");
+		guide.FabConversion.DroppedItems.Should().Contain(d => d.SourceButton == "DeadButton" && d.Reason.Contains("clicked"),
+			because: "a menu item without an action is not shipped");
+	}
+
+	[Test]
+	[Description("The source button's visible binding is carried onto the menu item verbatim, and the attribute it references SURVIVES in the filtered viewModelConfig even though the button itself was pruned from the tree.")]
+	public void Analyze_FabConversion_VisibleBinding_CarriedAndAttributeKept() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
+				  "visible": "$UsrCanOrder",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""",
+			viewModelConfigJson: """{ "attributes": { "UsrCanOrder": {} } }""",
+			resourcesJson: """{ "OrderButton_caption": { "en-US": "Order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		JsonObject converted = FabInserts(guide).Single().MobileValues!.AsObject();
+		converted["visible"]!.GetValue<string>().Should().Be("$UsrCanOrder",
+			because: "visible is the one state-bearing property carried besides the action");
+		guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject().Should().ContainKey("UsrCanOrder",
+			because: "the FAB item still references the attribute, so the filter must keep it");
+	}
+
+	[Test]
+	[Description("A menu button's OWN visible gate is inherited by every entry flattened out of it — the web '3 dots' button carries the role/state condition for its whole menu while the entries carry none, so discarding the opener must not make its actions unconditionally visible on mobile.")]
+	public void Analyze_FabConversion_MenuButtonVisibleGate_InheritedByFlattenedEntries() {
+		// Arrange: the gate sits on the button; neither the direct entry nor the one under an ungated
+		// submenu group declares a visible of its own.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "visible": "$UsrCanManage",
+				  "menuItems": [
+					{ "name": "OrderMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(OrderMenuItem_caption)#",
+					  "clicked": { "request": "crt.OpenPageRequest" } },
+					{ "name": "MoreGroup", "type": "crt.MenuItem", "caption": "#ResourceString(MoreGroup_caption)#",
+					  "items": [
+						{ "name": "DeepMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(DeepMenuItem_caption)#",
+						  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ] } ]
+			""",
+			viewModelConfigJson: """{ "attributes": { "UsrCanManage": {} } }""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "OrderMenuItem_caption": { "en-US": "Order" },
+			  "MoreGroup_caption": { "en-US": "More" }, "DeepMenuItem_caption": { "en-US": "Deep action" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert: both flattened entries carry the opener's gate.
+		List<ElementMapEntry> inserts = FabInserts(guide);
+		inserts.Should().HaveCount(2, because: "both entries convert — the gate does not stop the conversion");
+		inserts.Should().OnlyContain(e => e.MobileValues!["visible"]!.GetValue<string>() == "$UsrCanManage",
+			because: "an entry with no visible of its own inherits the gate of the button/submenu it hung " +
+				"under, so it is never visible on mobile where the web menu was hidden");
+		guide.FabConversion.DroppedItems.Should().BeNull(
+			because: "inheriting a gate is not a loss — nothing was dropped");
+		guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject().Should().ContainKey("UsrCanManage",
+			because: "the converted items now reference the button's attribute, so the filter must keep it");
+	}
+
+	[Test]
+	[Description("A menu entry that declares its OWN visible under an already-gated button is DROPPED with the reason: two conditions cannot be composed into one declarative mobile visible, and shipping the item under half of its web condition would expose an action the web page hides. The reason names no page-authored expression.")]
+	public void Analyze_FabConversion_MenuEntryWithOwnGateUnderGatedButton_Dropped() {
+		// Arrange: the button gates the whole menu; only the second entry adds a condition of its own.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "visible": "$UsrCanManage",
+				  "menuItems": [
+					{ "name": "PlainMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(PlainMenuItem_caption)#",
+					  "clicked": { "request": "crt.OpenPageRequest" } },
+					{ "name": "ApproveMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(ApproveMenuItem_caption)#",
+					  "visible": "$UsrIsApprover", "clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "PlainMenuItem_caption": { "en-US": "Order" },
+			  "ApproveMenuItem_caption": { "en-US": "Approve" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert: the singly-gated entry converts, the doubly-gated one is reported as a drop.
+		FabInserts(guide).Should().ContainSingle(
+			because: "only the entry subject to exactly ONE gate can be carried")
+			.Which.MobileName.Should().Be("PlainMenuItemFabMenuItem");
+		DroppedFabMenuItem droppedItem = guide.FabConversion.DroppedItems.Should().ContainSingle().Which;
+		droppedItem.SourceMenuItem.Should().Be("ApproveMenuItem",
+			because: "the loss must be attributed to the entry that could not be converted");
+		droppedItem.SourceButton.Should().Be("ActionsButton",
+			because: "the drop is attributed to the source button as well, so the developer finds it on the web page");
+		droppedItem.Reason.Should().Contain("visible",
+			because: "the reason must state that the visibility condition is what blocked the conversion");
+		droppedItem.Reason.Should().NotContain("$Usr",
+			because: "the reason is relayed into the agent's context, so page-authored expressions are not echoed " +
+				"into it — the developer reads them off the web page");
+	}
+
+	[Test]
+	[Description("A literal visible: true on the menu button gates nothing, so it is not counted as a condition: an entry's own visible still converts instead of colliding with a no-op gate.")]
+	public void Analyze_FabConversion_MenuButtonVisibleTrue_NotCountedAsGate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "visible": true,
+				  "menuItems": [
+					{ "name": "ApproveMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(ApproveMenuItem_caption)#",
+					  "visible": "$UsrIsApprover", "clicked": { "request": "crt.OpenPageRequest" } } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "ApproveMenuItem_caption": { "en-US": "Approve" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		FabInserts(guide).Should().ContainSingle(
+			because: "an always-true opener imposes no condition, so the entry's own gate is the only one")
+			.Which.MobileValues!["visible"]!.GetValue<string>().Should().Be("$UsrIsApprover",
+			because: "the entry's own condition is the one the mobile item must reproduce");
+		guide.FabConversion.DroppedItems.Should().BeNull(
+			because: "a no-op gate must never cost the page an action");
+	}
+
+	[Test]
+	[Description("A template-inherited (chrome) button inside the header — Save/Cancel/Close — is never extracted: only the page-added button converts, and the chrome button stays out of the FAB entirely.")]
+	public void Analyze_FabConversion_ChromeButtonsFiltered_ByTemplateBaseline() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveButton", "type": "crt.Button", "caption": "#ResourceString(SaveButton_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } },
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""",
+			resourcesJson: """
+			{ "SaveButton_caption": { "en-US": "Save" }, "CreateOrderButton_caption": { "en-US": "Create order" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "SaveButton"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Items.Should().ContainSingle(because: "only the page-added button is a FAB candidate")
+			.Which.SourceButton.Should().Be("CreateOrderButton");
+		FabInserts(guide).Should().ContainSingle(
+			because: "the chrome SaveButton contributes no item — the mobile app has its own save UX")
+			.Which.MobileName.Should().Be("CreateOrderButtonFabMenuItem");
+	}
+
+	[Test]
+	[Description("A template-inherited (chrome) '3 dots' button — the button itself never converts — carries a PAGE-ADDED entry on top of its own baseline menu: the page-added entry converts and is attributed to the chrome button as sourceButton, while the baseline entry (inherited from the same web template) is never re-emitted; the chrome button leaves excludedComponents once it is reported this way.")]
+	public void Analyze_FabConversion_ChromeButtonMenuItems_PageAddedEntryConverted() {
+		// Arrange: ActionsButton and its CopyMenuItem are BOTH part of the web template baseline; the page
+		// adds CreateOrderMenuItem on top via its own body ops (merge/insert), which the baseline does not know.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "menuItems": [
+					{ "name": "CopyMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(CopyMenuItem_caption)#",
+					  "clicked": { "request": "crt.CopyRecordRequest" } },
+					{ "name": "CreateOrderMenuItem", "type": "crt.MenuItem",
+					  "caption": "#ResourceString(CreateOrderMenuItem_caption)#",
+					  "clicked": { "request": "crt.OpenPageRequest" } } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "CopyMenuItem_caption": { "en-US": "Copy" },
+			  "CreateOrderMenuItem_caption": { "en-US": "Create order" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "ActionsButton", "CopyMenuItem"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert: only the page-added entry converts, attributed to the chrome button.
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "the baseline entry is chrome and must never be re-emitted — only the page-added one converts")
+			.Which;
+		insert.MobileName.Should().Be("CreateOrderMenuItemFabMenuItem");
+		FabMenuItemInfo item = guide.FabConversion.Items.Should().ContainSingle().Which;
+		item.SourceButton.Should().Be("ActionsButton",
+			because: "the loss/gain must be attributed to the chrome button the entry hung under, so the " +
+				"developer can find it on the web page");
+		item.SourceMenuItem.Should().Be("CreateOrderMenuItem");
+		guide.ElementMap.Should().NotContain(e => e.MobileName == "CopyMenuItemFabMenuItem",
+			because: "the baseline menu entry is inherited chrome, not page content — it must never convert");
+		(guide.ExcludedComponents ?? []).Should().NotContain(e => e.Name == "ActionsButton",
+			because: "a chrome button reported by fabConversion is not 'lost' either, the same as a page-added one");
+	}
+
+	[Test]
+	[Description("A template-inherited (chrome) '3 dots' button that carries its OWN visible gate, together with a page-added menu entry on top of its baseline menu: the page-added entry converts and inherits the chrome button's own gate exactly as a page-added button's own entries do — gate inheritance (the button's own visible flowing onto its flattened entries) and chrome-menu filtering (only the page-added entry, never the baseline one, is cloned out) must compose for a single entry.")]
+	public void Analyze_FabConversion_ChromeButtonMenuItems_GatedChromeButton_PageAddedEntryInheritsGate() {
+		// Arrange: ActionsButton is chrome (template baseline) and carries its own visible gate; CopyMenuItem
+		// is also baseline, CreateOrderMenuItem is page-added on top and declares no gate of its own.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "visible": "$UsrCanManage",
+				  "menuItems": [
+					{ "name": "CopyMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(CopyMenuItem_caption)#",
+					  "clicked": { "request": "crt.CopyRecordRequest" } },
+					{ "name": "CreateOrderMenuItem", "type": "crt.MenuItem",
+					  "caption": "#ResourceString(CreateOrderMenuItem_caption)#",
+					  "clicked": { "request": "crt.OpenPageRequest" } } ] } ] } ]
+			""",
+			viewModelConfigJson: """{ "attributes": { "UsrCanManage": {} } }""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "CopyMenuItem_caption": { "en-US": "Copy" },
+			  "CreateOrderMenuItem_caption": { "en-US": "Create order" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "ActionsButton", "CopyMenuItem"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert: the page-added entry converts and carries the chrome button's own gate.
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "the baseline entry is chrome and must never be re-emitted — only the page-added one converts")
+			.Which;
+		insert.MobileName.Should().Be("CreateOrderMenuItemFabMenuItem");
+		insert.MobileValues!["visible"]!.GetValue<string>().Should().Be("$UsrCanManage",
+			because: "the page-added entry declares no gate of its own, so it inherits the chrome button's own " +
+				"visible the same way a page-added button's own entries do — gate inheritance must survive the " +
+				"chrome-menu clone rather than being dropped along with the discarded button node");
+		FabMenuItemInfo item = guide.FabConversion.Items.Should().ContainSingle().Which;
+		item.SourceButton.Should().Be("ActionsButton",
+			because: "the entry is still attributed to the chrome button it hung under, gate or no gate");
+		guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject().Should().ContainKey("UsrCanManage",
+			because: "the converted item now references the button's attribute, so the filter must keep it");
+	}
+
+	[Test]
+	[Description("A template-inherited (chrome) '3 dots' button whose ENTIRE menu is baseline (no page-added entries at all) contributes nothing: no item, no drop, and the button stays a plain excluded chrome component — the pass must not manufacture a candidate out of pure chrome content.")]
+	public void Analyze_FabConversion_ChromeButtonMenuItems_AllBaseline_NothingConverted() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "menuItems": [
+					{ "name": "CopyMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(CopyMenuItem_caption)#",
+					  "clicked": { "request": "crt.CopyRecordRequest" } },
+					{ "name": "DeleteMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(DeleteMenuItem_caption)#",
+					  "clicked": { "request": "crt.DeleteRecordRequest" } } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "CopyMenuItem_caption": { "en-US": "Copy" },
+			  "DeleteMenuItem_caption": { "en-US": "Delete" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "ActionsButton", "CopyMenuItem", "DeleteMenuItem"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.FabConversion.Should().BeNull(
+			because: "an entirely baseline menu is pure chrome — nothing was extracted, so the pass has nothing to report");
+		FabInserts(guide).Should().BeEmpty();
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "ActionsButton",
+			because: "a chrome button fabConversion never reported stays an ordinary excluded chrome component");
+	}
+
+	[Test]
+	[Description("A page-added entry NESTED inside a submenu group that is itself part of the chrome baseline still converts: filtering the chrome menu recurses into groups, keeping a group only for the page-added children that survive inside it.")]
+	public void Analyze_FabConversion_ChromeButtonMenuItems_PageAddedEntryInsideBaselineGroup_Converted() {
+		// Arrange: MoreGroup is itself baseline (the template's own submenu), but the page added
+		// ExtraMenuItem on top of the group's own (baseline) DeepMenuItem.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "menuItems": [
+					{ "name": "MoreGroup", "type": "crt.MenuItem", "caption": "#ResourceString(MoreGroup_caption)#",
+					  "items": [
+						{ "name": "DeepMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(DeepMenuItem_caption)#",
+						  "clicked": { "request": "crt.SaveRecordRequest" } },
+						{ "name": "ExtraMenuItem", "type": "crt.MenuItem", "caption": "#ResourceString(ExtraMenuItem_caption)#",
+						  "clicked": { "request": "crt.OpenPageRequest" } } ] } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" }, "MoreGroup_caption": { "en-US": "More" },
+			  "DeepMenuItem_caption": { "en-US": "Deep action" }, "ExtraMenuItem_caption": { "en-US": "Extra" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "ActionsButton", "MoreGroup", "DeepMenuItem"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert: only ExtraMenuItem (page-added, inside a baseline group) converts.
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "DeepMenuItem is chrome (baseline) even though it sits inside the group — only the " +
+				"page-added sibling converts").Which;
+		insert.MobileName.Should().Be("ExtraMenuItemFabMenuItem");
+		guide.FabConversion.Items.Should().ContainSingle()
+			.Which.SourceMenuItem.Should().Be("ExtraMenuItem");
+	}
+
+	[Test]
+	[Description("A page-added header button the pass could NOT report at all (its menuItems flatten to no candidate) stays in excludedComponents: a button leaves that report only once fabConversion accounts for it, otherwise it would vanish from every surface at once.")]
+	public void Analyze_FabConversion_ButtonWithNoCandidate_StaysInExcludedComponents() {
+		// Arrange: the menu button carries menuItems, so the button itself is discarded in favour of its
+		// entries - and the array holds nothing an entry can be built from.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "menuItems": [ null ] } ] } ]
+			""",
+			resourcesJson: """{ "ActionsButton_caption": { "en-US": "Actions" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.FabConversion.Should().BeNull(because: "no candidate survived the flattening, so nothing was converted");
+		FabInserts(guide).Should().BeEmpty(because: "there is no item to insert");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "ActionsButton" && e.Container == "MainHeader",
+			because: "the excluded-components report is the only surface left that still names the button");
+		guide.SourceStructure.Should().NotContain(s => s.Name == "ActionsButton",
+			because: "the header is non-converting, so the button is not part of the converted layout either");
+	}
+
+	[Test]
+	[Description("Only the BUTTONS of a non-converting header leave excludedComponents for fabConversion - the header's non-button content stays reported there with its exclusion container.")]
+	public void Analyze_FabConversion_MixedHeaderContent_OnlyButtonLeavesExcludedComponents() {
+		// Arrange: the page adds both a button and a label to the excluded header.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } },
+				{ "name": "UsrHeaderNote", "type": "crt.Label" } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Label", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.FabConversion.Items.Should().ContainSingle(
+			because: "the button is the only FAB candidate in the header")
+			.Which.SourceButton.Should().Be("CreateOrderButton",
+				because: "the item names the source button it was converted from");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "CreateOrderButton",
+			because: "fabConversion accounts for the button, so it is not reported as lost");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "UsrHeaderNote" && e.Container == "MainHeader",
+			because: "a non-button neighbour has no FAB equivalent and stays reported as excluded");
+	}
+
+	[Test]
+	[Description("Without the web-template baseline the extraction is SKIPPED (page-added buttons cannot be told apart from chrome): no fabConversion section, the buttons stay in excludedComponents, and a constraint explains why.")]
+	public void Analyze_FabConversion_NoBaseline_SkippedWithConstraint() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: null,
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Should().BeNull(because: "the pass cannot run without a chrome baseline");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold");
+		FabInserts(guide).Should().BeEmpty();
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "CreateOrderButton",
+			because: "the header is excluded wholesale, so the button is reported as excluded");
+		guide.Constraints.Should().Contain(c => c.Contains("web-template baseline was unavailable"),
+			because: "the guide must explain why no FAB item was produced");
+	}
+
+	[Test]
+	[Description("Without the baseline, a header that holds NO button loses nothing when it is excluded wholesale - the skip constraint must stay out (every record-page template declares its header non-converting, so this state is the common one, not an edge case).")]
+	public void Analyze_FabConversion_NoBaselineButtonlessHeader_NoSkipConstraint() {
+		// Arrange: no template baseline, and the excluded header carries only non-button chrome.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PageTitle", "type": "crt.Label" } ] },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Label", false), ("crt.Input", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: null,
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.Constraints.Should().NotContain(c => c.Contains("web-template baseline was unavailable"),
+			because: "no button was at risk, so warning that header buttons were lost is a false alarm");
+		guide.FabConversion.Should().BeNull(because: "nothing was extracted and nothing was dropped");
+		guide.ExcludedComponents.Should().Contain(e => e.Name == "PageTitle",
+			because: "the header's non-button content is still excluded and reported as such");
+	}
+
+	[Test]
+	[Description("Without the baseline, a page-added header button ORPHANED to the tree root is still converted through its own-body parent chain (own-body ops are page-added by construction), so the guide carries the mandatory FAB constraint and NOT the skip constraint - emitting both would be two contradictory mandates.")]
+	public void Analyze_FabConversion_NoBaselineOrphanConverted_NoSkipConstraint() {
+		// Arrange: no template baseline; the button sits at the tree root and reaches MainHeader only through
+		// its declared own-body parent chain.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [] } ] },
+			  { "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				"clicked": { "request": "crt.OpenPageRequest" } },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "CreateOrderButton", "crt.Button", parentName: "ActionButtonsContainer")
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: null,
+			ownBodyViewConfigOps: ownBody,
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "the orphan recovery identifies a page-added button with no baseline at all").Which;
+		insert.MobileName.Should().Be("CreateOrderButtonFabMenuItem",
+			because: "the generated name derives from the source button name");
+		guide.Constraints.Should().Contain(c => c.Contains("fabConversion is MANDATORY"),
+			because: "the converted item is a real payload the model must apply verbatim");
+		guide.Constraints.Should().NotContain(c => c.Contains("web-template baseline was unavailable"),
+			because: "telling the model the header buttons could NOT be converted, beside the item it must " +
+				"apply, is a contradiction the advisory must never emit");
+	}
+
+	[Test]
+	[Description("When every candidate is dropped the section reports the drops but the element map carries no FAB entry: the mandatory-apply constraint (which claims synthesized entries) must NOT be emitted, and a drop-only constraint mandates reporting droppedItems instead.")]
+	public void Analyze_FabConversion_AllCandidatesDropped_ReportsDropsWithoutClaimingPayload() {
+		// Arrange: the header's only button carries a request the rules file clears for mobile.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PrintButton", "type": "crt.Button", "caption": "#ResourceString(PrintButton_caption)#",
+				  "clicked": { "request": "crt.PrintReportRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "PrintButton_caption": { "en-US": "Print" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		// Assert
+		guide.FabConversion.DroppedItems.Should().ContainSingle(
+			because: "a dropped candidate is a header action the mobile page will not have");
+		guide.FabConversion.Emission.Should().BeNull(
+			because: "nothing was emitted, so there is no shape to name and nothing for the caller to apply");
+		guide.FabConversion.TargetName.Should().BeNull(
+			because: "with no payload there is no target either");
+		guide.Constraints.Should().NotContain(c => c.Contains("fabConversion is MANDATORY"),
+			because: "that constraint tells the model to apply synthesized element-map entries, and this run " +
+				"produced none");
+		guide.Constraints.Should().Contain(c => c.Contains("produced NOTHING to apply"),
+			because: "the model must still be told the FAB has no payload and must not invent one");
+		guide.NextSteps.Should().NotContain(s => s.Contains("guide.fabConversion"),
+			because: "the build flow step describes applying a payload that does not exist here");
+	}
+
+	[Test]
+	[Description("When the mobile template's Scaffold was actually inspected and carries no floatAction, there is nothing to insert into — the FAB is created from the rules' default skeleton with ONLY the converted items, as ONE Scaffold merge (a FIRST definition of floatAction, which the diff applier accepts); no baseline Copy/Delete is invented for a template that deliberately has none.")]
+	public void Analyze_FabConversion_TemplateWithoutFab_CreatedFromDefaultSkeleton() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: null,
+			mobileTemplateUnavailable: false,
+			mobileTemplateFabProbed: true);
+
+		JsonObject floatAction = ScaffoldMerge(guide).MobileValues!.AsObject()["floatAction"]!.AsObject();
+		floatAction["name"]!.GetValue<string>().Should().Be("FloatingActionButton",
+			because: "the skeleton comes from the rules' defaultFab");
+		floatAction["icon"]!.GetValue<string>().Should().Be("more-vertical-button-icon");
+		floatAction["visible"]!.GetValue<string>().Should().Be("$CardState | crt.IsEqual : 'edit'");
+		floatAction["menuItems"]!.AsArray().Should().HaveCount(1,
+			because: "a template that genuinely has no FAB gets only the converted items, no invented baseline");
+		floatAction["menuItems"]![0]!["name"]!.GetValue<string>().Should().Be("CreateOrderButtonFabMenuItem");
+		FabInserts(guide).Should().BeEmpty(
+			because: "there is no template FAB to insert into — the merge is the only payload");
+		guide.FabConversion!.Emission.Should().Be("merge",
+			because: "the fallback shape must be named structurally, not left for the caller to infer");
+		guide.FabConversion.TargetName.Should().Be("Scaffold",
+			because: "a merge emission targets the Scaffold the floatAction is defined on");
+	}
+
+	[Test]
+	[Description("When the mobile template bundle could NOT be read at all, the converted items are still emitted as INSERTS targeting the rules' standard FAB name (inserts are additive, so a wrong assumption can never erase the template's own items — unlike the old full-replace merge, which the diff applier silently drops when the template owns floatAction) — and the note says so.")]
+	public void Analyze_FabConversion_TemplateUnreadable_InsertsTargetDefaultFabName() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: null,
+			mobileTemplateUnavailable: true);
+
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "the unknown state emits additive inserts, never a full-replace merge").Which;
+		insert.MobileName.Should().Be("CreateOrderButtonFabMenuItem");
+		insert.ParentName.Should().Be("FloatingActionButton",
+			because: "the rules' defaultFab name is the assumed insert target");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold",
+			because: "a full-replace merge in the unknown state would be silently dropped whenever the " +
+				"template actually owns floatAction — the common case");
+		guide.FabConversion.TargetAssumed.Should().BeTrue(
+			because: "the caller must be able to see the target was assumed without parsing the note");
+		guide.FabConversion.Note.Should().Contain("could not be resolved",
+			because: "the assumed insert target must also be visible in the human-facing summary");
+	}
+
+	[Test]
+	[Description("A null template floatAction that was never PROBED (no template name, no viewConfig, no Scaffold node, no fabConversion rule to search with) is UNKNOWN, not 'this template has no FAB': the pass emits additive inserts against the standard FAB name instead of the Scaffold merge the diff applier silently drops whenever the template does own a floatAction.")]
+	public void Analyze_FabConversion_TemplateFabNotProbed_InsertsInsteadOfMerging() {
+		// Arrange: the template read reported nothing about the FAB - mobileTemplateUnavailable stays false
+		// (the bundle itself was fine), yet the Scaffold was never inspected.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: null,
+			mobileTemplateUnavailable: false,
+			mobileTemplateFabProbed: false);
+
+		// Assert
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "an unknown template FAB must be treated like an unreadable one — inserts are additive " +
+				"and can never erase the template's own items").Which;
+		insert.ParentName.Should().Be("FloatingActionButton",
+			because: "the rules' defaultFab name is the assumed insert target");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold",
+			because: "a merge here would be silently dropped by the diff applier for every template that " +
+				"does own a named floatAction — the common case, and the loss would be invisible");
+		guide.FabConversion!.TargetAssumed.Should().BeTrue(
+			because: "the caller must know the insert target was assumed, not read off the template");
+	}
+
+	[Test]
+	[Description("Generated item names are unique: two unnamed menu entries of the same button share the base name and the second gets a numeric suffix; a collision with a template FAB item name is avoided the same way.")]
+	public void Analyze_FabConversion_NameCollision_GetsNumericSuffix() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionsButton", "type": "crt.Button", "caption": "#ResourceString(ActionsButton_caption)#",
+				  "menuItems": [
+					{ "type": "crt.MenuItem", "caption": "#ResourceString(FirstEntry_caption)#",
+					  "clicked": { "request": "crt.OpenPageRequest" } },
+					{ "type": "crt.MenuItem", "caption": "#ResourceString(SecondEntry_caption)#",
+					  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "ActionsButton_caption": { "en-US": "Actions" },
+			  "FirstEntry_caption": { "en-US": "First" }, "SecondEntry_caption": { "en-US": "Second" } }
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Items.Select(i => i.Name).Should().Equal(
+			new[] { "ActionsButtonFabMenuItem", "ActionsButtonFabMenuItem2" },
+			because: "an unnamed entry falls back to the button-derived base name and collisions get a numeric suffix");
+	}
+
+	[Test]
+	[Description("A page-added header button ORPHANED to the tree root (failed parentName resolution at merge) is still converted into a FAB item through its declared own-body parent chain — not reported as excluded.")]
+	public void Analyze_FabConversion_OrphanedHeaderButton_StillConverted() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [] } ] },
+			  { "name": "Button_f1g6row", "type": "crt.Button", "caption": "#ResourceString(Button_f1g6row_caption)#",
+				"clicked": { "request": "crt.OpenPageRequest" } },
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""",
+			resourcesJson: """{ "Button_f1g6row_caption": { "en-US": "Do it" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false), ("crt.Input", false));
+		var ownBody = new List<PageOperationInfo> {
+			Op("insert", "Button_f1g6row", "crt.Button", parentName: "ActionButtonsContainer"),
+			Op("insert", "UsrName", "crt.Input", parentName: "MainContainer")
+		};
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader", "ActionButtonsContainer"),
+			ownBodyViewConfigOps: ownBody,
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Items.Should().ContainSingle(
+			because: "an orphan declared into the header is a page-added header button by construction")
+			.Which.SourceButton.Should().Be("Button_f1g6row");
+		guide.ExcludedComponents.Should().NotContain(e => e.Name == "Button_f1g6row",
+			because: "a button reported under fabConversion is not 'lost' and leaves the excluded list");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Button_f1g6row");
+	}
+
+	[Test]
+	[Description("Without the template declaring the header non-converting (e.g. a list template) the FAB pass never triggers, even with the fabConversion rules present — the scope is form templates by data, not by code.")]
+	public void Analyze_FabConversion_NoHeaderExclusion_NotTriggered() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: null,
+			mobileTemplateFloatAction: TemplateFloatAction());
+
+		guide.FabConversion.Should().BeNull(because: "the FAB pass is the exception to an exclusion that was not declared");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "Scaffold",
+			because: "no exclusion means no extraction, so the Scaffold is never touched");
+		FabInserts(guide).Should().BeEmpty(because: "no extraction means no menu-item inserts either");
+	}
+
+	[Test]
+	[Description("A template floatAction WITHOUT a name cannot be targeted by inserts, so the pass falls back to ONE Scaffold merge carrying the complete FAB — the template's own items verbatim first, the converted items appended (an unnamed floatAction is not a named child, so the diff applier's merge guard does not strip it and the full replace is applied).")]
+	public void Analyze_FabConversion_TemplateFabUnnamed_FallsBackToFullReplaceMerge() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+		JsonNode unnamedFloatAction = JsonNode.Parse("""
+			{ "type": "crt.FloatingActionButton", "icon": "more-vertical-button-icon",
+			  "menuItems": [
+			    { "name": "FloatingActionButtonCopyMenuItem", "type": "crt.MenuItem",
+			      "caption": "#ResourceString(CopyMenuItem_caption)#", "clicked": { "request": "crt.CopyRecordRequest" } } ] }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: FabRules(),
+			nonConvertingContainers: Names("MainHeader"),
+			templateComponentNames: Names("MainHeader"),
+			mobileTemplateFloatAction: unnamedFloatAction);
+
+		FabInserts(guide).Should().BeEmpty(because: "there is no FAB name for an insert to target");
+		JsonObject floatAction = ScaffoldMerge(guide).MobileValues!.AsObject()["floatAction"]!.AsObject();
+		JsonArray menuItems = floatAction["menuItems"]!.AsArray();
+		menuItems.Should().HaveCount(2, because: "the template's own item is carried verbatim and the converted item is appended");
+		menuItems[0]!["name"]!.GetValue<string>().Should().Be("FloatingActionButtonCopyMenuItem");
+		menuItems[1]!["name"]!.GetValue<string>().Should().Be("CreateOrderButtonFabMenuItem");
+	}
+
+	[Test]
+	[Description("The BUNDLED fabConversion rule and the BUNDLED PageWithTabsFreedomTemplate's nonConvertingContainers — the two data halves every other FAB test exercises separately via the hand-built FabRules() double — are pinned against each other through the real code path: LoadBundled() feeds BuildNonConvertingContainers, and the result feeds Analyze. If a template's nonConvertingContainers ever stopped intersecting fabConversion.sourceContainers, or the bundled requests list dropped crt.OpenPageRequest, this is the one test that would catch it — every other FAB test would stay green regardless.")]
+	public void Analyze_FabConversion_BundledRulesAndTemplate_ProduceRealInsert() {
+		// Arrange: both halves come from the shipped WebToMobilePageConversionRules.json, not a test double.
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		TemplateMappingRule templateRule = rules.Templates.Single(t => t.Web == "PageWithTabsFreedomTemplate");
+		IReadOnlySet<string> nonConvertingContainers = MobilePageConversionGuideTool.BuildNonConvertingContainers(templateRule);
+		nonConvertingContainers.Should().Contain("MainHeader",
+			because: "the bundled template rule must still declare MainHeader non-converting for this test to mean anything");
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CreateOrderButton", "type": "crt.Button", "caption": "#ResourceString(CreateOrderButton_caption)#",
+				  "clicked": { "request": "crt.OpenPageRequest" } } ] } ]
+			""",
+			resourcesJson: """{ "CreateOrderButton_caption": { "en-US": "Create order" } }""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Button", false));
+
+		// Act: the bundled rules drive Analyze end to end — no FabRules() double anywhere in this test.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, rules: rules,
+			nonConvertingContainers: nonConvertingContainers,
+			templateComponentNames: Names("MainHeader"));
+
+		// Assert: the bundled sourceButtonType/menuItemType/defaultFab and requests list all actually fired.
+		ElementMapEntry insert = FabInserts(guide).Should().ContainSingle(
+			because: "the bundled sourceContainers ∩ nonConvertingContainers intersection must still trigger " +
+				"the FAB pass for a page-added crt.Button under MainHeader").Which;
+		insert.MobileType.Should().Be("crt.MenuItem",
+			because: "the emitted type must be the bundled fabConversion.menuItemType, not a hardcoded literal");
+		insert.ParentName.Should().Be("FloatingActionButton",
+			because: "with no mobile template bundle supplied, the insert targets the bundled defaultFab.name");
+		guide.FabConversion!.TargetAssumed.Should().BeTrue(
+			because: "the target came from defaultFab, not a read template — the same as an unread template bundle in production");
+		FabMenuItemInfo item = guide.FabConversion.Items.Should().ContainSingle(
+			because: "exactly one page-added button should have converted").Which;
+		item.SourceButton.Should().Be("CreateOrderButton",
+			because: "the advisory item must still name the real source button, not a fixture stand-in");
+		item.MobileRequest.Should().Be("crt.OpenPageRequest",
+			because: "the bundled requests list maps this request onto itself — a real entry, not FabRules()'s two-item stand-in");
+	}
+
+	[Test]
+	[Description("TryExtractScaffoldFloatAction pulls the resolved floatAction off the Scaffold node and reports whether that node was found at all - the signal that separates 'this template has no FAB' (found, no property) from 'nothing was learned' (no Scaffold, no tree), which the FAB pass must not confuse.")]
+	public void TryExtractScaffoldFloatAction_ReportsWhetherTheScaffoldWasInspected() {
+		// Arrange
+		JsonNode viewConfig = JsonNode.Parse("""
+			[ { "name": "Scaffold", "type": "crt.Scaffold",
+			    "floatAction": { "name": "FloatingActionButton", "menuItems": [] },
+			    "items": [ { "name": "MainContainer", "items": [] } ] } ]
+			""");
+		JsonNode nestedScaffold = JsonNode.Parse("""
+			[ { "name": "Root", "items": [
+			    { "name": "Scaffold", "type": "crt.Scaffold",
+			      "floatAction": { "name": "FloatingActionButton" } } ] } ]
+			""");
+
+		// Act
+		bool foundProperty = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			viewConfig, "Scaffold", "floatAction", out JsonNode floatAction);
+		bool foundWithoutProperty = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			viewConfig, "Scaffold", "somethingElse", out JsonNode absentProperty);
+		bool foundNested = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			nestedScaffold, "Scaffold", "floatAction", out JsonNode nested);
+		bool foundMissingScaffold = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			viewConfig, "OtherRoot", "floatAction", out JsonNode missingScaffold);
+		bool foundWithoutTree = WebToMobileAnalysisService.TryExtractScaffoldFloatAction(
+			null, "Scaffold", "floatAction", out JsonNode noTree);
+
+		// Assert
+		foundProperty.Should().BeTrue(because: "the Scaffold node was inspected");
+		floatAction!["name"]!.GetValue<string>().Should().Be("FloatingActionButton",
+			because: "the property is deep-cloned off the Scaffold node");
+		foundWithoutProperty.Should().BeTrue(
+			because: "the Scaffold WAS inspected — it simply carries no such property, which is real knowledge");
+		absentProperty.Should().BeNull(because: "an absent property yields null, not an empty node");
+		foundNested.Should().BeTrue(because: "the Scaffold is found at any depth, not only at the array root");
+		nested!["name"]!.GetValue<string>().Should().Be("FloatingActionButton");
+		foundMissingScaffold.Should().BeFalse(
+			because: "no Scaffold node means nothing was learned about the template's FAB");
+		missingScaffold.Should().BeNull(because: "a not-found lookup yields no property either");
+		foundWithoutTree.Should().BeFalse(because: "there was no viewConfig to search");
+		noTree.Should().BeNull(because: "an absent tree yields null rather than throwing");
 	}
 
 	#endregion
