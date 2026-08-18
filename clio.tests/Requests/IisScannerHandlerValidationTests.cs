@@ -49,14 +49,19 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other\" APPPOOL.NAME=\"other\" SITE.NAME=\"work\" /></appcmd>", "work/other", true)]
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other\" APPPOOL.NAME=\"other\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other/child\" APPPOOL.NAME=\"child\" SITE.NAME=\"work\" /></appcmd>", "work/other", false)]
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /><APP APPPOOL.NAME=\"pool\" SITE.NAME=\"other\" /></appcmd>", "work", false)]
-	// Creatio registers two applications per site - the root loader and the nested "/0" - in one pool.
-	// Requiring a single application rejected every Creatio environment, so uninstall-creatio could
-	// never remove a Creatio IIS site.
+	// Creatio registers two applications per site - the root loader and the nested "/0". Requiring a
+	// single application rejected every Creatio environment, so uninstall-creatio could never remove a
+	// Creatio IIS site (#1093).
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"work\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/0\" APPPOOL.NAME=\"work\" SITE.NAME=\"work\" /></appcmd>", "work", true)]
-	// A nested application in a DIFFERENT pool is foreign and must still block removal.
+	// A sibling in the site's OWN pool must still block removal: whole-site deletion would destroy it,
+	// and pool membership is not evidence of ownership.
+	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"work\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/custom\" APPPOOL.NAME=\"work\" SITE.NAME=\"work\" /></appcmd>", "work", false)]
+	// A sibling in a different pool must block removal too.
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"work\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/0\" APPPOOL.NAME=\"work\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/tenant/0\" APPPOOL.NAME=\"DefaultAppPool\" SITE.NAME=\"work\" /></appcmd>", "work", false)]
-	// A pool shared with another site must survive, so the target is not exclusive.
-	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"work\" /><APP APP.NAME=\"other/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"other\" /></appcmd>", "work", false)]
+	// A pool shared with ANOTHER SITE does not block site removal: uninstall-creatio.md and
+	// help/en/uninstall-creatio.txt promise that only the target is removed while the shared pool and its
+	// Windows profile survive, which CanDeleteAppPool / TryDeleteAppPoolIfUnused enforce downstream.
+	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"work\" /><APP APP.NAME=\"other/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"other\" /></appcmd>", "work", true)]
 	// The site's root application must exist; a site whose only application is nested is unresolved.
 	[TestCase("<appcmd><APP APP.NAME=\"work/0\" APPPOOL.NAME=\"work\" SITE.NAME=\"work\" /></appcmd>", "work", false)]
 	[TestCase("<html />", "work", false)]
@@ -74,7 +79,10 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 
 		// Assert
 		result.Should().Be(expected,
-			because: "shared pools and their Windows profiles must survive uninstall of one application");
+			because: "deleting a non-nested target removes the whole site, so it is removable only when the "
+			+ "site holds no sibling beyond Creatio's own root and \"/0\" applications - regardless of which "
+			+ "application pool they use, and independently of pools shared with other sites, which survive "
+			+ "downstream");
 	}
 
 	[TestCase(@"C:\sites\work", "pool", @"C:\sites\work", "pool", true)]
