@@ -20,7 +20,7 @@ SYNOPSIS
     clio update-theme --id <id> --caption <caption> --css-class-name <name> [options]
 
 OPTIONS
-    --id                            Id of the existing theme to overwrite (required)
+    --id                            Id (a GUID) of the existing theme to overwrite (required)
 
     --caption                       Human-readable theme caption, max 250 (required)
 
@@ -41,10 +41,10 @@ OPTIONS
     --Maintainer        -m          Maintainer name
 
 EXAMPLE
-    clio update-theme --id ocean-theme --caption "Ocean" --css-class-name ocean-theme --css-content ".ocean-theme{color:#039}" -e myapp
+    clio update-theme --id d53a816b-65ed-4b5b-ad3b-f739280add45 --caption "Ocean" --css-class-name ocean-theme --css-content ".ocean-theme{color:#039}" -e myapp
         overwrite the theme 'ocean-theme' with new inline CSS
 
-    clio update-theme --id ocean-theme --caption "Ocean" --css-class-name ocean-theme --css-content-file ./theme.css -e myapp
+    clio update-theme --id d53a816b-65ed-4b5b-ad3b-f739280add45 --caption "Ocean" --css-class-name ocean-theme --css-content-file ./theme.css -e myapp
         overwrite the theme reading the CSS from a file
 
 NOTES

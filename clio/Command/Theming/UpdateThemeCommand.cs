@@ -12,7 +12,7 @@ namespace Clio.Command.Theming;
 public class UpdateThemeOptions : RemoteCommandOptions
 {
 	/// <summary>Id of the existing theme to overwrite (required).</summary>
-	[Option("id", Required = true, HelpText = "Id of the existing theme to overwrite")]
+	[Option("id", Required = true, HelpText = "Id (a GUID) of the existing theme to overwrite")]
 	public string Id { get; set; }
 
 	/// <summary>Human-readable theme caption (required, ≤250).</summary>

@@ -74,6 +74,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"find-empty-iis-port",
 		"find-entity-schema",
 		"get-app-info",
+		// Reads client-unit hierarchy and merged entity metadata; never writes profile/schema/application state.
+		"get-classic-list-columns",
 		"get-component-info",
 		"get-entity-schema-column-properties",
 		"get-entity-schema-properties",

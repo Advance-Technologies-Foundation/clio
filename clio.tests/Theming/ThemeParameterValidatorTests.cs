@@ -152,25 +152,26 @@ public sealed class ThemeParameterValidatorTests {
 	}
 
 	[Test]
-	[TestCase("ok-id_1", true, TestName = "TryValidateId accepts a valid id")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", true, TestName = "TryValidateId accepts a 'D' format GUID")]
+	[TestCase("d53a816b65ed4b5bad3bf739280add45", true, TestName = "TryValidateId accepts an 'N' format GUID")]
+	[TestCase("ok-id_1", false, TestName = "TryValidateId rejects a readable slug")]
+	[TestCase("e2e-brand-theme-d53a816b65ed4b5bad3bf739280add45", false, TestName = "TryValidateId rejects a prefixed GUID")]
 	[TestCase("bad id", false, TestName = "TryValidateId rejects a space")]
-	[TestCase("bad.id", false, TestName = "TryValidateId rejects a dot")]
-	[TestCase("ok-id\n", false, TestName = "TryValidateId rejects a trailing newline")]
 	[TestCase("", false, TestName = "TryValidateId rejects empty")]
-	[Description("Validates the theme id against ^[A-Za-z0-9_-]+$ and the length cap.")]
-	public void TryValidateId_ShouldEnforceContract_WhenGivenId(string id, bool expected) {
+	[Description("ENG-91018 typed the theme id as a Guid on every theme request, so the id rule is now GUID-or-nothing; a non-GUID must be refused locally instead of coming back as an opaque server deserialization error.")]
+	public void TryValidateId_ShouldRequireGuid_WhenGivenId(string id, bool expected) {
 		// Act
 		bool ok = ThemeParameterValidator.TryValidateId(id, out string error);
 
 		// Assert
-		ok.Should().Be(expected, because: "the id must match the server regex and length contract");
+		ok.Should().Be(expected, because: "the id rule must mirror the server, which parses it as a Guid");
 		if (!expected) {
-			error.Should().NotBeNullOrWhiteSpace(because: "a rejected id must carry a diagnostic");
+			error.Should().NotBeNullOrWhiteSpace(because: "a rejected id must carry a diagnostic the caller can act on");
 		}
 	}
 
 	[Test]
-	[Description("Accepts an auto-generated UUID v4 ('D' format) as a valid id.")]
+	[Description("Accepts an auto-generated UUID v4 ('D' format) as a valid id — the shape create-theme generates when --id is omitted.")]
 	public void TryValidateId_ShouldAccept_WhenGivenGuidDFormat() {
 		// Arrange
 		string id = Guid.NewGuid().ToString("D");
@@ -179,7 +180,7 @@ public sealed class ThemeParameterValidatorTests {
 		bool ok = ThemeParameterValidator.TryValidateId(id, out string _);
 
 		// Assert
-		ok.Should().BeTrue(because: "a UUID in 'D' format contains only hex digits and hyphens, matching ^[A-Za-z0-9_-]+$");
+		ok.Should().BeTrue(because: "the id clio generates itself must satisfy its own rule");
 	}
 
 	[Test]
