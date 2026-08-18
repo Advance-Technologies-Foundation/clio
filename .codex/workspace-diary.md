@@ -8732,3 +8732,31 @@ Decision: Preflight file and directory project collisions, atomically publish a 
 Discovery: The package collision originated in `UiProjectCreator.Create` calling `PackageCreator.Create` unconditionally. Template copying also cleared its destination, so collision safety requires a same-parent staged directory and atomic move rather than a check followed by a direct copy. Valid package directories can be Windows junctions in the documented FSM layout and must remain reusable; descriptor reads are bounded without rejecting that package link. The MCP contract already described the intended create-or-reuse behavior, so no MCP schema change was required.
 Files: clio/Package/UiProjectCreator.cs, clio.tests/Package/UiProjectCreatorTests.cs, clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/docs/commands/new-ui-project.md, clio/help/en/new-ui-project.txt
 Impact: Package-first workspaces can add a Freedom UI project without rewriting existing package metadata or content, while invalid package paths and existing project directories fail before mutation.
+
+## 2026-08-18 14:20 – Fix flaky application progress-marker e2e assertions (issue #1103)
+Context: Three `clio.mcp.e2e` application tests painted every clio PR red on the shared TeamCity stand
+while trunk stayed green; all three are muted in `Team_Atf` with `resolution=whenFixed`.
+Decision: Fix the CLIENT side of the two progress tests rather than the server. Added
+`MessageCollectingProgress.WaitForMessagesAsync` / `WaitForCountAsync` — the typed-sink counterpart of the
+existing `McpServerSession.WaitForCapturedProgressAsync` — and replaced the immediate
+`progress.Count` / `progress.Messages.Should().Contain(...)` assertions with a bounded wait. Assert
+create-app success BEFORE expecting its markers, and moved the create precondition in the sync-schemas
+test to immediately after the create so the real create error is reported instead of a late timeout.
+Discovery: (1) The root cause is stated in the repo already — `McpServerSession.cs` documents that "tool
+completion and notification dispatch use independent SDK continuations", so a completed `tools/call` does
+NOT mean the sink has drained. (2) `McpProgressHeartbeat.PumpChannelAsync` delays BEFORE its first beat,
+so a heartbeat is only guaranteed when work outlasts the interval — at the test's forced 0.05 s override a
+backend round-trip always qualifies, which is why a client-side wait is the complete fix for the keep-alive
+test and no immediate-first-beat change is needed. (3) The stage markers are pushed as each phase runs, so
+a create that dies early legitimately never streams the later markers — the old test blamed the progress
+path for what was an environment failure (same finding as PR #1083 for sync-schemas).
+Discovery: local macOS baseline for these two fixtures is 14 failed / 13 skipped on a clean master
+worktree (no sandbox configured — `TestConfiguration.EnsureSandboxIsConfigured` fails); the branch matches
+it exactly, so local runs prove no regression but cannot exercise the sandbox tests.
+Files: clio.mcp.e2e/Support/Mcp/MessageCollectingProgress.cs,
+clio.mcp.e2e/MessageCollectingProgressWaitTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs,
+clio.mcp.e2e/ApplicationSectionToolE2ETests.cs
+Impact: Gives the e2e project a reusable bounded wait for typed progress assertions — any future
+notifications/progress test should use it instead of asserting on the post-call snapshot. Also records that
+a muted `whenFixed` test reports a GREEN build whether or not a fix works, so validating a flake fix means
+reading per-test status, not build status.
