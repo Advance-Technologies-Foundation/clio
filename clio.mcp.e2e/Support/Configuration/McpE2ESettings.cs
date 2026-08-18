@@ -101,5 +101,30 @@ internal sealed class SandboxSettings {
 
 	public string? PackageName { get; set; }
 
+	/// <summary>
+	/// Classic section schema on the sandbox whose live body DOES declare static list columns, used by
+	/// get-classic-list-columns to prove the <c>schema-default</c> branch against a real Classic body.
+	/// OPT-IN (the test self-ignores when unset): which sections declare static columns is a fact about the
+	/// SEEDING, not about the product, and no base Studio section is known to declare them — the CI stand
+	/// resolves <c>ContactSectionV2</c> to <c>entity-default</c>, so defaulting to it asserted a false premise
+	/// and turned the build red rather than skipping. Point
+	/// <c>McpE2E__Sandbox__ClassicSchemaDefaultSectionSchema</c> at a section the stand really seeds with a
+	/// <c>getGridDataColumns</c> / <c>initColumnsConfig</c> override. Documented alongside the other sandbox
+	/// settings in <c>clio.mcp.e2e/appsettings.example.json</c>, which is where stand configuration is
+	/// discoverable — an XML comment alone is not, and whoever configures the TeamCity stand will not read it.
+	/// While this stays blank the ticket's live discrimination criterion does NOT run.
+	/// </summary>
+	public string? ClassicSchemaDefaultSectionSchema { get; set; }
+
+	/// <summary>
+	/// Classic section schema on the sandbox that was never configured with static list columns, used by
+	/// get-classic-list-columns to prove the <c>entity-default</c> branch discriminates from
+	/// <c>schema-default</c>. Defaults to <c>ContactSectionV2</c>: the base Studio Contact section declares no
+	/// static list columns, which the sandbox run confirms by resolving it to <c>entity-default</c> with the
+	/// resolver's own "does not define static list columns" note and no skipped layers. Override through
+	/// <c>McpE2E__Sandbox__ClassicEntityDefaultSectionSchema</c> on a stand where Contact IS configured.
+	/// </summary>
+	public string? ClassicEntityDefaultSectionSchema { get; set; } = "ContactSectionV2";
+
 	public string SeedKeyPrefix { get; set; } = "clio-mcp-e2e";
 }
