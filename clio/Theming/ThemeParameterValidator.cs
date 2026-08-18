@@ -19,7 +19,7 @@ internal static class ThemeParameterValidator {
 	/// <summary>Maximum accepted css-class-name length.</summary>
 	internal const int MaxCssClassNameLength = 100;
 
-	/// <summary>Maximum accepted theme id length.</summary>
+	/// <summary>Display cap applied to a theme id when it is printed in the catalog listing.</summary>
 	internal const int MaxIdLength = 100;
 
 	/// <summary>Maximum accepted theme caption length.</summary>
@@ -31,7 +31,6 @@ internal static class ThemeParameterValidator {
 
 	/// <summary>The css-class-name character rule: starts with a letter; letters, digits, hyphen, underscore only.</summary>
 	private static readonly Regex CssClassNamePattern = new(@"^[A-Za-z][A-Za-z0-9_-]*\z", RegexOptions.Compiled, RegexTimeout);
-	private static readonly Regex IdPattern = new(@"^[A-Za-z0-9_-]+\z", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>Collapses each run of characters outside <c>[a-z0-9]</c> into a single hyphen.</summary>
 	private static readonly Regex NonSlugRun = new("[^a-z0-9]+", RegexOptions.Compiled, RegexTimeout);
@@ -122,23 +121,28 @@ internal static class ThemeParameterValidator {
 	}
 
 	/// <summary>
-	/// Validates a theme <c>id</c> against the server contract (<c>^[A-Za-z0-9_-]+$</c>, ≤100 chars).
+	/// Validates a theme <c>id</c>: it must be a GUID.
 	/// </summary>
 	/// <param name="id">The theme id to validate.</param>
 	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
-	/// <returns><c>true</c> when the id is valid.</returns>
+	/// <returns><c>true</c> when the id is a well-formed GUID.</returns>
+	/// <remarks>
+	/// The rule used to be the looser <c>^[A-Za-z0-9_-]+$</c>, matching a server that carried the id as a
+	/// <c>string</c>. ENG-91018 typed it as a <see cref="Guid"/> on every theme request
+	/// (<c>UpdateThemeRequest.Id</c>, which <c>CreateThemeRequest</c> inherits, and <c>DeleteThemeRequest.Id</c>)
+	/// and made the catalog skip non-GUID themes outright, so a readable id like <c>my-theme</c> is no longer
+	/// merely unconventional — it is unusable, and the server reports it as an opaque deserialization failure.
+	/// Validating here turns that into a local, actionable error. Accepts every format
+	/// <see cref="Guid.TryParse(string, out Guid)"/> does, mirroring the server rather than adding a rule of our own.
+	/// </remarks>
 	internal static bool TryValidateId(string id, out string error) {
 		error = null;
 		if (string.IsNullOrWhiteSpace(id)) {
 			error = "Theme id is required.";
 			return false;
 		}
-		if (id.Length > MaxIdLength) {
-			error = $"Theme id must be at most {MaxIdLength} characters.";
-			return false;
-		}
-		if (!IsMatchSafe(IdPattern, id)) {
-			error = "Theme id must match ^[A-Za-z0-9_-]+$ (letters, digits, underscore, hyphen).";
+		if (!Guid.TryParse(id, out _)) {
+			error = $"Theme id must be a GUID — the server parses it as one. Received: '{id}'.";
 			return false;
 		}
 		return true;

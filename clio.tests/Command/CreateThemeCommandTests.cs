@@ -113,15 +113,17 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(ci => { capturedBody = ci.ArgAt<string>(1); return "{\"success\":true}"; });
 		CreateThemeOptions options = ValidOptions();
-		options.Id = "my-explicit-theme";
+		// A GUID, not a readable slug: the server deserializes CreateThemeRequest.Id as a Guid.
+		options.Id = "d53a816b-65ed-4b5b-ad3b-f739280add45";
 
 		// Act
 		bool succeeded = _command.TryCreateTheme(options, out string createdId, out _);
 
 		// Assert
 		succeeded.Should().BeTrue(because: "a valid explicit id is created successfully");
-		capturedBody.Should().Contain("\"id\":\"my-explicit-theme\"", because: "an explicit id must be sent verbatim");
-		createdId.Should().Be("my-explicit-theme", because: "the effective id is the supplied one");
+		capturedBody.Should().Contain("\"id\":\"d53a816b-65ed-4b5b-ad3b-f739280add45\"",
+			because: "an explicit id must be sent verbatim");
+		createdId.Should().Be("d53a816b-65ed-4b5b-ad3b-f739280add45", because: "the effective id is the supplied one");
 	}
 
 	[Test, Category("Unit")]
@@ -166,6 +168,23 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 		_applicationClient.DidNotReceive().ExecutePostRequest(
 			Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails fast without any HTTP call when --id is not a GUID. The server parses CreateThemeRequest.Id as a Guid and answers a non-GUID with an opaque deserialization error, so clio must reject it locally with a message naming the rule.")]
+	public void CreateTheme_ShouldFailFastWithoutHttp_WhenIdIsNotAGuid() {
+		// Arrange
+		CreateThemeOptions options = ValidOptions();
+		options.Id = "e2e-brand-theme-d53a816b65ed4b5bad3bf739280add45";
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a non-GUID id is rejected before any service call");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("GUID")));
 	}
 
 	[Test, Category("Unit")]

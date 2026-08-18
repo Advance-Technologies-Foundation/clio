@@ -125,7 +125,12 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await EnsureThemingAccessAsync(context, environmentName);
-		string themeId = $"e2e-theme-{Guid.NewGuid():N}";
+		// The id must be a bare GUID — the server deserializes CreateThemeRequest.Id as one. The readable
+		// e2e- prefix moves to the css-class-name, which IS a string server-side (and must start with a letter,
+		// so it could never have been the id anyway once the id became a GUID).
+		Guid themeGuid = Guid.NewGuid();
+		string themeId = themeGuid.ToString("D");
+		string cssClassName = $"e2e-theme-{themeGuid:N}";
 		const string createdCaption = "Clio MCP E2E";
 		const string updatedCaption = "Clio MCP E2E updated";
 		_environmentNameForCleanup = environmentName;
@@ -136,8 +141,8 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 				["environment-name"] = environmentName,
 				["id"] = themeId,
 				["caption"] = createdCaption,
-				["css-class-name"] = themeId,
-				["css-content"] = $".{themeId}{{color:#003366}}"
+				["css-class-name"] = cssClassName,
+				["css-content"] = $".{cssClassName}{{color:#003366}}"
 			});
 		CreateThemeResult created = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(createCallResult);
 		created.Success.Should().BeTrue(
@@ -157,8 +162,8 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 				["environment-name"] = environmentName,
 				["id"] = themeId,
 				["caption"] = updatedCaption,
-				["css-class-name"] = themeId,
-				["css-content"] = $".{themeId}{{color:#ff6600}}"
+				["css-class-name"] = cssClassName,
+				["css-content"] = $".{cssClassName}{{color:#ff6600}}"
 			}));
 		updateResponse.ExitCode.Should().Be(0,
 			because: "the full overwrite of an existing theme must succeed");
@@ -189,7 +194,9 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await EnsureThemingAccessAsync(context, environmentName);
-		string themeId = $"e2e-user-theme-{Guid.NewGuid():N}";
+		Guid themeGuid = Guid.NewGuid();
+		string themeId = themeGuid.ToString("D");
+		string cssClassName = $"e2e-user-theme-{themeGuid:N}";
 		const string caption = "Clio MCP E2E user-apply";
 		_environmentNameForCleanup = environmentName;
 
@@ -199,8 +206,8 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 					["environment-name"] = environmentName,
 					["id"] = themeId,
 					["caption"] = caption,
-					["css-class-name"] = themeId,
-					["css-content"] = $".{themeId}{{color:#0a6cff}}"
+					["css-class-name"] = cssClassName,
+					["css-content"] = $".{cssClassName}{{color:#0a6cff}}"
 				}));
 			created.Success.Should().BeTrue(because: $"the theme to apply must be created first (error: {created.Error})");
 			_createdThemeId = themeId;
@@ -255,9 +262,10 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await EnsureThemingAccessAsync(context, environmentName);
-		string themeId = $"e2e-brand-theme-{Guid.NewGuid():N}";
+		Guid themeGuid = Guid.NewGuid();
+		string themeId = themeGuid.ToString("D");
 		const string caption = "Clio MCP E2E brand";
-		string cssClassName = themeId;
+		string cssClassName = $"e2e-brand-theme-{themeGuid:N}";
 		_environmentNameForCleanup = environmentName;
 
 		await AllureApi.Step("Create the theme from brand inputs only (no css-content)", async () => {
@@ -313,13 +321,15 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await EnsureThemingAccessAsync(context, environmentName);
-		string themeId = $"e2e-retry-theme-{Guid.NewGuid():N}";
+		Guid themeGuid = Guid.NewGuid();
+		string themeId = themeGuid.ToString("D");
+		string cssClassName = $"e2e-retry-theme-{themeGuid:N}";
 		_environmentNameForCleanup = environmentName;
 		Dictionary<string, object?> createArgs = new() {
 			["environment-name"] = environmentName,
 			["id"] = themeId,
 			["caption"] = "Clio MCP E2E retry",
-			["css-class-name"] = themeId,
+			["css-class-name"] = cssClassName,
 			["primary"] = "#004fd6"
 		};
 

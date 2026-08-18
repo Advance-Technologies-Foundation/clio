@@ -14,9 +14,9 @@ namespace Clio.Command.Theming;
 [RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]
 public class CreateThemeOptions : RemoteCommandOptions
 {
-	/// <summary>Theme id (<c>^[A-Za-z0-9_-]+$</c>, ≤100). When omitted, an auto-generated UUID v4 is used.</summary>
+	/// <summary>Theme id — a GUID, because the server parses it as one. When omitted, an auto-generated UUID v4 is used.</summary>
 	[Option("id", Required = false,
-		HelpText = "Theme id (^[A-Za-z0-9_-]+$, max 100). When omitted, an auto-generated UUID is used and reported back.")]
+		HelpText = "Theme id (a GUID; the server parses it as one). When omitted, an auto-generated UUID is used and reported back.")]
 	public string Id { get; set; }
 
 	/// <summary>Human-readable theme caption (≤250). When omitted, it is derived from <see cref="CssClassName"/>.</summary>

@@ -33,7 +33,7 @@ clio create-theme [options]
 ## Options
 
 ```bash
---id                            Theme id (^[A-Za-z0-9_-]+$, max 100); an auto-generated UUID when omitted
+--id                            Theme id (a GUID; the server parses it as one); an auto-generated UUID when omitted
 
 --caption                       Human-readable theme caption, max 250; derived from --css-class-name when omitted
 
