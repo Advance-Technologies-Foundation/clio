@@ -10,7 +10,10 @@
 > which supersedes this ADR's delivery section — with the requirements in
 > [spec-deliver-process-builder-package.md](../prd/spec-deliver-process-builder-package.md) and the
 > experiment log in [deliver-process-builder-package-plan.md](../deliver-process-builder-package/deliver-process-builder-package-plan.md).
-> The name `clioprocessbuilder` is left in place below as the historical record.
+> The GHE repository was renamed too — `cli-process-builder` → **`crt-process-builder`** (ENG-95409),
+> which changed nothing but the name: the descriptor `UId`, the REST route and the assembly name are all
+> independent of it. The names `clioprocessbuilder` and `cli-process-builder` are left in place below as
+> the historical record.
 
 **Jira**: [ENG-90883](https://creatio.atlassian.net/browse/ENG-90883) (Approach 1 of [ENG-91447](https://creatio.atlassian.net/browse/ENG-91447); follow-ups [ENG-91842](https://creatio.atlassian.net/browse/ENG-91842))
 

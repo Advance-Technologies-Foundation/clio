@@ -614,7 +614,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 ## Branding
 
 <a id="set-logo"></a>
-- [`set-logo`](docs/commands/set-logo.md) - Apply the product logos from local image files and bind them into a package as data bindings
+- [`set-logo`](docs/commands/set-logo.md) - Apply the product logos and the browser-tab favicon from local image files and bind them into a package as data bindings
 <a id="set-background-image"></a>
 - [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background and bind it into a package as data bindings
 
@@ -679,7 +679,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-http"></a>
-- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP (Streamable HTTP), with standard OAuth 2.1 Resource-Server authorization (off by default; whole-endpoint when configured) and an optional multi-tenant per-request credential-passthrough edge (dev/offline platform-api-key fallback when OAuth is not configured)
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over Streamable HTTP with hybrid stateless-modern/stateful-legacy protocol support, standard OAuth 2.1 Resource-Server authorization, and optional multi-tenant credential passthrough
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`

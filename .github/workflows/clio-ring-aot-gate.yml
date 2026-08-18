@@ -10,6 +10,7 @@ on:
   pull_request:
     paths:
       - "clio-ring/**"
+      - "Directory.Packages.props"
       - ".github/workflows/clio-ring-aot-gate.yml"
 
 permissions:

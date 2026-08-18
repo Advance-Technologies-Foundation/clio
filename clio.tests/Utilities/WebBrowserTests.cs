@@ -1,4 +1,8 @@
 ﻿using System;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Utilities;
 using FluentAssertions;
@@ -16,6 +20,8 @@ public class WebBrowserTests
 	private IProcessExecutor _processExecutorMock;
 	private IOSPlatformChecker _platformCheckerMock;
 	private IWebBrowser _sut;
+	private StubHttpMessageHandler _httpMessageHandler;
+	private HttpClient _httpClient;
 
 	#endregion
 
@@ -25,7 +31,16 @@ public class WebBrowserTests
 	public void Setup() {
 		_processExecutorMock = Substitute.For<IProcessExecutor>();
 		_platformCheckerMock = Substitute.For<IOSPlatformChecker>();
-		_sut = new WebBrowser(_processExecutorMock, _platformCheckerMock, Substitute.For<ILogger>());
+		_httpMessageHandler = new StubHttpMessageHandler(_ => throw new HttpRequestException("unreachable"));
+		_httpClient = new HttpClient(_httpMessageHandler, disposeHandler: false);
+		_sut = new WebBrowser(_processExecutorMock, _platformCheckerMock, Substitute.For<ILogger>(),
+			_httpClient);
+	}
+
+	[TearDown]
+	public void TearDown() {
+		_httpClient.Dispose();
+		_httpMessageHandler.Dispose();
 	}
 
 	#endregion
@@ -98,6 +113,7 @@ public class WebBrowserTests
 	public void CheckUrl_ShouldReturn_False_WhenUrlReturnsErrorStatusCode() {
 		// Arrange
 		const string urlWithError = "https://httpstat.us/404";
+		_httpMessageHandler.Respond = _ => new HttpResponseMessage(HttpStatusCode.NotFound);
 
 		// Act
 		bool result = _sut.CheckUrl(urlWithError);
@@ -112,6 +128,7 @@ public class WebBrowserTests
 	public void CheckUrl_ShouldReturn_False_WhenUrlRedirects() {
 		// Arrange
 		const string redirectUrl = "http://httpstat.us/301";
+		_httpMessageHandler.Respond = _ => new HttpResponseMessage(HttpStatusCode.MovedPermanently);
 
 		// Act
 		bool result = _sut.CheckUrl(redirectUrl);
@@ -171,9 +188,10 @@ public class WebBrowserTests
 	public void CheckUrl_ShouldReturn_True_WhenUrlIsValidAndReachable() {
 		// Arrange
 		const string validUrl = "https://www.google.com";
+		IWebBrowser browser = new WebBrowser(_processExecutorMock, _platformCheckerMock, Substitute.For<ILogger>());
 
 		// Act
-		bool result = _sut.CheckUrl(validUrl);
+		bool result = browser.CheckUrl(validUrl);
 
 		// Assert
 		result.Should().BeTrue(because: "a valid and reachable URL should pass the check");
@@ -243,6 +261,14 @@ public class WebBrowserTests
 	}
 
 	#endregion
+
+	private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond)
+		: HttpMessageHandler {
+		public Func<HttpRequestMessage, HttpResponseMessage> Respond { get; set; } = respond;
+
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+			CancellationToken cancellationToken) => Task.FromResult(Respond(request));
+	}
 }
 
 

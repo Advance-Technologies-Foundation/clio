@@ -62,7 +62,9 @@ public class TurnFsmCommandLoginRetryTests {
 			applicationClient, envSettings, Substitute.For<IServerReadinessWaiter>());
 		restartCommand.Execute(Arg.Any<RestartOptions>()).Returns(0);
 
-		TurnFsmCommand command = new(setFsmConfigCommand, loadToFs, loadToDb, applicationClient, envSettings, restartCommand, Substitute.For<Clio.Common.ILogger>());
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		TurnFsmCommand command = new(setFsmConfigCommand, loadToFs, loadToDb, applicationClient, envSettings,
+			restartCommand, Substitute.For<Clio.Common.ILogger>(), retryDelay);
 		TurnFsmCommandOptions options = new() {
 			IsFsm = "on",
 			Uri = envSettings.Uri,
@@ -75,6 +77,7 @@ public class TurnFsmCommandLoginRetryTests {
 		// Assert
 		result.Should().Be(0, "because the command should retry login until the application becomes available");
 		loginAttempts.Should().BeGreaterOrEqualTo(3, "because it should retry login when the server is still restarting");
+		retryDelay.Received(2).Wait(TimeSpan.FromSeconds(3));
 		fileDesignModePackages.Received(1).LoadPackagesToFileSystem();
 	}
 }
