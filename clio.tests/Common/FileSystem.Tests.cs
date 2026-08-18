@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -993,6 +993,126 @@ public class FileSystemTests
 		// Assert
 		Path.IsPathRooted(actual).Should().BeFalse("because relative input paths must stay relative");
 		actual.Should().Be(expected, "because all separator variants should be normalized to platform separators");
+	}
+
+	#endregion
+
+	#region WriteOwnerOnlyTextToFileAtomic — publishing the replacement
+
+	// The publish step is rename(2) on Unix and MoveFileEx(MOVEFILE_REPLACE_EXISTING) on Windows, and only
+	// the second one can be refused by a reader that already holds the destination open. So the retry
+	// cannot be provoked by real file I/O on this machine — on macOS and Linux the rename simply succeeds.
+	// These tests substitute the move so the contended path is exercised on every platform, which is the
+	// whole point: the defect they pin was invisible to a green macOS suite and only appeared on a Windows
+	// build agent.
+	private sealed class AtomicPublishHarness : IDisposable {
+
+		internal AtomicPublishHarness() {
+			Directory = Path.Combine(Path.GetTempPath(), $"clio-atomic-publish-{Guid.NewGuid():N}");
+			System.IO.Directory.CreateDirectory(Directory);
+			TargetPath = Path.Combine(Directory, "session.json");
+			File = Substitute.For<Ms.IFile>();
+			Ms.IFileSystem real = new Ms.FileSystem();
+			FileSystemUnderTest = Substitute.For<Ms.IFileSystem>();
+			// The temporary file is written for real, so the method under test is exercised end to end up
+			// to the publish; only the publish itself is under the test's control.
+			FileSystemUnderTest.FileStream.Returns(real.FileStream);
+			FileSystemUnderTest.File.Returns(File);
+		}
+
+		internal string Directory { get; }
+
+		internal string TargetPath { get; }
+
+		internal Ms.IFile File { get; }
+
+		internal Ms.IFileSystem FileSystemUnderTest { get; }
+
+		public void Dispose() {
+			try {
+				if (System.IO.Directory.Exists(Directory)) {
+					System.IO.Directory.Delete(Directory, recursive: true);
+				}
+			} catch (IOException) {
+				// A leftover temporary directory must never fail a test run.
+			}
+		}
+	}
+
+	[Test]
+	[Description("A destination briefly held open by a reader denies the rename on Windows; the publish must retry over its bounded window and still succeed rather than losing the write.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_PublishTheReplacement_When_AContendingReaderBrieflyDeniesTheRename() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		int moveAttempts = 0;
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => {
+				moveAttempts++;
+				if (moveAttempts <= 2) {
+					throw new UnauthorizedAccessException("Access to the path is denied.");
+				}
+			});
+		FileSystem sut = new(harness.FileSystemUnderTest);
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{\"cookies\":[]}");
+
+		// Assert
+		publish.Should().NotThrow(
+			because: "a reader's open handle is a transient condition that clears in milliseconds, and dropping the session write because of it is how a cached credential silently fails to refresh");
+		moveAttempts.Should().Be(3,
+			because: "the publish must retry past the two denials and then succeed on the attempt that finds the destination free");
+	}
+
+	[Test]
+	[Description("A denial that never clears is a real error — an ACL or a read-only file — and must surface unchanged instead of being retried into silence.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_SurfaceTheDenial_When_ItPersistsForTheWholeRetryWindow() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		int moveAttempts = 0;
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => {
+				moveAttempts++;
+				throw new UnauthorizedAccessException("Access to the path is denied.");
+			});
+		// A short explicit window: the subject here is that the deadline ENDS, not how long production
+		// waits, and burning the production window in a unit test buys nothing.
+		FileSystem sut = new(harness.FileSystemUnderTest, TimeSpan.FromMilliseconds(120));
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{}");
+
+		// Assert
+		publish.Should().Throw<UnauthorizedAccessException>(
+			because: "the retry window exists to outlast a contending reader, not to convert a genuine permission failure into an unbounded wait or a swallowed write");
+		moveAttempts.Should().BeGreaterThan(1,
+			because: "the caller must have been given the benefit of the retry window before the failure is declared final");
+	}
+
+	[Test]
+	[Description("Only a contention shape is retried: a missing temporary file is a programming error and must fail on the first attempt rather than costing the caller the whole retry window.")]
+	public void WriteOwnerOnlyTextToFileAtomic_Should_FailImmediately_When_TheFailureIsNotContention() {
+		// Arrange
+		using AtomicPublishHarness harness = new();
+		int moveAttempts = 0;
+		harness.File
+			.When(file => file.Move(Arg.Any<string>(), harness.TargetPath, true))
+			.Do(_ => {
+				moveAttempts++;
+				throw new FileNotFoundException("The temporary file is gone.");
+			});
+		FileSystem sut = new(harness.FileSystemUnderTest);
+
+		// Act
+		Action publish = () => sut.WriteOwnerOnlyTextToFileAtomic(harness.TargetPath, "{}");
+
+		// Assert
+		publish.Should().Throw<FileNotFoundException>(
+			because: "a vanished temporary file is not contention and no amount of waiting will produce it");
+		moveAttempts.Should().Be(1,
+			because: "retrying a non-contention failure would turn an instant, diagnosable error into a second of unexplained delay on every occurrence");
 	}
 
 	#endregion
