@@ -590,3 +590,23 @@ through the heartbeat, and the two that forward stage events.
 
 `get-related-page-addon`, a shipped cohort member, holds the SHARED fallback lock across a Creatio
 round trip — see story 19.
+
+### One contradiction, adjudicated with primary evidence
+
+A second pass claimed the Worker direction is entirely clean — no row that never reaches Creatio — and
+that the four listed above are therefore not findings. That claim was checked and **rejected**, because
+the two passes did not use the same method: the clearing pass inferred reachability from the tool's
+constructor dependencies, while the pass that flagged them read the command body.
+
+Verified directly, at the source:
+
+- `BrowserSessionService.ClearSessionAsync` is nine lines: a local cache delete, an optional file
+  delete, and `Task.CompletedTask`.
+- `StopCommand.cs` — zero occurrences of `IApplicationClient`, `HttpClient`, either request verb, the
+  URL builder, or `WebRequest`.
+- `CreatioUninstaller.cs` — the same, zero.
+
+A constructor dependency proves a service is available, not that a code path calls it. The clearing
+pass disclosed this tier itself. Where the two disagree, the read of the command body wins, and the
+four rows stand — with the reminder above that `uninstall-creatio` should not be "corrected", because
+its `Worker` classification is about containing a long destructive operation, not about reachability.

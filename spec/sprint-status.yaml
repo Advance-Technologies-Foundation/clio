@@ -2988,7 +2988,7 @@ stories:
     status_note: "Found 2026-08-18 by the classification adversary. PRE-EXISTING, not caused by this feature, but it affects get-related-page-addon, which stage 6 already ships in the worker cohort. Same defect class as story 12, which this branch fixed: per-tenant options are built and then the ENVIRONMENT-LESS ResolveCommand overload is called, so the shared fallback key is held across a Creatio round trip and every tenant queues behind it. The discriminating test asserts WHICH key was taken, not that a lock was taken."
     depends_on: []
   - id: story-mcp-worker-execution-boundary-20
-    title: "A cohort tool stopped streaming progress"
+    title: "The end-to-end delta this branch owes an explanation"
     feature: "mcp-worker-execution-boundary"
     status: ready-for-dev
     file: spec/stories/story-mcp-worker-execution-boundary-20.md

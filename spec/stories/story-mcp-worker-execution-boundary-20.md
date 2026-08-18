@@ -1,4 +1,4 @@
-# Story 20: a cohort tool stopped streaming progress
+# Story 20: the end-to-end delta this branch owes an explanation
 
 Found 2026-08-18 by TeamCity run 15893259 on this branch. **This is a regression introduced by
 stage 6**, confirmed against the master baseline (run 15892347), where the same test passes.
@@ -48,3 +48,47 @@ for cohort tools, which would mean the relay's forwarding is not doing what four
 - AC-04 Whatever the cause, the allowlist question is answered explicitly: which variables a child must
   inherit for its behaviour to match the parent's, and why each one is on or off the list. The list's
   own remarks claim it "carries every spelling the host may have used", which is currently false.
+
+
+## The full end-to-end delta (TeamCity 15893259 vs master baseline 15892347)
+
+Taken at 62 percent of the run, so the list may still grow — and the baseline's own four
+`ThemingSandboxE2ETests` failures had not been reached yet, so they are absent from this list rather
+than fixed.
+
+**Three tests passed on master and fail here. These are regressions.**
+
+| Test | First read |
+|---|---|
+| `ApplicationTool_Should_Stream_Progress_For_LongRunning_Call` | The progress case above. |
+| `CreateWorkspace_Should_Create_Empty_Workspace_When_Directory_Is_Omitted` | "Directory omitted" means the command uses the process working directory — and stage 6 changed which directory a worker starts in. That is the first thing to check, and it is checkable without a stand. |
+| `ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync` | No hypothesis yet. Could be environmental; do not assume either way. |
+
+**Two are this branch's OWN new tests, and they fail.** Neither exists in the baseline run, so they
+were added by wave 2 alongside the interprocess file gates (story 9):
+
+- `AppSettings_Should_YieldAWholeCatalog_When_ReadDuringRegWebAppWrites`
+- `BrowserSessionCache_Should_NeverExposeATornRead_When_WrittenConcurrently`
+
+Both are concurrency tests over shared files, and both are exactly the hazard the design named: separate
+address spaces isolate memory, not the filesystem. A green local unit suite says nothing about them —
+they are end-to-end, and the end-to-end suite is not run by GitHub CI, so this is the first time they
+have executed since they were written.
+
+Read that carefully before deciding what it means. Two readings, and they need different work:
+
+1. The gates genuinely do not hold under real concurrent processes, in which case story 9 is not done
+   and the browser-session cache and the settings catalogue both need the treatment `.clio-pages` got.
+2. The tests are flaky on the build host — shared temporary state, a fixed path, or a timing
+   assumption. This repository has a documented history of exactly that.
+
+Do not fix on hypothesis 1 without evidence, and do not dismiss as hypothesis 2 without evidence
+either. Re-run them in isolation on the build host first; that single step separates the two.
+
+## Additional acceptance criteria
+
+- AC-05 Every one of the five is classified as regression, pre-existing, or flaky, with the evidence
+  that decides it — not with an argument from plausibility.
+- AC-06 The two new gate tests either pass on the build host or their failure is explained and the gate
+  is fixed. A test this branch added, failing the first time it runs, is not something to carry into a
+  merge.
