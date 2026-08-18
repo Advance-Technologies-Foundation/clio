@@ -201,7 +201,7 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 				.CallToolAsync(WithoutParentSessionMetadata(parameters), budgetSource.Token)
 				.ConfigureAwait(false);
 			if (result is null) {
-				// OQ-9: a worker answering `{"result":null}` deserialises to a null CallToolResult, which
+				// OQ-10: a worker answering `{"result":null}` deserialises to a null CallToolResult, which
 				// would otherwise reach the SDK as "the tool answered" and be serialised as an empty success.
 				// A worker that answered nothing is a defect, and it is named rather than smoothed over.
 				_logger.WriteWarning($"MCP worker for '{toolName}' returned a null tool result.");

@@ -194,6 +194,48 @@ excluding Microsoft domains from filtering on a shared stand, which is a securit
 was deliberately not made. Anything on ts1 that fetches from Azure Edge with a validating client will fail
 the same way; run this gate on a host that already carries the C++ workload.
 
+### 2.5 The cost against the FAST cohort, which is the one Stage 6 actually ships
+
+Everything above justifies the spawn cost against operations that take tens of seconds to tens of minutes,
+where a 0.7–2.8 s tax rounds to nothing. **Stage 6's cohort is not that.** It is `get-page`, `list-pages`,
+`list-app-sections`, `get-schema`, `get-related-page-addon` and the SQL/OData reads — roughly one- to
+two-second calls on a healthy stand (§1.2's CLI arm: 42 calls, avg 2.4 s; §1.3: the same command through the
+CLI returns in ~1 s). Applying the measured spawn cost to *that* baseline gives a far worse ratio than
+anything quoted so far, and the ADR owes the reader the number rather than the reassurance:
+
+| Baseline read | + 0.7 s (macOS) | + 2.8 s (Windows Server 2022, 4 cores) |
+|---|---|---|
+| ~2 s (§1.2 CLI average) | **+35 %** | **+140 %** |
+| ~1 s (§1.3 best case) | **+70 %** | **~+280 %** |
+
+**So state the trade honestly.** On Windows a fast read that took 1 s can take nearly 4 s, every time, for
+as long as the tool stays in the worker cohort. That is not a rounding error and it is not hidden by
+averages — an agent doing twenty quick reads feels it.
+
+**Three things make it the right trade anyway, and the first is measured rather than argued.**
+
+1. **This cohort's own history is the evidence.** These are exactly the commands agents were forced off MCP
+   and onto the CLI. The CLI pays a fresh process start *and* a fresh login on **every** call — and the
+   head-to-head measured it at avg 2.3 s with **0 timeouts** for `get-page`, against in-process MCP's avg
+   90.2 s with **11 timeouts** in the same minutes on the same stand (§1.2). A per-call process for these
+   reads is not a hypothesis about acceptable latency; it is the configuration people already chose while
+   the fast path was available to them. The deck states the same thing in one line: this is the price the
+   CLI pays always.
+2. **The comparison is not "2 s vs 4 s", it is "4 s vs an environment that stays dead until the process
+   restarts."** The wedge is not a slow call — it is every later call for that environment cut at the read
+   deadline **without issuing an HTTP request at all**, and staying that way after the backend recovers
+   (§1). A 140 % tax on a healthy read buys the removal of an unbounded tax on an unhealthy one.
+3. **The Windows figure is an upper bound and is expected to fall.** 2.763 s was measured invoking
+   `dotnet clio.dll`, the development shape; production clio is an apphost that skips muxer resolution
+   (§2.4). Re-measuring against a published apphost before Stage 6 sets a default budget is already noted
+   there — this section is a second reason to do it, because the cohort's ratio is where the difference
+   shows.
+
+**What this does NOT license.** It does not justify moving *every* read into a worker. The cost is per call
+and it is worst where the call is cheapest, so cohort expansion at Stage 10 is a decision to be made against
+this table, tool by tool — not a formality once the machinery exists. A read that never wedged anything is a
+read that pays this tax for nothing.
+
 ### 2.3 What this deletes
 
 Unlike the in-process alternative, this decision *removes* machinery rather than adding it. At Stage 10:
@@ -216,10 +258,12 @@ rule 12 is new, from the relay spike.
    are credential-scoped today, so sharing by environment alone is a cross-client boundary violation.
    See the credential threat model inventory.
 4. **Process lifetime ≠ response budget.** `deploy-creatio` and `uninstall-creatio` are synchronous,
-   destructive and progress-streaming, and ClioRing waits for the authoritative terminal stage. A generic
-   45–60 s kill could leave a half-installed environment. The signalling protocol is specified in §3.3 —
-   without it `terminal-stage` is a label, and TC-E-801 could only prove that one implementation happens to
-   pass.
+   destructive and progress-streaming, and ClioRing waits for the authoritative terminal event — which in
+   the shipped contract is a stage event with `eventType == "run-completed"` for the run's root `runId`,
+   carrying one of `success` / `failure` / `success-with-warnings`; there is **no** `cancelled` outcome, so a
+   cancelled run resolves as indeterminate (§3.3). A generic 45–60 s kill could leave a half-installed
+   environment. The signalling protocol is specified in §3.3 — without it `terminal-stage` is a label, and
+   TC-E-801 could only prove that one implementation happens to pass.
 5. **Only two operation registries exist** (compile, restart). `install-process-builder` and
    `create-app-section` have none, and restart-by-credentials is deliberately unreportable, so "reap on
    terminal status" cannot manage three of the four long-running modes. Workers need a **private completion
@@ -326,6 +370,69 @@ order. ClioRing itself tolerates reordering (it buffers by `(runId, sequence)`),
 the component that introduces it — other clients have no such buffer, and ordered replay is part of the
 stage-event contract. This is an acceptance criterion for Stage 4, not a nice-to-have.
 
+#### 3.2a The write side needs no gate — and the reason it doesn't is also a retirement rule
+
+*Measured 2026-08-18 by decompiling the shipped assembly
+(`~/.nuget/packages/modelcontextprotocol.core/2.2.0/lib/net10.0/ModelContextProtocol.Core.dll`), not
+inferred from documentation.*
+
+The reordering above is a **read**-side property, and it was reasonable to ask whether the write side needs a
+matching relay-owned send gate. It does not. `StreamClientSessionTransport.SendMessageAsync` already
+serialises writes: a `SemaphoreSlim(1, 1)` `_sendLock` is taken for the whole send, and serialization, the
+payload write, the newline write and the flush all sit inside it. Two concurrent senders cannot interleave
+their bytes on the pipe. **So no relay-side send gate is needed, and adding one would be duplicated
+machinery.**
+
+**But the lock guarantees a COMPLETED send, not an ATOMIC one, and that distinction is this feature's own
+wedge in miniature.** The same cancellation token is passed to all three awaits inside the lock. Cancel
+between the payload write and the newline write — which the budget does, by design — and the lock is
+released over an **unterminated line**. The child's reader is line-oriented, so it is still waiting for that
+newline.
+
+- For a **per-call** worker this is harmless: the child is killed immediately afterwards and the dangling
+  line dies with the pipe.
+- For a **sticky** worker it is not. The transport survives, the next writer's JSON is appended to the
+  dangling line, and the child receives one corrupt frame and answers nothing. One process, wedged — the
+  exact failure this ADR exists to remove, reintroduced by the mechanism that removes it.
+
+**This makes the retirement rule binding rather than tidy: a session whose send did not complete is retired,
+never reused.** Any code path that cancels a send on a sticky worker must retire that worker's session, and
+"the send threw `OperationCanceledException`" is the signal. Stages 7 and 8 own the sticky pool, so this is
+their constraint to honour, not a Stage 4 detail.
+
+#### 3.2b How far a structural guard can enforce rule 12 — corrected 2026-08-18
+
+Rule 12 is guarded structurally today: TC-U-401 walks `Assembly.GetTypes()` restricted to the relay's
+namespace and fails if `McpClient` or `McpClientHandlers` appears in any field, property, parameter or
+return type (`clio.tests/Command/McpServer/WorkerMcpRelayTests`,
+`RelayTypes_ShouldNotReferenceTheSdkClient_WhenInspectedStructurally`, helper `SignatureTypes` — cited by
+member name because that file is under active edit and its line numbers moved on 2026-08-18).
+
+An earlier reading called that guard essentially blind, on the grounds that a signature scan cannot see
+inside a method body. **That is too pessimistic, and the correction matters because it changes what still
+needs building.** A local that crosses an `await` is hoisted by the compiler into a field of the generated
+async state machine, and those generated types are nested inside the declaring type — so they carry the
+enclosing namespace and `GetTypes()` returns them. The ordinary shape
+
+```csharp
+var client = await McpClient.CreateAsync(transport);   // client used after another await
+```
+
+therefore leaves a field of type `McpClient` that the existing scan **already catches**.
+
+Two shapes still escape it, and both are escapes from *exact type matching*, not from the idea of a scan:
+
+| Shape | What it leaves in metadata | Why the scan misses it |
+|---|---|---|
+| `await McpClient.CreateAsync(t)` whose result does not survive an await | `TaskAwaiter<McpClient>` | the check is `forbidden.Contains(pair.Type)` — an exact match, with no walk into generic arguments |
+| `_ = McpClient.CreateAsync(t)` | nothing | no local, no field, no signature |
+
+**So closing rule 12 completely needs an IL body scan** (a member-reference walk over method bodies), not a
+richer signature scan. Widening the signature check to unwrap generic arguments would close the first row
+cheaply and is worth doing; only the second row genuinely requires reading IL. Recording the split here so
+that a future implementer neither over-trusts the current guard nor rewrites it believing it catches
+nothing.
+
 ### 3.3 The `terminal-stage` protocol (binding, Stage 8)
 
 Rule 4 says the parent waits for the authoritative terminal stage. That is only enforceable once three
@@ -334,10 +441,33 @@ arrives.
 
 **Channel.** The existing stage-event stream, not a new one. The child already emits
 `notifications/progress` carrying `_meta.clioStageEvent` with `(runId, sequence)` — the same events ClioRing
-correlates on (rule 1), relayed raw. A terminal stage is a stage event whose `status` is one of the
-terminal values (`Completed` / `Failed` / `Cancelled`) for the run's root `runId`. No named pipe, no second
-IPC path: a private channel would be a second contract to keep in sync with the one ClioRing already reads,
-and the relay is required to be full-duplex for these tools anyway.
+correlates on (rule 1), relayed raw. No named pipe, no second IPC path: a private channel would be a second
+contract to keep in sync with the one ClioRing already reads, and the relay is required to be full-duplex
+for these tools anyway.
+
+**Detection — corrected 2026-08-18 against the shipped contract.** An earlier draft of this section said a
+terminal stage is "a stage event whose `status` is one of the terminal values
+(`Completed` / `Failed` / `Cancelled`)". **No such vocabulary exists**, and an implementer matching on it
+would write a condition that can never be true. The shipped contract
+(`clio/Command/McpServer/Progress/ClioStageEventContract.cs`) is:
+
+| Vocabulary | Members | Where |
+|---|---|---|
+| `EventTypes` | `manifest` · `stage` · `run-completed` | `:32-42` |
+| `StageStatuses` | `running` · `done` · `failed` · `skipped` · `warning` | `:55-71` — **per stage, never terminal** |
+| `RunOutcomes` | `success` · `failure` · `success-with-warnings` | `:74-84` |
+
+So the terminal test is: the notification is a progress notification **and**
+`_meta.clioStageEvent.eventType == "run-completed"` **and** its `runId` equals the run's root `runId`
+(`ClioStageEvent.cs:29-30`, `:105`, `:112`). The outcome is then `runCompleted.outcome`, one of the three
+`RunOutcomes`. A per-stage `failed` is **not** terminal — a best-effort run may continue past it, which is
+exactly why `warning` and `skipped` exist beside it.
+
+**And the consequence that is not obvious: there is no `cancelled` outcome in the contract at all.** A
+cancelled deploy therefore emits **no terminal event**, so it cannot resolve through the terminal route —
+it resolves through the *indeterminate* path below, the same as a crashed child. An implementer who goes
+looking for a cancellation outcome will not find one, and must not invent one here: adding a fourth
+`RunOutcome` is a contract change that ClioRing mirrors (`SchemaVersion`, `:18`), not a local decision.
 
 **Parent-side bound.** Two separate timers, and neither is a total-operation kill:
 
@@ -353,17 +483,71 @@ truncate a legitimately long deploy: a healthy deploy streams stages continuousl
 
 **Failure actions — the parent never guesses that a deploy finished.**
 
-- **Child exits without a terminal stage** (crash, kill, non-zero exit): the call fails with an explicit
-  *indeterminate* error naming the last stage reached, the environment is marked **possibly half-installed**,
-  and the parent does **not** retry. Retry-on-ambiguity is how a half-installed environment becomes two.
+- **Child exits without a `run-completed` event** (crash, kill, non-zero exit): the call fails with an
+  explicit *indeterminate* error naming the last stage reached, the environment is marked **possibly
+  half-installed**, and the parent does **not** retry. Retry-on-ambiguity is how a half-installed
+  environment becomes two.
+- **Cancellation** takes this same route, by construction rather than by choice — the contract has no
+  `cancelled` outcome, so a cancelled run produces no `run-completed` event and is indistinguishable at the
+  wire from a child that died. Reporting it as indeterminate is therefore honest, not lazy.
 - **Silence timer expires:** same indeterminate outcome, and the child is killed only *after* the error is
   reported, so its last stage is captured first.
-- **Terminal stage arrives, child then hangs:** the exit grace applies; the tool result is the terminal
-  stage, not an error.
+- **`run-completed` arrives, child then hangs:** the exit grace applies; the tool result is the terminal
+  outcome, not an error.
 
-The `BudgetPolicy = terminal-stage` value therefore means "bounded by silence and by the terminal event",
-never "unbounded". TC-E-801 asserts the mid-deploy case; TC-E-802 asserts the lost-child case, which is the
-one that distinguishes this protocol from a generic kill.
+The `BudgetPolicy = terminal-stage` value therefore means "bounded by silence and by the `run-completed`
+event", never "unbounded". TC-E-801 asserts the mid-deploy case; TC-E-802 asserts the lost-child case, which
+is the one that distinguishes this protocol from a generic kill.
+
+**The protocol has one hole that the caller, not the child, opens.** Stage events are forwarded only when
+the caller supplied a progress token: `StageEventProgressForwarder.Subscribe` returns an inert subscription
+when `progressToken is null`, with the comment "No progress token → the caller did not opt into progress;
+forwarding is a pure no-op" (`clio/Command/McpServer/Progress/StageEventProgressForwarder.cs:60-62`, read
+2026-08-18). So a client that calls `deploy-creatio` **without** a progress token emits zero stage events —
+and a silence-bounded protocol would declare that perfectly healthy deploy a lost child and report it
+indeterminate. That is the worst false negative available in this family: it turns a successful deploy into
+"possibly half-installed".
+
+A terminal-stage route with no caller progress token therefore **must inject a synthetic progress token on
+the child leg**, so the child streams and the parent can see it. What remains deliberately **open** is what
+the parent then does with those notifications: forward them upward under the synthetic token (simple, but
+sends a client progress it never asked for), or consume them at the relay and suppress them (the one
+deliberate exception to rule 1, and it must be written down as such rather than discovered later). Stage 8
+decides; this ADR only records that the decision exists and that neither branch is "do nothing".
+
+### 3.4 Who drains the worker's standard error (recorded 2026-08-18, as of Stage 6)
+
+The worker's standard error **is** drained — continuously, not read once at the end — and the drain lives in
+the **dispatcher** (`McpWorkerCallDispatcher`, nested `WorkerStandardErrorDrain`, bounded by
+`StandardErrorTailLimit`), not in the supervisor and not on the lease. *Cited by member name: that file was
+under active edit on 2026-08-18 and its line numbers moved within the hour.*
+
+**Draining is liveness, not diagnostics.** A worker that fills its standard-error pipe buffer blocks on the
+write and goes silent, which the parent observes as a call that never answers — a hang, attributed to the
+stand, caused by clio. The bounded tail is the useful by-product.
+
+**Why it stays in the dispatcher**, stated so the next reader does not "fix" it into the supervisor:
+
+- The **relay never sees the stream.** It is handed a transport built from the worker's standard *input* and
+  *output* only; standard error is not part of the MCP channel and must not be, or a stack trace would be
+  parsed as a protocol frame.
+- The **lease's owner drains it.** The dispatcher is what holds the lease for the duration of a call, so it
+  is the component that can start the pump at spawn and stop it before the lease is disposed. Moving the
+  drain into the supervisor would mean the supervisor pumping a stream on behalf of a consumer it does not
+  otherwise talk to.
+- **Promoting the nested drain behind an `IWorkerStandardErrorDrain` interface trips CLIO001.** The analyzer
+  treats a `Clio.*` class with a matching `I<Name>` interface as a DI service
+  (`Clio.Analyzers/DependencyInjectionManualConstructionAnalyzer.cs:120-130`) and permits `new` on it only
+  inside a class whose name — or whose interface's name — ends in `Factory` (`:106-118`). So the "cleaner"
+  shape costs a `*Factory` class whose only job is to hand back a per-call pump. It is nested and private
+  precisely because it is per-call state, not a service.
+
+**Residual, and it is an ordering constraint rather than a defect.** Exactly **one** lease consumer exists
+today — the dispatcher. Stages 7 and 8 add more (a sticky pool, and a deploy child that streams for
+minutes), and **each of them must drain too**. A new lease consumer that forgets is not a missing log line;
+it is a worker that blocks on a full pipe and is then reported as a stalled backend. Whoever adds the second
+consumer should also decide whether the drain becomes shared machinery at that point — with a `*Factory` to
+satisfy CLIO001 — rather than a third copy.
 
 ## 4. Execution metadata (Stage 1 contract)
 
@@ -440,7 +624,9 @@ no-toggle decision above replaces. Each of these remains a separate, later decis
 
 **Accepted costs**
 
-- ~0.7 s added latency per proxied call, against 38–60 min of timeouts on the observed workload.
+- **0.7–2.8 s added latency per proxied call** — 0.7 s macOS, 2.8 s Windows Server 2022 (§2.4) — against
+  38–60 min of timeouts on the observed workload. Do not quote the 0.7 s alone: it is the macOS best case,
+  and on the Stage 6 fast-read cohort the same tax is +35 % to +140 % of the call it wraps (§2.5).
 - One clio process per concurrent call. Eight parallel children was fine on a laptop; the supported maximum
   is an open question (§8).
 - A supervisor, a worker mode and a relay are new code to own — offset by the machinery deleted at Stage 10.
@@ -478,9 +664,22 @@ no-toggle decision above replaces. Each of these remains a separate, later decis
 | OQ-5 | Whether master ships this default-on or gated — decided at merge proposal, on evidence from this branch | merge |
 | OQ-6 | Migration off deprecated sampling (MCP9005 / SEP-2577) onto `InputRequest` / `ResolveInputRequestsAsync` — rule 1 works today but on a feature the SDK may remove | 4 |
 | OQ-7 | **9 of the 37 hint-unbounded tools classified `in-process`, so by the cross-field invariant they carry `BudgetPolicy = None` and the parent kill will never bound them.** They are local-only, so nothing waits on Creatio — but `install-toolkit` / `update-toolkit` do network I/O of their own. Decide whether local-but-unbounded needs its own bound, or record why not | 6 |
-| OQ-9 | Whether `mcp-http` is removed outright or revived. If revived, Stage 5 comes back and the stdio-only gate on the worker path is what must be lifted — deliberately, with the credential channel in place, never by deleting the check | when mcp-http's fate is decided |
 | OQ-8 | `McpToolSharedFileResource` has no member for the workspace data-binding artifacts (`descriptor.json` / `data.json` / localization, shared by `create-data-binding` and the two row tools) or `.clio-migration/<schema>/manifest.json`. Those rows carry `None` because **no member exists**, not because anyone judged them safe | 9 |
-| OQ-9 | **Is a worker's `{"result":null}` a legal empty answer or a worker defect?** Traced through the Stage 4a relay: the read loop resolves the pending slot with the response's `Result` verbatim (`WorkerMcpRelay.cs:471-473`), so a null result resolves the awaiter with a null `JsonNode`; `CallToolAsync` then deserialises that node, and deserialising a null node yields `null` rather than throwing (`:224-227`, helper at `:605-612`). The caller therefore receives a **null `CallToolResult`** where it expected either a result or a `WorkerRelayException` — and `ListToolsAsync` takes the identical path. The handshake is already guarded (`:430-436` rejects an `initialize` result with no `protocolVersion`), so this is specifically about tool traffic. Decide the contract before writing a null check: if a null result is illegal, the relay must fault the call with a named relay failure; if it is a legal "no content" answer, the relay must map it to an explicit empty `CallToolResult` and say so, so that "the worker answered nothing" and "the worker answered emptily" stop being the same value | 4 |
+| OQ-9 | **The `mcp-http` question.** Whether `mcp-http` is removed outright or revived. If revived, Stage 5 comes back and the stdio-only gate on the worker path is what must be lifted — deliberately, with the credential channel in place, never by deleting the check | when mcp-http's fate is decided |
+| OQ-10 | **The null-result question.** Is a worker's `{"result":null}` a legal empty answer or a worker defect? Traced through the Stage 4a relay: the read loop resolves the pending slot with the response's `Result` verbatim (`WorkerMcpRelay.cs:471-473`), so a null result resolves the awaiter with a null `JsonNode`; `CallToolAsync` then deserialises that node, and deserialising a null node yields `null` rather than throwing (`:224-227`, helper at `:605-612`). The caller therefore receives a **null `CallToolResult`** where it expected either a result or a `WorkerRelayException` — and `ListToolsAsync` takes the identical path. The handshake is already guarded (`:430-436` rejects an `initialize` result with no `protocolVersion`), so this is specifically about tool traffic. Decide the contract before writing a null check: if a null result is illegal, the relay must fault the call with a named relay failure; if it is a legal "no content" answer, the relay must map it to an explicit empty `CallToolResult` and say so, so that "the worker answered nothing" and "the worker answered emptily" stop being the same value | 4 |
+
+**Citation caveat on OQ-10 (2026-08-18).** The `WorkerMcpRelay.cs` line numbers in that row were correct when
+it was written against Stage 4a and have since drifted — the file was being edited while this note was added,
+and `Deserialize<TResult>` alone moved by more than 130 lines. The *behaviour* described is unchanged; chase
+it by member name (`CallToolAsync`, `ListToolsAsync`, the read loop, `Deserialize<TResult>`) rather than by
+line, and re-anchor the row when the relay settles.
+
+**Numbering note (2026-08-18).** `OQ-9` was used twice — once for `mcp-http`'s fate and once for the
+null-result contract — so the second is now **OQ-10**. Every open question above carries a short bold title
+for the same reason: **cite an open question by its content, never by its number alone**, so that a future
+duplicate is a naming collision anyone can see rather than an ambiguity nobody notices. Existing references
+to the `mcp-http` question keep `OQ-9` and are unaffected; references to the null-result question are the
+ones that move.
 
 ## 9. Relationship to adjacent ADRs
 

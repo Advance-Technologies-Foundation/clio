@@ -1,8 +1,13 @@
 # Inventory 3 — threat model for the parent→child credential channel
 
 **Feature:** mcp-worker-execution-boundary · **Jira:** ENG-95262 · **Stage:** 0 (design artifact)
-**Measured against:** `origin/master` @ `3fc50bf99`, 2026-08-17
-**Governs:** Stage 5 (HTTP credential channel + per-client sticky isolation); binding on Stages 2, 3 and 7.
+**Measured against:** `origin/master` @ `3fc50bf99`, 2026-08-17 · **Re-read against this branch** 2026-08-18
+for the reviewer findings folded into T-4, T-6, T-9, T-10, §5 and §6
+**Governs:** Stage 5 (HTTP credential channel + per-client sticky isolation); binding on Stages 2, 3, 6
+and 7. **Stage 5 was deferred on 2026-08-18** (ADR §5, OQ on `mcp-http`'s fate) — the requirements it owned
+(R-5, R-6, and the HTTP half of R-1) are therefore *unreachable* rather than unmet, because the stdio-only
+gate stops any HTTP call reaching a worker. §6 states requirement-by-stage applicability so this is a
+recorded position rather than an inference.
 
 Today credentials never leave the process that received them. Moving execution into a child process creates
 a channel that does not exist yet: the parent holds the authentication material and the child needs it to
@@ -10,6 +15,13 @@ talk to Creatio. **That channel is new attack surface, and it is the reason Stag
 rather than a detail of Stage 4.**
 
 Scope: how material reaches a worker, what a worker may do with it, and which worker a caller may reach.
+
+**Scope widened on 2026-08-18, deliberately.** T-9 (spawn exhaustion) and T-10 (executable substitution) are
+availability and integrity threats rather than confidentiality ones, so they sit outside the original
+"credential channel" framing. They are here because they are threats *created by the same act* — moving
+execution into a spawned process — and this is the only document that models that act. Splitting them into a
+second file would mean two threat models for one boundary, which is how a threat stops being anybody's.
+
 Out of scope: how the material reaches the parent in the first place — that is
 `adr-mcp-http-standard-authorization.md` (OAuth 2.1 resource server) and
 `adr-mcp-http-credential-passthrough.md` (`X-Integration-Credentials`), both unchanged by this work.
@@ -99,9 +111,31 @@ behaviour.
 **Requirement:** a sticky worker's scope key is
 **`authenticated session/principal` + `normalised target` + `credential fingerprint`** — all three. The
 fingerprint is a hash of the effective material (never the material itself), following
-`BuildPassthroughCacheKey` (`ToolCommandResolver.cs:316`), which already uses the **full** SHA-256 rather
-than a truncation precisely because "same url, different token" is the norm on this feature and a truncation
-collision would be a credential crossover.
+`BuildPassthroughCacheKey` (`clio/Command/McpServer/Tools/ToolCommandResolver.cs:316-327`), which already
+uses the **full** SHA-256 rather than a truncation precisely because "same url, different token" is the norm
+on this feature and a truncation collision would be a credential crossover.
+
+**The fingerprint is an unsalted digest, and that has two consequences worth naming.** `HashSecretMaterial`
+is a bare `SHA256.HashData` over the concatenated material — no salt, no key
+(`ToolCommandResolver.cs:333-336`). Anyone who can read a fingerprint and guess a candidate credential can
+confirm the guess **offline**: hash the candidate in the same shape, compare, done — no request to Creatio,
+no lockout, no log line, no rate limit. For a high-entropy bearer token that is not a practical attack; for
+a login/password pair it is an ordinary offline dictionary attack, and the login half is usually known
+already. So two requirements, one of which costs nothing today:
+
+- **The fingerprint is classified under R-7, explicitly.** It is treated as the secrets it derives from:
+  never logged, never written into an error envelope, never carried in a progress notification, never
+  captured in a test snapshot. It is a key, not a diagnostic. Holding this is easy right now — the digest
+  exists only inside in-memory cache keys, and the on-disk worker registry carries no credential-derived
+  field at all (`clio/Common/McpWorker/StaleWorkerRegistry.cs:37-44`). Stage 7's sticky scope keys are what
+  would spread it.
+- **Before any fingerprint is persisted or crosses a process boundary, the digest must be keyed** — an HMAC
+  under a per-parent-process random key, or an equivalent per-process random salt — so that a leaked
+  fingerprint cannot be tested against a candidate credential. A per-process key is sufficient and costs
+  nothing, because every consumer of the fingerprint is scoped to one parent's lifetime and nothing needs it
+  stable across restarts. *Unproven:* whether any Stage 7 design will need cross-restart stability. If one
+  does, that is the point at which this stops being a free change and becomes a design decision.
+
 **Requirement:** worker lookup **fails closed** — an unmatched key spawns a new worker; it never falls back
 to "closest match" or "any worker for this environment".
 **Verification:** two concurrent callers, same environment, different principals → two distinct workers,
@@ -158,8 +192,40 @@ from the ClioRing contribution policy applied to the new surface, and `Sensitive
 existing mechanism.
 **Requirement:** worker stderr is treated as untrusted, potentially secret-bearing text — redacted before it
 reaches a log or an error envelope, never echoed verbatim into a tool result.
+
+**Redaction is only half of "untrusted". The other half is size and shape, and it is not covered today.**
+T-6 as originally written assumed the danger in worker output was what it *says*; a worker's output is also
+something the parent has to *hold*, and the parent is the process this whole feature exists to keep alive.
+
+- **Bounded today:** the standard-error tail only — `StandardErrorTailLimit` characters (2000), continuously
+  front-trimmed by the nested `WorkerStandardErrorDrain` in
+  `clio/Command/McpServer/Relay/McpWorkerCallDispatcher.cs`. *Cited by member name rather than line: that
+  file was under active edit on 2026-08-18 (the constant moved from `private` to `internal` and the drain
+  class moved by ~75 lines within the hour), so a line anchor here would be wrong before it was read.*
+- **NOT bounded today, and this is the finding:** the worker's standard *output*. The relay reads the
+  child's messages through `StreamClientTransport`
+  (`clio/Command/McpServer/Relay/WorkerChildTransportOwner.ConnectAsync`), whose session transport reads the pipe
+  with `StreamReader.ReadLineAsync` and imposes **no maximum line length**
+  (`ModelContextProtocol.Core` 2.2.0, `StreamClientSessionTransport.ReadMessagesAsync`; decompiled and read
+  2026-08-18). A worker emitting one very long line grows a string **in the parent** until allocation fails.
+  There is no frame-size bound in clio's code and none in the SDK's, so a defective — or hostile — worker's
+  output is bounded by nothing.
+
+**Requirement (payload size):** the parent bounds how much a single worker may make it hold, on **both**
+streams, and a call that exceeds the bound fails with a named relay error rather than by exhausting the
+host. No number is fixed here on purpose: a bound smaller than a legitimate `get-schema` or `get-page`
+result would break the Stage 6 cohort, and the largest legitimate worker response has not been measured.
+**Measuring it is the prerequisite, not the bound** — a guessed constant here would be a new failure mode
+invented by the fix, exactly like a budget measured from admission (ADR §2.4).
+**Requirement (defensive parsing):** worker output is parsed as untrusted input — malformed, truncated,
+oversized or wrongly-typed payloads produce a named relay failure and never an unhandled exception, and
+never a value that reads to the caller as a domain answer. A partial defence exists already:
+`WorkerMcpRelay.Deserialize` converts a `JsonException` into a named `WorkerRelayException`
+(`clio/Command/McpServer/Relay/WorkerMcpRelay`, private `Deserialize<TResult>`). It is not sufficient on its
+own, because it runs *after* the bytes are already in the parent's memory.
 **Verification:** a redaction test over the relay's error path with a known secret marker, asserting the
-marker appears nowhere in the parent's output.
+marker appears nowhere in the parent's output; plus an oversized-output test asserting the parent answers
+with a bounded named error instead of growing without limit.
 
 ### T-7 — Orphaned worker holding a live session
 
@@ -193,6 +259,110 @@ credential's validity; revocation upstream must not be silently outlived. Where 
 stickiness is confined to the four long-running families rather than used as a general performance
 optimisation.
 
+### T-9 — Worker spawn exhaustion (denial of service)
+
+**Attack:** a caller — or an agent in a retry loop, which is the likelier source — issues MCP calls faster
+than workers finish them. Every environment-touching call spawns a clio process, so an unbounded call rate
+is an unbounded process count. Nothing in R-1…R-9 says otherwise; they all govern *what a worker may do*,
+not *how many there may be*.
+**Measured ceiling** (ADR §2.4, Windows Server 2022, 4 cores / 16 GB): peak working set 334 MB at width 4,
+649 MB at width 8, 1073 MB at width 16. Wall time grows linearly past the core count, so nothing is gained
+above ~4 on that box — and at width 16 one call waited **16.9 s** to reach `initialize`, purely queued
+behind CPU, against a perfectly healthy backend. CPU, not memory, is the binding constraint.
+**Status — capped, and the cap is measured rather than guessed.** `WorkerProcessSupervisor` admits at most
+`ConcurrencyCap` workers, defaulting to `Environment.ProcessorCount`. *Members in this block are cited by
+name rather than by line: `clio/Common/McpWorker/WorkerProcessSupervisor.cs` was under active edit on
+2026-08-18 and its line numbers moved by several hundred while this section was being written.*
+
+**Behaviour at the cap, as actually implemented: queue with a bound, then refuse with a named error.** A
+caller waits on the slot pool for at most `QueueWaitBound` — default `DefaultQueueWaitBound` = **60 s**,
+operator-overridable through `CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS` (accepted range 0 < n ≤ 3600) — and on
+expiry the call is refused with `WorkerQueueWaitExpiredException`, carrying the wait endured, the bound, the
+cap, and the queue depth *including the refused call*. Nothing is spawned and no request reaches Creatio. The
+60 s default is derived from ADR §2.4 rather than chosen: the worst *healthy* queue wait ever measured was
+16.9 s at width 16 on the four-core Windows stand, and 60 s of queueing plus the 120 s response budget is
+about the hard ceiling an MCP client gives one call. The exception is deliberately neither a
+`TimeoutException` nor an `OperationCanceledException`, because both would be misread — the first blames a
+backend clio never spoke to, the second blames a caller that was still waiting.
+
+**Why bounding the wait is the point, not a nicety:** an *unbounded* queue wait reproduces this feature's own
+defect signature exactly — a call that returns nothing and issues zero requests to Creatio, for an
+arbitrarily long time — differing only in that it eventually clears. "Eventually" is not a bound.
+
+**One gap remains, named rather than papered over:**
+
+- **G-1 — the concurrency cap itself is not operator-configurable.** The queue-*wait* bound is; the *cap* is
+  not. The only constructor taking an explicit cap is `internal` and documented as test-only; the public
+  constructor always takes `ProcessorCount`. No `CLIO_MCP_WORKER_CONCURRENCY`-style override exists —
+  grepped 2026-08-18, the supervisor defines exactly one environment variable and it is the queue-wait one.
+  So an operator on an over-subscribed host cannot lower the cap, and one on a large host cannot raise it;
+  they can only change how long callers wait before being refused. tetiana-moshon's finding asked for a
+  *configurable cap*, and that half is still outstanding.
+- **A structural note that makes G-1 sharper, not a second gap.** A slot is held from spawn to lease
+  dispose, so a worker whose lifetime outlives the answer it produced occupies capacity for its whole life.
+  On a four-core host, four such holders fill the cap and everything else queues. That is tolerable while
+  every worker is per-call; **Stage 7's sticky workers make it the ordinary case**, and that is the point at
+  which a fixed, underivable cap becomes the thing an operator needs to change.
+
+**Requirement:** R-10.
+**Verification:** TC-U-201 covers admit-N / queue-N+1 / never-drop. The queue-wait bound, its override
+parsing and the named refusal carry their own Stage 2 unit coverage. **G-1 has no test because it has no
+behaviour** — that is the gap, not an oversight in the plan.
+
+**How to read this section's history.** When this threat was first written on 2026-08-18 the queue wait was
+genuinely unbounded, and it named two gaps. The bound landed the same day, so only G-1 survives. The finding
+was still worth raising — it is what produced the bound.
+
+### T-10 — Worker executable substitution — **checked against the source, and already constrained**
+
+Raised by m-dymytrova with her own low-confidence flag ("worth a look rather than a confirmed gap"). It was
+looked at. The answer is recorded here rather than only in a review reply, so the next reader does not have
+to re-derive it.
+
+**Attack the question implies:** the parent is made to spawn something other than clio — a planted binary, a
+directory-traversing path, an attacker-chosen `dotnet` — and that process then inherits the worker's
+position inside the boundary.
+**Status: constrained at three independent points, all read on this branch 2026-08-18.**
+
+- **The candidate never comes from request data.** Resolution derives only from *this* process's own
+  identity: `Environment.ProcessPath` when clio runs as an apphost, otherwise the running assembly's
+  `Assembly.Location` passed to the muxer that is already hosting it
+  (`clio/Common/McpWorker/IClioExecutablePathProvider.cs:69-97`). No tool argument, no `appsettings.json`
+  entry and no MCP parameter reaches it.
+- **The final string is validated, not trusted.** `ProcessExecutor.ResolveExecutablePath` accepts **only** a
+  bare name or a fully-qualified path and throws on anything containing a directory separator
+  (`clio/Common/ProcessExecutor.cs:372-381`); a bare name is searched **only** in fully-qualified `PATH`
+  entries, relative entries being skipped precisely so a caller-controlled working directory cannot decide
+  which executable runs (`:398-403`).
+- **The resolved file is checked before use** — it must exist, must not be a directory, symlinks are
+  resolved to their final target, and on Unix at least one execute bit must be set (`:421-445`).
+
+**Residuals, both inside a boundary §5 already accepts:**
+
+- `WorkerSpawnRequest.LaunchOverride` bypasses the provider entirely
+  (`clio/Common/McpWorker/WorkerProcessSupervisor`, private `BuildLaunchRequest`). It is a documented test
+  seam — "used by tests, which contain and kill a purpose-built fixture rather than a real worker"
+  (`IWorkerProcessSupervisor.cs`, `WorkerSpawnRequest.LaunchOverride`) — set in code, never from a request.
+  Setting it from anything request-derived would be the defect; nothing does today.
+- `PATH`, `DOTNET_ROOT*` and `DOTNET_HOST_PATH` are inherited from the parent's own environment
+  (`WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist`), so whoever can set the parent's
+  environment picks the muxer. That is
+  the same OS account that can already read the parent's memory and its `appsettings.json` — §5's first
+  accepted residual, not a new one.
+
+**Requirement:** R-12 — recorded as *satisfied by construction today*, so that a future change which loosens
+any of the three points is visibly a regression rather than a new opinion.
+**Verification — and the honest state of it.** The behaviour is in the code and was read; the **coverage is
+thin**. Exactly two tests touch this path, and both assert the happy case: `ProcessExecutorTests`
+"executable resolution pins a bare program name to an absolute executable path"
+(`clio.tests/Common/ProcessExecutorTests.cs:179-185`) and
+`WorkerProcessSupervisorTests.ClioExecutablePathProvider_ShouldPassTheAssemblyToTheMuxer_WhenClioRunsThroughIt`.
+The three properties that actually carry the security argument — a separator in the name is **rejected**, a
+relative `PATH` entry is **skipped**, a non-executable or directory candidate is **refused** — have **no
+negative test**. So R-12 is *satisfied by construction, not by assertion*, and a refactor could quietly
+remove any of the three without a red test. Adding those three negative cases is the cheapest way to turn
+this from a read into a guarantee.
+
 ## 4. Requirements summary
 
 | # | Requirement | Stage | Verified by |
@@ -203,10 +373,13 @@ optimisation.
 | R-4 | Worker fails closed on unusable material — never falls back to a default identity | 3 | negative auth test asserting refusal, not success |
 | R-5 | Sticky scope key = principal + normalised target + credential fingerprint; lookup fails closed | 5, 7 | two-caller isolation test |
 | R-6 | Target normalisation follows the component-by-component algorithm in T-5; nothing is folded that the algorithm does not name | 5 | equivalence-table test generated from the T-5 table |
-| R-7 | No secrets in logs, errors, notifications, dumps or snapshots; worker stderr redacted | 2–5 | redaction test with secret marker |
+| R-7 | No secrets in logs, errors, notifications, dumps or snapshots; worker stderr redacted. **The credential fingerprint is classified here too** — never logged, persisted, notified or snapshotted (T-4) | 2–5 | redaction test with secret marker |
 | R-8a | Unix process-group containment plus parent-death signalling; identity-checked stale-worker cleanup | 2 | parent-SIGKILL E2E on Linux and macOS (TC-E-201) |
 | R-8b | Windows Job Object containment with kill-on-close; identity-checked stale-worker cleanup | 2 | parent-kill E2E on Windows (TC-E-203) — unmeasured today, **OQ-1** |
 | R-9 | Sticky lifetime bounded by credential validity, with an explicit maximum | 7 | lifetime test |
+| R-10 | Total live worker count capped by a processor-count-derived value; at the cap calls **queue under a bounded wait** (60 s default, `CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS`) and are refused with a *named* saturation error carrying cap and queue depth — never an unbounded process count, never an unbounded silent wait, never an error that reads as a backend timeout. **Still outstanding:** the cap must become operator-configurable, which matters from Stage 7 on, where sticky workers hold slots for their whole lifetime (T-9, G-1) | 2 | TC-U-201 (admit/queue/never-drop) + Stage 2 coverage of the wait bound, its override parsing and the named refusal; **cap configurability not yet built** |
+| R-11 | Worker output is bounded on **both** streams and parsed defensively: an oversized, malformed or wrongly-typed payload becomes a named relay failure, never an unhandled exception, never memory growth without limit, never a value the caller reads as a domain answer. The bound is set from a **measured** largest legitimate response, not guessed (T-6) | 4, 6 | stderr redaction test (TC-U-505) today; stdout size bound **not yet built** |
+| R-12 | Worker executable resolution derives only from this process's own identity, accepts only a bare name or a fully-qualified path, searches only fully-qualified `PATH` entries, and validates the resolved file. **Satisfied by construction** (T-10); recorded so that loosening it is visibly a regression | 2 | two happy-path tests only; the three load-bearing **negative** cases (separator rejected, relative `PATH` entry skipped, non-executable refused) have **no test** — see T-10 |
 
 ## 5. Residual risk accepted
 
@@ -215,6 +388,52 @@ optimisation.
   this worse; it must simply not make it *easier* (which is what T-1 is about).
 - **Stdio workers read `appsettings.json` directly.** Deliberate — it avoids a channel entirely for the
   Stage 6 cohort, and the file is already readable by anything running as that user.
-- **Windows containment behaviour is unverified** (OQ-1) — which is why R-8 is split into R-8a (Unix,
-  verifiable today) and R-8b (Windows, blocked on OQ-1). Stage 2 cannot close without measuring it; until
-  then no cohort ships on Windows, and any interim delivery is scoped to R-8a only.
+- **A local user with the same OS account as the parent can signal a worker's process group.** On Linux the
+  worker arms `prctl(PR_SET_PDEATHSIG, SIGTERM)` together with a `PosixSignalRegistration` for SIGTERM whose
+  handler kills the worker's own process group with SIGKILL
+  (`clio/Common/McpWorker/UnixParentDeathWatch.cs:187-206`, handler at `:157-164`). One SIGTERM from a
+  same-UID process therefore destroys that worker and every descendant it spawned, mid-operation — the same
+  effect as the parent's own budget kill, triggered by somebody else. On macOS that SIGTERM handler is not
+  installed (the parent-death watch there is a `kqueue` `EVFILT_PROC` watch), so an injected SIGTERM
+  terminates the worker under the default disposition and its descendants are left to the parent's own
+  containment kill.
+  **What this is:** a denial of service, and a way to interrupt an in-flight operation without touching the
+  parent. **What it is not:** a confidentiality change — no material is read, written or redirected — and
+  not a widening of the boundary, since the same user can already `kill` the parent, read its memory and
+  read `appsettings.json`, which the first bullet accepts. The outcome of a killed worker is exactly the
+  *indeterminate* path the design already specifies (ADR §3.3): a run that dies without a terminal event is
+  reported indeterminate and is never retried automatically. Group promotion in fact **narrows** what a
+  stray signal can reach — an unpromoted child would have inherited the launching shell's group
+  (`clio/Common/McpWorker/UnixProcessGroupContainment.cs:14-22`).
+  **Accepted**, on one condition that the terminal-stage protocol already meets: a signal-induced death must
+  never be reported to the caller as a domain answer.
+- **Windows containment: the mechanism is measured, the in-suite proof is platform-conditional.** OQ-1 is
+  **CLOSED** (ADR §8, measured 2026-08-17 on ts1-core-dev04, §2.4): a standalone probe showed
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` kills the whole subtree when — and only when — the child is assigned
+  to the job before it executes a single instruction. That is the R-8b *mechanism*. The R-8b **test** exists
+  in the suite (`clio.mcp.e2e/McpWorkerContainmentE2ETests.cs:141`, TC-E-203) but is skipped with an
+  explicit reason on any non-Windows host, so it closes R-8b only on the Windows agents of
+  `Team_Atf_ClioMcpE2eTests`. *Unproven from this checkout:* whether TC-E-203 has yet run green on those
+  agents. Until that result is stated, no cohort ships on Windows and any interim delivery is scoped to
+  R-8a only — the rule is unchanged, only its reason is now "the in-suite run is unstated" rather than "the
+  behaviour is unmeasured".
+
+## 6. Requirement applicability by stage
+
+Which requirements a stage boundary actually settles — derived from what has landed on this branch, not
+from the plan's intent. Read 2026-08-18. "Fully satisfied" means the requirement is implemented **and** has
+in-suite coverage on this branch; "partial / open" names what is missing, in words.
+
+| Stage | State | Fully satisfied at this boundary | Partial / open | Not yet applicable |
+|---|---|---|---|---|
+| 0 | done (design only) | none — no code exists | every requirement is *stated*, none is *held* | R-1…R-12 |
+| 1 | done | R-2 (routing key from resolved tenant identity, resolved after unwrapping `clio-run`; TC-U-101…109) | — | R-1, R-3…R-12 |
+| 2 | done | R-8a (TC-E-201/202, Unix) | **R-8b** — mechanism measured (§2.4), in-suite TC-E-203 skipped off Windows; **R-10** — cap exists, the queue wait is bounded and the refusal is named, but the **cap** is not operator-configurable (G-1); **R-12** — satisfied by construction, but its three load-bearing negative cases have no test | R-5, R-6, R-9, R-11 |
+| 3 | done | R-1 (TC-E-301 — and on stdio no material crosses the channel at all), R-3 (TC-E-302, fail-first identity), R-4 (TC-E-303, refusal not fallback) | — | R-5, R-6, R-9 |
+| 4 | done | — | **R-7** — worker stderr is drained and redacted onto the failure envelope (TC-U-505), but the fingerprint classification added in T-4 has no test and R-11's stdout bound does not exist | R-5, R-6, R-9 |
+| ~~5~~ | **deferred** (OQ, mcp-http's fate) | none | **R-5** and **R-6** are unbuilt, and the HTTP half of R-1 with them. They are *not violated*: the stdio-only gate means no HTTP call reaches a worker at all (`clio/Command/McpServer/IMcpWorkerPathGate.cs`), so the requirements are unreachable rather than unmet. **R-6's normalisation work does not wait for this stage** — story 7 carries it in stdio scope (see that story's prerequisite) | R-5/R-6 stay inapplicable while the gate holds |
+| 6 | done | R-1…R-4 and R-8a hold for the shipped cohort; the stdio-only gate is the enforcement (TC-E-601…604, TC-U-601) | **R-10** (G-1 carries forward — this is the first stage where call rate is real), **R-11** (no stdout bound), **R-12** (holds, untested negatives) | R-5, R-6, R-9 |
+| 7 | not started | — | **R-5** (sticky scope key), **R-6** (normalisation, re-homed here in stdio scope), **R-9** (sticky lifetime), the T-4 keyed-digest condition (sticky keys are what spread the fingerprint), and **R-10's G-1** — a slot is held for a worker's whole lifetime, so a fixed cap binds hardest exactly here | — |
+| 8 | not started | — | **R-7** and **R-11** get their hardest case: a deploy child streams for minutes and its output is the terminal-stage signal | R-5/R-6 while the gate holds |
+| 9 | done (`clio/Command/McpServer/Tools/InterprocessFileGate.cs`) | none of R-1…R-12 — the file gates answer ADR rule 8, not a credential requirement | — | not a credential-model stage |
+| 10 | not started | — | nothing new; deletion must not remove a bound that R-10 or R-11 turns out to rely on | — |

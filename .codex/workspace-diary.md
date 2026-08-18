@@ -8772,3 +8772,22 @@ Files: clio/Command/GetPageHierarchyCommand.cs, clio.tests/Command/GetPageHierar
 clio.tests/Command/McpServer/PageHierarchyGetToolTests.cs, clio.mcp.e2e/PageHierarchyGetToolE2ETests.cs
 Impact: the same split applies verbatim to PageGetOptions.ResolveDesignPackageUId and
 GetClassicPageSourcesCommand.ResolveHierarchyBaseToTop, which still carry the defect.
+
+## 2026-08-18 15:05 – ENG-95262 reviewer-body findings folded into the design docs
+Context: both CHANGES_REQUESTED review bodies on PR #1080 carried findings that never became resolvable
+threads, so nobody had answered them; that is why the PR still reads CHANGES_REQUESTED with 14/14 inline
+threads resolved.
+Decision: threat model gained T-9 (spawn exhaustion), T-10 (executable substitution) and R-10..R-12 plus a
+per-stage applicability table; ADR gained 2.5 (fast-cohort overhead ratio), 3.2a/3.2b (the SDK send lock and
+rule 12's real enforceability), 3.4 (why the stderr drain lives in the dispatcher), a corrected 3.3 terminal
+vocabulary and an OQ renumber; the stage-5 deferral re-homed session-key normalisation into story 7 as AC-00
+rather than a depends_on edge pointing at deferred work.
+Discovery: the SDK's send lock guarantees a COMPLETED send, not an ATOMIC one -- cancellation between the
+payload write and the newline leaves a dangling line, which wedges a sticky worker. The shipped stage-event
+contract has no `cancelled` outcome, so a cancelled deploy must resolve as indeterminate. And the child's
+STDOUT is unbounded: the SDK reads a line with no maximum length, so only the stderr tail is bounded today.
+Files: spec/adr/adr-mcp-worker-execution-boundary.md,
+spec/mcp-worker-execution-boundary/mcp-worker-execution-boundary-credential-threat-model.md,
+spec/stories/story-mcp-worker-execution-boundary-6.md, -7.md, spec/prd/prd-mcp-worker-execution-boundary.md
+Impact: the two review bodies are now answerable point by point, with citations anchored on symbols rather
+than line numbers -- five files in this feature moved by tens to hundreds of lines during one session.
