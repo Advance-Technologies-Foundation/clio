@@ -312,7 +312,8 @@ public sealed class DescribedEmail {
 	public string Subject { get; set; }
 
 	/// <summary>
-	/// True when the element carries a custom-message body (the body HTML itself is not echoed).
+	/// True when the element carries a custom-message body. A lightweight presence flag beside <see cref="Body"/>,
+	/// for callers that only need to know a body exists without pulling the (possibly large) decoded HTML.
 	/// <para>Nullable defensively, NOT because a known server omits it: the flag is a non-nullable <c>bool</c>
 	/// DataMember introduced in the same server commit as the email block, so every build that reports the block
 	/// reports the flag too. <c>null</c> therefore means the flag was absent, which no shipped server produces —
@@ -321,6 +322,17 @@ public sealed class DescribedEmail {
 	/// </summary>
 	[JsonPropertyName("hasBody")]
 	public bool? HasBody { get; set; }
+
+	/// <summary>
+	/// The custom-message body HTML, with the platform's process-macro image tokens DECODED back into the friendly
+	/// authoring placeholders (<c>[[param:Name]]</c> / <c>[[element:Element.Output(.Column)]]</c>) — the round-trip
+	/// of <c>email.body</c>, so a caller reads it in the same form it would author and can edit it in place on a
+	/// modify. <c>null</c> from a server that predates the body-macro feature (that older package reports only
+	/// <see cref="HasBody"/>); a macro token whose UIds no longer resolve is left as the raw <c>&lt;img&gt;</c> token
+	/// (the server's decode is best-effort). Can be large — use <see cref="HasBody"/> for a presence check.
+	/// </summary>
+	[JsonPropertyName("body")]
+	public string Body { get; set; }
 
 	/// <summary>Importance token (<c>none</c>/<c>normal</c>/<c>high</c>/<c>low</c>); null when not set.</summary>
 	[JsonPropertyName("importance")]
