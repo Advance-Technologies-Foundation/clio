@@ -1788,17 +1788,29 @@ public static class WebToMobileAnalysisService {
 				// Resolved BEFORE the values are built: a view-config template may ECHO the placement so the
 				// shape it declares can be read in place, and echoing needs the value the entry will carry.
 				string containerParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+				string containerProperty = parentPropertyName;
+				int? containerIndex = isPositional ? place.Index : null;
+				bool containerRetargeted = false;
+				if (ResolveTemplatePlacement(ctx, node, type, name, containerParent, containerProperty, sourceAncestors)
+					is { } containerTarget) {
+					containerParent = containerTarget.Parent;
+					containerProperty = containerTarget.Property;
+					containerIndex = null;
+					containerRetargeted = true;
+				}
 				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
-					containerParent, parentPropertyName, sourceAncestors);
+					containerParent, containerProperty, sourceAncestors);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
-					ParentName = containerParent, PropertyName = parentPropertyName,
-					Index = isPositional ? place.Index : null,
+					ParentName = containerParent, PropertyName = containerProperty,
+					Index = containerIndex,
 					CaptionResource = containerCaption,
 					MobileValues = containerValues,
-					Reason = isPositional
-						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-						: "container; mobile-supported"
+					Reason = containerRetargeted
+						? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
+						: isPositional
+							? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+							: "container; mobile-supported"
 				});
 				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
@@ -1828,15 +1840,29 @@ public static class WebToMobileAnalysisService {
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			string leafParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+			string leafProperty = parentPropertyName;
+			int? leafIndex = isPositional ? place.Index : null;
+			// A conversion template may DRIVE placement: retarget the element into a declared container/property
+			// (appended, no index) instead of where the walk found it — e.g. a header button → FloatingActionButton.
+			bool leafRetargeted = false;
+			if (ResolveTemplatePlacement(ctx, node, leafMobileType, name, leafParent, leafProperty, sourceAncestors)
+				is { } leafTarget) {
+				leafParent = leafTarget.Parent;
+				leafProperty = leafTarget.Property;
+				leafIndex = null;
+				leafRetargeted = true;
+			}
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
-				leafParent, parentPropertyName, sourceAncestors);
-			string leafReason = isPositional
-				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-				: "field/leaf; mobile-supported";
+				leafParent, leafProperty, sourceAncestors);
+			string leafReason = leafRetargeted
+				? $"field/leaf; retargeted by a conversion template into {leafParent}.{leafProperty}"
+				: isPositional
+					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+					: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
-				ParentName = leafParent, PropertyName = parentPropertyName,
-				Index = isPositional ? place.Index : null,
+				ParentName = leafParent, PropertyName = leafProperty,
+				Index = leafIndex,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
 				Reason = leafReason
@@ -2370,19 +2396,19 @@ public static class WebToMobileAnalysisService {
 		new(@"\{\{\s*([^{}]+?)\s*\}\}", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
-	/// The conversion templates that govern this element: from every <c>components</c> entry whose
-	/// <c>filters</c> match the node, the <see cref="ViewConfigTemplateRule"/>s whose declared <c>value.type</c>
-	/// equals the resolved mobile type and whose placement echoes the converter's own.
+	/// The conversion templates that govern this element: from every <c>components</c> entry whose <c>filters</c>
+	/// (and <c>path</c> scope) match the node, the <see cref="ViewConfigTemplateRule"/>s whose declared
+	/// <c>value.type</c> equals the resolved mobile type.
 	/// </summary>
 	/// <remarks>
 	/// Because templates have priority in leaf resolution (<see cref="ResolveTemplateTargetType"/> runs before
 	/// the registry check), the resolved type for a matched component IS the template's <c>value.type</c>, so the
 	/// type gate passes; the filters narrow which source elements an entry applies to, they do not authorize. A
 	/// template declares the mobile structure the web node has no counterpart for — e.g. a grid → list
-	/// <c>crt.ListItem</c> under <c>itemLayout</c> — and, for a field conversion, the full target shape. Its
-	/// placement is READ-ONLY: a template whose <c>parentName</c>/<c>propertyName</c> is anything but the
-	/// converter's own value is skipped WHOLE (<see cref="EchoesItsOwnPlacement"/>), since honouring the value
-	/// while ignoring where it asked to go would ship a shape the rules file believes it placed elsewhere.
+	/// <c>crt.ListItem</c> under <c>itemLayout</c> — and, for a field conversion, the full target shape. Placement
+	/// no longer gates admission: a template may DRIVE placement by declaring a <c>parentName</c>/<c>propertyName</c>
+	/// that names a different target (<see cref="ResolveTemplatePlacement"/>), which retargets the element rather
+	/// than being refused; the value is applied regardless.
 	/// </remarks>
 	private static IReadOnlyList<ViewConfigTemplateRule> MatchingConversionTemplates(
 		ElementMapContext ctx, JObject node, string mobileType, TemplateRoots roots,
@@ -2397,7 +2423,11 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			foreach (ViewConfigTemplateRule template in templates) {
-				if (DeclaresTargetType(template.Value, mobileType) && EchoesItsOwnPlacement(template, roots)) {
+				// Placement (parentName/propertyName) no longer gates admission: a template may DRIVE placement
+				// (retarget the element into a declared container/property — see ResolveTemplatePlacement), so its
+				// value is applied whether it echoes the walked position or names a different target. Only the
+				// declared target TYPE gates, so a template for another mobile type never applies here.
+				if (DeclaresTargetType(template.Value, mobileType)) {
 					matches.Add(template);
 				}
 			}
@@ -2521,24 +2551,34 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// True when the template leaves identity and placement to the converter. Each field must either be absent
-	/// or resolve to the value the converter already computed — a rules file able to set them would rename or
-	/// reparent an element behind the element map's back. Refusing the WHOLE template is deliberate: honouring
-	/// its value while ignoring where it asked to go would ship a shape the rules file believes it placed
-	/// somewhere else.
+	/// The placement a matching conversion template DRIVES for a node, or null to keep the walked position. A
+	/// template may declare a <c>parentName</c>/<c>propertyName</c>: when it renders to the value the converter
+	/// already computed (an ECHO, e.g. <c>"{{ diff.parentName }}"</c>) it changes nothing; when it renders to a
+	/// DIFFERENT value it RETARGETS the element — the converted element is emitted as an insert into that declared
+	/// container/property (appended, no index) instead of where the walk found it. This is how a source element is
+	/// regrouped elsewhere on mobile (e.g. a header button → <c>FloatingActionButton.menuItems</c>). A template that
+	/// declares neither field, or only echoes, returns null. When several matching templates disagree, the first
+	/// declaring a retarget wins.
 	/// </summary>
-	private static bool EchoesItsOwnPlacement(ViewConfigTemplateRule template, TemplateRoots roots) =>
-		EchoesRoot(template.ParentName, roots, "parentName")
-		&& EchoesRoot(template.PropertyName, roots, "propertyName");
-
-	private static bool EchoesRoot(string declared, TemplateRoots roots, string field) {
-		if (string.IsNullOrWhiteSpace(declared)) {
-			return true;
+	private static (string Parent, string Property)? ResolveTemplatePlacement(
+		ElementMapContext ctx, JObject node, string mobileType, string mobileName,
+		string computedParent, string computedProperty, IReadOnlyList<string> sourceAncestors) {
+		var roots = new TemplateRoots(
+			new JObject { ["name"] = mobileName, ["parentName"] = computedParent, ["propertyName"] = computedProperty },
+			node);
+		foreach (ViewConfigTemplateRule template in MatchingConversionTemplates(ctx, node, mobileType, roots, sourceAncestors)) {
+			string parent = RenderPlacementField(template.ParentName, roots) ?? computedParent;
+			string property = RenderPlacementField(template.PropertyName, roots) ?? computedProperty;
+			if (!string.Equals(parent, computedParent, StringComparison.Ordinal)
+				|| !string.Equals(property, computedProperty, StringComparison.Ordinal)) {
+				return (parent, property);
+			}
 		}
-		JToken rendered = RenderTemplateString(declared, roots, item: null);
-		string expected = roots.Diff[field]?.ToString();
-		return string.Equals(rendered?.ToString(), expected, StringComparison.Ordinal);
+		return null;
 	}
+
+	private static string RenderPlacementField(string declared, TemplateRoots roots) =>
+		string.IsNullOrWhiteSpace(declared) ? null : RenderTemplateString(declared, roots, item: null)?.ToString();
 
 	/// <summary>
 	/// Lays the rendered structure over the values: a key the template names WINS, a key it does not name

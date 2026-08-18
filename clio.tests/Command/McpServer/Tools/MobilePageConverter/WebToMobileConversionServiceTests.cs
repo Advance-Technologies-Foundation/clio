@@ -4454,8 +4454,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A template that tries to SET parentName is refused wholesale — nothing is rendered — because placement is the converter's to compute and a rules file able to reparent an element would desynchronize it from every other parentName in the element map.")]
-	public void Analyze_ViewConfigTemplate_TemplateSettingItsOwnParent_IsRefused() {
+	[Description("A template that SETS a different parentName now DRIVES placement: the converted element is retargeted into the declared container (appended, no index) and its value still applies. This supersedes the earlier read-only refusal and is the mechanism a header button uses to land in FloatingActionButton.menuItems.")]
+	public void Analyze_ViewConfigTemplate_TemplateSettingItsOwnParent_Retargets() {
 		// Arrange
 		WebToMobilePageConversionRules rules = RulesWithTemplate(RowOnlyTemplate, parentName: "SomeOtherContainer");
 
@@ -4464,12 +4464,52 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ElementMapEntry grid = Element(guide, "ProductsList");
-		grid.MobileValues["itemLayout"].Should().BeNull(
-			because: "the whole template is skipped, not just its placement field — honouring the value while "
-				+ "ignoring where it asked to go would ship a row the rules file believes it placed elsewhere");
-		grid.ParentName.Should().NotBe("SomeOtherContainer",
-			because: "the converter's own placement stands — a rules file must not be able to reparent an element, "
-				+ "which is the whole reason the placement fields are read-only");
+		grid.ParentName.Should().Be("SomeOtherContainer",
+			because: "a template naming a different parent now retargets the element there instead of being refused");
+		grid.PropertyName.Should().Be("items",
+			because: "the template echoed propertyName ({{ diff.propertyName }}), so the slot is unchanged");
+		grid.Index.Should().BeNull(
+			because: "a retargeted element is appended into the declared container, not positioned by the walk");
+		grid.MobileValues["itemLayout"].Should().NotBeNull(
+			because: "the template's value is applied together with the retarget, not skipped as before");
+	}
+
+	[Test]
+	[Description("Template-driven placement retargets BOTH parent and property: a crt.Button converted by a template declaring parentName=FloatingActionButton, propertyName=menuItems is emitted as an insert into that container's menuItems (appended, no index) — the core mechanism of the header-button -> FAB conversion.")]
+	public void Analyze_TemplateDrivenPlacement_RetargetsParentAndProperty() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "AddBtn", "type": "crt.Button", "caption": "#ResourceString(AddBtn_caption)#" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+		var rules = new WebToMobilePageConversionRules {
+			Components = [
+				new ComponentEquivalenceRule {
+					Filters = [new ElementFilterRule { Type = "crt.Button" }],
+					ViewConfigTemplates = [
+						new ViewConfigTemplateRule {
+							ParentName = "FloatingActionButton",
+							PropertyName = "menuItems",
+							Value = JsonDocument.Parse("{ \"type\": \"crt.MenuItem\" }").RootElement.Clone()
+						}
+					]
+				}
+			]
+		};
+
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: rules);
+
+		ElementMapEntry btn = Element(guide, "AddBtn");
+		btn.MobileType.Should().Be("crt.MenuItem",
+			because: "the template's value.type sets the mobile type");
+		btn.ParentName.Should().Be("FloatingActionButton",
+			because: "the template drives the element into the declared container, not its walked parent");
+		btn.PropertyName.Should().Be("menuItems",
+			because: "the template drives it into the declared property slot, not the default items");
+		btn.Index.Should().BeNull(
+			because: "a retargeted element is appended into the declared container, so it carries no positional index");
 	}
 
 	[Test]
