@@ -70,10 +70,17 @@ public class McpServerCommandTests {
 		CuratedKnowledgeBootstrapResult fresh = new(true, true, true, "ready from its local cache");
 
 		// Act
-		McpServerCommand.ReportCuratedKnowledgeBootstrap(fresh, logger);
+		CuratedKnowledgeBootstrapResult result = McpServerCommand.ReportCuratedKnowledgeBootstrap(fresh, logger);
 
 		// Assert
-		logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
+		result.Success.Should().BeTrue(
+			because: "a fresh cache is a healthy warm start and must be reported as a success");
+		string[] warnings = logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => call.GetArguments()[0]?.ToString() ?? string.Empty)
+			.ToArray();
+		warnings.Should().BeEmpty(
+			because: "warning about a cache that is already up to date would train operators to ignore staleness warnings");
 	}
 
 	[Test]
