@@ -136,7 +136,10 @@ public static class WebToMobileAnalysisService {
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
 		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
-			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames, mobileTypesByName, mobileByType, webBaselineNodes);
+			// A container a rule scopes to via `path` (e.g. MainHeader) is a non-converting scope that must NOT be
+			// pruned as chrome — its descendants need it as an ancestor for path matching.
+			IReadOnlySet<string> scopeContainerNames = CollectScopeContainerNames(rules);
+			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames);
 			templatePruned = true;
 		}
 
@@ -753,7 +756,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlySet<string> baseline,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
-		IReadOnlyDictionary<string, JObject> webBaselineNodes) {
+		IReadOnlyDictionary<string, JObject> webBaselineNodes,
+		IReadOnlySet<string> scopeContainerNames) {
 		var result = new JArray();
 		foreach (JToken token in nodes) {
 			if (token is not JObject node) {
@@ -784,20 +788,24 @@ public static class WebToMobileAnalysisService {
 				&& !string.IsNullOrEmpty(type)
 				&& string.Equals(mobileTwinType, type, StringComparison.OrdinalIgnoreCase)
 				&& !isContainerLike;
+			// A container a rule scopes to via `path` (e.g. MainHeader) is KEPT even when it is inherited chrome:
+			// the conversion needs it in the tree so its descendants retain it as an ancestor for path matching.
+			// The walk then treats it as a non-converting scope (it emits no mobile element of its own).
+			bool isScopeContainer = !string.IsNullOrEmpty(name) && scopeContainerNames.Contains(name);
 			bool isTemplateOwned = !string.IsNullOrEmpty(name)
 				&& baseline.Contains(name)
-				&& !isMappedTwin && !isAutoTwin;
+				&& !isMappedTwin && !isAutoTwin && !isScopeContainer;
 			if (isTemplateOwned) {
 				// Drop the template node itself; hoist any surviving (application) descendants up.
 				if (items is not null) {
-					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes)) {
+					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames)) {
 						result.Add(survivor);
 					}
 				}
 				continue;
 			}
 			if (items is not null) {
-				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes);
+				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames);
 			}
 			result.Add(node);
 		}
@@ -1599,7 +1607,26 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
 		IReadOnlyDictionary<string, string> MobileTypesByName,
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
-		JObject WebBaselineResources);
+		JObject WebBaselineResources,
+		IReadOnlySet<string> ScopeContainerNames);
+
+	/// <summary>
+	/// The set of container NAMES any conversion rule scopes to via <c>path</c>. Such a container is treated as a
+	/// NON-CONVERTING scope on mobile: it produces no element of its own, its subtree is walked in scope mode
+	/// (matching actions retarget, everything else drops), and it is KEPT through template-chrome pruning so its
+	/// descendants retain it as an ancestor for <c>path</c> matching (e.g. <c>MainHeader</c>).
+	/// </summary>
+	private static IReadOnlySet<string> CollectScopeContainerNames(WebToMobilePageConversionRules rules) {
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ComponentEquivalenceRule entry in rules?.Components ?? []) {
+			foreach (string name in entry?.Path ?? []) {
+				if (!string.IsNullOrWhiteSpace(name)) {
+					set.Add(name);
+				}
+			}
+		}
+		return set;
+	}
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -1634,13 +1661,15 @@ public static class WebToMobileAnalysisService {
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
-			webBaselineResources);
+			webBaselineResources,
+			CollectScopeContainerNames(rules));
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
 
 	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
-		string parentPropertyName = ItemsPropertyName, IReadOnlyList<string> sourceAncestors = null) {
+		string parentPropertyName = ItemsPropertyName, IReadOnlyList<string> sourceAncestors = null,
+		bool inNonConvertingScope = false) {
 		// Positional siblings: when this array holds a positional anchor container (e.g. CardContentWrapper),
 		// each sibling ABOVE it is placed above the mobile anchor (Tabs) — inserted into the anchor's parent
 		// (MainContainer) with an ascending index from 0 — and each sibling BELOW it is appended after.
@@ -1657,8 +1686,55 @@ public static class WebToMobileAnalysisService {
 			// nameless wrapper contributes no ancestor name).
 			if (string.IsNullOrEmpty(name)) {
 				if (items is not null) {
-					WalkElements(ctx, items, mobileParentName, sourceAncestors: sourceAncestors);
+					WalkElements(ctx, items, mobileParentName, sourceAncestors: sourceAncestors,
+						inNonConvertingScope: inNonConvertingScope);
 				}
+				continue;
+			}
+
+			// A non-converting scope container (named in a rule's `path`, e.g. MainHeader): it produces NO mobile
+			// element of its own, but its subtree is walked in "scope" mode — a matching header action retargets
+			// (e.g. into FloatingActionButton.menuItems) and everything else is dropped, so the container and its
+			// unconverted content are not present on mobile.
+			if (!inNonConvertingScope && ctx.ScopeContainerNames.Contains(name)) {
+				IReadOnlyList<string> scopeAncestors = Append(sourceAncestors, name);
+				if (items is not null) {
+					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, scopeAncestors, inNonConvertingScope: true);
+				}
+				RecurseChildArrays(ctx, node, name, type, scopeAncestors, inNonConvertingScope: true);
+				continue;
+			}
+
+			// Inside a non-converting scope: only a node a conversion template RETARGETS (e.g. a header crt.Button /
+			// crt.MenuItem → FloatingActionButton.menuItems) that also has a supported `clicked` is converted; it is
+			// emitted at the retargeted placement. Any other node (a container-only dropdown with no clicked of its
+			// own, an unsupported/absent clicked, a non-action component) is dropped. Either way the subtree is
+			// recursed IN SCOPE, so a dropdown's nested menuItems still flatten into the same target as siblings.
+			if (inNonConvertingScope) {
+				string scopedType = ResolveTemplateTargetType(ctx.Rules, node, sourceAncestors);
+				(string Parent, string Property)? scopedTarget = scopedType is null
+					? null
+					: ResolveTemplatePlacement(ctx, node, scopedType, name, ResolveParent(ctx, mobileParentName),
+						ItemsPropertyName, sourceAncestors);
+				if (scopedTarget is { } target && HasSupportedClicked(ctx, node)) {
+					CaptionResource scopedCaption = ResolveCaptionResource(ctx, node, name);
+					JsonNode scopedValues = BuildMobileValues(ctx, node, name, scopedType, scopedCaption,
+						target.Parent, target.Property, sourceAncestors);
+					ctx.Out.Add(new ElementMapEntry {
+						WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = scopedType,
+						ParentName = target.Parent, PropertyName = target.Property, Index = null,
+						CaptionResource = scopedCaption, MobileValues = scopedValues,
+						Reason = $"header action; converted into {target.Parent}.{target.Property}"
+					});
+				} else {
+					ctx.Out.Add(Drop(name, type,
+						"under a non-converting header container; not a supported action (no matching template or no supported clicked)"));
+				}
+				IReadOnlyList<string> childScopeAncestors = Append(sourceAncestors, name);
+				if (items is not null) {
+					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, childScopeAncestors, inNonConvertingScope: true);
+				}
+				RecurseChildArrays(ctx, node, name, scopedType ?? type, childScopeAncestors, inNonConvertingScope: true);
 				continue;
 			}
 
@@ -1883,16 +1959,24 @@ public static class WebToMobileAnalysisService {
 	/// their own element-map entries under the right <c>propertyName</c>.
 	/// </summary>
 	private static void RecurseChildArrays(ElementMapContext ctx, JObject node, string mobileParentName,
-		string mobileType, IReadOnlyList<string> childAncestors) {
+		string mobileType, IReadOnlyList<string> childAncestors, bool inNonConvertingScope = false) {
 		foreach (JProperty prop in node.Properties()) {
 			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
 				continue;
 			}
 			if (IsChildElementArray(ctx, mobileType, prop.Name, prop.Value)) {
-				WalkElements(ctx, (JArray)prop.Value, mobileParentName, prop.Name, childAncestors);
+				WalkElements(ctx, (JArray)prop.Value, mobileParentName, prop.Name, childAncestors, inNonConvertingScope);
 			}
 		}
 	}
+
+	/// <summary>
+	/// True when a node carries a <c>clicked</c> event binding whose request the Creatio Mobile app supports — the
+	/// gate for converting a header action into a FAB menu item. A node with NO <c>clicked</c> (a container-only
+	/// dropdown) or an unsupported request is not itself converted (its nested menu items are still flattened).
+	/// </summary>
+	private static bool HasSupportedClicked(ElementMapContext ctx, JObject node) =>
+		node["clicked"] is JObject && UnsupportedRequestOf(ctx, node) is null;
 
 	/// <summary>
 	/// The source-ancestor chain (outer→inner web element names) for the children of <paramref name="name"/>, i.e.
