@@ -16,6 +16,19 @@ jobs:
     # "running scripts is disabled on this system" (PSSecurityException / UnauthorizedAccess).
     env:
       PSExecutionPolicyPreference: Bypass
+      # actions/setup-dotnet installs into C:\Program Files\dotnet by default, which the
+      # self-hosted runner's service account cannot write:
+      #   "dotnet-install: The current user doesn't have write access to the installation root
+      #    'C:\Program Files\dotnet' to install .NET."
+      # The step was added to this workflow on 2026-08-14 (b5d6429c), copying the pattern from
+      # build.yml - but build.yml runs on GitHub-hosted ubuntu-latest/windows-latest, where the
+      # default root IS writable, whereas this job is the only one on self-hosted. Every release
+      # since has failed at that step before packing, so 8.1.0.105 and 8.1.0.106 were tagged and
+      # released on GitHub but never published to NuGet.
+      # Redirecting the install to the runner tool cache keeps the NET10 requirement that commit
+      # introduced (the test step below runs --framework net10.0) without needing write access to
+      # Program Files, and persists across runs so each release does not re-download the SDKs.
+      DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
     steps:
       - name: Free disk space
         shell: powershell
