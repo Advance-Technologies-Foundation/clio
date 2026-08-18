@@ -13,6 +13,7 @@ spec:
       labels:
         app: clio-email-listener
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: email-listener
           image: bpmonline/emaillistener:1.0.10
