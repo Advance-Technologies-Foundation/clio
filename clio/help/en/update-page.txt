@@ -41,25 +41,26 @@ DESCRIPTION
       crt.HandleViewModelInitRequest, usr.HandleSomeRequest).
     - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.RequiredValidator).
-    - Mobile: an authored component's type must sit inside values. In a
-      mobile viewConfigDiff, an operation:"insert" or "set" that puts
-      "type" on the operation object instead of inside "values" is
-      rejected — the Creatio differ builds the element from "values"
-      only, so the type is dropped and the element never renders even
-      though the write succeeds. A flat "insert" (type at operation level,
-      no values object at all) is rejected for the same reason: insert
-      declares no required parameters, so the differ persists a typeless
-      element rather than refusing it. Warnings, not errors: no type
-      anywhere, two conflicting types, and an operation whose letter case
-      does not match the differ's exact-case dispatch. Residual gaps: the
-      same shape breaks web pages too but is not yet enforced there, and
-      sync-pages validate=false skips the check entirely.
-    - Mobile: a crt.Button inserted with parentName "Scaffold" and
-      propertyName "actions" is warned about (ENG-95429). The write
-      succeeds but the button does not render in the Creatio Mobile app.
-      Place it as an item of a page container instead (parentName
-      "MainContainer" or a crt.GridContainer, propertyName "items") with a
-      layoutConfig — the shape the mobile designer emits.
+    MOBILE RULES (MCP update-page / sync-pages / validate-page only --
+    the CLI verb below does NOT run them; it checks a mobile body only
+    for disallowed sections):
+    - Rejected: an operation:"insert"/"set" that supplies a values object
+      but puts "type" on the operation object; and a flat "insert" (type
+      on the operation object, no values object at all). The Creatio
+      differ builds the element from "values" alone, so the type is
+      dropped and the element never renders even though the write
+      succeeds. A flat "set" is left to the differ, which refuses it for
+      the missing required "values".
+    - Warned: no type anywhere while values carries element properties;
+      two DIFFERENT types (the element still renders, as the values
+      copy); an operation whose letter case does not match the differ's
+      exact-case dispatch; and a crt.Button inserted into parentName
+      "Scaffold" / propertyName "actions", which saves but never renders
+      (ENG-95429) -- place it in a page container's "items" with a
+      "layoutConfig" instead.
+    - Not enforced: the same type-placement defect breaks web pages too
+      and is not checked there; sync-pages validate=false skips these
+      checks entirely.
     - User-visible text (label, caption, title, tooltip, placeholder) in
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's

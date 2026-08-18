@@ -52,27 +52,38 @@ name instead of trying to edit a non-existent local `insert`.
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
-- **Mobile: an authored component's `type` must sit inside `values`.** In a mobile body's
-  `viewConfigDiff`, an `operation:"insert"` or `operation:"set"` that supplies a `values` object but
-  declares `"type"` on the operation object instead of inside it is **rejected**. The Creatio differ
-  builds the element from `values` alone, so a type placed beside it is discarded and the page persists
-  an element the mobile runtime cannot render — the write would otherwise succeed and the component
-  would simply never appear. (`set` is included because it is `remove` + `insert` on the same payload.)
-  Reported as a non-blocking **warning** instead: an entry with no type anywhere, an entry whose type is
-  only at the operation level with no `values` object at all, and an entry that declares two different
-  types. If the offending entry came back from `get-page`, the page already carries the defect — correct
-  it in the body you send back. Two residual gaps, deliberate for now: the same shape breaks **web** pages
-  identically but is **not yet enforced** there, and `sync-pages` with `validate: false` skips the check
-  entirely. Call `clio get-guidance --name mobile-page-modification` for details.
-- **Mobile: a button inserted into the Scaffold `actions` slot does not render.** An
-  `operation:"insert"` of `crt.Button` with `parentName: "Scaffold"`, `propertyName: "actions"` is reported
-  as a **warning** (ENG-95429). The write succeeds and the catalog describes the slot as holding action
-  items, but the button never appears on the Creatio Mobile app — verified on a stand, where fields in a
-  container's `items` rendered and buttons in `Scaffold`/`actions` did not, in the same page. Place the
-  button as an item of a page container instead — `parentName: "MainContainer"` (or a `crt.GridContainer`),
-  `propertyName: "items"` — and give it a `layoutConfig`; that is what the Freedom UI mobile designer emits.
-  It is advisory rather than blocking because it is not yet settled whether the slot is a guidance defect or
-  a rendering one; a hard block would mask the latter.
+- **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
+  The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
+  sections — so a body rejected through MCP still saves from the command line.
+  - **Rejected — an authored component's `type` outside `values`.** In `viewConfigDiff`, an
+    `operation:"insert"` or `operation:"set"` that supplies a `values` object but puts `"type"` on the
+    operation object is refused. The Creatio differ builds the element from `values` alone, so the type is
+    discarded and the page would persist an element the mobile runtime cannot render — the write would
+    otherwise succeed and the component would simply never appear. (`set` is included because it is
+    `remove` + `insert` on the same payload.)
+  - **Rejected — a flat `insert`.** A `"type"` on the operation object with no `values` object at all is
+    refused for the same reason: `insert` declares no required parameters, so the differ does not reject it
+    — it persists a typeless element. A flat `set` is left to the differ, which refuses it for the missing
+    required `values`.
+  - **Warned — no type anywhere**, when `values` carries element properties but declares no `type`
+    (an entry that authors nothing — absent or empty `values` — is silent by design).
+  - **Warned — two DIFFERENT types**, one on the operation object and one inside `values`. The element still
+    renders, as the `values` copy. Two identical types are accepted silently.
+  - **Warned — an operation whose letter case does not match** the differ's exact-case dispatch
+    (`"Insert"`): the whole operation is discarded, so it authors nothing.
+  - **Warned — a `crt.Button` inserted into the Scaffold `actions` slot** (`parentName: "Scaffold"`,
+    `propertyName: "actions"`). ENG-95429: the write succeeds and the catalog describes the slot as holding
+    action items, but the button never appears in the Creatio Mobile app — verified on a stand, where in the
+    same page fields in a container's `items` rendered and buttons in `Scaffold`/`actions` did not. Place it
+    as an item of a page container instead (`propertyName: "items"`, on a container the page or its template
+    actually declares — confirm the name with `get-page`) and give it a `layoutConfig`; that is what the
+    Freedom UI mobile designer emits. Advisory rather than blocking because it is not yet settled whether
+    the slot is a guidance defect or a rendering one, and a hard block would mask the latter.
+  - If an offending entry came back from `get-page`, the page already carries the defect — correct it in the
+    body you send back.
+  - **Not enforced:** the same type-placement defect breaks **web** pages identically and is not checked
+    there; `sync-pages` with `validate: false` skips these checks along with every other one.
+  Call `clio get-guidance --name mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid

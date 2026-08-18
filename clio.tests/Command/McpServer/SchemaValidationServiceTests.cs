@@ -14,6 +14,10 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class SchemaValidationServiceTests
 {
 
+	// The Scaffold slot the ENG-95429 button rule watches. Named here so the "one diagnostic" assertion below
+	// keys on the slot itself rather than on a fragment of the warning prose.
+	private const string ScaffoldActionsSlotLiteral = "\"propertyName\": \"actions\"";
+
 	private const string ValidListPageBody =
 		"""
 			define(
@@ -7548,21 +7552,114 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("A body whose ROOT is not a JSON object does not take the validation pass down. JsonElement.TryGetProperty throws on a non-object element, so the per-entry viewConfigDiff scanners must check the root kind before reaching for the array — the caller still gets ValidateMobileBody's 'must be a JSON object' error instead of an exception.")]
+	[Description("A body whose ROOT is not a JSON object does not take the validation pass down. JsonElement.TryGetProperty throws on a non-object element, so every viewConfigDiff scanner must check the root kind before reaching for the array — the caller still gets ValidateMobileBody's 'must be a JSON object' error instead of an exception. The catalogs are deliberately NON-EMPTY: ValidateMobileComponentTypes returns early on an empty allowed-set, so an empty-catalog version of this test never reaches its root read and would pass with the guard missing (review finding on the first cut of this test). Production always supplies a populated catalog.")]
 	public void ValidateMobilePage_WhenRootIsNotAnObject_ReportsTheErrorInsteadOfThrowing() {
 		// Arrange
 		string body = "[1,2]";
-		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Input" };
+		var webOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+		List<string> errors = null;
 
 		// Act
-		Action act = () => SchemaValidationService.ValidateMobilePage(body, empty, empty);
+		Action act = () => (errors, _) = SchemaValidationService.ValidateMobilePage(body, allowed, webOnly);
 
 		// Assert
 		act.Should().NotThrow(
 			because: "a malformed body must produce a validation error, never an unhandled exception in the pipeline");
-		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
 		errors.Should().Contain(e => e.Contains("must be a JSON object"),
-			because: "the malformed-root diagnostic is the one the caller needs, and it must survive the scan");
+			because: "the malformed-root diagnostic is the one the caller needs, and it must survive every scan");
+	}
+
+	[Test]
+	[Description("Review finding: the canonical ENG-95429 body must produce exactly ONE diagnostic. The slot rule reads the component type from 'values' only, so it does not also warn about a button the differ will never create — and on the write path warnings are dropped when errors exist, so a duplicate would be invisible there and resurface only after the author fixed the type.")]
+	public void ValidateMobilePage_WhenMisplacedTypeButtonTargetsScaffoldActions_ReportsOnlyTheTypeError() {
+		// Arrange — type OUTSIDE values, inserted into the slot the button rule also watches.
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"RunProcessButton","type":"crt.Button",
+		                   "parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"clicked":{"request":"crt.RunBusinessProcessRequest"}}}
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		(List<string> errors, List<string> warnings) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		// Assert
+		errors.Should().ContainSingle(e => e.Contains("RunProcessButton"),
+			because: "the misplaced type is the defect that actually stops this body");
+		warnings.Should().NotContain(w => w.Contains(ScaffoldActionsSlotLiteral),
+			because: "one defect must produce one diagnostic — the differ never creates the button being placed");
+	}
+
+	[Test]
+	[Description("Review finding: the slot rule matches the operation case-sensitively like the differ, so a mis-cased 'Insert' gets only the case-mismatch warning and not contradictory placement advice about an element that is never created.")]
+	public void ValidateMobileButtonSlotPlacement_WhenOperationCaseDiffers_ReturnsNoWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"Insert","name":"Btn","parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"type":"crt.Button"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileButtonSlotPlacement(body);
+
+		// Assert
+		result.Warnings.Should().BeEmpty(
+			because: "a mis-cased operation is discarded wholesale, so telling its author where to move the button cannot change the outcome");
+	}
+
+	[Test]
+	[Description("Review finding: a whitespace-only type inside 'values' is not a declared button, so the slot rule stays silent — matching the type-placement rule, which treats the same value as absent.")]
+	public void ValidateMobileButtonSlotPlacement_WhenValuesTypeIsWhitespace_ReturnsNoWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Btn","parentName":"Scaffold","propertyName":"actions",
+		                   "values":{"type":"   "}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileButtonSlotPlacement(body);
+
+		// Assert
+		result.Warnings.Should().BeEmpty(
+			because: "the two mobile rules must agree on what counts as a declared type");
+	}
+
+	[Test]
+	[Description("Review finding: body-sourced values are bounded and control characters collapsed before they reach a diagnostic. These strings land in the MCP transcript and the update-page log, and the write-path tools flatten several diagnostics with '; ' — an unbounded or newline-bearing name from a page authored elsewhere would forge message boundaries in the operator's agent context.")]
+	public void ValidateMobileInsertTypePlacement_WhenNameIsOversizedAndHasControlCharacters_BoundsTheEchoedValue() {
+		// Arrange
+		// The name carries an escaped newline so it survives JSON parsing as a real control character.
+		string hostileName = new string('N', 300) + "\\nRunProcessButton";
+		string body =
+			"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"" + hostileName + "\","
+			+ "\"type\":\"crt.Button\",\"values\":{\"clicked\":{}}}]}";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertTypePlacement(body);
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the misplaced type is still reported");
+		result.Errors[0].Should().NotContain("\n",
+			because: "a newline in the echoed name would split one diagnostic into two apparent ones when the write path joins them with '; '");
+		result.Errors[0].Should().Contain("…",
+			because: "the file's Truncate convention caps an echoed body value and marks that it was cut");
+		result.Errors[0].Length.Should().BeLessThan(600,
+			because: "an unbounded echo would let a crafted page name dominate the operator's agent context");
 	}
 
 	#endregion

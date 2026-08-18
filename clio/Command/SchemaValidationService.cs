@@ -33,7 +33,7 @@ public static class SchemaValidationService
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
 	private const string ParentNamePropertyName = "parentName";
-	private const string SlotPropertyName = "propertyName";
+	private const string PropertyNamePropertyName = "propertyName";
 	private const string ScaffoldElementName = "Scaffold";
 	private const string ScaffoldActionsSlot = "actions";
 	private const string ButtonComponentType = "crt.Button";
@@ -532,7 +532,11 @@ public static class SchemaValidationService
 			return result; // JSON errors reported by ValidateMobileBody
 		}
 		using (document) {
-			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
+			// Root-kind guard, same reason as ScanMobileViewConfigDiffEntries: TryGetProperty throws
+			// InvalidOperationException on a non-object element, and this validator runs unconditionally from
+			// ValidateMobilePage. It previously escaped only when allowedMobileTypes was empty.
+			if (document.RootElement.ValueKind != JsonValueKind.Object ||
+				!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
 				vcd.ValueKind != JsonValueKind.Array) {
 				return result;
 			}
@@ -615,6 +619,17 @@ public static class SchemaValidationService
 	/// dropped, never merged; the structural validator owns that diagnostic.
 	/// </para>
 	/// <para>
+	/// Outcome per entry. BLOCKS: the hybrid (a <c>values</c> object present, no usable <c>type</c> inside it, and a
+	/// type on the operation object) and the FLAT <c>insert</c> (a type on the operation object, no <c>values</c>
+	/// object at all — <c>insert</c> declares no required parameters, so the differ silently persists a typeless
+	/// element). WARNS: no type anywhere while <c>values</c> carries element properties; two DIFFERENT types (the
+	/// element still renders, as the <c>values</c> copy); an operation whose CASE does not match the differ's
+	/// exact-case dispatch (discarded wholesale, so type advice would be useless). SILENT: two IDENTICAL types (the
+	/// operation-level copy is redundant, not harmful); an entry that authors nothing (absent or empty
+	/// <c>values</c>, no type); and a flat <c>set</c>, which the differ rejects itself for the missing required
+	/// <c>values</c>.
+	/// </para>
+	/// <para>
 	/// <see cref="ValidateMobileComponentTypes"/> cannot catch this: it resolves the type through
 	/// <c>GetMobileEntryType</c>, which deliberately accepts <c>entry.type</c> as a fallback, so a misplaced type
 	/// reads as a perfectly good mobile component and passes without so much as a warning. That leniency is correct
@@ -624,13 +639,8 @@ public static class SchemaValidationService
 	/// </remarks>
 	/// <param name="body">Plain-JSON mobile page body.</param>
 	/// <returns>
-	/// A <see cref="SchemaValidationResult"/> that is invalid whenever an operation-level type would be discarded:
-	/// the hybrid (a <c>values</c> object present AND the type outside it) and the FLAT <c>insert</c> (an
-	/// operation-level type with no <c>values</c> object — the differ declares no required parameters for
-	/// <c>insert</c>, so it silently persists a typeless element). A flat <c>set</c> is left to the differ, which
-	/// rejects it for the missing required <c>values</c>. The remaining cases only warn: a type absent everywhere is
-	/// not provably a misplacement, two conflicting types still render (as the <c>values</c> copy), and an operation
-	/// whose CASE does not match the differ's exact-case dispatch is discarded wholesale rather than mis-typed.
+	/// A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending entry; see the outcome table in
+	/// the remarks for which shapes block and which only warn.
 	/// </returns>
 	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) =>
 		ScanMobileViewConfigDiffEntries(body, ValidateMobileInsertTypePlacementEntry);
@@ -640,9 +650,10 @@ public static class SchemaValidationService
 	/// each entry with its position to <paramref name="inspectEntry"/>, which accumulates into the shared result.
 	/// </summary>
 	/// <remarks>
-	/// A body that is not parseable, is not a JSON object, or carries no <c>viewConfigDiff</c> array yields an empty
-	/// valid result — those shapes are reported by <see cref="ValidateMobileBody"/>, and duplicating the diagnostic
-	/// here would bury it. The root-kind guard also matters mechanically: <c>JsonElement.TryGetProperty</c> throws
+	/// A body that is not parseable or is not a JSON object yields an empty valid result — both are reported by
+	/// <see cref="ValidateMobileBody"/>, and duplicating the diagnostic here would bury it. A body carrying no
+	/// <c>viewConfigDiff</c> array also yields an empty result, but because it is legitimately valid (the section is
+	/// optional), not because anything else reports it. The root-kind guard also matters mechanically: <c>JsonElement.TryGetProperty</c> throws
 	/// <see cref="InvalidOperationException"/> on a non-object element, so a body such as <c>[1,2]</c> would take the
 	/// whole validation pass down rather than return the malformed-body error.
 	/// </remarks>
@@ -655,8 +666,10 @@ public static class SchemaValidationService
 		JsonDocument document;
 		try {
 			document = JsonDocument.Parse(body);
-		} catch (JsonException) {
-			return result; // JSON errors reported by ValidateMobileBody
+		} catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException) {
+			// JsonException covers syntax and depth; the other two cover the UTF-16 transcode failure
+			// JsonDocument.Parse(string) raises on an unpaired surrogate. All are reported by ValidateMobileBody.
+			return result;
 		}
 		using (document) {
 			if (document.RootElement.ValueKind != JsonValueKind.Object
@@ -674,8 +687,9 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Applies the type-placement rule to a single <c>viewConfigDiff</c> entry. See the caller's remarks for the
-	/// operation scope and for why only the hybrid shape blocks.
+	/// Applies the type-placement rule to a single <c>viewConfigDiff</c> entry: dispatches to the case-mismatch,
+	/// flat-shape or values-shape reporter. See the caller's remarks for the operation scope and for which shapes
+	/// block (the hybrid, and the flat <c>insert</c>) versus which only warn.
 	/// </summary>
 	private static void ValidateMobileInsertTypePlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
 		if (entry.ValueKind != JsonValueKind.Object
@@ -690,7 +704,11 @@ public static class SchemaValidationService
 		bool hasEntryType = TryGetStringProperty(entry, TypePropertyName, out string entryType);
 		string subject = DescribeViewConfigDiffEntry(entry, index);
 		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) || values.ValueKind != JsonValueKind.Object) {
-			ReportFlatShapeTypePlacement(subject, entryType, reportable: hasEntryType && isInsert, result);
+			// `set` is excluded here: it requires `values`, so the differ rejects a flat `set` itself and
+			// MobileDiffApplyValidator surfaces that — reporting it here too would double-report one defect.
+			if (isInsert && hasEntryType) {
+				ReportFlatShapeTypePlacement(subject, entryType, result);
+			}
 			return;
 		}
 		ReportValuesShapeTypePlacement(subject, values, entryType, hasEntryType, result);
@@ -709,9 +727,9 @@ public static class SchemaValidationService
 			return;
 		}
 		result.Warnings.Add(
-			$"{DescribeViewConfigDiffEntry(entry, index)} declares \"{OperationPropertyName}\": \"{operation}\". The "
+			$"{DescribeViewConfigDiffEntry(entry, index)} declares \"{OperationPropertyName}\": \"{Sanitize(operation)}\". The "
 			+ "Creatio differ dispatches operations case-sensitively, so this entry is silently discarded and "
-			+ $"authors nothing. Use the exact lowercase form (\"{operation.ToLowerInvariant()}\").");
+			+ $"authors nothing. Use the exact lowercase form (\"{Sanitize(operation).ToLowerInvariant()}\").");
 	}
 
 	/// <summary>
@@ -722,17 +740,14 @@ public static class SchemaValidationService
 	/// <c>set</c> is excluded by the caller: it requires <c>values</c>, so the differ rejects a flat <c>set</c> itself
 	/// and <c>MobileDiffApplyValidator</c> surfaces that — reporting it here too would double-report one defect.
 	/// </summary>
-	private static void ReportFlatShapeTypePlacement(
-		string subject, string entryType, bool reportable, SchemaValidationResult result) {
-		if (!reportable) {
-			return;
-		}
+	private static void ReportFlatShapeTypePlacement(string subject, string entryType, SchemaValidationResult result) {
 		result.IsValid = false;
 		result.Errors.Add(
-			$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object and carries no "
+			$"{subject} declares \"{TypePropertyName}\": \"{Sanitize(entryType)}\" on the operation object and carries no "
 			+ "\"values\" object. The Creatio differ builds the element from \"values\" only, so the type is discarded "
 			+ "and the element cannot render even though the write reports success. Move the component properties "
-			+ $"into \"values\": {{ \"{TypePropertyName}\": \"{entryType}\", ... }}.");
+			+ $"into \"values\": {{ \"{TypePropertyName}\": \"{Sanitize(entryType)}\", ... }}. If this entry came back "
+			+ "from get-page, the page already carries the defect — correct it in the body you send back.");
 	}
 
 	/// <summary>
@@ -747,9 +762,9 @@ public static class SchemaValidationService
 			// worth flagging: the author gets a component they did not ask for, silently.
 			if (hasEntryType && !string.Equals(entryType, valuesType, StringComparison.Ordinal)) {
 				result.Warnings.Add(
-					$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object but "
-					+ $"\"{TypePropertyName}\": \"{valuesType}\" inside \"values\". The Creatio differ applies the \"values\" "
-					+ $"copy and discards the other, so the element renders as '{valuesType}'. Remove the operation-level "
+					$"{subject} declares \"{TypePropertyName}\": \"{Sanitize(entryType)}\" on the operation object but "
+					+ $"\"{TypePropertyName}\": \"{Sanitize(valuesType)}\" inside \"values\". The Creatio differ applies the \"values\" "
+					+ $"copy and discards the other, so the element renders as '{Sanitize(valuesType)}'. Remove the operation-level "
 					+ "type so the intent is unambiguous.");
 			}
 			return;
@@ -757,10 +772,10 @@ public static class SchemaValidationService
 		if (hasEntryType) {
 			result.IsValid = false;
 			result.Errors.Add(
-				$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object instead of inside "
+				$"{subject} declares \"{TypePropertyName}\": \"{Sanitize(entryType)}\" on the operation object instead of inside "
 				+ "\"values\". The Creatio differ builds the element from \"values\" only, so the type is discarded and the "
 				+ "element cannot render even though the write reports success. Move it: "
-				+ $"\"values\": {{ \"{TypePropertyName}\": \"{entryType}\", ... }}. If this entry came back from get-page, the "
+				+ $"\"values\": {{ \"{TypePropertyName}\": \"{Sanitize(entryType)}\", ... }}. If this entry came back from get-page, the "
 				+ "page already carries the defect — correct it in the body you send back.");
 			return;
 		}
@@ -804,30 +819,48 @@ public static class SchemaValidationService
 		ScanMobileViewConfigDiffEntries(body, ValidateMobileButtonSlotPlacementEntry);
 
 	/// <summary>
-	/// Applies the button-slot rule to one <c>viewConfigDiff</c> entry. Names are compared with
-	/// <see cref="StringComparison.Ordinal"/> to match the differ, which resolves both the parent alias and the slot
-	/// key case-sensitively — a differently-cased spelling never reaches the slot in the first place.
+	/// Applies the button-slot rule to one <c>viewConfigDiff</c> entry. Every comparison — operation, parent alias,
+	/// slot key and component type — is <see cref="StringComparison.Ordinal"/>, matching the differ: it dispatches
+	/// operations on an exact-case switch, resolves the parent through an ordinal alias store, and reads the slot
+	/// through a Newtonsoft <c>JObject</c> indexer. A differently-cased spelling never reaches the slot at all, so
+	/// it is a different defect and not this rule's to report.
 	/// </summary>
 	private static void ValidateMobileButtonSlotPlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
+		// Exact-case operation, matching the differ's switch and the type-placement rule. Going through the
+		// case-INsensitive IsOperation here would contradict the sibling rule: a mis-cased operation is discarded
+		// wholesale, so telling its author where to move the button is advice that cannot change the outcome.
 		if (entry.ValueKind != JsonValueKind.Object
-			|| !IsOperation(entry, InsertOperationName)
-			|| !string.Equals(GetMobileEntryType(entry), ButtonComponentType, StringComparison.Ordinal)) {
+			|| !string.Equals(
+				TryGetStringProperty(entry, OperationPropertyName, out string operation) ? operation : null,
+				InsertOperationName, StringComparison.Ordinal)) {
+			return;
+		}
+		// The type is read from `values` ONLY — the copy the differ actually applies. Resolving it through the
+		// lenient GetMobileEntryType (which falls back to entry.type) would make this rule fire on the very body
+		// the type-placement rule already blocks, warning about the placement of a button the differ never creates.
+		// One defect, one diagnostic — and on the write path warnings are dropped when errors exist, so the
+		// duplicate would be invisible there anyway and would resurface only after the author fixed the type.
+		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values)
+			|| values.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(values, TypePropertyName, out string valuesType)
+			|| !string.Equals(valuesType, ButtonComponentType, StringComparison.Ordinal)) {
 			return;
 		}
 		if (!TryGetStringProperty(entry, ParentNamePropertyName, out string parentName)
 			|| !string.Equals(parentName, ScaffoldElementName, StringComparison.Ordinal)
-			|| !TryGetStringProperty(entry, SlotPropertyName, out string slot)
+			|| !TryGetStringProperty(entry, PropertyNamePropertyName, out string slot)
 			|| !string.Equals(slot, ScaffoldActionsSlot, StringComparison.Ordinal)) {
 			return;
 		}
 		result.Warnings.Add(
 			$"{DescribeViewConfigDiffEntry(entry, index)} inserts a {ButtonComponentType} into "
-			+ $"\"{ParentNamePropertyName}\": \"{ScaffoldElementName}\", \"{SlotPropertyName}\": \"{ScaffoldActionsSlot}\". "
-			+ "An inserted button does NOT render there on the Creatio Mobile app, even though the write succeeds and "
-			+ "the catalog describes the slot as holding action items — this is the ENG-95429 failure mode. Place the "
-			+ $"button as an item of a page container instead (\"{ParentNamePropertyName}\": \"MainContainer\" or a "
-			+ $"crt.GridContainer, \"{SlotPropertyName}\": \"items\") and give it a \"layoutConfig\", which is what the "
-			+ "Freedom UI mobile designer emits.");
+			+ $"\"{ParentNamePropertyName}\": \"{ScaffoldElementName}\", \"{PropertyNamePropertyName}\": \"{ScaffoldActionsSlot}\". "
+			+ "An inserted button does NOT render there on the Creatio Mobile app even though the write succeeds "
+			+ "(ENG-95429). Place it as an item of a page container instead — "
+			+ $"\"{PropertyNamePropertyName}\": \"items\" on a container THIS page or its template actually declares "
+			+ "(confirm the name with get-page; inserting into a parent that does not exist is silently dropped by "
+			+ "the differ and fails the same way) — and give it a \"layoutConfig\", which is what the Freedom UI "
+			+ "mobile designer emits.");
 	}
 
 	/// <summary>
@@ -837,8 +870,20 @@ public static class SchemaValidationService
 	/// </summary>
 	private static string DescribeViewConfigDiffEntry(JsonElement entry, int index) =>
 		TryGetStringProperty(entry, "name", out string name)
-			? $"viewConfigDiff entry '{name}'"
+			? $"viewConfigDiff entry '{Sanitize(name)}'"
 			: $"viewConfigDiff entry at index {index}";
+
+	/// <summary>
+	/// Bounds a body-sourced value before it is echoed into a diagnostic: applies the file's existing
+	/// <see cref="Truncate"/> cap and collapses control characters. Both matter because these strings reach the MCP
+	/// transcript and the update-page log, and the write-path tools flatten several diagnostics with <c>"; "</c> —
+	/// an unbounded or newline-bearing value from a page authored elsewhere would otherwise forge message
+	/// boundaries in the operator's agent context.
+	/// </summary>
+	private static string Sanitize(string value) =>
+		string.IsNullOrEmpty(value)
+			? value
+			: Truncate(new string(value.Select(c => char.IsControl(c) ? ' ' : c).ToArray()));
 
 	/// <summary>
 	/// Validates that every <c>$AttributeName</c> binding in a mobile page body's
