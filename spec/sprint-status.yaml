@@ -2955,7 +2955,7 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-17.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
@@ -2996,3 +2996,13 @@ stories:
     status_note: "REGRESSION from stage 6, confirmed against the master baseline: TeamCity 15893259 fails ApplicationTool_Should_Stream_Progress_For_LongRunning_Call with 0 progress notifications, and run 15892347 on master passes it. The test drives list-app-sections, a cohort member declaring RequiresClientRequests=Progress. Leading hypothesis is that the child environment allowlist drops CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS so the child never beats -- but that must be PROVEN, because the alternative is that worker progress does not reach the client at all, which would contradict four passing unit tests. Do not fix before the cause is established."
     depends_on:
       - story-mcp-worker-execution-boundary-6
+
+  - id: story-mcp-worker-execution-boundary-21
+    title: "Truncating the worker's standard error can un-redact a secret"
+    feature: "mcp-worker-execution-boundary"
+    status: ready-for-dev
+    file: spec/stories/story-mcp-worker-execution-boundary-21.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Security. Found 2026-08-18 while designing story 17's tests, and verified against the redactor's patterns: CredentialPairRegex REQUIRES the key, and the drain trims from the front at an arbitrary offset, so a tail beginning `word=SUPER-SECRET` (the `pass` of `password=` cut away) matches nothing and the value reaches the client on the failure envelope. JWT, Bearer, URI and host-port patterns are shape-based and still hold; it is the ordinary key=value credential -- the commonest shape in a stack trace -- that truncation defeats. TC-U-505 passes only because its fixture pads chunks so the cut lands in filler; that is test hygiene, not coverage."
+    depends_on:
+      - story-mcp-worker-execution-boundary-17

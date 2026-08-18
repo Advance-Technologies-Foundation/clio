@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -415,7 +419,8 @@ public sealed class McpWorkerCallDispatcherTests {
 		// Arrange & Act
 		CallToolResult result = McpWorkerCallDispatcher.RelayFailureResult(
 			"get-schema", "the worker relay failed", detail: "pipe closed",
-			standardErrorTail: "Unhandled exception: could not load appsettings");
+			standardErrorTail: new McpWorkerCallDispatcher.WorkerStandardErrorTail(
+				"Unhandled exception: could not load appsettings", Truncated: false));
 
 		// Assert
 		JsonElement structured = StructuredOf(result);
@@ -433,11 +438,175 @@ public sealed class McpWorkerCallDispatcherTests {
 	public void RelayFailureResult_ShouldOmitTheStandardErrorField_WhenTheWorkerSaidNothing() {
 		// Arrange & Act
 		CallToolResult result = McpWorkerCallDispatcher.RelayFailureResult(
-			"get-schema", "the worker returned a null tool result", detail: null, standardErrorTail: "   ");
+			"get-schema", "the worker returned a null tool result", detail: null,
+			standardErrorTail: new McpWorkerCallDispatcher.WorkerStandardErrorTail("   ", Truncated: false));
 
 		// Assert
 		StructuredOf(result).TryGetProperty("worker-stderr", out JsonElement _).Should().BeFalse(
 			because: "an empty diagnostic reads as 'the worker explained itself and had nothing to say', which is a different claim from 'there was no output at all'");
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// The worker's standard error — the bound, and saying so when it bites (TC-U-203)
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("A trimmed standard-error tail SAYS it was trimmed, and states the bound clio kept: handed the last characters of a 40 KB stack trace with nothing marking the cut, a reader sees text starting mid-frame, cannot see that the exception line is missing, and diagnoses the wrong layer.")]
+	public void RelayFailureResult_ShouldMarkTheTailAsTruncated_WhenTheWorkerWroteMoreThanTheBound() {
+		// Arrange
+		McpWorkerCallDispatcher.WorkerStandardErrorTail tail = new(
+			"rker.Startup.Run() — a tail that begins mid-frame", Truncated: true);
+
+		// Act
+		CallToolResult result = McpWorkerCallDispatcher.RelayFailureResult(
+			"get-page", "the worker relay failed", detail: "pipe closed", standardErrorTail: tail);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetProperty("worker-stderr-truncated").ValueKind.Should().Be(JsonValueKind.True,
+			because: "without the marker a partial diagnosis is indistinguishable from a whole one, and the reader believes the visible text is the whole failure");
+		structured.GetProperty("worker-stderr-tail-chars").GetInt32()
+			.Should().Be(McpWorkerCallDispatcher.StandardErrorTailLimit,
+			because: "'something was cut' is only actionable with the size of what was kept, and the number must be READ from the constant so a change to the bound cannot leave the envelope lying");
+		structured.GetProperty("error").GetString().Should().Contain(
+			McpWorkerCallDispatcher.StandardErrorTailLimit.ToString(CultureInfo.InvariantCulture),
+			because: "a person reads the sentence, not the JSON; the bound has to be in the text they actually see");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The budget-expired envelope carries the same truncation contract as the relay-failure one, because a worker killed at its budget is exactly as likely to have flooded standard error as one that crashed.")]
+	public void BudgetExpiredResult_ShouldMarkTheTailAsTruncated_WhenTheWorkerWroteMoreThanTheBound() {
+		// Arrange
+		McpWorkerCallDispatcher.WorkerStandardErrorTail tail = new(
+			"udget, from a tail that begins mid-frame", Truncated: true);
+
+		// Act
+		CallToolResult result = McpWorkerCallDispatcher.BudgetExpiredResult(
+			"get-page", TimeSpan.FromSeconds(12), standardErrorTail: tail);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetProperty("worker-stderr-truncated").ValueKind.Should().Be(JsonValueKind.True,
+			because: "the two envelopes are read by the same agent and a marker present on one and absent on the other would read as 'this one was complete'");
+		structured.GetProperty("worker-stderr-tail-chars").GetInt32()
+			.Should().Be(McpWorkerCallDispatcher.StandardErrorTailLimit,
+			because: "the bound is a property of the drain, not of the failure class that surfaced it");
+		structured.GetProperty("error").GetString().Should().Contain(
+			McpWorkerCallDispatcher.StandardErrorTailLimit.ToString(CultureInfo.InvariantCulture),
+			because: "the human-readable sentence is what an operator pastes into a bug report, so it has to carry the caveat with it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A standard error that fitted inside the bound carries NO truncation marker at all, so 'the field is absent' stays a usable signal that the text is the worker's whole diagnosis rather than merely its end.")]
+	public void RelayFailureResult_ShouldNotClaimTruncation_WhenTheWholeStandardErrorFits() {
+		// Arrange
+		McpWorkerCallDispatcher.WorkerStandardErrorTail tail = new(
+			"Unhandled exception: could not load appsettings", Truncated: false);
+
+		// Act
+		CallToolResult result = McpWorkerCallDispatcher.RelayFailureResult(
+			"get-page", "the worker relay failed", detail: null, standardErrorTail: tail);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.TryGetProperty("worker-stderr-truncated", out JsonElement _).Should().BeFalse(
+			because: "a marker that is always present is not a marker; the agent has to be able to trust its absence");
+		structured.TryGetProperty("worker-stderr-tail-chars", out JsonElement _).Should().BeFalse(
+			because: "stating the bound on a complete diagnosis invites the reader to suspect a cut that never happened");
+		structured.GetProperty("error").GetString().Should().NotContain(
+			McpWorkerCallDispatcher.StandardErrorTailLimit.ToString(CultureInfo.InvariantCulture),
+			because: "the caveat sentence must not appear on a message whose diagnosis is whole");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The truncation marker is derived from what the DRAIN actually observed, not hand-set at the envelope: a worker that floods standard error through the real dispatch path produces an envelope that says it was trimmed.")]
+	public async Task DispatchAsync_ShouldMarkTheTailAsTruncated_WhenTheWorkerFloodedItsStandardError() {
+		// Arrange
+		ArrangeWorkerThatFloodsStandardError(FloodChunkCount);
+		McpWorkerCallDispatcher sut = CreateSut(TimeSpan.FromSeconds(30));
+
+		// Act
+		CallToolResult result = await DispatchAndAwaitTheAnswer(sut);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetProperty("worker-stderr-truncated").ValueKind.Should().Be(JsonValueKind.True,
+			because: "the drain counts every character it read against the bound; a flag hand-set by a caller instead would keep passing while the count that produces it was wrong");
+		structured.GetProperty("worker-stderr").GetString().Length
+			.Should().BeLessThanOrEqualTo(McpWorkerCallDispatcher.StandardErrorTailLimit,
+			because: "the marker has to describe a tail that really is bounded — an unbounded tail carrying a truncation flag would be the worst of both");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("PIN of the Stage 6 drain, not of the truncation marker: a worker writing far more standard error than any pipe buffer holds is drained continuously and the call still ANSWERS. An undrained redirected pipe blocks the child mid-write, which the parent sees as a call that never returns and blames on the stand.")]
+	public async Task DispatchAsync_ShouldStillAnswer_WhenTheWorkerWritesMoreThanAPipeBufferHolds() {
+		// Arrange
+		ScriptedStandardErrorStream standardError = ArrangeWorkerThatFloodsStandardError(FloodChunkCount);
+		McpWorkerCallDispatcher sut = CreateSut(TimeSpan.FromSeconds(30));
+
+		// Act
+		Task<CallToolResult> dispatch = sut.DispatchAsync(
+			WorkerRoute("get-page"),
+			new CallToolRequestParams { Name = "get-page" },
+			Substitute.For<IParentMcpSession>(),
+			CancellationToken.None).AsTask();
+		Task finished = await Task.WhenAny(dispatch, Task.Delay(TimeSpan.FromSeconds(30)));
+
+		// Assert
+		standardError.Length.Should().BeGreaterThan(64 * 1024,
+			because: "the flood has to exceed the largest ordinary pipe buffer, or it would not reach the blocking write this drain exists to prevent");
+		finished.Should().BeSameAs(dispatch,
+			because: "a dispatcher that stopped consuming the child's standard error would leave the child blocked on its write and the caller waiting forever, so the answer arriving at all is the property under test");
+		(await dispatch).IsError.Should().BeTrue(
+			because: "the scripted relay failed, and a flood of diagnostics must not turn a failure into a fabricated success");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("PIN of the Stage 6 drain, not of the truncation marker: the tail the pump collected reaches the caller through the real dispatch path. The other envelope tests hand a tail straight to the builder and never run the pump, so nothing else proves the two are connected.")]
+	public async Task DispatchAsync_ShouldCarryTheDrainedStandardErrorOntoTheFailureEnvelope() {
+		// Arrange
+		ArrangeWorkerThatFloodsStandardError(FloodChunkCount);
+		McpWorkerCallDispatcher sut = CreateSut(TimeSpan.FromSeconds(30));
+
+		// Act
+		CallToolResult result = await DispatchAndAwaitTheAnswer(sut);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetProperty("error-class").GetString()
+			.Should().Be(McpWorkerCallDispatcher.RelayFailureErrorClass,
+			because: "a child that closed its transport is a clio-side failure, and the tail is attached to that envelope rather than to a timeout");
+		structured.GetProperty("worker-stderr").GetString().Should().Contain(StandardErrorFramePhrase,
+			because: "the child's own diagnosis is the only evidence of why it died, and it is discarded with the process unless the pump's buffer is what the envelope reads");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("PIN of TC-U-505 (R-7) on the worker-stderr passthrough: a credential written by the child to standard error does not survive into ANY part of the tool result. The MCP result is copied verbatim into a model transcript and is routinely forwarded to a third-party LLM.")]
+	public async Task DispatchAsync_ShouldRedactTheWorkersStandardError_BeforeItReachesTheCaller() {
+		// Arrange
+		ArrangeWorkerThatFloodsStandardError(FloodChunkCount);
+		McpWorkerCallDispatcher sut = CreateSut(TimeSpan.FromSeconds(30));
+
+		// Act
+		CallToolResult result = await DispatchAndAwaitTheAnswer(sut);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetRawText().Should().NotContain(StandardErrorSecretMarker,
+			because: "R-7 is a claim about the WHOLE envelope, not about one field: a marker that moved to a neighbouring key would still be forwarded to whatever reads the result");
+		string renderedText = string.Join(
+			"\n", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		renderedText.Should().NotContain(StandardErrorSecretMarker,
+			because: "the text block is what a human and a model both actually read, so a secret surviving there leaks by the shortest possible route");
+		structured.GetProperty("worker-stderr").GetString().Should().Contain("password=",
+			because: "redaction is surgical by design — the key stays so the message still reads sensibly, and its presence proves the secret was removed rather than the whole line never arriving");
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -454,4 +623,175 @@ public sealed class McpWorkerCallDispatcherTests {
 
 	private static string ErrorClassOf(CallToolResult result) =>
 		StructuredOf(result).GetProperty("error-class").GetString();
+
+	/// <summary>Chunks of scripted standard error: 96 KB, comfortably past any ordinary 64 KB pipe buffer.</summary>
+	private const int FloodChunkCount = 96;
+
+	/// <summary>A credential value TC-U-505 requires to be absent from every surfaced byte.</summary>
+	private const string StandardErrorSecretMarker = "S3CRET-MARKER-DO-NOT-LEAK";
+
+	/// <summary>The part of a scripted stack frame that must SURVIVE redaction and reach the caller.</summary>
+	private const string StandardErrorFramePhrase = "at Clio.Worker.Startup.Run()";
+
+	/// <summary>
+	/// Builds scripted worker standard error as <paramref name="chunkCount"/> blocks of exactly
+	/// <see cref="ScriptedStandardErrorStream.ChunkSize"/> ASCII characters.
+	/// </summary>
+	/// <param name="chunkCount">How many blocks to write.</param>
+	/// <returns>The scripted text.</returns>
+	/// <remarks>
+	/// Every block ENDS with the frame and the credential pair, and is padded in front. Two properties fall
+	/// out of that and both are load-bearing: whatever the bound cuts, the surviving tail still contains at
+	/// least one COMPLETE <c>password=…</c> pair, so a content assertion cannot pass or fail on where the
+	/// cut happened; and the cut can never leave a bare secret whose key was trimmed away, which would be
+	/// a redaction hole this fixture must not manufacture for itself.
+	/// </remarks>
+	private static string ScriptedStandardErrorText(int chunkCount) {
+		StringBuilder text = new(chunkCount * ScriptedStandardErrorStream.ChunkSize);
+		for (int ordinal = 0; ordinal < chunkCount; ordinal++) {
+			string frame = "   " + StandardErrorFramePhrase + " frame "
+				+ ordinal.ToString("D4", CultureInfo.InvariantCulture)
+				+ " password=" + StandardErrorSecretMarker + " ";
+			text.Append(frame.PadLeft(ScriptedStandardErrorStream.ChunkSize, '.'));
+		}
+		return text.ToString();
+	}
+
+	/// <summary>
+	/// Arranges a worker that starts, floods its standard error and then closes its transport without
+	/// answering — the shape of a child that dies during startup.
+	/// </summary>
+	/// <param name="chunkCount">How many blocks the child writes before the stream ends.</param>
+	/// <returns>The scripted standard-error stream, so a test can state how much was written.</returns>
+	private ScriptedStandardErrorStream ArrangeWorkerThatFloodsStandardError(int chunkCount) {
+		ScriptedStandardErrorStream standardError = new(ScriptedStandardErrorText(chunkCount));
+		IWorkerLease lease = Substitute.For<IWorkerLease>();
+		lease.ProcessId.Returns(4242);
+		lease.StandardInput.Returns(Stream.Null);
+		lease.StandardOutput.Returns(Stream.Null);
+		lease.StandardError.Returns(standardError);
+		// Without a future expiry the remaining budget is negative, the linked source cancels immediately,
+		// and the dispatch leaves through the budget path instead of the relay failure under test.
+		lease.BudgetExpiresAtUtc.Returns(DateTimeOffset.UtcNow.AddSeconds(30));
+		_supervisor
+			.SpawnContainedAsync(Arg.Any<WorkerSpawnRequest>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(lease));
+		_relay
+			.OpenAsync(Arg.Any<ITransport>(), Arg.Any<IParentMcpSession>(), Arg.Any<WorkerRelayOptions>(),
+				Arg.Any<CancellationToken>())
+			.Returns(_ => FailOnceTheStandardErrorIsDrained(standardError));
+		return standardError;
+	}
+
+	/// <summary>
+	/// Fails the relay only after the scripted stream has been read to its end, so the envelope a test
+	/// inspects is built from a buffer the pump has finished filling rather than from whatever it had
+	/// managed to append by then.
+	/// </summary>
+	/// <param name="standardError">The scripted stream to wait on.</param>
+	/// <returns>A task that always faults.</returns>
+	private static async Task<WorkerRelaySession> FailOnceTheStandardErrorIsDrained(
+		ScriptedStandardErrorStream standardError) {
+		await standardError.Drained.ConfigureAwait(false);
+		throw new IOException("the worker closed its transport before answering");
+	}
+
+	/// <summary>
+	/// Dispatches one worker call and refuses to wait forever for it — a drain that stopped consuming
+	/// would otherwise hang the whole run instead of failing one test.
+	/// </summary>
+	/// <param name="sut">The dispatcher under test.</param>
+	/// <returns>The tool result.</returns>
+	private static async Task<CallToolResult> DispatchAndAwaitTheAnswer(McpWorkerCallDispatcher sut) =>
+		await sut.DispatchAsync(
+			WorkerRoute("get-page"),
+			new CallToolRequestParams { Name = "get-page" },
+			Substitute.For<IParentMcpSession>(),
+			CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(30));
+
+	/// <summary>
+	/// Stands in for a worker's redirected standard error: it hands out a fixed payload in reads of at most
+	/// <see cref="ChunkSize"/> bytes that complete SYNCHRONOUSLY, then reports end of stream.
+	/// </summary>
+	/// <remarks>
+	/// <b><see cref="Drained"/> is what makes the content assertions deterministic.</b> It completes on the
+	/// end-of-stream read — the first read the drain issues after the whole payload was handed over — and
+	/// because every earlier read completed synchronously, the pump has already appended what it was given
+	/// by then. Without that signal a test would be racing a background pump and would fail intermittently
+	/// on a loaded machine rather than on a real defect.
+	/// </remarks>
+	private sealed class ScriptedStandardErrorStream : Stream {
+
+		/// <summary>Largest block handed over per read, matching the drain's own buffer size.</summary>
+		internal const int ChunkSize = 1024;
+
+		private readonly byte[] _payload;
+		private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private int _position;
+
+		/// <summary>Initializes a new instance of the <see cref="ScriptedStandardErrorStream"/> class.</summary>
+		/// <param name="text">The ASCII text the scripted worker writes to standard error.</param>
+		internal ScriptedStandardErrorStream(string text) {
+			_payload = Encoding.ASCII.GetBytes(text);
+		}
+
+		/// <summary>Gets a task completing when the reader has consumed the payload and reached end of stream.</summary>
+		internal Task Drained => _drained.Task;
+
+		/// <inheritdoc/>
+		public override bool CanRead => true;
+
+		/// <inheritdoc/>
+		public override bool CanSeek => false;
+
+		/// <inheritdoc/>
+		public override bool CanWrite => false;
+
+		/// <inheritdoc/>
+		public override long Length => _payload.Length;
+
+		/// <inheritdoc/>
+		public override long Position {
+			get => _position;
+			set => throw new NotSupportedException();
+		}
+
+		/// <inheritdoc/>
+		public override int Read(byte[] buffer, int offset, int count) =>
+			ReadCore(buffer.AsSpan(offset, count));
+
+		/// <inheritdoc/>
+		public override Task<int> ReadAsync(byte[] buffer, int offset, int count,
+			CancellationToken cancellationToken) =>
+			Task.FromResult(ReadCore(buffer.AsSpan(offset, count)));
+
+		/// <inheritdoc/>
+		public override ValueTask<int> ReadAsync(Memory<byte> buffer,
+			CancellationToken cancellationToken = default) =>
+			ValueTask.FromResult(ReadCore(buffer.Span));
+
+		/// <inheritdoc/>
+		public override void Flush() {
+		}
+
+		/// <inheritdoc/>
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+		/// <inheritdoc/>
+		public override void SetLength(long value) => throw new NotSupportedException();
+
+		/// <inheritdoc/>
+		public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+		private int ReadCore(Span<byte> destination) {
+			if (_position >= _payload.Length) {
+				_drained.TrySetResult();
+				return 0;
+			}
+			int take = Math.Min(Math.Min(destination.Length, ChunkSize), _payload.Length - _position);
+			_payload.AsSpan(_position, take).CopyTo(destination);
+			_position += take;
+			return take;
+		}
+	}
 }

@@ -59,7 +59,13 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	internal static readonly TimeSpan DefaultBudget = TimeSpan.FromSeconds(120);
 
 	/// <summary>How much of a failed worker's standard error is kept for the error envelope.</summary>
-	private const int StandardErrorTailLimit = 2000;
+	/// <remarks>
+	/// The single source of this number. It is surfaced on the envelope as
+	/// <c>worker-stderr-tail-chars</c> and named in the human-readable text whenever the tail was cut, so a
+	/// reader can tell a partial diagnosis from a whole one — nothing else, test assertions included, may
+	/// restate the literal.
+	/// </remarks>
+	internal const int StandardErrorTailLimit = 2000;
 
 	private readonly IWorkerProcessSupervisor _supervisor;
 	private readonly IWorkerChildTransportOwner _transportOwner;
@@ -389,14 +395,18 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// </summary>
 	/// <param name="toolName">Canonical tool name.</param>
 	/// <param name="budget">The elapsed budget.</param>
-	/// <param name="standardErrorTail">Tail of the worker's standard error, or <see langword="null"/>.</param>
+	/// <param name="standardErrorTail">
+	/// Bounded tail of the worker's standard error, or <see langword="null"/> when there is none.
+	/// </param>
 	/// <returns>The structured result.</returns>
-	internal static CallToolResult BudgetExpiredResult(string toolName, TimeSpan budget, string standardErrorTail) {
+	internal static CallToolResult BudgetExpiredResult(
+		string toolName, TimeSpan budget, WorkerStandardErrorTail standardErrorTail) {
 		string seconds = FormatSeconds(budget);
-		string text =
+		string text = WithStandardErrorBoundNote(
 			$"MCP tool '{toolName}' did not answer within its {seconds}s worker budget "
 			+ $"(error-class={BudgetExpiredErrorClass}), so clio terminated the worker process that was "
-			+ "running it. Nothing else in this environment was affected and the call is safe to retry.";
+			+ "running it. Nothing else in this environment was affected and the call is safe to retry.",
+			standardErrorTail);
 		JsonObject payload = new() {
 			["success"] = false,
 			["error-class"] = BudgetExpiredErrorClass,
@@ -426,17 +436,20 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// <param name="toolName">Canonical tool name.</param>
 	/// <param name="reason">Short description of what failed.</param>
 	/// <param name="detail">Underlying exception message, redacted before it is surfaced.</param>
-	/// <param name="standardErrorTail">Tail of the worker's standard error, or <see langword="null"/>.</param>
+	/// <param name="standardErrorTail">
+	/// Bounded tail of the worker's standard error, or <see langword="null"/> when there is none.
+	/// </param>
 	/// <returns>The structured result.</returns>
 	internal static CallToolResult RelayFailureResult(
-		string toolName, string reason, string detail, string standardErrorTail) {
+		string toolName, string reason, string detail, WorkerStandardErrorTail standardErrorTail) {
 		string redactedDetail = string.IsNullOrWhiteSpace(detail)
 			? null
 			: SensitiveErrorTextRedactor.Redact(detail);
-		string text =
+		string text = WithStandardErrorBoundNote(
 			$"MCP tool '{toolName}' was not executed: {reason} "
 			+ $"(error-class={RelayFailureErrorClass})."
-			+ (redactedDetail is null ? string.Empty : $" {redactedDetail}");
+			+ (redactedDetail is null ? string.Empty : $" {redactedDetail}"),
+			standardErrorTail);
 		JsonObject payload = new() {
 			["success"] = false,
 			["error-class"] = RelayFailureErrorClass,
@@ -454,21 +467,83 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		};
 	}
 
-	private static void AttachWorkerDiagnostics(JsonObject payload, string standardErrorTail) {
-		if (!string.IsNullOrWhiteSpace(standardErrorTail)) {
-			payload["worker-stderr"] = SensitiveErrorTextRedactor.Redact(standardErrorTail);
+	/// <summary>
+	/// Appends the truncation caveat to a human-readable failure sentence when the worker wrote more
+	/// standard error than <see cref="StandardErrorTailLimit"/> keeps.
+	/// </summary>
+	/// <param name="text">The failure sentence.</param>
+	/// <param name="standardErrorTail">The bounded tail, or <see langword="null"/> when there is none.</param>
+	/// <returns>The sentence, with the caveat when one is owed.</returns>
+	/// <remarks>
+	/// The structured marker alone is not enough. A person reads the sentence — it is what lands in a chat
+	/// transcript and in a bug report — and a reader handed the END of a 40 KB stack trace with nothing
+	/// saying so sees text starting mid-frame, cannot tell that the exception line is missing, and
+	/// investigates whatever the surviving frames happen to name.
+	/// </remarks>
+	private static string WithStandardErrorBoundNote(string text, WorkerStandardErrorTail standardErrorTail) {
+		if (!CarriesStandardError(standardErrorTail) || !standardErrorTail.Truncated) {
+			return text;
 		}
+		return text
+			+ " The worker wrote more to standard error than clio keeps, so worker-stderr below holds only"
+			+ $" its LAST {StandardErrorTailLimit} characters: it starts mid-stream, and the first line of the"
+			+ " failure — usually the one that names the cause — is not in it.";
 	}
+
+	private static void AttachWorkerDiagnostics(JsonObject payload, WorkerStandardErrorTail standardErrorTail) {
+		if (!CarriesStandardError(standardErrorTail)) {
+			return;
+		}
+		payload["worker-stderr"] = SensitiveErrorTextRedactor.Redact(standardErrorTail.Text);
+		if (!standardErrorTail.Truncated) {
+			// Deliberately absent rather than false: an agent has to be able to read "no marker" as "this is
+			// the worker's whole diagnosis", and a field that is always there says nothing by being there.
+			return;
+		}
+		payload["worker-stderr-truncated"] = true;
+		payload["worker-stderr-tail-chars"] = StandardErrorTailLimit;
+	}
+
+	private static bool CarriesStandardError(WorkerStandardErrorTail standardErrorTail) =>
+		standardErrorTail is not null && !string.IsNullOrWhiteSpace(standardErrorTail.Text);
+
+	/// <summary>
+	/// One bounded snapshot of a worker's standard error: the text that was kept, and whether keeping it
+	/// meant dropping anything.
+	/// </summary>
+	/// <param name="Text">The kept text — the LAST <see cref="StandardErrorTailLimit"/> characters at most.</param>
+	/// <param name="Truncated">
+	/// <see langword="true"/> when the worker wrote more than the bound, so <paramref name="Text"/> starts
+	/// mid-stream and the first line of the failure is not in it.
+	/// </param>
+	/// <remarks>
+	/// The two values travel together, taken under ONE lock, because they are only meaningful together: a
+	/// caller that read the text and then asked a separate "was it trimmed?" member could be answered
+	/// about a later state of the buffer than the one it is describing.
+	/// </remarks>
+	internal sealed record WorkerStandardErrorTail(string Text, bool Truncated);
 
 	/// <summary>
 	/// Continuously drains one worker's standard error, keeping a bounded tail for diagnostics.
 	/// </summary>
 	/// <remarks>
+	/// <para>
 	/// <b>Draining is not diagnostics, it is liveness.</b> A worker that fills its standard-error pipe
 	/// buffer BLOCKS on the write and goes silent, which the parent then observes as a call that never
 	/// answers — a hang, attributed to the stand, caused by clio. The bounded tail is the useful
 	/// by-product: without it a worker that fails at startup yields only "the worker closed its transport
 	/// before answering".
+	/// </para>
+	/// <para>
+	/// <b>Private and nested because there is exactly ONE lease consumer today</b> — the dispatch above is
+	/// the only caller of <see cref="IWorkerProcessSupervisor.SpawnContainedAsync"/>. Stages 7 and 8 add
+	/// more, and every one of them has to drain or it reintroduces the block. When the second consumer
+	/// appears, promote this: it must NOT simply be made public behind an
+	/// <c>IWorkerStandardErrorDrain</c> interface, because CLIO001 flags a <c>Clio.*</c> type carrying an
+	/// interface named exactly <c>I&lt;TypeName&gt;</c> at every <c>new</c> site, and this one is created
+	/// per lease from a live stream no container can supply. Route it through a <c>*Factory</c> class,
+	/// which the analyzer exempts.
+	/// </para>
 	/// </remarks>
 	private sealed class WorkerStandardErrorDrain {
 
@@ -476,6 +551,7 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		private readonly int _limit;
 		private readonly StringBuilder _tail = new();
 		private readonly object _tailLock = new();
+		private long _observedCharacters;
 		private Task _pump;
 
 		internal WorkerStandardErrorDrain(Stream stream, int limit) {
@@ -495,6 +571,10 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 					int read;
 					while ((read = await reader.ReadAsync(buffer, CancellationToken.None).ConfigureAwait(false)) > 0) {
 						lock (_tailLock) {
+							// Counted BEFORE the trim and never reset: this running total against the limit is
+							// the only surviving evidence that anything was dropped — a front-trimmed buffer
+							// sitting at its bound looks identical whether or not anything was cut from it.
+							_observedCharacters += read;
 							_tail.Append(buffer, 0, read);
 							if (_tail.Length > _limit) {
 								_tail.Remove(0, _tail.Length - _limit);
@@ -509,9 +589,11 @@ public sealed class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 			});
 		}
 
-		internal string Tail() {
+		internal WorkerStandardErrorTail Tail() {
 			lock (_tailLock) {
-				return _tail.Length == 0 ? null : _tail.ToString().Trim();
+				return _tail.Length == 0
+					? null
+					: new WorkerStandardErrorTail(_tail.ToString().Trim(), _observedCharacters > _limit);
 			}
 		}
 
