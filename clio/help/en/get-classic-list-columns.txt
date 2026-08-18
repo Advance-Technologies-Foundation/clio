@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-classic-list-columns - Resolve the effective default columns of a Classic section list
+
+SYNOPSIS
+    clio get-classic-list-columns [OPTIONS]
+
+DESCRIPTION
+    Resolves the default visible column set of a Classic section through read-only
+    Creatio APIs. Static columns declared by getGridDataColumns or
+    initColumnsConfig are returned with source schema-default. When the section
+    does not declare static columns, the entity primary display column is
+    returned with source entity-default. If neither source exists, the command
+    succeeds with source none and an empty columns array.
+
+    The command does not read or write user profile data and does not change
+    packages, schemas, or application data.
+
+OPTIONS
+    --schema-name                      Classic section schema name, for example
+                                       'ContactSectionV2' (required)
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name
+
+    --Maintainer             -m       Maintainer name
+
+EXAMPLES
+    clio get-classic-list-columns -e dev --schema-name ContactSectionV2
+        Resolve ContactSectionV2 list columns and print the source-aware JSON result
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-classic-page-sources - Assemble the Classic page-source migration manifest
+    list-entity-client-schemas - Resolve Classic sections and edit pages for an entity
