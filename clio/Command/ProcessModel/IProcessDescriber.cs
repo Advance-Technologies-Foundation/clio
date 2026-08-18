@@ -155,6 +155,14 @@ public class DescribeProcessResult {
 	/// <summary>Process-level parameters (inputs / variables).</summary>
 	[JsonPropertyName("parameters")]
 	public List<DescribedParameter> Parameters { get; set; }
+
+	/// <summary>
+	/// Captures every other field the server returns at the graph root so the description round-trips
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
+	/// command output verbatim instead of being discarded without a trace.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>
@@ -231,6 +239,23 @@ public sealed class DescribedElement {
 	public DescribedFilter Filter { get; set; }
 
 	/// <summary>
+	/// For a Send email element (<c>EmailTemplateUserTask</c>): its configuration decoded back into the descriptor
+	/// vocabulary. <c>null</c> for other element kinds and when the server (an older <c>CrtProcessBuilder</c>) does
+	/// not report it. Round-trips into a <c>create</c>/<c>modify</c> <c>email</c> block with TWO qualifications: a
+	/// FORMULA subject is reported for reading only — describe echoes the parameter's stored value whatever its
+	/// source, and feeding a <c>[#...#]</c> subject back is refused by the write path's constant guard, so re-enter
+	/// it through <c>addMapping</c> with an <c>expression</c> source; and recipients re-enter as MATCH-OR-APPEND
+	/// entries (an identical one is a no-op, a new one appends, none can be removed).
+	/// <para>The block reports EFFECTIVE values: a field the element inherits untouched from the
+	/// <c>EmailTemplateUserTask</c> schema (a platform default such as <c>ignoreErrors</c>) comes back like a
+	/// configured one, because it is the value the element will actually use. So the block's PRESENCE is not
+	/// evidence that anyone configured this element — do not read "importance is already normal" as a deliberate
+	/// choice, and do not use "no block" as the unconfigured signal.</para>
+	/// </summary>
+	[JsonPropertyName("email")]
+	public DescribedEmail Email { get; set; }
+
+	/// <summary>
 	/// The element's BOUND host-entity connections ("Connected to") — which records the Activity it creates is
 	/// attached to. <c>null</c> when the element has none, and also when the server is an older
 	/// <c>CrtProcessBuilder</c> that does not report them.
@@ -251,12 +276,107 @@ public sealed class DescribedElement {
 	/// answer that matters — it marks a process whose connections persist, compile and run green while writing
 	/// nothing — and it has TWO causes with different fixes: the user task's runtime never writes connections
 	/// (change the element kind), or this element's activity-creation gate is shut (set <c>CreateActivity</c> to a
-	/// constant true). <c>null</c> means NOT ESTABLISHED (not a user task, an unresolvable schema, or a user task
+	/// constant true — or, on a Send email element, switch it to manual send, which creates the activity
+	/// unconditionally and needs no <c>CreateActivity</c> write). <c>null</c> means NOT ESTABLISHED (not a user task, an unresolvable schema, or a user task
 	/// outside the supported set), so it is not a licence either. Both <c>false</c> and <c>null</c> mean
 	/// <c>setConnections</c> is refused on that element; only <c>true</c> means it is accepted.
 	/// </summary>
 	[JsonPropertyName("writesConnectionsAtRuntime")]
 	public bool? WritesConnectionsAtRuntime { get; set; }
+
+	/// <summary>
+	/// Captures every other field the server reports on an element so the description round-trips losslessly:
+	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
+	/// verbatim instead of being discarded without a trace.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The email configuration of a Send email element, read back from its parameters.</summary>
+public sealed class DescribedEmail {
+	/// <summary>Send mode: <c>auto</c> or <c>manual</c>; null when not set on the element.</summary>
+	[JsonPropertyName("mode")]
+	public string Mode { get; set; }
+
+	/// <summary>The sender formula (<c>[#Lookup.{objectUId}.{mailboxId}#]</c>); null when no sender is set.</summary>
+	[JsonPropertyName("sender")]
+	public string Sender { get; set; }
+
+	/// <summary>Human-readable sender identity (mailbox name / address) when the schema carries one.</summary>
+	[JsonPropertyName("senderDisplay")]
+	public string SenderDisplay { get; set; }
+
+	/// <summary>The subject — a plain constant or a formula expression; null when not set.</summary>
+	[JsonPropertyName("subject")]
+	public string Subject { get; set; }
+
+	/// <summary>
+	/// True when the element carries a custom-message body (the body HTML itself is not echoed).
+	/// <para>Nullable defensively, NOT because a known server omits it: the flag is a non-nullable <c>bool</c>
+	/// DataMember introduced in the same server commit as the email block, so every build that reports the block
+	/// reports the flag too. <c>null</c> therefore means the flag was absent, which no shipped server produces —
+	/// treat it as unknown rather than <c>false</c> if it ever appears. The degradation that DOES occur is the whole
+	/// block arriving null, which is what an older package produces.</para>
+	/// </summary>
+	[JsonPropertyName("hasBody")]
+	public bool? HasBody { get; set; }
+
+	/// <summary>Importance token (<c>none</c>/<c>normal</c>/<c>high</c>/<c>low</c>); null when not set.</summary>
+	[JsonPropertyName("importance")]
+	public string Importance { get; set; }
+
+	/// <summary>The ignore-sending-errors flag; null when not set on the element.</summary>
+	[JsonPropertyName("ignoreErrors")]
+	public bool? IgnoreErrors { get; set; }
+
+	/// <summary>To recipients — the element's dynamic <c>Recipient&lt;N&gt;</c> parameters that carry a value.</summary>
+	[JsonPropertyName("to")]
+	public List<DescribedParameter> To { get; set; }
+
+	/// <summary>Cc recipients — the dynamic <c>CopyRecipient&lt;N&gt;</c> parameters that carry a value.</summary>
+	[JsonPropertyName("cc")]
+	public List<DescribedParameter> Cc { get; set; }
+
+	/// <summary>Bcc recipients — the dynamic <c>BlindCopyRecipient&lt;N&gt;</c> parameters that carry a value.</summary>
+	[JsonPropertyName("bcc")]
+	public List<DescribedParameter> Bcc { get; set; }
+
+	/// <summary>The manual-mode performer; null when the element carries no performer assignment.</summary>
+	[JsonPropertyName("performer")]
+	public DescribedEmailPerformer Performer { get; set; }
+
+	/// <summary>
+	/// Captures every other field the server reports inside the email block so the description round-trips
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a template
+	/// selection, a body format, an attachment list — reaches the command output verbatim instead of being
+	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The manual-mode performer of a Send email element ("Who performs the task?").</summary>
+public sealed class DescribedEmailPerformer {
+	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary>For user/manager: the contact formula on the <c>OwnerId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("contact")]
+	public string Contact { get; set; }
+
+	/// <summary>For role: the role formula on the <c>RoleId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("role")]
+	public string Role { get; set; }
+
+	/// <summary>Human-readable role name when the schema carries one.</summary>
+	[JsonPropertyName("roleDisplay")]
+	public string RoleDisplay { get; set; }
+
+	/// <summary>The "open the execution page automatically" flag; null when not set on the element.</summary>
+	[JsonPropertyName("showPage")]
+	public bool? ShowPage { get; set; }
 }
 
 /// <summary>
@@ -269,9 +389,12 @@ public sealed class DescribedElement {
 /// in the same shape <c>setConnections</c> accepts. A macro the server does not recognise arrives as
 /// <see cref="Expression"/> carrying the original text, so nothing is lost and a future platform macro degrades
 /// instead of breaking the read.
-/// <para>Every member is declared here on purpose. The server drops unknown JSON members silently, and so does
-/// this side: a field the server reports and this type does not declare is discarded without a trace, which is the
-/// same silent-loss failure the connections feature exists to remove.</para>
+/// <para>Every member is declared here on purpose, but that is NOT a substitute for an overflow bag: a field the
+/// server reports and this type does not declare is still discarded without a trace, which is the same silent-loss
+/// failure the connections feature exists to remove. Unlike <see cref="DescribeProcessResult"/>,
+/// <see cref="DescribedElement"/> and <see cref="DescribedEmail"/>, this type has no
+/// <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
+/// remarks endorse. Add one here when that ticket is next touched.</para>
 /// </remarks>
 public sealed class DescribedConnection {
 	/// <summary>The host-entity column the connection binds (for example <c>Account</c>).</summary>

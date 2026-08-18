@@ -51,6 +51,7 @@ public sealed class ManagerMapResolveDataIdTests {
 	[TestCase("activityUserTask", ManagerMap.EventType.UserTask)]
 	[TestCase("userTask", ManagerMap.EventType.UserTask)]
 	[TestCase("emailTemplateUserTask", ManagerMap.EventType.UserTask)]
+	[TestCase("sendEmail", ManagerMap.EventType.UserTask)]
 	[TestCase("formulaTask", ManagerMap.EventType.FormulaTask)]
 	[TestCase("scriptTask", ManagerMap.EventType.ScriptTask)]
 	[TestCase("webService", ManagerMap.EventType.WebServiceTask)]
