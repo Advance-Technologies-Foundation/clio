@@ -136,6 +136,30 @@ public sealed record WorkerRelayOptions {
 	/// execution boundary exists to remove. Lowering this in a test is expected; removing the bound is not.
 	/// </remarks>
 	public TimeSpan ReadLoopShutdownGrace { get; init; } = TimeSpan.FromSeconds(5);
+
+	/// <summary>
+	/// Gets how long <c>WorkerRelaySession.ProbeLivenessAsync</c> waits for the worker's <c>tools/list</c>
+	/// answer before reporting the worker as not answering.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The probe needs a bound OF ITS OWN, because the one worker state it exists to catch is a worker whose
+	/// stdout pipe is open and which answers nothing: that worker never closes the pipe and never responds, so
+	/// a probe with no bound waits forever — and the thread that was meant to order the kill is the stuck one.
+	/// A probe that hangs on the worker it is asking about reproduces, one process down, the exact wedge this
+	/// execution boundary exists to remove.
+	/// </para>
+	/// <para>
+	/// The value is set against the measured cost of the alternative rather than picked. Probing exists only
+	/// because reusing a live worker beats spawning a new one, and a spawn plus <c>initialize</c> is p50
+	/// <b>2.763 s</b> on Windows Server 2022 (ADR §2.4; ~0.65 s is the macOS best case, §1.2). So a probe
+	/// allowed to run longer than a respawn has no reason to exist at all, which puts the ceiling at 2.763 s;
+	/// 2 s sits under it while still leaving a busy-but-healthy worker — one draining a tool result, one
+	/// answering a sampling round trip — room to serve a <c>tools/list</c> that costs it no I/O. A caller with
+	/// a tighter budget than the default passes its own bound per call instead of editing this.
+	/// </para>
+	/// </remarks>
+	public TimeSpan LivenessProbeTimeout { get; init; } = TimeSpan.FromSeconds(2);
 }
 
 /// <summary>

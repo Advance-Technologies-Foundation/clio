@@ -8791,3 +8791,21 @@ spec/mcp-worker-execution-boundary/mcp-worker-execution-boundary-credential-thre
 spec/stories/story-mcp-worker-execution-boundary-6.md, -7.md, spec/prd/prd-mcp-worker-execution-boundary.md
 Impact: the two review bodies are now answerable point by point, with citations anchored on symbols rather
 than line numbers -- five files in this feature moved by tens to hundreds of lines during one session.
+
+## 2026-08-18 16:30 – Relay: probe bound, cancel notification, mid-frame retirement, IL guard
+Context: ENG-95262 stories 15, 14, 18 and 16, done in one pass because 14 and 18 edit the same try/catch.
+Decision: the liveness probe gets its own 2 s bound, justified against ADR 2.4's measured 2.763 s spawn rather
+than chosen; a cancelled-but-already-sent request tells the worker through notifications/cancelled on the child
+leg; a send that did NOT complete retires the session instead of leaving it writable.
+Discovery: SDK 2.2.0's StreamClientSessionTransport DOES serialise writes behind a SemaphoreSlim, so no
+relay-side send gate is needed -- but it passes the caller's token to the payload write, the newline write and
+the flush SEPARATELY, so cancellation between them strands an unterminated line and the next writer's JSON is
+appended to it. Measured by decoding the shipped IL, not read from documentation. The same probe corrected the
+DTO member name (RequestId, not Id).
+Also: a signature-only guard is not as blind as the story assumed -- a local crossing an await is hoisted into
+an async state-machine field and IS visible. The shapes that escape are the non-surviving await and the
+discarded call, which is why the guard now reads method bodies.
+Files: clio/Command/McpServer/Relay/{WorkerMcpRelay,IWorkerMcpRelay,WorkerChildTransportOwner}.cs,
+clio.tests/Command/McpServer/WorkerMcpRelayTests.cs
+Impact: the reuse rule and the SDK write guarantee are now written where the code is, and the McpClient guard
+can actually fail -- proven by inserting one line, watching it go red naming the member, and removing it.

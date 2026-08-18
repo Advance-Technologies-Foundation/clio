@@ -115,6 +115,24 @@ public sealed class WorkerMcpRelay(ILogger logger) : IWorkerMcpRelay {
 /// residual loss is announced rather than assumed away.
 /// </para>
 /// <para>
+/// <b>What a cancelled call leaves behind, and the one rule that decides whether this session may be used
+/// again.</b> The SDK's <c>StreamClientSessionTransport</c> serialises a COMPLETED send behind its own
+/// <c>_sendLock</c>, not an atomic one: it takes the caller's token separately for the payload write, the
+/// newline write and the flush (read off the shipped 2.2.0 IL — see
+/// <see cref="IWorkerChildTransportOwner"/>). So a token that fires mid-send releases that lock with an
+/// UNTERMINATED line on the child's stdin, and the next writer's JSON is appended to it. Hence:
+/// <list type="bullet">
+/// <item><description>a session whose send did NOT complete is RETIRED — never written to again, its
+/// closure set, its process reclaimed by the supervisor's lease;</description></item>
+/// <item><description>a session whose call was cancelled CLEANLY (the request was written) is reusable, but
+/// only after a bounded <see cref="ProbeLivenessAsync"/> — the worker was told through
+/// <c>notifications/cancelled</c>, and a worker that ignores that is still busy.</description></item>
+/// </list>
+/// There is no worker pool yet: today every call gets its own worker and the supervisor's kill is the
+/// bound. This rule is what a pool would have to obey, written where the state it describes lives; do not
+/// read it as an invitation to build one here.
+/// </para>
+/// <para>
 /// <b>Not a raw pass-through in both directions.</b> A child request is bridged through typed parent API
 /// rather than forwarded raw, because the child's and the parent's request-id spaces are independent — a
 /// raw forward would route the client's response to the parent session's own router instead of back into
@@ -231,16 +249,52 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 	/// Checks that the worker is still answering, by listing its tools.
 	/// </summary>
 	/// <remarks>
+	/// <para>
 	/// <c>tools/list</c> and never <c>ping</c>: <c>ping</c> is not served on protocol revision
 	/// <c>2026-07-28</c> (ADR §3.1b), and ClioRing moved its own health probe to <c>tools/list</c> in the
 	/// same SDK upgrade for that reason.
+	/// </para>
+	/// <para>
+	/// A probe that runs out of its bound abandons a request the worker already has, so the worker is told —
+	/// the same <c>notifications/cancelled</c> every abandoned request emits (see <see cref="RequestAsync"/>).
+	/// That is deliberate: a worker still composing a tool list nobody will read should stop, and a worker
+	/// that ignores the notification is exactly the one this verdict is about.
+	/// </para>
 	/// </remarks>
 	/// <param name="cancellationToken">Cancels the probe.</param>
-	/// <returns><c>true</c> when the worker answered; <c>false</c> when it failed or closed.</returns>
-	public async Task<bool> ProbeLivenessAsync(CancellationToken cancellationToken) {
+	/// <param name="timeout">
+	/// How long to wait for the worker's answer, overriding
+	/// <see cref="WorkerRelayOptions.LivenessProbeTimeout"/> for this call only. Omit it to use the session's
+	/// own bound; a caller whose remaining budget is smaller than that bound passes it here.
+	/// </param>
+	/// <returns>
+	/// <c>true</c> when the worker answered; <c>false</c> when it failed, when it closed its pipe, OR when it
+	/// did not answer inside the probe's own bound. The third outcome is the one the probe exists for: a
+	/// worker with an open pipe that answers nothing is indistinguishable from a healthy one to a call that
+	/// never returns.
+	/// </returns>
+	/// <exception cref="OperationCanceledException">
+	/// <paramref name="cancellationToken"/> fired. This is deliberately NOT reported as <c>false</c>: a
+	/// cancelled probe learned nothing about the worker, and collapsing the two makes a shutdown look like a
+	/// dead worker. If the caller's token and the probe's own bound fire together, the caller wins.
+	/// </exception>
+	public async Task<bool> ProbeLivenessAsync(CancellationToken cancellationToken, TimeSpan? timeout = null) {
+		// The bound is the probe's OWN, linked to the caller's token rather than replacing it. Without it the
+		// probe completes only when the worker answers, when its pipe closes, or when the caller brought a
+		// token — and the worker this question exists to catch does none of the first two, so the thread that
+		// was meant to order the kill is the one that hangs.
+		using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		bounded.CancelAfter(timeout ?? _options.LivenessProbeTimeout);
 		try {
-			await ListToolsAsync(cancellationToken).ConfigureAwait(false);
+			await ListToolsAsync(bounded.Token).ConfigureAwait(false);
 			return true;
+		}
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+			// The probe's own bound expired. That is a VERDICT about the worker — "it did not answer in time" —
+			// and not a cancellation, so it is reported like every other failure the probe observes. The filter
+			// is what keeps the two exits apart, and it settles the tie the right way: if the caller's token
+			// fired too, this guard is false and the cancellation below wins.
+			return false;
 		}
 		catch (OperationCanceledException) {
 			throw;
@@ -256,9 +310,17 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 	/// </summary>
 	/// <param name="method">The JSON-RPC method.</param>
 	/// <param name="parameters">The raw parameters node.</param>
-	/// <param name="cancellationToken">Cancels this request only.</param>
+	/// <param name="cancellationToken">
+	/// Cancels this request only. Two things follow from it firing, both described in the type remarks: the
+	/// worker is TOLD through <c>notifications/cancelled</c> when the request had already been written, and
+	/// the session is RETIRED when it had not — a send that did not complete may have left half a frame on
+	/// the child's stdin.
+	/// </param>
 	/// <returns>The raw result node the worker returned.</returns>
-	/// <exception cref="WorkerRelayException">The worker answered an error, or closed its pipe.</exception>
+	/// <exception cref="WorkerRelayException">
+	/// The worker answered an error, closed its pipe, or the session was retired by an earlier incomplete
+	/// send.
+	/// </exception>
 	public async Task<JsonNode> RequestAsync(string method, JsonNode parameters,
 		CancellationToken cancellationToken) {
 		if (string.IsNullOrWhiteSpace(method)) {
@@ -281,15 +343,40 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 				((WorkerRelaySession, string, CancellationToken))state;
 			session.TakePending(key)?.TrySetCanceled(token);
 		}, (this, correlationKey, cancellationToken));
+		// The one fact both failure paths below turn on. The SDK's transport serialises a COMPLETED send, not
+		// an atomic one, so "the request reached the worker" and "the caller gave up" are different states with
+		// opposite correct answers — see the type remarks.
+		bool sent = false;
 		try {
 			await _childTransport
 				.SendMessageAsync(new JsonRpcRequest { Id = id, Method = method, Params = parameters },
 					cancellationToken)
 				.ConfigureAwait(false);
+			sent = true;
 			return await slot.Task.ConfigureAwait(false);
 		}
 		catch (Exception) {
 			TakePending(correlationKey);
+			if (!sent) {
+				// RETIRED, not repaired. The send was abandoned somewhere inside serialize → payload write →
+				// newline write → flush, each of which takes this very token, so the child's stdin may now hold
+				// an unterminated line; the next writer's JSON would be appended to it and the worker would get
+				// one frame it cannot parse. Setting the closure makes every later request fail at the guard
+				// above, and the supervisor's lease reclaims the process. Passing CancellationToken.None to the
+				// send instead is NOT the fix: this await is inline, so an uncancellable write against a full
+				// pipe hangs the caller past its own budget — the wedge, one layer up.
+				FailAllPending(new WorkerRelayException(
+					$"The relay session was retired: the '{method}' request was not written to the worker "
+					+ "completely, so its transport may hold a partial JSON-RPC frame."));
+			}
+			else if (cancellationToken.IsCancellationRequested && !IsClosed
+				&& !string.Equals(method, InitializeMethod, StringComparison.Ordinal)) {
+				// The worker HAS the request and nobody is waiting for the answer any more. A per-call worker
+				// dies with the supervisor's kill either way, but a sticky one would go on executing the
+				// abandoned tool, go on holding its Creatio session, and then be handed the next call on the
+				// same transport with the old one still in flight.
+				NotifyWorkerOfCancellation(id, method);
+			}
 			throw;
 		}
 	}
@@ -577,6 +664,60 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 			Id = id,
 			Error = new JsonRpcErrorDetail { Code = code, Message = message }
 		}, CancellationToken.None).ConfigureAwait(false);
+
+	/// <summary>
+	/// Gets a value indicating whether the session has already been closed or retired.
+	/// </summary>
+	/// <remarks>
+	/// Read under the same lock that writes the closure, because it gates a WRITE to the child: telling a
+	/// worker its call was cancelled over a transport that is closing achieves nothing and would only surface
+	/// as an exception in an unrelated place.
+	/// </remarks>
+	private bool IsClosed {
+		get {
+			lock (_pendingRequestsLock) {
+				return _closure is not null;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Tells the worker that the parent abandoned one of its requests.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// FIRE AND FORGET, and off the caller's thread, because the caller's cancellation must not be delayed by
+	/// a pipe write — a client that gave up waiting is entitled to be released immediately. It is also
+	/// deliberately NOT emitted from the <see cref="CancellationToken.Register"/> callback: that callback runs
+	/// synchronously on whichever thread cancelled the token, so a write to a closing transport would surface
+	/// there rather than here.
+	/// </para>
+	/// <para>
+	/// Sent under the session lifetime token rather than the caller's, which has just fired. Its own failure
+	/// is swallowed: the worker may already have been killed by the supervisor's lease, and a notification
+	/// nobody can receive is not a failure of the call that was cancelled.
+	/// </para>
+	/// </remarks>
+	/// <param name="id">The request id the relay issued for the abandoned call.</param>
+	/// <param name="method">The abandoned method, named in the reason so a worker log says what was dropped.</param>
+	private void NotifyWorkerOfCancellation(RequestId id, string method) {
+		JsonNode payload = JsonSerializer.SerializeToNode(
+			new CancelledNotificationParams {
+				RequestId = id,
+				Reason = $"The parent abandoned its '{method}' request."
+			}, McpJsonUtilities.DefaultOptions);
+		_ = Task.Run(async () => {
+			try {
+				await _childTransport.SendMessageAsync(new JsonRpcNotification {
+					Method = NotificationMethods.CancelledNotification,
+					Params = payload
+				}, _lifetime.Token).ConfigureAwait(false);
+			}
+			catch (Exception) {
+				// See the remarks: an unreachable worker is not this call's failure.
+			}
+		}, CancellationToken.None);
+	}
 
 	private TaskCompletionSource<JsonNode> TakePending(string correlationKey) {
 		lock (_pendingRequestsLock) {

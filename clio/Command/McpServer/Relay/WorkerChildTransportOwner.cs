@@ -29,6 +29,26 @@ namespace Clio.Command.McpServer.Relay;
 /// everything the relay measurements exercised — live in that shared base; the stdio subclass only adds
 /// the process ownership this design must not have.
 /// </para>
+/// <para>
+/// <b>Concurrent writers: measured, not assumed — and the guarantee is narrower than it looks.</b> The relay
+/// writes to one child from several places at once (<c>WorkerRelaySession.RequestAsync</c> on the caller's
+/// thread; <c>HandshakeAsync</c>; <c>AnswerChildRequestAsync</c> and <c>RespondWithErrorAsync</c>, both
+/// dispatched off the read loop so a slow client cannot stall notification forwarding; and the
+/// <c>notifications/cancelled</c> emit on a canceller's path), so whether the transport serialises writes is
+/// load-bearing. Read off the shipped <b>SDK 2.2.0</b> assembly (<c>ModelContextProtocol.Core</c>
+/// 2.2.0+6fa3825): <c>StreamClientSessionTransport.SendMessageAsync</c> holds a
+/// <c>SemaphoreSlim _sendLock</c> — taken through <c>SynchronizationExtensions.LockAsync(_sendLock, token)</c>
+/// — across serialize, the payload <c>WriteAsync</c>, the newline <c>WriteAsync</c> and the flush. So NO send
+/// gate is needed in the relay, and adding one would buy nothing.
+/// </para>
+/// <para>
+/// The guarantee is per-COMPLETED-send, though, and that distinction is the whole of it. Each of those three
+/// awaits takes the CALLER's token, so a token that fires between the payload write and the newline write
+/// leaves an unterminated line on the child's stdin and releases the lock anyway; the next writer's JSON then
+/// lands on the same line, the worker gets one frame it cannot parse, and it answers nothing — which reads as
+/// a sick environment rather than as a cancelled call. The relay's answer is to RETIRE a session whose send
+/// did not complete, never to write to that transport again; see the <c>WorkerRelaySession</c> remarks.
+/// </para>
 /// </remarks>
 public interface IWorkerChildTransportOwner {
 
