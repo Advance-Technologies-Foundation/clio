@@ -358,3 +358,53 @@ Note what this does and does not cover: it measures the platform semantic and th
 Windows. That clio's `WriteOwnerOnlyTextToFileAtomic` actually routes through that policy is a separate
 claim, and it is the one the substituted-move unit tests pin. Together they close the gap; neither does
 alone.
+
+
+## AC-03 ANSWERED 2026-08-19 by TeamCity 15895074 — and it found the defect underneath
+
+**3 failed / 496 passed / 9 ignored**, against this branch's previous 46 / 470 / 98 and the master
+baseline's 4 / 585 / 10.
+
+The ignored count was always the tell, and it is the one that settles this story: **ninety-eight became
+nine**. Tests do not skip because a feature regressed; they skip because the environment they need is
+unreachable. Every "clio settings bootstrap is broken" failure is gone — all twenty-four of them.
+
+Two things about how that number was obtained, neither incidental. The first launch died in three
+minutes at the Deploy step with `InstallBundlePackages failed!`, and a run somebody else had launched
+failed with byte-identical text — job-wide product breakage, not this branch — so it was relaunched
+pinned to the product build the master baseline itself used. And unlike run 15893259, this one can be
+read as a delta at all.
+
+### The gate test still fails, and that is the finding rather than a disappointment
+
+`AppSettings_Should_YieldAWholeCatalog_When_ReadDuringRegWebAppWrites` failed again — now in its OWN
+private home, on `cat-c`, with `The process cannot access the file because it is being used by another
+process`.
+
+That is not the old contention. Its writes no longer touch the shared catalog, so the reader fighting
+the writer is the test's own loop — exactly what it was written to arrange. **The test is finally
+measuring what it was built to measure, and what it found is real:**
+`SettingsRepository.CommitSettingsFile` publishes with `File.Replace` and `File.Move(overwrite: true)`
+and has no retry — the identical Windows publish a reader's `FileShare.Read` handle denies, in a second
+place.
+
+**So both of this story's original readings held a piece of the truth, and the order mattered.**
+Hypothesis 2 — "the tests are flaky on the build host" — is wrong. Hypothesis 1 — "the gate does not
+hold for the settings catalogue" — is **right**, and was unprovable until the inert isolation was
+removed, because while those registrations were landing in the shared file the failure looked like
+fixtures fighting each other. Fixing the test's targeting is what made its subject visible.
+
+Fixed with the policy already measured on Windows for the browser-session cache.
+`SettingsFileChangedException` is deliberately not caught: it is the optimistic-concurrency signal
+saying another writer won, which is a real answer the caller must see rather than something to spin on.
+`TemporaryClioSettingsOverride` — the bare read-modify-write from which 18 of the original 46 failures
+were raised — takes the same bounded retry.
+
+### The other two failures, named rather than folded into a count
+
+`ApplicationSectionCreate_ConcurrentCallsAgainstOneApp` fails on `Unauthorized ***** for
+[redacted-uri]` — an auth failure against the stand, not contention. `PageSyncTool` (immediate
+observability) and `PageUpdateTool` (out-of-band conflict detection) touch `update-page` and
+`sync-pages`, which are in **no** worker cohort and therefore execute exactly as they do on master.
+Neither belongs to this change, and neither has been established as pre-existing versus environmental —
+that needs a master run on the same pinned product build, and it is tracked separately.

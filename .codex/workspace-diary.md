@@ -9014,3 +9014,36 @@ Discovery 2: the exclusion and the sticky key are different cardinalities and bo
 Files: clio/Command/McpServer/Relay/{StickyWorkerRegistry,StickyWorkerPoll,SharedResourceReservation,WorkerOperationSignalContract,WorkerStandardErrorDrain,McpWorkerCallDispatcher.Sticky}.cs, clio/Command/McpServer/Tools/WorkerOperationCompletionSignal.cs, clio/Command/McpServer/McpWorkerCohort.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/StickyWorkerSupervisionTests.cs
 Impact: the four long-running families joined the shipped cohort. Six discriminating mutations were watched failing first; the drain was promoted out of the dispatcher (ADR §3.4's second lease consumer) WITHOUT an `I<Name>` interface, which is what keeps CLIO001 from demanding a `*Factory`.
 Follow-up found in review and fixed the same day: (1) `StickyCallBudgetHeadroom` was declared AFTER the budget that consumes it — static field initialisers run in TEXTUAL order, so the headroom was `TimeSpan.Zero` and the parent bound silently equalled the child's response deadline exactly. Caught by the new derivation test, not by any behaviour test. (2) The linger holds a sticky slot, and `StickyConcurrencyCap = total / 2` is 1 on a two-core agent — so a finished compile would refuse every long operation for the whole window. `StickyWorkerPoll` now reaps a completed entry as soon as the poll it was lingering for has been answered; the window is the backstop for a caller that never polls. (3) `restart-by-credentials` names no environment, so the parent now reads `url` as the target argument — without it every credentials-started restart on every stand shared one unresolved sticky key.
+
+## 2026-08-19 01:15 – ENG-95262: the e2e delta closed, and the method that closed it
+Context: story 20's 46/470/98 run was uninterpretable and blocked the merge.
+Decision: fix the CAUSE of the uninterpretability before re-running, not the symptoms.
+Discovery, in the order it mattered:
+  - "Run it in isolation and look at the file" answered NO on its own terms — the test
+    passed and the file was intact — because the mechanism was TARGETING, not tearing.
+    An isolated run leaves a whole file and still proves the defect. The step that
+    actually decided it was asking WHERE the writes went (watcher over the suite home).
+  - "clio settings bootstrap is broken" does not mean a damaged file. CanExecuteEnvTools
+    is just "the ActiveEnvironmentKey resolves"; two runs on byte-identical files
+    differing in that one key reproduce the message. A conclusion had been drawn from a
+    message that does not support it.
+  - Fixing the test's targeting is what made its SUBJECT visible: with a real private
+    home it failed again and exposed SettingsRepository.CommitSettingsFile publishing
+    with no retry — the same Windows MoveFileEx exposure as the browser-session cache.
+    Both of story 20's original hypotheses held a piece, and the order was the point.
+  - A Windows host settles what macOS cannot. rename(2) ignores open readers, so a green
+    macOS probe is CONSISTENT WITH A COMPLETELY BROKEN PUBLISH. The control arm that
+    reproduces the blindness is worth as much as the arm that reproduces the bug.
+  - Measurement corrected the fix, not just confirmed it: a 12-attempt bound was observed
+    needing 13, 15 and 16. A substituted-move unit test can never see that, because the
+    substitute decides how many attempts occur.
+Method worth reusing: mutate at the seam the assertion NAMES and require THAT test to go
+red. It caught a guard that could not fail (nested runId), a fixture that would have
+flaked CI on the happy path, and — twice — a fix of mine that was wrong (Redact(null)
+returns "" so a ?? fallback never fires; a sed whose escaping silently did nothing, so
+the "mutation" run proved nothing until redone in python).
+Files: clio/Environment/ConfigurationOptions.cs, clio/Common/FileSystem.cs,
+  clio.mcp.e2e/Support/Configuration/{IsolatedClioHome,TemporaryClioSettingsOverride}.cs,
+  clio/Common/McpWorker/**, clio/Command/McpServer/Relay/**, spec/**
+Impact: e2e went 46/470/98 -> 3/496/9; the remaining three are named and tracked, not
+counted. Nine review findings fixed, three deferred with reasons rather than silently.
