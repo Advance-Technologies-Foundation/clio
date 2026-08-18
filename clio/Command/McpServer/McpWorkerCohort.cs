@@ -71,6 +71,71 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	];
 
 	/// <summary>
+	/// The Stage 7 addition: the four long-running families whose worker is STICKY — each family's
+	/// starter together with the status poller that must reach the same worker.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>A family is added WHOLE or not at all.</b> A starter without its poller would put the operation
+	/// in a worker and leave the poll answering from an empty registry in another process, which is worse
+	/// than not moving it; a poller without its starter would reach nothing, every time.
+	/// </para>
+	/// <para>
+	/// <b>These names could not be here before Stage 7.</b> Each needs a worker that outlives its
+	/// response, a lookup that reaches that worker WITHOUT taking an admission slot (ADR §3.2c — the
+	/// alternative is hold-and-wait on the very worker being polled), a private completion signal to reap
+	/// on (rule 5, because three of the four families have no terminal status), an explicit lifetime bound
+	/// (T-8), and — for the configuration-build family — a reservation owned by the PARENT, since the
+	/// tool-side one would live in whichever child ran the tool and exclude nothing.
+	/// </para>
+	/// <para>
+	/// <b><c>restart-by-credentials</c> is in the list although <c>restart-status</c> cannot report it.</b>
+	/// It is the same family and the same sticky worker: the readiness wait outlives the response there
+	/// too, and its unreportability changes the poll story, not how the call executes. It is also the
+	/// family member that most needs the private completion signal, being the one with no terminal status
+	/// anywhere.
+	/// </para>
+	/// </remarks>
+	public static readonly IReadOnlyList<string> StageSevenNames = [
+		Tools.CompileCreatioTool.CompileCreatioToolName,          // compile-creatio
+		Tools.CompileStatusTool.CompileStatusToolName,            // compile-status
+		Tools.RestartTool.RestartByEnvironmentNameToolName,       // restart-by-environment-name
+		Tools.RestartTool.RestartByCredentialsToolName,           // restart-by-credentials
+		Tools.RestartStatusTool.RestartStatusToolName             // restart-status
+	];
+
+	/// <summary>
+	/// Stage 7's machinery supports these two, and Stage 7 deliberately does NOT ship them.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Sticky supervision was built for four long-running families, and these are two of them — the
+	/// private completion signal exists precisely because neither has an operation registry to reap on.
+	/// The machinery is complete and tested for them. What is withheld is MEMBERSHIP.
+	/// </para>
+	/// <para>
+	/// <b>Why.</b> A sticky worker is still killed at its lifetime bound, and the kill-safety audit lists
+	/// both of these under "unsafe to kill — a kill leaves durable damage nothing repairs":
+	/// <c>install-process-builder</c> produces exactly the "installed but never compiled" state the tool
+	/// exists to DETECT, whose documented recovery is a restore from backup rather than a rollback; and
+	/// <c>create-app-section</c> orphans an in-flight insert and loses the "in progress, do NOT retry,
+	/// poll list-app-sections" envelope that is an agent's only documented recovery path. Routing them
+	/// here would convert an operation the shipped code cannot kill into one that can be killed into an
+	/// unrecoverable state.
+	/// </para>
+	/// <para>
+	/// ADR §2.5 already reserves this call: cohort expansion is "a decision to be made against this table,
+	/// tool by tool — not a formality once the machinery exists". Stage 10 owns that pass, with the audit
+	/// in front of it. Moving a name from here into <see cref="StageSevenNames"/> is then a deliberate,
+	/// reviewable line rather than something that arrived with the plumbing.
+	/// </para>
+	/// </remarks>
+	public static readonly IReadOnlyList<string> StageSevenSupportedButNotShippedNames = [
+		Tools.InstallProcessBuilderTool.InstallProcessBuilderToolName, // install-process-builder
+		Tools.ApplicationSectionCreateTool.ApplicationSectionCreateToolName // create-app-section
+	];
+
+	/// <summary>
 	/// The Stage 8 addition: the two <see cref="McpToolBudgetPolicy.TerminalStage"/> tools — the whole
 	/// deploy family, since the cross-field invariant pins <c>Deploy ⇒ Worker + TerminalStage</c>.
 	/// </summary>
@@ -88,11 +153,12 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	];
 
 	/// <summary>
-	/// The membership this build actually ships: <see cref="StageSixNames"/> plus
-	/// <see cref="StageEightNames"/>. The two are kept as separate lists rather than merged into one so
+	/// The membership this build actually ships: <see cref="StageSixNames"/>, <see cref="StageSevenNames"/>
+	/// and <see cref="StageEightNames"/>. They are kept as separate lists rather than merged into one so
 	/// that each stage's promise stays independently readable — and independently pinnable by a test.
 	/// </summary>
-	public static readonly IReadOnlyList<string> ShippedNames = [.. StageSixNames, .. StageEightNames];
+	public static readonly IReadOnlyList<string> ShippedNames =
+		[.. StageSixNames, .. StageSevenNames, .. StageEightNames];
 
 	private readonly IReadOnlySet<string> _names;
 

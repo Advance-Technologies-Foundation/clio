@@ -215,6 +215,31 @@ public sealed class McpToolExecutionAttribute : Attribute {
 	/// can read. It is deliberately NOT one of the six routing fields.
 	/// </remarks>
 	public string AliasOf { get; set; }
+
+	/// <summary>
+	/// When the tool belongs to an <see cref="McpToolOperationFamily"/>, whether THIS tool is the one that
+	/// STARTS the family's operation (as opposed to the one that observes it). Meaningless — and left at
+	/// its default — for a tool whose family is <see cref="McpToolOperationFamily.None"/>.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>Deliberately NOT one of the six routing fields</b>, exactly like <see cref="AliasOf"/>: it does
+	/// not decide where a call executes. It decides what the dispatcher does when a family has NO live
+	/// sticky worker, and there the two members of a family need opposite answers. A starter creates the
+	/// worker (and, for <see cref="McpToolSharedFileResource.ConfigurationBuild"/>, takes the target's
+	/// reservation); a poller must NOT — a <c>compile-status</c> that spawned a sticky worker would take
+	/// the reservation that excludes <c>compile-creatio</c> and refuse the very compile it was asked to
+	/// report on.
+	/// </para>
+	/// <para>
+	/// It is declared rather than derived. The obvious derivations are both wrong: the six routing fields
+	/// are identical on <c>compile-creatio</c> and <c>compile-status</c> except for
+	/// <c>RequiresClientRequests</c>, which is about the relay and not about who starts anything; and
+	/// reading the <c>ReadOnly</c> safety hint would make a routing decision out of a client-facing hint,
+	/// which is precisely what ADR rule 7 rules out.
+	/// </para>
+	/// </remarks>
+	public bool StartsOperation { get; set; }
 }
 
 /// <summary>
@@ -228,6 +253,10 @@ public sealed class McpToolExecutionAttribute : Attribute {
 /// <param name="RequiresClientRequests">Whether the relay must be full-duplex for this tool.</param>
 /// <param name="SharedFileResource">Which interprocess file gate the tool needs.</param>
 /// <param name="AliasOf">The canonical tool name this deprecated declaration delegates to, or <c>null</c>.</param>
+/// <param name="StartsOperation">
+/// Whether this tool STARTS its operation family's work, as opposed to observing it. See
+/// <see cref="McpToolExecutionAttribute.StartsOperation"/>.
+/// </param>
 public sealed record McpToolExecutionMetadata(
 	McpToolExecutionLocation Location,
 	McpToolExecutionLifetime Lifetime,
@@ -235,7 +264,8 @@ public sealed record McpToolExecutionMetadata(
 	McpToolBudgetPolicy BudgetPolicy,
 	McpToolClientRequests RequiresClientRequests,
 	McpToolSharedFileResource SharedFileResource,
-	string AliasOf = null) {
+	string AliasOf = null,
+	bool StartsOperation = false) {
 
 	/// <summary>
 	/// The names of the fields left <c>Unspecified</c>, in declaration order. Empty when the tool is fully

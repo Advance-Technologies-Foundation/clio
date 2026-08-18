@@ -401,7 +401,7 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every name in the shipped cohort is a real tool whose declared metadata actually supports being relayed today: worker-classified, per-call, and bounded by a policy the dispatcher implements — the parent kill for the Stage 6 reads, the terminal stage for the Stage 8 deploy family.")]
+	[Description("Every name in the shipped cohort is a real tool whose declared metadata actually supports being relayed today: worker-classified, and bounded by a policy the dispatcher implements — the parent kill for the Stage 6 reads, the extended kill for the Stage 7 sticky families, the terminal stage for the Stage 8 deploy family; and a sticky member must name the family its status poll reaches.")]
 	public void ShippedCohort_ShouldNameOnlyToolsWhoseDeclaredMetadataSupportsRelayingToday() {
 		// Arrange
 		IReadOnlySet<string> cohortNames = new McpWorkerCohort().Names;
@@ -413,18 +413,24 @@ public sealed class McpExecutionRouterTests {
 		})];
 
 		// Assert
-		cohortNames.Should().HaveCount(9,
-			because: "the shipped cohort is story 6's seven retry-safe stdio reads plus story 8's two terminal-stage deploy tools; a changed count is a rollout decision and must be made deliberately, not drift in");
+		cohortNames.Should().HaveCount(14,
+			because: "the shipped cohort is story 6's seven retry-safe stdio reads, story 7's FIVE shipped sticky tools — install-process-builder and create-app-section are supported but deliberately withheld until Stage 10 weighs them against the kill-safety audit — and story 8's two terminal-stage deploy tools; a changed count is a rollout decision and must be made deliberately, not drift in");
 		declared.Should().NotContainNulls(
 			because: "a cohort name with no declared metadata would be routed on a guess — or, worse, silently fall through the reader's fail-closed unclassified branch and never relay at all");
 		declared.Should().OnlyContain(metadata => metadata.Location == McpToolExecutionLocation.Worker,
 			because: "the cohort may only name tools the metadata already classifies as worker-bound; naming an in-process tool would make the cohort override the classification instead of scoping it");
-		declared.Should().OnlyContain(metadata => metadata.Lifetime == McpToolExecutionLifetime.PerCall,
-			because: "a sticky worker is story 7 and the parent has no private completion signal yet, so a sticky member would leak the child");
+		declared.Should().OnlyContain(metadata =>
+				metadata.Lifetime == McpToolExecutionLifetime.PerCall
+				|| metadata.Lifetime == McpToolExecutionLifetime.Sticky,
+			because: "those are the two lifetimes the parent can now supervise — story 7 added the private completion signal and the explicit lifetime bound a sticky member needs so it cannot leak the child");
+		declared.Where(metadata => metadata.Lifetime == McpToolExecutionLifetime.Sticky)
+			.Should().OnlyContain(metadata => metadata.OperationFamily != McpToolOperationFamily.None,
+			because: "a sticky worker with no family is one nothing can ever reach again, so it is a leak rather than a feature — the dispatcher requires BOTH before it retains a worker");
 		declared.Should().OnlyContain(metadata =>
 				metadata.BudgetPolicy == McpToolBudgetPolicy.ParentKillDefault
+				|| metadata.BudgetPolicy == McpToolBudgetPolicy.ParentKillExtended
 				|| metadata.BudgetPolicy == McpToolBudgetPolicy.TerminalStage,
-			because: "those are the two bounds the dispatcher implements; a member declaring anything else would be relayed with no bound the parent knows how to apply");
+			because: "those are the three bounds the dispatcher implements; a member declaring anything else would be relayed with no bound the parent knows how to apply");
 		declared.Where(metadata => metadata.BudgetPolicy == McpToolBudgetPolicy.TerminalStage)
 			.Should().OnlyContain(metadata => metadata.OperationFamily == McpToolOperationFamily.Deploy,
 			because: "terminal-stage bounding waits on a run-completed stage event, and only the deploy family emits one — a non-deploy member declaring it would stream nothing and be reported indeterminate after the silence bound");
@@ -432,8 +438,8 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The shipped cohort is exactly the seven tools story 6 names plus the two story 8 names, pinned as LITERAL names — so changing membership has to change a test on purpose instead of passing because the assertion and the router read the same source.")]
-	public void ShippedCohort_ShouldBeExactlyTheNamesStoriesSixAndEightPromise() {
+	[Description("The shipped cohort is exactly the seven tools story 6 names, the seven story 7 names and the two story 8 names, pinned as LITERAL names — so changing membership has to change a test on purpose instead of passing because the assertion and the router read the same source.")]
+	public void ShippedCohort_ShouldBeExactlyTheNamesStoriesSixSevenAndEightPromise() {
 		// Arrange — literals, transcribed from spec/stories/story-mcp-worker-execution-boundary-6.md and
 		// -8.md, NOT from Tools.*.ToolName constants. Every other cohort assertion in this fixture compares
 		// the router against `new McpWorkerCohort().Names`, i.e. against the very data the router just read,
@@ -448,8 +454,32 @@ public sealed class McpExecutionRouterTests {
 			"execute-esq",
 			"odata-read"
 		];
-		// Story 8's promise, and the reason this test changed: these two are bounded by their own terminal
-		// stage rather than by the parent kill, so they could not be here until that protocol shipped.
+		// Story 7's promise: the four long-running families, each added WHOLE — a starter without its
+		// poller would leave the poll answering from an empty registry in another process, and a poller
+		// without its starter would reach nothing every time. They could not be here until a worker could
+		// outlive its response, be reached without an admission slot, be reaped on a private completion
+		// signal, be bounded by an explicit lifetime, and hold a PARENT-owned configuration-build
+		// reservation.
+		string[] storySevenNames = [
+			"compile-creatio",
+			"compile-status",
+			"restart-by-environment-name",
+			"restart-by-credentials",
+			"restart-status"
+		];
+		// DELIBERATELY ABSENT, and pinned as absent below: install-process-builder and create-app-section.
+		// Stage 7's machinery supports both — the private completion signal exists because neither has an
+		// operation registry — but a sticky worker is still killed at its lifetime bound, and the
+		// kill-safety audit lists both under "a kill leaves durable damage nothing repairs". ADR §2.5
+		// reserves cohort expansion for Stage 10, "tool by tool — not a formality once the machinery
+		// exists". Shipping them here would arrive with the plumbing rather than as a reviewed decision.
+		string[] supportedButNotShippedNames = [
+			"install-process-builder",
+			"create-app-section"
+		];
+		// Story 8's promise, and the reason this test changed once already: these two are bounded by their
+		// own terminal stage rather than by the parent kill, so they could not be here until that protocol
+		// shipped.
 		string[] storyEightNames = [
 			"deploy-creatio",
 			"uninstall-creatio"
@@ -459,12 +489,21 @@ public sealed class McpExecutionRouterTests {
 		IReadOnlySet<string> shipped = new McpWorkerCohort().Names;
 
 		// Assert
-		shipped.Should().BeEquivalentTo([.. storySixNames, .. storyEightNames],
-			because: "story 6 promises the seven retry-safe stdio reads agents were forced off MCP onto the CLI, and story 8 adds exactly the two terminal-stage deploy tools; adding, dropping or swapping one is a rollout decision that must be argued for here rather than discovered in production");
+		shipped.Should().BeEquivalentTo([.. storySixNames, .. storySevenNames, .. storyEightNames],
+			because: "story 6 promises the seven retry-safe stdio reads agents were forced off MCP onto the CLI, story 7 adds the four sticky long-running families whole, and story 8 adds exactly the two terminal-stage deploy tools; adding, dropping or swapping one is a rollout decision that must be argued for here rather than discovered in production");
 		McpWorkerCohort.StageSixNames.Should().BeEquivalentTo(storySixNames,
-			because: "story 8 expanded the cohort by ADDING a list, not by editing story 6's — keeping them separate is what lets each stage's promise stay independently falsifiable");
+			because: "stories 7 and 8 expanded the cohort by ADDING a list, not by editing story 6's — keeping them separate is what lets each stage's promise stay independently falsifiable");
+		McpWorkerCohort.StageSevenNames.Should().BeEquivalentTo(storySevenNames,
+			because: "a family added by halves is worse than not moving it at all, so the list that carries story 7's promise is pinned as a whole rather than only through the union above");
 		McpWorkerCohort.StageEightNames.Should().BeEquivalentTo(storyEightNames,
 			because: "the deploy family is exactly two tools, and the Deploy ⇒ Worker + TerminalStage cross-field invariant is what keeps it that way");
+		foreach (string withheld in supportedButNotShippedNames) {
+			shipped.Should().NotContain(withheld,
+				because: $"'{withheld}' leaves durable damage nothing repairs when killed, and a sticky worker is still killed at its lifetime bound — ADR §2.5 reserves that call for Stage 10, tool by tool, so it must arrive as a reviewed line rather than with the plumbing");
+		}
+		McpWorkerCohort.StageSevenSupportedButNotShippedNames.Should().BeEquivalentTo(
+			supportedButNotShippedNames,
+			because: "the withheld set is a deliberate decision and must be as hard to change silently as the shipped one");
 	}
 
 	[Test]

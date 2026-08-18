@@ -45,6 +45,30 @@ public interface IToolCommandResolver {
 	/// <param name="options">Environment options that identify the execution target.</param>
 	/// <returns>The cache key the command for these options resolves under.</returns>
 	string GetTenantKey(EnvironmentOptions options);
+
+	/// <summary>
+	/// Computes the NORMALISED TARGET key for <paramref name="options"/> — the environment a call is
+	/// about to act on, and nothing else. Never throws.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>Deliberately a DIFFERENT cardinality from <see cref="GetTenantKey"/>, and conflating the two
+	/// fails either way</b> (ENG-95262 story 7, AC-03; cross-call-state inventory §3).
+	/// <see cref="GetTenantKey"/> answers "whose session is this" and therefore carries the credential
+	/// fingerprint; it is the right key for the compile/restart STATUS registries and for the sticky
+	/// worker. This answers "which server am I about to recompile", and Creatio's configuration build is
+	/// SERVER-WIDE: keying the exclusion by the tenant key would let two principals on one environment
+	/// compile concurrently and corrupt each other's package compilation state.
+	/// </para>
+	/// <para>
+	/// The converse cost is stated rather than hidden: keyed by target alone, one principal's stuck build
+	/// denies every other principal on that environment — which is why the reservation's 30-minute reclaim
+	/// ceiling is its MAXIMUM HOLD TIME rather than an incidental number.
+	/// </para>
+	/// </remarks>
+	/// <param name="options">Environment options that identify the execution target.</param>
+	/// <returns>The normalised target key; a stable unresolved fallback when the target cannot be resolved.</returns>
+	string GetTargetKey(EnvironmentOptions options);
 }
 
 /// <summary>
@@ -144,6 +168,44 @@ public class ToolCommandResolver(
 			// Return a stable fallback derived from the requested identity so same-target failing calls
 			// still serialize and different targets do not — and no exception escapes the lock-key path.
 			return $"unresolved:{options.Environment ?? options.Uri ?? DefaultIdentifier}";
+		}
+	}
+
+	/// <inheritdoc />
+	public string GetTargetKey(EnvironmentOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		// Same branch order as GetTenantKey / Resolve, so the target this returns is the target the call
+		// actually acts on. The passthrough branch is unreachable on the shipped worker path (stdio only,
+		// ADR §5 / OQ-9) but is answered rather than left to fall through, so a future mcp-http revival
+		// does not silently key every passthrough call under one shared target.
+		CredentialContext credentialContext = credentialContextAccessor.Current;
+		if (credentialContext is not null) {
+			return NormalizeOrUnresolved(credentialContext.Url);
+		}
+		try {
+			(EnvironmentSettings settings, _) = ResolveSettingsAndKey(options);
+			return BuildTargetIdentity(options, settings);
+		}
+		catch (EnvironmentResolutionException) {
+			// NEVER throws, for the same reason GetTenantKey does not: an exclusion key is consulted on the
+			// dispatch path, and a target that cannot be resolved must fail the CALL (which it does, in the
+			// command) rather than the reservation lookup. The fallback is derived from the requested
+			// identity so two calls naming the same unresolvable target still exclude each other.
+			return $"unresolved:{options.Environment ?? options.Uri ?? DefaultIdentifier}";
+		}
+	}
+
+	// A target that the normaliser rejects (userinfo, query, fragment — threat model T-5) is NOT folded
+	// into some neighbouring target: it keeps an unresolved, raw-identity key of its own, which is
+	// strictly MORE distinguishing and can therefore only cost an extra reservation, never merge two
+	// environments. The rejected value is not echoed — T-6 forbids putting userinfo in a message, and a
+	// key derived from the raw url would carry it into a dictionary the same call later reads back.
+	private string NormalizeOrUnresolved(string url) {
+		try {
+			return sessionTargetNormalizer.Normalize(url);
+		}
+		catch (EnvironmentResolutionException) {
+			return $"unresolved:{HashSecretMaterial(url ?? string.Empty)}";
 		}
 	}
 

@@ -44,7 +44,8 @@ public class RestartTool(
 		OperationFamily = McpToolOperationFamily.Restart,
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.Progress,
-		SharedFileResource = McpToolSharedFileResource.None)]
+		SharedFileResource = McpToolSharedFileResource.None,
+		StartsOperation = true)]
 	[McpServerTool(Name = RestartByEnvironmentNameToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
@@ -89,7 +90,8 @@ public class RestartTool(
 		OperationFamily = McpToolOperationFamily.Restart,
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.Progress,
-		SharedFileResource = McpToolSharedFileResource.None)]
+		SharedFileResource = McpToolSharedFileResource.None,
+		StartsOperation = true)]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); re-check with healthcheck, or use restart-by-environment-name when you need a pollable restart.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(
@@ -177,7 +179,7 @@ public class RestartTool(
 				server,
 				requestContext?.Params?.ProgressToken,
 				waitContext.ToolName,
-				() => RunReadinessWait(options, requestResult, waitContext, tenantKey, operation.OperationId),
+				() => RunReadinessWait(options, requestResult, waitContext, tenantKey, operation.OperationId, server),
 				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
@@ -195,7 +197,8 @@ public class RestartTool(
 	// never observe an operation stuck "running" (mirrors CompileCreatioTool's registry.Finish guarantee).
 	private CommandExecutionResult RunReadinessWait(
 		RestartOptions options, CommandExecutionResult requestResult, RestartWaitContext waitContext,
-		string tenantKey, string operationId) {
+		string tenantKey, string operationId, global::ModelContextProtocol.Server.McpServer server) {
+		int readinessExitCode = 1;
 		// Pin the session container in-use for the wait (FR-08) WITHOUT taking the per-tenant lock (GetLock) —
 		// the readiness poll is read-only and must not serialize other same-tenant calls. Because no GetLock was
 		// taken, the release must NOT go through MarkAvailable (which decrements the GetLock-owned in-use count and
@@ -204,7 +207,8 @@ public class RestartTool(
 		try {
 			RestartCommand readinessCommand = commandResolver.Resolve<RestartCommand>(options);
 			bool ready = readinessCommand.WaitForReadiness(options);
-			registry.Finish(operationId, ready ? 0 : 1);
+			readinessExitCode = ready ? 0 : 1;
+			registry.Finish(operationId, readinessExitCode);
 			return ready
 				? requestResult
 				: new CommandExecutionResult(1, [
@@ -218,6 +222,12 @@ public class RestartTool(
 				exception, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
 		} finally {
 			McpToolExecutionLock.MarkSessionContainerAvailable(tenantKey);
+			// The PRIVATE completion signal (ADR rule 5), sent from where the readiness wait REALLY ends —
+			// this finally runs on the detached, past-deadline continuation. restart-by-credentials is the
+			// family member that most needs it: it is deliberately unreportable through restart-status, so
+			// there is no terminal status a parent could ever poll for it. No-op outside a worker process.
+			WorkerOperationCompletionSignal.ReportCompleted(
+				server, McpToolOperationFamily.Restart, readinessExitCode);
 		}
 	}
 

@@ -200,7 +200,8 @@ public sealed class McpToolExecutionMetadataReader : IMcpToolExecutionMetadataRe
 				attribute.BudgetPolicy,
 				attribute.RequiresClientRequests,
 				attribute.SharedFileResource,
-				attribute.AliasOf);
+				attribute.AliasOf,
+				attribute.StartsOperation);
 	}
 
 	private static IEnumerable<MethodInfo> EnumerateToolMethods(Type toolType) {

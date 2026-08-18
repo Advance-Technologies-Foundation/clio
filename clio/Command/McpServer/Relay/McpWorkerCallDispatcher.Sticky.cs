@@ -1,0 +1,528 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
+using Clio.Common.McpWorker;
+using ModelContextProtocol.Protocol;
+
+namespace Clio.Command.McpServer.Relay;
+
+/// <summary>
+/// The STICKY half of <see cref="McpWorkerCallDispatcher"/>: the four long-running families whose worker
+/// outlives the response that started it, so a later status poll reaches the process holding the
+/// operation (ENG-95262 story 7).
+/// </summary>
+public sealed partial class McpWorkerCallDispatcher {
+
+	/// <summary>
+	/// The tool-argument name every environment-bound clio MCP tool uses for its target.
+	/// </summary>
+	/// <remarks>
+	/// The parent reads this off the raw call rather than resolving the tool's own arguments record,
+	/// because it has no instance of that record and no binder for it. One convention covers the whole
+	/// catalog — see <see cref="TryReadEnvironmentName"/> for the two shapes it appears in.
+	/// </remarks>
+	internal const string EnvironmentNameArgument = "environment-name";
+
+	/// <summary>
+	/// The tool-argument name the credentials-started members of a long-running family use instead of
+	/// <see cref="EnvironmentNameArgument"/>.
+	/// </summary>
+	/// <remarks>
+	/// <c>restart-by-credentials</c> takes <c>url</c> / <c>userName</c> / <c>password</c> and names no
+	/// registered environment at all. Reading only the environment name would leave EVERY
+	/// credentials-started restart, against every stand, sharing one unresolved sticky key — so the
+	/// second one would collide with the first and quietly degrade to a per-call worker whose readiness
+	/// wait nothing can reach. Only the url is read; the credentials themselves are never touched here.
+	/// </remarks>
+	internal const string UrlArgument = "url";
+
+	/// <summary>Machine-readable error class emitted when a shared, target-wide resource is already held.</summary>
+	/// <remarks>
+	/// NOT <see cref="BudgetExpiredErrorClass"/> and not <see cref="RelayFailureErrorClass"/>. The call was
+	/// refused for a reason that is neither a slow backend nor a clio defect: another configuration build
+	/// owns the environment. Telling an agent "the relay failed" would send it to look for a bug, and
+	/// "creatio-timeout" would send it into a retry loop against a target that is busy for minutes.
+	/// </remarks>
+	internal const string SharedResourceBusyErrorClass = "clio-configuration-build-in-progress";
+
+	/// <summary>Machine-readable error class emitted when the host is running all the long operations it can.</summary>
+	/// <remarks>
+	/// The one condition whose remedy is neither retry nor investigation but an operator changing a
+	/// number, so it carries its own class. Mapping it onto the relay-failure class — which is what an
+	/// unhandled <see cref="WorkerStickyCapacityExceededException"/> would have done, since the spawn
+	/// site's catch-all produces that envelope — would report a correctly working saturation guard as a
+	/// clio bug.
+	/// </remarks>
+	internal const string StickyCapacityErrorClass = "clio-worker-capacity";
+
+	/// <summary>
+	/// How much longer than the child's response deadline the parent waits before giving up on one sticky
+	/// call.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// It covers spawn plus <c>initialize</c> (p50 2.763 s on Windows Server 2022, ADR §2.4) plus the
+	/// child's own in-progress envelope being written, framed, read off a pipe and forwarded — a minute is
+	/// generous for all of it. It is a MARGIN on top of a deadline, not a timeout of its own, which is why
+	/// it is expressed as headroom rather than as a second absolute number that could quietly fall below
+	/// the first.
+	/// </para>
+	/// <para>
+	/// <b>Declared BEFORE <see cref="DefaultStickyCallBudget"/>, and that is not cosmetic.</b> Static field
+	/// initialisers run in TEXTUAL order, so a headroom declared after the budget that consumes it is still
+	/// <see cref="TimeSpan.Zero"/> when the budget is computed — the parent bound would silently equal the
+	/// child's deadline exactly, turning the ordering this exists to guarantee into a scheduling race whose
+	/// loser is a killed long operation. Caught by
+	/// <c>DefaultStickyCallBudget_ShouldBeDerivedFromTheChildsResponseDeadline</c> rather than in
+	/// production, which is the only reason it is written down here.
+	/// </remarks>
+	internal static readonly TimeSpan StickyCallBudgetHeadroom = TimeSpan.FromSeconds(60);
+
+	/// <summary>
+	/// Wall-clock bound on ONE call to a sticky worker — not on the operation the worker is running.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// It must stay above the child's own MCP response deadline, because on this family it is the child's
+	/// in-progress envelope that RETURNS the call (ADR rule 11 — which is also why a sticky worker KEEPS
+	/// <c>CLIO_MCP_RESPONSE_DEADLINE_SECONDS</c> while an ordinary one is denied it). A parent bound below
+	/// that deadline would kill every long operation a fraction before it answered, and the symptom would
+	/// be a compile that always "fails" and always turns out to have run.
+	/// </para>
+	/// <para>
+	/// <b>DERIVED from that deadline rather than stated beside it</b>, because the deadline is
+	/// operator-configurable up to 600 s: a fixed 300 s here would hold the invariant on the default and
+	/// break it the moment somebody raised <c>CLIO_MCP_RESPONSE_DEADLINE_SECONDS</c> past it — the
+	/// invariant asserted by a comment rather than enforced by the code. Both values are resolved at type
+	/// load from the same environment, so the parent and the child cannot disagree about which deadline is
+	/// in force. On the shipped default this is 150 s + 60 s = 210 s.
+	/// </para>
+	/// </remarks>
+	internal static readonly TimeSpan DefaultStickyCallBudget =
+		Tools.McpProgressHeartbeat.DefaultResponseDeadline + StickyCallBudgetHeadroom;
+
+
+	/// <summary>
+	/// How long a sticky worker stays reachable AFTER it has reported that its long operation finished.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>Not zero, and the reason is a shipped contract rather than caution.</b> On stdio the compile and
+	/// restart operation registries are DI singletons INSIDE the worker, so the process is the only place
+	/// the operation record lives. Reaping the instant the work ends would answer the status poll the
+	/// caller was explicitly told to make with "no such operation" for an operation that had just
+	/// finished — the exact symptom this story exists to remove, produced by its own fix. This window is
+	/// what "the sticky worker serves both calls" (cross-call-state §3, P-1/P-2) costs when the second
+	/// call arrives after the first has completed; it disappears if and when the registries themselves
+	/// move to the parent.
+	/// </para>
+	/// <para>
+	/// The shared configuration-build reservation is NOT held for it: that is released the moment the
+	/// signal arrives, because a finished build must stop denying its environment at once. Only the
+	/// admission slot is held, and it is held for minutes rather than for the lifetime bound's half hour.
+	/// </para>
+	/// </remarks>
+	internal static readonly TimeSpan DefaultStickyCompletionLinger = TimeSpan.FromMinutes(5);
+
+	/// <summary>
+	/// Runs one call of a long-running family: reach the family's live sticky worker if there is one,
+	/// otherwise start it (when this tool is the family's starter) or fall back to an ordinary per-call
+	/// worker (when it is a poller with nothing to poll).
+	/// </summary>
+	/// <param name="toolName">The canonical tool name.</param>
+	/// <param name="metadata">The declared execution metadata for that tool.</param>
+	/// <param name="parameters">The caller's params.</param>
+	/// <param name="parentSession">The parent leg the child's traffic is relayed to.</param>
+	/// <param name="cancellationToken">Caller cancellation.</param>
+	/// <returns>The worker's result, or a named error envelope.</returns>
+	private async ValueTask<CallToolResult> DispatchStickyAsync(
+		string toolName,
+		McpToolExecutionMetadata metadata,
+		CallToolRequestParams parameters,
+		IParentMcpSession parentSession,
+		CancellationToken cancellationToken) {
+		EnvironmentOptions options = ReadTargetOptions(parameters);
+		string environmentName = options.Environment ?? options.Uri;
+
+		// FIRST, before any reservation is taken or reached: retire sticky workers that have exited or
+		// passed their lifetime bound (AC-04). The order is load-bearing rather than tidy — a worker at
+		// exactly StickyWorkerLifetimeBound.ExplicitMaximum still holds the reservation whose reclaim
+		// ceiling that bound equals, so sweeping after reserving would let a reclaim and a live holder
+		// coexist for one call.
+		await _stickyWorkers.ReapExpiredAsync().ConfigureAwait(false);
+
+		StickyWorkerKey key = new(metadata.OperationFamily, SafeTenantKey(options));
+		CallToolRequestParams childParameters = WithoutParentSessionMetadata(parameters);
+
+		// Only an OBSERVER reaches an existing worker. A starter that reused the family's live worker
+		// would multiplex a SECOND operation onto the process running the first — an install-process-builder
+		// answered by the worker holding somebody's compile — which is not what the reservation refusing it
+		// looks like and is not what any caller asked for. A starter always creates, and what stops two of
+		// them is the reservation below, not the reach above.
+		if (!metadata.StartsOperation) {
+			// Reaching takes NO admission slot — the binding half of ADR §3.2c. The slot a poll would
+			// otherwise wait for is held by the very worker it is reaching, which is hold-and-wait and does
+			// not resolve under load. _stickyPoll cannot spawn: that is what its dependency says.
+			CallToolResult reached = await _stickyPoll
+				.ReachAndCallAsync(key, childParameters, _stickyCallBudget, cancellationToken)
+				.ConfigureAwait(false);
+			return reached ?? await DispatchPerCallAsync(toolName, parameters, parentSession,
+				cancellationToken).ConfigureAwait(false);
+		}
+
+		SharedResourceReservationToken reservation = null;
+		if (metadata.SharedFileResource == McpToolSharedFileResource.ConfigurationBuild) {
+			// Keyed by the NORMALISED TARGET and the resource, never by the tenant key: Creatio's
+			// configuration build is server-wide, so two principals on one environment must exclude each
+			// other. This is the parent's dictionary, so it also excludes across worker PROCESSES — which
+			// the tool-side reservation, living in whichever child ran the tool, structurally cannot.
+			if (!_reservations.TryReserve(McpToolSharedFileResource.ConfigurationBuild,
+					SafeTargetKey(options), out reservation)) {
+				return SharedResourceBusyResult(toolName, environmentName);
+			}
+		}
+
+		return await StartStickyWorkerAsync(toolName, key, reservation, parameters, childParameters,
+			parentSession, cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Spawns the family's sticky worker, hands it to the registry and runs the starting call on it.
+	/// </summary>
+	/// <param name="toolName">The canonical tool name.</param>
+	/// <param name="key">The key the worker is registered and later reached under.</param>
+	/// <param name="reservation">The shared-resource reservation this worker will hold, or null.</param>
+	/// <param name="parameters">The caller's params, for the per-call fallback.</param>
+	/// <param name="childParameters">The params to send to the worker.</param>
+	/// <param name="parentSession">The parent leg.</param>
+	/// <param name="cancellationToken">Caller cancellation.</param>
+	/// <returns>The worker's result, or a named error envelope.</returns>
+	private async ValueTask<CallToolResult> StartStickyWorkerAsync(
+		string toolName,
+		StickyWorkerKey key,
+		SharedResourceReservationToken reservation,
+		CallToolRequestParams parameters,
+		CallToolRequestParams childParameters,
+		IParentMcpSession parentSession,
+		CancellationToken cancellationToken) {
+		// A sticky worker KEEPS clio's own response-deadline override (ADR rule 11): its in-progress
+		// envelope is what returns the call, and stripping it turned a 25 s backend call into a 77 s block
+		// in the prototype.
+		IReadOnlyDictionary<string, string> childEnvironment = McpWorkerEnvironment.ComposeChildEnvironment(
+			ReadFrozenFeatures(), McpWorkerLifetime.Sticky);
+		// The lease's own budget IS the sticky lifetime bound, so the supervisor's view of how long this
+		// worker may live and the registry's view cannot drift apart.
+		WorkerSpawnRequest spawnRequest =
+			ComposeSpawnRequest(childEnvironment, StickyWorkerLifetimeBound.ExplicitMaximum) with {
+				Lifetime = WorkerLifetime.Sticky
+			};
+
+		IWorkerLease lease;
+		try {
+			lease = await _supervisor.SpawnContainedAsync(spawnRequest, cancellationToken).ConfigureAwait(false);
+		}
+		catch (WorkerStickyCapacityExceededException exception) {
+			_reservations.Release(reservation);
+			_logger.WriteWarning($"MCP worker for '{toolName}' was refused: {exception.Message}");
+			return StickyCapacityResult(toolName, exception);
+		}
+		catch (OperationCanceledException) {
+			_reservations.Release(reservation);
+			throw;
+		}
+		catch (Exception exception) {
+			_reservations.Release(reservation);
+			_logger.WriteWarning(
+				$"Sticky MCP worker for '{toolName}' could not be started: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			return RelayFailureResult(toolName, "the worker process could not be started", exception.Message, null);
+		}
+
+		// Every lease consumer must drain (ADR §3.4). A sticky worker's drain lives as long as the worker,
+		// so it is owned by the registry entry rather than by this call.
+		WorkerStandardErrorDrain standardError = new(lease.StandardError, StandardErrorTailLimit);
+		standardError.Start();
+
+		StickyWorkerEntry entry = null;
+		bool ownershipTransferred = false;
+		try {
+			using CancellationTokenSource handshakeSource =
+				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			handshakeSource.CancelAfter(_stickyCallBudget);
+			ITransport childTransport = await _transportOwner
+				.ConnectAsync(lease.StandardInput, lease.StandardOutput, handshakeSource.Token)
+				.ConfigureAwait(false);
+			WorkerRelayOptions relayOptions = new() {
+				NotificationTap = notification => TapCompletionSignal(notification, key)
+			};
+			WorkerRelaySession session = await _relay
+				.OpenAsync(childTransport, parentSession, relayOptions, handshakeSource.Token)
+				.ConfigureAwait(false);
+			entry = new StickyWorkerEntry(lease, session, standardError,
+				StickyWorkerLifetimeBound.Resolve(lease.SpawnedAtUtc, credentialValidUntilUtc: null),
+				reservation, _reservations, _logger);
+			// A lost race means another call of this family registered first. This worker then serves ITS
+			// OWN call and is released afterwards — a per-call worker in all but name — rather than being
+			// left unowned or overwriting a live entry somebody else is polling.
+			ownershipTransferred = _stickyWorkers.TryRegister(key, entry);
+			using CancellationTokenSource callSource =
+				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			callSource.CancelAfter(_stickyCallBudget);
+			CallToolResult result = await session.CallToolAsync(childParameters, callSource.Token)
+				.ConfigureAwait(false);
+			if (result is null) {
+				_logger.WriteWarning($"Sticky MCP worker for '{toolName}' returned a null tool result.");
+				await ReleaseStartedWorkerAsync(key, entry, ownershipTransferred).ConfigureAwait(false);
+				return RelayFailureResult(toolName, "the worker returned a null tool result",
+					detail: null, standardError.Tail());
+			}
+			return result;
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			await ReleaseStartedWorkerAsync(key, entry, ownershipTransferred).ConfigureAwait(false);
+			await ReleaseUnregisteredAsync(entry, lease, standardError, reservation).ConfigureAwait(false);
+			throw;
+		}
+		catch (Exception exception) {
+			// Including the sticky call budget expiring. The worker is reaped rather than left running:
+			// its response deadline is well inside this bound, so a worker that did not answer here is not
+			// a slow operation but an unreachable process, and leaving it would hold both an admission
+			// slot and the target's configuration-build reservation with nobody able to observe it.
+			_logger.WriteWarning(
+				$"Sticky MCP worker relay for '{toolName}' failed: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			await ReleaseStartedWorkerAsync(key, entry, ownershipTransferred).ConfigureAwait(false);
+			await ReleaseUnregisteredAsync(entry, lease, standardError, reservation).ConfigureAwait(false);
+			return RelayFailureResult(toolName, "the worker relay failed", exception.Message,
+				standardError.Tail());
+		}
+		finally {
+			if (!ownershipTransferred && entry is not null) {
+				// The worker served its own call but nobody owns it, so it ends here — and this is the
+				// only path on which a sticky spawn returns its admission slot immediately.
+				await entry.ReleaseAsync().ConfigureAwait(false);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Reaps a worker that WAS registered, so the registry never keeps a key whose worker has just failed.
+	/// </summary>
+	/// <param name="key">The key.</param>
+	/// <param name="entry">The entry, or null when the session never opened.</param>
+	/// <param name="ownershipTransferred">Whether the registry took the entry.</param>
+	/// <returns>A task that completes when the entry is gone.</returns>
+	private async ValueTask ReleaseStartedWorkerAsync(StickyWorkerKey key, StickyWorkerEntry entry,
+		bool ownershipTransferred) {
+		if (entry is not null && ownershipTransferred) {
+			await _stickyWorkers.ReapAsync(key).ConfigureAwait(false);
+		}
+	}
+
+	/// <summary>
+	/// Releases a worker whose session never opened, so nothing else can.
+	/// </summary>
+	/// <param name="entry">The entry when one was built; null when the failure preceded it.</param>
+	/// <param name="lease">The lease.</param>
+	/// <param name="standardError">The running drain.</param>
+	/// <param name="reservation">The reservation the worker would have held.</param>
+	/// <returns>A task that completes when everything is released.</returns>
+	/// <remarks>
+	/// The entry's own release covers all four resources in the right order, so this only handles the
+	/// window BEFORE an entry exists — a transport or handshake failure — where the lease and the drain
+	/// are held by locals and the reservation by nobody.
+	/// </remarks>
+	private async ValueTask ReleaseUnregisteredAsync(StickyWorkerEntry entry, IWorkerLease lease,
+		WorkerStandardErrorDrain standardError, SharedResourceReservationToken reservation) {
+		if (entry is not null) {
+			return;
+		}
+		await standardError.StopAsync().ConfigureAwait(false);
+		_reservations.Release(reservation);
+		lease.Dispose();
+	}
+
+	/// <summary>
+	/// The read loop's serial observation point: consumes the worker's PRIVATE completion signal and
+	/// reaps the worker it came from.
+	/// </summary>
+	/// <param name="notification">A notification taken off the worker's pipe.</param>
+	/// <param name="key">The sticky worker that sent it.</param>
+	/// <returns><see langword="false"/> for the signal (consume it); <see langword="true"/> otherwise.</returns>
+	/// <remarks>
+	/// <para>
+	/// <b>Consumed, never forwarded.</b> Rule 5 calls this a PRIVATE signal, and it is: forwarding clio's
+	/// own process plumbing into the real client's notification stream would be a contract change no
+	/// client asked for. Everything else rides through untouched, which is what ADR rule 1 requires.
+	/// </para>
+	/// <para>
+	/// <b>The reap runs OFF this thread, and that is not a style choice.</b> This runs inside the relay's
+	/// read loop; reaping disposes the session, and the session's disposal joins that same loop. Reaping
+	/// inline would have the read loop waiting for itself.
+	/// </para>
+	/// </remarks>
+	private bool TapCompletionSignal(JsonRpcNotification notification, StickyWorkerKey key) {
+		if (!WorkerOperationSignalContract.TryRead(notification, out McpToolOperationFamily family,
+				out int? exitCode)) {
+			return true;
+		}
+		_logger.WriteInfo(string.Format(CultureInfo.InvariantCulture,
+			"Sticky MCP worker for operation family '{0}' reported completion (exit code {1}); reaping it.",
+			family == McpToolOperationFamily.Unspecified ? key.Family : family,
+			exitCode?.ToString(CultureInfo.InvariantCulture) ?? "unknown"));
+		// Releases the target's configuration-build reservation AT ONCE and shortens the worker's lifetime
+		// to the linger window; the sweep at the head of the next sticky dispatch is what actually returns
+		// the admission slot. Doing it this way rather than reaping inline is also what keeps this off the
+		// read loop, which reaping would otherwise make wait for itself.
+		_stickyWorkers.SignalCompleted(key, _stickyCompletionLinger);
+		return false;
+	}
+
+	/// <summary>
+	/// Reads the target a raw tool call names: its registered environment name, or failing that its
+	/// explicit url.
+	/// </summary>
+	/// <param name="parameters">The caller's params.</param>
+	/// <returns>
+	/// Options naming the target. Both fields are null when the call names neither, which the key
+	/// derivations answer with a stable unresolved key rather than by throwing.
+	/// </returns>
+	/// <remarks>
+	/// The name is preferred over the url because <see cref="Tools.IToolCommandResolver.GetTargetKey"/>
+	/// folds a registered name and an explicit url onto ONE key anyway (AC-00), so reading whichever is
+	/// present costs nothing and reading neither would put every credentials-started restart in one
+	/// bucket.
+	/// </remarks>
+	internal static EnvironmentOptions ReadTargetOptions(CallToolRequestParams parameters) {
+		string environmentName = TryReadStringArgument(parameters, EnvironmentNameArgument);
+		return environmentName is null
+			? new EnvironmentOptions { Uri = TryReadStringArgument(parameters, UrlArgument) }
+			: new EnvironmentOptions { Environment = environmentName };
+	}
+
+	/// <summary>
+	/// Reads one string argument out of a raw tool call.
+	/// </summary>
+	/// <param name="parameters">The caller's params.</param>
+	/// <param name="argumentName">The argument to read.</param>
+	/// <returns>The value, or <see langword="null"/> when the call carries none.</returns>
+	/// <remarks>
+	/// Two shapes, because the SDK binds arguments by PARAMETER name: a tool whose single parameter is a
+	/// complex args record receives one argument (<c>args</c>) holding the whole object, while a
+	/// scalar-parameter tool receives each key at the top level. Both are searched, top level first, and
+	/// the search goes exactly ONE level deep — deeper would start matching an unrelated nested
+	/// <c>environment-name</c> inside some other payload.
+	/// </remarks>
+	internal static string TryReadStringArgument(CallToolRequestParams parameters, string argumentName) {
+		IDictionary<string, JsonElement> arguments = parameters?.Arguments;
+		if (arguments is null) {
+			return null;
+		}
+		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
+			if (string.Equals(argument.Key, argumentName, StringComparison.OrdinalIgnoreCase)
+				&& argument.Value.ValueKind == JsonValueKind.String) {
+				return argument.Value.GetString();
+			}
+		}
+		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
+			if (argument.Value.ValueKind == JsonValueKind.Object
+				&& argument.Value.TryGetProperty(argumentName, out JsonElement nested)
+				&& nested.ValueKind == JsonValueKind.String) {
+				return nested.GetString();
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Resolves the tenant key without letting a resolution failure fail the dispatch.
+	/// </summary>
+	/// <param name="options">The environment options built from the call.</param>
+	/// <returns>The tenant key.</returns>
+	/// <remarks>
+	/// <see cref="Tools.IToolCommandResolver.GetTenantKey"/> already contracts never to throw for a bad
+	/// environment, and this is belt and braces for the unexpected: a key is only a dictionary key here,
+	/// and failing the CALL because the key could not be computed would turn a resolver defect into an
+	/// outage. The worker itself resolves the environment again and reports the real failure.
+	/// </remarks>
+	private string SafeTenantKey(EnvironmentOptions options) {
+		try {
+			return _commandResolver.GetTenantKey(options);
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(
+				"The tenant key for a sticky MCP worker could not be resolved: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			return $"unresolved-tenant:{options.Environment ?? options.Uri}";
+		}
+	}
+
+	/// <summary>
+	/// Resolves the normalised target key without letting a resolution failure fail the dispatch.
+	/// </summary>
+	/// <param name="options">The environment options built from the call.</param>
+	/// <returns>The target key.</returns>
+	private string SafeTargetKey(EnvironmentOptions options) {
+		try {
+			return _commandResolver.GetTargetKey(options);
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(
+				"The target key for a configuration-build reservation could not be resolved: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			// Derived from the requested identity rather than a constant: a constant would put every
+			// unresolvable target in one bucket and let one of them deny all the others.
+			return $"unresolved-target:{options.Environment ?? options.Uri}";
+		}
+	}
+
+	/// <summary>
+	/// Builds the envelope returned when the target's configuration build is already reserved.
+	/// </summary>
+	/// <param name="toolName">The refused tool.</param>
+	/// <param name="environmentName">The environment the call named.</param>
+	/// <returns>The error result.</returns>
+	internal static CallToolResult SharedResourceBusyResult(string toolName, string environmentName) {
+		string text = SharedResourceReservation.BuildAlreadyReservedMessage(toolName, environmentName);
+		JsonObject payload = new() {
+			["success"] = false,
+			["tool"] = toolName,
+			["error-class"] = SharedResourceBusyErrorClass,
+			["configuration-build-in-progress"] = true,
+			["message"] = text
+		};
+		return new CallToolResult {
+			IsError = true,
+			Content = [new TextContentBlock { Text = text }],
+			StructuredContent = JsonSerializer.SerializeToElement(payload)
+		};
+	}
+
+	/// <summary>
+	/// Builds the envelope returned when the host already runs as many long operations as it supports.
+	/// </summary>
+	/// <param name="toolName">The refused tool.</param>
+	/// <param name="exception">The refusal, whose message already names the limit and the knob.</param>
+	/// <returns>The error result.</returns>
+	internal static CallToolResult StickyCapacityResult(string toolName,
+		WorkerStickyCapacityExceededException exception) {
+		string text = $"'{toolName}' was not started. {exception.Message}";
+		JsonObject payload = new() {
+			["success"] = false,
+			["tool"] = toolName,
+			["error-class"] = StickyCapacityErrorClass,
+			["long-operation-capacity"] = exception.StickyConcurrencyCap,
+			["worker-concurrency"] = exception.TotalConcurrencyCap,
+			["message"] = text
+		};
+		return new CallToolResult {
+			IsError = true,
+			Content = [new TextContentBlock { Text = text }],
+			StructuredContent = JsonSerializer.SerializeToElement(payload)
+		};
+	}
+}

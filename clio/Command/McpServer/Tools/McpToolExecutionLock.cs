@@ -211,6 +211,17 @@ internal static class McpToolExecutionLock {
 	/// during installation, so it must exclude, and be excluded by, a concurrent compile on the same tenant.
 	/// It is deliberately narrow — it does NOT serialize unrelated same-tenant tools the way the per-tenant
 	/// execution monitor would (review Blocker).
+	/// <para>
+	/// <b>No longer the authoritative exclusion once the tool runs in a worker (ENG-95262 story 7).</b> This
+	/// dictionary is a <see langword="static"/> in whichever PROCESS ran the tool, so in a worker it excludes
+	/// only that worker's own calls — of which there is one. The cross-process, cross-principal exclusion now
+	/// lives in the parent as
+	/// <see cref="Clio.Command.McpServer.Relay.ISharedResourceReservation"/>, keyed by normalised target +
+	/// resource rather than by the tenant key, and taken by the dispatcher BEFORE the worker is spawned. This
+	/// one is kept because <c>compile-creatio</c> and <c>install-process-builder</c> still run in-process on
+	/// every host that does not route them to a worker (any non-stdio transport, and a worker's own
+	/// <c>clio-run</c>), where it remains the only guard there is. It retires with the cohort at Stage 10.
+	/// </para>
 	/// </remarks>
 	internal static bool TryReserveConfigurationBuild(string cacheKey, out BuildReservation reservation) {
 		string key = Normalize(cacheKey);

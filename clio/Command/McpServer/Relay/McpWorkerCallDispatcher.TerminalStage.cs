@@ -268,6 +268,24 @@ public sealed partial class McpWorkerCallDispatcher {
 			throw;
 		}
 		catch (Exception exception) {
+			// NOTHING WAS EVER ASKED OF THE WORKER. `call` is only assigned once the handshake succeeded and
+			// the tools/call was dispatched, so a null here means the failure happened before any request
+			// reached the child — a protocol-revision mismatch, an initialize result with no protocolVersion,
+			// a broken pipe on connect. No request means nothing could have been installed, and reporting
+			// "possibly half-installed, inspect the target and remove what is there" for an environment clio
+			// never spoke to sends an operator to dismantle a working system. This is the same distinction
+			// the spawn-failure branch above already makes; it just has to survive the handshake too.
+			if (call is null) {
+				_logger.WriteWarning(
+					$"MCP worker for '{toolName}' (pid {lease.ProcessId}) failed before the operation was "
+					+ $"requested, so nothing was deployed: "
+					+ SensitiveErrorTextRedactor.Redact(exception.Message));
+				CallToolResult beforeRequest = RelayFailureResult(toolName,
+					"the worker failed before the operation was requested, so nothing was deployed",
+					detail: exception.Message, standardError.Tail());
+				KillQuietly(lease, toolName);
+				return beforeRequest;
+			}
 			// The child crashed, was killed, or closed its pipe. Whether that is an answer or an ambiguity is
 			// decided by ONE question: did the run report its terminal stage first?
 			TerminalStageObservation observation = watch.Snapshot();

@@ -79,7 +79,8 @@ public sealed class InstallProcessBuilderTool(
 		OperationFamily = McpToolOperationFamily.ConfigurationBuild,
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.Progress,
-		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
+		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild,
+		StartsOperation = true)]
 	[Description("""
 	             Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio
 	             environment, making ProcessDesignService reachable there.
@@ -149,7 +150,7 @@ public sealed class InstallProcessBuilderTool(
 				server,
 				requestContext?.Params?.ProgressToken,
 				InstallProcessBuilderToolName,
-				() => RunInstall(options, callerAlreadyAnswered),
+				() => RunInstall(options, callerAlreadyAnswered, server),
 				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
@@ -174,7 +175,8 @@ public sealed class InstallProcessBuilderTool(
 	// monitor, and releases the reservation where the REAL work ends — including the detached continuation
 	// past the response deadline — rather than where the tool method returned.
 	private CommandExecutionResult RunInstall(
-		InstallProcessBuilderOptions options, StrongBox<bool> callerAlreadyAnswered) {
+		InstallProcessBuilderOptions options, StrongBox<bool> callerAlreadyAnswered,
+		global::ModelContextProtocol.Server.McpServer server) {
 		string tenantKey = ResolveTenantLockKey(options);
 		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation)) {
 			// Caller-actionable refusal (exit 1), not a clio failure: waiting fixes it. Deliberately fails
@@ -185,8 +187,10 @@ public sealed class InstallProcessBuilderTool(
 				+ "it to finish, then retry the process-designer tool you were using; it refuses again if the "
 				+ $"package is still missing, and only then call {InstallProcessBuilderToolName}.");
 		}
+		int installExitCode = -1;
 		try {
 			CommandExecutionResult result = InternalExecuteWithoutTenantLock<InstallProcessBuilderCommand>(options);
+			installExitCode = result.ExitCode;
 			if (result.ExitCode != 0 && callerAlreadyAnswered.Value) {
 				ReportPostDeadlineFailure(options.Environment, result.ExitCode);
 			}
@@ -194,6 +198,13 @@ public sealed class InstallProcessBuilderTool(
 		}
 		finally {
 			McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
+			// The PRIVATE completion signal (ADR rule 5), sent from where the REAL work ends — this finally
+			// runs on the detached, past-deadline continuation. install-process-builder has no operation
+			// registry at all, so without it the parent has no way to learn that this sticky worker has
+			// finished and could hold its admission slot until the lifetime bound expires. No-op outside a
+			// worker process.
+			WorkerOperationCompletionSignal.ReportCompleted(
+				server, McpToolOperationFamily.ConfigurationBuild, installExitCode);
 		}
 	}
 

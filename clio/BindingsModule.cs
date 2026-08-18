@@ -1059,6 +1059,14 @@ public class BindingsModule {
 		// own cap and bound nothing at all.
 		services.AddSingleton<Common.McpWorker.IWorkerProcessSupervisor,
 			Common.McpWorker.WorkerProcessSupervisor>();
+		// ENG-95262 Stage 7 — the NARROW supervisor surface, and it must FORWARD to the singleton above
+		// rather than being registered as its own implementation. Two WorkerProcessSupervisor instances
+		// would give each its own concurrency cap AND make every ReachExisting throw "the lease was not
+		// issued by this supervisor", because a lease is validated against the instance that created it.
+		// The narrowing exists for the CONSUMER (StickyWorkerPoll, which must have no member that can
+		// acquire an admission slot — ADR §3.2c), not for the implementation.
+		services.AddSingleton<Common.McpWorker.IWorkerReach>(sp =>
+			sp.GetRequiredService<Common.McpWorker.IWorkerProcessSupervisor>());
 		// ENG-95262 Stage 4b — the execution-metadata reader and the single execution-routing authority.
 		// TRANSPORT-NEUTRAL on purpose: the property is "one routing authority per host", and a host is not
 		// only the stdio one. mcp-http builds its graph from RegisterInto + RegisterMcpServer and never runs
@@ -1095,6 +1103,16 @@ public class BindingsModule {
 			Command.McpServer.Relay.WorkerChildTransportOwner>();
 		services.AddTransient<Command.McpServer.Relay.IWorkerMcpRelay,
 			Command.McpServer.Relay.WorkerMcpRelay>();
+		// ENG-95262 Stage 7 — parent-owned sticky supervision. All three are SINGLETONS because each IS
+		// its state: the registry owns the leases of every live sticky worker (a transient copy would own
+		// none and reap none), and the reservation dictionary is the exclusion itself — a per-resolution
+		// copy would exclude nothing while looking exactly like a working guard.
+		services.AddSingleton<Command.McpServer.Relay.IStickyWorkerRegistry,
+			Command.McpServer.Relay.StickyWorkerRegistry>();
+		services.AddSingleton<Command.McpServer.Relay.ISharedResourceReservation,
+			Command.McpServer.Relay.SharedResourceReservation>();
+		services.AddSingleton<Command.McpServer.Relay.IStickyWorkerPoll,
+			Command.McpServer.Relay.StickyWorkerPoll>();
 		services.AddSingleton<Command.McpServer.Relay.IMcpWorkerCallDispatcher,
 			Command.McpServer.Relay.McpWorkerCallDispatcher>();
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();

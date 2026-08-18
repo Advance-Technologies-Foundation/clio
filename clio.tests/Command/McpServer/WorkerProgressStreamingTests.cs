@@ -264,9 +264,14 @@ public sealed class WorkerProgressStreamingTests {
 	private static int BeatsWhenTheChildWasTunedToBeat(IReadOnlyDictionary<string, string> childEnvironment) =>
 		childEnvironment.ContainsKey(McpProgressHeartbeat.IntervalOverrideEnvVar) ? 1 : 0;
 
-	private McpWorkerCallDispatcher CreateSut() =>
-		new(_supervisor, new WorkerChildTransportOwner(), new WorkerMcpRelay(_logger), _settingsRepository,
-			_logger, TimeSpan.FromSeconds(30));
+	private McpWorkerCallDispatcher CreateSut() {
+		StickyWorkerRegistry stickyWorkers = new(_logger);
+		SharedResourceReservation reservations = new();
+		return new McpWorkerCallDispatcher(_supervisor, new WorkerChildTransportOwner(),
+			new WorkerMcpRelay(_logger), _settingsRepository, stickyWorkers,
+			new StickyWorkerPoll(_supervisor, stickyWorkers, _logger), reservations,
+			Substitute.For<IToolCommandResolver>(), _logger, TimeSpan.FromSeconds(30));
+	}
 
 	private static async Task<CallToolResult> DispatchAsync(
 		McpWorkerCallDispatcher sut, IParentMcpSession client) =>

@@ -70,9 +70,16 @@ public sealed class McpWorkerCallDispatcherTests {
 		_logger.ClearReceivedCalls();
 	}
 
-	private McpWorkerCallDispatcher CreateSut(TimeSpan? budget = null) =>
-		new(_supervisor, _transportOwner, _relay, _settingsRepository, _logger,
-			budget ?? TimeSpan.FromSeconds(5));
+	private McpWorkerCallDispatcher CreateSut(TimeSpan? budget = null) {
+		// Real sticky collaborators rather than substitutes: they are plain in-memory state, and a
+		// substitute registry would answer "no live worker" for reasons unrelated to the behaviour under
+		// test here (the per-call path, which never touches them).
+		StickyWorkerRegistry stickyWorkers = new(_logger);
+		SharedResourceReservation reservations = new();
+		return new McpWorkerCallDispatcher(_supervisor, _transportOwner, _relay, _settingsRepository,
+			stickyWorkers, new StickyWorkerPoll(_supervisor, stickyWorkers, _logger), reservations,
+			Substitute.For<Clio.Command.McpServer.Tools.IToolCommandResolver>(), _logger, budget ?? TimeSpan.FromSeconds(5));
+	}
 
 	// ---------------------------------------------------------------------------------------------
 	// Budget resolution
