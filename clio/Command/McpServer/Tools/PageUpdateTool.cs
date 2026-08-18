@@ -27,6 +27,10 @@ public sealed class PageUpdateTool(
 	ISettingsRepository? settingsRepository = null)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
+	// Own references to the two dependencies BaseTool takes but does not expose. Reading the primary-constructor
+	// parameters from the body instead would make the compiler capture them a second time alongside the base
+	// class's own copy (CS9107/CS9124) — same object either way, but two extra fields and a confusing read.
+	private readonly ILogger _logger = logger;
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
 	private readonly IPageBodySamplingService _samplingService = samplingService;
 
@@ -308,7 +312,7 @@ public sealed class PageUpdateTool(
 			return null;
 		}
 		try {
-			EnvironmentSettings settings = commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions {
+			EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions {
 				Environment = options.Environment,
 				Uri = options.Uri,
 				Login = options.Login,
@@ -351,7 +355,7 @@ public sealed class PageUpdateTool(
 						// config (the own body survives the merge).
 						options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode,
 						// update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
-						Logger: logger))
+						Logger: _logger))
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
