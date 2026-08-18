@@ -251,4 +251,37 @@ public sealed class SessionTargetNormalizerTests {
 		opaque.Should().NotBe(normalised,
 			because: "these are two different targets and must never share a session key — the marker has to use a character no RFC 3986 scheme may contain, or the valve that exists to be over-cautious becomes the one thing that merges targets");
 	}
+
+	[Test]
+	[Description("A NAMED IPv6 zone must survive normalisation: IPAddress.TryParse accepts fe80::1%ethA and its ToString silently drops the zone, so two different link-local destinations would fold into one target — over-normalisation, which on a sticky worker is a credential crossover rather than a cache miss.")]
+	public void Normalize_ShouldKeepTheZone_WhenAnIPv6LiteralIsScopedByInterfaceName() {
+		// Arrange — two link-local targets that differ ONLY by interface scope. On Unix these are
+		// genuinely different destinations.
+		const string viaFirstInterface = "http://[fe80::1%ethA]/";
+		const string viaSecondInterface = "http://[fe80::1%ethB]/";
+
+		// Act
+		string first = _normalizer.Normalize(viaFirstInterface);
+		string second = _normalizer.Normalize(viaSecondInterface);
+
+		// Assert
+		first.Should().NotBe(second,
+			because: "T-5 names no rule for zone identifiers and its stated default is that anything the algorithm does not name stays byte-exact and therefore distinguishing — folding them merges two targets");
+		first.Should().Contain("%ethA",
+			because: "the zone must be carried through verbatim rather than lowercased or dropped: interface names are case-sensitive on Unix");
+	}
+
+	[Test]
+	[Description("A NUMERIC IPv6 zone survives too, and is pinned separately because IPAddress.ToString happens to preserve it — an accident that would hide the named-zone defect if only this case were covered.")]
+	public void Normalize_ShouldKeepTheZone_WhenAnIPv6LiteralIsScopedByNumber() {
+		// Arrange
+		const string target = "http://[fe80::1%3]/";
+
+		// Act
+		string normalized = _normalizer.Normalize(target);
+
+		// Assert
+		normalized.Should().Contain("%3",
+			because: "a numeric scope distinguishes the destination exactly as a named one does, and it must not depend on a platform API happening to round-trip it");
+	}
 }

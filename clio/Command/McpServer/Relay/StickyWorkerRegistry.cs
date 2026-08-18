@@ -144,21 +144,42 @@ public interface IStickyWorkerRegistry {
 	/// shared-resource reservation it held and disposes its lease, which kills the process and returns
 	/// its admission slot.
 	/// </summary>
-	/// <param name="key">The key to reap. Unknown keys are a no-op.</param>
+	/// <param name="key">The key to reap.</param>
+	/// <param name="entry">The entry the caller means to end.</param>
 	/// <returns>A task that completes when the worker is gone.</returns>
-	ValueTask ReapAsync(StickyWorkerKey key);
+	/// <remarks>
+	/// <b>Scoped to the ENTRY, not to the key, and that is the whole signature.</b> A key outlives the
+	/// worker registered under it: a finished worker lingers so its status poll can be answered and is
+	/// then superseded by the next operation of the same family on the same target. A reap that removed
+	/// "whatever is under this key" would let a caller holding the FINISHED worker kill its SUCCESSOR —
+	/// an operation that had just started, ended by a poll for the one before it. The passed entry is
+	/// always released (its release is idempotent, and an entry nobody holds must not leak a process);
+	/// only an entry that is still the registered one is removed from the registry.
+	/// </remarks>
+	ValueTask ReapAsync(StickyWorkerKey key, StickyWorkerEntry entry);
 
 	/// <summary>
 	/// Records that a worker's long operation has finished: releases the shared resource it was holding
 	/// AT ONCE, and shortens its lifetime to a short linger window.
 	/// </summary>
-	/// <param name="key">The worker that reported completion. Unknown keys are a no-op.</param>
+	/// <param name="key">The key the reporting worker is registered under.</param>
+	/// <param name="entry">
+	/// The worker that reported completion. The signal only takes effect when THIS entry is the one
+	/// registered under <paramref name="key"/>.
+	/// </param>
 	/// <param name="linger">
 	/// How much longer the worker stays reachable after saying it has finished. See
 	/// <see cref="StickyWorkerEntry.MarkCompleted"/> for why this is not zero.
 	/// </param>
 	/// <returns><see langword="true"/> when a live worker was marked.</returns>
-	bool SignalCompleted(StickyWorkerKey key, TimeSpan linger);
+	/// <remarks>
+	/// <b>The identity check is a correctness requirement, not a guard against the impossible.</b> The
+	/// signal arrives on one worker's own read loop, and the key it is keyed by may by then hold a
+	/// DIFFERENT worker — the successor of a completed one. Marking by key alone would let a worker's
+	/// completion release the successor's shared-resource reservation and shorten its lifetime to a
+	/// linger window while its operation was still running.
+	/// </remarks>
+	bool SignalCompleted(StickyWorkerKey key, StickyWorkerEntry entry, TimeSpan linger);
 
 	/// <summary>
 	/// Reaps every entry that has exited or is past its lifetime bound.
@@ -405,22 +426,33 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry {
 	}
 
 	/// <inheritdoc/>
-	public async ValueTask ReapAsync(StickyWorkerKey key) {
+	public async ValueTask ReapAsync(StickyWorkerKey key, StickyWorkerEntry entry) {
 		ArgumentNullException.ThrowIfNull(key);
-		StickyWorkerEntry entry;
+		ArgumentNullException.ThrowIfNull(entry);
 		lock (_gate) {
-			if (!_entries.Remove(key, out entry)) {
-				return;
+			if (_entries.TryGetValue(key, out StickyWorkerEntry registered) && ReferenceEquals(registered, entry)) {
+				_entries.Remove(key);
 			}
 		}
+		// Released even when the key now holds somebody else: this entry is then owned by nobody, and the
+		// alternative to releasing it is a process, an admission slot and a reservation that nothing ever
+		// returns. Release is idempotent, so reaping an already-reaped entry costs nothing.
 		await entry.ReleaseAsync().ConfigureAwait(false);
 	}
 
 	/// <inheritdoc/>
-	public bool SignalCompleted(StickyWorkerKey key, TimeSpan linger) {
+	public bool SignalCompleted(StickyWorkerKey key, StickyWorkerEntry entry, TimeSpan linger) {
 		ArgumentNullException.ThrowIfNull(key);
+		if (entry is null) {
+			// A signal that arrived before the parent had built the entry it belongs to. There is nothing
+			// to mark and nothing to guess at: marking whatever the key held would be the very confusion
+			// this parameter exists to remove.
+			return false;
+		}
 		lock (_gate) {
-			return _entries.TryGetValue(key, out StickyWorkerEntry entry) && entry.MarkCompleted(linger);
+			return _entries.TryGetValue(key, out StickyWorkerEntry registered)
+				&& ReferenceEquals(registered, entry)
+				&& registered.MarkCompleted(linger);
 		}
 	}
 

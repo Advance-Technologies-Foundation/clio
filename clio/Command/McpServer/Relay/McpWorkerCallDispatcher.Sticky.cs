@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -58,6 +59,21 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// clio bug.
 	/// </remarks>
 	internal const string StickyCapacityErrorClass = "clio-worker-capacity";
+
+	/// <summary>
+	/// Machine-readable error class emitted when this family already has a live sticky worker for the
+	/// target, so the call would have been a SECOND operation of the same kind against one environment.
+	/// </summary>
+	/// <remarks>
+	/// Neither a capacity refusal nor a relay failure: the host has room and nothing is broken — the
+	/// operation the caller asked for is already running, and the remedy is to poll it rather than to
+	/// retry, wait for capacity, or look for a clio bug. It is the same statement
+	/// <see cref="SharedResourceBusyErrorClass"/> makes for the families a configuration-build
+	/// reservation already serialises; this one covers the families that have no shared resource to
+	/// reserve — <c>restart-*</c> above all — and are therefore the only ones that could ever reach the
+	/// spawn path twice for one key.
+	/// </remarks>
+	internal const string LongOperationInProgressErrorClass = "clio-long-operation-in-progress";
 
 	/// <summary>
 	/// How much longer than the child's response deadline the parent waits before giving up on one sticky
@@ -129,6 +145,19 @@ public sealed partial class McpWorkerCallDispatcher {
 	internal static readonly TimeSpan DefaultStickyCompletionLinger = TimeSpan.FromMinutes(5);
 
 	/// <summary>
+	/// The keys a sticky worker is being created for RIGHT NOW: spawned, handshaking, or not yet
+	/// registered.
+	/// </summary>
+	/// <remarks>
+	/// The window between spawn and registration is the whole defect this closes. Only starters ever
+	/// touch it, and an entry lives in it for spawn plus handshake, never for the operation.
+	/// </remarks>
+	private readonly HashSet<StickyWorkerKey> _startsInFlight = [];
+
+	/// <summary>Guards <see cref="_startsInFlight"/>; separate from the registry's own lock.</summary>
+	private readonly object _startGateLock = new();
+
+	/// <summary>
 	/// Runs one call of a long-running family: reach the family's live sticky worker if there is one,
 	/// otherwise start it (when this tool is the family's starter) or fall back to an ordinary per-call
 	/// worker (when it is a poller with nothing to poll).
@@ -174,6 +203,25 @@ public sealed partial class McpWorkerCallDispatcher {
 				cancellationToken).ConfigureAwait(false);
 		}
 
+		// STARTING IS SINGLE-FLIGHT PER KEY, and the gate is held across spawn, handshake and
+		// registration — not across the operation, which is why it is taken here and dropped the moment
+		// the registry has the entry. Without it two starters of one family both spawn, one loses
+		// TryRegister, and the loser is released the instant its response is composed: on
+		// restart-by-environment-name that response is IN-PROGRESS and the readiness wait continues
+		// INSIDE the worker, so the release destroys the operation and its state. It is taken with ZERO
+		// wait: queueing behind a starter that may sit in handshake for the whole sticky call budget
+		// would spend minutes of the caller's patience to arrive at the same refusal with less
+		// information.
+		using IDisposable startGate = TryEnterStartGate(key);
+		if (startGate is null) {
+			return LongOperationInProgressResult(toolName, key.Family, environmentName);
+		}
+		// The RESERVATION answers first where there is one, and the order is load-bearing rather than
+		// arbitrary. It is keyed by target and therefore excludes across principals AND across families
+		// (a compile excludes an install-process-builder), which is strictly broader than the sticky key
+		// below; and its refusal makes the more specific statement — this ENVIRONMENT's configuration
+		// build is busy, not merely this caller's own operation. Letting the key check answer first would
+		// silently downgrade that envelope for compile and install-process-builder.
 		SharedResourceReservationToken reservation = null;
 		if (metadata.SharedFileResource == McpToolSharedFileResource.ConfigurationBuild) {
 			// Keyed by the NORMALISED TARGET and the resource, never by the tenant key: Creatio's
@@ -186,8 +234,57 @@ public sealed partial class McpWorkerCallDispatcher {
 			}
 		}
 
-		return await StartStickyWorkerAsync(toolName, key, reservation, parameters, childParameters,
-			parentSession, cancellationToken).ConfigureAwait(false);
+		if (_stickyWorkers.TryReach(key, out StickyWorkerEntry existing)) {
+			if (!existing.IsCompleted) {
+				// Refused BEFORE anything is created. This is the answer for the families that have no
+				// shared resource to reserve — restart-* above all — which are exactly the ones that could
+				// otherwise reach the spawn path twice for one key.
+				_reservations.Release(reservation);
+				return LongOperationInProgressResult(toolName, key.Family, environmentName);
+			}
+			// A worker that has REPORTED COMPLETION is live only for its linger window, and the only thing
+			// that window protects is a status poll for work that has already ended. A new starter
+			// supersedes it: treating a lingering worker as "already in progress" would deny this target
+			// its next long operation for minutes after the last one finished.
+			await _stickyWorkers.ReapAsync(key, existing).ConfigureAwait(false);
+		}
+
+		return await StartStickyWorkerAsync(toolName, key, environmentName, reservation, parameters,
+			childParameters, parentSession, startGate, cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Takes the per-key start gate, or answers that another starter of this family already holds it.
+	/// </summary>
+	/// <param name="key">The sticky key a worker is about to be created for.</param>
+	/// <returns>
+	/// A lease to be disposed once the worker is registered, or <see langword="null"/> when a start for
+	/// that key is already in flight.
+	/// </returns>
+	/// <remarks>
+	/// A set of keys under a lock rather than a semaphore per key, because the gate NEVER WAITS: with no
+	/// waiters there is no queue to model, nothing to time out and no per-key synchronisation primitive
+	/// to reference-count and dispose. Held only for spawn, handshake and registration — the operation
+	/// itself runs outside it, since the registration that makes the worker reachable happens before the
+	/// starting call is sent.
+	/// </remarks>
+	private IDisposable TryEnterStartGate(StickyWorkerKey key) {
+		lock (_startGateLock) {
+			if (!_startsInFlight.Add(key)) {
+				return null;
+			}
+		}
+		return new StickyStartGateLease(this, key);
+	}
+
+	/// <summary>
+	/// Frees the per-key start gate so the next starter of that family may create a worker.
+	/// </summary>
+	/// <param name="key">The key to release.</param>
+	private void ExitStartGate(StickyWorkerKey key) {
+		lock (_startGateLock) {
+			_startsInFlight.Remove(key);
+		}
 	}
 
 	/// <summary>
@@ -195,19 +292,26 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// </summary>
 	/// <param name="toolName">The canonical tool name.</param>
 	/// <param name="key">The key the worker is registered and later reached under.</param>
+	/// <param name="environmentName">The target the call named, for the refusal envelope.</param>
 	/// <param name="reservation">The shared-resource reservation this worker will hold, or null.</param>
 	/// <param name="parameters">The caller's params, for the per-call fallback.</param>
 	/// <param name="childParameters">The params to send to the worker.</param>
 	/// <param name="parentSession">The parent leg.</param>
+	/// <param name="startGate">
+	/// The per-key start gate, dropped as soon as the registry owns the worker. The caller keeps its own
+	/// <c>using</c> on it, so every failure path releases it too; the lease is idempotent.
+	/// </param>
 	/// <param name="cancellationToken">Caller cancellation.</param>
 	/// <returns>The worker's result, or a named error envelope.</returns>
 	private async ValueTask<CallToolResult> StartStickyWorkerAsync(
 		string toolName,
 		StickyWorkerKey key,
+		string environmentName,
 		SharedResourceReservationToken reservation,
 		CallToolRequestParams parameters,
 		CallToolRequestParams childParameters,
 		IParentMcpSession parentSession,
+		IDisposable startGate,
 		CancellationToken cancellationToken) {
 		// A sticky worker KEEPS clio's own response-deadline override (ADR rule 11): its in-progress
 		// envelope is what returns the call, and stripping it turned a 25 s backend call into a 77 s block
@@ -256,8 +360,16 @@ public sealed partial class McpWorkerCallDispatcher {
 			ITransport childTransport = await _transportOwner
 				.ConnectAsync(lease.StandardInput, lease.StandardOutput, handshakeSource.Token)
 				.ConfigureAwait(false);
+			// The tap is scoped to THIS ENTRY, never to the key: the key outlives the worker registered
+			// under it (a finished worker lingers and is then superseded), so a signal keyed by key alone
+			// could release a SUCCESSOR's reservation and shorten its lifetime while its operation was
+			// still running. The box is written after the session opens and read on the relay's read
+			// loop, so both sides go through Volatile; a signal that arrives before the entry exists is
+			// consumed and does nothing, which is what the key-scoped tap did at that moment anyway.
+			StrongBox<StickyWorkerEntry> tapEntry = new(null);
 			WorkerRelayOptions relayOptions = new() {
-				NotificationTap = notification => TapCompletionSignal(notification, key)
+				NotificationTap = notification =>
+					TapCompletionSignal(notification, key, Volatile.Read(ref tapEntry.Value))
 			};
 			WorkerRelaySession session = await _relay
 				.OpenAsync(childTransport, parentSession, relayOptions, handshakeSource.Token)
@@ -265,10 +377,21 @@ public sealed partial class McpWorkerCallDispatcher {
 			entry = new StickyWorkerEntry(lease, session, standardError,
 				StickyWorkerLifetimeBound.Resolve(lease.SpawnedAtUtc, credentialValidUntilUtc: null),
 				reservation, _reservations, _logger);
-			// A lost race means another call of this family registered first. This worker then serves ITS
-			// OWN call and is released afterwards — a per-call worker in all but name — rather than being
-			// left unowned or overwriting a live entry somebody else is polling.
+			Volatile.Write(ref tapEntry.Value, entry);
 			ownershipTransferred = _stickyWorkers.TryRegister(key, entry);
+			if (!ownershipTransferred) {
+				// Unreachable while the start gate holds — and handled anyway, because the alternative is
+				// the defect this replaced: a worker that runs its call and is then released, which on a
+				// family whose operation OUTLIVES its response kills the operation the caller was just told
+				// to poll for. Nothing is invoked on an unowned worker; it ends here and the caller is told
+				// the truth, that the family's operation for this target is already running.
+				await entry.ReleaseAsync().ConfigureAwait(false);
+				return LongOperationInProgressResult(toolName, key.Family, environmentName);
+			}
+			// The window the gate exists for is over: the worker is reachable, so the next starter of this
+			// family will be refused by the registry lookup rather than by the gate. Holding it across the
+			// starting call would block that starter for as long as the sticky call budget.
+			startGate?.Dispose();
 			using CancellationTokenSource callSource =
 				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			callSource.CancelAfter(_stickyCallBudget);
@@ -302,8 +425,10 @@ public sealed partial class McpWorkerCallDispatcher {
 		}
 		finally {
 			if (!ownershipTransferred && entry is not null) {
-				// The worker served its own call but nobody owns it, so it ends here — and this is the
-				// only path on which a sticky spawn returns its admission slot immediately.
+				// Belt and braces for an entry the registry never took. The branch above already released
+				// it before invoking anything — a worker nobody owns must not run a second operation of a
+				// family whose work outlives its response — and release is idempotent, so this only ever
+				// matters if a future path leaves an unowned entry behind.
 				await entry.ReleaseAsync().ConfigureAwait(false);
 			}
 		}
@@ -319,7 +444,7 @@ public sealed partial class McpWorkerCallDispatcher {
 	private async ValueTask ReleaseStartedWorkerAsync(StickyWorkerKey key, StickyWorkerEntry entry,
 		bool ownershipTransferred) {
 		if (entry is not null && ownershipTransferred) {
-			await _stickyWorkers.ReapAsync(key).ConfigureAwait(false);
+			await _stickyWorkers.ReapAsync(key, entry).ConfigureAwait(false);
 		}
 	}
 
@@ -351,7 +476,11 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// reaps the worker it came from.
 	/// </summary>
 	/// <param name="notification">A notification taken off the worker's pipe.</param>
-	/// <param name="key">The sticky worker that sent it.</param>
+	/// <param name="key">The key the sending worker is registered under.</param>
+	/// <param name="entry">
+	/// The sending worker itself, or <see langword="null"/> when the signal arrived before the parent had
+	/// finished building it. The signal only completes THIS entry, never whatever the key holds now.
+	/// </param>
 	/// <returns><see langword="false"/> for the signal (consume it); <see langword="true"/> otherwise.</returns>
 	/// <remarks>
 	/// <para>
@@ -365,7 +494,8 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// inline would have the read loop waiting for itself.
 	/// </para>
 	/// </remarks>
-	private bool TapCompletionSignal(JsonRpcNotification notification, StickyWorkerKey key) {
+	private bool TapCompletionSignal(JsonRpcNotification notification, StickyWorkerKey key,
+		StickyWorkerEntry entry) {
 		if (!WorkerOperationSignalContract.TryRead(notification, out McpToolOperationFamily family,
 				out int? exitCode)) {
 			return true;
@@ -378,7 +508,7 @@ public sealed partial class McpWorkerCallDispatcher {
 		// to the linger window; the sweep at the head of the next sticky dispatch is what actually returns
 		// the admission slot. Doing it this way rather than reaping inline is also what keeps this off the
 		// read loop, which reaping would otherwise make wait for itself.
-		_stickyWorkers.SignalCompleted(key, _stickyCompletionLinger);
+		_stickyWorkers.SignalCompleted(key, entry, _stickyCompletionLinger);
 		return false;
 	}
 
@@ -500,6 +630,64 @@ public sealed partial class McpWorkerCallDispatcher {
 			Content = [new TextContentBlock { Text = text }],
 			StructuredContent = JsonSerializer.SerializeToElement(payload)
 		};
+	}
+
+	/// <summary>
+	/// Builds the envelope returned when this family's operation is already running for the target.
+	/// </summary>
+	/// <param name="toolName">The refused tool.</param>
+	/// <param name="family">The operation family that is already running.</param>
+	/// <param name="environmentName">The environment the call named, when it named one.</param>
+	/// <returns>The error result.</returns>
+	internal static CallToolResult LongOperationInProgressResult(string toolName,
+		McpToolOperationFamily family, string environmentName) {
+		string target = string.IsNullOrWhiteSpace(environmentName)
+			? "the requested environment"
+			: $"'{environmentName}'";
+		string text = string.Format(CultureInfo.InvariantCulture,
+			"'{0}' was not started: an operation of the '{1}' family is already running for {2} in this "
+			+ "clio MCP host. Poll that operation's status tool for its result, or wait for it to finish "
+			+ "before starting another.", toolName, family, target);
+		JsonObject payload = new() {
+			["success"] = false,
+			["tool"] = toolName,
+			["error-class"] = LongOperationInProgressErrorClass,
+			["long-operation-in-progress"] = true,
+			["operation-family"] = family.ToString(),
+			["message"] = text
+		};
+		return new CallToolResult {
+			IsError = true,
+			Content = [new TextContentBlock { Text = text }],
+			StructuredContent = JsonSerializer.SerializeToElement(payload)
+		};
+	}
+
+	/// <summary>
+	/// Holds the per-key start gate for one starter and frees it exactly once.
+	/// </summary>
+	/// <remarks>
+	/// Per-call runtime state rather than a service — like <c>WorkerStandardErrorDrain</c> — so it is a
+	/// private nested class with no interface and is never resolved from a container. Release is
+	/// idempotent because the starter drops the gate as soon as the registry owns the worker while its
+	/// caller still holds a <c>using</c> on it for the failure paths.
+	/// </remarks>
+	private sealed class StickyStartGateLease : IDisposable {
+
+		private readonly McpWorkerCallDispatcher _dispatcher;
+		private readonly StickyWorkerKey _key;
+		private int _released;
+
+		internal StickyStartGateLease(McpWorkerCallDispatcher dispatcher, StickyWorkerKey key) {
+			_dispatcher = dispatcher;
+			_key = key;
+		}
+
+		public void Dispose() {
+			if (Interlocked.Exchange(ref _released, 1) == 0) {
+				_dispatcher.ExitStartGate(_key);
+			}
+		}
 	}
 
 	/// <summary>

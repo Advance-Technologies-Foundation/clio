@@ -52,7 +52,21 @@ public sealed class StickyWorkerSupervisionTests {
 	private const string CompileToolName = "compile-creatio";
 	private const string CompileStatusToolName = "compile-status";
 	private const string InstallProcessBuilderToolName = "install-process-builder";
+	private const string RestartToolName = "restart-by-environment-name";
+	private const string RestartStatusToolName = "restart-status";
 	private const string EnvironmentName = "sandbox";
+
+	/// <summary>
+	/// The agent-observable error class a starter is refused with when its family already has a live
+	/// sticky worker for the target.
+	/// </summary>
+	/// <remarks>
+	/// Pinned here as a LITERAL rather than compared to the constant the dispatcher also reads, for the
+	/// same reason <c>WorkerOperationSignalContract.NotificationMethod</c> is: it is a token shipped
+	/// guidance and clients key on, so a rename must be a deliberate change rather than a comparison that
+	/// silently agrees with itself.
+	/// </remarks>
+	private const string LongOperationInProgressErrorClass = "clio-long-operation-in-progress";
 
 	/// <summary>
 	/// Short enough that a call which QUEUED for admission instead of reaching its worker is reported as
@@ -595,6 +609,213 @@ public sealed class StickyWorkerSupervisionTests {
 	}
 
 	// ---------------------------------------------------------------------------------------------
+	// The lost-race starter: starting is SINGLE-FLIGHT per key, and the second starter is refused
+	// before it can create a worker whose continuation would be killed with it
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("Two starters of one family racing for one key create exactly ONE worker: the loser is refused by name before anything is launched, rather than starting a second worker that is released — killed — the instant it has composed its in-progress response, taking the readiness wait continuing inside it with it.")]
+	public async Task DispatchAsync_ShouldCreateOneWorkerAndRefuseTheLoser_WhenTwoStartersRaceForOneKey() {
+		// Arrange — the restart family, whose shared file resource is None. It is the family with NO
+		// configuration-build reservation, which is precisely why two of its starters can reach the spawn
+		// path together; compile and install-process-builder are already serialised before it. Capacity is
+		// eight, so nothing here can be refused for want of a sticky slot. The child stalls its initialize
+		// reply so both starters are inside the spawn-to-register window at the same time — without that,
+		// the second may simply arrive after the first has registered and the race never happens.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 8,
+			handshakeDelay: TimeSpan.FromMilliseconds(150));
+
+		// Act
+		Task<CallToolResult> firstStarter = Task.Run(() => fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			EnvironmentName));
+		Task<CallToolResult> secondStarter = Task.Run(() => fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			EnvironmentName));
+		CallToolResult[] results = await Task.WhenAll(firstStarter, secondStarter);
+
+		// Assert
+		fixture.Containment.LaunchCount.Should().Be(1,
+			because: "the spawn count on the supervisor's containment is the ONLY place a second worker is visible: a loser that is created and then released leaves no trace in the registry, answers its caller normally, and takes the operation running inside it down when it goes");
+		results.Where(result => result.IsError != true).Should().ContainSingle(
+			because: "exactly one starter may own the family's worker for this target, and it must be answered normally");
+		results.Where(result => result.IsError == true).Should().ContainSingle(
+			because: "the other starter must be REFUSED rather than served by a doomed worker — a restart returns in-progress and continues its readiness wait inside the process, so releasing that process the moment the response is composed destroys the operation the caller was told to poll for");
+		ReadErrorClass(results.Single(result => result.IsError == true)).Should()
+			.Be(LongOperationInProgressErrorClass,
+				because: "the refusal must say WHY: an operation of this family is already running for this environment, which is neither a relay failure to investigate nor a timeout to retry but a state the caller resolves by polling the operation that is already running");
+		fixture.StickyWorkers.Count.Should().Be(1,
+			because: "one key holds one worker, and the survivor must be registered so the status poll the admitted caller was told to make can reach it");
+		fixture.Children.Should().ContainSingle(
+			because: "no second child process may exist at all; one that was created and killed is exactly the defect");
+		fixture.Children[0].HasExited.Should().BeFalse(
+			because: "the survivor must still be alive after the refusal — the refusal path must not touch the incumbent's worker");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A second starter arriving while the family's sticky worker is still running is refused by name, and the incumbent keeps answering its status polls — the refusal must cost the running operation nothing.")]
+	public async Task DispatchAsync_ShouldRefuseASecondStarter_WhileTheFamilysStickyWorkerIsStillRunning() {
+		// Arrange
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 8);
+		CallToolResult started = await fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			EnvironmentName);
+
+		// Act
+		CallToolResult refused = await fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			EnvironmentName);
+		CallToolResult status = await fixture.DispatchAsync(
+			RestartStatusToolName,
+			PollerMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			EnvironmentName);
+
+		// Assert
+		started.IsError.Should().NotBeTrue(
+			because: "the incumbent must have been admitted, or the refusal below would be measuring an empty registry rather than a live worker");
+		refused.IsError.Should().BeTrue(
+			because: "one target runs one operation of one family at a time: serving this call from a second worker that is released afterwards is what kills a readiness wait that had not finished");
+		ReadErrorClass(refused).Should().Be(LongOperationInProgressErrorClass,
+			because: "an agent needs to be told the operation it asked for is ALREADY RUNNING, which is actionable — poll it — where a relay failure would send it hunting a clio bug");
+		fixture.Containment.LaunchCount.Should().Be(1,
+			because: "a refused starter must create nothing: no second process, and therefore no second restart request to Creatio");
+		status.IsError.Should().NotBeTrue(
+			because: "the incumbent must still be reachable after the refusal; a refusal that disturbed the running worker would be worse than the defect it replaces");
+		fixture.Children[0].CallCount.Should().Be(2,
+			because: "the one worker answered the starting call and the poll, so the refusal neither reached it nor started anything alongside it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A worker that has already reported completion and is only lingering to answer a status poll does NOT refuse the next long operation of its family: the new starter supersedes it, so the linger cannot become minutes of false 'already in progress' refusals.")]
+	public async Task DispatchAsync_ShouldSupersedeALingeringCompletedWorker_WhenTheNextStarterArrives() {
+		// Arrange — the shipped-shaped linger rather than zero, because zero would let the sweep at the
+		// head of the next dispatch remove the entry and the successor would never meet it. A completed
+		// worker is still LIVE for the whole window, so an unconditional "is there a worker for this key"
+		// refusal would deny this environment its next restart for five minutes after the last one ended.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 8,
+			completionLinger: TimeSpan.FromMinutes(5));
+		await fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			EnvironmentName);
+		StickyWorkerKey key = new(McpToolOperationFamily.Restart, $"tenant|{EnvironmentName}");
+		await fixture.Children[0].SendCompletionSignalAsync(McpToolOperationFamily.Restart, exitCode: 0);
+		await WaitUntilAsync(() =>
+			fixture.StickyWorkers.TryReach(key, out StickyWorkerEntry lingering) && lingering.IsCompleted);
+
+		// Act
+		CallToolResult next = await fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			EnvironmentName);
+
+		// Assert
+		next.IsError.Should().NotBeTrue(
+			because: "the previous operation has FINISHED; refusing the next one because its worker is still lingering for a poll would invent a cooldown nobody asked for");
+		fixture.Containment.LaunchCount.Should().Be(2,
+			because: "the successor is a new operation and needs its own worker: reusing the finished one would multiplex a second restart onto the process that just reported its first as done");
+		fixture.StickyWorkers.TryReach(key, out StickyWorkerEntry registered).Should().BeTrue(
+			because: "the key must hold the RUNNING operation's worker so its status poll reaches it");
+		registered.IsCompleted.Should().BeFalse(
+			because: "the entry under this key must be the SUCCESSOR, not the finished worker it superseded — otherwise the new operation's poll is answered by the process that ran the previous one");
+		fixture.Children[1].HasExited.Should().BeFalse(
+			because: "the successor owns the key and must stay alive; a starter that registered nothing and released itself is precisely the lost-race worker this change removes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A completion signal carrying one worker completes THAT worker or nothing: aimed at a key another worker is registered under, it neither marks that worker complete nor releases the reservation it is holding for a build that is still running.")]
+	public async Task SignalCompleted_ShouldNotCompleteTheRegisteredWorker_WhenTheSignalCameFromAnotherWorker() {
+		// Arrange — two live sticky workers, each under its own key. The first holds its target's
+		// configuration-build reservation, and a completion releases that AT ONCE, so a signal that took
+		// effect on the wrong entry shows up as an environment that stopped being reserved while its
+		// build was still running — not merely as a lifetime quietly shortened to a linger window.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 8);
+		await fixture.DispatchAsync(
+			InstallProcessBuilderToolName,
+			StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild),
+			EnvironmentName);
+		await fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			"another-environment");
+		StickyWorkerKey buildKey =
+			new(McpToolOperationFamily.ConfigurationBuild, $"tenant|{EnvironmentName}");
+		StickyWorkerKey restartKey = new(McpToolOperationFamily.Restart, "tenant|another-environment");
+		fixture.StickyWorkers.TryReach(buildKey, out StickyWorkerEntry build).Should().BeTrue(
+			because: "the arrangement needs a live registered worker to aim a foreign signal at");
+		fixture.StickyWorkers.TryReach(restartKey, out StickyWorkerEntry restart).Should().BeTrue(
+			because: "and a second, DIFFERENT worker to be the one the signal actually came from");
+
+		// Act — the second worker's entry, presented under the first worker's key.
+		bool foreignSignal =
+			fixture.StickyWorkers.SignalCompleted(buildKey, restart, TimeSpan.FromMinutes(1));
+		bool completedAfterForeignSignal = build.IsCompleted;
+		int reservationsAfterForeignSignal = fixture.Reservations.HeldCount;
+		bool ownSignal = fixture.StickyWorkers.SignalCompleted(buildKey, build, TimeSpan.FromMinutes(1));
+
+		// Assert
+		foreignSignal.Should().BeFalse(
+			because: "a signal only completes the worker that emitted it: the key it names may by then hold a DIFFERENT worker — a successor to one that finished — and completing that one releases a reservation and shortens a lifetime under an operation that is still running");
+		completedAfterForeignSignal.Should().BeFalse(
+			because: "the running build must not be marked finished by somebody else's completion");
+		reservationsAfterForeignSignal.Should().Be(1,
+			because: "the configuration-build reservation is released the moment a build reports completion, so a foreign signal that took effect would leave this environment open to a second concurrent build while the first was still compiling");
+		restart.IsCompleted.Should().BeFalse(
+			because: "the entry that was passed must not be completed either — it was not registered under the key the signal named, and the signal is not a licence to complete it wherever it lives");
+		ownSignal.Should().BeTrue(
+			because: "the worker's OWN signal must still take effect, or this fixture would be proving that signals never work rather than that they are scoped");
+		fixture.Reservations.HeldCount.Should().Be(0,
+			because: "that own signal must release the finished build's reservation at once, which is the same observation the foreign signal was required not to produce");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reaping is scoped to the entry as well: asked to reap a worker the key no longer holds, the registry leaves the registered worker alone — otherwise a poll finishing late would end the operation that had just superseded the one it was polling.")]
+	public async Task ReapAsync_ShouldLeaveTheRegisteredWorkerAlone_WhenAskedToReapAnEntryThatKeyNoLongerHolds() {
+		// Arrange
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 8);
+		await fixture.DispatchAsync(
+			InstallProcessBuilderToolName,
+			StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild),
+			EnvironmentName);
+		await fixture.DispatchAsync(
+			RestartToolName,
+			StarterMetadata(McpToolOperationFamily.Restart, McpToolSharedFileResource.None),
+			"another-environment");
+		StickyWorkerKey buildKey =
+			new(McpToolOperationFamily.ConfigurationBuild, $"tenant|{EnvironmentName}");
+		fixture.StickyWorkers.TryReach(buildKey, out StickyWorkerEntry incumbent).Should().BeTrue(
+			because: "the incumbent has to be reachable before the reap, or 'still reachable after' would say nothing");
+		fixture.StickyWorkers.TryReach(
+			new StickyWorkerKey(McpToolOperationFamily.Restart, "tenant|another-environment"),
+			out StickyWorkerEntry strangerToThisKey).Should().BeTrue(
+			because: "the reap below has to be handed a real entry that is simply not the one this key holds");
+
+		// Act
+		await fixture.StickyWorkers.ReapAsync(buildKey, strangerToThisKey);
+
+		// Assert
+		fixture.StickyWorkers.TryReach(buildKey, out StickyWorkerEntry survivor).Should().BeTrue(
+			because: "the worker registered under this key must survive a reap that named a different entry — a key-scoped reap would end whichever operation happened to hold the key, which after a supersession is the NEW one");
+		survivor.Should().BeSameAs(incumbent,
+			because: "the key must still resolve to the SAME entry, so a later poll reaches the operation that is actually running rather than a replacement built for it");
+		fixture.Children[0].HasExited.Should().BeFalse(
+			because: "the registered worker's PROCESS must be untouched: the damage a key-scoped reap does is not a dictionary edit but a killed operation");
+		fixture.Children[1].HasExited.Should().BeTrue(
+			because: "the entry that WAS handed in is released whatever key it was named under — an entry nobody owns must not leak a process, an admission slot and a reservation");
+	}
+
+	// ---------------------------------------------------------------------------------------------
 	// Capacity refusal, mapped to its own envelope rather than to a relay failure
 	// ---------------------------------------------------------------------------------------------
 
@@ -656,8 +877,12 @@ public sealed class StickyWorkerSupervisionTests {
 		}
 	}
 
-	private StickyFixture CreateFixture(int concurrencyCap, TimeSpan? completionLinger = null) {
-		PipedContainment containment = new();
+	private StickyFixture CreateFixture(int concurrencyCap, TimeSpan? completionLinger = null,
+		TimeSpan? handshakeDelay = null) {
+		// The delay is a STATED arrangement, not a sleep in a test: it holds a starter inside the
+		// spawn-to-register window long enough for a second starter of the same key to be there too, which
+		// is the only condition under which the lost race happens at all.
+		PipedContainment containment = new(handshakeDelay ?? TimeSpan.Zero);
 		WorkerProcessSupervisor supervisor = new(_logger, _processExecutor, containment, _pathProvider,
 			_staleWorkers, concurrencyCap, ShortQueueWaitBound);
 		StickyWorkerRegistry stickyWorkers = new(_logger);
@@ -761,7 +986,10 @@ public sealed class StickyWorkerSupervisionTests {
 		private readonly ConcurrentBag<ScriptedChild> _children = [];
 		private readonly List<ScriptedChild> _ordered = [];
 		private readonly object _gate = new();
+		private readonly TimeSpan _handshakeDelay;
 		private int _nextProcessId = 20_000;
+
+		internal PipedContainment(TimeSpan handshakeDelay) => _handshakeDelay = handshakeDelay;
 
 		public bool OwnsProcessCreation => true;
 
@@ -782,7 +1010,7 @@ public sealed class StickyWorkerSupervisionTests {
 		}
 
 		public IContainedWorker Launch(WorkerLaunchRequest request) {
-			ScriptedChild child = new(Interlocked.Increment(ref _nextProcessId));
+			ScriptedChild child = new(Interlocked.Increment(ref _nextProcessId), _handshakeDelay);
 			_children.Add(child);
 			lock (_gate) {
 				_ordered.Add(child);
@@ -817,10 +1045,12 @@ public sealed class StickyWorkerSupervisionTests {
 		private readonly TaskCompletionSource<bool> _exited =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
 		private readonly SemaphoreSlim _writeGate = new(1, 1);
+		private readonly TimeSpan _handshakeDelay;
 		private StreamWriter _toParent;
 		private int _callCount;
 
-		internal ScriptedChild(int processId) {
+		internal ScriptedChild(int processId, TimeSpan handshakeDelay) {
+			_handshakeDelay = handshakeDelay;
 			ProcessId = processId;
 			StartTimeUtc = DateTime.UtcNow;
 			_parentToChildReader = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.None);
@@ -903,6 +1133,11 @@ public sealed class StickyWorkerSupervisionTests {
 			JsonNode request = JsonNode.Parse(line);
 			string method = request?["method"]?.GetValue<string>();
 			if (method == "initialize") {
+				if (_handshakeDelay > TimeSpan.Zero) {
+					// A worker that takes a moment to come up: p50 spawn plus initialize measured 2.763 s on
+					// Windows Server 2022 (ADR 2.4), so a starter really does sit in this window.
+					await Task.Delay(_handshakeDelay).ConfigureAwait(false);
+				}
 				await WriteAsync(new JsonObject {
 					["jsonrpc"] = "2.0",
 					["id"] = request["id"]?.DeepClone(),

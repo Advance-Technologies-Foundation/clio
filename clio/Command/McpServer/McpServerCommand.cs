@@ -51,6 +51,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ISessionContainerCache sessionContainerCache,
 	ITenantExecutionLockProvider tenantExecutionLockProvider,
 	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
+	Common.McpWorker.IWorkerProcessSupervisor workerProcessSupervisor,
 	ILogger logger) : Command<McpServerCommandOptions>{
 	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
 		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
@@ -61,6 +62,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		// own process group and arms parent-death signalling, so a hard-killed parent takes the worker and
 		// everything below it. A parent that is SIGKILLed runs no code, so this half cannot live there.
 		ArmWorkerContainment(options, logger);
+		ReapStaleWorkersForHost(options, workerProcessSupervisor, logger);
 		BootstrapCuratedKnowledgeForHost(options, curatedKnowledgeBootstrapService, logger);
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
@@ -194,6 +196,52 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			+ $"mode={result.Mode}, parent={result.ParentProcessId}, "
 			+ $"parent-already-exited={result.ParentAlreadyExited}.");
 		return result;
+	}
+
+	/// <summary>
+	/// Kills workers left behind by a PREVIOUS parent that died without taking them with it.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Containment normally makes this unnecessary: a worker leads its own process group and arms
+	/// parent-death signalling, so a hard-killed parent takes its workers down. But arming can FAIL — the
+	/// watch reports that — and a parent killed before it armed leaves a worker recorded on disk with
+	/// nothing to end it. That worker keeps its authenticated session and every descendant it spawned,
+	/// indefinitely.
+	/// </para>
+	/// <para>
+	/// <b>The registry has had an identity-checked reaper since stage 2 and nothing called it.</b> Found
+	/// 2026-08-19 by an external review; the method, its interface declaration and its tests all existed,
+	/// so the gap was invisible to everything except a search for callers. It runs on the HOST only — a
+	/// worker spawns no workers, and a worker reaping the registry would kill its siblings.
+	/// </para>
+	/// <para>
+	/// Non-fatal by construction: a startup that cannot reap must still serve. The reaper itself compares
+	/// the full pid / start-time / executable-path triple before killing anything, so it cannot take a
+	/// stranger that inherited a recycled pid.
+	/// </para>
+	/// </remarks>
+	/// <param name="options">The parsed command options; skipped under <c>--worker</c>.</param>
+	/// <param name="supervisor">The supervisor owning the on-disk worker registry.</param>
+	/// <param name="logger">The host logger.</param>
+	internal static void ReapStaleWorkersForHost(McpServerCommandOptions options,
+		Common.McpWorker.IWorkerProcessSupervisor supervisor, ILogger logger) {
+		if (options.Worker) {
+			return;
+		}
+		try {
+			Common.McpWorker.StaleWorkerReapReport report = supervisor.ReapStaleWorkers();
+			if (report.Terminated > 0 || report.Warnings.Count > 0) {
+				logger.WriteWarning(
+					$"Reaped {report.Terminated} worker(s) left by a previous clio host"
+					+ (report.Warnings.Count > 0 ? $"; {report.Warnings.Count} warning(s)." : "."));
+			}
+		}
+		catch (Exception exception) {
+			// A startup that cannot clean up must still serve requests.
+			logger.WriteWarning(
+				$"Stale worker cleanup did not run: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
+		}
 	}
 
 	/// <summary>

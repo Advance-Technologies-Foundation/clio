@@ -158,4 +158,29 @@ public sealed class ToolCommandResolverTargetConvergenceTests {
 		keyByOtherHost.Should().NotBe(keyByName,
 			because: "two different hosts are two different targets and must never share a worker or a session");
 	}
+
+	[Test]
+	[Description("Two environments on ONE normalised target that differ only by ClientSecret must NOT share a key: with the environment name gone from the identity, an unhashed secret makes their discriminators identical and the container cache hands the second one the first's authenticated client.")]
+	public void GetTenantKey_ShouldDiffer_WhenOnlyTheClientSecretDiffers() {
+		// Arrange — same uri, same ClientId, different secret. Before AC-00 the environment NAME kept these
+		// apart on its own; it no longer does, so the secret has to.
+		KeyCapturingSessionCache cache = new();
+		ToolCommandResolver resolver = CreateResolver(cache, EnvironmentUri);
+		EnvironmentOptions first = new() {
+			Uri = EnvironmentUri, Login = Login, Password = Password, IsNetCore = true,
+			ClientId = "shared-client", ClientSecret = "secret-one"
+		};
+		EnvironmentOptions second = new() {
+			Uri = EnvironmentUri, Login = Login, Password = Password, IsNetCore = true,
+			ClientId = "shared-client", ClientSecret = "secret-two"
+		};
+
+		// Act
+		string keyForFirst = resolver.GetTenantKey(first);
+		string keyForSecond = resolver.GetTenantKey(second);
+
+		// Assert
+		keyForFirst.Should().NotBe(keyForSecond,
+			because: "these are two different authentication contexts against one target, and sharing a session container or a sticky worker between them is a credential crossover rather than a cache hit");
+	}
 }

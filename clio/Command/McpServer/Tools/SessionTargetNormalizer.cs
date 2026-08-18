@@ -181,16 +181,33 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 	private static string NormalizeHost(string hostText) {
 		if (hostText[0] == '[') {
 			string inner = hostText[1..^1];
-			if (IPAddress.TryParse(inner, out IPAddress address)
+			// The ZONE is split off BEFORE parsing and re-appended byte-exact. Measured on net8.0, because
+			// the earlier comment here guessed the opposite and the guess was the defect:
+			//
+			//   IPAddress.TryParse("fe80::1%ethA")  -> succeeds, ToString() gives "fe80::1"
+			//   IPAddress.TryParse("fe80::1%ethB")  -> succeeds, ToString() gives "fe80::1"
+			//   IPAddress.TryParse("fe80::1%3")     -> succeeds, ToString() gives "fe80::1%3"
+			//
+			// So a NAMED zone parses fine and is silently discarded, and two different link-local
+			// destinations fold into one target — a credential crossover on a sticky worker rather than a
+			// cache miss (T-5). A numeric zone happens to survive, which is exactly the kind of accident
+			// that makes the named case easy to miss. T-5 names no rule for zones, and its default is
+			// explicit: anything the algorithm does not name is left byte-exact and therefore
+			// distinguishing.
+			int zoneStart = inner.IndexOf('%');
+			string addressText = zoneStart < 0 ? inner : inner[..zoneStart];
+			string zone = zoneStart < 0 ? string.Empty : inner[zoneStart..];
+			if (IPAddress.TryParse(addressText, out IPAddress address)
 				&& address.AddressFamily == AddressFamily.InterNetworkV6) {
 				// IPAddress.ToString() emits the RFC 5952 canonical form (lowercase hex, "::" at the
 				// longest zero run). It is managed code, so the result is identical on macOS, Linux and
 				// Windows — unlike the platform-backed IDNA path below.
-				return string.Concat("[", address.ToString(), "]");
+				return string.Concat("[", address.ToString(), zone, "]");
 			}
-			// A bracketed literal this runtime cannot parse (a scoped address, for instance) is not an
-			// RFC 5952 form we may canonicalise; hex case is the only fold T-5 names for it.
-			return string.Concat("[", inner.ToLowerInvariant(), "]");
+			// A bracketed literal this runtime cannot parse is not an RFC 5952 form we may canonicalise;
+			// hex case is the only fold T-5 names for it. The zone rides along untouched for the same
+			// reason as above — it is case-sensitive on Unix, so it is not lowercased either.
+			return string.Concat("[", addressText.ToLowerInvariant(), zone, "]");
 		}
 		if (LooksLikeIPv4Literal(hostText)) {
 			if (!IsCanonicalDottedQuad(hostText)) {

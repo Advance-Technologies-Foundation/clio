@@ -91,7 +91,7 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 			// Reaching is not an aliveness assertion: the worker may exit between the registry lookup and
 			// this read. That race is answered HERE rather than by a reach that throws, because the caller
 			// has one sensible response to it and it is the same as "there was no worker".
-			await _registry.ReapAsync(key).ConfigureAwait(false);
+			await _registry.ReapAsync(key, entry).ConfigureAwait(false);
 			return null;
 		}
 		using CancellationTokenSource budgetSource =
@@ -105,8 +105,10 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 				// record; once it has been, nobody needs the worker and holding its admission slot for the
 				// rest of the window would refuse the next long operation on a host whose sticky capacity is
 				// small — one or two on the machines this actually runs on. The window stays as the backstop
-				// for a caller that never polls at all.
-				await _registry.ReapAsync(key).ConfigureAwait(false);
+				// for a caller that never polls at all. Reaped by ENTRY: a starter may have superseded this
+				// finished worker between the send and the answer, and reaping by key alone would end the
+				// operation that just replaced it.
+				await _registry.ReapAsync(key, entry).ConfigureAwait(false);
 			}
 			return result;
 		}
@@ -123,7 +125,7 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 			_logger.WriteWarning(
 				$"A sticky MCP worker for operation family '{key.Family}' could not be reached and was "
 				+ $"reaped: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
-			await _registry.ReapAsync(key).ConfigureAwait(false);
+			await _registry.ReapAsync(key, entry).ConfigureAwait(false);
 			return null;
 		}
 	}

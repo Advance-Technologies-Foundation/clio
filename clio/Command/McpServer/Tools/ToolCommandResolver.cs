@@ -427,10 +427,30 @@ public class ToolCommandResolver(
 	// SHA-256 hashed via the shared helper and never placed raw in the key (FR-11).
 	internal string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
 		string identity = BuildTargetIdentity(options, settings);
+		// ClientSecret is here, and AuthAppUri deliberately is NOT. Both were absent while the identity
+		// still carried the ENVIRONMENT NAME, which distinguished two registrations on its own; AC-00
+		// replaced the name with the normalised target, so two environments on one uri sharing a ClientId
+		// — or both leaving it empty — would otherwise produce an IDENTICAL discriminator despite
+		// different secrets, and the container cache and sticky registry would hand the second one the
+		// first's authenticated client. That is the credential crossover T-5 exists to prevent.
+		//
+		// AuthAppUri is excluded because it is a DERIVED property, not stored state: when unset it returns
+		// Uri lowercased with ".creatio.com" replaced by "-is.creatio.com/connect/token"
+		// (ConfigurationOptions.cs). Hashing it would therefore re-split the very key AC-00 converged —
+		// and worse, that string replacement is not stable across equivalent uris, since a uri carrying an
+		// explicit :443 produces a mangled result the normaliser cannot fold back. A field whose default
+		// is a function of the target belongs in the target half or nowhere; it is already in the target
+		// half.
+		//
+		// Residual, stated rather than hidden: two environments identical in uri, ClientId and
+		// ClientSecret but with different EXPLICIT AuthAppUri values still share a key. That is R-5's
+		// per-principal credential fingerprint, which belongs to the deferred story 5 (ADR §5, OQ-9), not
+		// to a value derived from the uri.
 		string credentials = string.Concat(
 			settings.Login ?? string.Empty, "|",
 			settings.Password ?? string.Empty, "|",
 			settings.ClientId ?? string.Empty, "|",
+			settings.ClientSecret ?? string.Empty, "|",
 			settings.AccessToken ?? string.Empty, "|",
 			settings.AccessTokenType ?? string.Empty, "|",
 			settings.Cookie ?? string.Empty, "|",
