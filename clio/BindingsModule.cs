@@ -1072,8 +1072,29 @@ public class BindingsModule {
 		// a non-MCP CLI build that never resolves them pays nothing.
 		services.AddSingleton<Command.McpServer.IMcpToolExecutionMetadataReader,
 			Command.McpServer.McpToolExecutionMetadataReader>();
+		// ENG-95262 Stage 6 — the process-level worker-path gate the router consults. Registered next to
+		// the router and skip-listed with it: it answers a question about the PROCESS (which transport this
+		// host serves, and whether this process is itself a worker), so a per-resolution transient copy
+		// would be as wrong here as it is for the router.
+		services.AddSingleton<Command.McpServer.IMcpWorkerPathGate, Command.McpServer.McpWorkerPathGate>();
+		// ENG-95262 Stage 6 — which worker-classified tools have a worker path built for them yet. Not a
+		// toggle: the shipped membership is compile-time data (McpWorkerCohort.StageSixNames) with no
+		// runtime switch. It is a registration only because ADR §5 requires membership to be substitutable
+		// in DI for tests, which is how TC-E-603's in-process arm is obtained.
+		services.AddSingleton<Command.McpServer.IMcpWorkerCohort, Command.McpServer.McpWorkerCohort>();
 		services.AddSingleton<Command.McpServer.IMcpExecutionRouter,
 			Command.McpServer.McpExecutionRouter>();
+		// ENG-95262 Stage 6 — the worker relay's dispatch surface. Its namespace is excluded from the
+		// assembly auto-scan (see RegisterAssemblyInterfaceTypes), so these three are registered by hand:
+		// the relay and the transport owner are stateless and TRANSIENT, while the dispatcher is a
+		// SINGLETON because it caches the budget resolved once from the environment and is the seam three
+		// dispatch sites share.
+		services.AddTransient<Command.McpServer.Relay.IWorkerChildTransportOwner,
+			Command.McpServer.Relay.WorkerChildTransportOwner>();
+		services.AddTransient<Command.McpServer.Relay.IWorkerMcpRelay,
+			Command.McpServer.Relay.WorkerMcpRelay>();
+		services.AddSingleton<Command.McpServer.Relay.IMcpWorkerCallDispatcher,
+			Command.McpServer.Relay.McpWorkerCallDispatcher>();
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
 		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
@@ -1397,13 +1418,11 @@ public class BindingsModule {
 					// process), so auto-registering them would fail ValidateOnBuild and stop the host from
 					// starting at all.
 					|| implementedInterface.Namespace == typeof(Common.McpWorker.IProcessContainment).Namespace
-					// The worker MCP relay (ENG-95262 Stage 4a) is not wired into dispatch yet, and the scan
-					// would register it anyway because its types are Clio-namespaced classes. Skipped so that
-					// claim stays true, and so a later constructor on WorkerMcpRelay or WorkerChildTransportOwner
-					// — both of which will take per-worker runtime state, not container services — cannot start
-					// failing ValidateOnBuild and stop every host from starting. The order that wires the relay
-					// into dispatch registers this namespace explicitly, the way the supervisor namespace above
-					// already does.
+					// The worker MCP relay namespace (ENG-95262 Stage 4a/6) is registered explicitly in
+					// RegisterInto — with deliberate, differing lifetimes — rather than swept up by the scan.
+					// Skipping it also keeps the per-worker runtime types out of the container: WorkerRelaySession
+					// takes a live transport no container can supply, and auto-registering that would fail
+					// ValidateOnBuild and stop every host from starting.
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Relay.IWorkerMcpRelay).Namespace
 					// The execution-routing authority and the metadata reader it wraps (ENG-95262 Stage 4b)
 					// are registered explicitly as SINGLETONS in RegisterInto. Their constructors resolve
@@ -1413,6 +1432,11 @@ public class BindingsModule {
 					// registration rather than of declaration order.
 					|| implementedInterface == typeof(Command.McpServer.IMcpToolExecutionMetadataReader)
 					|| implementedInterface == typeof(Command.McpServer.IMcpExecutionRouter)
+					// The worker-path gate is registered explicitly as a SINGLETON beside the router it
+					// feeds (ENG-95262 Stage 6), for the same reason: a transient copy per resolution turns
+					// "this process may not spawn workers" into a per-call re-derivation.
+					|| implementedInterface == typeof(Command.McpServer.IMcpWorkerPathGate)
+					|| implementedInterface == typeof(Command.McpServer.IMcpWorkerCohort)
 					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
 					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
 					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {

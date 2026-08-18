@@ -41,8 +41,18 @@ public static class McpToolErrorFilter
 				// below rather than reaching the SDK's default handler as raw text (threat model R-7 — the same
 				// reason a SECOND call-tool filter is not added: filter composition order is SDK-defined and
 				// unverified, so a router outside this catch could emit unredacted text into the transcript).
-				if (TryCreateWorkerRouteRefusal(context, out CallToolResult? routeRefusal)) {
-					return routeRefusal;
+				MatchedRouteDecision decision = ResolveMatchedRoute(context);
+				if (decision.Refusal is not null) {
+					return decision.Refusal;
+				}
+				if (decision.Dispatcher is not null) {
+					// The call is relayed VERBATIM: the matched primitive's name is already the canonical
+					// one, so the caller's own params object goes to the worker unchanged — `_meta` and its
+					// progress token included.
+					return await decision.Dispatcher
+						.DispatchAsync(decision.Route!, context.Params!,
+							new Relay.McpServerParentSession(context.Server), cancellationToken)
+						.ConfigureAwait(false);
 				}
 				// ENG-93373: bound retry-safe (read-only, or the get-page local-write read; never idempotent server writes) tools by a wall-clock
 				// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
@@ -82,12 +92,12 @@ public static class McpToolErrorFilter
 		&& McpReadDeadlineGate.IsRetrySafe(tool.ProtocolTool.Name, tool.ProtocolTool.Annotations);
 
 	/// <summary>
-	/// Asks the single execution-routing authority where this MATCHED call executes, and refuses the call
-	/// when it routes to a worker this seam cannot reach (ENG-95262, ADR §9).
+	/// Asks the single execution-routing authority where this MATCHED call executes, and answers with what
+	/// this seam must do: continue in the host process, relay to a worker, or refuse (ENG-95262, ADR §9).
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// Two named branches, neither of them an implicit fallthrough:
+	/// Three named branches, none of them an implicit fallthrough:
 	/// </para>
 	/// <list type="number">
 	/// <item><description>
@@ -107,37 +117,74 @@ public static class McpToolErrorFilter
 	/// transport-neutral <c>BindingsModule.RegisterInto</c> path, so stdio, mcp-http and the per-request
 	/// tenant containers all resolve it; only a hand-built fixture reaches this branch.
 	/// </description></item>
+	/// <item><description>
+	/// <b>Worker route.</b> The call is relayed to a supervised child through
+	/// <see cref="Relay.IMcpWorkerCallDispatcher"/>, which is service-located here for the same reason the
+	/// router is — this seam is a static delegate with no constructor. An absent dispatcher refuses too,
+	/// rather than continuing: silently running a cohort tool in the host process is exactly the wedge the
+	/// worker path removes.
+	/// </description></item>
 	/// </list>
+	/// <para>
+	/// Note the ORDER against <see cref="McpReadResponseDeadline"/> below: a relayed call is bounded by the
+	/// parent killing its worker, so it must never also be wrapped in the in-process read deadline — which
+	/// bounds the ANSWER while the work runs on, keeping the per-tenant monitor. Routing therefore happens
+	/// first, and a worker-routed call leaves this filter before the deadline wrapper is reached.
+	/// </para>
 	/// <para>
 	/// Keyed on <c>tool.ProtocolTool.Name</c> and NOT on the inner command of a <c>clio-run</c> call: the
 	/// wrapper itself runs in-process, and its inner tool is routed at dispatch site (c), the only place the
 	/// unwrapped name exists (ADR rule 7).
 	/// </para>
 	/// </remarks>
-	private static bool TryCreateWorkerRouteRefusal(
-		RequestContext<CallToolRequestParams> context,
-		out CallToolResult? result) {
-		result = null;
+	private static MatchedRouteDecision ResolveMatchedRoute(RequestContext<CallToolRequestParams> context) {
 		if (context.MatchedPrimitive is not McpServerTool tool) {
-			return false;
+			return MatchedRouteDecision.ContinueInProcess;
 		}
 		if (context.Services?.GetService(typeof(IMcpExecutionRouter)) is not IMcpExecutionRouter router) {
-			// Do NOT turn this back into `return false`. That reads as harmless today (nothing routes to a
-			// worker, so continuing and routing agree byte for byte) and stops being harmless the moment the
-			// relay is wired, at which point it silently runs the worker cohort in the host process. See the
-			// remarks above and McpExecutionRouter.RoutingAuthorityUnreachableResult.
-			result = McpExecutionRouter.RoutingAuthorityUnreachableResult(tool.ProtocolTool.Name);
-			return true;
+			// Do NOT turn this back into "continue". That reads as harmless (routing and continuing agree
+			// for every in-process tool) right up until a cohort tool arrives, at which point it silently
+			// runs in the host process. See the remarks above and
+			// McpExecutionRouter.RoutingAuthorityUnreachableResult.
+			return MatchedRouteDecision.Refuse(
+				McpExecutionRouter.RoutingAuthorityUnreachableResult(tool.ProtocolTool.Name));
 		}
 		McpExecutionRoute route = router.Resolve(tool.ProtocolTool.Name, innerCommand: null);
 		if (route.ExecutesInProcess) {
-			// The in-process branch, taken by every call today. THIS is the line Stage 6 replaces with the
-			// relay invocation for the worker cohort — it is explicit rather than a fallthrough so the
-			// replacement has one obvious place to happen.
-			return false;
+			return MatchedRouteDecision.ContinueInProcess;
 		}
-		result = McpExecutionRouter.WorkerPathNotWiredResult(route);
-		return true;
+		// Service-located for the same reason the router is: this seam is a static delegate, so it has no
+		// constructor to inject into. Absent dispatcher ⇒ refuse, never continue — the two remaining
+		// possibilities stay symmetric with the router branch above.
+		if (context.Services?.GetService(typeof(Relay.IMcpWorkerCallDispatcher))
+			is not Relay.IMcpWorkerCallDispatcher dispatcher) {
+			return MatchedRouteDecision.Refuse(McpExecutionRouter.WorkerPathNotWiredResult(route));
+		}
+		return MatchedRouteDecision.Relay(route, dispatcher);
+	}
+
+	/// <summary>
+	/// What the matched seam must do with one call: continue in the host process, refuse with a named
+	/// result, or relay it to a worker.
+	/// </summary>
+	/// <remarks>
+	/// A three-way answer expressed as one value rather than as two <c>out</c> parameters, so "no router"
+	/// and "worker route" cannot be confused at the call site — they are different words here, and the
+	/// refusal text differs between them.
+	/// </remarks>
+	private readonly record struct MatchedRouteDecision(
+		McpExecutionRoute? Route,
+		Relay.IMcpWorkerCallDispatcher? Dispatcher,
+		CallToolResult? Refusal) {
+
+		internal static MatchedRouteDecision ContinueInProcess => default;
+
+		internal static MatchedRouteDecision Refuse(CallToolResult refusal) =>
+			new(Route: null, Dispatcher: null, refusal);
+
+		internal static MatchedRouteDecision Relay(
+			McpExecutionRoute route, Relay.IMcpWorkerCallDispatcher dispatcher) =>
+			new(route, dispatcher, Refusal: null);
 	}
 
 	// Message selection lives in Clio.Common.SurfacedExceptionMessage, shared with the nested clio-run

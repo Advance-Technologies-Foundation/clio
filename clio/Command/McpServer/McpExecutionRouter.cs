@@ -10,16 +10,35 @@ namespace Clio.Command.McpServer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Cohort membership is DATA, not a switch: a tool routes to a worker because its <c>Location</c> metadata
-/// says <c>Worker</c> (ADR §5, "No feature toggle" — the branch is the test environment, so a toggle
-/// defaulting to off would mean the branch's own suites exercise the old path). There is therefore nothing
-/// here reading <c>IFeatureToggleService</c>, and no <c>features</c> entry to enable.
+/// Cohort membership is DATA, not a switch (ADR §5, "No feature toggle" — the branch is the test
+/// environment, so a toggle defaulting to off would mean the branch's own suites exercise the old path).
+/// There is therefore nothing here reading <c>IFeatureToggleService</c>, and no <c>features</c> entry to
+/// enable.
 /// </para>
 /// <para>
-/// What keeps behaviour identical to before this type existed is not a flag but the ABSENCE OF A
-/// DESTINATION: <see cref="_workerPathWired"/> is <c>false</c> in the constructor DI uses, so every call
-/// resolves to one of the in-process dispositions and every dispatch site takes its in-process branch. The
-/// declared location is still reported, so the decision is observable before it is actionable.
+/// <b>Three independent conditions must all hold before a call is relayed</b>, and each answers with its
+/// own named disposition so a call that stayed in the host says WHY:
+/// </para>
+/// <list type="number">
+/// <item><description>
+/// the tool declares <see cref="McpToolExecutionLocation.Worker"/> — otherwise
+/// <see cref="McpExecutionDisposition.InProcessByClassification"/>;
+/// </description></item>
+/// <item><description>
+/// it is in the <see cref="IMcpWorkerCohort"/> — otherwise
+/// <see cref="McpExecutionDisposition.InProcessOutsideCohort"/>. 153 tools declare <c>Worker</c> because
+/// Stage 1 classified every tool with its eventual location, so the declaration alone would move the whole
+/// catalog at once, sticky and deploy families included;
+/// </description></item>
+/// <item><description>
+/// this process may spawn workers at all (<see cref="IMcpWorkerPathGate"/>: stdio host, not itself a
+/// worker) — otherwise <see cref="McpExecutionDisposition.InProcessTransportGated"/> or
+/// <see cref="McpExecutionDisposition.InProcessWorkerRecursionGuard"/>.
+/// </description></item>
+/// </list>
+/// <para>
+/// The declared location is reported verbatim in every case, so "the router says worker" and "the call ran
+/// in a worker" stay separable rather than collapsing into one unobservable answer.
 /// </para>
 /// <para>
 /// Name resolution (executor unwrap + alias canonicalisation) is NOT re-implemented here — it is delegated
@@ -30,35 +49,46 @@ namespace Clio.Command.McpServer;
 public sealed class McpExecutionRouter : IMcpExecutionRouter {
 
 	private readonly IMcpToolExecutionMetadataReader _metadataReader;
+	private readonly IMcpWorkerCohort _cohort;
+	private readonly IMcpWorkerPathGate _workerPathGate;
 
 	// Whether a worker dispatch path exists to route TO. Not a feature toggle: it is not configurable, not
-	// runtime-readable, and not persisted — it is a compile-time statement of what is wired. Stage 6 wires
-	// the relay and flips the production default; until then the only thing that can set it true is the
-	// internal test constructor below, which is what proves this router decides rather than always
-	// answering "in-process".
+	// runtime-readable, and not persisted — it is a compile-time statement of what is wired. Stage 6 wired
+	// the relay, so the constructor DI uses passes true; the false case survives only for the test that
+	// proves this router decides rather than always answering the same thing.
 	private readonly bool _workerPathWired;
 
 	/// <summary>
-	/// Builds the router over the declared execution metadata. Used by DI.
+	/// Builds the router over the declared execution metadata and the process-level worker-path gate.
+	/// Used by DI.
 	/// </summary>
 	/// <param name="metadataReader">The tool-name → declared execution metadata authority.</param>
-	/// <exception cref="ArgumentNullException">When <paramref name="metadataReader"/> is <c>null</c>.</exception>
-	public McpExecutionRouter(IMcpToolExecutionMetadataReader metadataReader)
-		: this(metadataReader, workerPathWired: false) {
+	/// <param name="cohort">Which worker-classified tools have a worker path built for them yet.</param>
+	/// <param name="workerPathGate">Whether this process may spawn workers at all.</param>
+	/// <exception cref="ArgumentNullException">When an argument is <c>null</c>.</exception>
+	public McpExecutionRouter(IMcpToolExecutionMetadataReader metadataReader, IMcpWorkerCohort cohort,
+		IMcpWorkerPathGate workerPathGate)
+		: this(metadataReader, cohort, workerPathGate, workerPathWired: true) {
 	}
 
 	/// <summary>
 	/// Builds the router with an explicit statement of whether a worker dispatch path exists. Exposed for
-	/// tests so the <see cref="McpExecutionDisposition.Worker"/> decision — unreachable in production until
-	/// Stage 6 — can be exercised, and so the difference between "reports Worker" and "executes in a worker"
-	/// is assertable rather than assumed.
+	/// tests so the difference between "reports Worker" and "executes in a worker" is assertable rather
+	/// than assumed.
 	/// </summary>
 	/// <param name="metadataReader">The tool-name → declared execution metadata authority.</param>
+	/// <param name="cohort">Which worker-classified tools have a worker path built for them yet.</param>
+	/// <param name="workerPathGate">Whether this process may spawn workers at all.</param>
 	/// <param name="workerPathWired">Whether a worker dispatch path is wired into the dispatch sites.</param>
-	/// <exception cref="ArgumentNullException">When <paramref name="metadataReader"/> is <c>null</c>.</exception>
-	internal McpExecutionRouter(IMcpToolExecutionMetadataReader metadataReader, bool workerPathWired) {
+	/// <exception cref="ArgumentNullException">When an argument is <c>null</c>.</exception>
+	internal McpExecutionRouter(IMcpToolExecutionMetadataReader metadataReader, IMcpWorkerCohort cohort,
+		IMcpWorkerPathGate workerPathGate, bool workerPathWired) {
 		ArgumentNullException.ThrowIfNull(metadataReader);
+		ArgumentNullException.ThrowIfNull(cohort);
+		ArgumentNullException.ThrowIfNull(workerPathGate);
 		_metadataReader = metadataReader;
+		_cohort = cohort;
+		_workerPathGate = workerPathGate;
 		_workerPathWired = workerPathWired;
 	}
 
@@ -76,18 +106,30 @@ public sealed class McpExecutionRouter : IMcpExecutionRouter {
 				McpExecutionDisposition.InProcessUnclassified,
 				Metadata: null);
 		}
-		return new McpExecutionRoute(routingKey, metadata.Location, Decide(metadata.Location), metadata);
+		return new McpExecutionRoute(routingKey, metadata.Location, Decide(metadata.Location, routingKey), metadata);
 	}
 
-	// The three-way decision, in one place. A Worker-classified tool is reported as Worker-classified
-	// whether or not a worker path exists; only the DISPOSITION changes with _workerPathWired.
-	private McpExecutionDisposition Decide(McpToolExecutionLocation location) {
+	// The whole decision, in one place. A Worker-classified tool is reported as Worker-classified whatever
+	// happens below; only the DISPOSITION narrows, and it narrows through named reasons rather than a
+	// single anonymous "no".
+	private McpExecutionDisposition Decide(McpToolExecutionLocation location, string routingKey) {
 		if (location != McpToolExecutionLocation.Worker) {
 			return McpExecutionDisposition.InProcessByClassification;
 		}
-		return _workerPathWired
-			? McpExecutionDisposition.Worker
-			: McpExecutionDisposition.InProcessPendingWorkerPath;
+		if (!_workerPathWired) {
+			return McpExecutionDisposition.InProcessPendingWorkerPath;
+		}
+		// Cohort membership is checked BEFORE the process gate so the two questions stay independent: a
+		// non-cohort tool reads as "not moved yet" on every transport, rather than as "gated" on http and
+		// "not moved yet" on stdio, which would make the AC-05 assertion transport-dependent.
+		if (!_cohort.Contains(routingKey)) {
+			return McpExecutionDisposition.InProcessOutsideCohort;
+		}
+		return _workerPathGate.Evaluate() switch {
+			McpWorkerPathAvailability.Available => McpExecutionDisposition.Worker,
+			McpWorkerPathAvailability.ProcessIsWorker => McpExecutionDisposition.InProcessWorkerRecursionGuard,
+			_ => McpExecutionDisposition.InProcessTransportGated
+		};
 	}
 
 	/// <summary>
@@ -95,8 +137,9 @@ public sealed class McpExecutionRouter : IMcpExecutionRouter {
 	/// <see cref="McpExecutionDisposition.Worker"/> but the site has no worker path to hand the call to.
 	/// </summary>
 	/// <remarks>
-	/// Unreachable in production today (the DI-built router never returns that disposition), and
-	/// deliberately fail-closed rather than a silent in-process fallthrough: a site that quietly ran a
+	/// Unreachable in a production stdio host, where all three sites now have a dispatcher; it is what a
+	/// host reached WITHOUT one answers, and it is deliberately fail-closed rather than a silent
+	/// in-process fallthrough: a site that quietly ran a
 	/// worker-routed call in the host process would reintroduce the exact wedge this work removes, and
 	/// would do it invisibly. Shared rather than hand-rolled per site for the same reason the router itself
 	/// is shared — three copies of a refusal drift.

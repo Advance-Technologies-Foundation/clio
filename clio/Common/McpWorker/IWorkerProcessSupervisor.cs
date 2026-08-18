@@ -57,7 +57,19 @@ public sealed record WorkerSpawnRequest {
 	/// </summary>
 	public TimeSpan Budget { get; init; } = TimeSpan.FromSeconds(DefaultBudgetSeconds);
 
-	/// <summary>Gets the working directory for the worker; the parent's when null.</summary>
+	/// <summary>
+	/// Gets the working directory for the worker.
+	/// </summary>
+	/// <remarks>
+	/// <b>Null does NOT mean "the parent's".</b> The fallback chain is this value, then
+	/// <see cref="ClioWorkerLaunchDescriptor.WorkingDirectory"/> — which
+	/// <see cref="ClioExecutablePathProvider"/> resolves to the directory the clio ASSEMBLY lives in —
+	/// and only then the parent's current directory, which is reached solely when a descriptor states
+	/// none. A caller that wants the worker to see the same "here" as the host must therefore say so:
+	/// leaving this null starts the child in the clio installation, where anything a tool anchors on the
+	/// current directory (<c>.clio-pages/{schema}/</c> above all) is written into clio's own install tree
+	/// instead of the user's workspace, with a successful answer and no warning.
+	/// </remarks>
 	public string WorkingDirectory { get; init; }
 
 	/// <summary>

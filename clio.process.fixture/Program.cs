@@ -11,6 +11,7 @@ const string growDirectoryArgument = "--grow-directory-with-inherited-pipes";
 const string spawnGrowingDescendantArgument = "--spawn-growing-inherited-handle-descendant";
 const string overflowOutputArgument = "--overflow-output-with-inherited-handle-descendant";
 const string carriageReturnOutputArgument = "--write-carriage-return-output";
+const string reportWorkingDirectoryArgument = "--report-working-directory";
 const string invocationMarkerFileName = "invoked.marker";
 const string descendantIdentityFileName = "descendant.identity";
 
@@ -71,6 +72,15 @@ if (args.Length == 2 && string.Equals(args[0], overflowOutputArgument, StringCom
 	using Process descendant = StartPipeHoldingDescendant();
 	await WriteProcessIdentityAsync(args[1], descendant);
 	await WriteOutputAsync(new string('x', 8192));
+	return 0;
+}
+
+// Reports the directory the process was actually STARTED in, and exits immediately. It exists because
+// a spawn request's stated working directory and a child's real one are different claims: the worker
+// execution boundary hands children the host's directory, and everything a tool anchors on "here"
+// (`.clio-pages/{schema}/` above all) lands wherever this reports.
+if (args.Length == 2 && string.Equals(args[0], reportWorkingDirectoryArgument, StringComparison.Ordinal)) {
+	await File.WriteAllTextAsync(args[1], Environment.CurrentDirectory);
 	return 0;
 }
 

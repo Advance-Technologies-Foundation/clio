@@ -8,6 +8,7 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Relay;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Creatio;
@@ -23,6 +24,13 @@ namespace Clio.Mcp.E2E;
 /// <c>clio mcp-server</c> against a deterministic Creatio stub.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>TC-E-604 is carried by call D, not by a test of its own.</b> "The environment recovers as soon as
+/// the backend does, with no restart" is exactly what D asserts: the stub is un-stalled, and the SAME
+/// long-lived <c>clio mcp-server</c> that has just taken three bounded calls answers D with its own
+/// backend request, on a session A never touched. A second fixture would restate that on the same host
+/// and the same stub, and two tests asserting one property is how one of them silently stops asserting it.
+/// </para>
 /// <para>
 /// <b>This fixture asserts on BACKEND REQUEST COUNTERS, never on elapsed time.</b> That is the whole point
 /// of it. The defect's signature is a call that returns at the read deadline having never issued an HTTP
@@ -70,11 +78,12 @@ public sealed class McpWorkerWedgeE2ETests {
 	private static readonly TimeSpan CallBDelay = TimeSpan.FromSeconds(1.5);
 
 	// ═══════════════════════════════════════════════════════════════════════════════════════════════════
-	// STAGE-6 FLIP POINT — switch this to WedgeExpectation.AfterStage6 when the worker path lands
-	// (TC-E-601). Keep WedgeExpectation.MasterToday as the flag-off / in-process arm of TC-E-602; do not
-	// delete it. Nothing else in this fixture encodes which column is expected.
+	// STAGE-6 FLIPPED (TC-E-601). The worker path is wired and list-pages is a cohort member, so the
+	// acceptance column is what this fixture now requires. WedgeExpectation.MasterToday is KEPT as the
+	// record of the defect it used to document — deleting it would erase the only statement of what was
+	// wrong. Nothing else in this fixture encodes which column is expected.
 	// ═══════════════════════════════════════════════════════════════════════════════════════════════════
-	private static readonly WedgeExpectation Expected = WedgeExpectation.MasterToday;
+	private static readonly WedgeExpectation Expected = WedgeExpectation.AfterStage6;
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
@@ -100,6 +109,12 @@ public sealed class McpWorkerWedgeE2ETests {
 		string budgetSeconds = ((int)Budget.TotalSeconds).ToString(CultureInfo.InvariantCulture);
 		settings.ProcessEnvironmentVariables[McpReadResponseDeadline.ReadDeadlineOverrideEnvVar] = budgetSeconds;
 		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = budgetSeconds;
+		// THE bound that matters once list-pages routes to a worker. The two deadlines above bound
+		// IN-PROCESS work and a relayed call never reaches them: the router answers before the read-deadline
+		// wrapper, and the parent bounds the child by KILLING it at this budget instead. Without this the
+		// stalled calls would each hold their worker for the 120 s default and the run would exceed its own
+		// cancellation window.
+		settings.ProcessEnvironmentVariables[McpWorkerCallDispatcher.BudgetOverrideEnvVar] = budgetSeconds;
 		// IsNetCore=false pins the .NET Framework DataService route, so the SelectQuery arrives at
 		// "0/DataService/json/SyncReply/SelectQuery" — the mandatory WebAppAlias prefix the stub matches by
 		// substring. Registering inline rather than through reg-web-app also removes a registration round
@@ -128,6 +143,8 @@ public sealed class McpWorkerWedgeE2ETests {
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(5));
 
 		List<WedgeCallResult> observed = [];
+		// Started BEFORE the host, so nothing a worker does can happen before the instrument is watching.
+		await using WorkerSpawnObserver workerObserver = WorkerSpawnObserver.Start(tempHome);
 		try {
 			// The session is created INSIDE the try so it is disposed at the end of this block — before the
 			// stub, whose parked stall must be aborted only once the client is already gone.
@@ -180,7 +197,7 @@ public sealed class McpWorkerWedgeE2ETests {
 				AssertRequestDelta(resultB, Expected.B, table));
 			AllureApi.Step("C, after A and B returned, shows whether the wedge is permanent", () =>
 				AssertRequestDelta(resultC, Expected.C, table));
-			AllureApi.Step("D, with the backend healthy again, shows whether the environment ever recovers", () =>
+			AllureApi.Step("TC-E-604: D, with the backend healthy again, shows whether the environment ever recovers — no restart, no new host, the same session that just took three bounded calls", () =>
 				AssertRequestDelta(resultD, Expected.D, table));
 			AllureApi.Step("Each call's outcome matches the expected column (bounded error today, success after Stage 6)", () => {
 				AssertOutcome(resultA, Expected.A, table);
@@ -192,6 +209,10 @@ public sealed class McpWorkerWedgeE2ETests {
 				AssertSessionDistinctFromA(resultA, resultD, Expected.D, table));
 			AllureApi.Step("The one legitimate timing bound, secondary to the request counter", () =>
 				AssertElapsedBound(resultD, Expected.D, table));
+			AllureApi.Step("A worker process was actually SPAWNED — observed in the host's own registry, not inferred from D succeeding", () =>
+				AssertWorkersWereSpawned(workerObserver, table));
+			AllureApi.Step("TC-E-601b: A was CLEANED UP, not merely outrun — its child is gone and the environment holds no session on its behalf", () =>
+				AssertStalledCallWasCleanedUp(workerObserver, resultD, stub, table));
 		} finally {
 			TryDeleteDirectory(tempHome);
 		}
@@ -385,37 +406,86 @@ public sealed class McpWorkerWedgeE2ETests {
 	/// (<c>error-class = creatio-timeout</c>), which is what a wedged or budget-killed call returns.
 	/// </summary>
 	private static bool IsBoundedError(CallToolResult callResult) =>
-		callResult.StructuredContent is JsonElement structured
-		&& structured.ValueKind == JsonValueKind.Object
-		&& structured.TryGetProperty("error-class", out JsonElement errorClass)
+		TryReadPayload(callResult, out JsonElement payload)
+		&& payload.TryGetProperty("error-class", out JsonElement errorClass)
 		&& errorClass.ValueKind == JsonValueKind.String
 		&& string.Equals(errorClass.GetString(), "creatio-timeout", StringComparison.Ordinal);
 
 	/// <summary>
-	/// True when the tool genuinely answered: a structured <c>success = true</c> envelope. Asserting the
-	/// POSITIVE shape matters because "not a timeout" also covers an auth failure, a parse failure and a
+	/// True when the tool genuinely answered: a <c>success = true</c> envelope. Asserting the POSITIVE shape
+	/// matters because "not a timeout" also covers an auth failure, a parse failure and a
 	/// <c>success:false</c> from a broken relay, none of which leave the environment usable.
 	/// </summary>
-	private static bool IsSuccessfulAnswer(CallToolResult callResult) =>
-		callResult.IsError != true
-		&& callResult.StructuredContent is JsonElement structured
-		&& structured.ValueKind == JsonValueKind.Object
-		&& structured.TryGetProperty("success", out JsonElement success)
-		&& success.ValueKind == JsonValueKind.True;
+	/// <remarks>
+	/// <b>Read from the structured content OR the JSON text block</b>, the way every other envelope parser
+	/// in this suite does (see <c>Support/Results/*Envelope.cs</c>). clio's MCP server does not emit
+	/// <c>structuredContent</c> at all — verified by hand-driving the server over raw stdio on both protocol
+	/// revisions and in both host and worker mode — so a tool's success envelope travels as a text block.
+	/// A structured-only predicate was therefore unsatisfiable for a real answer; it went unnoticed only
+	/// because the defect column this fixture used to assert never expected one.
+	/// </remarks>
+	private static bool IsSuccessfulAnswer(CallToolResult callResult) {
+		if (callResult.IsError == true) {
+			return false;
+		}
+		return TryReadPayload(callResult, out JsonElement payload)
+			&& payload.TryGetProperty("success", out JsonElement success)
+			&& success.ValueKind == JsonValueKind.True;
+	}
+
+	/// <summary>
+	/// Extracts the tool's JSON envelope from whichever channel carries it: structured content when present,
+	/// otherwise the first text content block that parses as a JSON object.
+	/// </summary>
+	private static bool TryReadPayload(CallToolResult callResult, out JsonElement payload) {
+		if (callResult.StructuredContent is JsonElement structured
+			&& structured.ValueKind == JsonValueKind.Object) {
+			payload = structured;
+			return true;
+		}
+		foreach (TextContentBlock block in callResult.Content.OfType<TextContentBlock>()) {
+			if (string.IsNullOrWhiteSpace(block.Text)) {
+				continue;
+			}
+			try {
+				using JsonDocument document = JsonDocument.Parse(block.Text);
+				if (document.RootElement.ValueKind == JsonValueKind.Object) {
+					payload = document.RootElement.Clone();
+					return true;
+				}
+			} catch (JsonException) {
+				// A prose block, not the envelope; keep looking.
+			}
+		}
+		payload = default;
+		return false;
+	}
 
 	private static string DescribeAnswer(CallToolResult callResult) {
-		if (callResult.StructuredContent is JsonElement structured && structured.ValueKind == JsonValueKind.Object) {
-			return Shorten(structured.GetRawText());
+		// The SOURCE of the rendering is named, not just its text. A relayed worker answer and a
+		// parent-built envelope print almost identically, so a run where structuredContent was lost in the
+		// relay would otherwise look exactly like one where it arrived (found the hard way).
+		string prefix = $"[isError={callResult.IsError?.ToString() ?? "null"}, "
+			+ $"structured={callResult.StructuredContent?.GetType().Name ?? "null"}] ";
+		if (TryReadPayload(callResult, out JsonElement payload)) {
+			return prefix + Shorten(payload.GetRawText());
 		}
 		string text = string.Join(
 			" ",
 			callResult.Content.OfType<TextContentBlock>().Select(block => block.Text ?? string.Empty));
-		return Shorten(text);
+		return prefix + Shorten(text);
 	}
+
+	// 600 rather than 160: once a call can fail because a CHILD PROCESS failed, the answer carries the
+	// worker's own standard-error tail, and that tail is the only evidence of why the child died. Truncating
+	// it away leaves a red CI run saying "the worker relay failed" and nothing else.
+	private const int AnswerDiagnosticLimit = 600;
 
 	private static string Shorten(string value) {
 		string flattened = value.Replace('\r', ' ').Replace('\n', ' ').Trim();
-		return flattened.Length <= 160 ? flattened : $"{flattened[..160]}…";
+		return flattened.Length <= AnswerDiagnosticLimit
+			? flattened
+			: $"{flattened[..AnswerDiagnosticLimit]}…";
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -496,6 +566,63 @@ public sealed class McpWorkerWedgeE2ETests {
 		// it happened at all.
 		result.Elapsed.Should().BeLessThan(maxElapsed,
 			because: $"{result.Label} must answer promptly once the backend is healthy again.{table}");
+	}
+
+	/// <summary>
+	/// TC-E-601 (spawn half): a worker child was OBSERVED, not inferred. "D succeeded quickly" is equally
+	/// consistent with the host having executed the call itself, so the assertion has to be about a process.
+	/// </summary>
+	private static void AssertWorkersWereSpawned(WorkerSpawnObserver observer, string table) {
+		string described = observer.Describe();
+		// The instrument first: a reader that silently failed would report zero workers, which is the same
+		// shape as "the worker path never engaged" — the exact confusion this fixture exists to prevent.
+		observer.ReadFailures.Should().BeEmpty(
+			because: $"a failed registry read makes an empty observation meaningless. {described}{table}");
+		observer.Observed.Should().NotBeEmpty(
+			because: $"every one of the four calls names a cohort tool, so the host must have started at "
+				+ $"least one child process — and the acceptance criterion is that this is OBSERVED rather "
+				+ $"than concluded from a call succeeding. {described}{table}");
+		observer.Observed.Select(worker => worker.ProcessId).Distinct().Should().HaveCountGreaterThan(1,
+			because: $"the calls are served by SEPARATE short-lived children; a single reused process would "
+				+ $"mean the isolation the fix rests on does not exist. {described}{table}");
+	}
+
+	/// <summary>
+	/// TC-E-601b: the stalled call was cleaned up rather than merely outrun. D succeeding proves the
+	/// environment recovered; it does not prove A stopped existing, and a leaked stalled child holding a
+	/// live session is the failure this feature would otherwise have moved rather than removed.
+	/// </summary>
+	private static void AssertStalledCallWasCleanedUp(
+		WorkerSpawnObserver observer,
+		WedgeCallResult resultD,
+		CreatioWedgeStubServer stub,
+		string table) {
+		string described = observer.Describe();
+		observer.ReadCurrent().Should().BeEmpty(
+			because: $"every lease is disposed when its call answers, so no worker may still be RECORDED "
+				+ $"once the sequence has finished. {described}{table}");
+		observer.Observed.Where(worker => worker.IsStillRunning()).Should().BeEmpty(
+			because: $"a recorded entry disappearing is not the same as the process dying — the identity "
+				+ $"(pid AND start time) of every worker seen during the run must be gone, or the stalled "
+				+ $"call was outrun rather than killed. {described}{table}");
+		// The environment side of the same statement: A's authenticated session must never be used again.
+		// A reused token after D would mean the stalled context was still alive somewhere and had simply
+		// stopped blocking, which is a quieter version of the same defect.
+		// A's OWN token is the FIRST one the stub ever saw — A is issued at t=0 and B only at +1.5 s.
+		// resultA.ObservedSessions cannot be used for this: it is everything seen inside A's twelve-second
+		// window, which legitimately includes B's session because B overlaps A on purpose.
+		IReadOnlyList<string> allSessions = stub.ObservedSelectSessions;
+		allSessions.Should().NotBeEmpty(
+			because: $"A must have reached the network for there to be a session to reason about.{table}");
+		string sessionA = allSessions[0];
+		allSessions.Count(session => string.Equals(session, sessionA, StringComparison.Ordinal))
+			.Should().Be(1,
+			because: $"A's authenticated session '{sessionA}' must be used exactly once and then die with "
+				+ $"its worker; a second request carrying it would mean the poisoned context outlived the "
+				+ $"call and had merely stopped blocking.{table}");
+		resultD.ObservedSessions.Should().NotContain(sessionA,
+			because: $"the recovery must come from a NEW session, not from the one the stalled call "
+				+ $"poisoned.{table}");
 	}
 
 	private static string BuildDiagnosticTable(IReadOnlyList<WedgeCallResult> observed, CreatioWedgeStubServer stub) {
@@ -620,9 +747,14 @@ public sealed class McpWorkerWedgeE2ETests {
 				MinSelectDelta: 1,
 				MaxSelectDelta: null,
 				ExpectSuccess: true,
-				// The prototype measured 0.8 s; 2 s is the plan's bound. Widen only with a recorded
-				// measurement from the agent it fails on, never to make a red run green.
-				MaxElapsed: TimeSpan.FromSeconds(2),
+				// The macOS prototype measured 0.8 s and the plan wrote 2 s from it. That figure cannot
+				// hold on the platform this suite actually runs on: child spawn plus MCP `initialize`
+				// measured p50 2.763 s on Windows Server 2022 (ADR §2.4, n=8, max 2.904), so a 2 s bound
+				// would fail a perfectly healthy Windows run before the tool did any work. 8 s is that
+				// measurement plus the call itself plus headroom, and it stays well inside the 12 s budget
+				// so a budget-KILLED call can never slip through as a fast one. Widened on a recorded
+				// measurement, which is what the rule below asks for — never to make a red run green.
+				MaxElapsed: TimeSpan.FromSeconds(8),
 				RequireSessionDistinctFromA: true));
 	}
 }

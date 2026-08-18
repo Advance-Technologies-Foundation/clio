@@ -473,12 +473,17 @@ public sealed class McpToolErrorFilterTests
 	// a context that carries a MatchedPrimitive and continues into the pipeline must also carry the router —
 	// exactly as every real host does. The real router over the real declared metadata is used rather than a
 	// stub: these tools are unclassified, so it answers in-process and the behaviour pinned here is the
-	// pre-router behaviour.
+	// pre-router behaviour. The EMPTY Stage 6 cohort keeps that true no matter which real tools these cases
+	// later name, and no worker dispatcher is registered — a relay reaching this fixture would be a defect.
 	private static RequestContext<CallToolRequestParams> WithRoutingAuthority(
 		RequestContext<CallToolRequestParams> context) {
 		context.Services = new ServiceCollection()
 			.AddSingleton<IMcpExecutionRouter>(
-				new McpExecutionRouter(new McpToolExecutionMetadataReader(new McpToolCompatibilityCatalog())))
+				new McpExecutionRouter(
+					new McpToolExecutionMetadataReader(new McpToolCompatibilityCatalog()),
+					new McpWorkerCohort([]),
+					new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+					workerPathWired: true))
 			.BuildServiceProvider();
 		return context;
 	}

@@ -1296,6 +1296,14 @@ internal class Program {
 			// Scoped to the MCP verb on purpose: a --worker option added to some unrelated verb later must not
 			// put the whole process into worker mode.
 			IsMcpWorkerMode = isMcp && McpWorkerEnvironment.IsWorkerModeArgv(clearArgs);
+			// ENG-95262 Stage 6 — the worker execution boundary is STDIO-ONLY, so the transport has to be
+			// declared before any routing question is asked. IsMcpCommand matches mcp-server / mcp only; the
+			// HTTP host declares itself in McpHttpServerCommand.Run, and everything else stays Unknown,
+			// which is the fail-closed answer.
+			if (isMcp) {
+				Clio.Command.McpServer.McpHostTransport.Current =
+					Clio.Command.McpServer.McpHostTransportKind.Stdio;
+			}
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			// Detect json output early (before the background updater logs) so decorated diagnostics are

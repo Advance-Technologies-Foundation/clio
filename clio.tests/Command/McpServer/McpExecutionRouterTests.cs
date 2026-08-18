@@ -23,11 +23,12 @@ namespace Clio.Tests.Command.McpServer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// There is no feature flag (ADR §5): cohort membership is the tool's <c>Location</c> metadata. What keeps
-/// behaviour identical to before the router existed is the absence of a DESTINATION — no worker path is
-/// wired into dispatch yet — so the load-bearing distinction these tests draw is between what the router
-/// REPORTS (<c>Worker</c> for the worker cohort) and where the call actually EXECUTES (the host process,
-/// for every cohort). A test that could not tell those apart would pass on a router that decides nothing.
+/// There is no feature flag (ADR §5): a tool routes to a worker when its <c>Location</c> metadata says so
+/// AND it is in the Stage 6 cohort AND this process may spawn workers at all. The load-bearing distinction
+/// these tests draw is therefore between what the router REPORTS (<c>Worker</c> for all 153
+/// worker-classified tools) and where the call actually EXECUTES (a worker for the cohort, the host process
+/// for everything else). A test that could not tell those apart would pass on a router that decides
+/// nothing.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -38,6 +39,11 @@ public sealed class McpExecutionRouterTests {
 	// the one subject that can be reached by all three routes, which is what TC-U-402 needs.
 	private const string WorkerToolCanonicalName = "get-classic-page-sources";
 	private const string WorkerToolDeprecatedAlias = "get-classic-migration-bundle";
+
+	// A real Stage 6 COHORT member: worker-classified AND in the shipped cohort, so the production-shaped
+	// router relays it. get-classic-page-sources above is deliberately NOT a member — the pair is what makes
+	// "declared worker" and "actually relayed" separately assertable.
+	private const string CohortToolName = Clio.Command.McpServer.Tools.PageListTool.ToolName;
 
 	// clio-run itself is classified in-process: the wrapper resolves and dispatches, the INNER tool decides.
 	private const string ExecutorToolName = "clio-run";
@@ -50,8 +56,22 @@ public sealed class McpExecutionRouterTests {
 		// The real reader over the real clio tool catalog and the real (production seed) compatibility
 		// catalog: routing is only meaningful against the metadata that actually ships.
 		_reader = new McpToolExecutionMetadataReader(new McpToolCompatibilityCatalog());
-		_sut = new McpExecutionRouter(_reader);
+		// PRODUCTION-SHAPED: the shipped cohort and a gate that reports an ordinary stdio host. Anything a
+		// test wants to vary it states explicitly rather than inheriting.
+		_sut = ProductionShapedRouter();
 	}
+
+	/// <summary>The router production resolves: shipped cohort, stdio host, worker path wired.</summary>
+	private McpExecutionRouter ProductionShapedRouter() =>
+		new(_reader, new McpWorkerCohort(), StdioHostGate(), workerPathWired: true);
+
+	/// <summary>A gate reporting an ordinary stdio host that is not itself a worker.</summary>
+	private static IMcpWorkerPathGate StdioHostGate() =>
+		new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false);
+
+	/// <summary>A gate reporting a host on a transport that has no credential channel to a child.</summary>
+	private static IMcpWorkerPathGate NonStdioHostGate() =>
+		new McpWorkerPathGate(() => McpHostTransportKind.Http, () => false);
 
 	// ---------------------------------------------------------------------------------------------
 	// The authority itself
@@ -92,7 +112,12 @@ public sealed class McpExecutionRouterTests {
 		// could not tell a site that consulted the authority from a site that never asked. Wired to a worker
 		// path, a site that consults the shared rule refuses and names the canonical tool; a site that does
 		// not, runs the tool. The three sites therefore have to DISAGREE for this test to pass wrongly.
-		IMcpExecutionRouter sharedRouter = new McpExecutionRouter(_reader, workerPathWired: true);
+		// The cohort is stated rather than inherited: this subject is the only tool reachable through all
+		// three vectors (it has a real deprecated alias), and the shipped cohort does not contain it — so a
+		// production-shaped router would answer InProcessOutsideCohort at every site and the agreement below
+		// would be vacuous. Substituting membership is exactly the seam ADR §5 requires for this.
+		IMcpExecutionRouter sharedRouter = new McpExecutionRouter(
+			_reader, new McpWorkerCohort([WorkerToolCanonicalName]), StdioHostGate(), workerPathWired: true);
 		IMcpToolCompatibilityCatalog realCatalog = new McpToolCompatibilityCatalog();
 		// A real SDK tool published under the CANONICAL protocol name, so the matched site keys on exactly
 		// the name production would match.
@@ -158,34 +183,110 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A worker-classified tool is REPORTED as worker while still EXECUTING in-process, because no worker path is wired yet — the two facts stay separable.")]
-	public void Resolve_ShouldReportWorkerButExecuteInProcess_WhenNoWorkerPathIsWired() {
-		// Arrange — the DI-built router, i.e. exactly what production resolves.
+	[Description("AC-05: a worker-classified tool OUTSIDE the Stage 6 cohort is REPORTED as worker while still EXECUTING in-process — the two facts stay separable, and the disposition names which of them applies.")]
+	public void Resolve_ShouldReportWorkerButExecuteInProcess_WhenToolIsOutsideTheCohort() {
+		// Arrange — the production-shaped router, i.e. exactly what DI resolves.
 		// Act
 		McpExecutionRoute route = _sut.Resolve(WorkerToolCanonicalName, innerCommand: null);
 
 		// Assert
 		route.DeclaredLocation.Should().Be(McpToolExecutionLocation.Worker,
-			because: "the router must report the declared cohort even before a worker path exists — otherwise the decision is unobservable");
-		route.Disposition.Should().Be(McpExecutionDisposition.InProcessPendingWorkerPath,
-			because: "the disposition names WHY the call runs in the host: the destination does not exist yet (Stage 6 wires it)");
+			because: "the router must report the declared location even for a tool that has not moved yet — otherwise the decision is unobservable");
+		route.Disposition.Should().Be(McpExecutionDisposition.InProcessOutsideCohort,
+			because: "the disposition names WHY the call runs in the host: this tool's supervision is a later stage, not a missing destination");
 		route.ExecutesInProcess.Should().BeTrue(
-			because: "behaviour must be byte-identical to before the router existed — nothing routes to a worker on this branch");
+			because: "nothing outside the cohort may change route — that is AC-05, and it is what keeps Stage 6 a cohort rather than a catalog move");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("With a worker path wired, the SAME worker-classified tool disposes to Worker — proving the router decides from metadata rather than always answering in-process.")]
-	public void Resolve_ShouldDisposeToWorker_WhenWorkerPathIsWired() {
-		// Arrange — the only thing that changes is the existence of a destination.
-		McpExecutionRouter routerWithWorkerPath = new(_reader, workerPathWired: true);
+	[Description("A worker-classified tool that is a Stage 6 cohort member routes to a worker on the production-shaped router — proving the router relays rather than always answering in-process.")]
+	public void Resolve_ShouldDisposeToWorker_WhenToolIsInTheCohort() {
+		// Arrange — nothing substituted: the shipped cohort and an ordinary stdio host.
+		// Act
+		McpExecutionRoute route = _sut.Resolve(CohortToolName, innerCommand: null);
+
+		// Assert
+		route.DeclaredLocation.Should().Be(McpToolExecutionLocation.Worker,
+			because: "a cohort member must be worker-classified in the shipped metadata, or the cohort names a tool the metadata does not support");
+		route.Disposition.Should().Be(McpExecutionDisposition.Worker,
+			because: "a router that answered in-process for a cohort member would leave Stage 6 unwired while every other assertion passed vacuously");
+		route.ExecutesInProcess.Should().BeFalse(
+			because: "a Worker disposition is the one case a dispatch site must NOT run in the host process");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("THE STDIO-ONLY GATE: a cohort tool on a non-stdio host stays in-process with a named transport-gated disposition, because no credential channel to a child exists while Stage 5 is deferred.")]
+	public void Resolve_ShouldRefuseToRelay_WhenHostTransportIsNotStdio() {
+		// Arrange — identical in every respect to the production router except the declared transport.
+		McpExecutionRouter httpHostRouter =
+			new(_reader, new McpWorkerCohort(), NonStdioHostGate(), workerPathWired: true);
 
 		// Act
-		McpExecutionRoute route = routerWithWorkerPath.Resolve(WorkerToolCanonicalName, innerCommand: null);
+		McpExecutionRoute route = httpHostRouter.Resolve(CohortToolName, innerCommand: null);
+
+		// Assert
+		route.DeclaredLocation.Should().Be(McpToolExecutionLocation.Worker,
+			because: "the declaration does not change with the transport — only what the host may do about it does");
+		route.Disposition.Should().Be(McpExecutionDisposition.InProcessTransportGated,
+			because: "on mcp-http the caller's credentials live in the parent's HttpContext and the channel to hand them to a child does not exist, so relaying would either fail or run the call under a DIFFERENT identity");
+		route.ExecutesInProcess.Should().BeTrue(
+			because: "the call must still be served, in the host process, exactly as it was before the worker path existed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("THE RECURSION GUARD: a cohort tool resolved INSIDE a worker process stays in-process, because the child receives the very call the parent relayed and would otherwise spawn a worker of its own without end.")]
+	public void Resolve_ShouldRefuseToRelay_WhenThisProcessIsItselfAWorker() {
+		// Arrange — a worker serves stdio too, so a transport-only check would have passed here.
+		IMcpWorkerPathGate workerProcessGate =
+			new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => true);
+		McpExecutionRouter routerInsideAWorker =
+			new(_reader, new McpWorkerCohort(), workerProcessGate, workerPathWired: true);
+
+		// Act
+		McpExecutionRoute route = routerInsideAWorker.Resolve(CohortToolName, innerCommand: null);
+
+		// Assert
+		route.Disposition.Should().Be(McpExecutionDisposition.InProcessWorkerRecursionGuard,
+			because: "a worker that relayed would hand its child the same call and the chain would never terminate — and the reason is named so it cannot be mistaken for the transport gate");
+		route.ExecutesInProcess.Should().BeTrue(
+			because: "the worker's whole purpose is to EXECUTE the call it was given");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With no worker path wired at all, a cohort tool reports Worker yet still executes in-process — the shape a router with no destination answers, kept distinct from the cohort and gate reasons.")]
+	public void Resolve_ShouldReportPendingWorkerPath_WhenNoWorkerPathIsWired() {
+		// Arrange
+		McpExecutionRouter unwiredRouter =
+			new(_reader, new McpWorkerCohort(), StdioHostGate(), workerPathWired: false);
+
+		// Act
+		McpExecutionRoute route = unwiredRouter.Resolve(CohortToolName, innerCommand: null);
+
+		// Assert
+		route.Disposition.Should().Be(McpExecutionDisposition.InProcessPendingWorkerPath,
+			because: "'there is nowhere to route to' is a different statement from 'this tool has not moved yet' and from 'this host may not spawn workers' — collapsing them would make a wiring regression read as a deliberate scoping decision");
+		route.ExecutesInProcess.Should().BeTrue(
+			because: "with no destination the call must still be served in the host process");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Cohort membership, not the wiring, is what moves a tool: the SAME non-cohort worker-classified tool disposes to Worker once membership is stated, so the in-process answer above is a scoping decision rather than a constant.")]
+	public void Resolve_ShouldDisposeToWorker_WhenMembershipIsStatedForANonCohortTool() {
+		// Arrange — the only thing that changes is the stated membership.
+		McpExecutionRouter routerWithWiderCohort = new(
+			_reader, new McpWorkerCohort([WorkerToolCanonicalName]), StdioHostGate(), workerPathWired: true);
+
+		// Act
+		McpExecutionRoute route = routerWithWiderCohort.Resolve(WorkerToolCanonicalName, innerCommand: null);
 
 		// Assert
 		route.Disposition.Should().Be(McpExecutionDisposition.Worker,
-			because: "a router that answered in-process here would be a constant, and every other assertion in this fixture would pass vacuously");
+			because: "expanding the cohort is the whole rollout mechanism (ADR §5 / Stage 10) and it must be the ONLY thing this change requires");
 		route.ExecutesInProcess.Should().BeFalse(
 			because: "a Worker disposition is the one case a dispatch site must NOT run in the host process");
 	}
@@ -195,7 +296,7 @@ public sealed class McpExecutionRouterTests {
 	[Description("An in-process-classified tool stays in-process even when a worker path is wired — the metadata, not the wiring, decides the cohort.")]
 	public void Resolve_ShouldStayInProcess_WhenToolIsClassifiedInProcessAndWorkerPathIsWired() {
 		// Arrange
-		McpExecutionRouter routerWithWorkerPath = new(_reader, workerPathWired: true);
+		McpExecutionRouter routerWithWorkerPath = ProductionShapedRouter();
 
 		// Act
 		McpExecutionRoute route = routerWithWorkerPath.Resolve(ExecutorToolName, innerCommand: null);
@@ -209,26 +310,62 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every worker-classified tool in the shipped catalog executes in-process today, and the cohort is large — so 'nothing routes yet' is asserted over the real catalog, not one example.")]
-	public void Resolve_ShouldExecuteEveryWorkerClassifiedToolInProcess_OnThisBranch() {
-		// Arrange
-		IReadOnlyList<string> workerToolNames = _reader.DeclaredMetadataByToolName
+	[Description("AC-05 over the WHOLE shipped catalog: the set of tools the production router actually relays equals the Stage 6 cohort EXACTLY — no tool outside it changes route, and every member of it does.")]
+	public void Resolve_ShouldRelayExactlyTheCohort_OverTheWholeShippedCatalog() {
+		// Arrange — every name the metadata reader knows, not a hand-picked sample: the assertion has to be
+		// set EQUALITY, because "no unintended route change" is a statement about the complement of the
+		// cohort, and a containment check would pass while quietly relaying a deploy tool.
+		IReadOnlyList<string> allToolNames = [.. _reader.DeclaredMetadataByToolName.Keys];
+		IReadOnlyList<string> workerClassifiedNames = [.. _reader.DeclaredMetadataByToolName
 			.Where(pair => pair.Value.Location == McpToolExecutionLocation.Worker)
-			.Select(pair => pair.Key)
-			.ToArray();
+			.Select(pair => pair.Key)];
 
 		// Act
-		IReadOnlyList<McpExecutionRoute> routes = workerToolNames
-			.Select(name => _sut.Resolve(name, innerCommand: null))
-			.ToArray();
+		IReadOnlyList<McpExecutionRoute> routes =
+			[.. allToolNames.Select(name => _sut.Resolve(name, innerCommand: null))];
+		IReadOnlySet<string> relayedNames = routes
+			.Where(route => !route.ExecutesInProcess)
+			.Select(route => route.RoutingKey)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
 		// Assert
-		workerToolNames.Should().HaveCountGreaterThan(100,
-			because: "the worker cohort is the majority of the 189 classified tools — a tiny set would mean the metadata regressed and this sweep proves nothing");
-		routes.Should().OnlyContain(route => route.ExecutesInProcess,
-			because: "no worker path is wired on this branch, so every classified worker tool must still run in the host process");
-		routes.Should().OnlyContain(route => route.DeclaredLocation == McpToolExecutionLocation.Worker,
-			because: "the router must keep reporting the declared cohort for all of them, which is what Stage 6 flips to actual relaying");
+		workerClassifiedNames.Should().HaveCountGreaterThan(100,
+			because: "the worker CLASSIFICATION is the majority of the 189 tools; if it collapsed, the complement this test guards would be empty and the assertion would prove nothing");
+		relayedNames.Should().BeEquivalentTo(new McpWorkerCohort().Names,
+			because: "exactly the Stage 6 cohort may relay — a name missing here means the cohort silently did not move, and an extra name means a family whose supervision is story 7 or 8 is already being relayed");
+		routes.Where(route => route.DeclaredLocation == McpToolExecutionLocation.Worker)
+			.Should().OnlyContain(route => route.Disposition == McpExecutionDisposition.Worker
+				|| route.Disposition == McpExecutionDisposition.InProcessOutsideCohort,
+			because: "a worker-classified tool either relays or is explicitly named as not-yet-in-cohort; any other disposition would mean the process gate fired on an ordinary stdio host");
+		routes.Where(route => route.DeclaredLocation == McpToolExecutionLocation.InProcess)
+			.Should().OnlyContain(route => route.Disposition == McpExecutionDisposition.InProcessByClassification,
+			because: "an in-process classification is a decision, and it must never be reported through one of the not-yet / gated reasons");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every name in the shipped Stage 6 cohort is a real tool whose declared metadata actually supports being relayed today: worker-classified, per-call, bounded by the parent kill.")]
+	public void ShippedCohort_ShouldNameOnlyToolsWhoseDeclaredMetadataSupportsRelayingToday() {
+		// Arrange
+		IReadOnlySet<string> cohortNames = new McpWorkerCohort().Names;
+
+		// Act
+		IReadOnlyList<McpToolExecutionMetadata> declared = [.. cohortNames.Select(name => {
+			_reader.TryGetMetadata(name, innerCommand: null, out McpToolExecutionMetadata metadata);
+			return metadata;
+		})];
+
+		// Assert
+		cohortNames.Should().HaveCount(7,
+			because: "the Stage 6 cohort is the seven retry-safe stdio reads story 6 names; a changed count is a rollout decision and must be made deliberately, not drift in");
+		declared.Should().NotContainNulls(
+			because: "a cohort name with no declared metadata would be routed on a guess — or, worse, silently fall through the reader's fail-closed unclassified branch and never relay at all");
+		declared.Should().OnlyContain(metadata => metadata.Location == McpToolExecutionLocation.Worker,
+			because: "the cohort may only name tools the metadata already classifies as worker-bound; naming an in-process tool would make the cohort override the classification instead of scoping it");
+		declared.Should().OnlyContain(metadata => metadata.Lifetime == McpToolExecutionLifetime.PerCall,
+			because: "a sticky worker is story 7 and the parent has no private completion signal yet, so a sticky member would leak the child");
+		declared.Should().OnlyContain(metadata => metadata.BudgetPolicy == McpToolBudgetPolicy.ParentKillDefault,
+			because: "the parent kill is the only bound implemented today; a terminal-stage member would be killed mid-deploy, which is exactly what ADR rule 4 forbids");
 	}
 
 	[Test]

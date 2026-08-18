@@ -20,11 +20,34 @@ public enum McpExecutionDisposition {
 	InProcessByClassification,
 
 	/// <summary>
-	/// The tool declares <see cref="McpToolExecutionLocation.Worker"/>, but no worker path is wired into
-	/// dispatch yet, so the call runs in the host process. This is the ONLY disposition the 156 (currently
-	/// 153) worker-classified tools produce today, and it is the seam Stage 6 replaces with the relay.
+	/// The tool declares <see cref="McpToolExecutionLocation.Worker"/>, but this router was built with no
+	/// worker path to route to. Production no longer produces this (Stage 6 wired the relay); it survives
+	/// as the shape a router with no destination answers, which is what keeps "reports Worker" and
+	/// "executes in a worker" separable in a test.
 	/// </summary>
 	InProcessPendingWorkerPath,
+
+	/// <summary>
+	/// The tool declares <see cref="McpToolExecutionLocation.Worker"/> and a worker path exists, but the
+	/// tool is not in <see cref="McpWorkerCohort"/> — its supervision (sticky lifetime, terminal-stage
+	/// bounding, per-family reservations) is later-stage work that does not exist yet. The declaration is
+	/// still reported verbatim, so "classified worker" and "moved to a worker" stay distinguishable, which
+	/// is exactly what AC-05 asserts.
+	/// </summary>
+	InProcessOutsideCohort,
+
+	/// <summary>
+	/// A cohort tool that would have been relayed, refused because this process may not spawn workers at
+	/// all: it serves a transport other than stdio, so the credential channel a child would need does not
+	/// exist (Stage 5 deferred). See <see cref="IMcpWorkerPathGate"/>.
+	/// </summary>
+	InProcessTransportGated,
+
+	/// <summary>
+	/// A cohort tool that would have been relayed, refused because THIS process is already a worker.
+	/// Relaying would hand the child the very call the parent relayed and spawn workers without end.
+	/// </summary>
+	InProcessWorkerRecursionGuard,
 
 	/// <summary>
 	/// The routing key resolved to no declared execution metadata at all (an unknown name, or a synthetic
@@ -33,9 +56,9 @@ public enum McpExecutionDisposition {
 	InProcessUnclassified,
 
 	/// <summary>
-	/// The call is relayed to a supervised child worker. Unreachable in production until Stage 6 wires the
-	/// worker path; a dispatch site that sees it today refuses the call rather than executing it silently
-	/// in-process.
+	/// The call is relayed to a supervised child worker. Produced for a cohort tool
+	/// (<see cref="McpWorkerCohort"/>) in a stdio host that is not itself a worker; a dispatch site with no
+	/// worker dispatcher to hand it to refuses the call rather than executing it silently in-process.
 	/// </summary>
 	Worker
 }
@@ -65,7 +88,7 @@ public sealed record McpExecutionRoute(
 
 	/// <summary>
 	/// <c>true</c> when the dispatch site must run the call in the host process — every disposition except
-	/// <see cref="McpExecutionDisposition.Worker"/>. True for every call today.
+	/// <see cref="McpExecutionDisposition.Worker"/>.
 	/// </summary>
 	public bool ExecutesInProcess => Disposition != McpExecutionDisposition.Worker;
 }

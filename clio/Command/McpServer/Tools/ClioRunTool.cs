@@ -68,7 +68,8 @@ public interface IClioRunExecutor {
 public sealed class ClioRunExecutor(
 	IMcpToolInvokerRegistry toolRegistry,
 	IMcpToolCompatibilityCatalog compatibilityCatalog,
-	IMcpExecutionRouter executionRouter) : IClioRunExecutor {
+	IMcpExecutionRouter executionRouter,
+	Relay.IMcpWorkerCallDispatcher workerCallDispatcher = null) : IClioRunExecutor {
 
 	/// <inheritdoc />
 	public ValueTask<CallToolResult> RunAsync(
@@ -179,9 +180,20 @@ public sealed class ClioRunExecutor(
 		// dispatch happens, so a decision made inside DispatchAsync would never run for a refused write.
 		McpExecutionRoute route = executionRouter.Resolve(toolName, innerCommand: null);
 		if (!route.ExecutesInProcess) {
-			// Fail-closed seam, unreachable while no worker path is wired (Stage 6 replaces this branch with
-			// the relay). Everything below dispatches in the host process, exactly as before.
-			return McpExecutionRouter.WorkerPathNotWiredResult(route);
+			if (workerCallDispatcher is null) {
+				// Fail-closed: a site with no dispatcher refuses rather than running a worker-routed call in
+				// the host process, which would silently bypass the execution boundary.
+				return McpExecutionRouter.WorkerPathNotWiredResult(route);
+			}
+			// The ORIGINAL clio-run params are relayed, not the unwrapped inner call. The child's own
+			// clio-run executes any tool directly (the host-level destructive gating this call already
+			// passed lives in the parent), so unwrapping here would only add a params rebuild that can drop
+			// arguments — the double-wrapping trap BuildChildParams exists to avoid — and would lose the
+			// caller's _meta, taking ClioRing's progress-token correlation with it.
+			return await workerCallDispatcher
+				.DispatchAsync(route, callContext.Params,
+					new Relay.McpServerParentSession(callContext.Server), cancellationToken)
+				.ConfigureAwait(false);
 		}
 
 		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) inner dispatch by the
