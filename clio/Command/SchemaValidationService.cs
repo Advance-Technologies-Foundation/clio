@@ -678,42 +678,65 @@ public static class SchemaValidationService
 			return;
 		}
 		bool isInsert = string.Equals(operation, InsertOperationName, StringComparison.Ordinal);
-		bool isSet = string.Equals(operation, SetOperationName, StringComparison.Ordinal);
-		if (!isInsert && !isSet) {
-			// Case matters: the differ dispatches on an exact-case switch with no default branch, so an
-			// operation that only case-insensitively matches is not "an insert with a bad type" — the WHOLE
-			// operation is discarded and nothing is authored at all. Report that instead of type advice the
-			// author could follow without changing the outcome.
-			if (string.Equals(operation, InsertOperationName, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(operation, SetOperationName, StringComparison.OrdinalIgnoreCase)) {
-				result.Warnings.Add(
-					$"{DescribeViewConfigDiffEntry(entry, index)} declares \"{OperationPropertyName}\": \"{operation}\". The "
-					+ "Creatio differ dispatches operations case-sensitively, so this entry is silently discarded and "
-					+ $"authors nothing. Use the exact lowercase form (\"{operation.ToLowerInvariant()}\").");
-			}
+		if (!isInsert && !string.Equals(operation, SetOperationName, StringComparison.Ordinal)) {
+			ReportOperationCaseMismatch(entry, index, operation, result);
 			return;
 		}
 		bool hasEntryType = TryGetStringProperty(entry, TypePropertyName, out string entryType);
-		bool hasValuesObject =
-			entry.TryGetProperty(ValuesPropertyName, out JsonElement values) && values.ValueKind == JsonValueKind.Object;
 		string subject = DescribeViewConfigDiffEntry(entry, index);
-		if (!hasValuesObject) {
-			// FLAT shape: everything at operation level, no `values` object. `insert` declares no required
-			// parameters, so the differ does NOT reject it — it clones nothing, stamps the alias and persists a
-			// typeless element: the same unrenderable outcome as the hybrid, so it blocks the same way. That two
-			// sibling validators READ `entry.type` says only that they can classify the shape, not that the differ
-			// renders it. `set` is excluded: it requires `values`, so the differ rejects a flat `set` itself and
-			// MobileDiffApplyValidator surfaces that — reporting it here too would double-report one defect.
-			if (hasEntryType && isInsert) {
-				result.IsValid = false;
-				result.Errors.Add(
-					$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object and carries no "
-					+ "\"values\" object. The Creatio differ builds the element from \"values\" only, so the type is discarded "
-					+ "and the element cannot render even though the write reports success. Move the component properties "
-					+ $"into \"values\": {{ \"{TypePropertyName}\": \"{entryType}\", ... }}.");
-			}
+		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) || values.ValueKind != JsonValueKind.Object) {
+			ReportFlatShapeTypePlacement(subject, entryType, reportable: hasEntryType && isInsert, result);
 			return;
 		}
+		ReportValuesShapeTypePlacement(subject, values, entryType, hasEntryType, result);
+	}
+
+	/// <summary>
+	/// Reports an operation that only case-insensitively matches <c>insert</c> / <c>set</c>. The differ dispatches on
+	/// an exact-case switch with no default branch, so such an entry is not "an insert with a bad type" — the WHOLE
+	/// operation is discarded and nothing is authored. Saying so beats type advice the author could follow without
+	/// changing the outcome.
+	/// </summary>
+	private static void ReportOperationCaseMismatch(
+		JsonElement entry, int index, string operation, SchemaValidationResult result) {
+		if (!string.Equals(operation, InsertOperationName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(operation, SetOperationName, StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+		result.Warnings.Add(
+			$"{DescribeViewConfigDiffEntry(entry, index)} declares \"{OperationPropertyName}\": \"{operation}\". The "
+			+ "Creatio differ dispatches operations case-sensitively, so this entry is silently discarded and "
+			+ $"authors nothing. Use the exact lowercase form (\"{operation.ToLowerInvariant()}\").");
+	}
+
+	/// <summary>
+	/// Reports the FLAT shape — everything at operation level, no <c>values</c> object. <c>insert</c> declares no
+	/// required parameters, so the differ does NOT reject it: it clones nothing, stamps the alias and persists a
+	/// typeless element, the same unrenderable outcome as the hybrid, so it blocks the same way. That two sibling
+	/// validators READ <c>entry.type</c> says only that they can classify the shape, not that the differ renders it.
+	/// <c>set</c> is excluded by the caller: it requires <c>values</c>, so the differ rejects a flat <c>set</c> itself
+	/// and <c>MobileDiffApplyValidator</c> surfaces that — reporting it here too would double-report one defect.
+	/// </summary>
+	private static void ReportFlatShapeTypePlacement(
+		string subject, string entryType, bool reportable, SchemaValidationResult result) {
+		if (!reportable) {
+			return;
+		}
+		result.IsValid = false;
+		result.Errors.Add(
+			$"{subject} declares \"{TypePropertyName}\": \"{entryType}\" on the operation object and carries no "
+			+ "\"values\" object. The Creatio differ builds the element from \"values\" only, so the type is discarded "
+			+ "and the element cannot render even though the write reports success. Move the component properties "
+			+ $"into \"values\": {{ \"{TypePropertyName}\": \"{entryType}\", ... }}.");
+	}
+
+	/// <summary>
+	/// Reports the three outcomes for an operation that DOES carry a <c>values</c> object: a usable type inside it
+	/// (renders — only a conflicting operation-level type is worth a warning), no usable type but one on the
+	/// operation object (the blocking hybrid), or no type anywhere (advisory).
+	/// </summary>
+	private static void ReportValuesShapeTypePlacement(
+		string subject, JsonElement values, string entryType, bool hasEntryType, SchemaValidationResult result) {
 		if (TryGetStringProperty(values, TypePropertyName, out string valuesType)) {
 			// The differ applies the `values` copy, so the element renders. A DIFFERENT operation-level type is still
 			// worth flagging: the author gets a component they did not ask for, silently.
