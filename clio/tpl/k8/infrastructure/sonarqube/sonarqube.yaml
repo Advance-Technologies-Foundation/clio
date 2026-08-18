@@ -13,6 +13,7 @@ spec:
       labels:
         app: sonarqube
     spec:
+      automountServiceAccountToken: false
       initContainers:
         - name: volume-permissions
           image: busybox
@@ -35,6 +36,10 @@ spec:
             limits:
               cpu: 2000m
               memory: 2048Mi
+              # /opt/sonarqube/temp (JVM tmpdir, plugin extraction, Elasticsearch
+              # bootstrap/translog scratch) is not PVC-backed, unlike data/extensions/logs
+              # below — sized generously above typical usage to avoid eviction under load.
+              ephemeral-storage: 4Gi
           volumeMounts:
           - mountPath: "/opt/sonarqube/data"
             name: sonar-data
