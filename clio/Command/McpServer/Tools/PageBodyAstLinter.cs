@@ -319,9 +319,9 @@ internal static class PageBodyAstLinter {
 	// triggering attribute but writes a view-model attribute through `$context.set(...)`. This request
 	// fires on EVERY attribute change, so an unscoped handler that writes an attribute re-enters on its
 	// OWN write — with a value that is no longer the one it expected — and typically clears the field it
-	// just set (or loops). The canonical scope is an early guard `if (request.attributeName !== "<Attr>")
-	// return next?.handle(request);` (page-schema-handlers guidance) or a `condition: { attributeName }`
-	// on the entry. `requestArgumentPropertyName` does NOT scope this handler — it is silently ignored,
+	// just set (or loops). The canonical scope is an early attributeName guard that returns through next
+	// when the changed attribute is not the target, or a condition entry naming attributeName
+	// (page-schema-handlers guidance). requestArgumentPropertyName does NOT scope this handler — it is silently ignored,
 	// which is exactly the trap this rule surfaces. No regex counterpart in SchemaValidationService /
 	// SchemaHandlerValidationService — the self-retrigger footgun is a data-flow shape, not a token match.
 	// Warning severity: the page still saves and renders; the field is just wiped at runtime.
@@ -376,12 +376,11 @@ internal static class PageBodyAstLinter {
 			Message: "A `crt.HandleViewModelAttributeChangeRequest` handler that writes a view-model attribute via `$context.set(...)` is not scoped to the triggering attribute, so it re-fires on its own write and can clear the value or loop. Scope it: guard the body with `if (request.attributeName !== \"<Attr>\") return next?.handle(request);` or add `condition: { attributeName: \"<Attr>\" }` to the entry (per page-schema-handlers guidance). Note: `requestArgumentPropertyName` does NOT scope this handler — it is silently ignored."));
 	}
 
-	// A `condition` on the handler entry scopes the handler and suppresses the warning. Two shapes count:
-	//   - declarative `condition: { attributeName: "<Attr>" }` (an ObjectExpression carrying attributeName);
-	//   - predicate `condition: (request) => request.attributeName === "<Attr>"` (an IFunction that
-	//     references attributeName) — the sibling `condition` is outside the handler function subtree
-	//     ScanHandlerBody walks, so without this branch a correctly-scoped predicate-form handler would
-	//     be a false positive.
+	// A condition on the handler entry scopes the handler and suppresses the warning. Two shapes count:
+	//   - declarative: an ObjectExpression condition carrying an attributeName key;
+	//   - predicate: an IFunction condition whose body references attributeName. The sibling condition is
+	//     outside the handler function subtree that ScanHandlerBody walks, so without this branch a
+	//     correctly-scoped predicate-form handler would be a false positive.
 	private static bool ConditionScopesOnAttributeName(Property conditionProp, int depth) {
 		switch (conditionProp?.Value) {
 			case ObjectExpression condObj:
@@ -410,12 +409,7 @@ internal static class PageBodyAstLinter {
 		if (node is Identifier { Name: "attributeName" }) {
 			return true;
 		}
-		foreach (Node child in node.ChildNodes) {
-			if (SubtreeReferencesAttributeName(child, depth + 1)) {
-				return true;
-			}
-		}
-		return false;
+		return node.ChildNodes.Any(child => SubtreeReferencesAttributeName(child, depth + 1));
 	}
 
 	// Walk the handler function subtree once, collecting the two orthogonal signals the rule needs:
@@ -449,8 +443,8 @@ internal static class PageBodyAstLinter {
 	// identifier or a `*.$context` member (typically `request.$context`).
 	//
 	// Accepted false negative (deliberate, second of two): a write through a LOCAL ALIAS that drops the
-	// `$context` member — `const ctx = request.$context; ctx.set("UsrCountryCode", ...)` — is NOT detected,
-	// so an unscoped handler writing that way is not flagged. Following aliases needs data-flow analysis;
+	// $context member — assigning request.$context to a local variable and calling set on that variable —
+	// is NOT detected, so an unscoped handler writing that way is not flagged. Following aliases needs data-flow analysis;
 	// this mirrors the same alias limitation on `IsContextExecuteRequest` and preserves the rule's
 	// zero-false-positive bias. Pinned by Lint_ShouldNotWarn_WhenAttributeChangeHandlerWritesViaAliasedContext.
 	private static bool IsContextSetCall(Node callee) =>
