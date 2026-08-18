@@ -114,9 +114,10 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
-		JObject webTemplateResources = null) =>
+		JObject webTemplateResources = null,
+		IReadOnlySet<string> mobileTypes = null) =>
 		WebToMobileAnalysisService.Analyze(
-			bundle, MobileTypes, WebTypes,
+			bundle, mobileTypes ?? MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType,
 			Rules, templateRule,
@@ -1307,6 +1308,88 @@ public sealed class WebToMobileConversionServiceTests {
 		// The string collection binding is carried unchanged.
 		vals["items"]!.GetValue<string>().Should().Be("$SimilarLeadList");
 	}
+
+	#region Child-element array traversal (menuItems / tools / data arrays)
+
+	[Test]
+	[Description("Structural child-array traversal: a crt.Button leaf's menuItems (crt.MenuItem children) are descended into and converted as their own element-map entries carrying the menuItems slot as propertyName, instead of being copied verbatim inside the button's values.")]
+	public void Analyze_ShouldConvertMenuItems_NestedInAButtonLeaf() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
+				  "menuItems": [ { "name": "PrintItem", "type": "crt.MenuItem",
+					"caption": "#ResourceString(PrintItem_caption)#" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		ElementMapEntry menuItem = Element(guide, "PrintItem");
+		menuItem.Operation.Should().Be("insert",
+			because: "a crt.MenuItem nested in the button's menuItems is a child view element the walk now descends into and converts");
+		menuItem.ParentName.Should().Be("OrderButton",
+			because: "the converted menu item stays under its button");
+		menuItem.PropertyName.Should().Be("menuItems",
+			because: "the walk records the slot it descended, so the item lands back in the button's menuItems array rather than its items");
+		menuItem.MobileType.Should().Be("crt.MenuItem",
+			because: "the child is registry-supported on mobile and kept as its own type");
+		ElementMapEntry button = Element(guide, "OrderButton");
+		button.MobileValues!.AsObject().ContainsKey("menuItems").Should().BeFalse(
+			because: "menuItems is emitted as its own child entries, never carried verbatim on the button");
+	}
+
+	[Test]
+	[Description("Two child-element containers on ONE component (crt.ExpansionPanel's items AND tools) are both descended: the items field and the tools button each become their own entry under the panel, each in its own propertyName slot.")]
+	public void Analyze_ShouldDescend_IntoBothItemsAndTools_OfOneComponent() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Panel", "type": "crt.ExpansionPanel",
+				"items": [ { "name": "Amount", "type": "crt.Input" } ],
+				"tools": [ { "name": "AddButton", "type": "crt.Button" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ExpansionPanel", "crt.Input", "crt.Button"
+		};
+
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		ElementMapEntry amount = Element(guide, "Amount");
+		amount.ParentName.Should().Be("Panel",
+			because: "the items child is descended and re-homed under the panel");
+		amount.PropertyName.Should().Be("items",
+			because: "an items child keeps the items slot");
+		ElementMapEntry addButton = Element(guide, "AddButton");
+		addButton.ParentName.Should().Be("Panel",
+			because: "the tools child of the SAME component is descended too — a second container is not ignored");
+		addButton.PropertyName.Should().Be("tools",
+			because: "the second container is walked into its own slot, kept distinct from items");
+		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
+		panelValues.ContainsKey("items").Should().BeFalse(
+			because: "both child arrays are emitted as their own entries, neither carried as a value");
+		panelValues.ContainsKey("tools").Should().BeFalse(
+			because: "both child arrays are emitted as their own entries, neither carried as a value");
+	}
+
+	[Test]
+	[Description("The child-array predicate is by shape, not name: a DATA array (objects with no crt.* type) is NOT descended into — it is carried verbatim on the element, so ordinary value arrays are untouched.")]
+	public void Analyze_ShouldNotDescend_IntoDataArrayWithoutComponentTypes() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "Rating", "type": "crt.Input",
+				  "options": [ { "id": "a", "label": "A" }, { "id": "b", "label": "B" } ] } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle);
+
+		guide.ElementMap.Should().NotContain(e => e.ParentName == "Rating",
+			because: "a data array (no crt.* typed object) is not a child-element collection, so nothing is walked out of it");
+		ElementMapEntry field = Element(guide, "Rating");
+		field.MobileValues!.AsObject()["options"]!.AsArray().Count.Should().Be(2,
+			because: "the data array is carried verbatim as a value, exactly as before the traversal change");
+	}
+
+	#endregion
 
 	#region ConvertPageBusinessRules
 
@@ -4803,7 +4886,7 @@ public sealed class WebToMobileConversionServiceTests {
 	private static readonly IReadOnlySet<string> EmptyRemovalMobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.TabPanel", "crt.TabContainer", "crt.FlexContainer", "crt.GridContainer",
-			"crt.ExpansionPanel", "crt.Input", "crt.ComboBox"
+			"crt.ExpansionPanel", "crt.Input", "crt.ComboBox", "crt.Button"
 		};
 
 	private static readonly EmptyContainerRemovalRule EmptyRemoval = new() {
@@ -4967,7 +5050,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Decision 2026-08-03: an ExpansionPanel is judged on items ONLY — an empty panel drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
+	[Description("An ExpansionPanel with no surviving children in any slot (empty items, no tools) drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
 	public void Analyze_ShouldDropEmptyExpansionPanel_AndCascadeIntoTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -4986,8 +5069,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Items-only decision: a panel with header buttons in tools but an empty items still drops — and the discarded tools are called out in the drop reason so the loss stays visible in the report.")]
-	public void Analyze_ShouldMentionDiscardedTools_WhenEmptyPanelCarriesToolsButtons() {
+	[Description("Supersedes the 2026-08-03 items-only decision: header buttons in an ExpansionPanel's tools zone are CONVERTED by the structural child-array walk, so a panel whose only content is tools keeps them (a surviving child in any slot occupies its parent) instead of being dropped as empty.")]
+	public void Analyze_ShouldConvertToolsButtons_AndKeepTheirPanel() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "ToolsOnlyPanel", "type": "crt.ExpansionPanel",
 			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ], "items": [] } ]
@@ -4995,10 +5078,18 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
+		ElementMapEntry addButton = Element(guide, "AddButton");
+		addButton.Operation.Should().Be("insert",
+			because: "a crt.Button in the tools zone is a child view element the walk now descends into and converts, not header chrome to discard");
+		addButton.ParentName.Should().Be("ToolsOnlyPanel",
+			because: "the converted tool stays under its own panel");
+		addButton.PropertyName.Should().Be("tools",
+			because: "the walk records the slot it descended, so the button lands back in the panel's tools array rather than its items");
 		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
-		panel.Operation.Should().Be("drop");
-		panel.Reason.Should().Contain("empty container");
-		panel.Reason.Should().Contain("tools", because: "silent removal is acceptable only while the discarded tools stay visible in the report");
+		panel.Operation.Should().Be("insert",
+			because: "a surviving converted child (the tools button) occupies the panel, so it is no longer judged empty on items alone");
+		panel.MobileValues!.AsObject().ContainsKey("tools").Should().BeFalse(
+			because: "the tools array is emitted as its own child entries, never carried as a value on the parent");
 	}
 
 	[Test]
