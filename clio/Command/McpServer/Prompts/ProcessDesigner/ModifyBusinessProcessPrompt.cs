@@ -31,8 +31,10 @@ public static class ModifyBusinessProcessPrompt {
 		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build;
 		 `setParameter` updates a parameter in place, `removeParameter` is dependency-checked, `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
-		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields such as
-		 `useBackgroundMode` in place on any element kind; `setConnections` binds the "Connected to" links of the
+		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
+		 `useBackgroundMode` on any element kind, and a `sendEmail` element's `email` block, where the fields you
+		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
+		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended); `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). Any failed operation aborts the whole edit
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,

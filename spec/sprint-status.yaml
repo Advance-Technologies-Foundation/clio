@@ -2629,7 +2629,7 @@ stories:
     size: M
     status: done
     jira: ENG-91845
-    pr: engineering/cli-process-builder#21
+    pr: engineering/crt-process-builder#21
     file: spec/stories/story-process-element-connections-1.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
@@ -2646,7 +2646,7 @@ stories:
     size: M
     status: done
     jira: ENG-91845
-    pr: engineering/cli-process-builder#21
+    pr: engineering/crt-process-builder#21
     file: spec/stories/story-process-element-connections-2.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
@@ -2663,7 +2663,7 @@ stories:
     size: L
     status: done
     jira: ENG-91845
-    pr: engineering/cli-process-builder#21
+    pr: engineering/crt-process-builder#21
     file: spec/stories/story-process-element-connections-3.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
@@ -2714,7 +2714,7 @@ stories:
     file: spec/stories/story-process-element-connections-6.md
     prd: spec/process-element-connections/process-element-connections-plan.md
     adr: spec/adr/adr-process-element-connections.md
-    status_note: "Follow-up found by reviewing a real session, not by planning: setConnections accepted any [#...#] token, so a SUCCESSFUL write told the caller nothing and the caller hedged. The package now refuses a [#SysVariable...#] whose name does not resolve through SystemValueManager or whose value type is not Guid (cli-process-builder, EntityConnectionBinder.EnsureCompatibleSystemVariable) — checkable, unlike the [#SysSettings...#] residual, because the vocabulary is compiled into the platform and an unknown name breaks CODE GENERATION rather than merely writing nothing. Docs/guidance for the three usable variables shipped first and deliberately describe BOTH behaviours, since an older CrtProcessBuilder on the environment keeps the unchecked one. OPEN AND MANDATORY: clio.mcp.e2e coverage for the two refusals (unknown name, non-record type) CANNOT be written until the rebundle lands — the bundled package is resolved from the BUILD OUTPUT, so the E2E would exercise the old assembly and pass vacuously. Sequence is fixed: merge the package PR, rebundle from the merged sources (never from a working tree), re-pin ExpectedArchiveSha256 + ExpectedDescriptorModifiedOnUtc, THEN add the E2E. Also open, deliberately deferred pending measurement: the variable-to-entity check (a Contact variable on an Account column), which needs a table the platform exposes only client-side — until it exists AutoGuid/SequentialGuid pass the type check while generating a value rather than referencing a record."
+    status_note: "Follow-up found by reviewing a real session, not by planning: setConnections accepted any [#...#] token, so a SUCCESSFUL write told the caller nothing and the caller hedged. The package now refuses a [#SysVariable...#] whose name does not resolve through SystemValueManager or whose value type is not Guid (crt-process-builder, EntityConnectionBinder.EnsureCompatibleSystemVariable) — checkable, unlike the [#SysSettings...#] residual, because the vocabulary is compiled into the platform and an unknown name breaks CODE GENERATION rather than merely writing nothing. Docs/guidance for the three usable variables shipped first and deliberately describe BOTH behaviours, since an older CrtProcessBuilder on the environment keeps the unchecked one. OPEN AND MANDATORY: clio.mcp.e2e coverage for the two refusals (unknown name, non-record type) CANNOT be written until the rebundle lands — the bundled package is resolved from the BUILD OUTPUT, so the E2E would exercise the old assembly and pass vacuously. Sequence is fixed: merge the package PR, rebundle from the merged sources (never from a working tree), re-pin ExpectedArchiveSha256 + ExpectedDescriptorModifiedOnUtc, THEN add the E2E. Also open, deliberately deferred pending measurement: the variable-to-entity check (a Contact variable on an Account column), which needs a table the platform exposes only client-side — until it exists AutoGuid/SequentialGuid pass the type check while generating a value rather than referencing a record."
     depends_on:
       - story-process-element-connections-3
     blocks: []

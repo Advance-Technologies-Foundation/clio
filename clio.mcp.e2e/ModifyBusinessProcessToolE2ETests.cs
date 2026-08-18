@@ -11,6 +11,7 @@ using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -87,6 +88,97 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		describeJson.Should().Contain("signalstart",
 			because: "the edit added a signalStart element, which must appear in the read-back structured graph");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, setElement's sendEmail recipient semantics are MATCH-OR-APPEND against a real server: re-sending an address the line already carries is a no-op (no duplicate), while a genuinely new address appends. Unit tests assert only that the operation JSON is passed through, so this is the only coverage that can catch the merge behaviour drifting.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process match-or-appends sendEmail recipients")]
+	public async Task ModifyBusinessProcess_Should_MatchOrAppendSendEmailRecipients() {
+		// Arrange — a sendEmail element that already carries one To address.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailRcptE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSendEmailWithRecipientDescriptor(processName)
+		});
+
+		// Act 1 — re-send the SAME address. Match-or-append means this must change nothing.
+		CallToolResult repeat = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildRecipientOperations("first@example.com")
+		});
+		repeat.IsError.Should().NotBeTrue(because: "re-applying an identical recipient is a valid no-op, not an error");
+
+		DescribedEmail afterRepeat = await ReadEmailAsync(context, processName);
+		afterRepeat.To.Should().NotBeNull().And.HaveCount(1,
+			because: "an entry whose resolved source and value the line already carries must NOT be appended again — "
+				+ "a duplicate would make the process email that address twice, and there is no removal path to undo it");
+
+		// Act 2 — send a genuinely different address. That must append rather than replace.
+		CallToolResult appended = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildRecipientOperations("second@example.com")
+		});
+		appended.IsError.Should().NotBeTrue(because: "adding a new recipient through setElement is supported");
+
+		// Assert
+		DescribedEmail afterAppend = await ReadEmailAsync(context, processName);
+		afterAppend.To.Should().NotBeNull().And.HaveCount(2,
+			because: "a new address APPENDS to the existing line — it must not replace what was already there");
+		afterAppend.To!.Select(recipient => recipient.Value).Should()
+			.Contain("first@example.com").And.Contain("second@example.com",
+				because: "both addresses must survive: append semantics, not overwrite");
+	}
+
+	// Reads the process back and returns the sendEmail element's email block, so a recipient assertion can be made
+	// against typed fields instead of substring-matching the escaped MCP envelope.
+	private static async Task<DescribedEmail> ReadEmailAsync(ArrangeContext context, string processName) {
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value)
+				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+		return graph.Elements.Single(element => element.Name == "SendEmail1").Email!;
+	}
+
+	// A sendEmail element seeded with exactly one To recipient, so the modify calls that follow are measured against
+	// a known starting count.
+	private static string BuildSendEmailWithRecipientDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Email Recipients E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail",
+		      "email": { "mode": "manual", "subject": "Recipient merge probe",
+		        "to": [ { "value": "first@example.com" } ] } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A setElement op whose email block carries a single To recipient — the same shape for both the duplicate and the
+	// genuinely-new case, so the only variable between the two acts is the address itself.
+	private static string BuildRecipientOperations(string address) =>
+		$$"""
+		[ { "op": "setElement", "elementName": "SendEmail1",
+		    "elementUpdate": { "email": { "to": [ { "value": "{{address}}" } ] } } } ]
+		""";
 
 	[Test]
 	[Description("Over the real MCP path, builds a process then adds process parameters via addParameter, including a Lookup referenceSchema; identifies the process by name only (exercises the optional processUid path).")]

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -16,14 +17,18 @@ public sealed class ModifyBusinessProcessCommandTests {
 		"[{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}]";
 
 	private IModifyBusinessProcessService _modifyBusinessProcessService;
+	private IProcessDescriber _processDescriber;
 	private ILogger _logger;
 	private ModifyBusinessProcessCommand _command;
 
 	[SetUp]
 	public void Setup() {
 		_modifyBusinessProcessService = Substitute.For<IModifyBusinessProcessService>();
+		// The command reads the process back to catch a server that discarded an email block while answering
+		// success. These operations carry no email block, so the substitute is never consulted.
+		_processDescriber = Substitute.For<IProcessDescriber>();
 		_logger = Substitute.For<ILogger>();
-		_command = new ModifyBusinessProcessCommand(_modifyBusinessProcessService, _logger);
+		_command = new ModifyBusinessProcessCommand(_modifyBusinessProcessService, _processDescriber, _logger);
 	}
 
 	[TearDown]

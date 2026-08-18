@@ -1062,22 +1062,19 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false });
 
 	/// <summary>
-	/// Serializes the raw MCP tool result for a diagnostic log line — structured content when the server sent it,
-	/// otherwise the content blocks. Deliberately bypasses <see cref="ExtractSchemaSyncResponse"/>, which throws
-	/// when the result is not a parsable <c>SchemaSyncResponse</c>: that is precisely the case this dump has to
-	/// survive. A serialization failure is returned as text so the diagnostic can never become the reported test
-	/// failure and mask the real one.
+	/// Serializes the raw MCP tool result for a diagnostic log line — the error flag together with both payload
+	/// channels, matching the <c>DescribeCallResult</c> shape used across the other e2e suites. Deliberately
+	/// bypasses <see cref="ExtractSchemaSyncResponse"/>, which throws when the result is not a parsable
+	/// <c>SchemaSyncResponse</c>: that is precisely the case this dump has to survive. Any serialization failure
+	/// is returned as text so the diagnostic can never become the reported test failure and mask the real one.
 	/// </summary>
 	private static string FormatRawToolResult(CallToolResult callResult) {
-		object? rawResult = (object?)callResult.StructuredContent ?? callResult.Content;
-		if (rawResult is null) {
-			return "<no content>";
-		}
+		object rawResult = new { callResult.IsError, callResult.StructuredContent, callResult.Content };
 
 		try {
 			return JsonSerializer.Serialize(rawResult, new JsonSerializerOptions { WriteIndented = false });
-		} catch (Exception ex) when (ex is JsonException or NotSupportedException) {
-			return $"<unserializable tool result ({rawResult.GetType().Name}): {ex.Message}>";
+		} catch (Exception ex) {
+			return $"<unserializable tool result: {ex.Message}>";
 		}
 	}
 
