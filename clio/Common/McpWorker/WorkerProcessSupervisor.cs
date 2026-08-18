@@ -18,25 +18,129 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// The <c>DOTNET_ROOT*</c> family is not decoration. It is how a .NET apphost — which is what a
-	/// published clio and the test fixture both are — finds the shared runtime when that runtime is not
-	/// at the machine's default location, and the variable that carries it is ARCHITECTURE-SPECIFIC:
+	/// <b>The governing principle: a worker must behave the way the PARENT was configured to behave.</b>
+	/// An operator who tunes a variable is tuning clio, not one process of it, so a knob that lands in the
+	/// parent only produces two clios that disagree — and the disagreement is invisible, because the parent
+	/// is the one the operator can observe. The list is nevertheless an allowlist and not "inherit
+	/// everything": three classes are deliberately kept OUT, and they are enumerated below so an omission
+	/// reads as a decision rather than as an oversight.
+	/// </para>
+	/// <para>
+	/// <b>Scope of the audit.</b> A variable earns a place here when it changes the behaviour of code a
+	/// worker can actually reach — <c>mcp-server --worker</c> serving <c>tools/call</c> for a
+	/// <see cref="Command.McpServer.McpToolExecutionLocation.Worker"/> tool, plus the in-process
+	/// <c>clio-run</c> dispatch a worker performs. Variables read only by CLI-only commands that no worker
+	/// path reaches are recorded as out of scope, to be revisited when the cohort expands, rather than
+	/// added speculatively.
+	/// </para>
+	/// <para>
+	/// <b>Runtime location — <c>DOTNET_ROOT*</c>.</b> Not decoration. It is how a .NET apphost — which is
+	/// what a published clio and the test fixture both are — finds the shared runtime when that runtime is
+	/// not at the machine's default location, and the variable that carries it is ARCHITECTURE-SPECIFIC:
 	/// measured on an arm64 macOS host, only <c>DOTNET_ROOT_ARM64</c> was set, and dropping it made a
 	/// spawned worker fail at startup with "You must install or update .NET" before executing a line of
 	/// clio. A frozen environment that omits these turns a working host into one where every worker dies
-	/// instantly, so the allowlist carries every spelling the host may have used.
+	/// instantly, so this family carries every spelling the host may have used.
 	/// </para>
 	/// <para>
-	/// The proxy family is here for the same reason and under the same "every spelling" rule. Where
-	/// egress goes through a mandated inspecting proxy, the parent honours <c>HTTPS_PROXY</c> and a
-	/// child that does not inherit it either cannot reach Creatio at all or reaches it around the
-	/// policy — and both present to the user as "the environment is broken". The lowercase spellings
-	/// are NOT duplicates of the uppercase ones: on Unix they are the conventional spelling, plenty of
-	/// stacks read them case-sensitively, and a host may have set only those.
+	/// <b>Egress — the proxy family, and the flag that decides whether it is honoured.</b> The proxy
+	/// variables are here under the same "every spelling" rule: where egress goes through a mandated
+	/// inspecting proxy, the parent honours <c>HTTPS_PROXY</c> and a child that does not inherit it either
+	/// cannot reach Creatio at all or reaches it around the policy — and both present to the user as "the
+	/// environment is broken". The lowercase spellings are NOT duplicates of the uppercase ones: on Unix
+	/// they are the conventional spelling, plenty of stacks read them case-sensitively, and a host may have
+	/// set only those. <c>CLIO_MCP_RESPECT_AMBIENT_PROXY</c> belongs with them because it decides whether an
+	/// MCP process honours those variables at all (<c>Program.cs</c>, MCP mode clears
+	/// <c>HttpClient.DefaultProxy</c> unless the flag is set): inheriting the proxy ADDRESS without the flag
+	/// is the worst of both worlds — the operator's parent goes through the mandated proxy and the worker
+	/// goes straight around it, which is precisely the policy bypass the paragraph above warns about.
+	/// </para>
+	/// <para>
+	/// <b>Host behaviour a worker must match.</b> <c>CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS</c> sets the
+	/// cadence at which a tool streams <c>notifications/progress</c> while a synchronous backend call runs.
+	/// It is captured at TYPE LOAD (<c>McpProgressHeartbeat.DefaultInterval</c> is <c>static readonly</c>),
+	/// so a worker that does not receive it at spawn can never be told afterwards — and a host tuned for a
+	/// fast beat then gets a parent that beats and a worker that does not.
+	/// <c>CLIO_WORKING_DIRECTORY</c> relocates clio's scratch root
+	/// (<c>WorkingDirectoriesProvider.BaseTempDirectory</c>), so a worker without it writes temporary trees
+	/// under the machine default while the parent writes them where the operator put them — and
+	/// <c>TEMP</c> / <c>TMP</c> / <c>TMPDIR</c> are already inherited, so withholding only the clio-specific
+	/// one is the inconsistent half of a pair. Checked rather than assumed: sharing the root is safe because
+	/// every allocation is a fresh <c>Guid</c> subdirectory, and
+	/// <c>WarmUpPackageDownloader.CreateOwnerPrivateDirectory</c> opts OUT of this variable on purpose — that
+	/// opt-out is a privacy guarantee that holds in parent and worker alike, so it is not an argument against
+	/// inheriting the variable for everything else.
+	/// <c>CLIO_CREATE_SECTION_TIMEOUT_SECONDS</c> bounds the <c>create-app-section</c> insert, and that tool
+	/// is <see cref="Command.McpServer.McpToolExecutionLocation.Worker"/>, so an operator's tuned timeout
+	/// would otherwise apply only while the tool still runs in-process.
+	/// The component / request registry overrides pin where component documentation is read from;
+	/// <c>get-component-info</c> is a worker-located tool, so a worker that ignores the pin reaches the
+	/// public CDN the operator redirected away from and answers out of different data.
+	/// <c>PATHEXT</c> is the other half of <c>PATH</c>: on Windows an executable is resolved as PATH ×
+	/// PATHEXT, so inheriting one without the other resolves a different program, or none.
+	/// </para>
+	/// <para>
+	/// <b>Exclusion class 1 — parent-side orchestration and hazards (ADR rule 11).</b>
+	/// <c>CLIO_MCP_READ_DEADLINE_SECONDS</c> must never reach a worker: the parent bounds a worker by
+	/// KILLING it, and a second in-child deadline would abandon the work while keeping the per-tenant
+	/// monitor, which is the wedge this feature exists to remove.
+	/// <c>CLIO_MCP_WORKER_FROZEN_FEATURES</c> is composed per call by
+	/// <see cref="McpWorkerEnvironment.ComposeChildEnvironment"/>; an ambient copy could contradict the
+	/// frozen payload.
+	/// <c>CLIO_MCP_WORKER_BUDGET_SECONDS</c>, <c>CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS</c> and
+	/// <c>CLIO_MCP_WORKER_CONCURRENCY</c> configure the SUPERVISOR, which only the parent runs; a worker
+	/// spawns no workers, and carrying them down would arm a second supervisor the day one ever did. The
+	/// concurrency cap joins its two siblings here for exactly that reason and for no other: it is an
+	/// admission knob, admission happens once, and it happens in the parent.
+	/// </para>
+	/// <para>
+	/// <b>NOT an exclusion, however it looks — <c>CLIO_MCP_RESPONSE_DEADLINE_SECONDS</c> is DELEGATED.</b>
+	/// It is absent from this list because it must reach SOME workers and not others, and an allowlist can
+	/// only say "always". <see cref="McpWorkerEnvironment.ComposeChildEnvironment"/> owns the decision and
+	/// makes it per lifetime: a STICKY worker <b>keeps the parent's value verbatim</b> — its in-progress
+	/// envelope is what returns the call, and stripping it turned a 25 s backend call into a 77 s block in
+	/// the prototype (ADR rule 11) — while a per-call worker gets no deadline override at all, because the
+	/// parent bounds it by killing. So the absence here is what ENABLES that asymmetry; adding the variable
+	/// to this list would silently promote "sometimes" to "always" and is not the way to fix a sticky worker
+	/// that is missing its deadline.
+	/// </para>
+	/// <para>
+	/// <b>Exclusion class 2 — secrets and transport-only configuration.</b> The credential threat model's
+	/// stdio property is that NO secret crosses the parent→worker channel: the child reads
+	/// <c>appsettings.json</c> itself and is handed only an environment NAME. So
+	/// <c>CLIO_OIDC_CLIENT_SECRET</c>, <c>CLIO_MCP_HTTP_PLATFORM_API_KEY</c>, <c>CLIO_TELEMETRY_INGEST_KEY</c>
+	/// and the <c>CLIO_KNOWLEDGE_TRUSTED_*</c> trust anchors stay out. The whole <c>CLIO_MCP_HTTP_AUTH*</c>
+	/// family configures the parent's HTTP transport, which no worker serves — the worker path is
+	/// stdio-only until Stage 5 is revived (ADR §5, OQ-9).
+	/// </para>
+	/// <para>
+	/// <b>Exclusion class 3 — variables whose ABSENCE is the correct worker behaviour.</b> <c>TERM</c> and
+	/// <c>NO_COLOR</c> are the clearest case and the decision is a positive one, not an omission: clio
+	/// enables ANSI colour only when <c>TERM</c> is present, a worker's standard output IS the MCP protocol
+	/// stream, and inheriting <c>TERM</c> would re-enable escape sequences in the one process that must
+	/// never emit them on stdout. The cleared environment already gives the right answer, so the right move
+	/// is to leave it cleared. <c>CLIO_NO_UPDATE_CHECK</c> is a second case: a worker is <c>mcp-server</c>,
+	/// and <c>Program.ShouldSkipUpdateCheck</c> returns true for MCP server mode before it ever reads the
+	/// variable, so parent and worker already agree. (Revisit if a worker ever spawns a grandchild clio in
+	/// ordinary CLI mode.)
+	/// </para>
+	/// <para>
+	/// <b>Out of scope while the cohort is Stage 6, revisit on expansion.</b> The telemetry family
+	/// (<c>CLIO_TELEMETRY_ENABLED</c> / <c>_ENDPOINT</c> / <c>_HOME</c>) — a worker runs no host bootstrap
+	/// and therefore no flush or drain (ADR rule 11), and <c>send-telemetry</c> is
+	/// <see cref="Command.McpServer.McpToolExecutionLocation.InProcess"/>, so nothing in a worker writes the
+	/// outbox. If that tool is ever worker-routed, <c>_HOME</c> and <c>_ENABLED</c> move onto this list
+	/// immediately: a mismatched home silently loses events and a missing opt-out violates it.
+	/// The curated-knowledge overrides (<c>CLIO_KNOWLEDGE_CURATED_API_BASE_URL</c>,
+	/// <c>CLIO_KNOWLEDGE_NUGET_*</c>) — the bootstrap they configure is host bootstrap, which a worker does
+	/// not run. And the infrastructure / container family (<c>CLIO_DEBUG_IIS</c>,
+	/// <c>KUBERNETES_SERVICE_HOST</c>, <c>XDG_RUNTIME_DIR</c>, the BuildKit host) — read only by
+	/// install / deploy / docker commands, none of them reachable from a worker-located tool today.
 	/// </para>
 	/// </remarks>
 	public static readonly IReadOnlyCollection<string> DefaultInheritedEnvironmentVariableAllowlist = [
 		"PATH",
+		"PATHEXT",
 		"HOME",
 		"USERPROFILE",
 		"LOCALAPPDATA",
@@ -55,6 +159,7 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		"DOTNET_ROOT(x86)",
 		"DOTNET_HOST_PATH",
 		"CLIO_HOME",
+		"CLIO_WORKING_DIRECTORY",
 		"LANG",
 		"LC_ALL",
 		"HTTP_PROXY",
@@ -62,7 +167,16 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		"NO_PROXY",
 		"http_proxy",
 		"https_proxy",
-		"no_proxy"
+		"no_proxy",
+		"CLIO_MCP_RESPECT_AMBIENT_PROXY",
+		"CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS",
+		"CLIO_CREATE_SECTION_TIMEOUT_SECONDS",
+		"CLIO_COMPONENT_REGISTRY_CDN_BASE_URL",
+		"CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
+		"CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE",
+		"CLIO_REQUEST_REGISTRY_LOCAL_FILE",
+		"CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE",
+		"CLIO_WEB_TO_MOBILE_PAGE_CONVERSION_RULES_LOCAL_FILE"
 	];
 
 	/// <summary>
@@ -75,6 +189,49 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	/// configured separately as well as reported separately.
 	/// </remarks>
 	internal const string QueueWaitOverrideEnvVar = "CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS";
+
+	/// <summary>
+	/// Environment variable overriding the total worker concurrency cap (whole workers, accepted range
+	/// 0 &lt; n ≤ <see cref="MaximumConfigurableConcurrencyCap"/>).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>The cap has to be configurable, and Stage 7 is the point at which it stops being optional</b>
+	/// (threat model T-9, gap G-1). While every worker was per-call, the default derived from the core
+	/// count was right on every host and an operator only ever needed to change how long callers WAIT.
+	/// Sticky workers hold a slot for a whole operation, so the number of slots becomes the number of
+	/// operations a host can run — an over-subscribed host needs to lower it, a large host wants to raise
+	/// it, and a single-slot host must raise it to run any long operation at all
+	/// (<see cref="StickyConcurrencyCap"/> is zero there by derivation).
+	/// </para>
+	/// <para>
+	/// <b>One variable, not two.</b> The sticky cap is DERIVED from this
+	/// (<see cref="DeriveStickyConcurrencyCap"/>) rather than configured beside it: two independent knobs
+	/// would let an operator set a sticky cap equal to or above the total and reintroduce precisely the
+	/// exhaustion the split removes, and the relationship — not just each range — would then need
+	/// clamping.
+	/// </para>
+	/// <para>
+	/// Deliberately absent from
+	/// <see cref="DefaultInheritedEnvironmentVariableAllowlist"/>, with its two supervisor siblings and
+	/// for their reason: a worker spawns no workers, so an admission knob has nothing to configure inside
+	/// one.
+	/// </para>
+	/// </remarks>
+	internal const string ConcurrencyCapOverrideEnvVar = "CLIO_MCP_WORKER_CONCURRENCY";
+
+	/// <summary>
+	/// Largest cap <see cref="ConcurrencyCapOverrideEnvVar"/> accepts; anything above falls back to the
+	/// core-count default.
+	/// </summary>
+	/// <remarks>
+	/// Derived from ADR §2.4 rather than picked as a round number. On the four-core Windows stand nothing
+	/// was gained above ~4 — wall time grows linearly past the core count — and width 16 already produced
+	/// a 1073 MB working set and a 16.9 s queue wait on a HEALTHY backend. 64 is therefore far past any
+	/// measured benefit even on a very large host, while still being low enough that a mistyped value
+	/// cannot fork hundreds of clio processes on a machine that has no cores to run them.
+	/// </remarks>
+	internal const int MaximumConfigurableConcurrencyCap = 64;
 
 	/// <summary>
 	/// How long a call may wait for a concurrency slot before it is refused with
@@ -112,7 +269,10 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	private readonly IProcessContainment _containment;
 	private readonly IClioExecutablePathProvider _executablePathProvider;
 	private readonly IStaleWorkerRegistry _registry;
-	private readonly WorkerSlotPool _perCallPool;
+	// ONE pool for the whole host, plus a ceiling on how much of it sticky work may hold. See the
+	// construction site for why this is a ceiling and not a partition.
+	private readonly WorkerSlotPool _pool;
+	private int _activeStickyWorkers;
 	private readonly ProcessIdentitySnapshot _ownerIdentity;
 
 	private int _activeWorkers;
@@ -136,7 +296,8 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 	public WorkerProcessSupervisor(ILogger logger, IProcessExecutor processExecutor,
 		IProcessContainment containment, IClioExecutablePathProvider executablePathProvider,
 		IStaleWorkerRegistry registry)
-		: this(logger, processExecutor, containment, executablePathProvider, registry, null,
+		: this(logger, processExecutor, containment, executablePathProvider, registry,
+			ResolveConcurrencyCap(System.Environment.GetEnvironmentVariable(ConcurrencyCapOverrideEnvVar)),
 			ResolveQueueWaitBound(System.Environment.GetEnvironmentVariable(QueueWaitOverrideEnvVar))) {
 	}
 
@@ -168,12 +329,32 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		// binding constraint — CPU is.
 		ConcurrencyCap = Math.Max(1, concurrencyCap ?? System.Environment.ProcessorCount);
 		QueueWaitBound = queueWaitBound ?? DefaultQueueWaitBound;
-		_perCallPool = new WorkerSlotPool(ConcurrencyCap);
+		// ONE pool of `ConcurrencyCap` slots, and a CEILING on how many of them sticky work may hold —
+		// deliberately not two partitioned pools.
+		//
+		// A partition reserves capacity from per-call work whether or not any sticky worker exists, so on
+		// a four-core host ordinary reads would drop from four concurrent to two on the day this shipped,
+		// for a benefit nothing consumes yet; on a two-core build agent they would drop to one and
+		// serialise the end-to-end suite. A ceiling costs nothing while sticky work is absent — per-call
+		// may use every slot — and still guarantees the floor the moment sticky work appears, because
+		// sticky can never occupy more than `StickyConcurrencyCap` of them.
+		//
+		// The floor is what AC-06 asserts, and it survives either way: with sticky at its ceiling,
+		// `ConcurrencyCap - StickyConcurrencyCap` slots remain reachable by per-call work.
+		StickyConcurrencyCap = DeriveStickyConcurrencyCap(ConcurrencyCap);
+		PerCallConcurrencyCap = ConcurrencyCap - StickyConcurrencyCap;
+		_pool = new WorkerSlotPool(ConcurrencyCap);
 		_ownerIdentity = CaptureCurrentProcessIdentity();
 	}
 
 	/// <inheritdoc />
 	public int ConcurrencyCap { get; }
+
+	/// <inheritdoc />
+	public int StickyConcurrencyCap { get; }
+
+	/// <inheritdoc />
+	public int PerCallConcurrencyCap { get; }
 
 	/// <summary>
 	/// Gets how long a call may wait for a slot before it is refused with
@@ -198,20 +379,95 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		return DefaultQueueWaitBound;
 	}
 
+	/// <summary>
+	/// Parses a raw whole-worker override into a total concurrency cap, falling back to the core-count
+	/// default for null / empty / non-numeric / out-of-range values. Pure, so the parse rules are testable
+	/// without touching process state.
+	/// </summary>
+	/// <param name="rawValue">The raw override value.</param>
+	/// <returns>The resolved total cap, always at least one.</returns>
+	/// <remarks>
+	/// Same shape as <see cref="ResolveQueueWaitBound"/> deliberately — one parse convention for the
+	/// supervisor's knobs — but WHOLE workers rather than seconds: half a slot does not exist, and
+	/// accepting "2.5" would silently mean something the operator did not write.
+	/// </remarks>
+	internal static int ResolveConcurrencyCap(string rawValue) {
+		if (!string.IsNullOrWhiteSpace(rawValue)
+			&& int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int cap)
+			&& cap > 0 && cap <= MaximumConfigurableConcurrencyCap) {
+			return cap;
+		}
+		return Math.Max(1, System.Environment.ProcessorCount);
+	}
+
+	/// <summary>
+	/// Derives the sticky cap — the number of concurrent long operations a host supports — from the total
+	/// admission capacity.
+	/// </summary>
+	/// <param name="totalConcurrencyCap">The total cap the two pools partition.</param>
+	/// <returns>The sticky cap, always strictly less than the total.</returns>
+	/// <remarks>
+	/// <para>
+	/// <b>Halving, and the two properties it is chosen for.</b> Integer division makes the result
+	/// STRICTLY LESS than the total for every input, so the per-call remainder
+	/// (<c>total − sticky</c>) is a floor that sticky work can never take — and it makes that remainder
+	/// greater than or equal to the sticky share for every input too (5 → 2 sticky, 3 per-call), so the
+	/// side of the split that answers ordinary reads is never the smaller one. Two pools whose caps left
+	/// per-call work at zero would have relabelled the exhaustion rather than removed it.
+	/// </para>
+	/// <para>
+	/// <b>A total of one derives a sticky cap of ZERO, and that is arithmetic rather than an oversight.</b>
+	/// A single slot cannot both carry an operation that holds it for an hour and leave ordinary calls a
+	/// floor; a host in that state supports no long operations, is told so by name
+	/// (<see cref="WorkerStickyCapacityExceededException"/>), and the operator's remedy is to raise
+	/// <see cref="ConcurrencyCapOverrideEnvVar"/>. The alternative — quietly flooring the TOTAL at two —
+	/// would double admitted concurrency on every single-core host to paper over one message.
+	/// </para>
+	/// <para>
+	/// <b>Partition rather than an additional pool.</b> An extra pool on top of the total would let a host
+	/// run more workers than the measured ceiling the total encodes (ADR §2.4: CPU, not memory, is the
+	/// binding constraint), and would make <see cref="ConcurrencyCap"/>'s published meaning — the most
+	/// workers that may run at once — false.
+	/// </para>
+	/// </remarks>
+	internal static int DeriveStickyConcurrencyCap(int totalConcurrencyCap) => totalConcurrencyCap / 2;
+
 	#region Methods: worker lifecycle
 
 	/// <inheritdoc />
 	public async Task<IWorkerLease> SpawnContainedAsync(WorkerSpawnRequest request,
 		CancellationToken cancellationToken) {
 		ArgumentNullException.ThrowIfNull(request);
-		// Queued, never dropped (AC-01) — but BOUNDED. A call is admitted the moment a slot frees, and
-		// only a wait that outlasts the bound is refused, with a named exception carrying the numbers a
-		// caller needs. An unbounded wait here would return nothing, issue zero requests to Creatio and
-		// do so for an arbitrarily long time, which is the wedge this feature removes wearing a
-		// different hat. Which POOL the slot came from is recorded on the lease, so a second pool with
-		// its own cap is an addition here rather than a rewrite of the release path.
-		WorkerSlotPool pool = _perCallPool;
-		await pool.AcquireAsync(QueueWaitBound, cancellationToken).ConfigureAwait(false);
+		// This method CREATES. Reaching a worker that already exists is ReachExisting, which takes no slot
+		// — routing that here would make a caller wait for capacity held by the worker it is looking for
+		// (ADR §3.2c).
+		//
+		// Per-call: queued, never dropped (AC-01) — but BOUNDED. A call is admitted the moment a slot
+		// frees, and only a wait that outlasts the bound is refused, with a named exception carrying the
+		// numbers a caller needs. An unbounded wait here would return nothing, issue zero requests to
+		// Creatio and do so for an arbitrarily long time, which is the wedge this feature removes wearing
+		// a different hat.
+		//
+		// Sticky: NOT queued. Its cap is the number of concurrent long operations the host supports and
+		// each holder keeps its slot for minutes to an hour, so a queue could only spend the caller's
+		// patience on its way to the same refusal. Which POOL the slot came from is recorded on the lease,
+		// so the release path is unchanged by there being two of them.
+		bool sticky = request.Lifetime == WorkerLifetime.Sticky;
+		WorkerSlotPool pool = _pool;
+		if (sticky) {
+			// The ceiling is checked BEFORE the slot, so a refusal never disturbs the pool. Both are then
+			// released together on every failure path below — a counter that drifts out of step with the
+			// semaphore either leaks capacity or refuses forever, and neither shows up in a green suite.
+			if (!TryReserveStickySlot()) {
+				throw new WorkerStickyCapacityExceededException(StickyConcurrencyCap, ConcurrencyCap);
+			}
+			if (!pool.TryAcquireImmediately()) {
+				ReleaseStickySlot();
+				throw new WorkerStickyCapacityExceededException(StickyConcurrencyCap, ConcurrencyCap);
+			}
+		} else {
+			await pool.AcquireAsync(QueueWaitBound, cancellationToken).ConfigureAwait(false);
+		}
 
 		bool slotHandedOver = false;
 		try {
@@ -227,12 +483,26 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 			UpdatePeak(active);
 			Interlocked.Increment(ref _totalSpawned);
 			slotHandedOver = true;
-			return new SupervisedWorkerLease(this, worker, pool, spawnedAtUtc, request.Budget);
+			return new SupervisedWorkerLease(this, worker, pool, sticky, spawnedAtUtc, request.Budget);
 		} finally {
 			if (!slotHandedOver) {
 				pool.Release();
+				if (sticky) {
+					ReleaseStickySlot();
+				}
 			}
 		}
+	}
+
+	/// <inheritdoc />
+	public IWorkerChannel ReachExisting(IWorkerLease lease) {
+		ArgumentNullException.ThrowIfNull(lease);
+		if (lease is not SupervisedWorkerLease ownLease) {
+			throw new ArgumentException("The lease was not issued by this supervisor.", nameof(lease));
+		}
+		// No pool is touched, on either branch, and there is nothing to await. That is the whole point:
+		// the slot a poll would wait for is held by the worker the poll is trying to reach (ADR §3.2c).
+		return new NonOwningWorkerChannel(ownLease);
 	}
 
 	/// <inheritdoc />
@@ -289,11 +559,16 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		return new WorkerSupervisorSnapshot(
 			ConcurrencyCap,
 			Volatile.Read(ref _activeWorkers),
-			_perCallPool.QueuedRequests,
+			_pool.QueuedRequests,
 			Volatile.Read(ref _peakActiveWorkers),
 			Interlocked.Read(ref _totalSpawned),
 			Interlocked.Read(ref _totalTerminated),
-			Interlocked.Read(ref _totalStaleReaped));
+			Interlocked.Read(ref _totalStaleReaped),
+			StickyConcurrencyCap,
+			PerCallConcurrencyCap,
+			// Read from the pool rather than from a counter of its own: the semaphore IS the occupancy, and
+			// a parallel counter is one more thing that can disagree with the resource it describes.
+			Volatile.Read(ref _activeStickyWorkers));
 	}
 
 	#endregion
@@ -389,17 +664,36 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 			executable,
 			descriptor.Arguments,
 			request.WorkingDirectory ?? descriptor.WorkingDirectory ?? System.Environment.CurrentDirectory,
-			BuildEnvironment(request),
+			ComposeEffectiveEnvironment(request),
 			request.ClearInheritedEnvironment);
 	}
 
-	private static IReadOnlyDictionary<string, string> BuildEnvironment(WorkerSpawnRequest request) {
+	/// <summary>
+	/// Composes the environment a worker is actually launched with: the allowlisted ambient variables read
+	/// from the parent, then the caller's explicit delta on top.
+	/// </summary>
+	/// <param name="request">The spawn request, which states the allowlist and the delta.</param>
+	/// <param name="parentEnvironmentReader">
+	/// Reads one variable from the parent process; defaults to
+	/// <see cref="System.Environment.GetEnvironmentVariable(string)"/>. Injected for the same reason
+	/// <see cref="McpWorkerEnvironment.ComposeChildEnvironment"/> injects one — the composition rule is what
+	/// decides whether a host-level knob reaches the worker at all, and asserting it must not require
+	/// mutating process-wide state that neighbouring fixtures run in parallel with.
+	/// </param>
+	/// <returns>The variables the worker sees.</returns>
+	/// <remarks>
+	/// The explicit delta is applied LAST and therefore wins over the allowlist: a caller that states a
+	/// variable is stating the worker's value for it, not a default the ambient environment may override.
+	/// </remarks>
+	internal static IReadOnlyDictionary<string, string> ComposeEffectiveEnvironment(WorkerSpawnRequest request,
+		Func<string, string> parentEnvironmentReader = null) {
+		Func<string, string> readParent = parentEnvironmentReader ?? System.Environment.GetEnvironmentVariable;
 		Dictionary<string, string> environment = new(StringComparer.Ordinal);
 		if (request.ClearInheritedEnvironment) {
 			IReadOnlyCollection<string> allowlist = request.InheritedEnvironmentVariableAllowlist
 				?? DefaultInheritedEnvironmentVariableAllowlist;
 			foreach (string name in allowlist) {
-				string value = System.Environment.GetEnvironmentVariable(name);
+				string value = readParent(name);
 				if (value is not null) {
 					environment[name] = value;
 				}
@@ -557,12 +851,33 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 
 	// The slot goes back to the pool it came from, named on the lease — not to "the" pool. A caller that
 	// waits on a different pool therefore releases into that one without this method changing.
-	private void ReleaseLease(IContainedWorker worker, WorkerSlotPool pool) {
+	private void ReleaseLease(IContainedWorker worker, WorkerSlotPool pool, bool sticky) {
 		Interlocked.Decrement(ref _activeWorkers);
 		UnregisterWorker(worker);
 		worker.Dispose();
 		pool.Release();
+		if (sticky) {
+			ReleaseStickySlot();
+		}
 	}
+
+	// Reserves one place under the sticky ceiling, or reports that the ceiling is full. A compare-exchange
+	// loop rather than a plain increment-then-test: the latter would momentarily exceed the ceiling and two
+	// racing callers could both observe their own over-count and both back out, refusing a slot that was
+	// free.
+	private bool TryReserveStickySlot() {
+		while (true) {
+			int current = Volatile.Read(ref _activeStickyWorkers);
+			if (current >= StickyConcurrencyCap) {
+				return false;
+			}
+			if (Interlocked.CompareExchange(ref _activeStickyWorkers, current + 1, current) == current) {
+				return true;
+			}
+		}
+	}
+
+	private void ReleaseStickySlot() => Interlocked.Decrement(ref _activeStickyWorkers);
 
 	private void CountTermination() => Interlocked.Increment(ref _totalTerminated);
 
@@ -617,21 +932,57 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		public void Dispose() => _dispose();
 	}
 
+	/// <summary>
+	/// A conversation with a worker somebody else holds: the lease's talking surface, and nothing that
+	/// could end it or return its slot.
+	/// </summary>
+	/// <remarks>
+	/// A wrapper rather than the lease handed out under a narrower static type, because a static type is
+	/// a suggestion: <c>(IWorkerLease)channel</c> or a stray <c>using</c> would put the kill switch back
+	/// in the hands of a caller that only wanted to read <c>compile-status</c>, and terminate the
+	/// operation it was observing. This class does not implement <see cref="IWorkerLease"/> or
+	/// <see cref="IDisposable"/>, so neither is expressible.
+	/// </remarks>
+	private sealed class NonOwningWorkerChannel : IWorkerChannel {
+
+		private readonly IWorkerChannel _worker;
+
+		internal NonOwningWorkerChannel(IWorkerChannel worker) => _worker = worker;
+
+		public int ProcessId => _worker.ProcessId;
+
+		public Stream StandardInput => _worker.StandardInput;
+
+		public Stream StandardOutput => _worker.StandardOutput;
+
+		public Stream StandardError => _worker.StandardError;
+
+		public bool HasExited => _worker.HasExited;
+
+		public int? ExitCode => _worker.ExitCode;
+
+		public Task WaitForExitAsync(CancellationToken cancellationToken) =>
+			_worker.WaitForExitAsync(cancellationToken);
+	}
+
 	/// <summary>One held worker: a concurrency slot, a contained process and a registry entry.</summary>
 	private sealed class SupervisedWorkerLease : IWorkerLease {
 
 		private readonly WorkerProcessSupervisor _supervisor;
 		private readonly IContainedWorker _worker;
 		private readonly WorkerSlotPool _pool;
+		private readonly bool _sticky;
 		private int _disposed;
 
 		public SupervisedWorkerLease(WorkerProcessSupervisor supervisor, IContainedWorker worker,
-			WorkerSlotPool pool, DateTimeOffset spawnedAtUtc, TimeSpan budget) {
+			WorkerSlotPool pool, bool sticky, DateTimeOffset spawnedAtUtc, TimeSpan budget) {
 			_supervisor = supervisor;
 			_worker = worker;
-			// Recorded rather than assumed: the lease is what returns the slot, so it must know WHICH
-			// pool granted it. With one pool this is bookkeeping; with two it is correctness.
+			// Recorded rather than assumed: the lease is what returns the slot, so it must know which pool
+			// granted it and whether that grant also took a place under the sticky ceiling. Both are
+			// returned together in Dispose, which is the only place either is given back.
 			_pool = pool;
+			_sticky = sticky;
 			SpawnedAtUtc = spawnedAtUtc;
 			Budget = budget;
 		}
@@ -672,7 +1023,7 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 			if (!_worker.HasExited) {
 				Terminate();
 			}
-			_supervisor.ReleaseLease(_worker, _pool);
+			_supervisor.ReleaseLease(_worker, _pool, _sticky);
 		}
 	}
 
@@ -702,7 +1053,11 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 
 		internal WorkerSlotPool(int cap) {
 			Cap = cap;
-			_slots = new SemaphoreSlim(cap, cap);
+			// A cap of ZERO is a legitimate pool, not a misconfiguration: DeriveStickyConcurrencyCap returns
+			// it on a host whose total capacity is one. SemaphoreSlim rejects a maximum of zero, so the
+			// semaphore is built with a maximum of one that is never filled, and both acquisition paths
+			// short-circuit on Cap before they reach it.
+			_slots = new SemaphoreSlim(cap, Math.Max(cap, 1));
 		}
 
 		/// <summary>Gets the maximum number of slots this pool hands out at once.</summary>
@@ -711,6 +1066,9 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		/// <summary>Gets the callers waiting for a slot on this pool right now.</summary>
 		internal int QueuedRequests => Volatile.Read(ref _queuedRequests);
 
+		/// <summary>Gets the slots of this pool that are held right now.</summary>
+		internal int SlotsInUse => Cap - _slots.CurrentCount;
+
 		/// <summary>
 		/// Waits for a slot, for at most <paramref name="queueWaitBound"/>.
 		/// </summary>
@@ -718,6 +1076,10 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		/// <param name="cancellationToken">Ends the wait early on the caller's behalf.</param>
 		/// <exception cref="WorkerQueueWaitExpiredException">The bound elapsed with no slot free.</exception>
 		internal async Task AcquireAsync(TimeSpan queueWaitBound, CancellationToken cancellationToken) {
+			if (Cap == 0) {
+				// Nothing will ever free, so waiting the bound out would only delay the same refusal.
+				throw new WorkerQueueWaitExpiredException(TimeSpan.Zero, queueWaitBound, Cap, 1);
+			}
 			long startedAt = Stopwatch.GetTimestamp();
 			Interlocked.Increment(ref _queuedRequests);
 			try {
@@ -732,6 +1094,16 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 				Interlocked.Decrement(ref _queuedRequests);
 			}
 		}
+
+		/// <summary>
+		/// Takes a slot if one is free at this instant, and otherwise gives up immediately.
+		/// </summary>
+		/// <returns><see langword="true"/> when a slot was taken.</returns>
+		/// <remarks>
+		/// <see cref="QueuedRequests"/> is deliberately untouched: nobody queues on this path, and counting
+		/// a caller that waited for nothing would report a phantom depth to the next one that reads it.
+		/// </remarks>
+		internal bool TryAcquireImmediately() => Cap > 0 && _slots.Wait(0);
 
 		/// <summary>Returns one slot to this pool.</summary>
 		internal void Release() => _slots.Release();

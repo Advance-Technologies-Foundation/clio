@@ -69,9 +69,39 @@ public sealed class WorkerProcessSupervisorTests {
 	}
 
 	[Test]
-	[Description("TC-U-201: the concurrency cap admits exactly N workers, queues the N+1st instead of dropping or failing it, and admits it as soon as a slot is released.")]
+	[Description("Sticky capacity is a CEILING on the shared pool, not a partition carved out of it: while no sticky worker exists, per-call work may use EVERY slot the host allows.")]
+	public async Task SpawnContainedAsync_ShouldGivePerCallWorkTheWholeCap_WhenNoStickyWorkerExists() {
+		// Arrange — a cap of three. Under a partition this host would admit only two per-call workers,
+		// costing a third of its throughput permanently for sticky capacity that nothing is using.
+		FakeContainment containment = new();
+		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
+		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
+			concurrencyCap: 3);
+		WorkerSpawnRequest request = new() { Budget = TimeSpan.FromMinutes(5) };
+
+		// Act — three concurrent per-call spawns, one more than a half-and-half partition would allow.
+		IWorkerLease first = await sut.SpawnContainedAsync(request, CancellationToken.None);
+		IWorkerLease second = await sut.SpawnContainedAsync(request, CancellationToken.None);
+		IWorkerLease third = await sut.SpawnContainedAsync(request, CancellationToken.None);
+		WorkerSupervisorSnapshot snapshot = sut.GetSnapshot();
+
+		// Assert
+		snapshot.ActiveWorkers.Should().Be(3,
+			because: "reserving slots for sticky work that does not exist would cut ordinary throughput on every host from the day the split shipped, for a benefit nothing is consuming");
+		snapshot.QueuedRequests.Should().Be(0,
+			because: "none of the three should have had to wait: the ceiling only binds once sticky workers actually hold slots");
+		snapshot.ActiveStickyWorkers.Should().Be(0,
+			because: "no sticky worker was requested, so the ceiling is entirely unconsumed");
+		first.Dispose();
+		second.Dispose();
+		third.Dispose();
+	}
+
+	[Test]
+	[Description("TC-U-201: the admission cap admits exactly N workers, queues the N+1st instead of dropping or failing it, and admits it as soon as a slot is released.")]
 	public async Task SpawnContainedAsync_ShouldQueueWithoutDropping_WhenTheCapIsReached() {
-		// Arrange
+		// Arrange — a cap of two. Sticky capacity is a CEILING on the shared pool rather than a partition
+		// carved out of it, so per-call work queues at the TOTAL, not at some smaller reserved share.
 		FakeContainment containment = new();
 		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
 		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
@@ -436,6 +466,69 @@ public sealed class WorkerProcessSupervisorTests {
 	}
 
 	[Test]
+	[Description("Every host-behaviour knob a worker can actually reach is inherited, because an operator tunes clio and not one process of it: a knob that lands in the parent only produces two clios that disagree, and the difference is invisible because the parent is the process an operator can watch.")]
+	public void DefaultInheritedEnvironmentVariableAllowlist_ShouldKeepEveryHostBehaviourVariableAWorkerCanReach() {
+		// Arrange — named one by one rather than read from the list, so deleting an entry fails this test
+		// instead of quietly redefining what the test asserts.
+		string[] required = [
+			"CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS",
+			"CLIO_MCP_RESPECT_AMBIENT_PROXY",
+			"CLIO_WORKING_DIRECTORY",
+			"CLIO_CREATE_SECTION_TIMEOUT_SECONDS",
+			"CLIO_COMPONENT_REGISTRY_CDN_BASE_URL",
+			"CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
+			"PATHEXT"
+		];
+
+		// Act
+		IReadOnlyCollection<string> allowlist =
+			WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist;
+
+		// Assert
+		allowlist.Should().Contain("CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS",
+			because: "McpProgressHeartbeat resolves its cadence at TYPE LOAD, so a worker that did not receive it at spawn can never be told afterwards — a host tuned for a fast beat then has a parent that beats and workers that do not, which is exactly how a progress-streaming cohort tool came to deliver zero notifications");
+		allowlist.Should().Contain("CLIO_MCP_RESPECT_AMBIENT_PROXY",
+			because: "the proxy ADDRESS is already inherited, so withholding the flag that decides whether an MCP process honours it is the worst combination available: the parent goes through the mandated inspecting proxy and the worker goes straight around it");
+		allowlist.Should().Contain(required,
+			because: "each of these changes the behaviour of code a worker reaches — the beat cadence, the egress policy, clio's scratch root, the create-app-section insert bound, where component documentation is read from, and how an executable is resolved on Windows");
+	}
+
+	[Test]
+	[Description("The parent-only and hazardous variables stay OUT of the allowlist even now that its sibling knobs are inherited, because widening it for host behaviour must not be read as licence to widen it for a second in-child deadline, for a secret, or for the colour switch that would put escape codes on the MCP protocol stream.")]
+	public void DefaultInheritedEnvironmentVariableAllowlist_ShouldExcludeParentOnlyAndHazardousVariables() {
+		// Arrange
+		string[] forbidden = [
+			"CLIO_MCP_READ_DEADLINE_SECONDS",
+			"CLIO_MCP_RESPONSE_DEADLINE_SECONDS",
+			"CLIO_MCP_WORKER_FROZEN_FEATURES",
+			"CLIO_MCP_WORKER_BUDGET_SECONDS",
+			"CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS",
+			"CLIO_MCP_WORKER_CONCURRENCY",
+			"CLIO_OIDC_CLIENT_SECRET",
+			"CLIO_MCP_HTTP_PLATFORM_API_KEY",
+			"CLIO_TELEMETRY_INGEST_KEY",
+			"TERM",
+			"NO_COLOR"
+		];
+
+		// Act
+		IReadOnlyCollection<string> allowlist =
+			WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist;
+
+		// Assert
+		allowlist.Should().NotContain("CLIO_MCP_READ_DEADLINE_SECONDS",
+			because: "the parent bounds an ordinary worker by KILLING it, and a second in-child deadline would abandon the work while keeping the per-tenant monitor — the wedge this execution boundary exists to remove (ADR rule 11)");
+		allowlist.Should().NotContain("CLIO_MCP_RESPONSE_DEADLINE_SECONDS",
+			because: "that variable is composed per LIFETIME by McpWorkerEnvironment — a sticky worker keeps it and a per-call worker must not — and inheriting it here would flatten that asymmetry into 'always'");
+		allowlist.Should().NotContain("TERM",
+			because: "clio enables ANSI colour only when TERM is present and a worker's standard output IS the MCP protocol stream: the cleared environment already gives the right answer, and inheriting TERM would put escape sequences on the one stream that must never carry them");
+		allowlist.Should().NotContain("CLIO_MCP_WORKER_CONCURRENCY",
+			because: "the concurrency cap is an ADMISSION knob and admission happens once, in the parent — a worker spawns no workers, so carrying it down would only arm a second supervisor the day one ever did");
+		allowlist.Should().NotContain(forbidden,
+			because: "the stdio credential property is that no secret crosses the parent-to-worker channel, and the supervisor variables configure a component only the parent runs");
+	}
+
+	[Test]
 	[Description("Each proxy variable the parent honours actually reaches the spawned worker, in the uppercase AND lowercase spelling, so a child behind a mandated inspecting proxy can still reach Creatio instead of failing as a broken environment.")]
 	public async Task SpawnContainedAsync_ShouldHandEveryProxyVariableSpellingToTheWorker() {
 		// Arrange — the six spellings are named one by one rather than read from the allowlist: a test that
@@ -636,7 +729,12 @@ public sealed class WorkerProcessSupervisorTests {
 	}
 
 	/// <summary>Containment that creates bookkeeping-only workers, so cap and budget tests spawn nothing.</summary>
-	private sealed class FakeContainment : IProcessContainment {
+	/// <remarks>
+	/// Internal rather than private so the admission-capacity fixture can reuse it: two copies of the same
+	/// fake would be one copy that can silently stop matching the contract the other one is asserted
+	/// against.
+	/// </remarks>
+	internal sealed class FakeContainment : IProcessContainment {
 
 		private int _nextProcessId = 10_000;
 
@@ -660,7 +758,7 @@ public sealed class WorkerProcessSupervisorTests {
 			WorkerTerminationOutcome.FallbackTreeKilled;
 	}
 
-	private sealed class FakeContainedWorker : IContainedWorker {
+	internal sealed class FakeContainedWorker : IContainedWorker {
 
 		private readonly TaskCompletionSource<bool> _exited =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
