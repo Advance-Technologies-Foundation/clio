@@ -193,6 +193,66 @@ existing mechanism.
 **Requirement:** worker stderr is treated as untrusted, potentially secret-bearing text — redacted before it
 reaches a log or an error envelope, never echoed verbatim into a tool result.
 
+**Redaction can be DEFEATED UPSTREAM of itself, and that is a failure class rather than one bug.**
+(Recorded 2026-08-18, story 21. Fixed for the drain; the class stays here because the next bounded copy of
+untrusted text will reproduce it.)
+
+Every pattern in `SensitiveErrorTextRedactor` recognises a secret by CONTEXT that surrounds it — the key in
+`password=…`, the `Bearer ` prefix, the `eyJ` header, the `scheme://` authority, the `:port` suffix. **Any
+transformation applied to untrusted text between CAPTURE and REDACTION can remove that context, and the
+redactor then cannot see what it was built to see.** The redactor is not at fault and cannot be patched into
+safety: it is handed a string that no longer contains the evidence.
+
+Two directions, both real, and naming only the first would leave the second to be rediscovered:
+
+- **Tail truncation orphans a value from its key.** `WorkerStandardErrorDrain` (nested in
+  `clio/Command/McpServer/Relay/McpWorkerCallDispatcher.cs`, bounded by `StandardErrorTailLimit`) keeps the
+  LAST N characters and trims from the front at an arbitrary offset. A cut inside `password=` leaves
+  `word=<secret>`, which matches no alternative of `CredentialPairRegex`, and the value was copied verbatim
+  into `worker-stderr` on the failure envelope — the one that goes to the client, into the model transcript,
+  and onward to whatever third party reads it. This is the ordinary `key=value` credential, the most common
+  shape in a stack trace or a connection-string dump. The self-identifying shapes (`JwtRegex`,
+  `BearerTokenRegex`, URI, host:port) survive a front cut because they carry their own context.
+  **Resolution:** the drain drops the leading PARTIAL line of a trimmed tail before the redactor runs, and
+  withholds the tail behind an explicit notice when no complete line survived the bound — so a redaction
+  input can no longer begin part-way through a token. Verified end to end on the failure envelope, from a
+  fixture that asserts its own cut really lands inside the key
+  (`McpWorkerCallDispatcherTests.DispatchAsync_ShouldNotLeakACredential_WhenTheBoundCutItsKeyInHalf`).
+- **Head truncation bisects a self-identifying shape.** The mirror case: `value[..N]` keeps the front, so a
+  key can never lose its value — but a JWT cut mid-token leaves fewer than three base64url segments and
+  `JwtRegex` misses it, and a URI cut short of its authority can slip past `UriRegex`. Head truncation is
+  therefore *safer*, not safe. The head-truncating call sites known today (`ODataCreateTool.Truncate`,
+  `ExecuteEsqTool.Truncate`, `ODataReadTool`'s parse-failure preview) all cut a JSON body at 500 characters,
+  well past any authority or token that appears at its head, so none is a live leak — but the reasoning is
+  positional, not structural, and it must be redone whenever a bound moves.
+
+**Two adjacent gaps found by the same sweep, neither of them this class, both open.** They are recorded here
+because the sweep is the only place they would otherwise be noticed: `CompileOperationRegistry.BuildMessageTail`
+caps a compile log at 50 MESSAGES and `CompileStatusTool` surfaces that tail to an MCP caller **without
+calling the redactor at all** — it cannot orphan anything (it cuts between whole messages, never inside a
+string), so this is a missing-redaction gap, not a truncation one; and `ExecuteEsqTool.cs` returns
+`Truncate(json)` of a DataService error body unredacted on two paths (`:129`, `:145`), while the sibling path
+at `:164` redacts. Both belong to T-6's first requirement (nothing secret-bearing reaches a tool result) and
+neither is closed by story 21.
+
+**The rule this yields, and the one to apply to any new bounded copy: REDACT FIRST, then transform.**
+`ServiceResponseJsonGuard.BuildResponsePreview` is the reference — it redacts the whole collapsed body and
+truncates the *redacted* string, so no transformation can ever run between capture and redaction. Where the
+order cannot be inverted — the drain must bound memory *before* it has a whole message to redact, because
+bounding is liveness (ADR §3.4) — the transformation must at least cut on a **structural** boundary rather
+than an arbitrary offset, so that the redactor is never handed a fragment of a token.
+
+**Residual, stated because a line boundary is weaker than it looks and the next reader will assume
+otherwise.** A line break is a boundary no pattern can be cut *inside*, but it is **not** a boundary the
+patterns cannot *span*: `CredentialPairRegex` separates key from value with `\s*`, and `\s` includes `\n`
+(confirmed against the pattern, 2026-08-18 — `password=\nSECRET` redacts today). So a key that ends the
+dropped partial line with its value beginning the surviving one is still orphaned by the line-boundary cut.
+This is **recorded, not fixed**: once the key is on the discarded side of the cut, nothing local to the drain
+can recover it, and the alternatives (keep the partial line, or drop a second line on the chance the first
+ended in a key) each cost more than they buy. The shape is also much rarer than the one story 21 closed — a
+worker would have to break its line exactly between a credential key and its value. **The durable answer
+remains REDACT FIRST wherever the ordering allows it**; the drain is the one place it does not.
+
 **Redaction is only half of "untrusted". The other half is size and shape, and it is not covered today.**
 T-6 as originally written assumed the danger in worker output was what it *says*; a worker's output is also
 something the parent has to *hold*, and the parent is the process this whole feature exists to keep alive.
@@ -291,7 +351,18 @@ arbitrarily long time — differing only in that it eventually clears. "Eventual
 
 **One gap remains, named rather than papered over:**
 
-- **G-1 — the concurrency cap itself is not operator-configurable.** The queue-*wait* bound is; the *cap* is
+- **G-1 — CLOSED 2026-08-18 (Stage 7).** `CLIO_MCP_WORKER_CONCURRENCY` now configures the total cap,
+  following the queue-wait precedent exactly: pure static resolver, invariant parse, accepted range
+  `0 < n <= 64`, fallback `Math.Max(1, ProcessorCount)` for null / empty / non-numeric / out-of-range.
+  Sticky capacity stays **derived** (`total / 2`) rather than separately configurable — two independent
+  knobs would let an operator set sticky >= total and reintroduce the exhaustion the split removes, and
+  would mean clamping a relationship rather than a range. The variable is excluded from the child-inherit
+  allowlist for the same reason as the other supervisor variables: a worker spawns no workers.
+  **The structural note below now has an answer rather than only a warning** — sticky capacity is a
+  CEILING on the shared pool, not a partition of it, so per-call work keeps the whole cap while no sticky
+  worker exists and still retains `total - sticky` once one does. Covered by
+  `WorkerAdmissionCapacityTests` and the amended TC-U-201. *Original text retained below for history.*
+- **G-1 (original) — the concurrency cap itself is not operator-configurable.** The queue-*wait* bound is; the *cap* is
   not. The only constructor taking an explicit cap is `internal` and documented as test-only; the public
   constructor always takes `ProcessorCount`. No `CLIO_MCP_WORKER_CONCURRENCY`-style override exists —
   grepped 2026-08-18, the supervisor defines exactly one environment variable and it is the queue-wait one.
@@ -306,8 +377,9 @@ arbitrarily long time — differing only in that it eventually clears. "Eventual
 
 **Requirement:** R-10.
 **Verification:** TC-U-201 covers admit-N / queue-N+1 / never-drop. The queue-wait bound, its override
-parsing and the named refusal carry their own Stage 2 unit coverage. **G-1 has no test because it has no
-behaviour** — that is the gap, not an oversight in the plan.
+parsing and the named refusal carry their own Stage 2 unit coverage. **G-1 now has behaviour and tests** — see the closure note above; the sentence below described the
+state before Stage 7. *G-1 had no test because it had no behaviour* — that was the gap, not an oversight
+in the plan.
 
 **How to read this section's history.** When this threat was first written on 2026-08-18 the queue wait was
 genuinely unbounded, and it named two gaps. The bound landed the same day, so only G-1 survives. The finding
@@ -373,11 +445,11 @@ this from a read into a guarantee.
 | R-4 | Worker fails closed on unusable material — never falls back to a default identity | 3 | negative auth test asserting refusal, not success |
 | R-5 | Sticky scope key = principal + normalised target + credential fingerprint; lookup fails closed | 5, 7 | two-caller isolation test |
 | R-6 | Target normalisation follows the component-by-component algorithm in T-5; nothing is folded that the algorithm does not name | 5 | equivalence-table test generated from the T-5 table |
-| R-7 | No secrets in logs, errors, notifications, dumps or snapshots; worker stderr redacted. **The credential fingerprint is classified here too** — never logged, persisted, notified or snapshotted (T-4) | 2–5 | redaction test with secret marker |
+| R-7 | No secrets in logs, errors, notifications, dumps or snapshots; worker stderr redacted. **The credential fingerprint is classified here too** — never logged, persisted, notified or snapshotted (T-4). **No transformation may run between capture and redaction that removes the context a pattern needs** — redact first and transform the redacted text, or cut only on a boundary the patterns cannot straddle (T-6, story 21) | 2–5 | redaction test with secret marker; mid-key-cut test on the failure envelope (story 21) |
 | R-8a | Unix process-group containment plus parent-death signalling; identity-checked stale-worker cleanup | 2 | parent-SIGKILL E2E on Linux and macOS (TC-E-201) |
 | R-8b | Windows Job Object containment with kill-on-close; identity-checked stale-worker cleanup | 2 | parent-kill E2E on Windows (TC-E-203) — unmeasured today, **OQ-1** |
 | R-9 | Sticky lifetime bounded by credential validity, with an explicit maximum | 7 | lifetime test |
-| R-10 | Total live worker count capped by a processor-count-derived value; at the cap calls **queue under a bounded wait** (60 s default, `CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS`) and are refused with a *named* saturation error carrying cap and queue depth — never an unbounded process count, never an unbounded silent wait, never an error that reads as a backend timeout. **Still outstanding:** the cap must become operator-configurable, which matters from Stage 7 on, where sticky workers hold slots for their whole lifetime (T-9, G-1) | 2 | TC-U-201 (admit/queue/never-drop) + Stage 2 coverage of the wait bound, its override parsing and the named refusal; **cap configurability not yet built** |
+| R-10 | Total live worker count capped by a processor-count-derived value; at the cap calls **queue under a bounded wait** (60 s default, `CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS`) and are refused with a *named* saturation error carrying cap and queue depth — never an unbounded process count, never an unbounded silent wait, never an error that reads as a backend timeout. **Closed 2026-08-18 (Stage 7):** the cap is operator-configurable via `CLIO_MCP_WORKER_CONCURRENCY` (0 < n <= 64), and sticky capacity is a derived CEILING on the shared pool rather than a partition, so per-call work keeps the whole cap until sticky work exists and retains a guaranteed floor after (T-9, G-1) | 2 | TC-U-201 (admit/queue/never-drop) + Stage 2 coverage of the wait bound, its override parsing and the named refusal; `WorkerAdmissionCapacityTests` plus the amended TC-U-201 |
 | R-11 | Worker output is bounded on **both** streams and parsed defensively: an oversized, malformed or wrongly-typed payload becomes a named relay failure, never an unhandled exception, never memory growth without limit, never a value the caller reads as a domain answer. The bound is set from a **measured** largest legitimate response, not guessed (T-6) | 4, 6 | stderr redaction test (TC-U-505) today; stdout size bound **not yet built** |
 | R-12 | Worker executable resolution derives only from this process's own identity, accepts only a bare name or a fully-qualified path, searches only fully-qualified `PATH` entries, and validates the resolved file. **Satisfied by construction** (T-10); recorded so that loosening it is visibly a regression | 2 | two happy-path tests only; the three load-bearing **negative** cases (separator rejected, relative `PATH` entry skipped, non-executable refused) have **no test** — see T-10 |
 
@@ -430,7 +502,7 @@ in-suite coverage on this branch; "partial / open" names what is missing, in wor
 | 1 | done | R-2 (routing key from resolved tenant identity, resolved after unwrapping `clio-run`; TC-U-101…109) | — | R-1, R-3…R-12 |
 | 2 | done | R-8a (TC-E-201/202, Unix) | **R-8b** — mechanism measured (§2.4), in-suite TC-E-203 skipped off Windows; **R-10** — cap exists, the queue wait is bounded and the refusal is named, but the **cap** is not operator-configurable (G-1); **R-12** — satisfied by construction, but its three load-bearing negative cases have no test | R-5, R-6, R-9, R-11 |
 | 3 | done | R-1 (TC-E-301 — and on stdio no material crosses the channel at all), R-3 (TC-E-302, fail-first identity), R-4 (TC-E-303, refusal not fallback) | — | R-5, R-6, R-9 |
-| 4 | done | — | **R-7** — worker stderr is drained and redacted onto the failure envelope (TC-U-505), but the fingerprint classification added in T-4 has no test and R-11's stdout bound does not exist | R-5, R-6, R-9 |
+| 4 | done | — | **R-7** — worker stderr is drained and redacted onto the failure envelope (TC-U-505), and the upstream-transformation defeat found in story 21 is closed at the drain (the trimmed tail can no longer begin part-way through a line); the fingerprint classification added in T-4 still has no test and R-11's stdout bound does not exist | R-5, R-6, R-9 |
 | ~~5~~ | **deferred** (OQ, mcp-http's fate) | none | **R-5** and **R-6** are unbuilt, and the HTTP half of R-1 with them. They are *not violated*: the stdio-only gate means no HTTP call reaches a worker at all (`clio/Command/McpServer/IMcpWorkerPathGate.cs`), so the requirements are unreachable rather than unmet. **R-6's normalisation work does not wait for this stage** — story 7 carries it in stdio scope (see that story's prerequisite) | R-5/R-6 stay inapplicable while the gate holds |
 | 6 | done | R-1…R-4 and R-8a hold for the shipped cohort; the stdio-only gate is the enforcement (TC-E-601…604, TC-U-601) | **R-10** (G-1 carries forward — this is the first stage where call rate is real), **R-11** (no stdout bound), **R-12** (holds, untested negatives) | R-5, R-6, R-9 |
 | 7 | not started | — | **R-5** (sticky scope key), **R-6** (normalisation, re-homed here in stdio scope), **R-9** (sticky lifetime), the T-4 keyed-digest condition (sticky keys are what spread the fingerprint), and **R-10's G-1** — a slot is held for a worker's whole lifetime, so a fixed cap binds hardest exactly here | — |

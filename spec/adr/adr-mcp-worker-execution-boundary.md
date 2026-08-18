@@ -433,6 +433,43 @@ cheaply and is worth doing; only the second row genuinely requires reading IL. R
 that a future implementer neither over-trusts the current guard nor rewrites it believing it catches
 nothing.
 
+### 3.2c Admission capacity is a HELD resource, and a sticky lifetime can deadlock on it (recorded 2026-08-18)
+
+This ADR models the concurrency cap against **per-call** workers, where a slot is held for exactly one
+answer. Under that model the cap can only ever delay a call. **Stage 7 breaks the assumption**, and the
+rule it produces belongs here rather than only in the story, because Stage 10's cohort expansion faces
+the same arithmetic.
+
+`WorkerProcessSupervisor.SpawnContainedAsync` acquires a slot from a pool of
+`Math.Max(1, Environment.ProcessorCount)` before launching and returns it on lease dispose. A sticky
+worker's lease outlives its call by design, so it holds a slot for the whole operation — minutes to an
+hour. Stage 7 also requires `compile-status` to reach *that same worker*. If reaching an existing
+worker goes through the ordinary spawn path, the poll waits for a slot that is held by the worker it
+is trying to reach: **hold-and-wait, not starvation.** It does not resolve under load — the state is
+stable until the operation ends unobserved, which the configuration-build reservation's 30-minute
+reclaim ceiling bounds at half an hour. On a single-core host the cap is 1, so one sticky worker makes
+every later call unreachable, including its own poll.
+
+**The binding rule: admission governs CREATING a worker, never TALKING to one that already exists.** A
+call that resolves to a live lease reuses it and takes no slot. The prototype's measured 0.00–0.02 s
+poll latency already implies this — a poll that queued for admission could not be that fast — but
+"reaches the same worker" does not say it, and an implementer who routes the poll through the spawn
+path satisfies the wording and ships the deadlock.
+
+Two consequences follow, and the second is the one that is easy to get subtly wrong:
+
+- Sticky workers draw from **their own pool with its own cap**. `WorkerSlotPool` already anticipates
+  this ("a second one with its own cap … an added field and an added `AcquireAsync` call site rather
+  than a rewrite of the release path"), and the lease already records which pool to release into.
+- The sticky cap must be **strictly less than the total**, leaving per-call work a guaranteed floor.
+  Two pools whose caps merely sum to the processor count relabel the exhaustion instead of removing
+  it. The sticky cap then also *is* the number of concurrent long operations a host supports — state
+  it, and refuse the next one immediately by name rather than after a 60-second queue.
+
+Testing note, because the obvious test passes either way: the discriminating case is a poll issued
+while the sticky pool is **saturated**. A poll on an idle host reaches its worker under both the
+correct and the deadlocking implementation.
+
 ### 3.3 The `terminal-stage` protocol (binding, Stage 8)
 
 Rule 4 says the parent waits for the authoritative terminal stage. That is only enforceable once three
@@ -490,6 +527,16 @@ truncate a legitimately long deploy: a healthy deploy streams stages continuousl
 - **Cancellation** takes this same route, by construction rather than by choice — the contract has no
   `cancelled` outcome, so a cancelled run produces no `run-completed` event and is indistinguishable at the
   wire from a child that died. Reporting it as indeterminate is therefore honest, not lazy.
+
+  **Clarified 2026-08-18, after Stage 8 implemented it.** "Resolves through the indeterminate path" is a
+  statement about how the run is CLASSIFIED at the wire, not an instruction to synthesise a tool result.
+  A client that cancelled sent `notifications/cancelled` and is no longer awaiting a response, so an
+  indeterminate *result* would have no recipient. Stage 8 therefore kills the child, emits a warning
+  naming the last stage reached, and rethrows `OperationCanceledException` — honouring
+  `IMcpWorkerCallDispatcher`'s documented caller-token contract while keeping the half-install
+  information recoverable through the channel that still has a reader. The two readings agree on
+  substance and differ only in where the information is delivered; recorded here so the code and this
+  ADR do not silently disagree.
 - **Silence timer expires:** same indeterminate outcome, and the child is killed only *after* the error is
   reported, so its last stage is captured first.
 - **`run-completed` arrives, child then hangs:** the exit grace applies; the tool result is the terminal
@@ -509,11 +556,46 @@ indeterminate. That is the worst false negative available in this family: it tur
 "possibly half-installed".
 
 A terminal-stage route with no caller progress token therefore **must inject a synthetic progress token on
-the child leg**, so the child streams and the parent can see it. What remains deliberately **open** is what
-the parent then does with those notifications: forward them upward under the synthetic token (simple, but
-sends a client progress it never asked for), or consume them at the relay and suppress them (the one
-deliberate exception to rule 1, and it must be written down as such rather than discovered later). Stage 8
-decides; this ADR only records that the decision exists and that neither branch is "do nothing".
+the child leg**, so the child streams and the parent can see it.
+
+**DECIDED 2026-08-18 (Stage 8): inject the synthetic token on the child leg and CONSUME the resulting
+notifications at the relay — do not forward them upward.** This is the one deliberate exception to
+rule 1, recorded here as such rather than left to be found in a diff.
+
+The reason is the consumer, not the specification. It is tempting to argue that forwarding progress
+under a token the client never supplied is a protocol violation; that was checked against the shipped
+SDK (`ModelContextProtocol.Core` 2.2.0) and no such enforcement exists there, so the stronger claim is
+NOT made. The verifiable argument suffices on its own: ClioRing always supplies a progress token — its
+`ClioStageEventAdapter` correlates on it — so the synthetic path is reached ONLY by a client that
+explicitly declined progress. Sending that client a stream it opted out of has no consumer and can only
+confuse; suppressing it costs nothing anyone asked for. The child still streams, the parent still sees
+every stage, and the terminal event still bounds the call. The exception is confined to the last hop.
+
+**The consequence for the indeterminate result is a cross-repo gap, not a local choice.**
+`InstallFormViewModel.DescribeUnstreamedFailure` classifies a no-terminal result in three branches:
+`IsError` yields "The install did not complete — clio reported an error"; then a non-zero `exit-code`;
+then `success:false` / non-empty `error`. Falling through all three yields "finished without reporting
+progress, so I can't confirm it completed".
+
+**None of them is "indeterminate — the environment may be half-installed, do not retry".** The first
+three assert the install did NOT complete, which invites exactly the retry this protocol forbids; the
+fallback understates a possibly damaged environment. The shipped Ring therefore cannot render this
+outcome correctly whatever clio sends, and choosing the least-wrong branch is the whole decision
+available on clio's side.
+
+Stage 8 emits `IsError = true` with structured content carrying `success: false`, a non-empty `error`,
+and an ADDITIVE `outcome: "indeterminate"` with explicit no-retry guidance. Rationale: the released Ring
+then renders its definite-failure message — wrong in wording, safe in effect, because an operator told
+the install did not complete inspects the environment, whereas one told nothing assumes success.
+`BudgetExpiredErrorClass` must NOT be reused: its shipped guidance says the call is safe to retry, which
+for a possibly half-installed environment is the single most damaging instruction available. The
+`outcome` field is additive, so no released Ring breaks on it — honouring the "never rely on clio and
+Ring being upgraded atomically" rule.
+
+**Follow-up owed to ClioRing, tracked rather than quietly accepted:** Ring needs a fourth branch that
+recognises `outcome: "indeterminate"` and says so — possibly half-installed, do not retry, inspect
+before reuse. Until it lands, the operator-facing wording for this case is knowingly imprecise, and that
+is a stated limitation of Stage 8 rather than a defect in it.
 
 ### 3.4 Who drains the worker's standard error (recorded 2026-08-18, as of Stage 6)
 

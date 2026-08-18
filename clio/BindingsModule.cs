@@ -768,6 +768,11 @@ public class BindingsModule {
 		// compile registry: restart-by-environment-name's Begin/Finish and restart-status's later lookup must
 		// share the SAME in-memory table regardless of which container resolves them.
 		services.AddSingleton<IRestartOperationRegistry, RestartOperationRegistry>();
+		// Session-target normalisation (ENG-95262 story 7, AC-00). Stateless and pure, so one SINGLETON
+		// instance is registered explicitly rather than left to the assembly auto-scan's transient default:
+		// every tenant-keyed registry stage 7 moves to the parent must fold a target through the SAME
+		// algorithm, and an explicit registration makes that intent readable instead of order-dependent.
+		services.AddSingleton<ISessionTargetNormalizer, SessionTargetNormalizer>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
@@ -1074,8 +1079,8 @@ public class BindingsModule {
 		// host serves, and whether this process is itself a worker), so a per-resolution transient copy
 		// would be as wrong here as it is for the router.
 		services.AddSingleton<Command.McpServer.IMcpWorkerPathGate, Command.McpServer.McpWorkerPathGate>();
-		// ENG-95262 Stage 6 — which worker-classified tools have a worker path built for them yet. Not a
-		// toggle: the shipped membership is compile-time data (McpWorkerCohort.StageSixNames) with no
+		// ENG-95262 Stage 6/8 — which worker-classified tools have a worker path built for them yet. Not a
+		// toggle: the shipped membership is compile-time data (McpWorkerCohort.ShippedNames) with no
 		// runtime switch. It is a registration only because ADR §5 requires membership to be substitutable
 		// in DI for tests, which is how TC-E-603's in-process arm is obtained.
 		services.AddSingleton<Command.McpServer.IMcpWorkerCohort, Command.McpServer.McpWorkerCohort>();

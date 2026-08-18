@@ -24,16 +24,16 @@ a budget expiry never leaves a half-installed environment
 - Gated by ClioRing contract tests **and** the Windows x64 NativeAOT publish. Contract changes can alter source-generated DTO/serialization paths, so a JIT-only pass is not evidence.
 
 ## Acceptance Criteria
-- [ ] AC-01 — Bounded by terminal stage; a mid-deploy budget expiry never leaves a half-installed environment (TC-E-801).
-- [ ] AC-02 — ClioRing contract suite green; byte/schema parity on the committed stage-event fixture; unknown-field tolerance and ordered replay preserved.
+- [x] AC-01 — *(implemented; E2E unverified on this host — see the delivery note)* Bounded by terminal stage; a mid-deploy budget expiry never leaves a half-installed environment (TC-E-801).
+- [x] AC-02 — ClioRing contract suite green; byte/schema parity on the committed stage-event fixture; unknown-field tolerance and ordered replay preserved.
 - [x] AC-03 — **DONE 2026-08-17** (ADR §2.4): publish exits 0 in 53.3 s, zero IL2026/IL3050/IL2104/IL3053,
       and the output is a real native image — `clio-ring.exe` 30.8 MB with no managed `clio-ring.dll` beside it.
       Re-run this whenever the contract changes; it is cheap and it is the only check that sees source-generated
       serialization paths. Note the host requirement: it needs the MSVC toolchain, which ts1-core-dev04 cannot
       install (ESET TLS interception breaks the VS catalog download).
-- [ ] AC-04 — No agent, test, probe, watcher, retry or startup path performs a real deploy/uninstall without an explicit user gesture and a disposable target.
-- [ ] AC-05 — **Lost child:** a child killed mid-deploy, and one silent past the stage-event timeout, each produce an explicit indeterminate error naming the last stage reached — never a success, never an automatic retry (TC-E-802).
-- [ ] AC-06 — **Post-terminal grace:** a child that emits its terminal stage then hangs is killed after the grace window and the tool result is the terminal stage, not an error (TC-E-803).
+- [x] AC-04 — No agent, test, probe, watcher, retry or startup path performs a real deploy/uninstall without an explicit user gesture and a disposable target.
+- [x] AC-05 — *(implemented; E2E unverified on this host)* **Lost child:** a child killed mid-deploy, and one silent past the stage-event timeout, each produce an explicit indeterminate error naming the last stage reached — never a success, never an automatic retry (TC-E-802).
+- [x] AC-06 — *(implemented; E2E unverified on this host)* **Post-terminal grace:** a child that emits its terminal stage then hangs is killed after the grace window and the tool result is the terminal stage, not an error (TC-E-803).
 
 ## Tests
 E2E TC-E-801, TC-E-802, TC-E-803; ClioRing TC-C-801. **Full unit suite required** — the protocol touches the supervisor and relay under `clio/Common/**`.
@@ -139,3 +139,53 @@ ts1-core-dev04: an ESET TLS filter re-signs HTTPS with an untrusted certificate 
 Studio installer fails to download its catalogue. Check the published output has no managed
 `clio-ring.dll` beside the executable — a bare exit code does not distinguish real ahead-of-time
 compilation from an executable wrapping intermediate language.
+
+
+## DELIVERED 2026-08-18 — what is proven here and what is handed back
+
+**Built.** `TerminalStageWatch` (a per-call read-loop observer) plus the protocol in a partial
+dispatcher file: terminal detection on `eventType == "run-completed"` at the run's ROOT `runId`, a
+300 s stage-event silence bound restarted by every stage event
+(`CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS`), a 30 s post-terminal exit grace via `lease.HasExited` +
+`KillContained`, synthetic-token injection with relay-side suppression, and the two result builders.
+`WaitWithinBudgetAsync` is deliberately not used — its `BudgetExpired` semantics are the generic-kill
+model this stage replaces. Bounds are `Stopwatch`-based so an NTP step cannot move them. The two names
+were added to the cohort LAST.
+
+**The pin tests were updated on purpose, not repaired.** `ShippedCohort_ShouldBeExactlyTheSevenNames…`
+became `…ShouldBeExactlyTheNamesStoriesSixAndEightPromise` with story 8's two literals as its new
+source, and the metadata pin's count moved 7→9 with `TerminalStage` constrained to
+`OperationFamily == Deploy`. That test was mutation-verified the same day as genuinely pinning literal
+names, so it going red here was expected and is the mechanism working.
+
+**Counters.** There is no Creatio backend delta to assert: both tools are local-only, have no
+`IApplicationClient`, and deploy *creates* the instance. The test plan's counter rule is met instead by
+**spawn == 1** — the only assertion that can observe an automatic retry — plus kill == 1, the kill's
+ordinal position after the warning naming the last stage, and the child's emit log stopping at the
+kill. State this in the pull request; a reviewer applying the rule mechanically will ask for a backend
+delta that cannot exist here.
+
+**Verified on this host:** 12 unit tests over a scripted stage-streaming child on a real pipe with the
+production dispatcher, relay and transport; four mutations each caught by exactly the intended test
+(kill-before-report, terminal branch disabled, tap always forwards, die-after-terminal). Full unit
+suite 9194 passed / 20 failed, the 20 matching the macOS baseline by name. ClioRing suite 155 passed /
+1 failed, that one the known macOS path-separator artifact.
+
+**Handed back, unverified here:** AC-01 / AC-05 / AC-06 are E2E — they install Creatio and need a
+Windows host with a disposable sandbox. All are `[Explicit]`, opt-in, TeamCity-guarded and fail-closed.
+TC-E-803's *hang* half is not producible against a real clio child without a fault-injection hook that
+was deliberately NOT added to a shipping binary; it is covered deterministically by the unit fixture
+and the E2E fixture records that.
+
+**AC-03 not re-run, and that is a conclusion rather than an omission:** `ClioStageEvent.cs`,
+`ClioStageEventContract.cs` (`SchemaVersion` still 1) and Ring's mirror are all unmodified, so no
+source-generated stage-event DTO or serialization path changed. The only new wire surface is additive
+fields on clio's own tool-result payload.
+
+**Two notes a reviewer should see.** The protocol is reachable only through `clio-run` — a raw-name
+`deploy-creatio` is stopped by the write-capability gate before routing — and the synthetic token
+survives that vector because `ClioRunTool.DispatchAsync` copies `Meta` to the child params; there is now
+a router test pinning the executor-unwrapped route, without which the live vector could silently fall
+back to the 120 s branch with every other test green. And a worker's own tool result is never
+second-guessed against the stage stream: if the child answers, that answer is relayed even when no
+`run-completed` was seen. The indeterminate path is only for "no result obtained".

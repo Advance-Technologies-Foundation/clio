@@ -8831,3 +8831,177 @@ clio/Command/McpServer/{IMcpWorkerPathGate,IMcpExecutionRouter}.cs,
 clio.tests/Command/McpServer/{WorkerProcessSupervisorTests,McpExecutionRouterTests}.cs
 Impact: the cohort's seven names are now pinned as literals against what story 6 promises, so changing the
 cohort has to change a test on purpose rather than silently agreeing with itself.
+
+## 2026-08-18 15:20 – Story 19: three tools serialized every tenant on the shared fallback lock
+Context: story 19 of mcp-worker-execution-boundary — get-related-page-addon held
+McpToolExecutionLock.SharedFallbackKey across a Creatio round-trip, so every other environment queued
+behind one tenant's read. Second instance of the story-12 defect class.
+Decision: switched the tool (and, from the AC-03 sweep, create-related-page-addon plus all eight
+business-rule tools) to the OPTIONS-AWARE BaseTool.ExecuteWithCleanLog overload.
+Discovery: two of the eight business-rule tools ALREADY passed options to the options-aware overload and
+were still on the shared key — BaseTool.ResolveTenantLockKey returns SharedFallbackKey whenever the base
+has no IToolCommandResolver, and all eight built their base as `BaseTool<...>(null, logger)`. A correct-
+looking call site silently degrades; the resolver has to reach the BASE constructor, not just the field.
+Second discovery: a lock-key test is worthless unless GetTenantKey is stubbed — NSubstitute returns "" for
+an unstubbed string and Normalize turns that into SharedFallbackKey, so broken and fixed look identical.
+Files: clio/Command/McpServer/Tools/{GetRelatedPageAddonTool,CreateRelatedPageAddonTool,BusinessRuleTool}.cs,
+clio.tests/Command/McpServer/{GetRelatedPageAddonToolTests,CreateRelatedPageAddonToolTests,BusinessRuleToolLockTests}.cs
+Impact: the reliable detector for this defect class is `ExecuteWithCleanLog(()` (environment-less overload)
+PLUS a check that every BaseTool subclass doing per-tenant work threads commandResolver to its base.
+
+## 2026-08-18 — ENG-95262 story 20: worker progress streaming, and the allowlist audit
+Context: `ApplicationTool_Should_Stream_Progress_For_LongRunning_Call` observed 0 progress notifications on
+the worker-execution branch and passed on master.
+Decision: two-arm harness to separate "the child never beat" from "the beat was lost". Arm A (host tuned,
+shipped allowlist) → 0 notifications AND the child's environment had no cadence at all. Arm B (child beats
+regardless) → all 3 beats reached the client in wire order with the caller's exact token. Verdict: emission
+defect, not a relay defect. Fix = `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` on
+`WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist`, plus a full audit of every `CLIO_*`
+variable with inclusion/exclusion reasons written into the member's remarks.
+Discovery: (1) a worker's environment is CLEARED and rebuilt from that allowlist, and every deadline/cadence
+default in clio is `static readonly` captured at TYPE LOAD — so anything not present at spawn can never be
+applied later; (2) `McpWorkerCallDispatcherTests`' remark that the happy path "requires a live
+WorkerRelaySession … that no substitute can produce" was wrong and had kept this whole class of regression
+out of the unit suite: it needs no substitute, only an anonymous pipe pair and a scripted child;
+(3) `TERM`'s ABSENCE is the correct worker behaviour — inheriting it would re-enable ANSI colour in the one
+process whose stdout is the MCP protocol stream.
+Files: clio/Common/McpWorker/WorkerProcessSupervisor.cs,
+clio.tests/Command/McpServer/WorkerProgressStreamingTests.cs,
+clio.tests/Command/McpServer/WorkerProcessSupervisorTests.cs,
+clio.tests/Command/McpServer/McpWorkerCallDispatcherTests.cs,
+clio.mcp.e2e/ApplicationSectionToolE2ETests.cs
+Impact: the worker happy path (handshake → tools/call → notifications → result) is now unit-testable in one
+process; reuse `ScriptedWorkerChild` for stage-event / sampling regressions instead of reaching for e2e.
+
+## 2026-08-18 16:20 – Closing b71f6ea0d's honest gap: the four unverified assertions
+Context: b71f6ea0d shipped with an explicit self-declared gap — its author never filed a
+red-before report, so two cohort-membership pins and the once-per-session HTTP notice were
+"treat as open until someone mutates an input and checks". This is that check.
+Decision: break each input at its own seam and require the specific test to go red, rather
+than trusting a green suite.
+Discovery: all four are non-vacuous, on exactly the scenarios the commit message named as
+previously undetectable.
+  - Swapping get-schema for another worker-classified tool in McpWorkerCohort.StageSixNames —
+    the scenario the commit says used to stay green — turns BOTH membership pins red:
+    ShippedCohort_ShouldBeExactlyTheSevenNamesStorySixPromises and
+    HandleAsync_ShouldReturnConfirmationRequiredWithoutRouting_WhenACohortToolIsWriteCapable.
+    The second is the more interesting of the pair: it means the get-schema write-capability
+    asymmetry is pinned to get-schema specifically, not to "some cohort member".
+  - Replacing the Interlocked.Exchange gate with an unconditional WriteWarning turns
+    Resolve_ShouldStateTheInactiveBoundaryExactlyOnce_WhenHostTransportIsHttp red — so the
+    test measures once-ness, not merely that a notice appears.
+  - Removing the `transport != Http` restriction turns
+    Resolve_ShouldStateNothing_WhenHostIsStdioOrItsTransportWasNeverDeclared red — so the
+    fail-closed Unknown case is genuinely covered, not incidentally passing.
+All mutations reverted; McpExecutionRouterTests 29/29 green on the restored tree.
+Files: clio/Command/McpServer/McpWorkerCohort.cs, clio/Command/McpServer/IMcpWorkerPathGate.cs
+  (both mutated and restored; no net change), clio.tests/Command/McpServer/McpExecutionRouterTests.cs (read only)
+Impact: the gap b71f6ea0d flagged is closed with evidence. Method worth reusing — mutate at the
+seam the assertion names, not at a random line, and require THAT test to fail rather than any test.
+
+## 2026-08-18 — story 21: truncation upstream of redaction can un-redact a secret
+Context: story-mcp-worker-execution-boundary-21 — `WorkerStandardErrorDrain` keeps the LAST N chars of a
+worker's stderr and trims from the front at an arbitrary offset, so a cut inside `password=` leaves
+`word=<secret>`, which `SensitiveErrorTextRedactor.CredentialPairRegex` cannot match (it requires the KEY).
+The value reached the client verbatim on `worker-stderr` of the failure envelope.
+Decision: drop the leading PARTIAL line of a trimmed tail, unconditionally, whenever anything was trimmed —
+the cheapest cut that no redaction pattern can straddle. Keying the drop on the redactor's own pattern list
+would duplicate it into the drain; remembering whether the byte before the cut was a line break would add
+pump state to recover, on the rare aligned cut, one line we are content to pay. When no complete line
+survives (one unbroken line), the tail is withheld behind `StandardErrorNoCompleteLineNotice` rather than
+emptied — an empty string removes `worker-stderr`, the truncation marker AND the caveat sentence together
+and reads as "the worker said nothing". Applied in `Tail()` (snapshot time), not in the pump: `Tail()` runs
+on paths before `StopAsync`, so the buffer may still be growing, and the trim-after-every-append invariant
+makes a snapshot-time drop no weaker.
+Discovery (generalises beyond this bug): every redaction pattern recognises a secret by CONTEXT around it,
+so ANY transformation between capture and redaction can un-redact. Two directions — TAIL truncation orphans
+a value from its key (this bug); HEAD truncation (`value[..N]`, used by ODataCreateTool / ExecuteEsqTool /
+ODataReadTool) can bisect a self-identifying shape (a JWT cut below three segments stops matching), so it is
+safer, not safe. The rule: REDACT FIRST, then transform (`ServiceResponseJsonGuard.BuildResponsePreview` is
+the reference); where the order cannot be inverted because bounding is liveness, cut only on a boundary the
+patterns cannot straddle. Recorded in the credential threat model under T-6/R-7.
+Also: the RED observation matters more than the test. The pre-existing TC-U-505 fixture padded its chunks so
+the cut landed in filler — it passed throughout and hid the hole. A fixture for this class must ASSERT its
+own precondition (that the bound really cuts inside the key, and that the redactor alone leaves the marker
+intact) or it silently re-pads itself the next time a constant moves.
+Files: clio/Command/McpServer/Relay/McpWorkerCallDispatcher.cs,
+  clio.tests/Command/McpServer/McpWorkerCallDispatcherTests.cs,
+  spec/mcp-worker-execution-boundary/mcp-worker-execution-boundary-credential-threat-model.md
+Impact: any future bounded/truncated copy of untrusted text (Stage 7 sticky pool, Stage 8 deploy child,
+R-11's stdout bound) has the same exposure and now has a named class and a stated rule to check against.
+
+## 2026-08-18 20:10 – Stage 8: the terminal-stage protocol for deploy-creatio / uninstall-creatio
+Context: ENG-95262 story 8. The deploy family declared `BudgetPolicy = TerminalStage` since Stage 1 but was
+absent from `McpWorkerCohort`, because the dispatcher kills an ordinary worker at its budget unconditionally
+and a deploy killed at a stopwatch can leave a half-installed environment.
+Decision: implemented ADR §3.3 on the EXISTING stage-event stream — no second IPC path. A read-loop tap
+(`WorkerRelayOptions.NotificationTap`, a delegate rather than an interface so `BindingsModule`'s assembly
+interface scan cannot auto-register per-call state) feeds `TerminalStageWatch`, which detects
+`_meta.clioStageEvent.eventType == "run-completed"` on the run's ROOT runId. Two bounds, neither an
+operation timer: a stage-event SILENCE bound (300 s, `CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS`) that every
+stage event restarts, and a 30 s post-terminal exit grace. All of it in a new partial file
+(`McpWorkerCallDispatcher.TerminalStage.cs`) so the contested stderr-drain file took only four small edits.
+Only after that did the two names go into the cohort (new `StageEightNames` + `ShippedNames`; `StageSixNames`
+left intact so each story's promise stays independently pinnable).
+Discovery (three, each of which would have shipped a silent defect):
+ 1. The ADR's original terminal vocabulary (`Completed`/`Failed`/`Cancelled`) DOES NOT EXIST. The shipped
+    contract is `manifest`/`stage`/`run-completed` + `success`/`failure`/`success-with-warnings`. Coding the
+    old wording gives a condition that never fires, so every healthy deploy would time out on silence and
+    report indeterminate — a defect that reads as an environment problem. There is no `cancelled` outcome at
+    all, so a cancelled run resolves through the indeterminate path by construction.
+ 2. A caller with no progress token makes the child emit NOTHING (`StageEventProgressForwarder` is inert),
+    which a silence-bounded protocol would call a lost child. Fixed by injecting a synthetic token on the
+    child leg and CONSUMING that traffic at the relay — the one deliberate exception to rule 1. Verified the
+    token survives the live vector: `ClioRunTool.DispatchAsync` sets `childParams.Meta = originalParams.Meta`,
+    so a token on the OUTER clio-run params reaches the inner deploy tool inside the child.
+ 3. `IsError` alone is not enough for the consumer. ClioRing's `DescribeUnstreamedFailure` reads the payload,
+    so the indeterminate result carries `IsError` + `success:false` + non-empty `error` + additive
+    `outcome:"indeterminate"`. `BudgetExpiredErrorClass` must never be reused here: its shipped guidance says
+    the call is safe to retry.
+Testing note: the three assertions that actually discriminate are spawn count == 1 (the ONLY thing that can
+see an automatic retry), kill ordinal position (error composed and logged BEFORE the kill, or the last stage
+is lost to a closed pipe), and the fixture child's emit log stopping at the kill — which needs the
+substituted supervisor's `KillContained` to really close the child's pipe, or all three go vacuous. There is
+NO Creatio backend counter for these two tools: they are local-only, have no `IApplicationClient`, and deploy
+CREATES the instance. Mutation-checked three ways (kill-before-report, branch disabled, tap always forwards);
+each was caught by exactly the intended test.
+Files: clio/Command/McpServer/Relay/McpWorkerCallDispatcher.TerminalStage.cs,
+  clio/Command/McpServer/Relay/TerminalStageWatch.cs, clio/Command/McpServer/Relay/WorkerMcpRelay.cs,
+  clio/Command/McpServer/Relay/IWorkerMcpRelay.cs, clio/Command/McpServer/McpWorkerCohort.cs,
+  clio.tests/Command/McpServer/WorkerTerminalStageProtocolTests.cs,
+  clio.tests/Command/McpServer/McpExecutionRouterTests.cs, clio.mcp.e2e/DeployTerminalStageE2ETests.cs,
+  clio/docs/commands/deploy-creatio.md, clio/docs/commands/uninstall-creatio.md
+Impact: Stage 10's cohort expansion inherits a working non-stopwatch bound and, more importantly, the shape
+of the answer for any operation whose outcome the parent cannot establish — name the last stage, mark the
+environment, and never retry.
+
+## 2026-08-18 – ENG-95262 stage 7 AC-00: session-key normalisation (one target, one key)
+Context: stage 7 moves tenant-keyed registries to the parent MCP process. `ToolCommandResolver.BuildCacheKey`
+built its identity as `options.Environment ?? "default"` + `"|"` + `settings.Uri`, so ONE target produced TWO
+keys (`myenv|http://x` by name, `default|http://x` by explicit uri). Moving the registries on a split key makes
+`compile-status` answer "no such operation" for a running compile, and it is not repairable afterwards.
+Decision: the identity is now the NORMALISED TARGET and nothing else, folded by a new
+`ISessionTargetNormalizer` implementing the BINDING T-5 component table (threat model
+`mcp-worker-execution-boundary-credential-threat-model.md`). Conservative by construction: `http`/`https` and
+hostname/IP stay distinct; userinfo, query, fragment and non-canonical IPv4 literals are REJECTED (explicit
+`EnvironmentResolutionException`, never a looser key). `BuildTargetIdentity` is the seam where R-5's principal
+and credential-fingerprint components get composed in when mcp-http is revived — the normaliser itself stays a
+pure target→target fold.
+Discovery (load-bearing, verified on net10.0 2026-08-18): `new Uri("http://0177.0.0.1/").Host` AND
+`IPAddress.Parse("0177.0.0.1").ToString()` BOTH return `127.0.0.1` — both silently perform the exact octal fold
+T-5 rejects. The host must therefore be read from the RAW authority text, never through `Uri.Host`. Also
+`IdnMapping{UseStd3AsciiRules=true}.GetAscii("a_b.com")` THROWS `ArgumentException`, so IDNA is applied only to
+non-ASCII hosts (ASCII hosts take a plain `ToLowerInvariant` fast path) — underscore hosts are common on dev stands.
+Files: clio/Command/McpServer/Tools/SessionTargetNormalizer.cs, clio/Command/McpServer/Tools/ToolCommandResolver.cs,
+clio/BindingsModule.cs, clio.tests/Command/McpServer/SessionTargetNormalizerTests.cs,
+clio.tests/Command/McpServer/ToolCommandResolverTargetConvergenceTests.cs
+Impact: `BuildCacheKey` is now an INSTANCE method (six-arg ctor), which is why several McpServer fixtures gained
+a `new SessionTargetNormalizer()` argument. Any future key component belongs in `BuildTargetIdentity`, not in a
+second static.
+
+## 2026-08-18 19:40 – Admission capacity: two pools, a reach seam, and an operator cap (ENG-95262 Stage 7 foundation)
+Context: ADR §3.2c / story-7 BLOCKER — a sticky worker holds an admission slot for its whole operation, so a `compile-status` poll routed through the spawn path waits for a slot HELD BY THE WORKER IT IS REACHING (hold-and-wait, not starvation). Also closes threat-model T-9 gap G-1.
+Decision: (1) `IWorkerChannel` (talk-only) split out of `IWorkerLease`, reached through a deliberately narrow `IWorkerReach.ReachExisting` that takes no slot and returns a non-owning wrapper that is not castable back to a lease; (2) the total cap is PARTITIONED into `_stickyPool` + `_perCallPool` (never additive — an extra pool would exceed the ADR §2.4 measured ceiling and falsify `ConcurrencyCap`'s published meaning); (3) sticky cap = `total / 2`, one derivation, strictly below the total for every input, per-call remainder ≥ sticky ≥ 0; (4) sticky admission never queues — `WorkerStickyCapacityExceededException` carries the limit and names `CLIO_MCP_WORKER_CONCURRENCY`.
+Discovery: a total of 1 derives a sticky cap of 0, so a single-slot host runs no long operation; flooring the TOTAL at 2 instead would double admitted concurrency on every single-core host and break AC-06, so the arithmetic is kept and the operator override is the remedy. `SemaphoreSlim` rejects a maximum of 0, so `WorkerSlotPool` builds a never-filled one-slot semaphore and short-circuits on `Cap`. The discriminating tests are the SATURATED ones — an idle-host poll passes under the deadlocking implementation too; six deliberate mis-implementations were each watched red before the correct one was restored.
+Files: clio/Common/McpWorker/IWorkerProcessSupervisor.cs, clio/Common/McpWorker/WorkerProcessSupervisor.cs, clio.tests/Command/McpServer/WorkerAdmissionCapacityTests.cs, clio.tests/Command/McpServer/WorkerProcessSupervisorTests.cs
+Impact: Stage 7 sticky supervision can be built on a capacity model that cannot deadlock; the dispatcher still needs `Lifetime = Sticky` on the long-operation spawn, `IWorkerReach` injection on the poll path, and a `BindingsModule` forwarding registration to the SAME supervisor singleton.

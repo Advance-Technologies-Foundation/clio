@@ -58,7 +58,8 @@ public class ToolCommandResolver(
 	ISettingsBootstrapService settingsBootstrapService,
 	ICredentialContextAccessor credentialContextAccessor,
 	ITargetUrlValidator targetUrlValidator,
-	ISessionContainerCache sessionContainerCache) : IToolCommandResolver {
+	ISessionContainerCache sessionContainerCache,
+	ISessionTargetNormalizer sessionTargetNormalizer) : IToolCommandResolver {
 
 	/// <summary>
 	/// Prefix of every credential-passthrough cache key (see <see cref="BuildPassthroughCacheKey"/>).
@@ -313,6 +314,10 @@ public class ToolCommandResolver(
 	// truncation): on this feature "same url, different token" is the norm, so a truncation collision
 	// would be a credential crossover. Full FR-07 key unification and FR-08 TTL / eviction are
 	// Story 8 — this only prevents the cross-tenant collision.
+	// AC-00 (ENG-95262 story 7) deliberately stops short of this branch: session-target normalisation is
+	// scoped to STDIO, and the passthrough branch is only ever taken in the mcp-http host, which is
+	// deferred with story 5 (ADR §5, OQ-9). Normalising context.Url here would also change a
+	// credential-discriminating key on a surface whose principal component does not exist yet.
 	internal static string BuildPassthroughCacheKey(CredentialContext context) {
 		CredentialMaterial auth = context.Auth;
 		string material = string.Concat(
@@ -358,15 +363,8 @@ public class ToolCommandResolver(
 	// two requests to the SAME url/environment with DISTINCT tokens (empty login/password) resolve to
 	// distinct containers instead of colliding on a shared authenticated session. Secret material is
 	// SHA-256 hashed via the shared helper and never placed raw in the key (FR-11).
-	internal static string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
-		// The uri belongs in the identity, not just the name. An environment re-pointed to a new uri in
-		// appsettings.json keeps its name, so a name-only identity handed back the cached container whose
-		// IApplicationClient is still bound to the OLD uri — the settings reload would be undone by the
-		// cache (ENG-94529). Adding the uri only makes the key finer-grained: identical settings still
-		// share one authenticated session.
-		string identity = string.Concat(
-			options.Environment ?? DefaultIdentifier, "|",
-			settings.Uri ?? string.Empty);
+	internal string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
+		string identity = BuildTargetIdentity(options, settings);
 		string credentials = string.Concat(
 			settings.Login ?? string.Empty, "|",
 			settings.Password ?? string.Empty, "|",
@@ -377,6 +375,41 @@ public class ToolCommandResolver(
 			settings.IsNetCore.ToString());
 		return $"{identity}:{HashSecretMaterial(credentials)}";
 	}
+
+	/// <summary>
+	/// Builds the TARGET component of the session key (ENG-95262 story 7, AC-00).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The identity is the NORMALISED TARGET and nothing else, so one resolved target produces one key
+	/// whether it was reached by registered environment name or by explicit URI. It previously read
+	/// <c>options.Environment ?? "default"</c> + <c>"|"</c> + <c>settings.Uri</c>, which yielded TWO keys
+	/// for one target — <c>myenv|http://x</c> through the name branch and <c>default|http://x</c> through
+	/// the URI branch. ENG-94529 put the uri into the identity (so a re-pointed environment stops handing
+	/// back a client bound to its OLD uri, which the fold below preserves — the uri is still what the key
+	/// is made of) but left the two branches divergent. Every registry stage 7 moves to the parent is keyed
+	/// by tenant, so a split key would put <c>compile-creatio</c> invoked by name and <c>compile-status</c>
+	/// polled by uri in different buckets and make the poll answer "no such operation" for a running compile.
+	/// </para>
+	/// <para>
+	/// SCOPE — stdio only, and this method is the seam that keeps it extensible. R-5's sticky key has three
+	/// components: principal + normalised target + credential fingerprint. On stdio the target IS the whole
+	/// key, because the child reads <c>appsettings.json</c> itself and no credential crosses the boundary;
+	/// the other two belong to the deferred story 5 (ADR §5, OQ-9). When <c>mcp-http</c> is revived they are
+	/// composed in HERE, alongside the normalised target — the normaliser itself stays a pure target→target
+	/// fold and does not need to change. (The credential hash appended by <see cref="BuildCacheKey"/> is the
+	/// pre-existing FR-07 container discriminator, not R-5's per-process credential fingerprint.)
+	/// </para>
+	/// <para>
+	/// A target that cannot be reached at all — a registered environment with no uri — keeps a name-derived
+	/// identity. That is strictly MORE distinguishing than a normalised target, so it can only ever cost an
+	/// extra container, never merge two targets. There is no uri branch to converge with in that case.
+	/// </para>
+	/// </remarks>
+	private string BuildTargetIdentity(EnvironmentOptions options, EnvironmentSettings settings) =>
+		string.IsNullOrWhiteSpace(settings.Uri)
+			? $"env:{options.Environment ?? DefaultIdentifier}"
+			: sessionTargetNormalizer.Normalize(settings.Uri);
 
 	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) =>
 		EnvironmentNotFoundError.Build(missingEnvironmentName, settingsRepository);

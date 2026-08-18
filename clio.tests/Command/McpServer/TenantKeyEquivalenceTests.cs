@@ -67,7 +67,8 @@ public sealed class TenantKeyEquivalenceTests {
 			settingsBootstrapService,
 			credentialContextAccessor,
 			Substitute.For<ITargetUrlValidator>(),
-			cache);
+			cache,
+			new SessionTargetNormalizer());
 	}
 
 	[Test]

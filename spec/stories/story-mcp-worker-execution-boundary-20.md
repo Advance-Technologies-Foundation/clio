@@ -204,3 +204,157 @@ void — neither evidence of a regression nor evidence of health.
 
 The next run must not start until the concurrent-write question is settled, or it will spend an hour
 producing another uninterpretable number.
+
+## RESOLVED 2026-08-18: the cause, proven — and it is neither hypothesis this story offered
+
+The isolated run this story asked for was executed. **The test passed and the settings file was
+intact.** Read literally that refutes the leading hypothesis — but the hypothesis was aimed at the
+wrong mechanism. The defect is not *tearing*, it is *targeting*: the writes never went where the test
+believed. An isolated run leaves a whole file and still proves the defect, so "intact" settles
+nothing on its own and must not be quoted as a clean bill of health.
+
+### Fact 1 — the test's isolation is inert (proven)
+
+`SettingsRepository.AppSettingsFolderPath` returns `CLIO_HOME` **verbatim** and only falls through to
+`HOME` / `LOCALAPPDATA` when it is unset (`clio/Environment/ConfigurationOptions.cs`, "the single
+source of truth for clio's home directory"). `TestConfiguration.Load` injects the suite-owned
+`CLIO_HOME` into `ProcessEnvironmentVariables` for **every** spawned clio process
+(`clio.mcp.e2e/Support/Configuration/TestConfiguration.cs:30-32`).
+
+`AppSettings_Should_YieldAWholeCatalog_When_ReadDuringRegWebAppWrites` set only `HOME`/`LOCALAPPDATA`.
+So its comment — "an ISOLATED clio home. Without it this test would race real reg-web-app writes
+against the developer's own environment catalog" — described an isolation that did not exist.
+
+Measured two ways. Direct probe:
+
+```
+$ CLIO_HOME=/tmp/probe-A HOME=/tmp/probe-B clio info --settings-file
+/tmp/probe-A/appsettings.json
+$ CLIO_HOME=/tmp/probe-A HOME=/tmp/probe-B clio reg-web-app cat-a ...
+# cat-a lands in /tmp/probe-A; /tmp/probe-B stays empty
+```
+
+And observed during the real isolated run, by snapshotting the suite home while it executed:
+
+```
+Environments: [bench2, bench3, bench4, c2f_probe_0818, cat-a, cat-b, cat-c, cat-d,
+               cat-e, cat-f, probe0823, sae_m_seeenu_15827662_0818, stubwedge]
+```
+
+All six `cat-*` in the **shared** catalog every other fixture resolves against. The private home the
+test created and deleted was never written to at all.
+
+### Fact 2 — "settings bootstrap is broken" does NOT mean the file was damaged (proven)
+
+`SettingsBootstrapService` sets `CanExecuteEnvTools = resolvedEnvironment is not null` — that is, "the
+`ActiveEnvironmentKey` resolves to a configured environment". A catalog that is whole, valid and
+parseable still fails that test if its active key points nowhere. Driven through the real MCP server
+on two files differing in one key and nothing else:
+
+| `ActiveEnvironmentKey` | Result |
+|---|---|
+| `"d2"` — resolves | the ordinary "a configured environment name or an explicit URI is required" error |
+| `"gone"` — does not resolve | `clio settings bootstrap is broken. Repair [redacted-path] …` |
+
+**So this story's earlier conclusion — "The settings file was damaged during the run" — is not
+supported by the message that was used to establish it.** The message proves an unresolvable active
+key, nothing more.
+
+### Fact 3 — what actually happened on the build host (primary source)
+
+Pulled from TeamCity 15893259 rather than inferred. The 46 failures bucket cleanly:
+
+| Bucket | Count | Signature |
+|---|---|---|
+| unresolvable active key | 24 | `clio settings bootstrap is broken. Repair [redacted-path]` where an environment-not-found error was expected |
+| shared-file contention | 18 | `IOException: The process cannot access the file 'C:\TSAgent\temp\buildTmp\clio-mcp-e2e-shared-home-…\appsettings.json' because it is being used by another process` |
+| downstream | 4 | `Could not parse <tool> MCP result` |
+
+The contention bucket names the shared home **in the exception text**, with stack frames landing
+inside `TemporaryClioSettingsOverride`:
+
+- `CreateWorkspace_Should_Create_Empty_Workspace_When_Directory_Is_Omitted` → `SetWorkspacesRoot` line 30
+- `SettingsHealth_Should_Report_Repaired_Status_When_Active_Environment_Key_Is_Invalid` → `ReplaceContent` line 42
+- `AppSettings_Should_YieldAWholeCatalog…` → `reg-web-app cat-a` exited 1 with
+  `The process cannot access the file because it is being used by another process`
+
+Nine fixtures rewrite that one shared file through a plain, non-atomic `File.WriteAllText` that takes
+none of the cross-process locks a real clio writer takes, and one of them
+(`SettingsHealthToolE2ETests`) **deliberately installs a catalog whose `ActiveEnvironmentKey` does not
+resolve**, relying on a `Dispose` restore to contain it. A sharing violation that kills the fixture
+before or during that restore leaves the deliberate breakage in place for the rest of the run — which
+is the 24-test bucket, and the 10→98 skip explosion (every reachability probe then fails into
+`Assert.Ignore`).
+
+**Why master is green:** all nine writers are pre-existing, but none of them spawns six real
+`reg-web-app` processes doing locked read-modify-writes on that file over several seconds. This branch
+added the tenth writer and it is the one that opens the window wide. **The branch owns the cascade —
+but through inert test isolation, not through the interprocess gate. The gate was never involved.**
+
+### AC-05 — every failure classified, with the evidence that decides it
+
+| Test | Verdict | Evidence |
+|---|---|---|
+| `AppSettings_Should_YieldAWholeCatalog…` | **branch defect, fixed** | inert isolation, proven twice above |
+| `CreateWorkspace_…_When_Directory_Is_Omitted` | **NOT a regression in its own behaviour** — casualty of the same contention | died in `ArrangeAsync` → `SetWorkspacesRoot` on the shared-home `IOException`; never reached the "directory omitted" path. This story's working-directory hypothesis for it is refuted |
+| `BrowserSessionCache_…_When_WrittenConcurrently` | **genuine product defect, Windows-only, fixed** | see below — not the shared catalog |
+| `ApplicationGetInfo_…_After_SchemaSync` | **environmental, not this branch** | `sync-schemas` returned `success:false` with `"columns were saved, but publishing the configuration failed: Error generating content for schema EntitySchemaManager.UsrCodex69153d48"` — a stand-side configuration build failure. Independently, none of `create-app`, `sync-schemas` or `get-app-info` is in `McpWorkerCohort.StageSixNames`, so no worker-routed code path is involved |
+| `ApplicationTool_Should_Stream_Progress_For_LongRunning_Call` | separate defect — the heartbeat allowlist gap | tracked under AC-01/AC-02/AC-04 above; unaffected by the settings cascade |
+| the other 41 | consequences | bucketed in Fact 3; their results are void as evidence either way |
+
+### AC-06 — the two new gate tests
+
+**`AppSettings_Should_YieldAWholeCatalog…`** — the gate was never the problem; the test was pointed at
+the wrong file. Fixed by `clio.mcp.e2e/Support/Configuration/IsolatedClioHome.cs`, which sets
+`CLIO_HOME` (the decisive one) alongside `HOME`/`LOCALAPPDATA`/`USERPROFILE`. The test now also asks
+clio itself where it will write and refuses to run unless that path is inside its own home — verified
+non-vacuous by removing the `CLIO_HOME` redirect and watching it go red naming the shared home.
+Applied to `ClioPagesConcurrencyE2ETests`, `SettingsHealthToolE2ETests`,
+`SkillManagementToolE2ETests`, `ReadResponseDeadlineToolE2ETests` and `CreateWorkspaceToolE2ETests` —
+the five fixtures that redirected `HOME` without `CLIO_HOME`.
+
+**`BrowserSessionCache_…_When_WrittenConcurrently`** — this one is hypothesis 1, and it is a real
+product defect rather than a test artifact. It failed with six `UnauthorizedAccessException: Access to
+the path is denied` from its writers, against its **own** temporary directory; the shared catalog is
+not involved. Cause: `FileSystem.WriteOwnerOnlyTextToFileAtomic` publishes via
+`File.Move(overwrite: true)`, which is `rename(2)` on Unix — indifferent to open readers — and
+`MoveFileEx(MOVEFILE_REPLACE_EXISTING)` on Windows, which needs DELETE access on the destination and is
+refused while any other handle is open on it. `File.ReadAllText` opens with `FileShare.Read`, and that
+share mode denies the rename. **The real consumer is Playwright loading a cached `storageState` while
+clio refreshes it**, so this is an operator-visible failure, not a test-only one — and it was
+structurally invisible to a green macOS suite.
+
+Fixed by retrying the publish over a bounded ~1.1 s window for contention shapes only; a genuine ACL
+or read-only-file error still surfaces unchanged, and a non-contention failure
+(`FileNotFoundException`) fails on the first attempt. Three unit tests in
+`clio.tests/Common/FileSystem.Tests.cs` substitute the move so the contended path runs on every
+platform; all three were confirmed red against the pre-fix code (two against the missing retry, one
+against a broadened failure classifier).
+
+### GAP CLOSED 2026-08-18: the retry measured under real Windows contention
+
+The paragraph that stood here said the retry's behaviour was argued from `MoveFileEx` semantics and
+pinned only by substituted-move unit tests, never observed on Windows. It has now been observed, on a
+Windows 11 host (.NET 8), with a probe reproducing TC-E-902's exact shape — six concurrent writers
+against one `File.ReadAllText` reader loop, three payload sizes, 180 publishes per arm:
+
+| Arm | Publish failures / 180 | Notes |
+|---|---|---|
+| bare `File.Move(overwrite: true)` — pre-fix | **108, 113, 113, 103** across four runs | every one `UnauthorizedAccessException: Access to the path is denied.` |
+| deadline-bounded retry — post-fix | **0, 0, 0, 0** | worst case 16 attempts; the deadline was never reached |
+| bare move on macOS — control | **0** | `rename(2)` ignores open readers, exactly as specified |
+
+The macOS control is the part worth keeping: it reproduces the blindness rather than merely failing to
+reproduce the bug. A green macOS run of this probe is consistent with a completely broken publish.
+
+**The measurement also corrected the fix.** The first version bounded the retry by an ATTEMPT COUNT of
+12. Under this load the observed worst cases were 13, 15 and 16 attempts — so a count that looked
+generous was already failing, and no substituted-move test could have revealed it because the substitute
+decides how many attempts occur. The bound is now a **deadline** (2.5 s, capped linear backoff), which
+states the guarantee directly and does not need re-tuning when the backoff curve changes. Four runs
+never came close to exhausting it.
+
+Note what this does and does not cover: it measures the platform semantic and the retry policy on real
+Windows. That clio's `WriteOwnerOnlyTextToFileAtomic` actually routes through that policy is a separate
+claim, and it is the one the substituted-move unit tests pin. Together they close the gap; neither does
+alone.
