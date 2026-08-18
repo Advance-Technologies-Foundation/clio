@@ -63,6 +63,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
 	internal const string RuleEntityDataSourceStaticFilters = "entity-data-source-static-filters";
+	internal const string RuleHandlerAttributeChangeUnscopedWrite = "handler-attribute-change-unscoped-write";
 
 	#endregion
 
@@ -139,6 +140,7 @@ internal static class PageBodyAstLinter {
 			case ObjectExpression obj:
 				CheckSchemaSectionShapes(obj, findings);
 				CheckEntityDataSourceStaticFilters(obj, findings);
+				CheckUnscopedAttributeChangeHandler(obj, depth, findings);
 				break;
 			case Property prop:
 				CheckProperty(prop, ctx, findings);
@@ -312,6 +314,152 @@ internal static class PageBodyAstLinter {
 			Column: filtersProp.Location.Start.Column + 1,
 			Message: "`config.filters` on a `crt.EntityDataSource` is never applied — `filters` is not a recognized data-source config key. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
 	}
+
+	// Rule 12: a `crt.HandleViewModelAttributeChangeRequest` handler entry that is NOT scoped to the
+	// triggering attribute but writes a view-model attribute through `$context.set(...)`. This request
+	// fires on EVERY attribute change, so an unscoped handler that writes an attribute re-enters on its
+	// OWN write — with a value that is no longer the one it expected — and typically clears the field it
+	// just set (or loops). The canonical scope is an early guard `if (request.attributeName !== "<Attr>")
+	// return next?.handle(request);` (page-schema-handlers guidance) or a `condition: { attributeName }`
+	// on the entry. `requestArgumentPropertyName` does NOT scope this handler — it is silently ignored,
+	// which is exactly the trap this rule surfaces. No regex counterpart in SchemaValidationService /
+	// SchemaHandlerValidationService — the self-retrigger footgun is a data-flow shape, not a token match.
+	// Warning severity: the page still saves and renders; the field is just wiped at runtime.
+	//
+	// Keyed off the handler entry ObjectExpression: `request` === the target literal, a `handler` function,
+	// and — inside that function's subtree — a `$context.set(...)` write with NO `attributeName` reference.
+	// Referencing `attributeName` anywhere in the body (member access, destructuring, comparison) is treated
+	// as "author is scope-aware" and suppresses the warning; a `condition.attributeName` sibling (or a
+	// predicate-form `condition` referencing attributeName) likewise suppresses it. Both suppressors bias
+	// the rule toward NO false positives on already-scoped handlers.
+	//
+	// Accepted false negative (deliberate): the `attributeName` reference is a scope-awareness PROXY, not a
+	// proof that the write is guarded. A handler that reads `request.attributeName` for an unrelated purpose
+	// (logging, an unrelated branch) while still writing UNCONDITIONALLY is the genuine self-retrigger shape
+	// yet is not flagged. Proving the write is actually guarded needs data-flow analysis; the proxy trades
+	// that rare miss for zero false positives on the common scoped-handler shapes — the right bias for a
+	// non-blocking Warning. Pinned by Lint_ShouldNotWarn_WhenAttributeNameReferencedButWriteUnconditional.
+	private static void CheckUnscopedAttributeChangeHandler(ObjectExpression obj, int depth, List<PageBodyLintFinding> findings) {
+		Property requestProp = null;
+		Property handlerProp = null;
+		Property conditionProp = null;
+		foreach (Node element in obj.Properties) {
+			if (!TryGetInitProperty(element, out Property prop, out string key)) {
+				continue;
+			}
+			switch (key) {
+				case "request": requestProp = prop; break;
+				case "handler": handlerProp = prop; break;
+				case "condition": conditionProp = prop; break;
+			}
+		}
+		if (requestProp?.Value is not Literal { Value: "crt.HandleViewModelAttributeChangeRequest" }) {
+			return;
+		}
+		if (handlerProp?.Value is not IFunction handlerFn) {
+			return;
+		}
+		if (ConditionScopesOnAttributeName(conditionProp, depth)) {
+			return;
+		}
+		bool referencesAttributeName = false;
+		bool writesContextAttribute = false;
+		ScanHandlerBody((Node)handlerFn, depth, ref referencesAttributeName, ref writesContextAttribute);
+		if (referencesAttributeName || !writesContextAttribute) {
+			return;
+		}
+		findings.Add(new PageBodyLintFinding(
+			Rule: RuleHandlerAttributeChangeUnscopedWrite,
+			Severity: LintSeverity.Warning,
+			Line: requestProp.Location.Start.Line,
+			Column: requestProp.Location.Start.Column + 1,
+			Message: "A `crt.HandleViewModelAttributeChangeRequest` handler that writes a view-model attribute via `$context.set(...)` is not scoped to the triggering attribute, so it re-fires on its own write and can clear the value or loop. Scope it: guard the body with `if (request.attributeName !== \"<Attr>\") return next?.handle(request);` or add `condition: { attributeName: \"<Attr>\" }` to the entry (per page-schema-handlers guidance). Note: `requestArgumentPropertyName` does NOT scope this handler — it is silently ignored."));
+	}
+
+	// A `condition` on the handler entry scopes the handler and suppresses the warning. Two shapes count:
+	//   - declarative `condition: { attributeName: "<Attr>" }` (an ObjectExpression carrying attributeName);
+	//   - predicate `condition: (request) => request.attributeName === "<Attr>"` (an IFunction that
+	//     references attributeName) — the sibling `condition` is outside the handler function subtree
+	//     ScanHandlerBody walks, so without this branch a correctly-scoped predicate-form handler would
+	//     be a false positive.
+	private static bool ConditionScopesOnAttributeName(Property conditionProp, int depth) {
+		switch (conditionProp?.Value) {
+			case ObjectExpression condObj:
+				foreach (Node element in condObj.Properties) {
+					if (TryGetInitProperty(element, out _, out string key) && key == "attributeName") {
+						return true;
+					}
+				}
+				return false;
+			case IFunction condFn:
+				return SubtreeReferencesAttributeName((Node)condFn, depth);
+			default:
+				return false;
+		}
+	}
+
+	// Whether an `attributeName` identifier appears anywhere in a subtree. Used only for the predicate-form
+	// `condition` scope check — a single-signal read that keeps the write-detecting ScanHandlerBody bound to
+	// its named purpose (the handler body) instead of being reused with a discarded out-parameter. Shares
+	// the caller's MaxAstDepth budget (depth is threaded in, not reset) so nested scans cannot compose past
+	// the cap.
+	private static bool SubtreeReferencesAttributeName(Node node, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return false;
+		}
+		if (node is Identifier { Name: "attributeName" }) {
+			return true;
+		}
+		foreach (Node child in node.ChildNodes) {
+			if (SubtreeReferencesAttributeName(child, depth + 1)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Walk the handler function subtree once, collecting the two orthogonal signals the rule needs:
+	//   - any Identifier named `attributeName` (member access `request.attributeName`, destructuring
+	//     `const { attributeName } = request`, or a comparison) → author is scope-aware, suppress.
+	//   - a `$context.set(...)` call (`request.$context.set` or a destructured `$context.set`) → the
+	//     handler writes an attribute, which is what makes an unscoped handler self-retrigger.
+	// Bounded by MaxAstDepth for the same StackOverflow reason the main traversal is; short-circuits
+	// as soon as both signals are known.
+	private static void ScanHandlerBody(Node node, int depth, ref bool referencesAttributeName, ref bool writesContextAttribute) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (node is Identifier { Name: "attributeName" }) {
+			referencesAttributeName = true;
+		} else if (node is CallExpression call && IsContextSetCall(call.Callee)) {
+			writesContextAttribute = true;
+		}
+		if (referencesAttributeName && writesContextAttribute) {
+			return;
+		}
+		foreach (Node child in node.ChildNodes) {
+			ScanHandlerBody(child, depth + 1, ref referencesAttributeName, ref writesContextAttribute);
+			if (referencesAttributeName && writesContextAttribute) {
+				return;
+			}
+		}
+	}
+
+	// `<ctx>.set(...)` where `<ctx>` is the live ViewModel context: either the destructured `$context`
+	// identifier or a `*.$context` member (typically `request.$context`).
+	//
+	// Accepted false negative (deliberate, second of two): a write through a LOCAL ALIAS that drops the
+	// `$context` member — `const ctx = request.$context; ctx.set("UsrCountryCode", ...)` — is NOT detected,
+	// so an unscoped handler writing that way is not flagged. Following aliases needs data-flow analysis;
+	// this mirrors the same alias limitation on `IsContextExecuteRequest` and preserves the rule's
+	// zero-false-positive bias. Pinned by Lint_ShouldNotWarn_WhenAttributeChangeHandlerWritesViaAliasedContext.
+	private static bool IsContextSetCall(Node callee) =>
+		callee is MemberExpression { Property: Identifier { Name: "set" }, Computed: false, Object: var target }
+		&& target switch {
+			Identifier { Name: "$context" } => true,
+			MemberExpression { Property: Identifier { Name: "$context" }, Computed: false } => true,
+			_ => false
+		};
 
 	// CheckProperty intentionally has no rules left: `params-empty` and
 	// `converter-crt-prefix-reserved` now run inside CheckSchemaSectionShape
