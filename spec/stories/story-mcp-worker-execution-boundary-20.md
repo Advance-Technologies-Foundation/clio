@@ -92,3 +92,85 @@ either. Re-run them in isolation on the build host first; that single step separ
 - AC-06 The two new gate tests either pass on the build host or their failure is explained and the gate
   is fixed. A test this branch added, failing the first time it runs, is not something to carry into a
   merge.
+
+
+## Update 2026-08-18: the allowlist half of the hypothesis is now a fact
+
+Checked directly. The child environment allowlist carries `PATH`, `HOME`, `USERPROFILE`,
+`LOCALAPPDATA`, `APPDATA`, `SystemRoot`, `SystemDrive`, `windir`, `COMSPEC`, the temporary-directory
+spellings, the `DOTNET_ROOT` family, `DOTNET_HOST_PATH`, `CLIO_HOME`, `LANG`, `LC_ALL` and — added
+today — the six proxy spellings. It does **not** carry `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS`.
+
+So the mechanism is established: the end-to-end test forces a 0.05 second interval on the parent so a
+single backend round trip deterministically produces a beat, the child never receives it, the child
+uses the default, and a fast `list-app-sections` finishes well inside that default. Zero beats.
+
+**Do not stop there and call it a broken test.** Two things follow, and only one of them is about the
+test:
+
+1. The test's instrument is defeated, which explains the red. Adding the variable to the allowlist
+   would turn it green.
+2. **A worker does not honour heartbeat configuration the parent was given.** That is a behaviour
+   difference an operator hits in production, not a test artifact: someone who tunes the interval gets
+   it in the parent and silently does not get it in any worker. The same argument the proxy variables
+   just won applies here — the allowlist's own remarks claim it "carries every spelling the host may
+   have used", and it does not.
+
+AC-01 still stands, and is now sharper rather than answered: making the test green must not be
+mistaken for proving that a worker's progress notifications reach the client at all. That second
+question is untouched by the allowlist, and it is the one that would matter.
+
+
+## Update 2026-08-18, later in the same run: the eleven failures are one cascade
+
+The run ended at eleven failures, not five, and reading the messages changes what the list means.
+
+`GetRelatedPageAddon_ShouldReportInvalidEnvironment_WhenEnvironmentMissing` expected an
+environment-not-found error and got this instead:
+
+```
+clio settings bootstrap is broken. Repair [redacted-path]
+Explicit uri/login/password remains available only as an emergency fallback.
+```
+
+That is not a variant of the expected failure. **The settings file was damaged during the run.** The
+six failures that appeared after it are almost all "Could not parse <tool> MCP result" —
+`get-fsm-mode`, `list-packages`, `find-entity-schema`, `get-record-rights`, the second
+`get-related-page-addon` — which is what every tool does once it cannot read settings.
+
+So this is one cascade with one root cause, not eleven independent problems, and the count is
+misleading in both directions: most of the eleven are consequences, and the root cause is worse than
+any single one of them.
+
+### What the root cause most likely is, and why the branch owns it
+
+The first failure in this family, appearing well before the cascade, is
+`AppSettings_Should_YieldAWholeCatalog_When_ReadDuringRegWebAppWrites` — **a test this branch added**,
+which deliberately performs concurrent registration writes against the settings catalogue to prove the
+interprocess gate holds. It failed. Everything downstream that needs settings then failed too.
+
+Read together, the most economical explanation is that the gate does not hold, the concurrent writes
+tore the settings file, and the rest of the suite inherited the damage. That would mean two things at
+once, and both matter:
+
+1. **The gate is not doing its job for the settings catalogue.** Story 9 gave `.clio-pages` an
+   interprocess gate and established that DbHub was already safe. The settings file was not given the
+   same treatment, and this run is the first evidence about it either way.
+2. **A test in this branch damages shared state for every test after it.** Even once the gate is
+   fixed, a test that can corrupt the suite's own settings file must not run against the shared one.
+
+### What is NOT yet proven, and must not be assumed
+
+The ordering above is consistent with causation but does not establish it: the later tests could
+simply belong to a batch that ran afterwards for unrelated reasons. The settings file being damaged is
+directly evidenced by the message; that the concurrent-write test damaged it is inference.
+
+The step that settles it costs one run: execute `AppSettings_Should_YieldAWholeCatalog_When_ReadDuringRegWebAppWrites`
+alone on the build host and inspect the settings file afterwards. If it is intact, the cascade has a
+different cause and this section is wrong.
+
+### Consequence for AC-05 and AC-06
+
+Both stand, and one is now sharper: whatever else is true, **a branch whose own test can corrupt the
+settings file for the remainder of the suite does not merge.** That is independent of how the three
+regressions above are eventually explained.
