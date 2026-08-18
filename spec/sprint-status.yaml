@@ -2794,11 +2794,11 @@ stories:
     feature: "mcp-worker-execution-boundary"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: deferred
     jira: ENG-95262
     file: spec/stories/story-mcp-worker-execution-boundary-5.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    status_note: "Stage 5. Secret material must never reach a child's command line — /proc/<pid>/cmdline and ps make it world-readable to any local user; the channel is an inherited handle or a pipe written after spawn (pipe preferred: env blocks are inherited by grandchildren and appear in crash dumps). Sticky scope key is principal + normalised target + credential fingerprint, all three: status tools are credential-scoped TODAY, so environment-only scoping would be both a cross-client boundary violation and a regression against shipped behaviour. Normalisation must be conservative — over-normalising merges two targets and carries one caller's credentials to another's; when in doubt spawn another worker, 0.7s against a credential crossover. Full unit suite required."
+    status_note: "DEFERRED 2026-08-18 by the branch owner: mcp-http does not currently work and may be removed, so a credential channel for it is work for a transport that may not survive. The design already scoped Stage 6 stdio-only for exactly this reason (on stdio no secret crosses the channel - the child reads appsettings.json and gets only the environment name). Enforced consequence: the worker path must be STDIO-ONLY until this is revived, because a cohort tool routed over mcp-http would need the missing channel. Tracked as OQ-9. Original note follows. Stage 5. Secret material must never reach a child's command line — /proc/<pid>/cmdline and ps make it world-readable to any local user; the channel is an inherited handle or a pipe written after spawn (pipe preferred: env blocks are inherited by grandchildren and appear in crash dumps). Sticky scope key is principal + normalised target + credential fingerprint, all three: status tools are credential-scoped TODAY, so environment-only scoping would be both a cross-client boundary violation and a regression against shipped behaviour. Normalisation must be conservative — over-normalising merges two targets and carries one caller's credentials to another's; when in doubt spawn another worker, 0.7s against a credential crossover. Full unit suite required."
     depends_on:
       - story-mcp-worker-execution-boundary-3
     blocks: []

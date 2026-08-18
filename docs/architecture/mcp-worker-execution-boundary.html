@@ -390,7 +390,7 @@
   .scale-label { font: 700 13px/1.25 var(--mono); }
   .scale-track { height: 44px; border-radius: 8px; background: var(--surface-2); overflow: hidden; }
   .scale-bar { height: 100%; min-width: 10px; display: flex; align-items: center; padding: 0 12px; color: var(--surface); font: 700 12px/1 var(--mono); white-space: nowrap; }
-  .scale-bar.cost { width: 1.36%; background: var(--blue); padding: 0; }
+  .scale-bar.cost { width: 3.42%; background: var(--blue); padding: 0; }
   .scale-bar.saved-low { width: 63.3%; background: var(--accent); }
   .scale-bar.saved-high { width: 100%; background: var(--accent-2); }
   .scale-value { text-align: right; font: 750 17px/1 var(--mono); }
@@ -652,22 +652,22 @@
 
       <section class="slide" aria-labelledby="title-7">
         <header class="slide-head">
-          <div><p class="kicker">06 · Ціна ізоляції</p><h2 id="title-7">+31 секунда запусків замість 38–60 хвилин каскадних таймаутів</h2></div>
+          <div><p class="kicker">06 · Ціна ізоляції</p><h2 id="title-7">+31…123 секунди запусків замість 38–60 хвилин каскадних таймаутів</h2></div>
           <span class="slide-no">07 / 08</span>
         </header>
         <div class="performance-stack">
           <div class="economics">
-            <div class="card scale-chart" aria-label="Порівняння 31 секунди overhead із 2280–3600 секундами таймаутів">
-              <div class="chart-head"><div><h3>Виміряне навантаження</h3><p class="chart-sub">спільна шкала: 0–3600 секунд</p></div><span class="pill pill-ok">до 116× менше</span></div>
-              <div class="scale-row"><span class="scale-label">Запуск worker-ів</span><div class="scale-track"><div class="scale-bar cost"></div></div><span class="scale-value">+31 с</span></div>
+            <div class="card scale-chart" aria-label="Порівняння 31–123 секунд overhead із 2280–3600 секундами таймаутів">
+              <div class="chart-head"><div><h3>Виміряне навантаження</h3><p class="chart-sub">спільна шкала: 0–3600 секунд</p></div><span class="pill pill-ok">18–29× менше</span></div>
+              <div class="scale-row"><span class="scale-label">Запуск worker-ів</span><div class="scale-track"><div class="scale-bar cost"></div></div><span class="scale-value">+123 с</span></div>
               <div class="scale-row"><span class="scale-label">Таймаути · min</span><div class="scale-track"><div class="scale-bar saved-low">38 хв</div></div><span class="scale-value">2280 с</span></div>
               <div class="scale-row"><span class="scale-label">Таймаути · max</span><div class="scale-track"><div class="scale-bar saved-high">60 хв</div></div><span class="scale-value">3600 с</span></div>
               <div class="scale-axis"><span>0</span><span>1800 с</span><span>3600 с</span></div>
             </div>
             <div class="card big-stat soft-accent">
-              <span class="number">≈0,7 с</span>
-              <span class="unit">на один виклик</span>
-              <p>Запуск процесу разом із входом у Creatio. Це та сама ціна, яку CLI платить завжди.</p>
+              <span class="number">0,7–2,8 с</span>
+              <span class="unit">на виклик, залежно від ОС</span>
+              <p>Запуск процесу разом із входом у Creatio: 0,7 с на macOS, 2,8 с на Windows Server 2022 (4 ядра). Це та сама ціна, яку CLI платить завжди.</p>
             </div>
           </div>
           <div class="grid-3">
@@ -676,7 +676,7 @@
             <div class="card"><h3>Менше механізмів</h3><p class="body-copy">Після ізоляції спільний tenant-lock стає непотрібним і видаляється.</p></div>
           </div>
         </div>
-        <div class="slide-foot"><span class="takeaway">Невелика постійна ціна купує передбачувану верхню межу збою.</span><span>Виміряно</span></div>
+        <div class="slide-foot"><span class="takeaway">Стала ціна на виклик купує передбачувану верхню межу збою — на будь-якій ОС.</span><span>Виміряно</span></div>
       </section>
 
       <section class="slide" aria-labelledby="title-8">
