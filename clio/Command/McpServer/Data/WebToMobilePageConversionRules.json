@@ -76,28 +76,43 @@
   ],
   "components": [
     {
-      "web": ["crt.Checkbox"],
-      "mobile": ["crt.Toggle"],
-      "category": "AlternativeAvailable",
-      "note": "Boolean fields on mobile use crt.Toggle instead of the web crt.Checkbox."
+      "filters": [{ "type": "crt.DataGrid" }, { "type": "crt.DataTable" }],
+      "viewConfigTemplates": [
+        {
+          "preserveSourceProperties": true,
+          "parentName": "{{ diff.parentName }}",
+          "propertyName": "{{ diff.propertyName }}",
+          "value": {
+            "type": "crt.List",
+            "name": "{{ diff.name }}",
+            "items": "{{ source.items }}",
+            "itemLayout": {
+              "name": "{{ diff.name }}_ListItem",
+              "type": "crt.ListItem",
+              "title": "${{ source.columns[0].code }}",
+              "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+            }
+          }
+        }
+      ]
     },
     {
-      "web": ["crt.HtmlEditor"],
-      "mobile": ["crt.RichTextEditor"],
-      "category": "AlternativeAvailable",
-      "note": "Rich text on mobile uses crt.RichTextEditor instead of the web crt.HtmlEditor."
+      "filters": [{ "type": "crt.Checkbox" }],
+      "viewConfigTemplates": [
+        {
+          "preserveSourceProperties": true,
+          "value": { "type": "crt.Toggle" }
+        }
+      ]
     },
     {
-      "web": ["crt.DataGrid", "crt.DataTable"],
-      "mobile": ["crt.List", "crt.ListItem"],
-      "category": "AlternativeAvailable"
-    },
-    {
-      "web": ["crt.FolderTree", "crt.FolderTreeActions"],
-      "mobile": ["crt.FolderTreeActions"],
-      "category": "AlternativeAvailable",
-      "primaryWeb": "crt.FolderTree",
-      "note": "Many->one: mobile FolderTreeActions is produced from web crt.FolderTree (primary); web crt.FolderTreeActions is consumed. Values are reconciled against the mobile component's registry contract."
+      "filters": [{ "type": "crt.HtmlEditor" }],
+      "viewConfigTemplates": [
+        {
+          "preserveSourceProperties": true,
+          "value": { "type": "crt.RichTextEditor" }
+        }
+      ]
     }
   ],
   "tabAreaLayers": {
@@ -123,28 +138,6 @@
       }
     }
   },
-  "viewConfigTemplates": [
-    {
-      "filters": [{ "type": "crt.DataGrid" }, { "type": "crt.DataTable" }],
-      "templates": [
-        {
-          "parentName": "{{ diff.parentName }}",
-          "propertyName": "{{ diff.propertyName }}",
-          "value": {
-            "type": "crt.List",
-            "name": "{{ diff.name }}",
-            "items": "{{ source.items }}",
-            "itemLayout": {
-              "name": "{{ diff.name }}_ListItem",
-              "type": "crt.ListItem",
-              "title": "${{ source.columns[0].code }}",
-              "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
-            }
-          }
-        }
-      ]
-    }
-  ],
   "componentPropertyOverrides": [
     {
       "type": "crt.GridContainer",
