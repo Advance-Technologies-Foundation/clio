@@ -27,7 +27,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-	Write-Error 'gh CLI is required but was not found in PATH.'
+	[Console]::Error.WriteLine('gh CLI is required but was not found in PATH.')
 	exit 3
 }
 
@@ -44,23 +44,35 @@ if ($assignees -contains $me) {
 }
 
 if ($assignees.Count -gt 0) {
-	Write-Error "Issue #$IssueNumber is already assigned to: $($assignees -join ', '). Refusing to claim work owned by somebody else. Pick another issue, or ask the current assignee to hand it over."
+	[Console]::Error.WriteLine("Issue #$IssueNumber is already assigned to: $($assignees -join ', ')")
+	[Console]::Error.WriteLine('Refusing to claim work owned by somebody else. Pick another issue, or ask the current assignee to hand it over.')
 	exit 1
 }
 
-$body = 'An automated agent started working on this issue.'
+$body = "`u{1F916} An automated agent started working on this issue."
 if ($Branch -and $Branch -ne 'HEAD') {
 	$body += "`n`nWorking branch: ``$Branch``"
 }
 $body += "`n`nThe issue is assigned to @$me, who is accountable for the result. Progress will be reported here and in the pull request that references this issue."
 
-gh issue edit $IssueNumber --add-assignee $me | Out-Null
-if ($LASTEXITCODE -eq 0) {
-	Write-Host "Assigned issue #$IssueNumber to $me."
+# A failed assignment must not abort the claim: the comment still has to be posted.
+# On pwsh 7.4+ a non-zero native exit code throws while $ErrorActionPreference is 'Stop',
+# so the call needs both a try/catch and the $LASTEXITCODE check.
+$assignFailed = $false
+try {
+	gh issue edit $IssueNumber --add-assignee $me | Out-Null
+	if ($LASTEXITCODE -ne 0) { $assignFailed = $true }
 }
-else {
+catch {
+	$assignFailed = $true
+}
+
+if ($assignFailed) {
 	Write-Warning "Could not assign issue #$IssueNumber to $me (insufficient permissions?)."
 	$body += "`n`nAssignment could not be set automatically - a maintainer needs to assign this issue to @$me."
+}
+else {
+	Write-Host "Assigned issue #$IssueNumber to $me."
 }
 
 gh issue comment $IssueNumber --body $body | Out-Null
