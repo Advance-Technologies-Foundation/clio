@@ -152,9 +152,10 @@ claim() {
     return 0
 }
 
-# shellcheck disable=SC2086  # mode_args deliberately expands to one or two flags
 claim_mode() {
-    claim '' $(mode_args "$1")
+    local mode="$1"
+    # shellcheck disable=SC2086  # mode_args deliberately expands to one or two separate flags
+    claim '' $(mode_args "$mode")
     return 0
 }
 
