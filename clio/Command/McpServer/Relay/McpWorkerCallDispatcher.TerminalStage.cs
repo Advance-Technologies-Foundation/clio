@@ -123,8 +123,8 @@ public sealed partial class McpWorkerCallDispatcher {
 		CallToolRequestParams parameters,
 		IParentMcpSession parentSession,
 		CancellationToken cancellationToken) {
-		IReadOnlyDictionary<string, string> childEnvironment = McpWorkerEnvironment.ComposeChildEnvironment(
-			ReadFrozenFeatures(), McpWorkerLifetime.PerCall);
+		IReadOnlyDictionary<string, string> childEnvironment =
+			ComposeChildEnvironmentSafely(McpWorkerLifetime.PerCall);
 		// The silence bound is recorded on the lease as its "budget" because it is the only fixed interval
 		// this policy has. NOTHING in this path reads IWorkerLease.BudgetExpiresAtUtc: a terminal-stage call
 		// has no total bound at all, and deriving one from the lease is exactly the generic kill this

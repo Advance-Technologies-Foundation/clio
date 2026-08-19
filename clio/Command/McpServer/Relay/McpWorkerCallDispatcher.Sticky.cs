@@ -357,8 +357,8 @@ public sealed partial class McpWorkerCallDispatcher {
 		// A sticky worker KEEPS clio's own response-deadline override (ADR rule 11): its in-progress
 		// envelope is what returns the call, and stripping it turned a 25 s backend call into a 77 s block
 		// in the prototype.
-		IReadOnlyDictionary<string, string> childEnvironment = McpWorkerEnvironment.ComposeChildEnvironment(
-			ReadFrozenFeatures(), McpWorkerLifetime.Sticky);
+		IReadOnlyDictionary<string, string> childEnvironment =
+			ComposeChildEnvironmentSafely(McpWorkerLifetime.Sticky);
 		// The lease's own budget IS the sticky lifetime bound, so the supervisor's view of how long this
 		// worker may live and the registry's view cannot drift apart.
 		WorkerSpawnRequest spawnRequest =

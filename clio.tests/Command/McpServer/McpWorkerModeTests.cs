@@ -195,6 +195,178 @@ public sealed class McpWorkerModeTests {
 			because: "a frozen-off flag must stay off");
 	}
 
+	// Every one of these is a key `clio experimental --name <key> --enable` accepts and
+	// ISettingsRepository.SetFeature persists verbatim (only null/empty/whitespace is refused), and a
+	// hand-edited appsettings.json can hold any of them regardless of who wrote it. The freeze reads the
+	// WHOLE map, so a single such key must not be able to take the worker cohort out.
+	private static readonly string[] HostileFeatureKeys = [
+		"pair;separator",
+		"name=value",
+		"both;and=inside",
+		";",
+		"=",
+		"already%3Descaped",
+		"percent%sign",
+		" leading-space",
+		"trailing-space ",
+		"inner space",
+		"кирилиця"
+	];
+
+	[TestCaseSource(nameof(HostileFeatureKeys))]
+	[Category("Unit")]
+	[Description("A feature key containing a payload separator (or any other character the write surface accepts) survives the parent → child freeze unchanged, instead of taking every worker-routed call down with it.")]
+	public void Format_ShouldRoundTripTheFeatureName_WhenItContainsAPayloadSeparator(string hostileKey) {
+		// Arrange — the hostile key rides alongside an ordinary one, because the failure that matters is
+		// the BLAST RADIUS: the freeze is shared by all three dispatch paths, so one unrepresentable key
+		// stops every worker spawn, not just the calls that care about that flag.
+		Dictionary<string, bool> parentFeatures = new(StringComparer.OrdinalIgnoreCase) {
+			[hostileKey] = true,
+			[RingFeature] = false
+		};
+
+		// Act
+		string payload = McpWorkerEnvironment.Format(parentFeatures);
+		IReadOnlyDictionary<string, bool> parsed = McpWorkerEnvironment.Parse(payload);
+
+		// Assert
+		parsed.Should().ContainKey(hostileKey,
+			because: "the payload has to carry back the key the parent resolved, character for character, or "
+				+ "the worker silently disagrees with the parent about which flag is set");
+		parsed[hostileKey].Should().BeTrue(
+			because: "the value must survive the round trip along with the name");
+		parsed.Should().HaveCount(2,
+			because: "an unrepresentable key must not consume, corrupt, or displace its neighbours");
+		parsed[RingFeature].Should().BeFalse(
+			because: "the ordinary neighbour keeps its own value; nothing about it depends on the hostile key");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Freezing the whole feature map never throws for any key the write surface accepts, so no value already on disk can stop every worker in the cohort from spawning.")]
+	public void Format_ShouldNeverThrow_ForEveryKeyTheWriteSurfaceAccepts() {
+		// Arrange — one map holding all of them at once, which is the real shape: GetFeatures() returns
+		// whatever is in appsettings.json, and Format is called on that whole map before every spawn.
+		Dictionary<string, bool> parentFeatures = new(StringComparer.OrdinalIgnoreCase) {
+			[RingFeature] = true
+		};
+		foreach (string hostileKey in HostileFeatureKeys) {
+			parentFeatures[hostileKey] = true;
+		}
+
+		// Act
+		Func<string> act = () => McpWorkerEnvironment.Format(parentFeatures);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a throw here is raised before the spawn on all three dispatch paths, so one typo'd or "
+				+ "hostile feature name would make EVERY worker-routed MCP tool fail until somebody hand-edits "
+				+ "appsettings.json");
+		McpWorkerEnvironment.Parse(act()).Should().HaveCount(parentFeatures.Count,
+			because: "not throwing is not enough on its own: the entries must actually reach the worker");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An ordinary kebab-case feature map stays readable as plain name=1 pairs in the child's environment, so the common payload is still legible in a process listing.")]
+	public void Format_ShouldKeepThePayloadReadable_ForOrdinaryFeatureNames() {
+		// Arrange
+		Dictionary<string, bool> parentFeatures = new(StringComparer.OrdinalIgnoreCase) {
+			["deploy-identity"] = true,
+			[RingFeature] = false
+		};
+
+		// Act
+		string payload = McpWorkerEnvironment.Format(parentFeatures);
+
+		// Assert
+		payload.Should().Be("deploy-identity=1;ring=0",
+			because: "every real feature key is unreserved characters only, so escaping must leave the common "
+				+ "payload byte-for-byte what it was — legible in a process listing and diffable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A separator-bearing feature key survives the real parent → child path: composed into the child's environment by the host and read back through the worker's own environment reader.")]
+	public void ReadFrozenFeatures_ShouldCarryASeparatorBearingKey_AcrossTheEnvironmentVariable() {
+		// Arrange — the environment variable is the actual carrier, so the round trip is exercised through
+		// it rather than through Format/Parse alone: this is the layer where an escaped payload could still
+		// be mangled between the two processes.
+		const string separatorBearingKey = "pair;separator=and-value";
+		Dictionary<string, bool> parentFeatures = new(StringComparer.OrdinalIgnoreCase) {
+			[separatorBearingKey] = true,
+			[RingFeature] = false
+		};
+		string originalValue = Environment.GetEnvironmentVariable(
+			McpWorkerEnvironment.FrozenFeaturesVariableName);
+		try {
+			IReadOnlyDictionary<string, string> childEnvironment = McpWorkerEnvironment.ComposeChildEnvironment(
+				parentFeatures, McpWorkerLifetime.PerCall);
+
+			// Act — what the supervisor writes into the child's environment is what the child then reads.
+			Environment.SetEnvironmentVariable(
+				McpWorkerEnvironment.FrozenFeaturesVariableName,
+				childEnvironment[McpWorkerEnvironment.FrozenFeaturesVariableName]);
+			IReadOnlyDictionary<string, bool> frozen = McpWorkerEnvironment.ReadFrozenFeatures();
+
+			// Assert
+			frozen.Should().ContainKey(separatorBearingKey,
+				because: "the worker resolves its whole gated surface from this map, so a key the parent holds "
+					+ "must arrive intact rather than as a differently spelled flag that reads as off");
+			frozen[separatorBearingKey].Should().BeTrue(
+				because: "the flag value must cross the process boundary with the name it belongs to");
+			frozen[RingFeature].Should().BeFalse(
+				because: "the ordinary neighbour must be unaffected by the escaping its neighbour needed");
+		} finally {
+			// The full unit suite shares one process; a leaked payload would make an unrelated fixture read
+			// a frozen generation it never set.
+			Environment.SetEnvironmentVariable(
+				McpWorkerEnvironment.FrozenFeaturesVariableName, originalValue);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A payload segment the worker cannot read is dropped on its own — the feature reads as off — instead of rejecting the whole generation and taking the worker's entire tool surface with it.")]
+	public void Parse_ShouldDropOnlyTheUnreadableSegment_WhenThePayloadIsMalformed() {
+		// Arrange — a segment with no separator, one with an empty name, and one with a value that is
+		// neither flag spelling; all three are unreachable from Format and can only come from a corrupted
+		// or truncated variable.
+		const string malformed = "ring=1;no-separator;=1;bad-value=perhaps;deploy-identity=0";
+
+		// Act
+		IReadOnlyDictionary<string, bool> parsed = McpWorkerEnvironment.Parse(malformed);
+
+		// Assert
+		parsed.Should().HaveCount(2,
+			because: "only the three unreadable segments are dropped; a whole-payload rejection would fail the "
+				+ "call with a startup crash instead of the ordinary 'feature is off' behaviour");
+		parsed[RingFeature].Should().BeTrue(
+			because: "a readable segment before the damage must still be honoured");
+		parsed["deploy-identity"].Should().BeFalse(
+			because: "a readable segment AFTER the damage must still be honoured, so one bad segment cannot "
+				+ "truncate the generation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A worker started by an older parent still reads that parent's unescaped payload, which is reachable because an in-place clio upgrade lets a running parent spawn a newer worker binary.")]
+	public void Parse_ShouldReadTheLegacyPayload_WhenAnOlderParentWroteIt() {
+		// Arrange — exactly what a pre-escaping parent emitted: no key it could write ever contained '%',
+		// ';' or '=', so the escaped format is a strict superset of it.
+		const string legacyPayload = "deploy-identity=1;ring=0";
+
+		// Act
+		IReadOnlyDictionary<string, bool> parsed = McpWorkerEnvironment.Parse(legacyPayload);
+
+		// Assert
+		parsed["deploy-identity"].Should().BeTrue(
+			because: "old parent → new worker is the reachable mixed-version pair: the spawn re-resolves the "
+				+ "executable on disk, which an in-place upgrade replaces under a running parent");
+		parsed[RingFeature].Should().BeFalse(
+			because: "the legacy payload must be read in full, not just its first entry");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("TC-U-302: an absent frozen payload freezes every gated feature OFF instead of falling back to appsettings.json, and an ungated type stays enabled.")]

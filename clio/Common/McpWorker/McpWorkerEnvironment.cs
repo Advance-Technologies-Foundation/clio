@@ -107,27 +107,44 @@ public static class McpWorkerEnvironment {
 	/// Formats a feature map for <see cref="FrozenFeaturesVariableName"/> as
 	/// <c>name=1;other-name=0</c>, ordered by name so the payload is stable and diffable.
 	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>The name is percent-escaped, and this method never throws.</b> A feature key is whatever is in
+	/// <c>appsettings.json</c>: <c>ISettingsRepository.SetFeature</c> refuses only a null/empty/whitespace
+	/// name, <c>clio experimental --name &lt;key&gt; --enable</c> persists an unrecognized key on purpose (it
+	/// is listed later as an orphan), and a hand-edited file is bound by nothing at all. This freeze is
+	/// shared by all three worker dispatch paths and runs BEFORE the spawn, so refusing one key here would
+	/// stop every worker-routed MCP tool in the cohort until somebody edited the settings file by hand —
+	/// a value already on disk must never be able to reach that state.
+	/// </para>
+	/// <para>
+	/// <b>Why <see cref="Uri.EscapeDataString"/>.</b> Its round trip is a BCL pair rather than a hand-rolled
+	/// escaper, and it leaves the RFC 3986 unreserved set (letters, digits, <c>-._~</c>) untouched — which is
+	/// every real feature key — so the common payload is still the legible <c>deploy-identity=1;ring=0</c> in
+	/// a process listing, and only a pathological key pays for its own escaping. Both separators, the escape
+	/// character itself, whitespace and control characters all become <c>%XX</c>, so a key can no longer
+	/// smuggle a delimiter into the payload or lose an edge space to <see cref="Parse"/>'s trimming.
+	/// </para>
+	/// </remarks>
 	/// <param name="features">The parent's whole feature map (typically <c>ISettingsRepository.GetFeatures()</c>).</param>
-	/// <returns>The formatted payload; an empty string when there are no features.</returns>
-	/// <exception cref="ArgumentException">A feature name contains a separator character.</exception>
+	/// <returns>
+	/// The formatted payload; an empty string when there are no features. Blank names are skipped — the
+	/// settings repository already treats one as absent, and no name is representable in fewer characters.
+	/// </returns>
 	public static string Format(IReadOnlyDictionary<string, bool> features) {
 		if (features is null || features.Count == 0) {
 			return string.Empty;
 		}
 		List<string> pairs = [];
+		// Ordered by the RAW name, not the escaped one: the ordering exists to make the payload stable and
+		// diffable for a human reading it against the settings file.
 		foreach (KeyValuePair<string, bool> feature in features.OrderBy(pair => pair.Key, StringComparer.Ordinal)) {
 			if (string.IsNullOrWhiteSpace(feature.Key)) {
 				continue;
 			}
-			if (feature.Key.IndexOf(PairSeparator) >= 0 || feature.Key.IndexOf(NameValueSeparator) >= 0) {
-				throw new ArgumentException(
-					$"Feature name '{feature.Key}' cannot be carried to a worker: it contains "
-					+ $"'{PairSeparator}' or '{NameValueSeparator}'.",
-					nameof(features));
-			}
 			pairs.Add(string.Create(
 				CultureInfo.InvariantCulture,
-				$"{feature.Key}{NameValueSeparator}{(feature.Value ? 1 : 0)}"));
+				$"{Uri.EscapeDataString(feature.Key)}{NameValueSeparator}{(feature.Value ? 1 : 0)}"));
 		}
 		return string.Join(PairSeparator, pairs);
 	}
@@ -136,11 +153,34 @@ public static class McpWorkerEnvironment {
 	/// Parses a payload produced by <see cref="Format"/>.
 	/// </summary>
 	/// <remarks>
+	/// <para>
 	/// The map is <see cref="StringComparer.OrdinalIgnoreCase"/> because the settings repository compares
 	/// feature keys case-insensitively; an ordinal map here would let a case-differing name read as absent in
-	/// the worker while the parent read it as enabled. Unparseable segments are skipped rather than throwing:
-	/// a worker that refused to start on a malformed payload would fail the call with a startup crash instead
-	/// of the ordinary "feature is off" behaviour, and the payload is produced by clio itself.
+	/// the worker while the parent read it as enabled.
+	/// </para>
+	/// <para>
+	/// <b>An unreadable segment is dropped, one at a time, and the rest of the generation is kept.</b> That is
+	/// the deliberate decision for a malformed payload, and it is the same fail-closed answer an absent
+	/// variable gives: the dropped feature simply reads as off. Refusing the whole payload — or throwing —
+	/// would turn a truncated variable into a worker that fails its call with a startup crash, which is
+	/// exactly the cohort-wide failure the escaping on the writing side exists to prevent. Nothing in this
+	/// method can throw: <see cref="Uri.UnescapeDataString"/> leaves a malformed <c>%</c> sequence such as
+	/// <c>%zz</c> or a trailing bare <c>%</c> as literal text rather than raising.
+	/// </para>
+	/// <para>
+	/// <b>The delimiter search is sound because <see cref="Format"/> escapes the name.</b> A literal
+	/// <c>=</c> inside a key is always <c>%3D</c> in the payload, so the FIRST <c>=</c> is unambiguously the
+	/// name/value delimiter. Trimming is now purely defensive — an escaped name has no edge whitespace left
+	/// to lose, since <see cref="Uri.EscapeDataString"/> encodes a space as <c>%20</c>.
+	/// </para>
+	/// <para>
+	/// <b>An older parent's payload still reads correctly.</b> Old parent → new worker is reachable: the
+	/// spawn re-resolves clio's executable on disk, which an in-place upgrade can replace under a running
+	/// host. The escaped format is a strict superset of the old one, because the old writer REFUSED every
+	/// name containing a separator and unescaping leaves an ordinary name unchanged. The single residual
+	/// case — an old key that literally contained <c>%3D</c> — decodes to a differently spelled orphan flag
+	/// that reads as off, which is not worth a version marker.
+	/// </para>
 	/// </remarks>
 	/// <param name="rawValue">The raw variable value; may be <see langword="null"/> or empty.</param>
 	/// <returns>The frozen feature map; empty when nothing could be parsed.</returns>
@@ -156,7 +196,7 @@ public static class McpWorkerEnvironment {
 			if (separator <= 0) {
 				continue;
 			}
-			string name = segment[..separator].Trim();
+			string name = Uri.UnescapeDataString(segment[..separator].Trim());
 			string value = segment[(separator + 1)..].Trim();
 			if (name.Length == 0 || !TryParseFlag(value, out bool enabled)) {
 				continue;

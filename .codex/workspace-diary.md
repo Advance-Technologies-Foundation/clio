@@ -9218,3 +9218,32 @@ Files: clio/Common/McpWorker/WorkerProcessSupervisor.cs,
 Impact: "release on confirmation, not on request" is the general form — the same
   question applies anywhere this codebase returns a resource after asking something
   else to give it up.
+
+## 2026-08-19 15:20 – Worker feature freeze must be TOTAL, not validated
+Context: external review P2 on this branch — McpWorkerEnvironment.Format threw on a feature key
+  containing ';' or '=', and the freeze runs before the spawn on all three dispatch paths, so one
+  key from `clio experimental --name` (or a hand-edited appsettings.json) disabled the whole
+  worker cohort.
+Decision: serialize losslessly (Uri.EscapeDataString on the NAME) rather than reject at the write
+  surface. GetFeatures() reads whatever is on disk whoever wrote it, so a write-surface guard
+  cannot clean a key already there — and would additionally remove the only CLI path to clear an
+  orphaned bad key (`--name "a=b" --disable` would start refusing). An unreadable payload segment
+  is dropped one at a time and reads as off, never rejected wholesale.
+Discovery: (1) a THIRD failure mode nobody reported — Parse trimmed the name, so a key with
+  leading/trailing whitespace was silently renamed rather than refused. (2) Uri.Escape/Unescape are
+  total on net8.0 and net10.0: no throw on a lone surrogate (U+FFFD), no length limit, lenient on
+  '%zz'. STJ rejects an unpaired-surrogate dictionary key at load, so no invalid UTF-16 reaches
+  Format. (3) old parent → new worker IS a reachable mixed-version pair, because the spawn
+  re-resolves the executable on disk and an in-place tool update replaces it; the escaped format is
+  a strict superset of the old one, so no compatibility branch is needed.
+  The SHAPE was the real finding: all three paths composed the child environment OUTSIDE their try,
+  so any throwing helper on that line is cohort-fatal by construction. Now routed through
+  ComposeChildEnvironmentSafely, which falls back to an empty feature map — deliberately untested,
+  because after the encoding fix no reachable input makes it throw, and it is recorded as insurance
+  rather than dressed up as covered behaviour.
+Files: clio/Common/McpWorker/McpWorkerEnvironment.cs,
+  clio/Command/McpServer/Relay/McpWorkerCallDispatcher{,.Sticky,.TerminalStage}.cs,
+  clio.tests/Command/McpServer/McpWorkerModeTests.cs,
+  clio.tests/Command/SettingsRepositoryFeatureTests.cs
+Impact: judge any parent→child payload on TOTALITY (never throws on data already on disk), not on
+  input validation.

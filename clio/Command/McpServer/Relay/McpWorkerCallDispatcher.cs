@@ -286,8 +286,8 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		// own allowlist is everything the worker sees. An ordinary worker gets NO read-deadline override —
 		// the parent bounds it by killing, and a second in-child deadline would abandon the work while
 		// keeping the per-tenant monitor, which is the wedge this feature removes (ADR rule 11).
-		IReadOnlyDictionary<string, string> childEnvironment = McpWorkerEnvironment.ComposeChildEnvironment(
-			ReadFrozenFeatures(), McpWorkerLifetime.PerCall);
+		IReadOnlyDictionary<string, string> childEnvironment =
+			ComposeChildEnvironmentSafely(McpWorkerLifetime.PerCall);
 		WorkerSpawnRequest spawnRequest = ComposeSpawnRequest(childEnvironment, _budget);
 
 		IWorkerLease lease;
@@ -493,6 +493,37 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 			RequestState = parameters.RequestState,
 			Meta = relayMeta
 		};
+	}
+
+	// Composes the child environment so that NOTHING on this line can fail a spawn.
+	//
+	// All three dispatch paths build the child environment before entering their try, which makes any
+	// throw here cohort-fatal: not one tool, every worker-routed call, until somebody edits
+	// appsettings.json. That already happened once — Format threw on a feature key containing its own
+	// separator, and `clio experimental --name "a;b=c"` is enough to put one on disk. The encoding was
+	// fixed, but the SHAPE is the defect: a helper on this line is one refactor away from throwing again.
+	//
+	// The fallback re-composes with an EMPTY feature map rather than returning nothing, because the
+	// environment carries more than features (the read-deadline policy above depends on lifetime), and a
+	// worker started with every gated feature off is the same fail-closed answer ReadFrozenFeatures gives
+	// for an unreadable settings file. If the empty-map composition throws too, the failure is in the
+	// composer and not in the data, and it is allowed through.
+	//
+	// Deliberately untested: after the encoding fix no reachable input makes the first call throw, so a
+	// test could only assert this by mocking a static. It is insurance against a future edit, and it is
+	// recorded as such rather than dressed up as covered behaviour.
+	private IReadOnlyDictionary<string, string> ComposeChildEnvironmentSafely(McpWorkerLifetime lifetime) {
+		IReadOnlyDictionary<string, bool> frozenFeatures = ReadFrozenFeatures();
+		try {
+			return McpWorkerEnvironment.ComposeChildEnvironment(frozenFeatures, lifetime);
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(
+				"MCP worker feature generation could not be carried to the worker; it starts with every "
+				+ $"gated feature off: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
+			return McpWorkerEnvironment.ComposeChildEnvironment(
+				new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase), lifetime);
+		}
 	}
 
 	private IReadOnlyDictionary<string, bool> ReadFrozenFeatures() {
