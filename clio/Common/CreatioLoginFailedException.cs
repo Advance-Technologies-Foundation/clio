@@ -42,20 +42,20 @@ namespace Clio.Common;
 /// verbose log.
 /// </para>
 /// </remarks>
-internal sealed class CreatioLoginFailedException : UnauthorizedAccessException {
-	#region Constants: Internal
+public sealed class CreatioLoginFailedException : UnauthorizedAccessException {
+	#region Constants: Public
 
 	/// <summary>
 	/// <see cref="Exception.Data"/> key holding the original exception's
 	/// <see cref="object.ToString"/> (type, message, and stack trace).
 	/// </summary>
-	internal const string OriginalExceptionDataKey = "clio.login.originalException";
+	public const string OriginalExceptionDataKey = "clio.login.originalException";
 
 	/// <summary>
 	/// <see cref="Exception.Data"/> key holding the recorded diagnostic context, so a caller can read
 	/// the fields structurally instead of parsing them back out of the message.
 	/// </summary>
-	internal const string DiagnosticContextDataKey = "clio.login.diagnostics";
+	public const string DiagnosticContextDataKey = "clio.login.diagnostics";
 
 	#endregion
 

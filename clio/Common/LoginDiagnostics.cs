@@ -241,10 +241,9 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 			if (current is not WebException webException) {
 				continue;
 			}
-			description = webException.Status.ToString();
-			if (webException.Response is HttpWebResponse httpResponse) {
-				description += $"/{Number((int)httpResponse.StatusCode)}-{httpResponse.StatusCode}";
-			}
+			description = webException.Response is HttpWebResponse httpResponse
+				? $"{webException.Status}/{Number((int)httpResponse.StatusCode)}-{httpResponse.StatusCode}"
+				: webException.Status.ToString();
 			return true;
 		}
 		description = null;
