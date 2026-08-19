@@ -86,6 +86,16 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 					DateParseHandling = DateParseHandling.None,
 					MaxDepth = 64
 				}) ?? throw new InvalidDataException("Git knowledge manifest is empty.");
+			// LOCAL DEV TOGGLE (off by default): clio-knowledge master/newer branches derive the
+			// generation sequence from libraryVersion and omit the explicit "sequence" field (a bundle
+			// format ahead of this clio). When the 'knowledge-allow-unsequenced' feature flag is enabled
+			// in the clio config, synthesize a non-zero sequence from libraryVersion so ANY branch/tag
+			// loads for local testing without editing the knowledge repo. Default (flag off) keeps stock
+			// behavior: ValidateEnvelope rejects a missing sequence. Downstream identity/upgrade logic
+			// then sees a real monotonic number.
+			if (manifest.Sequence == 0 && _capabilities.AllowUnsequencedGitBundles) {
+				manifest.Sequence = DeriveSequenceFromLibraryVersion(manifest.LibraryVersion);
+			}
 			ValidateEnvelope(manifest, expectedLibraryId);
 			ValidateCompatibility(manifest);
 			ValidateRequirements(manifest);
@@ -174,6 +184,31 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 		} catch (System.Text.Json.JsonException exception) {
 			throw new InvalidDataException("Git knowledge manifest is not strict JSON.", exception);
 		}
+	}
+
+	// LOCAL TEST PATCH (not for release): pack libraryVersion (e.g. "1.13.21") into a non-zero, roughly
+	// monotonic sequence number so a knowledge branch/tag that omits the explicit "sequence" field still
+	// loads. Each dotted component is clamped to 3 digits: "1.13.21" -> ((1*1000+13)*1000+21) = 1013021.
+	private static ulong DeriveSequenceFromLibraryVersion(string libraryVersion) {
+		if (string.IsNullOrWhiteSpace(libraryVersion)) {
+			return 1;
+		}
+		ulong accumulated = 0;
+		foreach (string part in libraryVersion.Split('.')) {
+			ulong component = 0;
+			foreach (char character in part) {
+				if (character < '0' || character > '9') {
+					break;
+				}
+				component = component * 10 + (ulong)(character - '0');
+				if (component > 999) {
+					component = 999;
+					break;
+				}
+			}
+			accumulated = accumulated * 1000 + component;
+		}
+		return accumulated == 0 ? 1 : accumulated;
 	}
 
 	private static void ValidateEnvelope(
@@ -410,7 +445,7 @@ internal sealed class KnowledgeGitRepositoryManifest {
 	public string LibraryVersion { get; init; } = string.Empty;
 
 	[JsonProperty("sequence")]
-	public ulong Sequence { get; init; }
+	public ulong Sequence { get; set; }
 
 	[JsonProperty("compatibility")]
 	public KnowledgeGitRepositoryCompatibility? Compatibility { get; init; }
