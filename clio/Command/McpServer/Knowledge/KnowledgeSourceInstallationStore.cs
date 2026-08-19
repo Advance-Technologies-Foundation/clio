@@ -293,7 +293,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			bool acquired = TryExecuteWithSourceMutationLock(sourceAlias, () => {
 				string sourceRoot = ResolveSourceRoot(sourceAlias, create: false);
 				KnowledgeSourceCurrentState? current = ReadCurrentMarker(sourceAlias, sourceRoot, out string? diagnostic);
-				if (diagnostic is not null || current?.Active != expectedActive) {
+				if (diagnostic is not null || current is null || current.Active != expectedActive) {
 					return;
 				}
 				KnowledgeSourcePublisherCheckState renewed = new(
