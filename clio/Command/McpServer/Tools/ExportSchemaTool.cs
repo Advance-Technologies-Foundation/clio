@@ -82,6 +82,6 @@ public record ExportSchemaArgs(
 	string ManagerName = null,
 
 	[property: JsonPropertyName("destination")]
-	[Description("Directory that will receive the bundle folder. Default: the current directory.")]
+	[Description("Directory that will receive the bundle folder. Default: the workspace root of the current directory, or the current directory itself when there is no workspace above it.")]
 	string Destination = null
 );

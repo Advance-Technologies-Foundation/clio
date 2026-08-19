@@ -35,9 +35,12 @@ public class ExportSchemaOptions : EnvironmentOptions {
 		HelpText = "Schema manager to narrow the lookup to, for example AddonSchemaManager")]
 	public string ManagerName { get; set; }
 
-	/// <summary>Gets or sets the directory that will receive the bundle folder. Defaults to the current directory.</summary>
+	/// <summary>
+	/// Gets or sets the directory that will receive the bundle folder. Defaults to the workspace root the
+	/// current directory belongs to, or the current directory itself when there is no workspace above it.
+	/// </summary>
 	[Option('d', "destination", Required = false,
-		HelpText = "Directory that will receive the bundle folder. Default: the current directory.")]
+		HelpText = "Directory that will receive the bundle folder. Default: the workspace root, or the current directory when there is no workspace.")]
 	public string Destination { get; set; }
 }
 
@@ -52,7 +55,6 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 
 	private readonly ISchemaTransferClient _schemaTransferClient;
 	private readonly ISchemaBundleStore _schemaBundleStore;
-	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly ILogger _logger;
@@ -61,11 +63,9 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 	/// Initializes a new instance of the <see cref="ExportSchemaCommand"/> class.
 	/// </summary>
 	public ExportSchemaCommand(ISchemaTransferClient schemaTransferClient, ISchemaBundleStore schemaBundleStore,
-		IWorkingDirectoriesProvider workingDirectoriesProvider, IoFileSystem ioFileSystem,
-		EnvironmentSettings environmentSettings, ILogger logger) {
+		IoFileSystem ioFileSystem, EnvironmentSettings environmentSettings, ILogger logger) {
 		_schemaTransferClient = schemaTransferClient;
 		_schemaBundleStore = schemaBundleStore;
-		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_ioFileSystem = ioFileSystem;
 		_environmentSettings = environmentSettings;
 		_logger = logger;
@@ -78,15 +78,9 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 			if (string.IsNullOrWhiteSpace(schemaName)) {
 				throw new InvalidOperationException("Schema name cannot be empty.");
 			}
-			// Confine the bundle path BEFORE any network call: export-schema is MCP-callable, so the destination
-			// can come from an agent rather than a shell. Resolve symlinks, drop an untrusted anchor, keep the
-			// write inside the workspace or the OS temp dir, and refuse a target that already exists — the same
-			// guard get-schema applies to its --output-file.
-			string destination = string.IsNullOrWhiteSpace(options.Destination)
-				? _workingDirectoriesProvider.CurrentDirectory
-				: options.Destination.Trim();
-			(string bundleDirectory, string pathError) = OutputPathConfinement.Resolve(
-				_ioFileSystem, System.IO.Path.Combine(destination, schemaName));
+			// Resolve the bundle path BEFORE any network call: export-schema is MCP-callable, so an explicit
+			// destination can come from an agent rather than a shell.
+			(string bundleDirectory, string pathError) = ResolveBundleDirectory(options, schemaName);
 			if (pathError != null) {
 				throw new InvalidOperationException(pathError);
 			}
@@ -103,6 +97,42 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 		catch (Exception exception) {
 			_logger.WriteError(exception.Message);
 			return 1;
+		}
+	}
+
+	/// <summary>
+	/// Resolves the folder the bundle is written into.
+	/// </summary>
+	/// <param name="options">Parsed command options.</param>
+	/// <param name="schemaName">Trimmed schema name; it becomes the bundle folder name.</param>
+	/// <returns>The bundle folder with a <c>null</c> error, or <c>(null, error)</c> when the path is refused.</returns>
+	/// <remarks>
+	/// Same split as <c>GetClassicPageSourcesCommand.ResolveOutputPath</c>, and for the same reason.
+	/// An EXPLICIT <c>--destination</c> may be agent-supplied, so it goes through
+	/// <see cref="OutputPathConfinement.Resolve"/> — symlinks resolved, untrusted anchor dropped, write confined
+	/// to the workspace or the OS temp dir. The DEFAULT is tool-owned and must NOT flow through that guard
+	/// (<c>OutputPathConfinement</c> documents this itself): confinement drops an untrusted anchor, and the
+	/// user's home directory counts as untrusted, so a plain <c>clio export-schema Foo</c> run from <c>$HOME</c>
+	/// would be refused even though the help text promises the current directory. The default is anchored the way
+	/// every other default output path in this repo is — workspace root if there is one, never bare <c>$HOME</c>.
+	/// The cwd read happens under <see cref="McpServer.Tools.McpToolExecutionLock.CwdLock"/> because the MCP
+	/// workspace tools PIN process cwd; an unsynchronized read could default one tenant's bundle into another
+	/// tenant's pinned directory. Overwrite protection is not lost with the confinement guard:
+	/// <see cref="ISchemaBundleStore.Write"/> refuses an existing bundle folder on both branches.
+	/// </remarks>
+	private (string path, string error) ResolveBundleDirectory(ExportSchemaOptions options, string schemaName) {
+		if (!string.IsNullOrWhiteSpace(options.Destination)) {
+			return OutputPathConfinement.Resolve(
+				_ioFileSystem, System.IO.Path.Combine(options.Destination.Trim(), schemaName));
+		}
+		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
+			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
+				_ioFileSystem,
+				_ioFileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				null);
+			return (System.IO.Path.Combine(anchor, schemaName), null);
 		}
 	}
 

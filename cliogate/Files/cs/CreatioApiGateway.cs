@@ -528,10 +528,7 @@ namespace cliogate.Files.cs
 				if (layers.Count > 1) {
 					response.Success = false;
 					response.Candidates = layers;
-					response.ErrorInfo = BuildErrorInfo(
-						$"Schema '{schemaName}' exists in {layers.Count} packages: " +
-						string.Join(", ", layers.Select(layer => layer.PackageName).ToArray()) +
-						". Specify the package to export.");
+					response.ErrorInfo = BuildErrorInfo(DescribeAmbiguity(schemaName, layers));
 					return response;
 				}
 				SchemaLayerInfo schema = layers[0];
@@ -593,6 +590,42 @@ namespace cliogate.Files.cs
 				response.ErrorInfo = BuildErrorInfo(exception);
 			}
 			return response;
+		}
+
+		/// <summary>
+		/// Builds the refusal message for a schema name that resolved to more than one layer.
+		/// </summary>
+		/// <param name="schemaName">The requested schema name.</param>
+		/// <param name="layers">The layers that matched. Always more than one.</param>
+		/// <returns>A message naming every candidate and the option that can actually narrow it down.</returns>
+		/// <remarks>
+		/// The uniqueness constraint behind this feature is <c>IU_Name_Manager_Package</c>, so the same name can
+		/// legitimately live in the same package under two different managers. Naming only the packages would then
+		/// print the same package twice and advise <c>--package-name</c>, which cannot reduce the match — a dead-end
+		/// refusal loop. Each candidate is therefore described by BOTH dimensions, the list is deduplicated, the
+		/// count is a count of LAYERS (which is what matched), and the remedy is chosen from what actually
+		/// distinguishes the candidates.
+		/// </remarks>
+		internal static string DescribeAmbiguity(string schemaName, List<SchemaLayerInfo> layers){
+			List<string> candidates = new List<string>();
+			foreach (SchemaLayerInfo layer in layers) {
+				string candidate = string.IsNullOrWhiteSpace(layer.ManagerName)
+					? $"'{layer.PackageName}'"
+					: $"'{layer.PackageName}' ({layer.ManagerName})";
+				if (!candidates.Contains(candidate)) {
+					candidates.Add(candidate);
+				}
+			}
+			bool sharesOnePackage = layers
+				.Select(layer => layer.PackageName)
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.Count() == 1;
+			string remedy = sharesOnePackage
+				? "They all live in the same package, so specify the manager (--manager-name) to disambiguate."
+				: "Specify the package (--package-name) to export, and the manager (--manager-name) when one "
+					+ "package still carries more than one.";
+			return $"Schema '{schemaName}' matches {layers.Count} layers: " +
+				string.Join(", ", candidates.ToArray()) + ". " + remedy;
 		}
 
 		/// <summary>

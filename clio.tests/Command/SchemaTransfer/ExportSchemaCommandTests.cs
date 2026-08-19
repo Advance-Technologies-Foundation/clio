@@ -131,6 +131,26 @@ public class ExportSchemaCommandTests : BaseCommandTests<ExportSchemaOptions> {
 				&& bundle.Descriptor.SourcePackageName == PackageName));
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Exports to the tool-owned default destination without routing it through the confinement guard")]
+	public void Execute_Should_Export_To_The_Default_Destination() {
+		// Arrange — no --destination at all, which is the documented default and the branch every plain
+		// `clio export-schema Foo -e Dev` takes.
+		ExportSchemaOptions options = new() { SchemaName = SchemaName, PackageName = PackageName };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the default destination is tool-owned; pushing it through OutputPathConfinement would drop "
+				+ "an untrusted anchor and refuse a run started from the user's home directory");
+		_schemaBundleStore.Received(1).Write(
+			Arg.Is<string>(path => System.IO.Path.GetFileName(path) == SchemaName),
+			Arg.Any<SchemaBundle>());
+	}
+
 	private static SchemaLayerDto BuildLayer() =>
 		new() {
 			SchemaName = SchemaName,

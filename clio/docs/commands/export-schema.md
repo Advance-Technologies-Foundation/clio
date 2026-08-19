@@ -25,7 +25,7 @@ clio export-schema <SchemaName> [--package-name <Package>] -e <Environment> [-d 
 | `<SchemaName>` | Name of the schema to export. Required. |
 | `--package-name` | Package that owns the layer to export. Required when the name is ambiguous. There is no `-p` short form — `EnvironmentOptions` already binds `-p` to `--password`. |
 | `--manager-name` | Schema manager to narrow the lookup to, e.g. `AddonSchemaManager`. |
-| `-d`, `--destination` | Directory that will receive the bundle folder. Default: the current directory. Must resolve inside the workspace/current directory or the OS temp directory — the command is MCP-callable, so the write path is confined the same way `get-schema --output-file` is. |
+| `-d`, `--destination` | Directory that will receive the bundle folder. Default: the workspace root the current directory belongs to, or the current directory when there is no workspace above it. An **explicit** destination must resolve inside the workspace or the OS temp directory — the command is MCP-callable, so an agent-supplied write path is confined the same way `get-schema --output-file` is. The tool-owned default is not routed through that guard, so a plain run from any directory (including `$HOME`) still works. |
 | `-e`, `--environment` | Environment name. |
 
 ## Coverage
@@ -37,14 +37,25 @@ pages), which have no other read surface in clio.
 ## Disambiguation
 
 A schema name is unique only per (manager, package) pair, so the same name legitimately exists in several
-packages. When it does, the command **fails and lists the packages** rather than picking one:
+packages — and, under two different managers, even twice inside one package. When the name matches more
+than one layer, the command **fails and lists every candidate by package and manager** rather than picking
+one:
 
 ```
-Schema 'Contact' exists in 5 packages: Completeness, CrtCoreBase, CrtMobile7x, MLangContent, SSP.
-Specify the package to export.
+Schema 'Contact' matches 5 layers: 'Completeness' (EntitySchemaManager), 'CrtCoreBase' (EntitySchemaManager),
+'CrtMobile7x' (EntitySchemaManager), 'MLangContent' (EntitySchemaManager), 'SSP' (EntitySchemaManager).
+Specify the package (--package-name) to export, and the manager (--manager-name) when one package still
+carries more than one.
 ```
 
-Re-run with `--package-name <Package>`.
+Re-run with `--package-name <Package>`. When every candidate shares the same package, `--package-name`
+cannot narrow anything — the message says so and points at `--manager-name` instead:
+
+```
+Schema 'UsrProbe' matches 2 layers: 'UsrProbePackage' (SourceCodeSchemaManager),
+'UsrProbePackage' (AddonSchemaManager). They all live in the same package, so specify the
+manager (--manager-name) to disambiguate.
+```
 
 ## Bundle layout
 

@@ -143,7 +143,6 @@ public class SchemaTransferToolTests {
 			: base(
 				Substitute.For<ISchemaTransferClient>(),
 				Substitute.For<ISchemaBundleStore>(),
-				Substitute.For<IWorkingDirectoriesProvider>(),
 				Substitute.For<IoFileSystem>(),
 				new EnvironmentSettings(),
 				Substitute.For<ILogger>()) {
