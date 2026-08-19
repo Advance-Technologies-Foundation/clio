@@ -432,6 +432,29 @@ public sealed class WorkerTerminalStageProtocolTests {
 	}
 
 	[Test]
+	[Description("A deploy refused because every worker slot is in use must arrive as retryable SATURATION, not as a relay failure telling the operator that retrying is unlikely to help — nothing was spawned, so nothing was deployed.")]
+	public async Task DispatchAsync_ShouldReportSaturation_WhenTheTerminalStageSpawnWaitsOutTheQueueBound() {
+		// Arrange — the supervisor's named refusal on the terminal-stage admission path.
+		_supervisor
+			.SpawnContainedAsync(Arg.Any<WorkerSpawnRequest>(), Arg.Any<CancellationToken>())
+			.Returns<Task<IWorkerLease>>(_ => throw new WorkerQueueWaitExpiredException(
+				waitEndured: TimeSpan.FromSeconds(60), configuredBound: TimeSpan.FromSeconds(60),
+				concurrencyCap: 4, queueDepth: 7));
+		RecordingClientSession client = new();
+		McpWorkerCallDispatcher sut = CreateSut();
+
+		// Act
+		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
+
+		// Assert
+		JsonNode structured = ReadStructured(result);
+		structured?["error-class"]?.GetValue<string>().Should().Be("clio-worker-saturated",
+			because: "the saturation envelope was added on the per-call path first and this branch was left flattening the same exception into a relay failure — the deploy family is exactly where wrong retry guidance costs the most");
+		structured?["queue-depth"]?.GetValue<int>().Should().Be(7,
+			because: "the admission numbers are what tell an operator to wait rather than to go looking for a defect in clio");
+	}
+
+	[Test]
 	[Category("Unit")]
 	[Description("The stage-event silence bound falls back to its 300 s default for a missing, blank, non-numeric or out-of-range override, and honours a valid one — parsed in invariant culture so a host locale cannot change the bound.")]
 	public void ResolveStageEventSilenceBound_ShouldFallBackToTheDefault_WhenTheOverrideIsUnusable() {

@@ -126,6 +126,19 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 			}
 			CallToolResult result =
 				await entry.Session.CallToolAsync(parameters, budgetSource.Token).ConfigureAwait(false);
+			if (result is null) {
+				// A worker answering `{"result":null}` is a defect, and the starter and per-call paths
+				// already treat it as one. Leaving it registered is the part that hurts: the caller falls
+				// back to a fresh per-call worker whose operation registry is EMPTY — so a status poll
+				// answers "not found" for an operation that is still running — while the broken worker
+				// keeps its admission slot and any reservation until expiry. Reaped by ENTRY, so a starter
+				// that superseded it in the meantime is not the one ended.
+				_logger.WriteWarning(
+					$"A sticky MCP worker for operation family '{key.Family}' returned a null tool result "
+					+ "and was reaped; the caller falls back to an ordinary per-call worker.");
+				await _registry.ReapAsync(key, entry).ConfigureAwait(false);
+				return null;
+			}
 			if (entry.IsCompleted) {
 				// The linger exists so THIS poll can be answered out of the process that holds the operation
 				// record; once it has been, nobody needs the worker and holding its admission slot for the

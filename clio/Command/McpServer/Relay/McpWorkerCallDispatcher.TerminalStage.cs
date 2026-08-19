@@ -138,6 +138,14 @@ public sealed partial class McpWorkerCallDispatcher {
 		catch (OperationCanceledException) {
 			throw;
 		}
+		catch (WorkerQueueWaitExpiredException exception) {
+			// Saturation, not a defect. Same reasoning as the per-call path: "the worker process could not
+			// be started" sends an agent hunting a clio bug when the host is simply at its cap, and throws
+			// away the numbers R-10 promises. Round 4 fixed only the per-call branch; this is the rest of
+			// the same fix.
+			_logger.WriteWarning($"MCP worker for '{toolName}' was not started: {exception.Message}");
+			return WorkerSaturationResult(toolName, exception);
+		}
 		catch (Exception exception) {
 			// Nothing was spawned, so nothing was deployed: this is a plain relay failure and must NOT be
 			// reported as indeterminate, which would send an operator to inspect an environment clio never

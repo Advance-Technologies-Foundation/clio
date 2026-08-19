@@ -360,6 +360,15 @@ public sealed partial class McpWorkerCallDispatcher {
 			_reservations.Release(reservation);
 			throw;
 		}
+		catch (WorkerQueueWaitExpiredException exception) {
+			// Saturation of the SHARED pool, which is a different thing from the sticky ceiling: this
+			// starter already holds a place under the ceiling, and ordinary per-call reads are holding the
+			// slots. That clears in seconds and is worth retrying, so it must not arrive as a relay
+			// failure. The reservation goes back first — the call is not going to happen.
+			_reservations.Release(reservation);
+			_logger.WriteWarning($"Sticky MCP worker for '{toolName}' was not started: {exception.Message}");
+			return WorkerSaturationResult(toolName, exception);
+		}
 		catch (Exception exception) {
 			_reservations.Release(reservation);
 			_logger.WriteWarning(

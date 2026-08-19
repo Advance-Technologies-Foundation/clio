@@ -633,6 +633,17 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		Process process = null;
 		try {
 			process = Process.GetProcessById(entry.ProcessId);
+			// RE-VALIDATED ON THIS HANDLE, not trusted from the caller's earlier check. The registry does
+			// compare the full pid / start-time / executable-path triple before deciding an entry is stale
+			// — but that was a DIFFERENT Process object at an earlier instant. Between that decision and
+			// this GetProcessById the recorded worker can exit and its pid be handed to something else, and
+			// TerminateOrphan kills a process TREE. Killing a stranger and its children is the one outcome
+			// this registry's identity checks exist to make impossible, so the check is repeated against the
+			// handle actually about to be terminated. A pid alone is not an identity.
+			DateTime actualStartTimeUtc = ReadStartTimeUtc(process);
+			if (actualStartTimeUtc.Ticks != entry.StartTimeUtcTicks) {
+				return WorkerTerminationOutcome.AlreadyExited;
+			}
 			using IWorkerProcessHandle handle = CreateHandle(process, entry.ExecutablePath, null, null, null);
 			return _containment.TerminateOrphan(handle);
 		} catch (Exception exception) when (IsProcessInspectionFailure(exception)) {
