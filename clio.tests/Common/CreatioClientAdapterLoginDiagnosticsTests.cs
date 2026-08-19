@@ -34,6 +34,10 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		IReauthExecutor reauthExecutor = null) =>
 		new(new Lazy<CreatioClient>(() => null), reauthExecutor, diagnostics);
 
+	// Its own scoreboard, never LoginAttemptScoreboard.Shared: a test that reached the process-wide
+	// singleton would be order-dependent under parallel execution.
+	private static LoginDiagnostics CreateRecorder() => new(new LoginDiagnostics.LoginAttemptScoreboard());
+
 	private static IReauthExecutor CreatePassthroughExecutor() {
 		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
 		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
@@ -128,7 +132,7 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		// Arrange — a real recorder plus a client whose construction throws the rejection shape.
 		CreatioClientAdapter adapter = new(
 			new Lazy<CreatioClient>(() => throw new UnauthorizedAccessException(LoginRejectionMessage)),
-			Substitute.For<IReauthExecutor>(), new LoginDiagnostics());
+			Substitute.For<IReauthExecutor>(), CreateRecorder());
 
 		// Act
 		Action act = () => adapter.Login();
@@ -147,7 +151,7 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		// Arrange
 		WebException original = new("connect failed", WebExceptionStatus.ConnectFailure);
 		CreatioClientAdapter adapter = new(new Lazy<CreatioClient>(() => throw original),
-			Substitute.For<IReauthExecutor>(), new LoginDiagnostics());
+			Substitute.For<IReauthExecutor>(), CreateRecorder());
 
 		// Act
 		Action act = () => adapter.Login();
