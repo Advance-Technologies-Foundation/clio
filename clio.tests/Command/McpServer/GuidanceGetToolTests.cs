@@ -103,6 +103,7 @@ public sealed class GuidanceGetToolTests {
 		KnowledgeArticleProvenance provenance = new(
 			"partner",
 			"com.example.partner",
+			"2.1.0",
 			"guide.item",
 			"topic.shared",
 			42,
@@ -121,6 +122,9 @@ public sealed class GuidanceGetToolTests {
 		response.Success.Should().BeTrue(because: "verified external guidance should be returned");
 		response.Article!.LibraryId.Should().Be("com.example.partner",
 			because: "agents need the stable publisher identity for attribution");
+		response.Article.LibraryVersion.Should().Be("2.1.0",
+			because: "a warm start never contacts the publisher, so the served library version is the "
+				+ "only way an agent session can tell which guidance generation it is reading");
 		response.Article.ItemId.Should().Be("guide.item",
 			because: "agents need the stable item identity inside the publisher library");
 		response.Article.TopicId.Should().Be("topic.shared",

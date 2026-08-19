@@ -359,6 +359,7 @@ public sealed class KnowledgeReferenceExampleServiceTests {
 		KnowledgeArticleProvenance provenance = new(
 			sourceAlias,
 			libraryId,
+			"1.0.0",
 			itemId,
 			itemId,
 			42,

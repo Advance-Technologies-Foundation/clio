@@ -146,6 +146,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				}
 				KnowledgeLibrarySnapshot refreshed = current with {
 					LibraryId = snapshot.LibraryId,
+					LibraryVersion = snapshot.LibraryVersion,
 					Priority = priority,
 					Participation = participation,
 					Articles = snapshot.Articles
@@ -175,6 +176,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			KnowledgeLibrarySnapshot activated = new(
 				sourceAlias,
 				snapshot.LibraryId,
+				snapshot.LibraryVersion,
 				priority,
 				participation,
 				snapshot.Sequence,
@@ -228,6 +230,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				KnowledgeLibrarySnapshot activated = new(
 					request.SourceAlias,
 					prepared.LibraryId,
+					prepared.LibraryVersion,
 					request.Priority,
 					request.Participation,
 					prepared.Sequence,
@@ -280,6 +283,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		LibraryActivationRequest request,
 		PreparedKnowledgeBundle prepared) {
 		KnowledgeLibrarySnapshot refreshed = current with {
+			LibraryVersion = prepared.LibraryVersion,
 			Priority = request.Priority,
 			Participation = request.Participation,
 			Articles = RebaseArticlePaths(prepared.Articles, request.LocalRootPath)
@@ -363,6 +367,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 					new KnowledgeArticleProvenance(
 						library.SourceAlias,
 						library.LibraryId,
+						library.LibraryVersion,
 						article.ItemId,
 						article.TopicId,
 						library.Sequence,
