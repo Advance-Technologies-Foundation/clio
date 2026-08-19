@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Threading;
@@ -219,6 +220,112 @@ public sealed class SettingsRepositoryConcurrencyTests {
 		// the non-repairing read follows the same scripted sequence.
 		public SettingsBootstrapResult GetResultWithoutRepairs() {
 			return GetResult();
+		}
+	}
+
+	[Test]
+	[Description("A settings publish that a contending reader refuses is retried until it lands instead of failing the command.")]
+	public void ConfigureEnvironment_ShouldRetryThePublish_WhenAContendingReaderRefusesIt() {
+		// Arrange
+		// The refusal shape is the one Windows produces when a FOREIGN reader holds appsettings.json:
+		// File.ReadAllText opens with FileShare.Read, which denies the DELETE access the publish needs, and
+		// the BCL reports it as a PATH-LESS IOException (File.Move/File.Replace pass no path to
+		// Win32Marshal). The repository is constructed BEFORE the script is armed so the bootstrap's own
+		// migration write is not counted as a publish attempt.
+		ScriptedPublishFailureFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+		fileSystem.ArmPublishRefusals(new IOException(
+			"The process cannot access the file because it is being used by another process."), 3);
+
+		// Act
+		deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		fileSystem.PublishAttempts.Should().Be(4,
+			because: "the publish must be re-attempted after each refusal — three refusals and one success is four calls, and without the retry the count would be one and the command would have failed");
+		new SettingsRepository(fileSystem).GetAllEnvironments().Should().ContainKey("deployed",
+			because: "a registration must survive a reader that momentarily refuses the publish, not be lost with it");
+	}
+
+	[Test]
+	[Description("A publish failure that is not contention surfaces on the first attempt instead of being spun on until the deadline.")]
+	public void ConfigureEnvironment_ShouldNotRetryThePublish_WhenTheFailureIsNotContention() {
+		// Arrange
+		ScriptedPublishFailureFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+		fileSystem.ArmPublishRefusals(new FileNotFoundException("The temporary settings file vanished."), 1);
+
+		// Act
+		Action act = () => deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		act.Should().Throw<FileNotFoundException>(
+			because: "a vanished temporary file is a real error, not a contending handle, so it must reach the caller unchanged");
+		fileSystem.PublishAttempts.Should().Be(1,
+			because: "a non-contention failure must not be retried into a multi-second delay before the same error is reported anyway");
+	}
+
+	private static void SeedExistingSettings(MockFileSystem fileSystem) {
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(JsonConvert.SerializeObject(
+			new Settings {
+				ActiveEnvironmentKey = "existing",
+				Environments = new Dictionary<string, EnvironmentSettings> {
+					["existing"] = new() { Uri = "https://existing.example.com" }
+				}
+			})));
+	}
+
+	// Substitutes the PUBLISH of appsettings.json so the contended path runs on every platform.
+	//
+	// LIMIT OF THIS DOUBLE, stated because it is easy to over-read: a substituted file system is not
+	// System.IO.Abstractions.FileSystem, so SaveSettingsUnlocked treats it as not-real and commits through
+	// the File.Move branch of CommitSettingsFile rather than the File.Replace branch a real CLI takes. Both
+	// go through the same PublishSettingsFile wrapper, and that wrapper is what these tests pin. The
+	// platform semantic of the replace itself is not reproducible here and needs a Windows host.
+	private sealed class ScriptedPublishFailureFileSystem : MockFileSystem {
+
+		private readonly ScriptedPublishFailureFile _file;
+
+		public ScriptedPublishFailureFileSystem() {
+			_file = new ScriptedPublishFailureFile(this);
+		}
+
+		public override IFile File => _file;
+
+		public int PublishAttempts => _file.PublishAttempts;
+
+		public void ArmPublishRefusals(Exception refusal, int refusalCount) =>
+			_file.Arm(refusal, refusalCount);
+	}
+
+	private sealed class ScriptedPublishFailureFile(IMockFileDataAccessor fileDataAccessor)
+		: MockFile(fileDataAccessor) {
+
+		private Exception _refusal;
+		private int _refusalsRemaining;
+
+		public int PublishAttempts { get; private set; }
+
+		public void Arm(Exception refusal, int refusalCount) {
+			_refusal = refusal;
+			_refusalsRemaining = refusalCount;
+			PublishAttempts = 0;
+		}
+
+		public override void Move(string sourceFileName, string destFileName, bool overwrite) {
+			if (_refusal is not null
+				&& string.Equals(destFileName, SettingsRepository.AppSettingsFile, StringComparison.Ordinal)) {
+				PublishAttempts++;
+				if (_refusalsRemaining > 0) {
+					_refusalsRemaining--;
+					throw _refusal;
+				}
+			}
+			base.Move(sourceFileName, destFileName, overwrite);
 		}
 	}
 

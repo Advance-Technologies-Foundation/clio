@@ -126,6 +126,43 @@ There is no cross-platform atomic directory replacement (`renameat2(RENAME_EXCHA
 and not exposed by .NET), so "absent" is the irreducible residual state for a directory-shaped
 publication, not a gap in the implementation.
 
+## A read moved across the boundary is a read moved to another SESSION (2026-08-19)
+
+This audit was written to answer "what does a kill damage". The end-to-end runs found a second question
+that decides cohort membership just as hard, and that nothing in the ADR asked: **what does moving a read
+into a child process do to read-after-write?**
+
+A worker authenticates on its own — the cookie container is per-process
+(`clio/Command/McpServer/SessionContainerCache.cs`) — so a read relayed to a child speaks to Creatio on a
+different session from the host-resident tools that WRITE the same object. Reads served out of Creatio's
+in-memory schema manager are not guaranteed to reflect a write made moments earlier on another session.
+This was measured, not theorised: on build 15895074 a worker `get-page` returned a body **14 s out of
+date**, and the same phenomenon appears in three separate page tests that are green on trunk and
+timing-dependent on the branch.
+
+The consequence is worse than a slow read, because `get-page` also WRITES the conflict baseline. A stale
+read arms conflict detection against a superseded generation, which produces false negatives — the case
+observed, where a stale-baseline write was accepted and somebody else's change would be silently
+overwritten — as well as false positives.
+
+**So Stage 6 membership was re-decided by READ PATH:**
+
+| Read path | Tools | In the cohort? |
+|---|---|---|
+| Schema designer (server-side schema cache) | `get-page`, `get-schema`, `get-related-page-addon` | **Withdrawn** — their writers (`update-page`, `sync-pages`, `create-related-page-addon`) are host-resident |
+| Shared database (DataService / `Select` / ESQ / OData) | `list-pages`, `list-app-sections`, `execute-esq`, `odata-read` | Kept — a second session reads the same rows the first one wrote |
+
+The mechanism behind the staleness is **inferred, not measured**. The plausible reading is session
+affinity: the session cookie pins a caller to one IIS worker process, each with its own schema cache
+generation, and a fresh login can land on one whose cache has not been invalidated. It is recorded as
+inference deliberately, because it decides which LONG-TERM fix is viable — under affinity, handing the
+child the parent's session would restore correctness; under "fresh sessions simply lag", it would not.
+The membership rule above does not depend on the answer.
+
+Stage 10 faces this question for every read it proposes to move, and it is not answerable from the
+tool's metadata: ask what the read goes through on the server, and whether a host-resident tool writes
+the same object within one agent session.
+
 ## Not reached — an honest gap
 
 The command bodies were NOT read for: `dataforge-initialize`, `dataforge-update` (both declare

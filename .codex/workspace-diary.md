@@ -9247,3 +9247,31 @@ Files: clio/Common/McpWorker/McpWorkerEnvironment.cs,
   clio.tests/Command/SettingsRepositoryFeatureTests.cs
 Impact: judge any parent→child payload on TOTALITY (never throws on data already on disk), not on
   input validation.
+
+## 2026-08-19 17:40 – A read moved to a worker is a read moved to another Creatio session
+Context: three page tests were green on trunk and failing on this branch. I had them filed as
+  "non-branch failures". They were not: two are branch regressions and the third is a new test
+  of mine that had never been green.
+Discovery (proven from the stand's own server-side write ledger, not inferred): a worker
+  authenticates on its OWN session — the cookie container is per-process — so a read relayed to a
+  child speaks to Creatio on a different session from the host-resident tools that write the same
+  object. A worker get-page returned a body 14 s out of date. Because get-page also WRITES the
+  conflict baseline, the stale read armed conflict detection against a superseded generation and a
+  stale-baseline write was ACCEPTED. Silent overwrite, not a slow read.
+Decision: Stage 6 membership re-decided by READ PATH, not by tool. Schema-designer reads
+  withdrawn (get-page, get-schema, get-related-page-addon — their writers are host-resident);
+  database reads kept (list-pages, list-app-sections, execute-esq, odata-read — a second session
+  sees the same rows). The mechanism is recorded as INFERENCE (session affinity to an IIS worker
+  process with its own schema-cache generation), because it decides which long-term fix is viable,
+  and the membership rule does not depend on the answer.
+  Two corrections to myself on the way: (1) my first replacement guard asserted "no cohort member
+  is write-capable", which is false by design — deploy/compile/restart are write-capable and in
+  the cohort deliberately; removed rather than adjusted. (2) I attributed the AppSettings test
+  going green to the product pin; it was the first run containing my own retry commit, and all 13
+  red occurrences predate it. The parsimonious cause was mine, and I had talked myself out of it.
+Files: clio/Command/McpServer/McpWorkerCohort.cs,
+  clio.tests/Command/McpServer/McpExecutionRouterTests.cs,
+  spec/mcp-worker-execution-boundary/mcp-worker-execution-boundary-kill-safety-audit.md
+Impact: cohort membership needs a SECOND question beside kill-safety — what does the read go
+  through on the server, and does a host-resident tool write the same object in one agent session.
+  Stage 10 faces it for every read it moves.

@@ -413,8 +413,8 @@ public sealed class McpExecutionRouterTests {
 		})];
 
 		// Assert
-		cohortNames.Should().HaveCount(14,
-			because: "the shipped cohort is story 6's seven retry-safe stdio reads, story 7's FIVE shipped sticky tools — install-process-builder and create-app-section are supported but deliberately withheld until Stage 10 weighs them against the kill-safety audit — and story 8's two terminal-stage deploy tools; a changed count is a rollout decision and must be made deliberately, not drift in");
+		cohortNames.Should().HaveCount(11,
+			because: "the shipped cohort is story 6's FOUR remaining database reads — the three schema-designer reads were withdrawn on 2026-08-19 because a worker reads them on its own Creatio session — story 7's FIVE shipped sticky tools — install-process-builder and create-app-section are supported but deliberately withheld until Stage 10 weighs them against the kill-safety audit — and story 8's two terminal-stage deploy tools; a changed count is a rollout decision and must be made deliberately, not drift in");
 		declared.Should().NotContainNulls(
 			because: "a cohort name with no declared metadata would be routed on a guess — or, worse, silently fall through the reader's fail-closed unclassified branch and never relay at all");
 		declared.Should().OnlyContain(metadata => metadata.Location == McpToolExecutionLocation.Worker,
@@ -445,14 +445,25 @@ public sealed class McpExecutionRouterTests {
 		// the router against `new McpWorkerCohort().Names`, i.e. against the very data the router just read,
 		// so swapping one member for another worker-classified tool leaves them all green. A constant here
 		// would re-read the same source and be exactly as unfalsifiable.
+		// WITHDRAWN 2026-08-19, and the withdrawal is the point of this list now: story 6 shipped SEVEN
+		// names and three of them are gone. get-page, get-schema and get-related-page-addon all read
+		// through Creatio's schema designer, which is served from a server-side cache; a worker
+		// authenticates on its own session, and the branch's end-to-end runs measured a worker get-page
+		// returning a body 14 s out of date. That armed a conflict baseline against a superseded
+		// generation — a silent-overwrite defect, not a slow read. The four that remain read the shared
+		// DATABASE (DataService / Select / ESQ / OData), where a second session sees what the first wrote.
 		string[] storySixNames = [
-			"get-page",
 			"list-pages",
 			"list-app-sections",
-			"get-schema",
-			"get-related-page-addon",
 			"execute-esq",
 			"odata-read"
+		];
+		// The three withdrawn reads, pinned as ABSENT. Re-admitting one requires the worker to speak on
+		// the parent's Creatio session; until then this list failing is the intended outcome.
+		string[] schemaDesignerReadsWithheld = [
+			"get-page",
+			"get-schema",
+			"get-related-page-addon"
 		];
 		// Story 7's promise: the four long-running families, each added WHOLE — a starter without its
 		// poller would leave the poll answering from an empty registry in another process, and a poller
@@ -504,6 +515,13 @@ public sealed class McpExecutionRouterTests {
 		McpWorkerCohort.StageSevenSupportedButNotShippedNames.Should().BeEquivalentTo(
 			supportedButNotShippedNames,
 			because: "the withheld set is a deliberate decision and must be as hard to change silently as the shipped one");
+		foreach (string withheld in schemaDesignerReadsWithheld) {
+			shipped.Should().NotContain(withheld,
+				because: $"'{withheld}' reads through the schema designer, and a worker reads it on its OWN Creatio session — so a write made moments earlier by a host-resident tool may not be visible, and the baseline this read writes would arm conflict detection against a superseded generation, silently overwriting somebody else's change");
+		}
+		McpWorkerCohort.SchemaDesignerReadsWithheldNames.Should().BeEquivalentTo(
+			schemaDesignerReadsWithheld,
+			because: "an exclusion with a reason attached is a decision; an exclusion that is merely an absence is something the next expansion re-fills without noticing");
 	}
 
 	[Test]
@@ -752,11 +770,17 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("THE get-schema ASYMMETRY, stated rather than left as folklore: a cohort member that declares ReadOnly=false is stopped by the unmatched site's write-capability gate BEFORE routing, so a raw-name call comes back confirmation-required and never reaches the router — it reaches a worker only through clio-run.")]
+	[Description("THE get-schema ASYMMETRY, stated rather than left as folklore: a tool that declares ReadOnly=false is stopped by the unmatched site's write-capability gate BEFORE routing, so a raw-name call comes back confirmation-required and never reaches the router — it reaches a worker only through clio-run.")]
 	public async Task HandleAsync_ShouldReturnConfirmationRequiredWithoutRouting_WhenACohortToolIsWriteCapable() {
-		// Arrange — the two premises are read from the SHIPPED sources, not restated, so this test stops
-		// being true the moment either changes: get-schema is in the cohort, and its own [McpServerTool]
-		// declares ReadOnly=false (output-file writes the schema body to disk).
+		// Arrange — the premise is read from the SHIPPED source, not restated, so this test stops being
+		// true the moment it changes: get-schema's own [McpServerTool] declares ReadOnly=false, because
+		// output-file writes the schema body to disk.
+		//
+		// get-schema was in the cohort when this asymmetry was found and was WITHDRAWN on 2026-08-19 (a
+		// schema-designer read must not cross a session boundary). The ordering statement below is
+		// unaffected — the write-capability gate sits ahead of the routing question for every unmatched
+		// raw-name call, member or not — so the test keeps its subject and drops only the membership
+		// premise. What membership adds is pinned separately, below.
 		const string writeCapableCohortTool = "get-schema";
 		McpServerToolAttribute declaredAnnotations = typeof(Clio.Command.McpServer.Tools.GetSchemaTool)
 			.GetMethod(nameof(Clio.Command.McpServer.Tools.GetSchemaTool.GetSchema))!
@@ -774,13 +798,17 @@ public sealed class McpExecutionRouterTests {
 			CallContext(writeCapableCohortTool), CancellationToken.None);
 
 		// Assert
-		new McpWorkerCohort().Contains(writeCapableCohortTool).Should().BeTrue(
-			because: "the asymmetry is only interesting for a COHORT member: a non-member would stay in-process for an entirely different reason");
+		// NO membership assertion here any more, and the reason is worth keeping: the first replacement
+		// I wrote claimed "no cohort member declares write capability", which is FALSE by design —
+		// compile-creatio, deploy-creatio and the restart family are write-capable and are in the cohort
+		// deliberately. They are reached through clio-run, which is precisely the route this refusal
+		// names. The asymmetry documented here is about the ORDERING of the gate, and that holds for any
+		// unmatched raw-name call whether or not the tool is relayed.
 		declaredAnnotations.ReadOnly.Should().BeFalse(
 			because: "this is the premise of the whole behaviour — get-schema advertises write capability because output-file writes to disk, and the unmatched site gates on readOnlyHint rather than on destructiveHint (issue #953)");
 		_sut.Resolve(writeCapableCohortTool, innerCommand: null).Disposition
-			.Should().Be(McpExecutionDisposition.Worker,
-			because: "the production router WOULD relay this tool — which is what makes the refusal below an ordering statement rather than a routing one");
+			.Should().Be(McpExecutionDisposition.InProcessOutsideCohort,
+			because: "get-schema declares Worker but was withdrawn from the cohort, so the refusal below cannot be mistaken for a routing decision — it is purely the ordering of the write-capability gate");
 		TextOf(result).Should().Contain("writes durable state to the target (additive)",
 			because: "the raw-name call comes back as the write-capability refusal, so a cohort member can be unreachable under its own name — surprising, and previously undocumented");
 		TextOf(result).Should().Contain(Clio.Command.McpServer.Tools.ClioRunTool.ToolName,
@@ -1012,4 +1040,5 @@ public sealed class McpExecutionRouterTests {
 			Registry.IsReadOnly(toolName).Returns(readOnly);
 		}
 	}
+
 }

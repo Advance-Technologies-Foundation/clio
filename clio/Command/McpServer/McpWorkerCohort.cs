@@ -54,20 +54,69 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	/// is what makes them the ones whose repair is worth proving.
 	/// </summary>
 	/// <remarks>
+	/// <para>
 	/// Adding a name here is a deliberate cohort expansion and must come with the supervision its
 	/// <see cref="McpToolExecutionMetadata"/> asks for. Everything below is
 	/// <see cref="McpToolExecutionLifetime.PerCall"/> + <see cref="McpToolBudgetPolicy.ParentKillDefault"/>,
 	/// which was the only combination the parent could bound at Stage 6: sticky lifetimes are story 7 and
 	/// terminal-stage bounding is story 8 (<see cref="StageEightNames"/>).
+	/// </para>
+	/// <para>
+	/// <b>A SECOND membership requirement, learned the hard way on 2026-08-19 and not derivable from the
+	/// metadata: what the read goes through on the SERVER.</b> A worker authenticates on its own — the
+	/// cookie container is per-process — so a read moved into a child speaks on a different Creatio
+	/// session from the host-resident tools that WRITE the same object. Reads served out of Creatio's
+	/// in-memory schema manager are not guaranteed to reflect a write made moments earlier on another
+	/// session, and the branch's own end-to-end tests measured it: a worker <c>get-page</c> returned a
+	/// body 14 s out of date, which armed a conflict baseline against a superseded generation. That is a
+	/// silent-overwrite defect, not a slow read.
+	/// </para>
+	/// <para>
+	/// So the line is drawn by the READ PATH, not by the tool:
+	/// </para>
+	/// <list type="bullet">
+	/// <item><description>
+	/// <b>Schema-designer reads are EXCLUDED</b> — <c>get-page</c>
+	/// (<c>ClientUnitSchemaDesignerService/GetParentSchemas</c>), <c>get-schema</c> and
+	/// <c>get-related-page-addon</c> (both through the schema designer). They are served from the
+	/// server's schema cache, and their writers (<c>update-page</c>, <c>sync-pages</c>,
+	/// <c>create-related-page-addon</c>) are host-resident, so read-after-write inside one agent session
+	/// is exactly what an agent relies on and exactly what the boundary breaks.
+	/// </description></item>
+	/// <item><description>
+	/// <b>Database reads STAY</b> — <c>list-pages</c> and <c>list-app-sections</c> (DataService /
+	/// <c>Select</c>), <c>execute-esq</c> and <c>odata-read</c>. These go to the shared database rather
+	/// than to a per-process cache, so a second session sees the same rows the first one wrote.
+	/// </description></item>
+	/// </list>
+	/// <para>
+	/// The mechanism behind the staleness is INFERRED, not measured: the plausible reading is session
+	/// affinity — the session cookie pins a caller to one IIS worker process, each with its own schema
+	/// cache generation, and a fresh login can land on one whose cache has not been invalidated. It is
+	/// recorded as inference on purpose. The membership rule above does not depend on which cache lags,
+	/// only on the fact that a schema-designer read crossed a session boundary and came back old.
+	/// </para>
 	/// </remarks>
 	public static readonly IReadOnlyList<string> StageSixNames = [
+		Tools.PageListTool.ToolName,               // list-pages    — DataService, reads the database
+		Tools.ApplicationSectionGetListTool.ApplicationSectionGetListToolName, // list-app-sections — Select
+		Tools.ExecuteEsqTool.ToolName,             // execute-esq   — the SQL read
+		Tools.ODataReadTool.ToolName               // odata-read    — the OData read
+	];
+
+	/// <summary>
+	/// The schema-designer reads that Stage 6 shipped and 2026-08-19 WITHDREW: worker-routing them breaks
+	/// read-after-write for the host-resident tools that write the same schema.
+	/// </summary>
+	/// <remarks>
+	/// Kept as a named list rather than deleted, so the exclusion is a recorded decision with a reason
+	/// attached instead of an absence somebody re-fills. Re-admitting any of these requires the worker to
+	/// speak on the PARENT'S Creatio session — see the membership rule on <see cref="StageSixNames"/>.
+	/// </remarks>
+	public static readonly IReadOnlyList<string> SchemaDesignerReadsWithheldNames = [
 		Tools.PageGetTool.ToolName,                // get-page
-		Tools.PageListTool.ToolName,               // list-pages
-		Tools.ApplicationSectionGetListTool.ApplicationSectionGetListToolName, // list-app-sections
 		Tools.GetSchemaTool.ToolName,              // get-schema
-		Tools.GetRelatedPageAddonTool.ToolName,    // get-related-page-addon
-		Tools.ExecuteEsqTool.ToolName,             // execute-esq  — the SQL read
-		Tools.ODataReadTool.ToolName               // odata-read   — the OData read
+		Tools.GetRelatedPageAddonTool.ToolName     // get-related-page-addon
 	];
 
 	/// <summary>
