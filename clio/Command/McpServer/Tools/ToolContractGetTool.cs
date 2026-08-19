@@ -1193,26 +1193,26 @@ internal static class ToolContractCatalog {
 			toolName,
 			"Stores a single product telemetry event about AI-assisted Creatio work run through this MCP server as a local OpenTelemetry-shaped JSON file after user consent. It covers EVERY workflow, not only app creation, and an agent working on a developer's behalf is in scope even when no skill file is loaded. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
 			new ToolInputSchemaContract(
-				["session_id", EventNameFieldName, "coding_agent", "plugin_version"],
+				["session_id", EventNameFieldName],
 				[
 					Field("session_id", StringType, "Opaque random identifier (generate a fresh GUID) reused for every event of one workflow run. Never derive it from user, account, host, file-path or email data, and never reuse another run's id."),
 					Field(EventNameFieldName, StringType,
 						$"Product event name — a flow-agnostic stage. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
-					Field("workflow", StringType, "Which flow this run is, for example app-creation, classic-to-freedom-migration, mobile-page-conversion, branding or app-maintenance. Send it on every event: the stage names are shared, so without it a stage cannot be attributed to a flow. Short lowercase token (letters, digits, '.', '_', '-')."),
+					Field("workflow", StringType, "Which flow this run is, for example app-creation, classic-to-freedom-migration, mobile-page-conversion, branding or app-maintenance. Send it on every event: the stage names are shared, so without it a stage cannot be attributed to a flow, and it also keys the run's elapsed-time state. An omitted value is recorded as the reserved 'unattributed' rather than being left empty. Short lowercase token (letters, digits, '.', '_', '-')."),
 					Field("variant", StringType, "Optional bounded qualifier the flow defines for that stage — a migration scope, a blocked reason, a unit kind. Same token shape as workflow; never free text and never customer data."),
 					Field("model", StringType, "Optional identifier of the model driving the run, for example claude-opus-5 or gpt-5. Send the id, lowercased, not a display name or a version guess. Same token shape as workflow."),
 					Field("input_tokens", NumberType, "Optional running total of prompt tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
 					Field("output_tokens", NumberType, "Optional running total of generated tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
 					Field("cached_input_tokens", NumberType, "Optional running total of prompt tokens served from cache. Non-negative; snapshot, not a delta."),
-					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
-					Field("plugin_version", StringType, "Product plugin version."),
+					Field("coding_agent", StringType, "Optional agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor. Send the value your toolkit supplies, verbatim; OMIT it rather than guessing. Stored canonicalised to a lowercase slug so one host is one cohort."),
+					Field("plugin_version", StringType, "Optional product plugin version, taken verbatim from the toolkit that supplies it. OMIT it when nothing supplies one — a guessed version or a placeholder such as 'unknown' lands real runs in a cohort that never existed."),
 					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
 					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
 						Context: "event_name must be one of the documented product event names."),
-					new ToolContractValidator("token", "invalid-token", "workflow",
+					new ToolContractValidator("token", "invalid-token", Fields: ["workflow", "variant", "model"],
 						Context: "workflow, variant and model must be short lowercase tokens of letters, digits, '.', '_' or '-'.")
 				]),
 			EnvelopeOutput(
@@ -1260,7 +1260,7 @@ internal static class ToolContractCatalog {
 					[EventNameFieldName] = "plan_presented",
 					["workflow"] = "classic-to-freedom-migration",
 					["coding_agent"] = "Codex",
-					["plugin_version"] = "0.1.0"
+					["plugin_version"] = "1.6.0"
 				})
 			],
 			Flow([toolName], flowNotes),

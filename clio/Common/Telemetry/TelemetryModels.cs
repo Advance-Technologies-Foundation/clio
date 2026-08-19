@@ -10,8 +10,10 @@ namespace Clio.Common.Telemetry;
 public sealed record TelemetryEventRequest(
 	[property: JsonPropertyName("session_id")] string SessionId,
 	[property: JsonPropertyName("event_name")] string EventName,
-	[property: JsonPropertyName("coding_agent")] string CodingAgent,
-	[property: JsonPropertyName("plugin_version")] string PluginVersion,
+	// Optional: the guidance article and the toolkit's hook both tell an agent to OMIT these rather than
+	// send a guessed version or the placeholder `unknown`, so the shape has to permit their absence.
+	[property: JsonPropertyName("coding_agent")] string CodingAgent = null,
+	[property: JsonPropertyName("plugin_version")] string PluginVersion = null,
 	[property: JsonPropertyName("duration_ms")] long? DurationMs = null,
 	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent = null,
 	[property: JsonPropertyName("workflow")] string Workflow = null,
