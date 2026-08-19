@@ -936,6 +936,35 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 
 	// The slot goes back to the pool it came from, named on the lease — not to "the" pool. A caller that
 	// waits on a different pool therefore releases into that one without this method changing.
+	// Defers the release of a worker whose termination FAILED until its exit is observed. The wait is
+	// deliberately unbounded and detached: there is no deadline after which it becomes safe to pretend a
+	// live child is gone, and the alternative — a timer that releases anyway — would reintroduce exactly
+	// the invisible runaway this exists to prevent.
+	private void ReleaseWhenExitConfirmed(IContainedWorker worker, WorkerSlotPool pool, bool sticky) {
+		_logger.WriteWarning(
+			$"MCP worker (pid {worker.ProcessId}) did not respond to termination. Its concurrency slot and "
+			+ "registry entry are being HELD until it is observed to exit, so it stays visible to this "
+			+ "host's accounting and to the next clio start's stale-worker reap.");
+		_ = Task.Run(async () => {
+			try {
+				await worker.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+			}
+			catch (Exception exception) when (exception is InvalidOperationException or IOException
+				or ObjectDisposedException) {
+				// The handle can no longer tell us anything, which is not evidence the process is gone.
+				// Reported and NOT released, for the same reason the release is deferred at all.
+				_logger.WriteWarning(
+					$"MCP worker (pid {worker.ProcessId}) could not be watched for exit: {exception.Message}. "
+					+ "Its slot stays held; a later clio start will reap it if it is still running.");
+				return;
+			}
+			_logger.WriteInfo(
+				$"MCP worker (pid {worker.ProcessId}) has exited after a failed termination; its slot is "
+				+ "returned.");
+			ReleaseLease(worker, pool, sticky);
+		});
+	}
+
 	private void ReleaseLease(IContainedWorker worker, WorkerSlotPool pool, bool sticky) {
 		Interlocked.Decrement(ref _activeWorkers);
 		UnregisterWorker(worker);
@@ -1108,10 +1137,29 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 			if (Interlocked.Exchange(ref _disposed, 1) != 0) {
 				return;
 			}
-			if (!_worker.HasExited) {
-				Terminate();
+			if (_worker.HasExited) {
+				_supervisor.ReleaseLease(_worker, _pool, _sticky);
+				return;
 			}
-			_supervisor.ReleaseLease(_worker, _pool, _sticky);
+			if (Terminate() != WorkerTerminationOutcome.Failed) {
+				_supervisor.ReleaseLease(_worker, _pool, _sticky);
+				return;
+			}
+			// THE KILL DID NOT LAND AND THE CHILD IS STILL RUNNING. Releasing here would unregister it,
+			// dispose its handle and hand its slot to the next caller — so an authenticated worker nobody
+			// can see keeps running, absent from the stale reap because its registry entry is gone and
+			// absent from admission accounting because its slot was returned. Repeat that and the host
+			// accumulates invisible children, which is the exact failure this whole boundary removes.
+			//
+			// So the lease keeps BOTH: the registration, so the next parent's reap can finish the job, and
+			// the slot, so the capacity this host advertises stays the capacity it actually has. A held
+			// slot is a visible cost — saturation is reported with its numbers (R-10) — whereas an
+			// invisible runaway is not a cost anybody can measure.
+			//
+			// Release is not abandoned, only deferred to the one event that PROVES the child is gone. If
+			// it never exits, the slot is never returned, and that is the intended reading rather than a
+			// leak: the honest account of a host with an unkillable child is one fewer slot.
+			_supervisor.ReleaseWhenExitConfirmed(_worker, _pool, _sticky);
 		}
 	}
 

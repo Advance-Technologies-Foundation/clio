@@ -9193,3 +9193,28 @@ Files: clio/Command/McpServer/Tools/PageSyncTool.cs,
 Impact: OneShotInterleavingFileGate is the reusable way to test "another writer wins the gate in
   the gap"; InterruptionObservingFileSystem is the way to test a kill. Not interchangeable — the
   first models a competitor, the second models a corpse.
+
+## 2026-08-19 14:10 – Round 13: a slot returned to a child that never died
+Context: codex round 13 over the whole branch. Three findings — one already closed by
+  the commit the review predated, two real.
+Decision: lease disposal no longer treats "we asked it to die" and "it is gone" as the
+  same event. When Kill() reports Failed the lease HOLDS its registration and its slot
+  and releases them only on observed exit. Unbounded wait, deliberately: there is no
+  deadline after which it becomes safe to assume a live process has died, and a timer
+  that released anyway would restore the state being removed.
+Discovery: the old path was the worst available shape. Releasing unregistered the
+  worker, disposed its handle and returned its slot — so a still-running authenticated
+  child was invisible to admission accounting AND absent from the stale reap, because
+  the entry the reap reads had just been deleted. The trade accepted here is that a
+  held slot is VISIBLE (saturation reports its numbers, R-10) while an invisible
+  runaway cannot be reported at all.
+  Test-shape note: each of the two tests guards one direction and only one goes red
+  under the mutation — the hold test. That is correct, not weak coverage: the deferred
+  release passes trivially when everything is released eagerly, so it can only guard
+  the opposite regression.
+Files: clio/Common/McpWorker/WorkerProcessSupervisor.cs,
+  clio.tests/Command/McpServer/WorkerProcessSupervisorTests.cs,
+  spec/adr/adr-mcp-worker-execution-boundary.md
+Impact: "release on confirmation, not on request" is the general form — the same
+  question applies anywhere this codebase returns a resource after asking something
+  else to give it up.

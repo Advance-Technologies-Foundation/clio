@@ -377,6 +377,56 @@ public sealed class WorkerProcessSupervisorTests {
 	}
 
 	[Test]
+	[Description("A worker whose termination FAILS keeps its concurrency slot and its registry entry, because releasing them would hand capacity to a child that is still running and hide it from the stale reap.")]
+	public async Task DisposeLease_ShouldHoldTheSlotAndTheRegistration_WhenTerminationFails() {
+		// Arrange — a cap of one, so the held slot is directly observable: the next spawn either gets in
+		// (the slot was wrongly released) or is refused (the slot is still held by the live child).
+		FakeContainment containment = new() { WorkersRefuseToDie = true };
+		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
+		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
+			concurrencyCap: 1, queueWaitBound: QueueObservationWindow);
+		IWorkerLease lease = await sut.SpawnContainedAsync(
+			new WorkerSpawnRequest { Budget = TimeSpan.FromMinutes(5) },
+			CancellationToken.None);
+
+		// Act
+		lease.Dispose();
+		Func<Task> nextSpawn = async () => await sut.SpawnContainedAsync(
+			new WorkerSpawnRequest { Budget = TimeSpan.FromMinutes(5) },
+			CancellationToken.None);
+
+		// Assert
+		await nextSpawn.Should().ThrowAsync<WorkerQueueWaitExpiredException>(
+			because: "the child is still running, so its slot is still occupied — admitting another worker here would let a host serve more concurrent children than the cap it advertises, with the extra one invisible");
+		registry.DidNotReceive().Remove(Arg.Any<int>(), Arg.Any<long>());
+		sut.GetSnapshot().ActiveWorkers.Should().Be(1,
+			because: "a worker that would not die is still a worker, and an account that drops it is the account that lets invisible children accumulate");
+	}
+
+	[Test]
+	[Description("The slot held for an unkillable worker is returned as soon as that worker is OBSERVED to exit, so a transient termination failure costs capacity only for as long as the child actually lives.")]
+	public async Task DisposeLease_ShouldReturnTheSlot_WhenTheUnkillableWorkerLaterExits() {
+		// Arrange
+		FakeContainment containment = new() { WorkersRefuseToDie = true };
+		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
+		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
+			concurrencyCap: 1, queueWaitBound: UnboundedWaitDetectionWindow);
+		IWorkerLease lease = await sut.SpawnContainedAsync(
+			new WorkerSpawnRequest { Budget = TimeSpan.FromMinutes(5) },
+			CancellationToken.None);
+		lease.Dispose();
+
+		// Act — the child finally goes away, which is the only event that proves it is safe to release.
+		containment.Launched[0].SimulateExit();
+		using IWorkerLease next = await SpawnWithinAsync(sut);
+
+		// Assert
+		next.Should().NotBeNull(
+			because: "holding the slot is deferral, not forfeiture: once the child is gone the capacity must come back without a restart");
+		registry.Received().Remove(Arg.Any<int>(), Arg.Any<long>());
+	}
+
+	[Test]
 	[Description("TC-U-202c: the supervisor's own last-mile check before a kill compares the WHOLE identity triple, so a live process that matches the recorded pid and start time but not the recorded executable is left alone.")]
 	public void TerminateStaleWorker_ShouldRefuseTheKill_WhenOnlyTheExecutablePathDisagrees() {
 		// Arrange — the recorded entry names THIS test host's pid and start time, which is the collision
@@ -693,6 +743,13 @@ public sealed class WorkerProcessSupervisorTests {
 		return new StaleWorkerRegistry(fileSystem, new InterprocessFileGate(fileSystem), _registryRoot);
 	}
 
+	// Spawns with a generous queue wait and fails the test rather than the run if the slot never comes
+	// back: an unbounded wait here would hang the suite instead of reporting the defect.
+	private static async Task<IWorkerLease> SpawnWithinAsync(WorkerProcessSupervisor supervisor) {
+		return await supervisor.SpawnContainedAsync(
+			new WorkerSpawnRequest { Budget = TimeSpan.FromMinutes(5) }, CancellationToken.None);
+	}
+
 	private static Process StartFixture(params string[] arguments) {
 		ProcessStartInfo startInfo = new() {
 			FileName = ResolveFixtureExecutable(),
@@ -785,10 +842,20 @@ public sealed class WorkerProcessSupervisorTests {
 
 		public bool OwnsProcessCreation => true;
 
+		/// <summary>Every worker this containment has launched, in launch order.</summary>
+		public List<FakeContainedWorker> Launched { get; } = [];
+
+		/// <summary>When set, every worker launched from here refuses to die.</summary>
+		public bool WorkersRefuseToDie { get; set; }
+
 		public IContainedWorker Launch(WorkerLaunchRequest request) {
 			LaunchCount++;
 			LastRequest = request;
-			return new FakeContainedWorker(Interlocked.Increment(ref _nextProcessId));
+			FakeContainedWorker worker = new(Interlocked.Increment(ref _nextProcessId)) {
+				RefuseToDie = WorkersRefuseToDie
+			};
+			Launched.Add(worker);
+			return worker;
 		}
 
 		public IContainedWorker Adopt(IWorkerProcessHandle startedProcess) =>
@@ -833,10 +900,23 @@ public sealed class WorkerProcessSupervisorTests {
 			await _exited.Task.WaitAsync(cancellationToken);
 		}
 
+		/// <summary>
+		/// When set, <see cref="Kill"/> reports failure and leaves the worker RUNNING — the state a real
+		/// containment reports when the signal is refused (EPERM, a job object the host will not
+		/// terminate) and the one case where a released slot would hand capacity to a live child.
+		/// </summary>
+		public bool RefuseToDie { get; set; }
+
 		public WorkerTerminationOutcome Kill() {
+			if (RefuseToDie) {
+				return WorkerTerminationOutcome.Failed;
+			}
 			_exited.TrySetResult(true);
 			return WorkerTerminationOutcome.ContainedJobTerminated;
 		}
+
+		/// <summary>Lets a test end the unkillable worker so the deferred release can be observed.</summary>
+		public void SimulateExit() => _exited.TrySetResult(true);
 
 		public void Dispose() => _exited.TrySetResult(true);
 	}

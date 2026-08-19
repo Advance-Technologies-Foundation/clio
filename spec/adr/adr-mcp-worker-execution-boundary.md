@@ -466,6 +466,22 @@ Two consequences follow, and the second is the one that is easy to get subtly wr
   it. The sticky cap then also *is* the number of concurrent long operations a host supports — state
   it, and refuse the next one immediately by name rather than after a 60-second queue.
 
+**A slot is returned when the worker is GONE, not when we asked it to go (added 2026-08-19).** The
+release path took the two to be the same: lease disposal killed the child and returned its slot in one
+step, whatever the kill reported. Termination can fail — a refused signal, a job object the host will
+not terminate — and on that path the release unregistered the worker, disposed its handle and handed
+its slot to the next caller while the child kept running. The result is the worst shape available
+here: an authenticated worker that is invisible to admission accounting AND absent from the stale reap,
+because the entry that reap reads had just been deleted. Repeat it and a host accumulates children
+nobody can count or find.
+
+So a failed termination now HOLDS both the registration and the slot, and releases them only when the
+child is observed to exit. The cost is a slot's capacity for as long as the child actually lives, and
+that cost is deliberate: a held slot is visible — saturation is reported with its own numbers (R-10) —
+whereas an invisible runaway is not something the host can report at all. There is no deadline after
+which it becomes safe to assume a live process has died, so the wait for exit is unbounded rather than
+timed; a timer that released anyway would restore exactly the state this removes.
+
 Testing note, because the obvious test passes either way: the discriminating case is a poll issued
 while the sticky pool is **saturated**. A poll on an idle host reaches its worker under both the
 correct and the deadlocking implementation.
