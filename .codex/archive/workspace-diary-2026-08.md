@@ -8807,6 +8807,61 @@ Discovery: the e2e used the id as the css-class-name as well (`["id"] = themeId,
 Files: clio/Theming/ThemeParameterValidator.cs, clio/Command/Theming/{CreateThemeCommand,UpdateThemeCommand,DeleteThemeCommand}.cs, clio/Command/McpServer/Tools/{CreateThemeTool,UpdateThemeTool,DeleteThemeTool}.cs, clio/docs/commands/{create,update,delete}-theme.md, clio/help/en/{create,update,delete}-theme.txt, clio.tests/Theming/ThemeParameterValidatorTests.cs, clio.tests/Command/{CreateThemeCommandTests,UpdateThemeCommandTests,DeleteThemeCommandTests,ThemeRequestBuilderTests}.cs, clio.mcp.e2e/ThemingSandboxE2ETests.cs
 Impact: `~Theme|~HelpArtifact|~CommandHelp|~Wiki` 430 green; full unit suite 8983 passed / 20 failed / 42 skipped against a clean-master baseline of 8980 / 20 / 42 — the same 20 pre-existing macOS-platform failures (Windows paths, IIS, NetFramework HTTPS), so three net new tests and no regression. Generalisation: when an e2e goes red with a server-side deserialization message, diff the server repo before touching the test — the commit that broke it may say "breaks backward compatibility" in its own message, and the client-side contract text (help, docs, MCP `[Description]`) is part of what has to move with it.
 
+## 2026-08-18 14:20 – Fix flaky application progress-marker e2e assertions (issue #1103)
+Context: Three `clio.mcp.e2e` application tests painted every clio PR red on the shared TeamCity stand
+while trunk stayed green; all three are muted in `Team_Atf` with `resolution=whenFixed`.
+Decision: Fix the CLIENT side of the two progress tests rather than the server. Added
+`MessageCollectingProgress.WaitForMessagesAsync` / `WaitForCountAsync` — the typed-sink counterpart of the
+existing `McpServerSession.WaitForCapturedProgressAsync` — and replaced the immediate
+`progress.Count` / `progress.Messages.Should().Contain(...)` assertions with a bounded wait. Assert
+create-app success BEFORE expecting its markers, and moved the create precondition in the sync-schemas
+test to immediately after the create so the real create error is reported instead of a late timeout.
+Discovery: (1) The root cause is stated in the repo already — `McpServerSession.cs` documents that "tool
+completion and notification dispatch use independent SDK continuations", so a completed `tools/call` does
+NOT mean the sink has drained. (2) `McpProgressHeartbeat.PumpChannelAsync` delays BEFORE its first beat,
+so a heartbeat is only guaranteed when work outlasts the interval — at the test's forced 0.05 s override a
+backend round-trip always qualifies, which is why a client-side wait is the complete fix for the keep-alive
+test and no immediate-first-beat change is needed. (3) The stage markers are pushed as each phase runs, so
+a create that dies early legitimately never streams the later markers — the old test blamed the progress
+path for what was an environment failure (same finding as PR #1083 for sync-schemas).
+Discovery: local macOS baseline for these two fixtures is 14 failed / 13 skipped on a clean master
+worktree (no sandbox configured — `TestConfiguration.EnsureSandboxIsConfigured` fails); the branch matches
+it exactly, so local runs prove no regression but cannot exercise the sandbox tests.
+Files: clio.mcp.e2e/Support/Mcp/MessageCollectingProgress.cs,
+clio.mcp.e2e/MessageCollectingProgressWaitTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs,
+clio.mcp.e2e/ApplicationSectionToolE2ETests.cs
+Impact: Gives the e2e project a reusable bounded wait for typed progress assertions — any future
+notifications/progress test should use it instead of asserting on the post-call snapshot. Also records that
+a muted `whenFixed` test reports a GREEN build whether or not a fix works, so validating a flake fix means
+reading per-test status, not build status.
+
+## 2026-08-18 15:55 – e2e job DOES isolate the stand per build (corrects issue #1103)
+Context: Issue #1103 blamed the flaky application e2e tests on 10+ concurrent builds contending for one
+shared Creatio sandbox, and proposed serialising the job or provisioning an isolated stand per build.
+Alex asked why that regressed, since a per-run site was the original design.
+Discovery: it did NOT regress — isolation is in place and working. `teamcity api
+/app/rest/builds/id:<id>/resulting-properties` on the three builds cited in the issue shows
+`DeployedUrl=http://ts1-agent<N>:88/studioenu_<buildId>_<MMDD>`, matching `DeployedDatabaseName` and
+`ApplicationPoolName`, with `DeployCreatioBuild=true`, `env.ApplicationAlreadyDeployed=False`,
+`PublishServerName=%env.COMPUTERNAME%`, `UseSharingDBMS/UseSharingIIS=false`. Concurrent builds were each
+on a different agent (ts1-agent06/18/27/37/45/51/54/60).
+Discovery: what makes this LOOK like a shared stand — (a) at buildType level `DeployedUrl`,
+`DeployedDatabaseName` and `BuildPath` are EMPTY (auto-derived per run), so reading
+`/app/rest/buildTypes/<id>/parameters` suggests nothing is configured; you must read a build's
+`resulting-properties`. (b) `env.McpE2E__Sandbox__EnvironmentName=dev` is a constant, but it is only the
+clio ENV NAME, registered against the per-build URL.
+Discovery: intra-build contention is ruled out too — `clio.mcp.e2e.runsettings` sets
+`NumberOfTestWorkers=2`, but only 25 of 135 fixtures are `[Parallelizable]` and both application fixtures
+are `[NonParallelizable]`.
+Discovery: consequently `ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync` is UNEXPLAINED —
+build 15893413 shows an ~11.2s `create-app` failure with `found False` and no error text, on a fresh
+dedicated stand. Post-deploy warm-up is a guess, not verified.
+Files: (no code change) — issue #1103 body + comment, PR #1104 body, test comments in
+clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionToolE2ETests.cs
+Impact: Do NOT attribute a clio.mcp.e2e failure to other builds on the stand, and do not propose job
+serialisation for it. Read `resulting-properties` of a build, never the buildType `/parameters`, when
+checking how a TeamCity job provisions its environment.
+
 ## 2026-08-18 14:10 – ENG-95429 round-3 review: a partial crash fix and a test that could not see it
 Context: Three parallel reviewers over the full PR #1086 diff, after the slot rule and the SonarCloud dedup landed.
 Decision: Applied all Medium findings. The slot rule now reads the button type from `values.type` ONLY (not the lenient `GetMobileEntryType`) and matches the operation case-sensitively — that single change removed a double-diagnostic on the canonical ENG-95429 body, a whitespace disagreement between the two rules, and a pair of contradictory warnings on a mis-cased operation. Removed the concrete `MainContainer` from the remedy text: an agent obeying it on a page without that container gets an insert the differ silently drops — clio's own advice reproducing the failure class the ticket is about. Routed every echoed body value through the file's existing `Truncate` + control-character stripping (I had REJECTED truncation in round 1 on "no injection sink" grounds; the round-3 argument is different and correct — the file already ships the convention with a written rationale about the MCP transcript and the flattened `"; "` join).
