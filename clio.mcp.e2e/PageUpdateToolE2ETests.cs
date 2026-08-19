@@ -1170,6 +1170,51 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-95429 on the WRITE path: update-page refuses to save a mobile body whose viewConfigDiff insert carries its component type on the operation object instead of inside 'values'. The defect being fixed is a write that SUCCEEDS while persisting an unrenderable element, so this asserts the save is actually aborted end to end — unit coverage of the validator alone cannot show that.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects a mobile insert whose type sits outside values")]
+	[AllureDescription("Sends the ENG-95429 shape through the real MCP server and verifies update-page returns success=false naming the element, rather than saving an element the mobile runtime cannot render.")]
+	public async Task PageUpdateTool_Should_Reject_Mobile_Insert_With_Type_Outside_Values() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMisplacedType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton", "type": "crt.Button",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrSomeProcess",
+			                                           "processRunType": "RegardlessOfThePage" } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBodyWithMisplacedType
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a validation failure is a structured tool result, not a protocol error");
+		response.Success.Should().BeFalse(
+			because: "the differ discards an operation-level type, so the save must abort instead of persisting an unrenderable element");
+		response.Error.Should().Contain("RunProcessButton",
+			because: "the failure must name the offending element so the agent fixes the right entry");
+		response.Error.Should().Contain("values",
+			because: "the actionable fix must survive into the write-path response, not only the validator result");
+	}
+
+	[Test]
 	[Description("Accepts a valid mobile JSON body (plain JSON starting with '{') and skips AMD marker validation.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page accepts a valid mobile JSON body without AMD markers")]
