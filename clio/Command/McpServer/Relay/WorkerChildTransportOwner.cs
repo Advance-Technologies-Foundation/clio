@@ -75,6 +75,20 @@ public interface IWorkerChildTransportOwner {
 /// <inheritdoc cref="IWorkerChildTransportOwner"/>
 public sealed class WorkerChildTransportOwner : IWorkerChildTransportOwner {
 
+	private readonly long _maxWorkerMessageBytes;
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="WorkerChildTransportOwner"/> class.
+	/// </summary>
+	public WorkerChildTransportOwner()
+		: this(WorkerStdoutBoundedStream.DefaultMaxMessageBytes) {
+	}
+
+	// The bound is injectable only from inside the assembly, so a test can prove what a worker exceeding
+	// it actually does to the transport without writing 64 MB to a pipe to find out.
+	internal WorkerChildTransportOwner(long maxWorkerMessageBytes) =>
+		_maxWorkerMessageBytes = maxWorkerMessageBytes;
+
 	/// <inheritdoc/>
 	public async Task<ITransport> ConnectAsync(Stream workerStandardInput, Stream workerStandardOutput,
 		CancellationToken cancellationToken) {
@@ -97,7 +111,7 @@ public sealed class WorkerChildTransportOwner : IWorkerChildTransportOwner {
 		// R-11's standard-output half. Applied HERE because this is the one place all three dispatch paths
 		// — per-call, sticky and terminal-stage — hand the worker's stream to the SDK, so a bound placed
 		// anywhere else would cover some of them and quietly miss the rest.
-		Stream boundedOutput = new WorkerStdoutBoundedStream(workerStandardOutput);
+		Stream boundedOutput = new WorkerStdoutBoundedStream(workerStandardOutput, _maxWorkerMessageBytes);
 		// StreamClientTransport is a value-like SDK wrapper over the two streams, not a clio behaviour
 		// class, so constructing it here is the intended use and not a DI bypass.
 		StreamClientTransport transport = new(workerStandardInput, boundedOutput, loggerFactory: null);

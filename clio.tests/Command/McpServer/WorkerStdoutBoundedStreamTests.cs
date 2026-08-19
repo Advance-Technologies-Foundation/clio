@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Relay;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -83,6 +84,27 @@ public sealed class WorkerStdoutBoundedStreamTests {
 	}
 
 	[Test]
+	[Description("An over-bound message is caught even when the read that carries it also carries the end of a previous message, because the reader chooses its own buffer size and a delimiter earlier in the buffer must not carry the remainder past the check.")]
+	public async Task ReadAsync_ShouldFail_WhenTheOversizedMessageFollowsADelimiterInTheSameRead() {
+		// Arrange - one read buffer larger than the bound, holding the tail of one message and the start
+		// of a runaway.
+		byte[] payload = Encoding.UTF8.GetBytes("done\n" + new string('q', SmallBound * 2));
+		using MemoryStream inner = new(payload);
+		await using WorkerStdoutBoundedStream sut = new(inner, SmallBound);
+		byte[] buffer = new byte[payload.Length];
+
+		// Act
+		Func<Task> read = async () => {
+			while (await sut.ReadAsync(buffer, CancellationToken.None).ConfigureAwait(false) > 0) {
+			}
+		};
+
+		// Assert
+		await read.Should().ThrowAsync<IOException>(
+			because: "the bound must hold whatever the reader's buffer happens to contain, or a runaway is admitted by the accident of a message boundary landing in the same read");
+	}
+
+	[Test]
 	[Description("The shipped bound is set far above the largest payload clio produces, so it can only ever fire on a runaway and never truncate a real answer.")]
 	public void DefaultMaxMessageBytes_ShouldBeOrdersOfMagnitudeAboveTheLargestRealPayload() {
 		// Arrange - the largest real payload measured in this repository is the live component registry
@@ -96,6 +118,43 @@ public sealed class WorkerStdoutBoundedStreamTests {
 		// Assert
 		bound.Should().BeGreaterThan(largestObservedRealPayloadBytes * 4,
 			because: "a cap that fires on a working call converts this feature into a regression, which is a worse outcome than the memory it would save");
+	}
+
+	[Test]
+	[Description("Driven through the SDK transport the relay actually uses: once a worker exceeds the bound the transport delivers nothing further, so a runaway cannot keep the parent reading and cannot smuggle later messages through behind it.")]
+	public async Task Transport_ShouldDeliverNothingFurther_WhenTheWorkerExceedsTheBound() {
+		// Arrange - an oversized first message, then a PERFECTLY VALID one. Without the bound the valid
+		// message arrives; with it, the transport is finished. That second message is the whole
+		// discriminator: a test that only asserted "the stream ended" would pass on end-of-file alone and
+		// prove nothing about the bound. The SDK frames messages with a newline
+		// (StreamClientSessionTransport reads lines), which is what the per-message reset depends on, so
+		// driving the real transport pins that assumption where it would otherwise be inference.
+		string runaway = new('r', SmallBound * 4);
+		const string validMessage = """{"jsonrpc":"2.0","method":"notifications/progress","params":{}}""";
+		using MemoryStream workerInput = new();
+		using MemoryStream workerOutput = new(Encoding.UTF8.GetBytes($"{runaway}\n{validMessage}\n"));
+		WorkerChildTransportOwner sut = new(SmallBound);
+		using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(15));
+
+		// Act
+		int delivered = 0;
+		await using ITransport transport = await sut.ConnectAsync(workerInput, workerOutput, timeout.Token);
+		try {
+			await foreach (JsonRpcMessage _ in transport.MessageReader.ReadAllAsync(timeout.Token)
+				.ConfigureAwait(false)) {
+				delivered++;
+			}
+		}
+		catch (Exception exception) when (exception is not OperationCanceledException) {
+			// A faulted stream is an acceptable outcome and a normal completion is too; what must NOT
+			// happen is a hang, or a message arriving from behind the runaway.
+		}
+
+		// Assert
+		delivered.Should().Be(0,
+			because: "the bound must end the relay's reading of this worker, not merely skip the oversized message and carry on reading whatever follows it");
+		timeout.IsCancellationRequested.Should().BeFalse(
+			because: "the failure mode that matters is a HANG: a bound that stalls the read loop instead of ending it turns a runaway worker into a call nobody ever answers, which is the wedge this feature exists to remove");
 	}
 
 	[Test]

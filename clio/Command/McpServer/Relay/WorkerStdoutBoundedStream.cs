@@ -139,25 +139,37 @@ internal sealed class WorkerStdoutBoundedStream : Stream {
 		await base.DisposeAsync().ConfigureAwait(false);
 	}
 
-	// Counts bytes since the last message delimiter. Scanning the bytes the reader actually received —
-	// rather than trusting any framing above — is what makes the accounting independent of how the SDK
-	// chunks its reads.
+	// Counts the length of EVERY message in what the reader just received, not merely of the one still
+	// being read. The distinction is not academic: a first draft reset the counter to the bytes after the
+	// LAST delimiter in the chunk, which made an oversized message invisible whenever a later delimiter
+	// happened to land in the same buffer — and driving the real SDK transport is what exposed it, because
+	// a small payload arrives in exactly one read. Scanning the bytes the reader actually received, rather
+	// than trusting any framing above, is also what keeps the accounting independent of how the SDK chunks
+	// its reads.
 	private void Account(ReadOnlySpan<byte> justRead) {
-		if (justRead.IsEmpty) {
+		int start = 0;
+		while (start <= justRead.Length) {
+			int delimiter = justRead[start..].IndexOf((byte)'\n');
+			if (delimiter < 0) {
+				// No further boundary: the rest belongs to the message still being read.
+				_currentMessageBytes += justRead.Length - start;
+				break;
+			}
+			_currentMessageBytes += delimiter;
+			ThrowIfOverBound();
+			// That message is complete and within the bound; the next one starts after the delimiter.
+			_currentMessageBytes = 0;
+			start += delimiter + 1;
+		}
+		ThrowIfOverBound();
+	}
+
+	private void ThrowIfOverBound() {
+		if (_currentMessageBytes <= _maxMessageBytes) {
 			return;
 		}
-		int lastDelimiter = justRead.LastIndexOf((byte)'\n');
-		if (lastDelimiter >= 0) {
-			// Everything up to and including the delimiter belongs to messages that are now complete; only
-			// the remainder is the message still being read.
-			_currentMessageBytes = justRead.Length - (lastDelimiter + 1);
-			return;
-		}
-		_currentMessageBytes += justRead.Length;
-		if (_currentMessageBytes > _maxMessageBytes) {
-			long limitMegabytes = _maxMessageBytes / (1024 * 1024);
-			throw new IOException(string.Create(CultureInfo.InvariantCulture,
-				$"The MCP worker sent a single message larger than the {limitMegabytes} MB limit, so the relay stopped reading it. This is a runaway worker, not a large answer: the limit is far above any response clio produces."));
-		}
+		long limitMegabytes = _maxMessageBytes / (1024 * 1024);
+		throw new IOException(string.Create(CultureInfo.InvariantCulture,
+			$"The MCP worker sent a single message larger than the {limitMegabytes} MB limit, so the relay stopped reading it. This is a runaway worker, not a large answer: the limit is far above any response clio produces."));
 	}
 }
