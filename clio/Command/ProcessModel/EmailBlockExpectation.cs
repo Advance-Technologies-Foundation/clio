@@ -23,6 +23,11 @@ namespace Clio.Command.ProcessModel;
 /// </summary>
 public static class EmailBlockExpectation {
 
+	// Descriptor/operation JSON keys, named once so the parsing shape reads consistently and to keep the
+	// repeated string literals out of the analyzer's duplicate-literal radar.
+	private const string ElementsKey = "elements";
+	private const string EmailKey = "email";
+
 	/// <summary>
 	/// Element names that a build descriptor asks to configure as email elements — every entry under
 	/// <c>elements[]</c> carrying a non-null <c>email</c> object. Returns an empty list for a payload with no email
@@ -31,13 +36,13 @@ public static class EmailBlockExpectation {
 	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
 	public static IReadOnlyList<string> FromDescriptor(string descriptorJson) {
 		JsonObject? descriptor = TryParse(descriptorJson) as JsonObject;
-		if (descriptor?["elements"] is not JsonArray elements) {
+		if (descriptor?[ElementsKey] is not JsonArray elements) {
 			return Array.Empty<string>();
 		}
 
 		List<string> names = [];
 		foreach (JsonNode? element in elements) {
-			if (element is not JsonObject candidate || candidate["email"] is not JsonObject) {
+			if (element is not JsonObject candidate || candidate[EmailKey] is not JsonObject) {
 				continue;
 			}
 
@@ -68,7 +73,7 @@ public static class EmailBlockExpectation {
 			}
 
 			// addElement: the descriptor (and therefore the name) is nested under "element".
-			if (op["element"] is JsonObject added && added["email"] is JsonObject) {
+			if (op["element"] is JsonObject added && added[EmailKey] is JsonObject) {
 				string? name = added["name"]?.GetValue<string>();
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
@@ -76,7 +81,7 @@ public static class EmailBlockExpectation {
 			}
 
 			// setElement: the name is on the operation, the block is under "elementUpdate".
-			if (op["elementUpdate"] is JsonObject update && update["email"] is JsonObject) {
+			if (op["elementUpdate"] is JsonObject update && update[EmailKey] is JsonObject) {
 				string? name = op["elementName"]?.GetValue<string>();
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
@@ -134,7 +139,7 @@ public static class EmailBlockExpectation {
 		}
 
 		string elements = string.Join("', '", missing);
-		string subject = missing.Count == 1 ? "element" : "elements";
+		string subject = ElementNoun(missing.Count);
 		// States the OBSERVATION as fact and the CAUSE as the likely one. All this check saw is that the block is
 		// absent from the read-back; "the package predates sendEmail" is the explanation that fits, not something
 		// it measured, and asserting it outright would be a diagnosis dressed up as evidence.
@@ -156,13 +161,13 @@ public static class EmailBlockExpectation {
 	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
 	public static IReadOnlyList<string> MacroBodyElements(string descriptorJson) {
 		JsonObject? descriptor = TryParse(descriptorJson) as JsonObject;
-		if (descriptor?["elements"] is not JsonArray elements) {
+		if (descriptor?[ElementsKey] is not JsonArray elements) {
 			return Array.Empty<string>();
 		}
 
 		List<string> names = [];
 		foreach (JsonNode? element in elements) {
-			if (element is not JsonObject candidate || candidate["email"] is not JsonObject email) {
+			if (element is not JsonObject candidate || candidate[EmailKey] is not JsonObject email) {
 				continue;
 			}
 
@@ -218,7 +223,7 @@ public static class EmailBlockExpectation {
 		}
 
 		string elements = string.Join("', '", unresolved);
-		string subject = unresolved.Count == 1 ? "element" : "elements";
+		string subject = ElementNoun(unresolved.Count);
 		return $"The operation reported success, but the Send email body for the {subject} '{elements}' carried "
 			+ "process-macro placeholders ([[param:…]] / [[element:…]]) that the read-back shows did NOT resolve "
 			+ "(the element reports a body but describe returned none). The usual cause is a deployed CrtProcessBuilder "
@@ -227,6 +232,9 @@ public static class EmailBlockExpectation {
 			+ "(clio install-process-builder) and re-apply the body, or insert the process data through the "
 			+ "designer's Content designer.";
 	}
+
+	// Singular/plural of "element" for a count, kept in one place so the noun is not a duplicated string literal.
+	private static string ElementNoun(int count) => count == 1 ? "element" : "elements";
 
 	private static bool ContainsMacro(string body) =>
 		body.IndexOf("[[param:", StringComparison.OrdinalIgnoreCase) >= 0
