@@ -598,6 +598,40 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the warning to the related-list static-filter guidance");
 	}
 
+	[Test]
+	[Description("validate-page returns a WARNING (not a hard failure) when a crt.HandleViewModelAttributeChangeRequest handler is not scoped to an attribute but writes a view-model attribute via $context.set(...) — the unscoped handler re-fires on its own write and clears the field at runtime (ENG-95557). Proves the handler-attribute-change-unscoped-write lint rule surfaces through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about an unscoped attribute-change handler that writes an attribute")]
+	[AllureDescription("Sends a body whose SCHEMA_HANDLERS array holds an unscoped crt.HandleViewModelAttributeChangeRequest handler that calls $context.set(...) and verifies validate-page surfaces an advisory WARNING carrying handler-attribute-change-unscoped-write while keeping valid=true — the self-retrigger footgun is a runtime clear, not a structural break.")]
+	public async Task PageValidateTool_Should_Warn_On_Unscoped_AttributeChange_Handler_Write() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithUnscopedHandler = ValidPageBody.Replace(
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"handlers: /**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+				"handler: async (request, next) => { await request.$context.set(\"UsrCountryCode\", request.value); " +
+				"return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithUnscopedHandler);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an unscoped attribute-change handler that writes an attribute is a runtime self-retrigger footgun, not a structural break — validate-page must advise rather than block so the page still saves");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a Warning-severity lint finding must not demote content-ok — only Error findings block");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must flag the unscoped attribute-change write as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("handler-attribute-change-unscoped-write", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the warning to the page-schema-handlers scoping guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
