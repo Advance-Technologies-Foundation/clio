@@ -65,6 +65,16 @@ claim() {
         ( cd "$sandbox/work" && PATH="$sandbox/bin:$PATH" FAKE_GH_STATE="$sandbox/state" \
             bash "$repo_root/scripts/claim-issue.sh" "${args[@]}" ) >"$sandbox/last.out" 2>"$sandbox/last.err" || rc=$?
     fi
+    # Diagnostics on any non-zero run — including the cases that are supposed to fail, since what
+    # matters is that they failed for the documented reason and not by accident.
+    if (( rc != 0 )); then
+        {
+            printf '       [exit %s] stdout:\n' "$rc"
+            sed 's/^/         | /' "$sandbox/last.out"
+            printf '       [exit %s] stderr:\n' "$rc"
+            sed 's/^/         | /' "$sandbox/last.err"
+        } >&2
+    fi
     echo "$rc"
 }
 

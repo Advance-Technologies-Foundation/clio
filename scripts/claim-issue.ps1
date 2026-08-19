@@ -238,13 +238,20 @@ function Complete-Run {
     exit $Code
 }
 
+# An empty FILE rather than piping '' into --stdin: the PowerShell pipeline appends a newline,
+# and a one-byte tree object is corrupt, so `git hash-object -t tree` rejects it. A temporary
+# empty file also avoids the /dev/null vs NUL split.
+$emptyTree = $null
+$emptyFile = [System.IO.Path]::GetTempFileName()
 $previous = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-    # --stdin with no input rather than a /dev/null vs NUL device path, so this works on any host.
-    $emptyTree = ('' | & git hash-object -w -t tree --stdin 2>$null | Select-Object -First 1)
+    $emptyTree = (& git hash-object -w -t tree $emptyFile 2>$null | Select-Object -First 1)
 }
-finally { $ErrorActionPreference = $previous }
+finally {
+    $ErrorActionPreference = $previous
+    Remove-Item -LiteralPath $emptyFile -Force -ErrorAction SilentlyContinue
+}
 if (-not $emptyTree) {
     Write-Err 'Could not create the empty tree object needed for the claim commit.'
     exit $ExitLost
