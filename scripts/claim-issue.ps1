@@ -49,7 +49,7 @@ if ($assignees.Count -gt 0) {
 	exit 1
 }
 
-$body = "`u{1F916} An automated agent started working on this issue."
+$body = "🤖 An automated agent started working on this issue."
 if ($Branch -and $Branch -ne 'HEAD') {
 	$body += "`n`nWorking branch: ``$Branch``"
 }
