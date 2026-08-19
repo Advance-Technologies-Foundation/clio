@@ -8853,3 +8853,35 @@ Decision: new `handler-attribute-change-unscoped-write` Warning in PageBodyAstLi
 Discovery (from d-krestov's CHANGES_REQUESTED review, all four fixed): (1) an earlier `condition: { attributeName }` suppressor was UNSUBSTANTIATED — that key is nowhere in the page-schema-handlers guide nor anywhere in the repo, and if Freedom UI silently ignores it the linter would both stay quiet on the real defect AND advise a silently-ignored key. Dropped the `condition` suppressor, its message clause, and both condition tests; only the guide-documented in-body guard scopes. (2) `TryGetInitProperty` rejects `Method: true`, so a shorthand-method `handler(request, next) {}` was a FALSE NEGATIVE; added `TryGetEntryProperty` (accepts method-form) for the `request`/`handler` keys. Bracket-access `request["attributeName"]` was a FALSE POSITIVE; `ScanHandlerBody` now also matches a COMPUTED member access on the `"attributeName"` property literal — `MemberExpression { Computed: true, Property: Literal { Value: "attributeName" } }`. (A first pass matched a bare `Literal { Value: "attributeName" }` anywhere in the body; a second code-review round caught that this silences the warning on an incidental literal such as `$context.set("attributeName", x)` — a new false negative on the exact ENG-95557 footgun — so it was narrowed to the computed-member form. A THIRD round caught that neither existing test distinguished the narrowed form from the bare-literal one (a revert stayed green), so a dedicated regression lock was added — `Lint_ShouldWarn_WhenIncidentalAttributeNameLiteralButWriteUnscoped`, an unscoped `$context.set("attributeName", ...)` that MUST warn — and verified to go red under the reverted bare-literal match. A separate specificity test pins that a bracket read of a DIFFERENT key still warns.) (3) the doc comment no longer claims "zero false positives" — a guard hidden behind a helper call (an early return driven by a helper predicate) is an acknowledged residual FP (needs inter-procedural analysis); (4) the message now offers an exit for the intentional cross-field-recompute case (still guard against self-re-entry). A final commit reworded the rule doc comment to clear SonarCloud S125 (it read statement-like snippets as commented-out code).
 Files: clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs
 Impact: `~PageBodyAstLinter` 38 green (added shorthand-method-warns, bracket-access-no-warn, bracket-key-specificity-warns, incidental-literal regression lock, condition-only-warns; removed two condition tests, retargeted the mixed-array test's scoped entry to an in-body guard); `Category=Unit&Module=McpServer` 3463 passed / 1 skipped; new e2e `PageValidateTool_Should_Warn_On_Unscoped_AttributeChange_Handler_Write` 1/1 (net10). SonarCloud PR #1107: Quality Gate OK, 0 bugs / 0 vulns / 0 smells. Generalisation: a linter suppressor must scope on a signal the platform actually honors — before teaching a rule to stay quiet on a config key, prove the key exists in the shipped guidance and that the runtime respects it, or the rule advises a footgun while going blind to the exact defect it targets; and anchor a token-based suppressor to its real syntactic position (a computed member access), never a bare literal match, or an incidental occurrence silences it.
+
+## 2026-08-19 16:20 – Login-failure diagnostics for GH #1106 flaky e2e
+Context: GitHub issue #1106 items 3/4 — clio MCP e2e `create-app-section` / `update-app-section`
+intermittently fail with `Unauthorized ***** for [uri]`. Prior pass proposed no fix because the
+concurrent-login theory could not be confirmed from static analysis.
+Decision: ship instrumentation only (operator's call). Decorate a rejected login with timing +
+concurrency context so the next TeamCity reproduction proves or kills the theory. No behavioral
+change; `SectionCreateSerializationGuard` scope deliberately left alone (ADR-level).
+Discovery (three facts, all verified, two of them by decompiling creatio.client 1.0.38):
+1. `CreatioClient.Login()` throws `UnauthorizedAccessException("Unauthorized {user} for {url}")` when
+   the login response body contains `"Code":1` — so the e2e failures are a SERVER-side login
+   rejection, not a gap in `ReauthExecutor`. It also assigns `_authCookie = new CookieContainer()`
+   BEFORE the request, so a failed login destroys an existing valid session.
+2. `CreatioClient.InitAuthCookie()` logs in IMPLICITLY from inside every request method when the
+   client has no auth cookie yet. This is the dominant path in the MCP surface (every tool call
+   builds its own `IApplicationClient`), and it is invisible to adapter-level `Login()` wrapping.
+   Found only by a runtime check against a fake Creatio — static reading had missed it.
+3. `SurfacedExceptionMessage.Resolve` (MCP boundary) and `Exception.GetBaseException()` (application
+   -section commands) BOTH reduce to the inner-most exception. A wrapper that keeps the original as
+   its InnerException therefore has its message silently discarded — so `CreatioLoginFailedException`
+   is deliberately inner-less, with the original in `Exception.Data`.
+Runtime verification: local fake Creatio (returns `"Code":1` on the login URL; login-page HTML on
+data URLs) reproduced both shapes through the real `CreatioClient` and showed the decorated message
+for `kind=implicit` and `kind=reauth`.
+Files: clio/Common/LoginDiagnostics.cs, clio/Common/ILoginDiagnostics.cs,
+clio/Common/LoginAttemptKind.cs, clio/Common/CreatioLoginFailedException.cs,
+clio/Common/CreatioClientAdapter.cs, clio/BindingsModule.cs,
+clio.tests/Common/LoginDiagnosticsTests.cs
+Impact: any future "Unauthorized … for …" in CI now carries kind / client id / ordinal /
+in-flight-logins / in-flight-requests / timestamps, so the concurrent-login question is answerable
+from the log alone. Reusable pattern: when a diagnostic must survive to an MCP caller, the carrying
+exception must be the inner-most one.
