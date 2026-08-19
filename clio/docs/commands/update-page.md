@@ -72,6 +72,13 @@ name instead of trying to edit a non-existent local `insert`.
     renders, as the `values` copy. Two identical types are accepted silently.
   - **Warned — an operation whose letter case does not match** the differ's exact-case dispatch
     (`"Insert"`): the whole operation is discarded, so it authors nothing.
+  - **Warned — a `crt.Button` inserted into the Scaffold `actions` slot** (`parentName: "Scaffold"`,
+    `propertyName: "actions"`). ENG-95429: the save succeeds, but a button placed there does not appear on the
+    Freedom UI mobile designer canvas, so nobody can see or edit it there. Place it as an item of a page
+    container instead — `propertyName: "items"` on a container the page or its template actually declares
+    (confirm the name with `get-page`) — and give it a `layoutConfig`; that is the shape the designer itself
+    emits. Advisory rather than blocking: `actions` is a legitimate runtime slot (the platform's own Save
+    button lives there), so the defect is design-time discoverability, not an invalid write.
   - If an offending entry came back from `get-page`, the page already carries the defect — correct it in the
     body you send back.
   - **Not enforced:** the same type-placement defect breaks **web** pages identically and is not checked

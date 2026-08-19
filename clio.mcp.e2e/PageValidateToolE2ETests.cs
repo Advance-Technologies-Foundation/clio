@@ -752,6 +752,44 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-95429: a well-formed crt.Button insert into Scaffold/actions passes validation (valid=true) but comes back with the placement warning. This is the body a coding agent actually produced; the type-placement rule correctly stays silent on it, so the slot advisory is the only thing that can steer the author to a placement the mobile designer canvas can show.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about a mobile button in the Scaffold actions slot")]
+	[AllureDescription("Sends the stand-verified ENG-95429 body — type inside values, correct operation case, inserted into Scaffold/actions — and verifies validate-page accepts it but returns the non-blocking placement warning pointing at a page container's items with a layoutConfig.")]
+	public async Task PageValidateTool_Should_Warn_About_Mobile_Button_In_Scaffold_Actions() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithButtonInActions = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton",
+			      "parentName": "Scaffold", "propertyName": "actions",
+			      "values": { "type": "crt.Button",
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrSomeProcess",
+			                                           "processRunType": "RegardlessOfThePage" } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithButtonInActions);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the placement is undiscoverable in the designer, not invalid — the rule steers rather than refuses");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().NotBeNullOrEmpty(
+			because: "the whole point of the rule is that this body is otherwise clean and would pass unremarked");
+		response.Validation.Warnings!.Should().Contain(
+			w => w.Contains("RunProcessButton") && w.Contains("layoutConfig"),
+			because: "the agent must reach the working placement from the warning alone, without another round-trip");
+	}
+
+	[Test]
 	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]
