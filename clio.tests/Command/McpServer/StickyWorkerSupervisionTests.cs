@@ -981,11 +981,19 @@ public sealed class StickyWorkerSupervisionTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A completed sticky worker is reaped as soon as the poll it was lingering for has been answered, so a finished long operation does not hold one of a small host's few sticky slots for the whole linger window.")]
-	public async Task DispatchAsync_ShouldReapACompletedWorker_OnceItsStatusPollHasBeenAnswered() {
-		// Arrange — the shipped linger, not a shortened one: the point is that the reap happens because the
-		// poll consumed it, not because the window elapsed. Total 2 means sticky capacity is exactly 1, so
-		// "the slot came back" is observable as the next long operation being admitted.
+	[Description("A completed sticky worker's slot is reclaimed by the NEXT long operation superseding it — not by the poll that read its status, which may be repeated as often as the caller likes.")]
+	public async Task DispatchAsync_ShouldReclaimTheSlotOfACompletedWorker_WhenTheNextOperationSupersedesIt() {
+		// Arrange — INVERTED 2026-08-19, and the inversion is the point. This test used to assert that
+		// answering one poll reaped the completed worker, and it passed while production was wrong: the
+		// second of two adjacent polls then reached a fresh per-call worker with an empty operation
+		// registry and answered "not-found" for an operation that HAD been recorded (e2e 15896920). The
+		// slot concern was real; the mechanism was the wrong one. Supersession by the next starter returns
+		// the capacity without destroying a record the caller is still entitled to poll, which is what this
+		// now pins.
+		//
+		// The shipped linger, not a shortened one: the reclaim must come from the supersession, not from
+		// the window elapsing. Total 2 means sticky capacity is exactly 1, so "the slot came back" is
+		// observable as the next long operation being admitted.
 		using StickyFixture fixture = CreateFixture(concurrencyCap: 2,
 			completionLinger: TimeSpan.FromMinutes(5));
 		await fixture.DispatchAsync(
@@ -1007,9 +1015,45 @@ public sealed class StickyWorkerSupervisionTests {
 		status.IsError.Should().NotBeTrue(
 			because: "the poll must still have been answered by the completed worker — reaping it BEFORE it answered would defeat the linger entirely");
 		fixture.StickyWorkers.Count.Should().Be(1,
-			because: "only the NEW long operation may be registered: the completed one had to go once its poll was served");
+			because: "only the NEW long operation may be registered: the completed one is superseded when a starter arrives for its key, which is what returns the slot");
 		nextOperation.IsError.Should().NotBeTrue(
 			because: "sticky capacity here is exactly one, so a completed worker still holding its slot would refuse this call for the rest of the linger window — a host reporting itself full while nothing is running");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("REPRODUCTION of the ENG-95262 stage-7 end-to-end failure in TeamCity 15896920: two ADJACENT compile-status polls inside one linger window must both be answered by the worker that ran the compile. This is the unit-scale twin of CompileStatus_Should_AnswerRepeatedPolls_FromTheStickyWorkerThatRanTheCompile, and it cannot both pass and let DispatchAsync_ShouldReapACompletedWorker_OnceItsStatusPollHasBeenAnswered pass: one asserts the completed worker survives its first answered poll, the other asserts it is reaped by it.")]
+	public async Task DispatchAsync_ShouldAnswerTwoAdjacentStatusPolls_FromTheSameCompletedWorker() {
+		// Arrange — the shipped linger, and enough capacity that nothing here can be refused for a reason
+		// other than the one under test. The compile is COMPLETED before the first poll, which is the
+		// arrangement the stand produced on its own: the end-to-end test compiles an environment that does
+		// not exist, so the operation is finalised as `failed` long before either poll is issued.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 8,
+			completionLinger: TimeSpan.FromMinutes(5));
+		await fixture.DispatchAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
+		await fixture.Children[0].SendCompletionSignalAsync(McpToolOperationFamily.ConfigurationBuild,
+			exitCode: 1);
+		await WaitUntilAsync(() => fixture.Reservations.HeldCount == 0);
+
+		// Act — two polls, back to back, exactly as a caller told to "poll compile-status" issues them.
+		CallToolResult firstPoll = await fixture.DispatchAsync(
+			CompileStatusToolName, PollerMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
+		CallToolResult secondPoll = await fixture.DispatchAsync(
+			CompileStatusToolName, PollerMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
+
+		// Assert
+		firstPoll.IsError.Should().NotBeTrue(
+			because: "the first poll falls inside the linger and must be answered, or the second assertion below would be about an arrangement that never worked at all");
+		secondPoll.IsError.Should().NotBeTrue(
+			because: "a second poll inside the same linger window is an ordinary thing for a caller to do — compile-status is declared ReadOnly and Idempotent, and the shipped workspace AGENTS.md tells the agent to poll it");
+		fixture.Children.Should().ContainSingle(
+			because: "BOTH polls must be answered by the process that holds the compile record; a second child here is the parent falling back to a per-call worker whose ICompileOperationRegistry is empty, which is exactly how a completed compile turns into 'not-found' between two adjacent polls");
+		fixture.Children[0].CallCount.Should().Be(3,
+			because: "one starting call plus two polls all served by the one worker is what 'the sticky worker serves both calls' means when the caller polls more than once");
 	}
 
 	[Test]

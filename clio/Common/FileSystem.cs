@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -27,16 +28,12 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 
 	internal static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
-	/// <summary>
-	/// How long <see cref="WriteOwnerOnlyTextToFileAtomic"/> keeps retrying a publish that a contending
-	/// handle is refusing. See the remarks on <c>PublishAtomicReplacement</c> for the measurement.
-	/// </summary>
-	internal static readonly TimeSpan DefaultAtomicPublishRetryWindow = TimeSpan.FromSeconds(2.5);
-
 	// Stated rather than read from configuration so a test can bound a contended publish without
 	// waiting out the production window or mutating process-wide state — the same reasoning
 	// WorkerProcessSupervisor gives for its explicit queue-wait bound.
-	private readonly TimeSpan _atomicPublishRetryWindow = DefaultAtomicPublishRetryWindow;
+	private readonly TimeSpan _atomicPublishRetryWindow = AtomicPublishRetry.DefaultWindow;
+
+	private readonly Func<int, int> _nextBackoffJitterMilliseconds = Random.Shared.Next;
 
 	/// <summary>
 	/// Initializes a file system whose atomic-publish retry window is set explicitly, so a test can
@@ -44,9 +41,17 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 	/// </summary>
 	/// <param name="fileSystem">The underlying file system abstraction.</param>
 	/// <param name="atomicPublishRetryWindow">How long a refused publish keeps retrying.</param>
-	internal FileSystem(Ms.IFileSystem fileSystem, TimeSpan atomicPublishRetryWindow)
+	/// <param name="nextBackoffJitterMilliseconds">
+	/// Draws the jittered tail of the backoff, given an exclusive upper bound — the shape of
+	/// <see cref="Random.Next(int)"/>. Injected so a test observing the backoff stays deterministic.
+	/// </param>
+	internal FileSystem(Ms.IFileSystem fileSystem, TimeSpan atomicPublishRetryWindow,
+		Func<int, int> nextBackoffJitterMilliseconds = null)
 		: this(fileSystem) {
 		_atomicPublishRetryWindow = atomicPublishRetryWindow;
+		if (nextBackoffJitterMilliseconds != null) {
+			_nextBackoffJitterMilliseconds = nextBackoffJitterMilliseconds;
+		}
 	}
 
 	public char DirectorySeparatorChar => Path.DirectorySeparatorChar;
@@ -615,22 +620,26 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 	// deliberate: a genuine ACL or read-only-file error must still surface rather than being spun on,
 	// so the final attempt's exception propagates unchanged.
 	private void PublishAtomicReplacement(string temporary, string filePath) {
-		const int backoffStepMilliseconds = 15;
-		const int backoffCapMilliseconds = 100;
 		long startedAt = Stopwatch.GetTimestamp();
 		for (int attempt = 1; ; attempt++) {
 			try {
 				msFileSystem.File.Move(temporary, filePath, overwrite: true);
 				return;
 			}
-			catch (Exception e) when (Stopwatch.GetElapsedTime(startedAt) < _atomicPublishRetryWindow
-				&& IsTransientReplacementFailure(e)) {
+			catch (Exception e) when (IsTransientReplacementFailure(e)) {
+				TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
+				if (elapsed >= _atomicPublishRetryWindow) {
+					if (!AtomicPublishRetry.CanDescribeExhausted(e)) {
+						throw;
+					}
+					throw AtomicPublishRetry.DescribeExhausted(e, filePath, elapsed, attempt);
+				}
 				// Capped linear backoff. The bound is a DEADLINE rather than an attempt count, and that
 				// distinction is measured rather than stylistic: an earlier 12-attempt version was
-				// observed needing 13, 15 and 16 attempts under the load below, so a count that looked
+				// observed needing 13, 15 and 16 attempts under the load above, so a count that looked
 				// generous was already failing. A deadline states the guarantee directly and does not
 				// have to be re-tuned whenever the backoff curve changes.
-				Thread.Sleep(Math.Min(backoffStepMilliseconds * attempt, backoffCapMilliseconds));
+				Thread.Sleep(AtomicPublishRetry.NextBackoffMilliseconds(attempt, _nextBackoffJitterMilliseconds));
 			}
 		}
 	}
@@ -642,6 +651,80 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 			&& e is not DirectoryNotFoundException);
 
 	#endregion
+}
+
+#endregion
+
+#region Class: AtomicPublishRetry
+
+// The shared vocabulary of clio's two contended-publish loops — this one and
+// SettingsRepository.PublishSettingsFile. The LOOPS stay separate (they retry different calls and
+// screen different exceptions); the window, the backoff curve and the wording of the final failure
+// live here so the two cannot drift apart.
+internal static class AtomicPublishRetry {
+
+	// THE HONEST LIMIT, for whoever comes here to tune this number.
+	//
+	// On Windows there is NO API that atomically replaces a file another process is holding without
+	// FILE_SHARE_DELETE. MoveFileEx and ReplaceFile both need DELETE access on the destination, the
+	// share check happens when the handle is OPENED, and FILE_RENAME_POSIX_SEMANTICS does not rescue
+	// this: it removes the delete-while-open restriction, not the share-mode check. Against a FOREIGN
+	// reader — one whose share mode clio does not get to choose — retrying is the only mechanism
+	// available, so clio CANNOT GUARANTEE EXIT 0. Any reader that keeps the handle open longer than the
+	// window defeats the window, whatever the window is. Raising this number buys probability, never a
+	// guarantee, and it is bounded from above by SettingsRepository's settings-lock timeout, which is
+	// held across the publish.
+	//
+	// Why 5 s and not the 2.5 s it started at: the e2e reader that exposed this holds the file for a
+	// measured 84.4% of its 46 microsecond cycle, and P(the whole window is refused) is that duty cycle
+	// raised to the attempt count. 2.5 s left roughly a 5% failure rate per run; 5 s takes the same
+	// arithmetic well under 1%.
+	internal static readonly TimeSpan DefaultWindow = TimeSpan.FromSeconds(5);
+
+	internal const int BackoffStepMilliseconds = 15;
+	internal const int BackoffCapMilliseconds = 100;
+	internal const int BackoffJitterMilliseconds = 25;
+
+	// Capped linear backoff with a JITTERED TAIL.
+	//
+	// The jitter is HARDENING, not a fix for anything observed: a constant tail can phase-lock with a
+	// periodic reader, but the reader measured here cycles every 46 microseconds and cannot lock with a
+	// 100 ms tail. It is here so a future reader whose period is near the tail cannot land on the
+	// pathological case. The draw is injected rather than taken from Random.Shared inline so a test can
+	// stay deterministic, and it is bounded, so the deadline is overshot by at most one capped sleep
+	// plus the jitter — jitter never makes the wait unbounded.
+	internal static int NextBackoffMilliseconds(int attempt, Func<int, int> nextJitterMilliseconds) {
+		int delay = Math.Min(BackoffStepMilliseconds * attempt, BackoffCapMilliseconds);
+		return delay < BackoffCapMilliseconds
+			? delay
+			: delay + nextJitterMilliseconds(BackoffJitterMilliseconds);
+	}
+
+	// Only the two shapes contention actually produces are re-described, and each keeps its own type,
+	// because callers catch these by type: UnauthorizedAccessException is not an IOException, and
+	// funnelling both into one wrapper would silently stop an existing catch from firing. A DERIVED
+	// IOException (PathTooLongException, say) is deliberately excluded and rethrown untouched —
+	// flattening it to IOException would take a type a caller can catch and lose it.
+	internal static bool CanDescribeExhausted(Exception e) =>
+		e.GetType() == typeof(IOException) || e.GetType() == typeof(UnauthorizedAccessException);
+
+	// The BCL message for a refused replacement is PATHLESS and stackless — literally "The process
+	// cannot access the file because it is being used by another process." with nothing to say which
+	// file, which operation, or that clio already spent seconds retrying. That one sentence is what made
+	// the original diagnosis expensive, so the destination, the retry and its usual cause are stated
+	// here and the original refusal is kept as InnerException.
+	internal static Exception DescribeExhausted(Exception inner, string destination, TimeSpan elapsed,
+		int attempts) {
+		string message =
+			$"Could not publish '{destination}'. clio retried the replacement for "
+			+ $"{elapsed.TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)} s ({attempts} attempts) "
+			+ "and it was refused every time. The usual cause is another process holding the file open: on "
+			+ "Windows a reader that does not share delete access blocks the replacement outright. Close "
+			+ "whatever is reading the file and run the command again.";
+		return inner is UnauthorizedAccessException
+			? new UnauthorizedAccessException(message, inner)
+			: new IOException(message, inner);
+	}
 }
 
 #endregion

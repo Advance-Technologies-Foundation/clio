@@ -211,6 +211,32 @@ public interface IStickyWorkerRegistry {
 	/// </remarks>
 	ValueTask<int> ReapExpiredAsync();
 
+	/// <summary>
+	/// Reaps every worker whose operation has COMPLETED, returning the admission slots they were lingering
+	/// with. Called only when a slot is actually wanted.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>Reclaim on demand, which is the resolution of a real conflict rather than a tidy-up.</b> A
+	/// completed worker keeps lingering because the caller is entitled to poll it again — there is no bound
+	/// on how many times <c>compile-status</c> may be asked, its own description tells the caller to poll,
+	/// and the shipped workspace template says so verbatim. Reaping it the moment ONE poll was answered is
+	/// what made the second of two adjacent polls answer "not-found" for an operation that had been
+	/// recorded (e2e 15896920).
+	/// </para>
+	/// <para>
+	/// But the slot concern that motivated that reap is real too: on a host whose sticky capacity is one,
+	/// a finished worker lingering for five minutes refuses the next long operation on a DIFFERENT key,
+	/// and supersession does not help there — it only reclaims the key it supersedes. So the two are
+	/// reconciled by WHEN rather than by choosing a loser: the record survives until somebody needs the
+	/// capacity, and a starter that needs it takes it. A caller polling a completed operation loses its
+	/// record only when the host actually has other work, which is the trade worth making in that
+	/// direction.
+	/// </para>
+	/// </remarks>
+	/// <returns>How many workers were reaped.</returns>
+	ValueTask<int> ReapCompletedAsync();
+
 	/// <summary>Gets the number of sticky workers currently supervised.</summary>
 	int Count { get; }
 }
@@ -605,6 +631,43 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 			RearmLocked();
 			return true;
 		}
+	}
+
+	/// <inheritdoc/>
+	public async ValueTask<int> ReapCompletedAsync() {
+		List<(StickyWorkerKey Key, StickyWorkerEntry Entry)> completed = [];
+		List<CancellationTokenSource> watches = [];
+		lock (_gate) {
+			foreach (KeyValuePair<StickyWorkerKey, StickyWorkerEntry> pair in _entries) {
+				if (pair.Value.IsCompleted) {
+					completed.Add((pair.Key, pair.Value));
+				}
+			}
+			foreach ((StickyWorkerKey key, StickyWorkerEntry entry) in completed) {
+				// Entry-scoped, exactly like ReapExpiredAsync: reaping by key alone would end an operation
+				// that had replaced this finished one between the scan and the removal.
+				if (_entries.TryGetValue(key, out StickyWorkerEntry registered)
+					&& ReferenceEquals(registered, entry)) {
+					_entries.Remove(key);
+				}
+				watches.Add(DetachWatchLocked(entry));
+			}
+			RearmLocked();
+		}
+		foreach (CancellationTokenSource watch in watches) {
+			StopWatch(watch);
+		}
+		foreach ((StickyWorkerKey key, StickyWorkerEntry entry) in completed) {
+			try {
+				await entry.ReleaseAsync().ConfigureAwait(false);
+			}
+			catch (Exception exception) {
+				_logger.WriteWarning(string.Format(CultureInfo.InvariantCulture,
+					"Reclaiming the slot of the completed sticky MCP worker for operation family '{0}' "
+					+ "failed: {1}", key.Family, SensitiveErrorTextRedactor.Redact(exception.Message)));
+			}
+		}
+		return completed.Count;
 	}
 
 	/// <inheritdoc/>

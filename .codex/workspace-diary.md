@@ -9275,3 +9275,32 @@ Files: clio/Command/McpServer/McpWorkerCohort.cs,
 Impact: cohort membership needs a SECOND question beside kill-safety — what does the read go
   through on the server, and does a host-resident tool write the same object in one agent session.
   Stage 10 faces it for every read it moves.
+
+## 2026-08-19 19:05 – The poll destroyed the record it had just read
+Context: e2e 15896920's fourth failure — compile-status answered 'failed' on poll one and
+  'not-found' on poll two, adjacent calls.
+Discovery: StickyWorkerPoll reaped a COMPLETED worker as soon as one poll had been answered.
+  The second poll then found no entry, fell through to an ordinary per-call worker whose
+  in-worker operation registry is empty, and the tool reported "no compile-creatio operation
+  has been recorded for this environment in the current MCP server session" — a sentence that
+  was FALSE about an operation the parent had just destroyed. compile-status has no bound on
+  poll count: its own description tells the caller to poll, and clio/tpl/workspace/AGENTS.md
+  ships "poll compile-status" verbatim into every user repo.
+  The worst part is mine: DispatchAsync_ShouldReapACompletedWorker_OnceItsStatusPollHasBeenAnswered
+  asserted exactly that behaviour and was GREEN. Two tests on the branch asserted mutually
+  exclusive things; a test can pin a defect as firmly as it pins a contract.
+Decision: reclaim ON DEMAND, not on poll. The naive fix — delete the reap — regressed the slot
+  concern the reap was solving, and the test proved it within a minute: supersession reclaims
+  only its OWN key, so a finished worker on a DIFFERENT key refuses the next long operation for
+  the whole 5-minute linger on a host whose sticky capacity is one. New ReapCompletedAsync is
+  called from the STARTER path only — the one path that is about to want a slot. The record
+  survives while nothing else needs the host, and real work outranks a possible future poll.
+Files: clio/Command/McpServer/Relay/StickyWorkerPoll.cs,
+  clio/Command/McpServer/Relay/StickyWorkerRegistry.cs,
+  clio/Command/McpServer/Relay/McpWorkerCallDispatcher.Sticky.cs,
+  clio.tests/Command/McpServer/StickyWorkerSupervisionTests.cs
+Impact: when two claims conflict — a record a caller may still read, and capacity somebody
+  needs now — reconcile them by WHEN rather than by choosing a permanent loser. Also: a latent
+  hole remains and is recorded rather than fixed — a worker whose PROCESS dies mid-linger takes
+  its record with it, because linger holds a lease, not a process. Unfixable by lingering; it
+  needs the record to live outside the child.

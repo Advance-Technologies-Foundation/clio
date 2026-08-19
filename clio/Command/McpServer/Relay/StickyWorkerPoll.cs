@@ -139,16 +139,24 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 				await _registry.ReapAsync(key, entry).ConfigureAwait(false);
 				return null;
 			}
-			if (entry.IsCompleted) {
-				// The linger exists so THIS poll can be answered out of the process that holds the operation
-				// record; once it has been, nobody needs the worker and holding its admission slot for the
-				// rest of the window would refuse the next long operation on a host whose sticky capacity is
-				// small — one or two on the machines this actually runs on. The window stays as the backstop
-				// for a caller that never polls at all. Reaped by ENTRY: a starter may have superseded this
-				// finished worker between the send and the answer, and reaping by key alone would end the
-				// operation that just replaced it.
-				await _registry.ReapAsync(key, entry).ConfigureAwait(false);
-			}
+			// NO REAP HERE, and the block that used to be here is worth naming so it is not reinstated.
+			//
+			// It reaped a COMPLETED worker as soon as one poll had been answered, reasoning that nobody
+			// needs it afterwards and that its admission slot should go back. The reasoning has a false
+			// premise: `compile-status` has no bound on poll count. Its own description tells the caller to
+			// use it after an in-progress note, and the shipped workspace template says "poll
+			// compile-status" verbatim, so a caller polling twice is the DOCUMENTED usage. The second poll
+			// then found no entry, fell through to an ordinary per-call worker whose in-worker operation
+			// registry is empty, and the tool answered "no compile-creatio operation has been recorded for
+			// this environment in the current MCP server session" — a sentence that was false, about an
+			// operation the parent had just destroyed. End-to-end run 15896920 caught exactly that: poll one
+			// answered 'failed', poll two answered 'not-found'.
+			//
+			// The slot concern it was solving is already solved elsewhere and better: a starter arriving for
+			// this key SUPERSEDES a lingering completed worker (see DispatchStickyAsync), so the next long
+			// operation reclaims the capacity rather than being refused. What is left is a different key
+			// wanting a slot mid-linger, and the knob for that is the linger length — which is injected —
+			// not destroying the record a caller is still allowed to ask for.
 			return result;
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {

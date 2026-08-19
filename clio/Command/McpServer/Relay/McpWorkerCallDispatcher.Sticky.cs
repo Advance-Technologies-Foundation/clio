@@ -232,6 +232,16 @@ public sealed partial class McpWorkerCallDispatcher {
 				cancellationToken).ConfigureAwait(false);
 		}
 
+		// RECLAIM ON DEMAND, and only here — on the path that is about to want a slot. A completed worker
+		// lingers because its caller may poll it again, and destroying that record as soon as one poll was
+		// answered is what made two adjacent polls disagree (e2e 15896920). Sweeping the completed ones at
+		// the moment a STARTER needs capacity resolves the two claims by ordering instead of by picking a
+		// loser: the record survives while nothing else needs the host, and real work outranks a possible
+		// future poll. Note this covers what supersession below cannot — supersession reclaims only its own
+		// key, so a finished worker on a DIFFERENT key would otherwise refuse this call for the whole
+		// linger on a host whose sticky capacity is one.
+		await _stickyWorkers.ReapCompletedAsync().ConfigureAwait(false);
+
 		// STARTING IS SINGLE-FLIGHT PER KEY, and the gate is held across spawn, handshake and
 		// registration — not across the operation, which is why it is taken here and dropped the moment
 		// the registry has the entry. Without it two starters of one family both spawn, one loses

@@ -548,8 +548,8 @@ namespace Clio
 	{
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
-		private const int SettingsLockTimeoutSeconds = 30;
-		private const int SettingsUpdateAttemptLimit = 3;
+		internal const int SettingsLockTimeoutSeconds = 30;
+		internal const int SettingsUpdateAttemptLimit = 3;
 		private static readonly object SchemaFileLock = new ();
 		private static readonly ConcurrentDictionary<string, object> ProcessSettingsLocks = new();
 		[ThreadStatic]
@@ -562,6 +562,7 @@ namespace Clio
 		// non-interactive host. Null only for the internal/direct (non-DI) construction sites that
 		// never call GetEnvironment; those fall back to RealInteractiveConsole.Shared.
 		private readonly IInteractiveConsole _interactiveConsole;
+		private readonly SettingsPublishRetryPolicy _publishRetryPolicy = SettingsPublishRetryPolicy.Default;
 		public static string AppSettingsFolderPath {
 			get {
 				// CLIO_HOME, when set, overrides the entire root verbatim. This is the single
@@ -609,6 +610,17 @@ namespace Clio
 			EnsureSettingsCollections();
 			AttachDbServers(_settings);
 			TrySaveSchema(_fileSystem);
+		}
+
+		/// <summary>
+		/// Initializes a repository whose contended-publish retry policy is stated explicitly, so a test
+		/// can observe the exhausted-publish path without waiting out the production deadline.
+		/// </summary>
+		/// <param name="fileSystem">The file system the repository reads and writes settings through.</param>
+		/// <param name="publishRetryPolicy">The window and jitter draw a refused publish retries with.</param>
+		internal SettingsRepository(IFileSystem fileSystem, SettingsPublishRetryPolicy publishRetryPolicy)
+			: this(fileSystem) {
+			_publishRetryPolicy = publishRetryPolicy;
 		}
 
 		/// <inheritdoc />
@@ -680,15 +692,16 @@ namespace Clio
 		}
 
 		internal static void SaveSettings(IFileSystem fileSystem, Settings settings, string expectedContent = null,
-			bool verifyExpectedContent = false) {
+			bool verifyExpectedContent = false, SettingsPublishRetryPolicy publishRetryPolicy = null) {
+			SettingsPublishRetryPolicy policy = publishRetryPolicy ?? SettingsPublishRetryPolicy.Default;
 			ExecuteWithSettingsLock(fileSystem, () => {
-				SaveSettingsUnlocked(fileSystem, settings, expectedContent, verifyExpectedContent);
+				SaveSettingsUnlocked(fileSystem, settings, expectedContent, verifyExpectedContent, policy);
 				return true;
 			});
 		}
 
 		private static void SaveSettingsUnlocked(IFileSystem fileSystem, Settings settings, string expectedContent,
-			bool verifyExpectedContent) {
+			bool verifyExpectedContent, SettingsPublishRetryPolicy policy) {
 			if (!fileSystem.Directory.Exists(AppSettingsFolderPath)) {
 				fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
 			}
@@ -701,7 +714,7 @@ namespace Clio
 				WriteSettingsTempFile(fileSystem, tempFilePath, settings, isRealFileSystem,
 					windowsFileSecurity, unixFileMode);
 				CommitSettingsFile(fileSystem, tempFilePath, expectedContent, verifyExpectedContent,
-					isRealFileSystem);
+					isRealFileSystem, policy);
 			}
 			finally {
 				if (fileSystem.File.Exists(tempFilePath)) {
@@ -755,30 +768,59 @@ namespace Clio
 		// genuine ACL error still surfaces unchanged, and SettingsFileChangedException — the optimistic
 		// concurrency signal — is deliberately NOT caught: it means another writer won, which is a real
 		// answer the caller must see rather than something to spin on.
-		private static readonly TimeSpan SettingsPublishRetryWindow = TimeSpan.FromSeconds(2.5);
+		//
+		// The window, the backoff curve and the wording of the exhausted-publish failure come from
+		// Clio.Common.AtomicPublishRetry so this loop and FileSystem.PublishAtomicReplacement cannot
+		// drift. READ THE COMMENT ON AtomicPublishRetry.DefaultWindow BEFORE TUNING IT: the retry is the
+		// only mechanism Windows offers against a foreign reader, so no window makes exit 0 a guarantee.
+		// One bound is local, though — ExecuteWithSettingsLock holds the settings lock across the
+		// publish, and UpdateSettingsIfChanged can spend the window SettingsUpdateAttemptLimit times
+		// inside one lock hold, so Window * SettingsUpdateAttemptLimit must stay well under
+		// SettingsLockTimeoutSeconds or a concurrent clio process starts timing out on the lock instead.
+		/// <summary>
+		/// The window and the jitter draw a contended settings publish uses. Injected as a whole so a
+		/// test can bound the contended path without waiting out the production deadline and without
+		/// mutating process-wide state.
+		/// </summary>
+		/// <param name="Window">How long a refused publish keeps retrying.</param>
+		/// <param name="NextBackoffJitterMilliseconds">
+		/// Draws the jittered tail of the backoff, given an exclusive upper bound.
+		/// </param>
+		internal sealed record SettingsPublishRetryPolicy(TimeSpan Window,
+			Func<int, int> NextBackoffJitterMilliseconds) {
 
-		private static void PublishSettingsFile(Action publish) {
-			const int backoffStepMilliseconds = 15;
-			const int backoffCapMilliseconds = 100;
+			internal static SettingsPublishRetryPolicy Default { get; } =
+				new(AtomicPublishRetry.DefaultWindow, Random.Shared.Next);
+		}
+
+		private static void PublishSettingsFile(Action publish, SettingsPublishRetryPolicy policy) {
 			long startedAt = Stopwatch.GetTimestamp();
 			for (int attempt = 1; ; attempt++) {
 				try {
 					publish();
 					return;
 				}
-				catch (Exception e) when (Stopwatch.GetElapsedTime(startedAt) < SettingsPublishRetryWindow
-					&& e is not SettingsFileChangedException
+				catch (Exception e) when (e is not SettingsFileChangedException
 					&& (e is UnauthorizedAccessException || (e is IOException && e is not FileNotFoundException
 						&& e is not DirectoryNotFoundException))) {
-					Thread.Sleep(Math.Min(backoffStepMilliseconds * attempt, backoffCapMilliseconds));
+					TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
+					if (elapsed >= policy.Window) {
+						if (!AtomicPublishRetry.CanDescribeExhausted(e)) {
+							throw;
+						}
+						throw AtomicPublishRetry.DescribeExhausted(e, AppSettingsFile, elapsed, attempt);
+					}
+					Thread.Sleep(AtomicPublishRetry.NextBackoffMilliseconds(attempt,
+						policy.NextBackoffJitterMilliseconds));
 				}
 			}
 		}
 
 		private static void CommitSettingsFile(IFileSystem fileSystem, string tempFilePath, string expectedContent,
-			bool verifyExpectedContent, bool isRealFileSystem) {
+			bool verifyExpectedContent, bool isRealFileSystem, SettingsPublishRetryPolicy policy) {
 			if (!verifyExpectedContent) {
-				PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true));
+				PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true),
+					policy);
 				return;
 			}
 			if (expectedContent == null) {
@@ -795,11 +837,11 @@ namespace Clio
 				}
 				if (isRealFileSystem) {
 					PublishSettingsFile(() => fileSystem.File.Replace(tempFilePath, AppSettingsFile,
-						destinationBackupFileName: null, ignoreMetadataErrors: true));
+						destinationBackupFileName: null, ignoreMetadataErrors: true), policy);
 					return;
 				}
 			}
-			PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true));
+			PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true), policy);
 		}
 
 		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath) {
@@ -986,7 +1028,8 @@ namespace Clio
 		// Returns false only when the optimistic-concurrency check failed and another attempt remains.
 		private bool TrySaveMutatedSettings(string expectedContent, int attempt) {
 			try {
-				SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
+				SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true,
+					_publishRetryPolicy);
 				return true;
 			}
 			catch (SettingsFileChangedException) {
