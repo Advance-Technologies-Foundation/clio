@@ -9145,3 +9145,51 @@ Discovery, and the parts worth carrying forward:
 Files: too many to list; see commits between 35be22b05 and HEAD.
 Impact: the method generalises — mutate at the seam the assertion names, require THAT
 test to go red, and treat "I already fixed that" as a claim to re-verify, not a fact.
+
+## 2026-08-19 12:20 – Two open questions closed: no lifetime ceiling, and the finally that never runs
+Context: the review loop had cleared the reported defects, leaving two items I had raised
+  against myself: whether the terminal-stage path needs an absolute lifetime ceiling, and
+  what happens to the temporary trees a killed worker abandons.
+Decision: NO ceiling for terminal-stage, recorded in ADR §3.3 with the reasoning rather
+  than left as an absence. Any number large enough not to truncate a real deploy can only
+  fire on the runs it is most expensive to be wrong about, and what it produces on firing
+  is the false half-install the whole protocol exists to avoid. The live-locked case is
+  bounded by the caller's own token, by one worker slot, and by saturation reporting.
+Discovery: `CreateTempDirectory` cleans up in a `finally`, and a killed process runs no
+  `finally`. What used to be an occasional Ctrl+C leftover becomes one abandoned tree PER
+  KILL under the execution boundary — the boundary's own litter. Swept at host startup
+  beside the stale-worker reap, matching only the 32-hex names the generator produces and
+  only those older than a day, because a working directory carries no owner to ask and a
+  younger one may belong to a clio process running right now.
+  Two traps on the way: a `using X = System.IO.Abstractions.IFileSystem` alias at file
+  level is BEATEN by `Clio.Common.IFileSystem` when the file's namespace is nested under
+  it (the alias has to go inside the namespace); and `Clio.Common.McpWorker` is excluded
+  from the DI auto-scan wholesale, so a new service there is invisible until registered by
+  hand — which only the ValidateOnBuild wiring tests reveal.
+Files: clio/Common/McpWorker/WorkerTempResidueSweeper.cs, .../IWorkerTempResidueSweeper.cs,
+  clio/Command/McpServer/McpServerCommand.cs, clio/BindingsModule.cs,
+  clio.tests/Common/McpWorker/WorkerTempResidueSweeperTests.cs,
+  spec/adr/adr-mcp-worker-execution-boundary.md,
+  spec/mcp-worker-execution-boundary/mcp-worker-execution-boundary-kill-safety-audit.md
+Impact: the pattern to carry forward is that a `finally` is a promise the kill boundary
+  breaks, so every cleanup written as one is a candidate for the same treatment.
+
+## 2026-08-19 12:45 – sync-pages publishes its verified read-back under one gate acquisition
+Context: external review found sync-pages' verify path taking the schema gate twice — once for
+  body.js, once for meta.json — leaving a window in which a worker-routed get-page swaps the
+  schema directory and the baseline ends up describing a body that is no longer there.
+Decision: merged the two into PublishVerifiedReadBack, one acquisition over both local writes;
+  the network read-back stays outside it, and the anchor's CwdLock stays outside the gate so the
+  lock order per-tenant → CwdLock → schema gate still matches PageFileWriter.
+Discovery: the residual is wider than the window. sync writes body.js + meta.json in place and
+  never writes bundle.json, so the bundle always describes an older generation; and a kill between
+  the two writes still splits body from baseline. Staging + swap is the fix, but reusing
+  PageFileWriter.WritePageFiles as it stands would strip EnvironmentUri — its BuildBaseline has no
+  MergeEnvironmentIdentity, so a URI-mode baseline would silently lose the identity that arms
+  conflict detection. Recorded as the acceptance test for a follow-up, not added red to the suite.
+Files: clio/Command/McpServer/Tools/PageSyncTool.cs,
+  clio.tests/Command/McpServer/PageSyncToolBaselineTests.cs,
+  clio.tests/Command/McpServer/OneShotInterleavingFileGate.cs
+Impact: OneShotInterleavingFileGate is the reusable way to test "another writer wins the gate in
+  the gap"; InterruptionObservingFileSystem is the way to test a kill. Not interchangeable — the
+  first models a competitor, the second models a corpse.

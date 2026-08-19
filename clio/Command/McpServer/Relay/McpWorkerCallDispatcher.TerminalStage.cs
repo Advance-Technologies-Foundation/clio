@@ -128,7 +128,9 @@ public sealed partial class McpWorkerCallDispatcher {
 		// The silence bound is recorded on the lease as its "budget" because it is the only fixed interval
 		// this policy has. NOTHING in this path reads IWorkerLease.BudgetExpiresAtUtc: a terminal-stage call
 		// has no total bound at all, and deriving one from the lease is exactly the generic kill this
-		// protocol replaces.
+		// protocol replaces. Nor is an absolute lifetime ceiling missing here by oversight: ADR §3.3
+		// records why one would fire only on the runs it is most expensive to be wrong about, and what
+		// bounds the live-locked case instead.
 		WorkerSpawnRequest spawnRequest = ComposeSpawnRequest(childEnvironment, _stageEventSilenceBound);
 
 		IWorkerLease lease;

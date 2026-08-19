@@ -111,10 +111,16 @@ never partial.
   exactly the path `OutputPathConfinement.Resolve` refuses to overwrite, so the kill BLOCKED its own
   retry.
 - NOT covered by the above, and not to be generalised from it: `sync-pages`' verify read-back writes
-  `body.js` in place into the published directory, and `get-classic-page-sources` writes its
-  tool-owned DEFAULT path with a plain `WriteAllText` — only its explicit `--output-file` branch is
-  staged. Both remain unsafe to kill, and both are prerequisites if either tool is ever considered for
-  the cohort.
+  `body.js` AND `meta.json` in place into the published directory. Since 2026-08-19 the two are written
+  under ONE gate acquisition, so no concurrent writer can replace the schema directory between them and
+  leave a baseline describing a body that is no longer there. That closes the interleaving window; it
+  does not make the tool killable. A kill between the two writes still leaves `body.js` from the
+  verified read-back beside a `meta.json` from the previous generation — and `bundle.json` from a third,
+  since sync never writes it at all, which `PageFileWriterKillSafetyTests` pins as an invariant for
+  `get-page`. `get-classic-page-sources` writes its tool-owned DEFAULT path with a plain `WriteAllText`;
+  only its explicit `--output-file` branch is staged. Both remain unsafe to kill, and staging plus swap
+  — with the environment-identity merge `PageBaselineStore.MergeEnvironmentIdentity` provides, which
+  `PageFileWriter.BuildBaseline` does not — is the prerequisite for either tool joining the cohort.
 
 There is no cross-platform atomic directory replacement (`renameat2(RENAME_EXCHANGE)` is Linux-only
 and not exposed by .NET), so "absent" is the irreducible residual state for a directory-shaped
@@ -137,3 +143,20 @@ in-process only, so they die with the child. The persistent state that DOES surv
 on disk: the `Maintainer` setting and unlocked packages from `link-from-repository`, the hotfix state
 from `unlock-for-hotfix`, the stale page baseline from `sync-pages`, and the orphaned `.gz` left by the
 installer's skipped `finally`.
+
+### The `finally` that no longer runs, generalised (closed 2026-08-19)
+
+The orphaned `.gz` above is one instance of a pattern worth naming, because it applies to every tool in
+this table and not only to the installer. `IWorkingDirectoriesProvider.CreateTempDirectory(Action<string>)`
+deletes its tree in a `finally`, and a killed process runs no `finally`. Before this feature that cost a
+leftover directory when somebody pressed Ctrl+C; under the execution boundary the parent kills a child on
+every budget expiry, every cancellation and every stale reap, so an occasional leftover becomes a per-kill
+one — an unpacked package tree at a time, under the user's temporary directory, with nothing that ever
+removes it.
+
+This is disk residue, not damage: no environment is left inconsistent and no operation is left half-done,
+which is why it belongs here as a footnote rather than in the "unsafe to kill" table. It is nonetheless the
+boundary's own litter, so the boundary cleans it: the host sweeps abandoned working directories at startup,
+beside the stale-worker reap (`IWorkerTempResidueSweeper`). The sweep removes only names of the 32-hex shape
+that `GenerateTempDirectoryPath` produces and only those older than a day — a directory younger than that
+may belong to a clio process running right now, and the working directory carries no owner to ask.

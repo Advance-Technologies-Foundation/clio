@@ -377,6 +377,35 @@ public sealed class WorkerProcessSupervisorTests {
 	}
 
 	[Test]
+	[Description("TC-U-202c: the supervisor's own last-mile check before a kill compares the WHOLE identity triple, so a live process that matches the recorded pid and start time but not the recorded executable is left alone.")]
+	public void TerminateStaleWorker_ShouldRefuseTheKill_WhenOnlyTheExecutablePathDisagrees() {
+		// Arrange — the recorded entry names THIS test host's pid and start time, which is the collision
+		// the check exists for: a pid handed on to a stranger that happens to share the recorded start
+		// timestamp. Only the executable path tells the two apart, so it is the only field made to differ.
+		// Containment is the fake, so a regression here is a recorded call rather than a killed test run.
+		FakeContainment containment = new();
+		IStaleWorkerRegistry registry = Substitute.For<IStaleWorkerRegistry>();
+		WorkerProcessSupervisor sut = new(_logger, _processExecutor, containment, _pathProvider, registry,
+			concurrencyCap: 2);
+		using Process self = Process.GetCurrentProcess();
+		WorkerRegistrationEntry entry = new(
+			ProcessId: self.Id,
+			StartTimeUtcTicks: self.StartTime.ToUniversalTime().Ticks,
+			ExecutablePath: Path.Combine(Path.GetTempPath(), "clio-that-this-process-is-not"),
+			OwnerProcessId: self.Id, OwnerStartTimeUtcTicks: 900,
+			OwnerExecutablePath: "/opt/clio/clio", RecordedAtUtc: DateTimeOffset.UtcNow);
+
+		// Act
+		WorkerTerminationOutcome outcome = sut.TerminateStaleWorker(entry);
+
+		// Assert
+		containment.TerminateOrphanCount.Should().Be(0,
+			because: "TerminateOrphan kills a process TREE, and the tree behind a stranger's pid is the agent host, the user's shell and everything they started");
+		outcome.Should().Be(WorkerTerminationOutcome.AlreadyExited,
+			because: "a recorded worker that cannot be identified on this handle is reported as gone, which drops the entry instead of leaving a reused identifier to be re-examined for ever");
+	}
+
+	[Test]
 	[Description("TC-U-206: workers recorded by another clio parent that is still running are left untouched, because reaping a healthy neighbour's live workers would recreate the very failure this feature removes.")]
 	public void ReapStaleWorkers_ShouldLeaveAliveOwnersAlone_WhenAnotherParentIsStillRunning() {
 		// Arrange
@@ -765,8 +794,13 @@ public sealed class WorkerProcessSupervisorTests {
 		public IContainedWorker Adopt(IWorkerProcessHandle startedProcess) =>
 			throw new NotSupportedException();
 
-		public WorkerTerminationOutcome TerminateOrphan(IWorkerProcessHandle orphan) =>
-			WorkerTerminationOutcome.FallbackTreeKilled;
+		/// <summary>How many process trees a real containment would have killed by now.</summary>
+		public int TerminateOrphanCount { get; private set; }
+
+		public WorkerTerminationOutcome TerminateOrphan(IWorkerProcessHandle orphan) {
+			TerminateOrphanCount++;
+			return WorkerTerminationOutcome.FallbackTreeKilled;
+		}
 	}
 
 	internal sealed class FakeContainedWorker : IContainedWorker {

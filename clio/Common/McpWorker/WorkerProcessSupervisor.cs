@@ -648,8 +648,17 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 			// TerminateOrphan kills a process TREE. Killing a stranger and its children is the one outcome
 			// this registry's identity checks exist to make impossible, so the check is repeated against the
 			// handle actually about to be terminated. A pid alone is not an identity.
+			// The FULL triple, not two thirds of it. An earlier version of this guard compared only the
+			// start ticks — which is better than the pid alone and still not an identity: start timestamps
+			// have finite resolution and two processes can share one, and on a machine that recycles pids
+			// quickly the pair is exactly what collides. The registry's own comparison uses pid, start time
+			// AND executable path, and a last-mile check that stops short of it is a weaker promise made in
+			// the same words. An unreadable path counts as NO match, following the registry's rule: the
+			// cost of refusing is one surviving orphan, the cost of guessing is a stranger's process tree.
 			DateTime actualStartTimeUtc = ReadStartTimeUtc(process);
-			if (actualStartTimeUtc.Ticks != entry.StartTimeUtcTicks) {
+			string actualExecutablePath = ReadExecutablePath(process);
+			if (actualStartTimeUtc.Ticks != entry.StartTimeUtcTicks
+				|| !ExecutablePathsEqual(actualExecutablePath, entry.ExecutablePath)) {
 				return WorkerTerminationOutcome.AlreadyExited;
 			}
 			using IWorkerProcessHandle handle = CreateHandle(process, entry.ExecutablePath, null, null, null);
@@ -845,6 +854,20 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		} catch (Exception exception) when (IsProcessInspectionFailure(exception)) {
 			return DateTime.UtcNow;
 		}
+	}
+
+	// Mirrors StaleWorkerRegistry.PathsEqual deliberately — same refusal on a blank path, and the same
+	// raw string comparison. Both sides of this comparison were produced by ReadExecutablePath, so there
+	// is nothing to normalise; normalising anyway would mean calling Path.GetFullPath on a string read
+	// out of another process, which can throw, and an identity check that can throw is not one.
+	private static bool ExecutablePathsEqual(string left, string right) {
+		if (string.IsNullOrEmpty(left) || string.IsNullOrEmpty(right)) {
+			// Half an identity is not an identity: the cost of refusing is one surviving orphan, the cost
+			// of guessing is a stranger's process tree.
+			return false;
+		}
+		return string.Equals(left, right,
+			OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 	}
 
 	private static string ReadExecutablePath(Process process) {

@@ -94,9 +94,13 @@ public sealed class WorkerChildTransportOwner : IWorkerChildTransportOwner {
 			throw new ArgumentException("The worker's standard output must be readable.",
 				nameof(workerStandardOutput));
 		}
+		// R-11's standard-output half. Applied HERE because this is the one place all three dispatch paths
+		// — per-call, sticky and terminal-stage — hand the worker's stream to the SDK, so a bound placed
+		// anywhere else would cover some of them and quietly miss the rest.
+		Stream boundedOutput = new WorkerStdoutBoundedStream(workerStandardOutput);
 		// StreamClientTransport is a value-like SDK wrapper over the two streams, not a clio behaviour
 		// class, so constructing it here is the intended use and not a DI bypass.
-		StreamClientTransport transport = new(workerStandardInput, workerStandardOutput, loggerFactory: null);
+		StreamClientTransport transport = new(workerStandardInput, boundedOutput, loggerFactory: null);
 		return await transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
 	}
 }

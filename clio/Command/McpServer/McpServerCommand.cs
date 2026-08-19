@@ -52,6 +52,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ITenantExecutionLockProvider tenantExecutionLockProvider,
 	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
 	Common.McpWorker.IWorkerProcessSupervisor workerProcessSupervisor,
+	Common.McpWorker.IWorkerTempResidueSweeper workerTempResidueSweeper,
 	Relay.ISharedResourceReservation sharedResourceReservation,
 	ILogger logger) : Command<McpServerCommandOptions>{
 	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
@@ -64,6 +65,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		// everything below it. A parent that is SIGKILLed runs no code, so this half cannot live there.
 		ArmWorkerContainment(options, logger);
 		ReapStaleWorkersForHost(options, workerProcessSupervisor, logger);
+		SweepWorkingDirectoryResidueForHost(options, workerTempResidueSweeper, logger);
 		BootstrapCuratedKnowledgeForHost(options, curatedKnowledgeBootstrapService, logger);
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
@@ -252,6 +254,41 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			// A startup that cannot clean up must still serve requests.
 			logger.WriteWarning(
 				$"Stale worker cleanup did not run: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
+		}
+	}
+
+	/// <summary>
+	/// Removes the working directories that killed clio processes could not remove themselves.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Beside the stale-worker reap because it answers the other half of the same question: the reap
+	/// disposes of processes a previous host left running, this disposes of what those processes left on
+	/// disk. A worker is killed on budget expiry, on cancellation and on reap, and a killed process runs
+	/// no <c>finally</c> — so the clean-up that <c>IWorkingDirectoriesProvider.CreateTempDirectory</c>
+	/// relies on is precisely the clean-up the boundary prevents.
+	/// </para>
+	/// <para>
+	/// HOST only, for the same reason as the reap: a worker sweeping the shared temporary root would race
+	/// its own siblings' live working directories. Non-fatal, and quiet — a start that cannot tidy up must
+	/// still serve, and an unreadable temporary directory is not the operator's problem to solve today.
+	/// </para>
+	/// </remarks>
+	/// <param name="options">The parsed command options; skipped under <c>--worker</c>.</param>
+	/// <param name="sweeper">The residue sweeper.</param>
+	/// <param name="logger">The host logger.</param>
+	internal static void SweepWorkingDirectoryResidueForHost(McpServerCommandOptions options,
+		Common.McpWorker.IWorkerTempResidueSweeper sweeper, ILogger logger) {
+		if (options.Worker) {
+			return;
+		}
+		try {
+			sweeper.Sweep();
+		}
+		catch (Exception exception) {
+			logger.WriteWarning(
+				"Abandoned working directories were not swept: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
 		}
 	}
 

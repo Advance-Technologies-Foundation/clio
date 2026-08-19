@@ -1054,6 +1054,11 @@ public class BindingsModule {
 		services.AddSingleton<Common.McpWorker.IClioExecutablePathProvider,
 			Common.McpWorker.ClioExecutablePathProvider>();
 		services.AddSingleton<Common.McpWorker.IStaleWorkerRegistry, Common.McpWorker.StaleWorkerRegistry>();
+		// Registered by hand for the same reason as its neighbours: the whole Clio.Common.McpWorker
+		// interface namespace is outside the auto-scan. Singleton because the sweep is host-startup work
+		// with no per-call state, and one instance keeps it that way.
+		services.AddSingleton<Common.McpWorker.IWorkerTempResidueSweeper,
+			Common.McpWorker.WorkerTempResidueSweeper>();
 		// SINGLETON because the concurrency cap IS the instance: the semaphore, the resource accounting and
 		// the recorded owner identity all live in it, so a transient supervisor would give every call its
 		// own cap and bound nothing at all.

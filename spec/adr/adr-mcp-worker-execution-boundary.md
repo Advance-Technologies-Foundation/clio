@@ -518,6 +518,30 @@ The silence timer, not an operation timer, is what bounds `terminal-stage`. It i
 truncate a legitimately long deploy: a healthy deploy streams stages continuously, and a child that has gone
 30 s past its own terminal stage has nothing left to lose.
 
+**Decided 2026-08-19: there is deliberately no absolute lifetime ceiling, and this is the reasoning.** The
+open question the implementation left behind was whether a worker that keeps *emitting* stage events for
+ever — a live-locked deploy, not a silent one — should be killed at some outer wall-clock bound. It should
+not, and adding one would be a net loss:
+
+- The number would have to be larger than the longest legitimate deploy, which on a slow stand with a large
+  bundle is hours, not minutes. A ceiling only ever fires below that number, so the only runs it can reach
+  are the ones it is most costly to be wrong about.
+- What it would produce on firing is precisely the outcome the rest of §3.3 is built to avoid: a killed
+  child mid-stage, an environment marked possibly half-installed, and an operator sent to inspect a deploy
+  that was in fact still progressing. Trading an unbounded call for a false half-install is trading a
+  visible problem for an invisible one.
+- The call is not in fact unattended. A client that gives up sends `notifications/cancelled`, and the
+  cancellation path above kills the child and names the last stage reached. The wedge class ENG-95262
+  exists for — a call nobody is waiting for that nothing will ever end — needs a caller who has stopped
+  listening AND a parent that cannot be told; here the parent is told.
+- The blast radius of the remaining case is one worker slot, not the environment. Admission capacity is a
+  held resource (§3.2c) and saturation is reported with its own numbers (R-10), so a host losing slots to
+  live-locked deploys says so rather than going quiet.
+
+So the honest bound for this family is: handshake, silence, post-terminal grace, and the caller's own token.
+A run that streams real progress indefinitely is a defect in the command being run, and it is reported as a
+saturated pool — never resolved by killing the deploy on a guess.
+
 **Failure actions — the parent never guesses that a deploy finished.**
 
 - **Child exits without a `run-completed` event** (crash, kill, non-zero exit): the call fails with an
