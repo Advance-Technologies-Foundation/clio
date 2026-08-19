@@ -29,6 +29,25 @@ public sealed partial class McpWorkerCallDispatcher {
 	internal const string EnvironmentNameArgument = "environment-name";
 
 	/// <summary>
+	/// The camelCase spelling the same argument arrives under when a tool declares it as a bare method
+	/// parameter rather than inside an args record.
+	/// </summary>
+	/// <remarks>
+	/// <b>Both spellings are real, and reading only one broke the family this machinery exists for.</b>
+	/// Every sticky tool but one declares its target inside a record with
+	/// <c>[JsonPropertyName("environment-name")]</c>; <c>restart-by-environment-name</c> declares a bare
+	/// <c>string environmentName</c> parameter, so the SDK reflects it into the schema camelCased. The
+	/// starter therefore arrived with a name this dispatcher did not recognise and was registered under an
+	/// UNRESOLVED sticky key — while <c>restart-status</c>, whose args record does use the kebab spelling,
+	/// looked under the real one. A poll for a running restart answered "not found", and two restarts
+	/// against different environments shared the one unresolved key and could refuse each other.
+	/// Swept 2026-08-19: restart-by-environment-name is the only tool with this shape, but both spellings
+	/// are accepted rather than the one being "corrected", because changing a shipped tool's argument name
+	/// is a contract break for every existing caller.
+	/// </remarks>
+	internal const string EnvironmentNameCamelArgument = "environmentName";
+
+	/// <summary>
 	/// The tool-argument name the credentials-started members of a long-running family use instead of
 	/// <see cref="EnvironmentNameArgument"/>.
 	/// </summary>
@@ -566,7 +585,8 @@ public sealed partial class McpWorkerCallDispatcher {
 	internal static EnvironmentOptions ReadTargetOptions(
 		CallToolRequestParams parameters, string dispatchedToolName) {
 		IDictionary<string, JsonElement> arguments = ReadEffectiveArguments(parameters, dispatchedToolName);
-		string environmentName = TryReadStringArgument(arguments, EnvironmentNameArgument);
+		string environmentName = TryReadStringArgument(arguments, EnvironmentNameArgument)
+			?? TryReadStringArgument(arguments, EnvironmentNameCamelArgument);
 		return environmentName is null
 			? new EnvironmentOptions { Uri = TryReadStringArgument(arguments, UrlArgument) }
 			: new EnvironmentOptions { Environment = environmentName };

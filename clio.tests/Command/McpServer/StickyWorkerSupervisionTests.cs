@@ -2379,4 +2379,35 @@ public sealed class StickyWorkerSupervisionTests {
 			_callback(_state);
 		}
 	}
+
+	[Test]
+	[Description("restart-by-environment-name declares a bare `string environmentName` parameter, so the SDK reflects it camelCased — the starter must resolve the SAME sticky key its own restart-status poller does, or the poll answers 'not found' for a restart that is running.")]
+	public void ReadTargetOptions_ShouldResolveTheTarget_WhenTheArgumentIsCamelCased() {
+		// Arrange — the two spellings the catalog actually emits: a record with
+		// [JsonPropertyName("environment-name")], and a bare method parameter reflected as camelCase.
+		CallToolRequestParams kebab = new() {
+			Name = "restart-status",
+			Arguments = new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonSerializer.SerializeToElement("sandbox")
+			}
+		};
+		CallToolRequestParams camel = new() {
+			Name = "restart-by-environment-name",
+			Arguments = new Dictionary<string, JsonElement> {
+				["environmentName"] = JsonSerializer.SerializeToElement("sandbox")
+			}
+		};
+
+		// Act
+		EnvironmentOptions fromKebab =
+			McpWorkerCallDispatcher.ReadTargetOptions(kebab, "restart-status");
+		EnvironmentOptions fromCamel =
+			McpWorkerCallDispatcher.ReadTargetOptions(camel, "restart-by-environment-name");
+
+		// Assert
+		fromCamel.Environment.Should().Be("sandbox",
+			because: "the starter's own schema spells it camelCase, and failing to read it registers the worker under an unresolved key that its poller can never reach");
+		fromCamel.Environment.Should().Be(fromKebab.Environment,
+			because: "the starter and the poller of ONE family must derive the same target, or a running restart is reported as not found and two environments share one key");
+	}
 }
