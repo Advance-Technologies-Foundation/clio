@@ -7798,6 +7798,227 @@ public sealed class SchemaValidationServiceTests
 
 	#endregion
 
+	#region ValidateMobileMergeSlotAuthoring
+
+	[Test]
+	[Description("The stand-verified ENG-95429 merge shape blocks: a button authored inside values.actions of a merge on Scaffold never reaches the merged config.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenMergeAuthorsChildrenInSlot_AddsBlockingError() {
+		// Arrange - the exact body written to the stand: saved successfully, zero occurrences in the merged viewConfig.
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold",
+		                   "values":{"actions":[{"type":"crt.Button","name":"UsrMergeProbeButton",
+		                                         "clicked":{"request":"crt.SaveRecordRequest"}}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the differ strips the slot out of the merge, so the write silently persists an operation that creates nothing");
+		result.Errors.Should().ContainSingle(e => e.Contains("Scaffold") && e.Contains("actions"),
+			because: "the diagnostic must name both the merged element and the slot the author has to move out of");
+	}
+
+	[Test]
+	[Description("The rule reports every offending slot on one entry rather than stopping at the first, so a single pass fixes the whole operation.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenTwoSlotsAuthorChildren_ReportsBoth() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold",
+		                   "values":{"actions":[{"type":"crt.Button","name":"A"}],
+		                             "leading":[{"type":"crt.Button","name":"B"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.Errors.Should().HaveCount(2,
+			because: "reporting one slot would send the author back for a second round on the same entry");
+	}
+
+	[Test]
+	[Description("A merge that sets scalar properties is untouched - that is the ordinary shape the mobile designer itself emits throughout a page.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenMergeSetsScalarProperties_AddsNoError() {
+		// Arrange - taken verbatim from a real mobile page body.
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"AreaProfileContainer",
+		                   "values":{"layoutConfig":{"column":1,"colSpan":1,"row":1,"rowSpan":1}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "blocking the everyday merge would refuse almost every page the designer produces");
+	}
+
+	[Test]
+	[Description("An insert that declares children inside values is untouched: for insert the values object becomes the element, which is the documented container-authoring pattern.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenInsertDeclaresChildrenInValues_AddsNoError() {
+		// Arrange - the field-grouping pattern the mobile guidance prescribes.
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"ProfileContainer","parentName":"MainContainer","propertyName":"items",
+		                   "values":{"type":"crt.GridContainer","color":"primary",
+		                             "items":[{"type":"crt.Input","name":"UsrName"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "insert clones values into the new element, so children declared there are created - the rule is merge-only");
+	}
+
+	[Test]
+	[Description("A set that declares children inside values is untouched for the same reason as insert: set is a remove followed by an insert of the same payload.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenSetDeclaresChildrenInValues_AddsNoError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"set","name":"ProfileContainer","parentName":"MainContainer","propertyName":"items",
+		                   "values":{"type":"crt.GridContainer","items":[{"type":"crt.Input","name":"UsrName"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "set rebuilds the element from values, so children declared there survive - the rule is merge-only");
+	}
+
+	[Test]
+	[Description("An array of plain data objects is untouched: the applier's own test is a non-empty name, and column descriptors carry none.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenMergedArrayHasNoNamedItems_AddsNoError() {
+		// Arrange - the column descriptors of a real crt.FileList.
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"AttachmentFileList",
+		                   "values":{"columns":[{"id":"57795b02","code":"AttachmentListDS_Name","dataValueType":28}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "data rows are not view elements and the applier does not strip them; blocking them would break list configuration");
+	}
+
+	[Test]
+	[Description("An empty array authors nothing, so it is not reported - matching the applier, which finds no first child to test.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenMergedArrayIsEmpty_AddsNoError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold","values":{"actions":[]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "an empty array creates no element, so there is nothing for the author to move to an insert");
+	}
+
+	[Test]
+	[Description("A first item whose name is whitespace is not an item config by the applier's test, so the rule does not fire on it.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenFirstItemNameIsWhitespace_AddsNoError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold","values":{"actions":[{"type":"crt.Button","name":"  "}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the rule must mirror the applier's non-empty-name test rather than invent a stricter one");
+	}
+
+	[Test]
+	[Description("A mis-cased operation is not reported here: the differ discards it wholesale, and the type-placement rule already names that as the defect.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenOperationCaseDiffers_AddsNoError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"Merge","name":"Scaffold","values":{"actions":[{"type":"crt.Button","name":"A"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "telling the author to move a child out of an operation that never runs is advice that cannot change the outcome");
+	}
+
+	[Test]
+	[Description("The check is wired into ValidateMobilePage: the merge-slot defect blocks the write through the real pipeline.")]
+	public void ValidateMobilePage_WhenMergeAuthorsChildrenInSlot_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold",
+		                   "values":{"actions":[{"type":"crt.Button","name":"UsrMergeProbeButton",
+		                                         "clicked":{"request":"crt.SaveRecordRequest"}}]}}
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		// Assert
+		errors.Should().Contain(e => e.Contains("UsrMergeProbeButton") && e.Contains("actions"),
+			because: "the pipeline must refuse a write whose elements are proven never to reach the merged config");
+	}
+
+	#endregion
+
+
 	#region ValidateMobileFieldBindings
 
 	[Test]

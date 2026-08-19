@@ -32,6 +32,7 @@ public static class SchemaValidationService
 	private const string PathPropertyName = "path";
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
+	private const string MergeOperationName = "merge";
 	private const string ParentNamePropertyName = "parentName";
 	private const string PropertyNamePropertyName = "propertyName";
 	private const string ScaffoldElementName = "Scaffold";
@@ -309,6 +310,9 @@ public static class SchemaValidationService
 
 		SchemaValidationResult buttonSlotResult = ValidateMobileButtonSlotPlacement(body);
 		warnings.AddRange(buttonSlotResult.Warnings);
+
+		SchemaValidationResult mergeSlotResult = ValidateMobileMergeSlotAuthoring(body);
+		if (!mergeSlotResult.IsValid) errors.AddRange(mergeSlotResult.Errors);
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
@@ -863,6 +867,109 @@ public static class SchemaValidationService
 			+ "actually declares (confirm the name with get-page; inserting into a parent that does not exist is "
 			+ "silently dropped by the differ and fails the same way) — and give it a \"layoutConfig\", which is "
 			+ "what the designer itself emits.");
+	}
+
+	/// <summary>
+	/// Blocks a <c>merge</c> that authors CHILD ELEMENTS inside its <c>values</c> — an array of item configs placed
+	/// on a container slot such as <c>actions</c>, <c>leading</c>, <c>items</c> or <c>menuItems</c>. The differ never
+	/// applies that payload the way the author intends, and both of its outcomes are silent.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Mechanism (<c>JsonDiffApplier.Merge</c>): before copying anything, the applier walks the properties of the
+	/// TARGET element and, for each one whose first child is an item config (an object with a non-empty <c>name</c>),
+	/// strips the same-named property out of the incoming <c>values</c> — the platform's
+	/// <c>ItemWithItemsPropertyMergeException</c> warn-and-drop. So when the slot already holds elements the authored
+	/// children are discarded outright: the write reports success, the operation persists in the page's own body, and
+	/// nothing reaches the merged config. When the slot is empty or absent the strip does not fire and the array is
+	/// copied wholesale instead, REPLACING the slot rather than adding to it.
+	/// </para>
+	/// <para>
+	/// Verified on a stand for ENG-95429: a <c>merge</c> on <c>Scaffold</c> carrying a <c>crt.Button</c> in
+	/// <c>values.actions</c> saved successfully and left the merged <c>viewConfig</c> untouched — the button appeared
+	/// zero times in it while remaining in the saved body. That is the reported symptom exactly: saved, never rendered.
+	/// </para>
+	/// <para>
+	/// Scope is <c>merge</c> ONLY. For <c>insert</c> and <c>set</c> the whole <c>values</c> object BECOMES the element,
+	/// so children declared inside it are the documented, working way to author a container — see the field-grouping
+	/// pattern in the mobile guidance. Only the first array item is examined, mirroring the applier's own
+	/// <c>firstChild</c> test.
+	/// </para>
+	/// <para>
+	/// KNOWN LIMITATION: clio validates <c>viewConfigDiff</c> against an empty base, so it cannot tell the two
+	/// outcomes apart. Blocking therefore also refuses the one shape where a <c>merge</c> is the only route — creating
+	/// a slot the target element does not have at all, where an <c>insert</c> throws
+	/// <c>NotContainerItemInsertException</c> because the parent property is not a container yet. That case is rare
+	/// and silently wrong far more often than it is intended; if it ever needs an escape hatch, add it here rather
+	/// than by weakening the rule.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> carrying one blocking error per offending slot.</returns>
+	public static SchemaValidationResult ValidateMobileMergeSlotAuthoring(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileMergeSlotAuthoringEntry);
+
+	/// <summary>
+	/// Per-entry half of <see cref="ValidateMobileMergeSlotAuthoring"/>; reports every offending slot on the entry
+	/// rather than stopping at the first, so one pass fixes the whole operation.
+	/// </summary>
+	private static void ValidateMobileMergeSlotAuthoringEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		// Exact-case, matching the differ's switch and both sibling rules: a mis-cased operation never runs at all,
+		// and ValidateMobileInsertTypePlacement already names that as the defect.
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !string.Equals(
+				TryGetStringProperty(entry, OperationPropertyName, out string operation) ? operation : null,
+				MergeOperationName, StringComparison.Ordinal)) {
+			return;
+		}
+		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values)
+			|| values.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty slot in values.EnumerateObject()) {
+			if (!TryGetFirstAuthoredElementName(slot.Value, out string firstChildName)) {
+				continue;
+			}
+			result.IsValid = false;
+			result.Errors.Add(
+				$"{DescribeViewConfigDiffEntry(entry, index)} is a \"{MergeOperationName}\" whose "
+				+ $"\"{ValuesPropertyName}\" authors child elements in \"{Sanitize(slot.Name)}\" (starting with "
+				+ $"'{Sanitize(firstChildName)}'). The differ does not "
+				+ "apply them: when the target already holds elements in that slot the whole property is stripped "
+				+ "from the merge, so the save succeeds and the elements never reach the page (ENG-95429); when the "
+				+ "slot is empty or absent the array is written wholesale instead, REPLACING the slot rather than "
+				+ $"adding to it. Author each child as its own \"{InsertOperationName}\" entry — "
+				+ $"\"{ParentNamePropertyName}\": the element this merge targets, "
+				+ $"\"{PropertyNamePropertyName}\": \"{Sanitize(slot.Name)}\" — and keep the merge for scalar "
+				+ "properties. If this entry came back from get-page, the page already carries the defect: the "
+				+ "operation is stored but its elements are absent from the merged config.");
+		}
+	}
+
+	/// <summary>
+	/// Whether a merged-in property value is a collection of authored view elements, mirroring the applier's
+	/// <c>isItemConfig</c> test (an object with a non-empty <c>name</c>) against the FIRST item only — the same
+	/// element the applier itself inspects — and handing that item's alias back for the diagnostic, since the entry
+	/// itself is named after the element being merged rather than the child that goes missing. An empty array
+	/// authors nothing and is left alone; so is an array of plain data objects, such as the column descriptors on a
+	/// file list, which carry no <c>name</c>.
+	/// </summary>
+	private static bool TryGetFirstAuthoredElementName(JsonElement value, out string firstChildName) {
+		firstChildName = null;
+		if (value.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		foreach (JsonElement item in value.EnumerateArray()) {
+			if (item.ValueKind != JsonValueKind.Object
+				|| !TryGetStringProperty(item, "name", out string name)
+				|| string.IsNullOrWhiteSpace(name)) {
+				return false;
+			}
+			firstChildName = name;
+			return true;
+		}
+		return false;
 	}
 
 	/// <summary>

@@ -824,6 +824,66 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-95429: a merge that authors a button inside values.actions is REJECTED end to end. Verified on a stand before the rule existed - the write succeeded, the operation persisted in the page body, and the button appeared zero times in the server-merged viewConfig, because the differ strips a slot the target already populates. The slot-placement rule cannot see this shape: it matches insert only.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile merge that authors children in a Scaffold slot")]
+	[AllureDescription("Sends the stand-verified merge shape - a crt.Button nested in values.actions of a merge on Scaffold - and verifies validate-page refuses it with an error naming the slot and the child that would go missing.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Merge_Authoring_Children_In_Slot() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMergeAuthoredButton = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "Scaffold",
+			      "values": { "actions": [ { "type": "crt.Button", "name": "UsrMergeProbeButton",
+			                                 "clicked": { "request": "crt.SaveRecordRequest" } } ] } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithMergeAuthoredButton);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the elements are provably never created, so accepting the body would let the silent failure through again");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("UsrMergeProbeButton") && e.Contains("actions"),
+			because: "the author must see which child goes missing and from which slot, not just that the merge is wrong");
+	}
+
+	[Test]
+	[Description("Companion to the merge-slot rejection: a merge that sets only scalar properties stays valid end to end. This is the shape the mobile designer emits throughout a real page, so a false positive here would refuse almost every mobile write.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts a mobile merge that sets scalar properties")]
+	[AllureDescription("Sends a layoutConfig-only merge taken from a real mobile page body and verifies validate-page accepts it, proving the merge-slot rule is scoped to authored child elements.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Merge_Of_Scalar_Properties() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithScalarMerge = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "AreaProfileContainer",
+			      "values": { "layoutConfig": { "column": 1, "colSpan": 1, "row": 1, "rowSpan": 1 } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithScalarMerge);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an ordinary property merge must stay writable - the rule targets authored child elements only");
+	}
+
+	[Test]
 	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]

@@ -33,6 +33,11 @@ When `validate` is `true` (the default), the body is checked client-side before 
     all). The Creatio differ builds the element from `values` alone, so the type is discarded and the
     element never renders even though the save succeeds. A flat `set` is left to the differ, which refuses
     it for the missing required `values`.
+  - **Rejected** — a `merge` whose `values` authors child elements in a container slot (an array of objects
+    carrying a `name`, on `actions` / `leading` / `items` / `menuItems` / …). The differ strips the property
+    when the target already holds elements there, so the write succeeds and nothing is created; when the slot
+    is empty it overwrites the slot wholesale instead. Author each child with its own `insert`. `merge`-only —
+    for `insert`/`set` the `values` object becomes the element, so children declared there are created.
   - **Warned** — no type anywhere while `values` carries element properties; two DIFFERENT types (the
     element still renders, as the `values` copy); and an operation whose letter case does not match the
     differ's exact-case dispatch; and a `crt.Button` inserted into `parentName: "Scaffold"`,

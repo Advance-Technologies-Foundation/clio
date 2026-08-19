@@ -66,6 +66,15 @@ name instead of trying to edit a non-existent local `insert`.
     refused for the same reason: `insert` declares no required parameters, so the differ does not reject it
     — it persists a typeless element. A flat `set` is left to the differ, which refuses it for the missing
     required `values`.
+  - **Rejected — a `merge` that authors child elements inside `values`.** An array of item configs (objects
+    carrying a `name`) placed on a container slot such as `actions`, `leading`, `items` or `menuItems`. The
+    differ never applies it as intended: when the target already holds elements in that slot the whole
+    property is stripped from the merge, so the write succeeds and the elements never reach the page
+    (stand-verified for ENG-95429 — the button appeared zero times in the server-merged `viewConfig` while
+    remaining in the saved body); when the slot is empty or absent the array is written wholesale instead,
+    **replacing** the slot rather than adding to it. Author each child as its own `insert`. This is
+    `merge`-only: for `insert`/`set` the `values` object becomes the element, so children declared there are
+    the documented way to author a container.
   - **Warned — no type anywhere**, when `values` carries element properties but declares no `type`
     (an entry that authors nothing — absent or empty `values` — is silent by design).
   - **Warned — two DIFFERENT types**, one on the operation object and one inside `values`. The element still
