@@ -177,6 +177,14 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		// public certificates.
 		"SSL_CERT_FILE",
 		"SSL_CERT_DIR",
+		// WHICH CLUSTER a deployment targets. `deploy-creatio` became worker-routed at stage 8, and
+		// InstallerCommand — the command it runs — takes IKubernetes as a constructor dependency, built
+		// through KubernetesClientConfiguration.BuildConfigFromConfigFile(), which honours KUBECONFIG. An
+		// operator who selects a non-default context therefore gets it in the parent and NOT in the worker,
+		// so the worker silently falls back to the default kubeconfig: a destructive operation aimed at a
+		// cluster nobody chose, or a valid deployment rejected because the default context cannot see it.
+		// It is a path to a config file, not a secret.
+		"KUBECONFIG",
 		"CLIO_MCP_RESPECT_AMBIENT_PROXY",
 		"CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS",
 		"CLIO_CREATE_SECTION_TIMEOUT_SECONDS",

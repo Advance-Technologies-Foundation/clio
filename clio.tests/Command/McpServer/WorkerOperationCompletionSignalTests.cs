@@ -865,4 +865,31 @@ public sealed class WorkerOperationCompletionSignalTests {
 		session.Count.Should().Be(0,
 			because: "get-page is not a sticky starter, and treating any tool with a `command` argument as a clio-run wrapper would make an ordinary read report completion for an operation that never existed");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A payload carrying a command at BOTH levels must resolve the same one the executor dispatches — the top-level. Two readers of one payload disagreeing is how a sticky compile ends up with no completion ledger.")]
+	public async Task HandleCallToolErrors_ShouldPreferTheTopLevelCommand_WhenThePayloadCarriesBoth() {
+		// Arrange — a mixed shape: a nested non-sticky command and a top-level sticky one. ClioRunExecutor
+		// reads the top level, so the ledger must key off that.
+		RecordingWorkerSession session = new();
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => new ValueTask<CallToolResult>(new CallToolResult { Content = [] }));
+		Dictionary<string, System.Text.Json.JsonElement> mixed = new() {
+			["args"] = JsonSerializer.SerializeToElement(new { command = "get-page" }),
+			["command"] = JsonSerializer.SerializeToElement(CompileCreatioTool.CompileCreatioToolName)
+		};
+		RequestContext<CallToolRequestParams> context =
+			McpRequestContextTestFactory.CreateCallToolContext(ClioRunTool.ToolName, mixed);
+		context.Server = session.Server;
+		context.Services = McpRequestContextTestFactory.CreateExecutionMetadataServices();
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		session.WaitForSignals(1).Should().Be(1,
+			because: "the executor dispatches the top-level compile-creatio, so scanning nested objects first would load get-page's non-sticky metadata and leave the sticky compile holding its worker, its admission slot and the target's configuration-build reservation until the thirty-minute bound");
+	}
 }

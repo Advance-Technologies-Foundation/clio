@@ -461,6 +461,8 @@ public sealed class WorkerProcessSupervisorTests {
 			WorkerProcessSupervisor.DefaultInheritedEnvironmentVariableAllowlist;
 
 		// Assert
+		allowlist.Should().Contain("KUBECONFIG",
+			because: "deploy-creatio is worker-routed and InstallerCommand resolves IKubernetes through BuildConfigFromConfigFile, so a worker without this variable silently targets the DEFAULT cluster rather than the one the operator selected — a destructive operation aimed somewhere nobody chose");
 		allowlist.Should().Contain("SSL_CERT_FILE",
 			because: "an installation trusting a private Creatio CA configures the PARENT through this path, and a worker without it fails certificate validation on every call while the parent succeeds — which presents as an unreachable environment rather than as a trust problem");
 		allowlist.Should().Contain(required,
@@ -485,6 +487,7 @@ public sealed class WorkerProcessSupervisorTests {
 			"CLIO_WEB_TO_MOBILE_PAGE_CONVERSION_RULES_LOCAL_FILE",
 			"SSL_CERT_FILE",
 			"SSL_CERT_DIR",
+			"KUBECONFIG",
 			"PATHEXT"
 		];
 

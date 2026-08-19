@@ -168,17 +168,24 @@ public static class McpToolErrorFilter
 		if (parameters?.Arguments is not { } arguments) {
 			return null;
 		}
-		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
-			if (TryReadCommand(argument.Value, out string command)) {
-				return command;
+		// TOP-LEVEL FIRST, and only then the named `args` wrapper — the same precedence
+		// ClioRunTool.RecoverWrappedCall uses, which reads `command` off the wrapper it was handed.
+		// The earlier version scanned nested objects first, so a mixed payload carrying BOTH — say
+		// {"args":{"command":"get-page",…},"command":"compile-creatio"} — made the executor dispatch
+		// compile-creatio while this filter loaded get-page's metadata. The sticky compile would then open
+		// no completion ledger and hold its worker, its admission slot and the target's
+		// configuration-build reservation until the thirty-minute bound. Two readers of one payload must
+		// not disagree about which command it names.
+		if (arguments.TryGetValue("command", out JsonElement topLevel)
+			&& topLevel.ValueKind == JsonValueKind.String) {
+			string flat = topLevel.GetString();
+			if (!string.IsNullOrWhiteSpace(flat)) {
+				return flat;
 			}
-			if (string.Equals(argument.Key, "command", StringComparison.OrdinalIgnoreCase)
-				&& argument.Value.ValueKind == JsonValueKind.String) {
-				string flat = argument.Value.GetString();
-				if (!string.IsNullOrWhiteSpace(flat)) {
-					return flat;
-				}
-			}
+		}
+		if (arguments.TryGetValue("args", out JsonElement wrapper)
+			&& TryReadCommand(wrapper, out string nested)) {
+			return nested;
 		}
 		return null;
 	}
