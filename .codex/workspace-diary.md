@@ -8781,6 +8781,13 @@ Discovery: The package collision originated in `UiProjectCreator.Create` calling
 Files: clio/Package/UiProjectCreator.cs, clio.tests/Package/UiProjectCreatorTests.cs, clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/docs/commands/new-ui-project.md, clio/help/en/new-ui-project.txt
 Impact: Package-first workspaces can add a Freedom UI project without rewriting existing package metadata or content, while invalid package paths and existing project directories fail before mutation.
 
+## 2026-08-18 – Reuse preinstalled SDKs in the release workflow
+Context: The self-hosted release runner already has .NET 8 and .NET 10, but `actions/setup-dotnet` downloads both SDKs on every host and previously failed trying to write under `C:\Program Files\dotnet`.
+Decision: Remove `actions/setup-dotnet` and its install-directory override; fail fast with a read-only `dotnet --list-sdks` prerequisite check for major versions 8 and 10.
+Discovery: PowerShell remoting showed the GitHub runner service is `NT AUTHORITY\NETWORK SERVICE`; a one-time task under that exact SID passed the predicate with exit code 0 on `TS1-MRKT-WEB01`, where the system installation exposes SDKs 8.0.423, 10.0.204, and 10.0.302.
+Files: .github/workflows/reliase-to-nuget.yml
+Impact: Release runs reuse provisioned system SDKs and no longer download or install .NET.
+
 ## 2026-08-18 14:10 – Theme ids are GUIDs now: follow ENG-91018 through clio instead of guessing at the symptom
 Context: the `CLIO MCP e2e tests` trunk baseline went red between builds 15889154 (green, 17:50 on 08-17) and 15890679 (first red, 01:23 on 08-18) — four `ThemingSandboxE2ETests.*`, all on `create-theme`, all with the same server message: `CreateThemeRequest ... The value 'e2e-brand-theme-<hex>' cannot be parsed as the type 'Guid'`. The clio revisions in that range (`801059c60..0fbd280b8`) touch no theming code, so the change was not ours.
 Decision: found the source rather than adapting the tests to the symptom. `core@79b7098c118` (ENG-91018, d.nagayko, 08-13) retyped `Id` from `string` to `Guid` on `UpdateThemeRequest` (which `CreateThemeRequest` inherits), `DeleteThemeRequest` and `ThemeDescriptorDto`, and its own message says so: "Theme ids are now GUIDs everywhere ... breaks backward compatibility with string theme ids". The matching `PackageStore` schemas landed as r380007 (08-14), were reverted, and were restored as r380041 on 08-17 11:31 — which is why the stand only started refusing at 01:23 on 08-18, five days after the core commit.
@@ -8843,3 +8850,17 @@ clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionToolE2ET
 Impact: Do NOT attribute a clio.mcp.e2e failure to other builds on the stand, and do not propose job
 serialisation for it. Read `resulting-properties` of a build, never the buildType `/parameters`, when
 checking how a TeamCity job provisions its environment.
+
+## 2026-08-19 09:29 – Curated knowledge freshness survives a confirmed-current update
+Context: Issue #1100 and PR #1102 exposed that warm artifact-backed MCP starts can serve an old curated bundle indefinitely without a visible version or staleness signal.
+Decision: Keep warm startup offline, warn after three days, expose `libraryVersion` on `get-guidance`, and renew the existing activation-pointer timestamp only when an explicit update check confirms the same generation is still current. The renewal is guarded by a source-lock compare-and-swap, so a slow check cannot mark a concurrently replaced generation fresh.
+Discovery: An activation-age warning alone becomes permanently unclearable when the publisher has no newer release; `NoCandidate` must acknowledge freshness. Stdio warnings also need direct stderr coverage because ordinary console logging is suppressed to protect the JSON-RPC stdout stream.
+Files: clio/Command/McpServer/Knowledge/CuratedKnowledgeBootstrapService.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceInstallationStore.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio.mcp.e2e/CuratedKnowledgeArtifactStartupE2ETests.cs
+Impact: A successful `update-knowledge --source creatio-curated` check now clears the age warning without changing bundle identity, and real-process E2E proves the warning reaches stderr while MCP initialize remains valid on stdout.
+
+## 2026-08-19 11:20 – Separate publisher freshness from generation identity
+Context: Final review of PR #1102 found that rewriting `ActivatedAtUtc` could invalidate a concurrent publication compare-and-swap, and that a rejected newer candidate followed by `NoCandidate` could incorrectly silence issue #1100.
+Decision: Persist `LastPublisherCheckAtUtc` separately on the current-state marker, renew it only after a clean no-candidate search, and make the advisory write non-blocking and best-effort. Startup wording describes the cached activation candidate rather than claiming it is the generation ultimately served.
+Discovery: A publisher check is successful for freshness only when no candidate was rejected during that search. Freshness metadata must not participate in immutable generation identity, and corrupt or materially future markers require visible diagnostics rather than indefinite silence.
+Files: clio/Command/McpServer/Knowledge/KnowledgeSourceInstallationStore.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio/Command/McpServer/Knowledge/CuratedKnowledgeBootstrapService.cs, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs, clio.mcp.e2e/CuratedKnowledgeArtifactStartupE2ETests.cs
+Impact: Clean update checks clear stale warnings without racing valid publications; rejected releases, corrupt markers, and clock skew remain operator-visible, while real-process tests cannot leak an MCP child on failure.
