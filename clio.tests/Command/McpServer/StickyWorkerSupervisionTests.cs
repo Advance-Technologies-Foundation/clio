@@ -5,9 +5,11 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Relay;
@@ -16,6 +18,7 @@ using Clio.Common;
 using Clio.Common.McpWorker;
 using Clio.UserEnvironment;
 using FluentAssertions;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using NUnit.Framework;
@@ -76,6 +79,32 @@ public sealed class StickyWorkerSupervisionTests {
 
 	/// <summary>Ceiling on every wait here; a scripted child answers in milliseconds.</summary>
 	private static readonly TimeSpan AssertionTimeout = TimeSpan.FromSeconds(30);
+
+	/// <summary>The JSON-RPC method a poll invokes on its worker.</summary>
+	private const string CallToolMethodName = "tools/call";
+
+	/// <summary>The JSON-RPC method the bounded liveness probe uses (never <c>ping</c>, ADR 3.1b).</summary>
+	private const string ListToolsMethodName = "tools/list";
+
+	/// <summary>The key the hermetic poll harness registers its single sticky worker under.</summary>
+	private static readonly StickyWorkerKey PollKey =
+		new(McpToolOperationFamily.ConfigurationBuild, $"tenant|{EnvironmentName}");
+
+	/// <summary>
+	/// The budget the hermetic polls are given: long enough that anything shorter than it which happens is
+	/// a BOUND of its own rather than the budget expiring.
+	/// </summary>
+	private static readonly TimeSpan PollBudget = TimeSpan.FromSeconds(10);
+
+	/// <summary>The liveness-probe bound the hermetic harness runs with.</summary>
+	private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMilliseconds(300);
+
+	/// <summary>
+	/// The ceiling a probe-bounded reap must come in under. Well clear of <see cref="ProbeTimeout"/> so a
+	/// loaded agent does not fail it, and far short of <see cref="PollBudget"/> so a poll that waited out
+	/// its whole budget instead of its probe cannot pass.
+	/// </summary>
+	private static readonly TimeSpan ProbeBoundCeiling = TimeSpan.FromSeconds(3);
 
 	private ILogger _logger;
 	private IProcessExecutor _processExecutor;
@@ -969,6 +998,107 @@ public sealed class StickyWorkerSupervisionTests {
 
 
 	// ---------------------------------------------------------------------------------------------
+	// ADR 3.2a - a cancelled poll decides the SESSION's fate, because the SDK's send lock guarantees a
+	// completed send and not an atomic one
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("A poll whose caller cancelled while its request was still being written RETIRES the sticky worker: the session may hold half a JSON-RPC frame, so it is reaped rather than left registered for the next poll to append to.")]
+	public async Task ReachAndCallAsync_ShouldRetireTheStickyWorker_WhenTheCallersCancellationInterruptedTheSend() {
+		// Arrange - the send never completes, which is precisely the state the SDK's _sendLock does not
+		// protect against: the caller's token is taken separately by the payload write, the newline write and
+		// the flush, so a token firing between them releases the lock over an unterminated line.
+		ScriptedPollTransport transport = new() { BlockToolCallSends = true };
+		await using PollHarness harness = await CreatePollHarnessAsync(transport);
+		using CancellationTokenSource caller = new();
+
+		// Act
+		Task<CallToolResult> poll = harness.Poll.ReachAndCallAsync(PollKey,
+			DirectCallParams(CompileStatusToolName, EnvironmentName), PollBudget, caller.Token).AsTask();
+		await WaitUntilAsync(() => transport.ToolCallSendsStarted == 1);
+		await caller.CancelAsync();
+		Func<Task> awaitingThePoll = async () => await poll;
+
+		// Assert
+		await awaitingThePoll.Should().ThrowAsync<OperationCanceledException>(
+			because: "the caller must still see its own cancellation: retiring a SESSION and answering a CALLER are different things, and a poll that swallowed the cancellation would report a status nobody asked for any more");
+		transport.ToolCallSendsCancelled.Should().Be(1,
+			because: "the arrangement is only the one under test if the send itself was interrupted - a send that had completed would be the CLEAN cancellation, which has the opposite correct answer");
+		harness.Registry.TryReach(PollKey, out StickyWorkerEntry _).Should().BeFalse(
+			because: "ADR 3.2a is binding: a session whose send did not complete is retired and never reused, because the next writer's JSON would be appended to the dangling line and the worker would get one corrupt frame and answer nothing - one process wedged, which is the failure this whole boundary exists to remove");
+		harness.LeaseDisposals.Should().Be(1,
+			because: "retiring the ENTRY is what returns the worker's admission slot and its shared-resource reservation; leaving them held until expiry would refuse the next long operation on a host whose sticky capacity is one or two");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A poll whose caller cancelled AFTER its request was written leaves the sticky worker registered, and the next poll proves the session before reusing it: the reuse is preceded by a bounded tools/list probe rather than by an assumption.")]
+	public async Task ReachAndCallAsync_ShouldProveTheSessionWithABoundedProbe_WhenReusingItAfterACleanCancellation() {
+		// Arrange - the send COMPLETES and the answer never comes, so the worker was told through
+		// notifications/cancelled and the transport is provably whole. That session is reusable, but only
+		// after the worker has been asked whether it is still answering.
+		ScriptedPollTransport transport = new() { AnswerToolCalls = false };
+		await using PollHarness harness = await CreatePollHarnessAsync(transport);
+		using CancellationTokenSource caller = new();
+		Task<CallToolResult> abandoned = harness.Poll.ReachAndCallAsync(PollKey,
+			DirectCallParams(CompileStatusToolName, EnvironmentName), PollBudget, caller.Token).AsTask();
+		await WaitUntilAsync(() => transport.ToolCallSendsStarted == 1);
+		await caller.CancelAsync();
+		Func<Task> awaitingTheAbandonedPoll = async () => await abandoned;
+		await awaitingTheAbandonedPoll.Should().ThrowAsync<OperationCanceledException>(
+			because: "the arrangement depends on the first poll genuinely being cancelled by its caller");
+		bool retained = harness.Registry.TryReach(PollKey, out StickyWorkerEntry _);
+		transport.AnswerToolCalls = true;
+
+		// Act
+		CallToolResult reused = await harness.Poll.ReachAndCallAsync(PollKey,
+			DirectCallParams(CompileStatusToolName, EnvironmentName), PollBudget, CancellationToken.None);
+
+		// Assert
+		retained.Should().BeTrue(
+			because: "a session whose request was WRITTEN carries no half frame, and killing the worker over it would end a compile that is still running - the operation the abandoned status poll was about");
+		reused.Should().NotBeNull(
+			because: "a retained worker must still be reachable: answering 'nothing was reached' would send the caller down the per-call path for a worker that was perfectly healthy");
+		transport.SentMethods.Should().ContainInOrder(new[] { CallToolMethodName, ListToolsMethodName, CallToolMethodName },
+			because: "the ADR allows reuse after a clean cancellation only behind a bounded liveness probe: the worker was told to stop, and a worker that ignores that notification is still busy with the abandoned call");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The probe that precedes reuse is BOUNDED: a worker that stops answering after a clean cancellation is reaped in probe time rather than in the poll's whole budget, so an unreachable worker does not hold a caller for the length of its call budget.")]
+	public async Task ReachAndCallAsync_ShouldReapInProbeTime_WhenTheWorkerStopsAnsweringAfterACleanCancellation() {
+		// Arrange - a worker with an open pipe that answers nothing is exactly the state a probe exists to
+		// catch, and an unbounded probe on it would be the same wedge wearing a different hat.
+		ScriptedPollTransport transport = new() { AnswerToolCalls = false };
+		await using PollHarness harness = await CreatePollHarnessAsync(transport);
+		using CancellationTokenSource caller = new();
+		Task<CallToolResult> abandoned = harness.Poll.ReachAndCallAsync(PollKey,
+			DirectCallParams(CompileStatusToolName, EnvironmentName), PollBudget, caller.Token).AsTask();
+		await WaitUntilAsync(() => transport.ToolCallSendsStarted == 1);
+		await caller.CancelAsync();
+		Func<Task> awaitingTheAbandonedPoll = async () => await abandoned;
+		await awaitingTheAbandonedPoll.Should().ThrowAsync<OperationCanceledException>(
+			because: "the arrangement depends on the first poll genuinely being cancelled by its caller");
+		transport.AnswerToolsList = false;
+
+		// Act
+		long startedAt = Stopwatch.GetTimestamp();
+		CallToolResult reused = await harness.Poll.ReachAndCallAsync(PollKey,
+			DirectCallParams(CompileStatusToolName, EnvironmentName), PollBudget, CancellationToken.None);
+		TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
+
+		// Assert
+		reused.Should().BeNull(
+			because: "a worker that cannot be proved alive must be answered as 'nothing was reached', so the caller takes the ordinary per-call path exactly as it would have after a parent restart");
+		elapsed.Should().BeLessThan(ProbeBoundCeiling,
+			because: "the probe carries its own bound, so an unanswering worker costs the caller probe time rather than the poll's whole budget - a probe that waited out the budget would be the unbounded wait this fix exists to remove");
+		harness.Registry.TryReach(PollKey, out StickyWorkerEntry _).Should().BeFalse(
+			because: "a worker that failed its probe is retired then and there, or its admission slot and reservation stay held until expiry for a process nothing can talk to");
+	}
+
+
+	// ---------------------------------------------------------------------------------------------
 	// Helpers
 	// ---------------------------------------------------------------------------------------------
 
@@ -1411,5 +1541,162 @@ public sealed class StickyWorkerSupervisionTests {
 			CancellationToken cancellationToken) =>
 			throw new NotSupportedException();
 #pragma warning restore MCP9005
+	}
+
+	/// <summary>
+	/// Builds ONE registered sticky worker over a scripted transport, with the real relay, the real
+	/// registry and the real poll around it.
+	/// </summary>
+	/// <param name="transport">The scripted child transport.</param>
+	/// <returns>The harness.</returns>
+	/// <remarks>
+	/// Hermetic rather than piped on purpose. What these three cases turn on is a STATE - whether the send
+	/// completed - and a transport that blocks <c>tools/call</c> on the caller's token produces it exactly.
+	/// The byte-level half frame that state stands for is already pinned over real pipes by
+	/// <c>WorkerMcpRelayTests.RequestAsync_ShouldRetireTheSession_WhenASendWasCancelledMidFrame</c>, and
+	/// reproducing it here would buy a second copy of that proof rather than a second property.
+	/// </remarks>
+	private async Task<PollHarness> CreatePollHarnessAsync(ScriptedPollTransport transport) {
+		WorkerMcpRelay relay = new(_logger);
+		WorkerRelaySession session = await relay.OpenAsync(transport, new RecordingParentSession(),
+			new WorkerRelayOptions { LivenessProbeTimeout = ProbeTimeout }, CancellationToken.None);
+		IWorkerLease lease = Substitute.For<IWorkerLease>();
+		lease.HasExited.Returns(false);
+		StrongBox<int> disposals = new(0);
+		lease.When(disposed => disposed.Dispose()).Do(_ => disposals.Value++);
+		IWorkerReach reach = Substitute.For<IWorkerReach>();
+		reach.ReachExisting(Arg.Any<IWorkerLease>()).Returns(lease);
+		StickyWorkerRegistry registry = new(_logger);
+		StickyWorkerEntry entry = new(lease, session, new WorkerStandardErrorDrain(null, 1024),
+			DateTimeOffset.UtcNow.AddMinutes(30), reservation: null, new SharedResourceReservation(), _logger);
+		registry.TryRegister(PollKey, entry).Should().BeTrue(
+			because: "every case below starts from ONE registered sticky worker, and a harness that registered none would make them all vacuous");
+		return new PollHarness(new StickyWorkerPoll(reach, registry, _logger), registry, entry, disposals);
+	}
+
+	/// <summary>One registered sticky worker and everything a case needs to state what happened to it.</summary>
+	private sealed class PollHarness : IAsyncDisposable {
+
+		private readonly StickyWorkerEntry _entry;
+		private readonly StrongBox<int> _leaseDisposals;
+
+		internal PollHarness(StickyWorkerPoll poll, StickyWorkerRegistry registry, StickyWorkerEntry entry,
+			StrongBox<int> leaseDisposals) {
+			Poll = poll;
+			Registry = registry;
+			_entry = entry;
+			_leaseDisposals = leaseDisposals;
+		}
+
+		internal StickyWorkerPoll Poll { get; }
+
+		internal StickyWorkerRegistry Registry { get; }
+
+		/// <summary>Gets how often the worker's lease was disposed - the only thing that returns its slot.</summary>
+		internal int LeaseDisposals => _leaseDisposals.Value;
+
+		public async ValueTask DisposeAsync() => await _entry.ReleaseAsync().ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// A scripted child transport whose ONE interesting property is whether a <c>tools/call</c> send is
+	/// allowed to complete.
+	/// </summary>
+	/// <remarks>
+	/// Blocking the send on the caller's own token reproduces the state ADR 3.2a is about without a pipe:
+	/// the relay's <c>sent</c> flag stays false, so it retires the session before it rethrows, exactly as it
+	/// does when a real newline write is abandoned mid-frame.
+	/// </remarks>
+	private sealed class ScriptedPollTransport : ITransport {
+
+		private readonly Channel<JsonRpcMessage> _fromChild =
+			Channel.CreateUnbounded<JsonRpcMessage>(new UnboundedChannelOptions { SingleReader = true });
+		private readonly List<string> _sentMethods = [];
+		private readonly object _sentLock = new();
+		private int _toolCallSendsStarted;
+		private int _toolCallSendsCancelled;
+
+		/// <summary>Gets or sets a value indicating whether a <c>tools/call</c> send never completes.</summary>
+		internal bool BlockToolCallSends { get; set; }
+
+		/// <summary>Gets or sets a value indicating whether <c>tools/call</c> is answered.</summary>
+		internal bool AnswerToolCalls { get; set; } = true;
+
+		/// <summary>Gets or sets a value indicating whether <c>tools/list</c> is answered.</summary>
+		internal bool AnswerToolsList { get; set; } = true;
+
+		/// <summary>Gets how many <c>tools/call</c> sends were begun.</summary>
+		internal int ToolCallSendsStarted => Volatile.Read(ref _toolCallSendsStarted);
+
+		/// <summary>Gets how many <c>tools/call</c> sends were abandoned part-way.</summary>
+		internal int ToolCallSendsCancelled => Volatile.Read(ref _toolCallSendsCancelled);
+
+		/// <summary>Gets every method the relay has sent, in order.</summary>
+		internal IReadOnlyList<string> SentMethods {
+			get {
+				lock (_sentLock) {
+					return [.. _sentMethods];
+				}
+			}
+		}
+
+		public string SessionId => "sticky-poll-fake";
+
+		public ChannelReader<JsonRpcMessage> MessageReader => _fromChild.Reader;
+
+		public async Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken) {
+			string method = message switch {
+				JsonRpcRequest request => request.Method,
+				JsonRpcNotification notification => notification.Method,
+				_ => null
+			};
+			if (method is not null) {
+				lock (_sentLock) {
+					_sentMethods.Add(method);
+				}
+			}
+			if (message is not JsonRpcRequest sent) {
+				return;
+			}
+			if (string.Equals(sent.Method, CallToolMethodName, StringComparison.Ordinal)) {
+				Interlocked.Increment(ref _toolCallSendsStarted);
+				if (BlockToolCallSends) {
+					try {
+						await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+					}
+					catch (OperationCanceledException) {
+						Interlocked.Increment(ref _toolCallSendsCancelled);
+						throw;
+					}
+					return;
+				}
+			}
+			Answer(sent);
+		}
+
+		public ValueTask DisposeAsync() {
+			_fromChild.Writer.TryComplete();
+			return default;
+		}
+
+		private void Answer(JsonRpcRequest request) {
+			JsonNode result = request.Method switch {
+				"initialize" => new JsonObject {
+					["protocolVersion"] = WorkerRelayOptions.MeasuredProtocolVersion,
+					["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
+					["serverInfo"] = new JsonObject { ["name"] = "sticky-poll-fake", ["version"] = "1" }
+				},
+				ListToolsMethodName when AnswerToolsList =>
+					JsonSerializer.SerializeToNode(new ListToolsResult { Tools = [] },
+						McpJsonUtilities.DefaultOptions),
+				CallToolMethodName when AnswerToolCalls =>
+					JsonSerializer.SerializeToNode(new CallToolResult { Content = [] },
+						McpJsonUtilities.DefaultOptions),
+				_ => null
+			};
+			if (result is not null) {
+				_fromChild.Writer.TryWrite(new JsonRpcResponse { Id = request.Id, Result = result });
+			}
+		}
 	}
 }

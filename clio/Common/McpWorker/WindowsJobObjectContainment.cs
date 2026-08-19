@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -368,8 +369,16 @@ public sealed class WindowsJobObjectContainment : IProcessContainment {
 					variables[pair.Key] = pair.Value;
 				}
 			}
+			// SORTED, case-insensitively by name, before the block is marshalled. A Dictionary preserves no
+			// order worth relying on — here it would emit the inherited allowlist first and the appended
+			// CLIO_* delta last — and Windows documents the environment block as sorted. This is not a
+			// speculative reading of the contract: .NET's own System.Diagnostics.Process builds its block
+			// with exactly this comparer, so a worker launched through this containment path now gets the
+			// same ordering as one launched through ProcessStartInfo, which is the path every other clio
+			// process takes. Matching the platform costs one sort and removes a difference nobody would
+			// think to look for when a child's environment lookup misbehaves.
 			StringBuilder builder = new();
-			foreach (KeyValuePair<string, string> pair in variables) {
+			foreach (KeyValuePair<string, string> pair in variables.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)) {
 				builder.Append(pair.Key).Append('=').Append(pair.Value).Append('\0');
 			}
 			builder.Append('\0');

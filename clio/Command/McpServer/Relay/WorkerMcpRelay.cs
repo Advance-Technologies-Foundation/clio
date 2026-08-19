@@ -128,9 +128,15 @@ public sealed class WorkerMcpRelay(ILogger logger) : IWorkerMcpRelay {
 /// only after a bounded <see cref="ProbeLivenessAsync"/> — the worker was told through
 /// <c>notifications/cancelled</c>, and a worker that ignores that is still busy.</description></item>
 /// </list>
-/// There is no worker pool yet: today every call gets its own worker and the supervisor's kill is the
-/// bound. This rule is what a pool would have to obey, written where the state it describes lives; do not
-/// read it as an invitation to build one here.
+/// <b>Corrected 2026-08-19: the pool exists.</b> This paragraph used to say "there is no worker pool
+/// yet: today every call gets its own worker and the supervisor's kill is the bound", and described the
+/// rules above as what a pool WOULD have to obey. Story 7's sticky supervision is that pool, and
+/// <see cref="StickyWorkerPoll"/> now enforces the retirement rule rather than anticipating it — a
+/// cancelled poll retires a session whose send did not complete, and proves liveness with a bounded
+/// probe before reusing one that was cleanly abandoned. The correction matters because a reader who
+/// trusted the old sentence would conclude these rules were still hypothetical and that reusing a
+/// session needed no check. Still not an invitation to build a second pool here: the state lives in
+/// the registry, not in the relay.
 /// </para>
 /// <para>
 /// <b>Not a raw pass-through in both directions.</b> A child request is bridged through typed parent API
@@ -369,7 +375,7 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 					$"The relay session was retired: the '{method}' request was not written to the worker "
 					+ "completely, so its transport may hold a partial JSON-RPC frame."));
 			}
-			else if (cancellationToken.IsCancellationRequested && !IsClosed
+			else if (cancellationToken.IsCancellationRequested && !IsRetired
 				&& !string.Equals(method, InitializeMethod, StringComparison.Ordinal)) {
 				// The worker HAS the request and nobody is waiting for the answer any more. A per-call worker
 				// dies with the supervisor's kill either way, but a sticky one would go on executing the
@@ -697,14 +703,26 @@ public sealed class WorkerRelaySession : IAsyncDisposable {
 		}, CancellationToken.None).ConfigureAwait(false);
 
 	/// <summary>
-	/// Gets a value indicating whether the session has already been closed or retired.
+	/// Gets a value indicating whether this session has been RETIRED: it has a closure, so it will never
+	/// be written to again and every later request fails at the guard in <see cref="RequestAsync"/>.
 	/// </summary>
 	/// <remarks>
-	/// Read under the same lock that writes the closure, because it gates a WRITE to the child: telling a
-	/// worker its call was cancelled over a transport that is closing achieves nothing and would only surface
-	/// as an exception in an unrelated place.
+	/// <para>
+	/// <b>It is the union of every reason a session stops being writable</b> — a send that did not
+	/// complete, disposal, the worker closing its pipe, and a transport failure. The union is deliberate
+	/// rather than lossy: the ONE decision this property exists to serve is "may this session carry
+	/// another call", and all four reasons answer it the same way. The interrupted send is the one that
+	/// makes the rule binding (ADR §3.2a): the SDK's <c>_sendLock</c> guarantees a completed send and not
+	/// an atomic one, so a token firing mid-send releases that lock over an unterminated line and the next
+	/// writer's JSON is appended to it.
+	/// </para>
+	/// <para>
+	/// Read under the same lock that writes the closure. Inside this type it also gates a WRITE to the
+	/// child: telling a worker its call was cancelled over a transport that is closing achieves nothing
+	/// and would only surface as an exception in an unrelated place.
+	/// </para>
 	/// </remarks>
-	private bool IsClosed {
+	public bool IsRetired {
 		get {
 			lock (_pendingRequestsLock) {
 				return _closure is not null;

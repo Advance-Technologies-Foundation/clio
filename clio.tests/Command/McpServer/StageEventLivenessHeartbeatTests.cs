@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Progress;
 using Clio.Command.McpServer.Relay;
 using FluentAssertions;
@@ -183,6 +184,66 @@ public sealed class StageEventLivenessHeartbeatTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A beat stuck inside the sink does not hold the stage open: the stage's own terminal transition and the run's run-completed are raised while that beat is still blocked, and once the sink returns every event is delivered in one contiguous ascending sequence.")]
+	public async Task CompleteSuccess_ShouldStillRaiseTheTerminalEvent_WhileALivenessBeatIsBlockedInsideTheSink() {
+		// Arrange - the sink blocks the FIRST beat and nothing else. A sink that blocks on pipe backpressure
+		// is the whole failure mode: the bounded join in StopLivenessRefresh gives up on that beat, and the
+		// terminal emission that follows must not then wait on synchronisation that beat is still holding.
+		using ManualResetEventSlim beatEnteredTheSink = new(false);
+		using ManualResetEventSlim releaseTheSink = new(false);
+		List<ClioStageEvent> delivered = [];
+		int runningSeen = 0;
+		StageEventEmitter emitter = new() { LivenessRefreshInterval = TimeSpan.FromMilliseconds(50) };
+		emitter.Begin(ClioStageEventContract.Operations.Deploy, [
+			new StageDescriptor(LongStageId, "Restore database", false),
+			new StageDescriptor(LaterStageId, "Configure site", false)
+		], stageEvent => {
+			if (IsRunningFor(stageEvent, LongStageId) && Interlocked.Increment(ref runningSeen) == 2) {
+				beatEnteredTheSink.Set();
+				// Bounded, so a regression is a failed assertion rather than a hung fixture.
+				releaseTheSink.Wait(SinkBlockCeiling);
+			}
+			// Recorded AFTER the block, so the recorded order IS the delivery order a consumer would see.
+			lock (delivered) {
+				delivered.Add(stageEvent);
+			}
+		});
+
+		try {
+			// Act - the stage ends the moment the first beat is inside the sink, so the stage's own terminal
+			// transition and the run's terminal event are both emitted while that beat is still blocked.
+			Task run = Task.Run(() => {
+				emitter.RunStage(LongStageId, () => beatEnteredTheSink.Wait(SinkBlockCeiling));
+				emitter.CompleteSuccess("deployed");
+			});
+			Task finished = await Task.WhenAny(run, Task.Delay(TerminalEmissionBound));
+			bool raisedWhileTheBeatWasStuck = ReferenceEquals(finished, run) && !releaseTheSink.IsSet;
+			releaseTheSink.Set();
+			await run;
+			await WaitUntilAsync(() => LastDelivered(delivered)?.EventType
+				== ClioStageEventContract.EventTypes.RunCompleted);
+
+			// Assert
+			beatEnteredTheSink.IsSet.Should().BeTrue(
+				because: "the arrangement is only the one under test if a beat really did reach the sink and block there - a stage that ended before the first refresh would make every assertion below pass over a run that was never contended");
+			raisedWhileTheBeatWasStuck.Should().BeTrue(
+				because: "a beat the bounded join gave up on is still inside the sink, and if the terminal transition has to wait for it the stage never finishes: the run reports no terminal stage, the parent classifies a healthy deploy as indeterminate and kills the worker - the exact outcome the bounded join was added to prevent");
+			List<ClioStageEvent> events = Snapshot(delivered);
+			events.Last().EventType.Should().Be(ClioStageEventContract.EventTypes.RunCompleted,
+				because: "run-completed must still be the last thing the run delivers - a terminal event that never reaches the sink is indistinguishable, to the parent, from a child that died");
+			events.Select(stageEvent => stageEvent.Sequence).Should().Equal(Enumerable.Range(0, events.Count),
+				because: "ClioRing buffers until the next contiguous (runId, sequence), so decoupling the sink call from the sequence stamp must not open a gap or a repeat in the numbering");
+			events.Select(stageEvent => stageEvent.Sequence).Should().BeInAscendingOrder(
+				because: "ordered replay is the half of the contract that motivated serialising the sink in the first place: a correctly numbered stream delivered out of order stalls the consumer just as badly as a repeated number does");
+		}
+		finally {
+			// Never leave a thread-pool thread parked inside the sink, whatever failed above.
+			releaseTheSink.Set();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The shipped silence bound is a comfortable multiple of the refresh interval, so a healthy long stage can never be mistaken for a silent worker — the one relationship the two numbers cannot derive at run time.")]
 	public void DefaultStageEventSilenceBound_ShouldBeAComfortableMultipleOfTheStageLivenessRefreshInterval() {
 		// Arrange — the child cannot read the parent's bound: CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS
@@ -199,6 +260,45 @@ public sealed class StageEventLivenessHeartbeatTests {
 			because: "several refreshes must fit inside one silence window: at a ratio near one a single dropped or delayed beat expires the bound and kills a healthy deploy, and these two numbers cannot check each other at run time");
 		StageEventEmitter.StageLivenessRefreshInterval.Should().BePositive(
 			because: "a zero or negative interval would either spin the emitter or disable the refresh silently");
+	}
+
+	/// <summary>
+	/// How long the blocking sink may stay blocked before it gives up by itself. A ceiling on the fixture,
+	/// never a wait the assertions depend on.
+	/// </summary>
+	private static readonly TimeSpan SinkBlockCeiling = TimeSpan.FromSeconds(30);
+
+	/// <summary>
+	/// How long the terminal emission is given to RETURN while a beat is stuck in the sink. Deliberately
+	/// generous: what discriminates the defect is WHETHER the emission returns at all, never how quickly,
+	/// so the bound is set well clear of the stage's own waits (a one-second join plus the emitter's
+	/// terminal-delivery bound) and well short of the ceiling above, where a wedge still fails as an
+	/// assertion rather than as a hung run.
+	/// </summary>
+	private static readonly TimeSpan TerminalEmissionBound = TimeSpan.FromSeconds(20);
+
+	private static bool IsRunningFor(ClioStageEvent stageEvent, string stageId) =>
+		stageEvent.Stage is { } stage
+		&& stage.StageId == stageId
+		&& stage.Status == ClioStageEventContract.StageStatuses.Running;
+
+	private static ClioStageEvent LastDelivered(List<ClioStageEvent> delivered) {
+		lock (delivered) {
+			return delivered.Count == 0 ? null : delivered[^1];
+		}
+	}
+
+	private static List<ClioStageEvent> Snapshot(List<ClioStageEvent> delivered) {
+		lock (delivered) {
+			return [.. delivered];
+		}
+	}
+
+	private static async Task WaitUntilAsync(Func<bool> condition) {
+		DateTimeOffset deadline = DateTimeOffset.UtcNow + SinkBlockCeiling;
+		while (!condition() && DateTimeOffset.UtcNow < deadline) {
+			await Task.Delay(10).ConfigureAwait(false);
+		}
 	}
 
 	private static (StageEventEmitter Emitter, List<ClioStageEvent> Events) CreateEmitter(

@@ -48,6 +48,15 @@ public interface IStickyWorkerPoll {
 	/// </returns>
 	/// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
 	/// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+	/// <remarks>
+	/// <b>A cancelled poll decides the worker's SESSION, and that is a different thing from its
+	/// operation.</b> The caller's cancellation is always rethrown and never ends an operation by itself.
+	/// But the SDK's send lock guarantees a completed send rather than an atomic one, so a token firing
+	/// mid-send can leave an unterminated line on the child's stdin (ADR §3.2a): a session in that state is
+	/// RETIRED — the worker is reaped, which also ends its operation, because the lease is what kills the
+	/// process. A session whose request was fully written is kept, and the next call proves it with a
+	/// bounded liveness probe before reusing it.
+	/// </remarks>
 	ValueTask<CallToolResult> ReachAndCallAsync(StickyWorkerKey key, CallToolRequestParams parameters,
 		TimeSpan budget, CancellationToken cancellationToken);
 }
@@ -98,6 +107,23 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		budgetSource.CancelAfter(budget);
 		try {
+			if (entry.RequiresLivenessProof) {
+				// The call before this one was abandoned by its caller AFTER its request had been written, so
+				// the worker was told to stop through `notifications/cancelled`. The transport is whole — that
+				// is what makes this session reusable at all — but a worker that ignores the notification is
+				// still executing the abandoned call, and reusing it would put a second request on a session
+				// whose first one is still in flight. BOUNDED, and the bound is the point: the one worker
+				// state this asks about is a worker whose pipe is open and which answers nothing, so an
+				// unbounded proof would hang on exactly the worker it exists to catch.
+				if (!await entry.Session.ProbeLivenessAsync(budgetSource.Token).ConfigureAwait(false)) {
+					_logger.WriteWarning(
+						$"A sticky MCP worker for operation family '{key.Family}' did not answer the liveness "
+						+ "probe that follows an abandoned call and was reaped.");
+					await _registry.ReapAsync(key, entry).ConfigureAwait(false);
+					return null;
+				}
+				entry.MarkProvedAlive();
+			}
 			CallToolResult result =
 				await entry.Session.CallToolAsync(parameters, budgetSource.Token).ConfigureAwait(false);
 			if (entry.IsCompleted) {
@@ -113,9 +139,32 @@ public sealed class StickyWorkerPoll : IStickyWorkerPoll {
 			return result;
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
-			// The CALLER gave up. The worker is left alone on purpose: it is running somebody's compile,
-			// and a client that stopped waiting for a STATUS answer is not a reason to end the operation
-			// that status was about.
+			// The CALLER gave up, and the OPERATION is not what that decides: a client that stopped waiting
+			// for a STATUS answer is not a reason to end the compile that status was about. The SESSION is a
+			// different question, and it is DECIDED here rather than assumed (ADR §3.2a). The SDK's send lock
+			// guarantees a COMPLETED send, not an atomic one — it takes this very token for the payload write,
+			// the newline write and the flush — so a token firing between them releases that lock over an
+			// unterminated line on the child's stdin, and the next writer's JSON is appended to it. The relay
+			// already knows which of the two happened: an incomplete send sets the session's closure BEFORE it
+			// rethrows, so this needs no probe and no I/O to tell them apart.
+			if (entry.Session.IsRetired) {
+				// Retired means never written to again, so this worker can no longer be reached at all —
+				// leaving it registered would hand the next poll a transport that may hold half a frame, and
+				// leaving it unreaped would hold its admission slot and its shared-resource reservation until
+				// expiry for a process nothing can talk to. Reaping ends the operation as well, because the
+				// lease is what kills the process; that is the price of §3.2a and it is paid deliberately.
+				// By ENTRY, never by key: a starter may have superseded this worker between the send and now.
+				_logger.WriteWarning(
+					$"A sticky MCP worker for operation family '{key.Family}' was retired: its call was "
+					+ "cancelled before the request had been written, so its transport may hold a partial "
+					+ "JSON-RPC frame and the worker was reaped rather than reused.");
+				await _registry.ReapAsync(key, entry).ConfigureAwait(false);
+			}
+			else {
+				// The request WAS written, so the transport is whole and the worker is left alone. It is not
+				// yet reusable though: it still has the abandoned call, so the next poll proves it first.
+				entry.MarkCallAbandoned();
+			}
 			throw;
 		}
 		catch (Exception exception) {

@@ -223,6 +223,7 @@ public sealed class StickyWorkerEntry {
 	private DateTimeOffset _expiresAtUtc;
 	private int _completed;
 	private int _reaped;
+	private int _unprovenAfterCancellation;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="StickyWorkerEntry"/> class.
@@ -330,12 +331,47 @@ public sealed class StickyWorkerEntry {
 	public bool IsCompleted => Volatile.Read(ref _completed) == 1;
 
 	/// <summary>
-	/// Gets a value indicating whether this worker is still usable: it has not exited and has not passed
-	/// its lifetime bound.
+	/// Gets a value indicating whether this worker must be PROVED alive before its session carries
+	/// another call, because the call before it was abandoned by its caller after the request had been
+	/// written.
+	/// </summary>
+	/// <remarks>
+	/// <b>Not the same question as <see cref="WorkerRelaySession.IsRetired"/>, and the difference is the
+	/// whole of ADR §3.2a.</b> A send that did NOT complete may have left half a frame on the child's
+	/// stdin, so its session is retired and the worker goes. A send that DID complete left the transport
+	/// whole and the worker was told through <c>notifications/cancelled</c> — the session is reusable,
+	/// but a worker that ignores that notification is still busy with the call nobody is waiting for, and
+	/// that is what the bounded probe asks about.
+	/// </remarks>
+	public bool RequiresLivenessProof => Volatile.Read(ref _unprovenAfterCancellation) == 1;
+
+	/// <summary>
+	/// Records that a call over this worker's session was abandoned by its caller AFTER its request had
+	/// been written, so the next call must prove the worker before reusing it.
+	/// </summary>
+	public void MarkCallAbandoned() => Volatile.Write(ref _unprovenAfterCancellation, 1);
+
+	/// <summary>
+	/// Records that the worker answered a bounded liveness probe, so the next call needs no further
+	/// proof.
+	/// </summary>
+	public void MarkProvedAlive() => Volatile.Write(ref _unprovenAfterCancellation, 0);
+
+	/// <summary>
+	/// Gets a value indicating whether this worker is still usable: its session has not been retired, it
+	/// has not exited and it has not passed its lifetime bound.
 	/// </summary>
 	/// <param name="utcNow">The instant to judge expiry against.</param>
 	/// <returns><see langword="true"/> when the worker may serve another call.</returns>
-	public bool IsLive(DateTimeOffset utcNow) => !Lease.HasExited && utcNow < ExpiresAtUtc;
+	/// <remarks>
+	/// <b>The session term is load-bearing, not defensive.</b> Process lifetime alone answers "is there
+	/// still a worker there", never "can anything still be said to it". A session retired by a send that
+	/// did not complete (ADR §3.2a) belongs to a process that is alive and permanently unreachable, and
+	/// reporting it live would hand the next poll a transport that may hold half a JSON-RPC frame while
+	/// its admission slot and its shared-resource reservation stayed held until expiry.
+	/// </remarks>
+	public bool IsLive(DateTimeOffset utcNow) =>
+		!Lease.HasExited && !Session.IsRetired && utcNow < ExpiresAtUtc;
 
 	/// <summary>
 	/// Releases everything this worker held, once. Safe to call twice — the second call does nothing.

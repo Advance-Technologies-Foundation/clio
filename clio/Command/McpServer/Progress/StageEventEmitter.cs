@@ -165,19 +165,55 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	private readonly HashSet<string> _emitted = new(StringComparer.Ordinal);
 
 	/// <summary>
-	/// Guards the sequencing chokepoint. The in-stage liveness refresh emits from its own thread, so the
-	/// counter increment AND the sink invocation are serialised here: two events sharing one
-	/// <c>sequence</c> would stall ClioRing's ordered replay, which buffers until the next contiguous
-	/// number arrives.
+	/// Guards the sequencing chokepoint: the counter increment, the queue of stamped events, and the flag
+	/// that says a thread is already delivering them. The in-stage liveness refresh emits from its own
+	/// thread, so two events sharing one <c>sequence</c> would stall ClioRing's ordered replay, which
+	/// buffers until the next contiguous number arrives.
 	/// </summary>
 	/// <remarks>
+	/// <para>
+	/// <b>The sink is invoked OUTSIDE this lock, and that separation is the whole of the fix.</b> Holding
+	/// it across the sink made the ordering guarantee and the liveness guarantee mutually exclusive: a
+	/// beat blocked on pipe backpressure held the lock, the bounded join in
+	/// <see cref="StopLivenessRefresh"/> gave up on that beat by design, and the stage's own terminal
+	/// transition — and after it the run's <c>run-completed</c> — then blocked on the lock the timed-out
+	/// beat still owned. The stage could not finish, the run reported no terminal stage, and the parent
+	/// classified a healthy deploy as indeterminate and killed the worker: precisely the outcome the
+	/// bounded join was added to prevent.
+	/// </para>
+	/// <para>
 	/// <b>It guards emission only, and that is sufficient because of where the boundary runs.</b> The
 	/// refresh reaches exactly one member — <c>EmitStage</c> — and touches no other state; every mutation
 	/// of <see cref="_emitted"/>, <see cref="_manifest"/>, <see cref="_completed"/> and the cascade happens
 	/// on the stage's own thread. Anything added to the beat path that reads or writes those fields needs
 	/// this lock too.
+	/// </para>
 	/// </remarks>
 	private readonly object _emitLock = new();
+
+	/// <summary>
+	/// Events already stamped and not yet delivered, in sequence order. Guarded by
+	/// <see cref="_emitLock"/>.
+	/// </summary>
+	/// <remarks>
+	/// Each entry carries the sink CAPTURED AT ENQUEUE TIME rather than reading <see cref="_sink"/> at
+	/// delivery: a <see cref="Begin"/> for a second run would otherwise be able to divert the tail of the
+	/// previous run's stream into the new run's subscriber.
+	/// </remarks>
+	private readonly Queue<PendingStageEvent> _pending = new();
+
+	/// <summary>Whether a thread is inside the delivery loop right now. Guarded by <see cref="_emitLock"/>.</summary>
+	private bool _delivering;
+
+	/// <summary>
+	/// The managed thread currently inside the delivery loop, or <c>0</c>. Guarded by
+	/// <see cref="_emitLock"/>.
+	/// </summary>
+	/// <remarks>
+	/// Recorded so that a sink which emits while it is being delivered to does not wait for a loop it is
+	/// itself standing in — a self-wait that could only end at the bound.
+	/// </remarks>
+	private int _deliveringThreadId;
 
 	/// <summary>
 	/// Test seam: the in-stage liveness interval this instance runs with.
@@ -190,6 +226,15 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	internal TimeSpan LivenessRefreshInterval { get; set; } = StageLivenessRefreshInterval;
 
 	/// <summary>
+	/// Test seam: how long a terminal event waits for a delivery loop it could not join.
+	/// </summary>
+	/// <remarks>
+	/// Production never sets it — <see cref="DefaultTerminalDeliveryBound"/> is the shipped value. A test
+	/// that wants to observe the give-up path without paying seconds shortens it here.
+	/// </remarks>
+	internal TimeSpan TerminalDeliveryBound { get; set; } = DefaultTerminalDeliveryBound;
+
+	/// <summary>
 	/// Floor on how long <see cref="StopLivenessRefresh"/> waits for an in-flight beat before carrying on.
 	/// </summary>
 	/// <remarks>
@@ -198,6 +243,17 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	/// bound itself so that a test scaling the interval down to milliseconds still joins reliably.
 	/// </remarks>
 	private static readonly TimeSpan MinimumLivenessJoinBound = TimeSpan.FromSeconds(1);
+
+	/// <summary>
+	/// How long a terminal event waits for a delivery loop somebody else is running, when it could not
+	/// deliver itself.
+	/// </summary>
+	/// <remarks>
+	/// Generous for a sink that is merely slow, and short enough that a sink which is not returning at all
+	/// cannot hold the run open — the parent's own post-terminal exit grace is 30 s (ADR §3.3), so a
+	/// terminal event that has not reached the pipe within seconds is not going to.
+	/// </remarks>
+	private static readonly TimeSpan DefaultTerminalDeliveryBound = TimeSpan.FromSeconds(2);
 	private Action<ClioStageEvent> _sink;
 	private string _operation = string.Empty;
 	private Guid _runId;
@@ -208,10 +264,15 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	/// <inheritdoc />
 	public void Begin(string operation, IReadOnlyList<StageDescriptor> stages, Action<ClioStageEvent> sink) {
 		ArgumentNullException.ThrowIfNull(stages);
-		_sink = sink;
+		lock (_emitLock) {
+			// The counter, the sink and the undelivered tail of any previous run move together: a queue kept
+			// across a Begin would deliver the old run's numbering into the new run's stream.
+			_sink = sink;
+			_sequence = 0;
+			_pending.Clear();
+		}
 		_operation = operation;
 		_runId = Guid.NewGuid();
-		_sequence = 0;
 		_completed = false;
 		_emitted.Clear();
 
@@ -462,15 +523,116 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 				durationMs, message, detail, errorCode, skipReason)));
 	}
 
+	/// <summary>One stamped event and the sink it is owed to.</summary>
+	/// <param name="Event">The redacted, sequenced event.</param>
+	/// <param name="Sink">The subscriber captured when the event was stamped.</param>
+	private readonly record struct PendingStageEvent(ClioStageEvent Event, Action<ClioStageEvent> Sink);
+
 	// The single redaction + sequencing chokepoint: every event is scrubbed of secrets and stamped with the
 	// next monotonic sequence before it reaches the sink. A null/absent sink makes emission a pure no-op.
 	private void Emit(ClioStageEvent stageEvent) {
-		// The increment and the sink invocation are inside ONE lock, not two: the sequence is what
-		// ClioRing de-duplicates and orders on, and a sink invoked out of sequence order would deliver a
-		// correctly numbered stream in the wrong order.
+		// STAMP AND ENQUEUE under the lock; DELIVER outside it. The sequence is what ClioRing
+		// de-duplicates and orders on, so stamping has to be serialised — but delivery is serialised by the
+		// single delivery loop below instead of by this lock, so a sink that blocks holds up only the
+		// events behind it and never a thread that is merely trying to raise one.
+		bool deliverHere;
 		lock (_emitLock) {
 			ClioStageEvent sequenced = Redact(stageEvent) with { Sequence = _sequence++ };
-			_sink?.Invoke(sequenced);
+			Action<ClioStageEvent> sink = _sink;
+			if (sink is null) {
+				return;
+			}
+			_pending.Enqueue(new PendingStageEvent(sequenced, sink));
+			deliverHere = !_delivering;
+			if (deliverHere) {
+				_delivering = true;
+				_deliveringThreadId = Environment.CurrentManagedThreadId;
+			}
+			else if (sequenced.EventType == ClioStageEventContract.EventTypes.RunCompleted
+				&& _deliveringThreadId != Environment.CurrentManagedThreadId) {
+				// Somebody else's loop owes this run its terminal event. Waiting for it — BOUNDED, and with
+				// the lock released — is the difference between "the terminal event went out behind a slow
+				// beat" and "the process ended with it still queued".
+				AwaitDelivery();
+			}
+		}
+
+		if (deliverHere) {
+			// In the ordinary single-threaded case this runs the queue dry before Emit returns, so the sink
+			// still sees the event synchronously, exactly as it did when the lock spanned the invocation.
+			DeliverPending();
+		}
+	}
+
+	/// <summary>
+	/// Delivers stamped events, in order, until the queue is empty. Exactly one thread runs this at a
+	/// time, which is what keeps delivery ordered now that the sink is invoked outside
+	/// <see cref="_emitLock"/>.
+	/// </summary>
+	private void DeliverPending() {
+		try {
+			while (true) {
+				PendingStageEvent next;
+				lock (_emitLock) {
+					if (!_pending.TryDequeue(out next)) {
+						StopDelivering();
+						return;
+					}
+				}
+
+				try {
+					next.Sink(next.Event);
+				}
+				catch (Exception) {
+					// A progress sink must never break the run it is reporting on — the shipped subscriber
+					// (StageEventProgressForwarder) already swallows its own send failures for this reason, and
+					// a shared delivery loop must not start attributing one subscriber's fault to whichever
+					// thread happens to be draining.
+				}
+			}
+		}
+		catch (Exception) {
+			// Nothing ordinary reaches here — the sink is the only thing that can throw and it is caught
+			// above. Releasing the loop on the way out anyway is what keeps the failure LOCAL: a flag left
+			// set would mute the emitter for the rest of the run, and a run that stops emitting is exactly
+			// what the parent reports as a possibly half-installed environment.
+			lock (_emitLock) {
+				StopDelivering();
+			}
+			throw;
+		}
+	}
+
+	/// <summary>
+	/// Releases the delivery loop and wakes whoever is waiting on it. Called with
+	/// <see cref="_emitLock"/> HELD, so an event enqueued after this point is guaranteed to find
+	/// <see cref="_delivering"/> false and carry itself.
+	/// </summary>
+	private void StopDelivering() {
+		_delivering = false;
+		_deliveringThreadId = 0;
+		Monitor.PulseAll(_emitLock);
+	}
+
+	/// <summary>
+	/// Waits — briefly, with <see cref="_emitLock"/> released — for the running delivery loop to empty the
+	/// queue. Called with the lock HELD.
+	/// </summary>
+	private void AwaitDelivery() {
+		if (TerminalDeliveryBound <= TimeSpan.Zero) {
+			return;
+		}
+
+		long deadline = Environment.TickCount64 + (long)TerminalDeliveryBound.TotalMilliseconds;
+		while (_pending.Count > 0) {
+			long remaining = deadline - Environment.TickCount64;
+			if (remaining <= 0) {
+				// Given up on deliberately. The alternative is waiting on a sink that is not returning, which
+				// is the wedge this whole change removes; a terminal event that cannot reach the pipe is a
+				// transport failure the parent's silence bound already covers.
+				return;
+			}
+			Monitor.Wait(_emitLock, (int)remaining);
 		}
 	}
 
