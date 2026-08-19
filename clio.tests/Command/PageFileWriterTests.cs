@@ -172,7 +172,7 @@ public sealed class PageFileWriterTests {
 	[TestCase("..")]
 	[TestCase("with space")]
 	[TestCase("")]
-	[Description("WritePageFiles must reject a schema name carrying path separators or out-of-charset characters before performing the recursive directory delete, so the destructive write cannot escape .clio-pages/.")]
+	[Description("WritePageFiles must reject a schema name carrying path separators or out-of-charset characters before touching any directory, so neither the published tree nor its staging counterpart can escape .clio-pages/.")]
 	public void WritePageFiles_ShouldReturnFailureAndNotWrite_WhenSchemaNameIsUnsafe(string unsafeName) {
 		// Arrange
 		PageGetResponse response = CreateResponse();
@@ -193,7 +193,7 @@ public sealed class PageFileWriterTests {
 	// ---------------------------------------------------------------------------------------------
 
 	[Test]
-	[Description("WritePageFiles must hold the schema's interprocess gate across the recursive delete AND the three file writes, in a single acquisition.")]
+	[Description("WritePageFiles must hold the schema's interprocess gate across the three staged file writes AND the swap that publishes them, in a single acquisition.")]
 	public void WritePageFiles_ShouldHoldTheSchemaGateAcrossPrepareAndWrite_WhenWritingPageFiles() {
 		// Arrange
 		PageGetResponse response = CreateResponse();
@@ -203,12 +203,12 @@ public sealed class PageFileWriterTests {
 
 		// Assert
 		_fileGate.EnteredLockPaths.Should().HaveCount(1,
-			because: "the delete and the writes are one indivisible sequence — a second acquisition would let a reader observe the directory after the delete but before the rewrite");
+			because: "the staged writes and the swap are one indivisible sequence — a second acquisition would let a reader observe the schema directory between the two renames that publish it");
 		_fileGate.IsHeld.Should().BeFalse(because: "the gate must be released once the write returns");
 	}
 
 	[Test]
-	[Description("The get-page sentinel must live outside .clio-pages/{schema}/, because that directory is deleted recursively on every get-page.")]
+	[Description("The get-page sentinel must live outside .clio-pages/{schema}/, because that directory is replaced wholesale on every get-page.")]
 	public void WritePageFiles_ShouldUseASentinelOutsideTheDeletedDirectory_WhenWritingPageFiles() {
 		// Arrange
 		PageGetResponse response = CreateResponse();
@@ -221,7 +221,7 @@ public sealed class PageFileWriterTests {
 		_fileSystem.Path.GetFileName(lockPath).Should().Be($"{SchemaName}.lock",
 			because: "the sentinel is per schema, so a get-page of one page never waits on another");
 		_fileSystem.Path.GetFullPath(lockPath).Should().NotStartWith(_fileSystem.Path.GetFullPath(_schemaDir),
-			because: "a sentinel inside the deleted subtree would be unlinked from under its holder on Unix, and on Windows would make the recursive delete fail against the open exclusive handle and turn a working get-page into an error");
+			because: "a sentinel inside the replaced subtree would be moved out from under its holder on Unix, and on Windows would make the swap fail against the open exclusive handle and turn a working get-page into an error");
 		_fileSystem.Path.GetFullPath(lockPath).Should().StartWith(_fileSystem.Path.GetFullPath(_clioPagesDir),
 			because: "the sentinel still belongs to the workspace's .clio-pages tree, which the generated .gitignore already excludes wholesale");
 	}

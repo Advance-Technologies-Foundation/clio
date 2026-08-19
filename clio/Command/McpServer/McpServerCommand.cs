@@ -52,6 +52,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ITenantExecutionLockProvider tenantExecutionLockProvider,
 	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
 	Common.McpWorker.IWorkerProcessSupervisor workerProcessSupervisor,
+	Relay.ISharedResourceReservation sharedResourceReservation,
 	ILogger logger) : Command<McpServerCommandOptions>{
 	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
 		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
@@ -67,7 +68,17 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
 		// in-flight eviction guard operate on the SAME instances ToolCommandResolver uses.
-		McpToolExecutionLock.Configure(tenantExecutionLockProvider, sessionContainerCache);
+		//
+		// The third argument is the ENG-95262 story 7 / AC-03 half: the same singleton
+		// McpWorkerCallDispatcher reserves through before it spawns a worker. Without it the facade keeps
+		// its own static dictionary, and a target-keyed reservation taken by the dispatcher for a
+		// worker-routed compile-creatio sits in a DIFFERENT store from the one an in-process
+		// install-process-builder consults — same key, two dictionaries, so the two stop excluding each
+		// other exactly where the shipped configuration needs them to (install-process-builder is withheld
+		// from the worker cohort deliberately: the kill-safety audit lists it as leaving damage nothing
+		// repairs). One store, therefore, and this is the seam that makes it one.
+		McpToolExecutionLock.Configure(
+			tenantExecutionLockProvider, sessionContainerCache, sharedResourceReservation);
 		McpLogNotifier.Initialize(server);
 		// The using-scoped source is disposed at the END of Execute — strictly after the finally
 		// block has detached the handlers and drained. Do not narrow this scope or dispose earlier:

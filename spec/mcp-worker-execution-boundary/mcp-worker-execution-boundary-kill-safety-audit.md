@@ -86,8 +86,39 @@ that is still running — which is what stage 7's sticky supervision exists to f
 `remove-package-dependency`, `unlock-for-hotfix`, `finish-hotfix`, `create-page`, `create-schema`,
 `update-schema`, `create-client-unit-schema`, `update-client-unit-schema`, `create-sql-schema`,
 `update-sql-schema`, `install-sql-schema`, `create-business-process`, `modify-business-process`, the
-theme commands, `clear-redis-db-by-*`, `start-creatio`, `create-oauth-technical-user` — plus every
-read-only tool.
+theme commands, `clear-redis-db-by-*`, `start-creatio`, `create-oauth-technical-user`.
+
+### Read-only to the server is not side-effect-free locally
+
+*Added 2026-08-19. The clause that used to close the list above — "plus every read-only tool" —
+conflated server-read-only with side-effect-free, and two cohort members disproved it.*
+
+A tool that mutates nothing server-side can still PUBLISH local output, and a kill mid-publication
+leaves that output in a state the tool itself then refuses to repair. Such a tool is safe to kill only
+when its publication is staged and swapped, so the published path is observable absent or complete and
+never partial.
+
+- `get-page` — publishes `.clio-pages/{schema}/` by building the tree in
+  `.clio-pages/.staging/{schema}/{id}` and swapping it in with two renames. Residual state after a
+  kill: the previous complete tree, the new complete tree, or (within the two-rename window) no
+  directory — the honest "never fetched" state, which self-heals on retry. Before this, a kill after
+  `body.js` and before `meta.json` (written LAST) left a directory that reads as a SUCCESSFUL get-page
+  with no baseline, which `PageBaselineStore` reports as "no baseline" **with no warning**: the next
+  `update-page` then ran with no expected checksum and could overwrite an external change. Silent,
+  permanent, and a disarming of the conflict detection story 9 exists to provide.
+- `get-schema` — its `--output-file` body is completed in a sibling temp file and moved onto the
+  target. Before this, `FileMode.CreateNew` on the target itself meant a kill left an empty file at
+  exactly the path `OutputPathConfinement.Resolve` refuses to overwrite, so the kill BLOCKED its own
+  retry.
+- NOT covered by the above, and not to be generalised from it: `sync-pages`' verify read-back writes
+  `body.js` in place into the published directory, and `get-classic-page-sources` writes its
+  tool-owned DEFAULT path with a plain `WriteAllText` — only its explicit `--output-file` branch is
+  staged. Both remain unsafe to kill, and both are prerequisites if either tool is ever considered for
+  the cohort.
+
+There is no cross-platform atomic directory replacement (`renameat2(RENAME_EXCHANGE)` is Linux-only
+and not exposed by .NET), so "absent" is the irreducible residual state for a directory-shaped
+publication, not a gap in the implementation.
 
 ## Not reached — an honest gap
 

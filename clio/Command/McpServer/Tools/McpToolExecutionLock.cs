@@ -81,6 +81,12 @@ internal static class McpToolExecutionLock {
 	private static ITenantExecutionLockProvider _lockProvider = TenantExecutionLockProvider.Shared;
 	private static ISessionContainerCache _sessionContainerCache;
 
+	// The ONE configuration-build reservation domain, when a host has one (ENG-95262 story 7, AC-03).
+	// Null on every host that does not configure it — plain CLI, unit tests, any non-MCP composition — and
+	// that null is the whole fallback: TryReserveConfigurationBuild then uses the static dictionary below,
+	// exactly as it did before the bridge existed.
+	private static Relay.ISharedResourceReservation _sharedResourceReservation;
+
 	// Per-tenant "compilation in flight" reservation (ENG-91315, review Blocker). Compilation is the one
 	// env-bound MCP operation the Creatio core itself serializes: WorkspaceBuilder rejects a second
 	// concurrent compilation on the node with "AnotherCompilationIsInProgress" (verified in core trunk,
@@ -107,7 +113,22 @@ internal static class McpToolExecutionLock {
 	/// <param name="StartedAtMs">
 	/// When the reservation was taken, in monotonic ticks, for the ceiling comparison only.
 	/// </param>
-	internal readonly record struct BuildReservation(long Token, long StartedAtMs);
+	/// <param name="BridgedOwner">
+	/// The store that issued this reservation when the facade was bridged; <see langword="null"/> when the
+	/// facade's own dictionary issued it. Carried on the token rather than read from the field at release
+	/// time so a release always goes back to the store that HANDED THE TOKEN OUT — reconfiguring the bridge
+	/// between reserve and release would otherwise send the release to a store that never held it, and the
+	/// original entry would then sit there until the ceiling reclaimed it.
+	/// </param>
+	/// <param name="BridgedToken">
+	/// The parent-owned token to hand back to <see cref="Relay.ISharedResourceReservation.Release"/>, which
+	/// is ownership-aware; <see langword="null"/> on the unbridged path.
+	/// </param>
+	internal readonly record struct BuildReservation(
+		long Token,
+		long StartedAtMs,
+		Relay.ISharedResourceReservation BridgedOwner = null,
+		Relay.SharedResourceReservationToken BridgedToken = null);
 
 	private static long _reservationTokenSource;
 
@@ -120,8 +141,16 @@ internal static class McpToolExecutionLock {
 	/// distributed lease: another clio process on another machine is unaffected either way. See
 	/// <see cref="TryReserveConfigurationBuild"/> for what does serialize that case, why a reservation can
 	/// become unreleasable, and why this value is generous.
+	/// <para>
+	/// Derived from <see cref="Relay.SharedResourceReservation.DefaultReclaimCeiling"/> rather than restated
+	/// as a second literal, so the two paths of ONE reservation domain cannot drift apart. Only one of them
+	/// is ever in effect — bridged, this constant governs nothing — but a host that moved the parent's
+	/// ceiling and left a different number here would give the CLI/unbridged path a maximum hold nobody
+	/// chose, and nothing would report the disagreement.
+	/// </para>
 	/// </remarks>
-	private static readonly TimeSpan ConfigurationBuildReservationCeiling = TimeSpan.FromMinutes(30);
+	private static readonly TimeSpan ConfigurationBuildReservationCeiling =
+		Relay.SharedResourceReservation.DefaultReclaimCeiling;
 
 	/// <summary>
 	/// The ceiling in the units the reservation stamps are measured in.
@@ -136,13 +165,23 @@ internal static class McpToolExecutionLock {
 	/// </summary>
 	/// <param name="lockProvider">The DI-registered tenant execution lock provider.</param>
 	/// <param name="sessionContainerCache">The session-container cache whose entries must be marked in-use during a call.</param>
+	/// <param name="sharedResourceReservation">
+	/// The host's DI-registered <see cref="Relay.ISharedResourceReservation"/> — the ONE store the
+	/// configuration-build exclusion lives in for this process, shared with the worker dispatcher. Passing
+	/// <see langword="null"/> (every non-MCP host, and every test that does not opt in) leaves the facade on
+	/// its own static dictionary, which is the behaviour that shipped before the bridge.
+	/// </param>
 	internal static void Configure(
-		ITenantExecutionLockProvider lockProvider, ISessionContainerCache sessionContainerCache) {
+		ITenantExecutionLockProvider lockProvider, ISessionContainerCache sessionContainerCache,
+		Relay.ISharedResourceReservation sharedResourceReservation = null) {
 		if (lockProvider is not null) {
 			_lockProvider = lockProvider;
 		}
 		if (sessionContainerCache is not null) {
 			_sessionContainerCache = sessionContainerCache;
+		}
+		if (sharedResourceReservation is not null) {
+			_sharedResourceReservation = sharedResourceReservation;
 		}
 	}
 
@@ -212,19 +251,49 @@ internal static class McpToolExecutionLock {
 	/// It is deliberately narrow — it does NOT serialize unrelated same-tenant tools the way the per-tenant
 	/// execution monitor would (review Blocker).
 	/// <para>
-	/// <b>No longer the authoritative exclusion once the tool runs in a worker (ENG-95262 story 7).</b> This
-	/// dictionary is a <see langword="static"/> in whichever PROCESS ran the tool, so in a worker it excludes
-	/// only that worker's own calls — of which there is one. The cross-process, cross-principal exclusion now
-	/// lives in the parent as
-	/// <see cref="Clio.Command.McpServer.Relay.ISharedResourceReservation"/>, keyed by normalised target +
-	/// resource rather than by the tenant key, and taken by the dispatcher BEFORE the worker is spawned. This
-	/// one is kept because <c>compile-creatio</c> and <c>install-process-builder</c> still run in-process on
-	/// every host that does not route them to a worker (any non-stdio transport, and a worker's own
-	/// <c>clio-run</c>), where it remains the only guard there is. It retires with the cohort at Stage 10.
+	/// <b>ONE reservation domain, and which store that is depends on the host (ENG-95262 story 7, AC-03).</b>
+	/// When a host has configured a <see cref="Relay.ISharedResourceReservation"/> through
+	/// <see cref="Configure"/> — the MCP stdio host does, passing the same singleton
+	/// <c>McpWorkerCallDispatcher</c> reserves through — this method RESERVES THERE and the dictionary below
+	/// is not touched at all: one store, and the bridged store's ceiling is the only ceiling in effect.
+	/// Unbridged (plain CLI, unit tests, any non-MCP host) the dictionary below is the whole domain and
+	/// behaves exactly as it did before the bridge existed.
+	/// </para>
+	/// <para>
+	/// <b>Why the bridge is not optional on an MCP host.</b> Keying both sides by the normalised target was
+	/// necessary and NOT sufficient. <c>compile-creatio</c> is routed to a worker and reserves through the
+	/// parent-owned store before the child is spawned; <c>install-process-builder</c> is deliberately
+	/// withheld from the worker cohort (the kill-safety audit lists it as leaving damage nothing repairs) and
+	/// reserves through this facade. Same key in two dictionaries excludes nothing, and two overlapping
+	/// configuration builds on one environment corrupt each other's package compilation state while both
+	/// restart the application. That split is the SHIPPED configuration, not a transitional state, so the
+	/// facade delegates rather than keeping a parallel store.
+	/// </para>
+	/// <para>
+	/// This dictionary is a <see langword="static"/> in whichever PROCESS ran the tool, which is why it could
+	/// never be the authoritative exclusion on its own: inside a worker it excludes only that worker's own
+	/// calls, of which there is one. It retires with the cohort at Stage 10.
 	/// </para>
 	/// </remarks>
 	internal static bool TryReserveConfigurationBuild(string cacheKey, out BuildReservation reservation) {
 		string key = Normalize(cacheKey);
+		Relay.ISharedResourceReservation bridge = _sharedResourceReservation;
+		if (bridge is not null) {
+			// ONE STORE, and the dictionary below is not touched on this path — deliberately, because
+			// writing both "for safety" is how the defect this fixes was arrived at the first time: the key
+			// was unified and the stores were not, so the exclusion still evaluated to nothing. The bridged
+			// store also owns the ceiling and the reclaim, so there is exactly one of each in effect.
+			// The key is normalised FIRST: the parent rejects a blank key by contract, while this facade has
+			// always folded one onto SharedFallbackKey, and an environment-less call must keep getting an
+			// answer from the guard rather than an exception.
+			if (bridge.TryReserve(McpToolSharedFileResource.ConfigurationBuild, key,
+					out Relay.SharedResourceReservationToken bridged)) {
+				reservation = new BuildReservation(bridged.Token, bridged.StartedAtMs, bridge, bridged);
+				return true;
+			}
+			reservation = default;
+			return false;
+		}
 		// Environment.TickCount64, NOT DateTime.UtcNow: this is an ELAPSED-time measurement, and the wall clock
 		// is not monotonic. A forward step of more than the ceiling — an NTP phase correction, a VM snapshot
 		// restore, a laptop resuming with a corrected RTC, an operator setting the clock — would otherwise
@@ -293,21 +362,38 @@ internal static class McpToolExecutionLock {
 	/// a single reclaim: precisely the "second install on top of a live one" this reservation exists to stop,
 	/// arrived at by way of the fix for the wedge.
 	/// </remarks>
-	internal static void ReleaseConfigurationBuild(string cacheKey, BuildReservation reservation) =>
+	internal static void ReleaseConfigurationBuild(string cacheKey, BuildReservation reservation) {
+		if (reservation.BridgedOwner is not null) {
+			// Ownership-aware on the far side too: Relay.ISharedResourceReservation.Release removes only
+			// when this token is still the holder, so a stalled holder whose slot was reclaimed frees
+			// nothing. Never weaken this into an unconditional remove by key.
+			reservation.BridgedOwner.Release(reservation.BridgedToken);
+			return;
+		}
 		_configurationBuildInFlight.TryRemove(
 			new KeyValuePair<string, BuildReservation>(Normalize(cacheKey), reservation));
+	}
 
 	// Test-only: clears the process-global reservations so detached work started by one test cannot
 	// fast-fail the next one (the release runs on the detached continuation, which may outlive the test
 	// method). No production caller.
-	internal static void ResetConfigurationBuildReservationsForTests() =>
+	//
+	// It also DROPS THE BRIDGE, and that is not housekeeping bolted onto an unrelated helper: the bridge is
+	// process-global state of the same reservation domain, and a fixture that configured one and left it set
+	// would hand every later fixture a facade pointing at a store that fixture never resets and cannot see.
+	// Clearing only the dictionary in that state clears nothing that is being used.
+	internal static void ResetConfigurationBuildReservationsForTests() {
+		_sharedResourceReservation = null;
 		_configurationBuildInFlight.Clear();
+	}
 
 	// Test-only: ages an existing reservation so the ceiling in TryReserveConfigurationBuild can be exercised
 	// without waiting it out. Deliberately manipulates the same dictionary rather than making the ceiling
 	// itself settable — a configurable ceiling is production state a test could leave wrong for the next one,
 	// whereas a back-dated entry is cleared by ResetConfigurationBuildReservationsForTests like any other.
-	// Returns false when there is no reservation to age, so a test cannot silently assert nothing.
+	// Returns false when there is no reservation to age, so a test cannot silently assert nothing — which is
+	// also the honest answer while a bridge is configured, since the reservation is then in the bridged store
+	// and this dictionary is empty. A bridged ceiling is exercised by constructing the bridge with one.
 	internal static bool BackdateConfigurationBuildReservationForTests(string cacheKey, TimeSpan age) {
 		string key = Normalize(cacheKey);
 		return _configurationBuildInFlight.TryGetValue(key, out BuildReservation held)
@@ -317,10 +403,12 @@ internal static class McpToolExecutionLock {
 				held);
 	}
 
-	// Test-only: the ceiling, so a test can express "older than the ceiling" without restating the number and
-	// silently passing if production changes it.
+	// Test-only: the ceiling IN EFFECT, so a test can express "older than the ceiling" without restating the
+	// number and silently passing if production changes it. Bridged, the ceiling is the bridge's — there is
+	// exactly one, never two disagreeing, because the bridged path does not touch the dictionary this type's
+	// own ceiling governs.
 	internal static TimeSpan ConfigurationBuildReservationCeilingForTests =>
-		ConfigurationBuildReservationCeiling;
+		_sharedResourceReservation?.ReclaimCeiling ?? ConfigurationBuildReservationCeiling;
 
 	// Null/blank normalizes to the single shared fallback key so GetLock, MarkInUse, and MarkAvailable
 	// all key the same lock-provider entry for an environment-less / test-double call.

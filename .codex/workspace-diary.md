@@ -9096,3 +9096,52 @@ Decision: per-entry supervision watcher started in `TryRegister` and torn down a
 Discovery: (1) `!IsLive` as the watcher predicate reaped freshly registered workers in the fixture — the lease is stamped from the real clock while the registry judges against the offset clock, so a registration after an `Advance` is born expired. Splitting reachability out of `IsLive` is what makes supervision and the deadline disjoint. (2) A `ControllableClock` that publishes a timer BEFORE arming it can drop a whole `Advance` for timers armed on pool threads; `CreateTimer` now arms first, and `TimerCount` lets a case wait until watchers are parked. (3) `DispatchAsync_ShouldReapTheStickyWorkerAndReturnItsSlot_WhenTheWorkerSignalsCompletion` gated on the RESERVATION, which is released at `MarkCompleted`, while the slot comes back on the registry's own sweep — a pre-existing race (0/20 at HEAD, ~1/10 with the extra background work) now gated on `ActiveStickyWorkers == 0`; 0/25 under 12-way CPU load afterwards.
 Files: clio/Command/McpServer/Relay/StickyWorkerRegistry.cs, clio.tests/Command/McpServer/StickyWorkerSupervisionTests.cs
 Impact: a dead or unreachable sticky worker returns its admission slot within one cadence instead of half an hour. Red-before proved with four mutations (no watcher / no cadence / no teardown / no disposal guards), each caught by exactly the intended case. Validated: dotnet test --filter "Category=Unit&Module!=Common" — 8351 passed, 0 failed.
+
+## 2026-08-19 — .clio-pages / --output-file publication made kill-atomic (ENG-95262)
+Context: get-page and get-schema ship in the stage-6 worker cohort, so both are bounded by an
+uncatchable parent kill. Both published local output in place.
+Decision: remedy (1) — stage then swap, in both writers. PageFileWriter builds the tree in
+`.clio-pages/.staging/{schema}/{guid}` and publishes with two renames (old aside, new in);
+OutputPathConfinement.WriteAtomic completes the body in a sibling `.tmp` and moves it onto the target.
+Neither tool leaves the cohort.
+Discovery: (a) the durable damage was not untidiness — meta.json is written LAST, so a kill after
+body.js left a directory that reads as a successful get-page with NO baseline, which
+PageBaselineStore reports as "no baseline" and update-page then runs with no expected checksum;
+(b) WriteAtomic's FileMode.CreateNew on the TARGET meant a kill left an empty file at exactly the path
+OutputPathConfinement.Resolve refuses to overwrite, so the kill blocked its own retry; (c) no
+cross-platform atomic directory replacement exists (renameat2(RENAME_EXCHANGE) is Linux-only and not
+exposed by .NET), so the residual state is "directory absent", which is the honest never-fetched state;
+(d) a kill cannot be modelled by throwing (production catches it and finally still runs) — snapshot
+BETWEEN filesystem operations instead: clio.tests/Command/InterruptionObservingFileSystem.cs.
+Files: clio/Command/PageFileWriter.cs, clio/Command/OutputPathConfinement.cs,
+clio.tests/Command/InterruptionObservingFileSystem.cs, clio.tests/Command/PageFileWriterKillSafetyTests.cs,
+clio.tests/Command/OutputPathConfinementKillSafetyTests.cs
+Impact: any future cohort candidate that publishes local output can reuse the observing file system to
+prove the same property; the kill-safety audit's blanket "plus every read-only tool" needs the
+publication caveat spelled out.
+
+## 2026-08-19 02:10 – ENG-95262: nine rounds of external review, and what it cost to be wrong twice
+Context: Alex asked for codex review (gpt-5.6-sol, high) over the whole branch against
+origin/master, fix, re-review, until a round produces nothing to fix.
+Decision: verify EVERY finding against the code before acting, and mutation-check every
+fix rather than trusting a green suite.
+Discovery, and the parts worth carrying forward:
+  - 38 findings over 9 rounds, 38 confirmed, 0 rejected. That precision is itself a
+    finding: three earlier parallel reviews had missed most of them.
+  - TWICE a round's own fix created the next round's defect. Round 2 widened a lock and
+    bounded a join; together they cancelled out (round 3). Round 4's saturation envelope
+    was applied to one of three spawn paths (round 5). Neither was visible without
+    another full pass.
+  - TWICE I claimed a fix I had not made. "Unified the reservation" unified the KEY and
+    left two dictionaries (found in round 9, two rounds later). The lesson is that a
+    commit message is an assertion and deserves the same scepticism as a test.
+  - THREE TIMES I wrote a test one layer away from the change it defended — pinning the
+    envelope builder, not the dispatcher's routing to it; pinning the metadata reader,
+    not the filter that supplies its argument. Every time the mutation found it and the
+    suite did not.
+  - The strongest agent reports were the ones that argued back: a test I specified that
+    CANNOT exist under an order-preserving design; two corrections to an ordering I had
+    dictated; a mutation that was NOT caught, reported as a gap rather than smoothed.
+Files: too many to list; see commits between 35be22b05 and HEAD.
+Impact: the method generalises — mutate at the seam the assertion names, require THAT
+test to go red, and treat "I already fixed that" as a claim to re-verify, not a fact.

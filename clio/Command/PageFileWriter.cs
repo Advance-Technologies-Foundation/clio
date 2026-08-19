@@ -40,10 +40,16 @@ public sealed class PageFileWriter : IPageFileWriter {
 
 	private const string ClioPagesDirectoryName = ".clio-pages";
 
+	// Sibling of `.locks` at the `.clio-pages` root: every transient copy of a page tree lives under
+	// `.staging/{schema}/`, so the pages root itself never carries litter and a purge of one schema's
+	// residue is a WHOLE-SEGMENT match that cannot reach another schema's in-flight publication. The
+	// `.gitignore` written at the root already excludes it, `.locks` included.
+	private const string StagingDirectoryName = ".staging";
+
 	// Platform client-unit schema names are alphanumeric + underscore. Validating before building the
-	// target directory keeps the recursive delete below contained inside `.clio-pages/`: a name that
-	// matches this pattern cannot contain a path separator, `..`, or a drive/volume marker, so the
-	// destructive write can never escape the workspace anchor via the schema name.
+	// target directory keeps the destructive swap below contained inside `.clio-pages/`: a name that
+	// matches this pattern cannot contain a path separator, `..`, or a drive/volume marker, so neither the
+	// published directory nor its `.staging/{schema}` counterpart can escape the workspace anchor.
 	private static readonly Regex SchemaNamePattern =
 		new("^[A-Za-z0-9_]+$", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
@@ -93,11 +99,11 @@ public sealed class PageFileWriter : IPageFileWriter {
 		}
 		string rootDir = _fileSystem.Path.Combine(anchor, ClioPagesDirectoryName);
 		string schemaDir = _fileSystem.Path.Combine(rootDir, schemaName);
-		// H-1 (ENG-95262): the recursive delete plus the three writes below are one indivisible unit of
+		// H-1 (ENG-95262): staging the three files and swapping them into place are one indivisible unit of
 		// work on files another clio process (a CLI update-page, a second MCP call, a worker child) may be
 		// reading or rewriting at the same instant. Hold the schema's interprocess gate across the whole
-		// sequence — the sentinel lives in a sibling `.locks` directory precisely because the delete below
-		// would otherwise remove the lock file from under its own holder.
+		// sequence — the sentinel lives in a sibling `.locks` directory precisely because the swap below
+		// replaces the schema directory wholesale and would otherwise take the lock file with it.
 		string lockFilePath = _fileGate is null
 			? null
 			: PageBaselineStore.ResolveSchemaLockFilePath(_fileSystem, rootDir, schemaName);
@@ -114,6 +120,20 @@ public sealed class PageFileWriter : IPageFileWriter {
 		}
 	}
 
+	// ENG-95262: get-page runs in the worker cohort, so it is bounded by the parent KILLING the worker —
+	// TerminateJobObject over the job on Windows, kill(-pid, SIGKILL) to the process group on Unix. No
+	// `finally` runs, so whatever is on disk between two filesystem operations is what the user is left
+	// with. Writing the three files straight into `.clio-pages/{schema}/` therefore had a durable failure
+	// mode, not just an untidy one: meta.json is written LAST, so a kill after body.js left a directory
+	// that reads as a successful get-page while carrying NO conflict baseline — PageBaselineStore then
+	// answers "no baseline", the next update-page runs with no expected checksum, and an external change
+	// can be overwritten silently. Nothing repaired it and nothing reported it.
+	//
+	// So the tree is BUILT elsewhere and SWAPPED in. A cross-platform atomic directory replacement does
+	// not exist (renameat2(RENAME_EXCHANGE) is Linux-only and not exposed by .NET), so the swap is two
+	// renames and there is a hairline in which the schema directory is absent. That residual state is the
+	// honest "never fetched" one the rest of the page code already treats as legitimate ("fail toward no
+	// check"), and it self-heals on retry — unlike a directory that exists with files missing.
 	private PageGetResponse WritePageFilesUnderLock(
 		PageGetResponse response,
 		string schemaName,
@@ -121,12 +141,18 @@ public sealed class PageFileWriter : IPageFileWriter {
 		string uri,
 		string rootDir,
 		string schemaDir) {
+		string stagingRoot = _fileSystem.Path.Combine(rootDir, StagingDirectoryName, schemaName);
+		// A short discriminator, not a full GUID: this segment is pure added depth against the Windows
+		// MAX_PATH budget of a workspace tree, and it only has to be unique among the leftovers of THIS
+		// schema — which the purge below has just cleared, under a gate that excludes every other writer.
+		string stagingDir = _fileSystem.Path.Combine(stagingRoot, Guid.NewGuid().ToString("N")[..8]);
 		try {
-			if (_fileSystem.Directory.Exists(schemaDir)) {
-				_fileSystem.Directory.Delete(schemaDir, recursive: true);
-			}
-			_fileSystem.Directory.CreateDirectory(schemaDir);
 			EnsureGitIgnoreEntry(rootDir);
+			// Residue of THIS schema's own interrupted publication, cleared under the gate this call already
+			// holds. Scoped to `.staging/{schema}/` as a whole path segment: another schema's staging is
+			// guarded by another schema's gate and may be in flight right now.
+			PurgeStagingResidue(stagingRoot);
+			_fileSystem.Directory.CreateDirectory(stagingDir);
 		} catch (Exception ex) {
 			return new PageGetResponse {
 				Success = false,
@@ -139,16 +165,21 @@ public sealed class PageFileWriter : IPageFileWriter {
 		string fetchedAt = DateTime.UtcNow.ToString("o");
 		PageBaselineInfo baseline = BuildBaseline(schemaName, environmentName, uri, response, fetchedAt);
 		try {
-			_fileSystem.File.WriteAllText(bodyFile, response.Raw.Body);
-			_fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
-			// meta.json is the file every other page path reads, so it is written atomically: a reader
-			// outside this gate (an older clio, a foreign tool) must never observe a truncated prefix.
-			PageBaselineStore.WriteMetaAtomically(_fileSystem, metaFile, new PageMetaFileModel {
-				FetchedAt = fetchedAt,
-				Page = response.Page,
-				Baseline = baseline
-			});
+			_fileSystem.File.WriteAllText(_fileSystem.Path.Combine(stagingDir, "body.js"), response.Raw.Body);
+			_fileSystem.File.WriteAllText(_fileSystem.Path.Combine(stagingDir, "bundle.json"),
+				System.Text.Json.JsonSerializer.Serialize(response.Bundle));
+			// meta.json is the file every other page path reads, so it is written atomically even inside
+			// staging: a reader outside this gate (an older clio, a foreign tool) must never observe a
+			// truncated prefix once the directory is published.
+			PageBaselineStore.WriteMetaAtomically(_fileSystem, _fileSystem.Path.Combine(stagingDir, "meta.json"),
+				new PageMetaFileModel {
+					FetchedAt = fetchedAt,
+					Page = response.Page,
+					Baseline = baseline
+				});
+			PublishStagedDirectory(stagingRoot, stagingDir, schemaDir);
 		} catch (Exception ex) {
+			TryDeleteDirectory(stagingDir);
 			return new PageGetResponse {
 				Success = false,
 				Error = $"Failed to write page files: {ex.Message}"
@@ -167,6 +198,67 @@ public sealed class PageFileWriter : IPageFileWriter {
 				FetchedAt = fetchedAt
 			}
 		};
+	}
+
+	// Swaps the finished staging directory into place. The previous generation is RENAMED aside rather
+	// than deleted first: a rename is O(1), so the window in which the schema directory does not exist is
+	// two renames wide, whereas a recursive delete would stretch that window across the whole delete.
+	// Nothing here is rollback for a kill (a kill runs no rollback) — the move-back only covers an
+	// ordinary publish failure, so a plain error does not cost the user the tree they already had.
+	private void PublishStagedDirectory(string stagingRoot, string stagingDir, string schemaDir) {
+		// The `old-` prefix keeps the retired tree from ever colliding with a staging directory name.
+		string retiredDir = _fileSystem.Path.Combine(stagingRoot, $"old-{Guid.NewGuid().ToString("N")[..8]}");
+		bool retired = false;
+		if (_fileSystem.Directory.Exists(schemaDir)) {
+			_fileSystem.Directory.Move(schemaDir, retiredDir);
+			retired = true;
+		}
+		try {
+			_fileSystem.Directory.Move(stagingDir, schemaDir);
+		} catch (Exception) {
+			if (retired) {
+				TryMoveDirectory(retiredDir, schemaDir);
+			}
+			throw;
+		}
+		if (retired) {
+			TryDeleteDirectory(retiredDir);
+		}
+	}
+
+	// Clears whatever an earlier interrupted publication of THIS schema left behind. Best-effort: residue
+	// is inert (nothing reads `.staging`), so failing to remove it must never fail the fetch that repairs
+	// the very state the residue came from.
+	private void PurgeStagingResidue(string stagingRoot) {
+		try {
+			if (!_fileSystem.Directory.Exists(stagingRoot)) {
+				return;
+			}
+			foreach (string leftover in _fileSystem.Directory.GetDirectories(stagingRoot)) {
+				TryDeleteDirectory(leftover);
+			}
+		} catch {
+			// ignore — see above.
+		}
+	}
+
+	private void TryDeleteDirectory(string directory) {
+		try {
+			if (_fileSystem.Directory.Exists(directory)) {
+				_fileSystem.Directory.Delete(directory, recursive: true);
+			}
+		} catch {
+			// ignore — leftover staging is inert and is cleared by the next fetch of this schema.
+		}
+	}
+
+	private void TryMoveDirectory(string source, string destination) {
+		try {
+			_fileSystem.Directory.Move(source, destination);
+		} catch {
+			// ignore — the publish failure is already being reported; this only tries to give the previous
+			// generation back.
+		}
 	}
 
 	private void EnsureGitIgnoreEntry(string rootDir) {

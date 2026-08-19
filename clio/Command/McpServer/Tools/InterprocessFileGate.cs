@@ -135,6 +135,12 @@ public sealed class InterprocessFileGate : IInterprocessFileGate {
 		}
 		string key = NormalizeKey(lockFilePath);
 		object processLock = ProcessLocks.GetOrAdd(key, _ => new object());
+		// ONE deadline across BOTH layers. The gate waits twice — first for the in-process monitor, then
+		// for the cross-process file handle — and each used to start its own clock, so a caller that spent
+		// almost the whole timeout on the monitor was then granted a second full timeout on the handle. A
+		// gate documented as bounded at 30 s could block for nearly 60. Started here, before the first
+		// wait, and what remains is handed to the second.
+		long startedAt = Stopwatch.GetTimestamp();
 		if (!Monitor.TryEnter(processLock, _timeout)) {
 			throw new TimeoutException(
 				$"Timed out waiting for the file lock '{lockFilePath}'. Another operation in this clio process is still using the guarded file.");
@@ -145,7 +151,7 @@ public sealed class InterprocessFileGate : IInterprocessFileGate {
 				// Already held by this thread — the outer Enter owns the handle and its release.
 				return action();
 			}
-			using FileSystemStream lockStream = AcquireLockHandle(lockFilePath);
+			using FileSystemStream lockStream = AcquireLockHandle(lockFilePath, startedAt);
 			heldLocks.Add(key);
 			try {
 				return action();
@@ -157,14 +163,15 @@ public sealed class InterprocessFileGate : IInterprocessFileGate {
 		}
 	}
 
-	private FileSystemStream AcquireLockHandle(string lockFilePath) {
+	private FileSystemStream AcquireLockHandle(string lockFilePath, long startedAt) {
 		EnsureLockDirectory(lockFilePath);
-		Stopwatch stopwatch = Stopwatch.StartNew();
 		while (true) {
 			try {
 				return _fileSystem.File.Open(
 					lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-			} catch (IOException) when (stopwatch.Elapsed < _timeout) {
+			// Measured from when the CALLER started waiting, not from when this loop began: the monitor wait
+			// above already spent part of the budget.
+			} catch (IOException) when (Stopwatch.GetElapsedTime(startedAt) < _timeout) {
 				Thread.Sleep(SpinMilliseconds);
 			} catch (IOException exception) {
 				// The deadline expired while the handle was still held elsewhere. Translate rather than
