@@ -105,21 +105,82 @@ internal class LoginDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("Track decorates any failure of a clio-driven login, not only the Code:1 rejection shape")]
-	public void Track_ShouldDecorateAnyFailure_WhenClioDrivesTheLogin() {
+	[Description("Track decorates a clio-driven login that was rejected with the Code:1 shape")]
+	public void Track_ShouldDecorate_WhenClioDrivenLoginIsRejected() {
 		// Arrange
 		LoginDiagnostics sut = CreateSut(CreateScoreboard());
 
 		// Act
-		Action act = () => sut.Track(() => throw new TimeoutException("login timed out"),
+		Action act = () => sut.Track(() => throw new UnauthorizedAccessException(LoginRejectionMessage),
 			LoginAttemptKind.Reauthentication);
 
 		// Assert
 		act.Should().Throw<CreatioLoginFailedException>(
-			because: "on the explicit paths every exception is unambiguously a login failure, so all of them "
-				+ "deserve the context — unlike the request path, where only the rejection shape is a login")
-			.Which.Message.Should().Contain("original-type=TimeoutException",
+			because: "a rejected clio-driven login is the failure GitHub #1106 needs the context for")
+			.Which.Message.Should().Contain("original-type=UnauthorizedAccessException",
 				because: "the original failure type must stay visible after the decoration");
+	}
+
+	[Test]
+	[Description("Track rethrows the very same instance when the login failed for a reason other than a credential rejection")]
+	public void Track_ShouldRethrowSameInstance_WhenFailureIsNotALoginRejection() {
+		// Arrange
+		LoginDiagnostics sut = CreateSut(CreateScoreboard());
+		TimeoutException original = new("login timed out");
+
+		// Act
+		Action act = () => sut.Track(() => throw original, LoginAttemptKind.Reauthentication);
+
+		// Assert
+		act.Should().Throw<TimeoutException>(
+			because: "substituting the type here would break the live typed handlers that key on it — "
+				+ "RemoteCommand.Login's catch (WebException) => return 1, BaseDataContextCommand's 404 "
+				+ "diagnostic, ExceptionReadableMessageExtension's InnerException walk, "
+				+ "GetCreatioInfoCommand.IsRecoverable's fatal-type blocklist, and McpToolErrorFilter's "
+				+ "OperationCanceledException rethrow (ENG-93373)")
+			.Which.Should().BeSameAs(original,
+				because: "an untouched failure must reach the caller as the identical instance, stack trace included");
+	}
+
+	[Test]
+	[Description("A WebException thrown by a clio-driven login still reaches a catch (WebException) caller")]
+	public void Track_ShouldRethrowWebExceptionUntouched_SoTypedCallersKeepWorking() {
+		// Arrange
+		LoginDiagnostics sut = CreateSut(CreateScoreboard());
+		WebException original = new("connect failed", WebExceptionStatus.ConnectFailure);
+		bool reachedTypedHandler = false;
+
+		// Act
+		try {
+			sut.Track(() => throw original, LoginAttemptKind.Initial);
+		} catch (WebException) {
+			reachedTypedHandler = true;
+		}
+
+		// Assert
+		reachedTypedHandler.Should().BeTrue(
+			because: "RemoteCommand.Login returns exit code 1 from exactly this arm; decorating the exception "
+				+ "would turn a returned exit code into an escaping exception for all of its callers");
+	}
+
+	[Test]
+	[Description("Track decorates a rejection that arrives wrapped in an AggregateException, the shape the NuGet client's Task.Result produces")]
+	public void Track_ShouldDecorate_WhenRejectionArrivesWrappedInAggregateException() {
+		// Arrange
+		LoginDiagnostics sut = CreateSut(CreateScoreboard());
+
+		// Act
+		CreatioLoginFailedException failure = Assert.Throws<CreatioLoginFailedException>(
+			() => sut.Track(
+				() => throw new AggregateException(new UnauthorizedAccessException(LoginRejectionMessage)),
+				LoginAttemptKind.Reauthentication));
+
+		// Assert
+		failure.Message.Should().StartWith(LoginRejectionMessage,
+			because: "the message must come from the rejection, not from the wrapper — an AggregateException's "
+				+ "own 'One or more errors occurred.' would replace the primary server signal");
+		FieldValue(failure.Message, "wrapped-in").Should().Be(nameof(AggregateException),
+			because: "the wrapper is diagnostic information in its own right and must not be silently dropped");
 	}
 
 	#endregion
@@ -233,6 +294,69 @@ internal class LoginDiagnosticsTests {
 			because: "a null request callback is a programming error and must fail loudly at the call site");
 	}
 
+
+	[Test]
+	[Description("TrackRequest decorates a rejection that arrives wrapped in an AggregateException")]
+	public void TrackRequest_ShouldDecorateAsImplicit_WhenRejectionArrivesWrappedInAggregateException() {
+		// Arrange
+		LoginDiagnostics sut = CreateSut(CreateScoreboard());
+
+		// Act
+		CreatioLoginFailedException failure = Assert.Throws<CreatioLoginFailedException>(
+			() => sut.TrackRequest<string>(() => throw new AggregateException(
+				new UnauthorizedAccessException(LoginRejectionMessage))));
+
+		// Assert
+		FieldValue(failure.Message, "kind").Should().Be("implicit",
+			because: "this repository documents that Creatio.Client runs via Task.Result and its faults arrive "
+				+ "wrapped (EntitySchemaPublishHelper, TransientNetworkFailureClassifier, GetCreatioInfoCommand, "
+				+ "ApplicationSectionCreateCommand, UserThemeApplier all unwrap it), so the dominant MCP path "
+				+ "must match that shape and not only the bare exception a unit test constructs");
+	}
+
+	[Test]
+	[Description("The void TrackRequest overload records the attempt and decorates a rejected implicit login")]
+	public void TrackRequestAction_ShouldDecorateAsImplicit_WhenImplicitLoginIsRejected() {
+		// Arrange
+		LoginDiagnostics.LoginAttemptScoreboard scoreboard = CreateScoreboard();
+		LoginDiagnostics sut = CreateSut(scoreboard);
+
+		// Act
+		CreatioLoginFailedException failure = Assert.Throws<CreatioLoginFailedException>(
+			() => sut.TrackRequest(() => throw new UnauthorizedAccessException(LoginRejectionMessage)));
+
+		// Assert
+		FieldValue(failure.Message, "kind").Should().Be("implicit",
+			because: "the void overload exists for DownloadFile and must record exactly like the generic one");
+		scoreboard.RequestsInFlight.Should().Be(0,
+			because: "the void overload must release the gauge on the failure path too");
+	}
+
+	#endregion
+
+	#region Tests: Classifier contract
+
+	[Test]
+	[Description("The decorated exception is an UnauthorizedAccessException so clio's four auth classifiers keep matching")]
+	public void Decorated_ShouldBeAnUnauthorizedAccessException_SoAuthClassifiersKeepMatching() {
+		// Arrange
+		LoginDiagnostics sut = CreateSut(CreateScoreboard());
+
+		// Act
+		CreatioLoginFailedException failure = Assert.Throws<CreatioLoginFailedException>(
+			() => sut.Track(() => throw new UnauthorizedAccessException(LoginRejectionMessage),
+				LoginAttemptKind.Initial));
+
+		// Assert
+		failure.Should().BeAssignableTo<UnauthorizedAccessException>(
+			because: "four sites classify a rejected login by this type and silently degrade to their generic "
+				+ "arm without it: ServerReadinessWaiter (AuthenticationRejected — otherwise a refused "
+				+ "credential stops failing fast and burns the readiness budget on further rejected logins), "
+				+ "GetCreatioInfoCommand (BaseProbeFailure.Authentication), SchemaNamePrefixTool (the "
+				+ "MCP-visible 'Authentication error reading SchemaNamePrefix.' result) and "
+				+ "SysSettingsCommand.CategorizeError");
+	}
+
 	#endregion
 
 	#region Tests: Diagnostic context
@@ -279,7 +403,8 @@ internal class LoginDiagnosticsTests {
 
 		// Act
 		CreatioLoginFailedException failure = Assert.Throws<CreatioLoginFailedException>(
-			() => sut.Track(() => throw new InvalidOperationException("boom"), LoginAttemptKind.Initial));
+			() => sut.Track(() => throw new UnauthorizedAccessException(LoginRejectionMessage),
+				LoginAttemptKind.Initial));
 
 		// Assert
 		FieldValue(failure.Message, "kind").Should().Be("initial",
@@ -295,7 +420,7 @@ internal class LoginDiagnosticsTests {
 
 		// Act
 		CreatioLoginFailedException failure = Assert.Throws<CreatioLoginFailedException>(
-			() => sut.Track(() => throw new InvalidOperationException("login failed", webException),
+			() => sut.Track(() => throw new UnauthorizedAccessException(LoginRejectionMessage, webException),
 				LoginAttemptKind.Initial));
 
 		// Assert
@@ -331,10 +456,10 @@ internal class LoginDiagnosticsTests {
 
 		// Act
 		CreatioLoginFailedException firstClientFailure = Assert.Throws<CreatioLoginFailedException>(
-			() => firstClient.Track(() => throw new InvalidOperationException("boom"),
+			() => firstClient.Track(() => throw new UnauthorizedAccessException(LoginRejectionMessage),
 				LoginAttemptKind.Reauthentication));
 		CreatioLoginFailedException secondClientFailure = Assert.Throws<CreatioLoginFailedException>(
-			() => secondClient.Track(() => throw new InvalidOperationException("boom"),
+			() => secondClient.Track(() => throw new UnauthorizedAccessException(LoginRejectionMessage),
 				LoginAttemptKind.Initial));
 
 		// Assert

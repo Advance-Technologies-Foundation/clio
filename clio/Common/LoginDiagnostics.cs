@@ -61,8 +61,16 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 		AttemptRecord record = BeginAttempt(kind);
 		try {
 			login();
-		} catch (Exception exception) {
-			throw Decorate(exception, record);
+		} catch (Exception exception)
+			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
+			// Only the login-rejection shape is decorated, exactly like the request path below. Anything
+			// else — a WebException, a TimeoutException, an OperationCanceledException, a fatal type —
+			// propagates as the same instance, so the typed handlers that key on it keep working
+			// (RemoteCommand.Login's catch (WebException) => return 1, BaseDataContextCommand's 404
+			// diagnostic, ExceptionReadableMessageExtension's InnerException walk,
+			// GetCreatioInfoCommand.IsRecoverable's fatal-type blocklist, and McpToolErrorFilter's
+			// deliberate OperationCanceledException rethrow for the ENG-93373 read-response deadline).
+			throw Decorate(exception, rejection, record);
 		} finally {
 			EndAttempt(record);
 		}
@@ -74,12 +82,58 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 		AttemptRecord record = BeginAttempt(LoginAttemptKind.Implicit);
 		try {
 			return request();
-		} catch (UnauthorizedAccessException exception)
-			when (exception.Message.StartsWith(LoginRejectionMessagePrefix, StringComparison.Ordinal)) {
-			throw Decorate(exception, record);
+		} catch (Exception exception)
+			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
+			throw Decorate(exception, rejection, record);
 		} finally {
 			EndAttempt(record);
 		}
+	}
+
+	/// <inheritdoc />
+	public void TrackRequest(Action request) {
+		ArgumentNullException.ThrowIfNull(request);
+		TrackRequest<object>(() => {
+			request();
+			return null;
+		});
+	}
+
+	/// <summary>
+	/// Finds the Creatio login rejection inside <paramref name="exception"/>, if there is one.
+	/// </summary>
+	/// <remarks>
+	/// The chain is walked and every <see cref="AggregateException"/> is flattened because the NuGet
+	/// client runs its transport through <c>Task.Result</c>, so faults can arrive wrapped — the same
+	/// arrival shape this repository already unwraps in
+	/// <c>EntitySchemaPublishHelper</c>, <c>TransientNetworkFailureClassifier</c>,
+	/// <c>GetCreatioInfoCommand</c>, <c>ApplicationSectionCreateCommand</c> and <c>UserThemeApplier</c>.
+	/// Matching them here means the decoration fires on the production arrival shape and not only on the
+	/// bare exception a unit test constructs.
+	/// </remarks>
+	/// <param name="exception">The failure to inspect. May be <c>null</c>.</param>
+	/// <param name="rejection">The rejection found, or <c>null</c>.</param>
+	/// <returns><c>true</c> when a login rejection was found.</returns>
+	internal static bool TryFindLoginRejection(Exception exception,
+		out UnauthorizedAccessException rejection) {
+		for (Exception current = exception; current is not null; current = current.InnerException) {
+			if (current is AggregateException aggregate) {
+				foreach (Exception inner in aggregate.Flatten().InnerExceptions) {
+					if (TryFindLoginRejection(inner, out rejection)) {
+						return true;
+					}
+				}
+				// Flatten() already reached every branch; InnerException is just InnerExceptions[0].
+				break;
+			}
+			if (current is UnauthorizedAccessException unauthorized
+				&& unauthorized.Message.StartsWith(LoginRejectionMessagePrefix, StringComparison.Ordinal)) {
+				rejection = unauthorized;
+				return true;
+			}
+		}
+		rejection = null;
+		return false;
 	}
 
 	#endregion
@@ -114,18 +168,26 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 		}
 	}
 
-	private CreatioLoginFailedException Decorate(Exception exception, AttemptRecord record) {
+	/// <param name="surfaced">The exception the callback actually threw; may wrap the rejection.</param>
+	/// <param name="rejection">The login rejection found inside <paramref name="surfaced"/>.</param>
+	/// <param name="record">What was captured when the attempt started.</param>
+	private CreatioLoginFailedException Decorate(Exception surfaced, UnauthorizedAccessException rejection,
+		AttemptRecord record) {
 		// Read the gauges BEFORE the finally block releases this attempt, so the figures describe the
 		// concurrency this login actually competed with rather than what is left after it.
-		string context = BuildContext(exception, record, _scoreboard.LoginsInFlight,
+		string context = BuildContext(surfaced, rejection, record, _scoreboard.LoginsInFlight,
 			_scoreboard.RequestsInFlight);
-		CreatioLoginFailedException failure = new($"{exception.Message} [{context}]");
-		failure.Data[CreatioLoginFailedException.OriginalExceptionDataKey] = exception.ToString();
+		// The message is built from the rejection, not from the wrapper: an AggregateException's own
+		// message would replace the server's "Unauthorized <user> for <url>" — the primary signal — with
+		// "One or more errors occurred.".
+		CreatioLoginFailedException failure = new($"{rejection.Message} [{context}]");
+		failure.Data[CreatioLoginFailedException.OriginalExceptionDataKey] = surfaced.ToString();
 		failure.Data[CreatioLoginFailedException.DiagnosticContextDataKey] = context;
 		return failure;
 	}
 
-	private string BuildContext(Exception exception, AttemptRecord record, int loginsInFlightAtFailure,
+	private string BuildContext(Exception surfaced, UnauthorizedAccessException rejection,
+		AttemptRecord record, int loginsInFlightAtFailure,
 		int requestsInFlightAtFailure) {
 		long now = Stopwatch.GetTimestamp();
 		StringBuilder builder = new("clio-login");
@@ -143,11 +205,16 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 		Append(builder, "started-at", record.StartedAtUtc.ToString("O", CultureInfo.InvariantCulture));
 		Append(builder, "elapsed-ms", Milliseconds(now - record.StartedAtTimestamp));
 		Append(builder, "since-client-created-ms", Milliseconds(now - _createdAtTimestamp));
-		Append(builder, "original-type", exception.GetType().Name);
+		Append(builder, "original-type", rejection.GetType().Name);
+		if (!ReferenceEquals(surfaced, rejection)) {
+			// The rejection arrived wrapped, so record the wrapper too — otherwise the message would
+			// claim a bare exception was thrown where a Task.Result fault was.
+			Append(builder, "wrapped-in", surfaced.GetType().Name);
+		}
 		// The readable-message extension folds an inner WebException's transport status into its output.
 		// This exception is intentionally inner-less (see CreatioLoginFailedException), so fold the same
 		// signal in here — otherwise a 401-vs-connect-failure distinction would be lost on the CLI path.
-		if (TryDescribeTransport(exception, out string transport)) {
+		if (TryDescribeTransport(surfaced, out string transport)) {
 			Append(builder, "transport", transport);
 		}
 		return builder.ToString();
@@ -236,6 +303,14 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 		/// does so at its very beginning, so this is the closest observable proxy for concurrent implicit
 		/// logins.
 		/// </summary>
+		/// <remarks>
+		/// A <see cref="LoginAttemptKind.Reauthentication"/> record excludes its own triggering request:
+		/// <c>ReauthExecutor.Execute</c> calls the request first and re-authenticates only after it
+		/// returned or threw, by which point <see cref="TrackRequest{T}"/>'s <c>finally</c> has already
+		/// released that request. So a reauth failure reports one fewer request than were logically
+		/// active — typically <c>0/0</c> in an otherwise idle process. Read it as "besides the request
+		/// that triggered this re-login".
+		/// </remarks>
 		internal int RequestsInFlight => Volatile.Read(ref _requestsInFlight);
 
 		#endregion

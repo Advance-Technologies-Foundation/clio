@@ -8940,3 +8940,61 @@ Impact: any future "Unauthorized … for …" in CI now carries kind / client id
 in-flight-logins / in-flight-requests / timestamps, so the concurrent-login question is answerable
 from the log alone. Reusable pattern: when a diagnostic must survive to an MCP caller, the carrying
 exception must be the inner-most one.
+
+## 2026-08-19 – GH #1106 login diagnostics: review round (blast radius of the decoration)
+Context: PR #1117 review (m-dymytrova) requested changes with two Blockers sharing one root cause —
+the recorder replaced the surfaced exception type on paths that were never in scope. Every claim was
+re-verified against the merged tree before fixing; all seven findings were warranted except the
+process-wide-counter one, which is answered instead of changed.
+Decision (two steps, both required, in this order):
+(a) `LoginDiagnostics.Track` no longer catches `Exception` unconditionally — it now uses the same
+    login-rejection predicate as `TrackRequest`, so a `WebException` / `TimeoutException` /
+    `OperationCanceledException` / fatal type propagates as the SAME instance. That restores
+    `RemoteCommand.Login`'s `catch (WebException) => return 1` (a control-flow change, not a message
+    change — the premise "no CLI command calls adapter.Login() explicitly" was wrong: there are seven
+    production callers), `BaseDataContextCommand`'s 404 arm, `ExceptionReadableMessageExtension`'s
+    InnerException walk, `GetCreatioInfoCommand.IsRecoverable`'s fatal-type blocklist, and
+    `McpToolErrorFilter`'s deliberate `OperationCanceledException` rethrow (ENG-93373). It also removes
+    the `elapsed-ms=401` substring-classifier interaction the PR body had flagged as Low.
+(b) Only THEN `CreatioLoginFailedException : UnauthorizedAccessException`. Deriving before narrowing
+    would have reclassified a login timeout as "credentials refused" at `ServerReadinessWaiter`,
+    killing the warm-up tolerance its comment protects. With (a) in place everything decorated really
+    is a credential rejection, so the four classifiers that key on the type keep matching:
+    `ServerReadinessWaiter` (AuthenticationRejected → fail fast instead of burning the readiness budget
+    on further rejected logins, each of which destroys a live session), `GetCreatioInfoCommand`,
+    `SchemaNamePrefixTool` (an MCP-VISIBLE result-content change — the "MCP reviewed, no update
+    required" claim only becomes true again with this step) and `SysSettingsCommand.CategorizeError`.
+    Deriving preserves the inner-less invariant, so `GetBaseException().Message` and
+    `SurfacedExceptionMessage.Resolve` still surface the context.
+Discovery: the filter was exact-type + prefix with no chain unwrapping, while this repo documents the
+opposite arrival shape for this very client — `Creatio.Client` runs transport via `Task.Result`, so
+faults arrive wrapped in `AggregateException` (`EntitySchemaPublishHelper`,
+`TransientNetworkFailureClassifier`, `GetCreatioInfoCommand`, `ApplicationSectionCreateCommand`,
+`UserThemeApplier` all unwrap it). All 20 original tests threw BARE, so the suite could not tell
+"the filter matches in production" from "the feature never fires". New
+`TryFindLoginRejection(Exception, out UnauthorizedAccessException)` flattens and walks; the message is
+built from the FOUND rejection (an `AggregateException`'s own "One or more errors occurred." would
+have replaced the primary server signal) and the wrapper is recorded as `wrapped-in=`.
+Also: `ILoginDiagnostics` got an injection seam (an extra internal ctor where the reauth executor MAY
+be null — the only way to reach the `Reauthentication` closure the DEFAULT executor owns), the
+eight-fold `_reauthExecutor.Execute(() => _loginDiagnostics.TrackRequest(...))` composition collapsed
+into one `ExecuteRequest` helper (non-generic: the session-expired predicate inspects a response body,
+so it is string-only), a `void TrackRequest(Action)` overload removed `DownloadFile`'s `return null`
+contortion, and the `Reauthentication` XML doc now records that its `in-flight-requests` excludes the
+request that triggered the re-login (`ReauthExecutor` runs the request to completion first, so
+`0/0` means "no OTHER traffic").
+Not changed: the process-wide counters stay in the caller-facing message. Scoping them per tenant is
+not reachable without new plumbing — the adapter's private ctor holds only a `Lazy<CreatioClient>`,
+and the bearer/passthrough construction paths carry no credential identity at all — and moving them to
+`Exception.Data` only would defeat the PR's whole goal ("diagnosable from CI output alone"). Left as
+an open call.
+Files: clio/Common/LoginDiagnostics.cs, clio/Common/ILoginDiagnostics.cs,
+clio/Common/LoginAttemptKind.cs, clio/Common/CreatioLoginFailedException.cs,
+clio/Common/CreatioClientAdapter.cs, clio.tests/Common/LoginDiagnosticsTests.cs,
+clio.tests/Common/CreatioClientAdapterLoginDiagnosticsTests.cs
+Impact: `~LoginDiagnostics|~CreatioClientAdapter` 46/46; the classifier-adjacent suites
+(`~ServerReadiness|~GetInfoCommand|~SchemaNamePrefix|~SysSettings|~Reauth|~McpToolError|~ApplicationClientFactory`)
+305/305; full `Category=Unit` 9103 passed with the same 20 pre-existing macOS-only failures
+(9085 → 9103). Generalisation: an exception decorator's blast radius is the set of `catch` clauses that
+key on the type it replaces — narrow the decoration to the exact shape it claims to describe, then
+derive from the type the callers already classify, so the wrapper adds information without removing any.

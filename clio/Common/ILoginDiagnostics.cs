@@ -50,4 +50,15 @@ internal interface ILoginDiagnostics {
 	/// <paramref name="request"/> failed because its implicit login was rejected.
 	/// </exception>
 	T TrackRequest<T>(Func<T> request);
+
+	/// <summary>
+	/// Invokes <paramref name="request"/> under the same recording as <see cref="TrackRequest{T}"/>, for
+	/// request methods that return nothing.
+	/// </summary>
+	/// <param name="request">The request callback. Required.</param>
+	/// <exception cref="ArgumentNullException"><paramref name="request"/> is <c>null</c>.</exception>
+	/// <exception cref="CreatioLoginFailedException">
+	/// <paramref name="request"/> failed because its implicit login was rejected.
+	/// </exception>
+	void TrackRequest(Action request);
 }

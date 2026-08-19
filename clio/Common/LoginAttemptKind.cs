@@ -14,6 +14,12 @@ internal enum LoginAttemptKind {
 	/// An automatic re-login driven by <see cref="IReauthExecutor"/> after a request observed a
 	/// session-expired response.
 	/// </summary>
+	/// <remarks>
+	/// The recorded in-flight request count excludes the request that triggered this re-login:
+	/// <c>ReauthExecutor.Execute</c> runs the request to completion (or failure) before re-authenticating,
+	/// so that request has already left the gauge. Read <c>in-flight-requests</c> on a reauth record as
+	/// "besides the triggering request" — <c>0/0</c> means no <em>other</em> traffic, not no traffic.
+	/// </remarks>
 	Reauthentication,
 
 	/// <summary>

@@ -17,6 +17,24 @@ namespace Clio.Common;
 /// do not add an inner exception here.
 /// </para>
 /// <para>
+/// It derives from <see cref="UnauthorizedAccessException"/> because that is the type clio's auth
+/// classifiers key on, and everything decorated here genuinely is a credential rejection (the recorder
+/// only decorates the client's <c>"Unauthorized &lt;user&gt; for &lt;url&gt;"</c> shape; every other
+/// login failure propagates as its original instance). Four sites depend on it and would silently fall
+/// through to their generic arm otherwise: <c>ServerReadinessWaiter</c> (maps it to
+/// <c>AuthenticationRejected</c> and fails fast instead of burning the readiness budget on further
+/// rejected logins), <c>GetCreatioInfoCommand</c> (<c>BaseProbeFailure.Authentication</c>),
+/// <c>SchemaNamePrefixTool</c> (the MCP-visible "Authentication error reading SchemaNamePrefix."
+/// result), and <c>SysSettingsCommand.CategorizeError</c>.
+/// </para>
+/// <para>
+/// <b>Rejected alternative:</b> keeping the original as <see cref="Exception.InnerException"/> behind an
+/// <c>IAuthoritativeErrorMessage</c> marker does not work. <c>ApplicationSectionCreateCommand</c> reports
+/// the root cause via <see cref="Exception.GetBaseException"/><c>.Message</c>, which walks to the
+/// inner-most exception and ignores marker interfaces — the diagnostic context would be dropped exactly
+/// where it is needed. Deriving keeps both properties at once: inner-most, and correctly classified.
+/// </para>
+/// <para>
 /// The original exception is not lost: its type name and, when it is (or wraps) a
 /// <see cref="System.Net.WebException"/>, its transport status are folded into
 /// <see cref="Exception.Message"/>, and its full <see cref="object.ToString"/> is stored in
@@ -24,7 +42,7 @@ namespace Clio.Common;
 /// verbose log.
 /// </para>
 /// </remarks>
-internal sealed class CreatioLoginFailedException : Exception {
+internal sealed class CreatioLoginFailedException : UnauthorizedAccessException {
 	#region Constants: Internal
 
 	/// <summary>
