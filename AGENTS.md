@@ -7,34 +7,57 @@ may add rules for their subtree but must not duplicate or contradict this file.
 # Claiming a GitHub issue before you start
 
 Whenever you (agent or human) start working on a GitHub issue in this repository, claim it **first**,
-before editing any file or creating a branch:
+before editing any file. Pass the branch you are about to create — the claim records it:
 
 ```bash
-./scripts/claim-issue.sh <issue-number>
+./scripts/claim-issue.sh <issue-number> <planned-branch-name>
 ```
 
 On a host without bash, use the PowerShell equivalent:
 
 ```powershell
-pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number>
+pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number> -Branch <planned-branch-name>
 ```
 
-The script assigns the issue to the authenticated `gh` user and posts a comment saying that an agent
-started working on it, naming the working branch. It is idempotent: an issue already assigned to the
-current user is left untouched and no duplicate comment is posted. An issue assigned to somebody else
-is refused with a non-zero exit code — do not override it, pick another issue or ask the current
-assignee to hand it over.
+The script takes an **exclusive** claim, then assigns the issue to the authenticated `gh` user and
+posts a comment saying that an agent started working on it. It exits 0 only when all three hold:
+the claim is ours, the assignee is confirmed by a re-read, and the claim comment is on the issue.
+Anything else exits non-zero and leaves the issue free, so the next agent is never told an issue is
+available when its ownership is actually unresolved.
+
+Exclusivity does not come from the assignee: several of these agents run under the SAME GitHub
+identity, and "assigned to my login" cannot tell two of them apart — nor can a check-then-assign or
+a post-then-read on comments, because two runs can pass either check at once. Arbitration uses the
+one compare-and-swap GitHub offers: `git push --force-with-lease=refs/claims/issue-<n>:` with an
+empty expected value creates the ref only if it does not exist, checked inside the server's atomic
+ref transaction. Exactly one racing run wins; the rest are refused.
 
 Rules:
 
 - Claim the issue even for a small change, and even when you expect the work to take minutes.
-- If the assignment fails because of permissions, the script still posts the comment and asks a
-  maintainer to set the assignee. Do not treat that as a reason to skip the claim.
+- Pass the planned branch name. Claiming happens before the branch exists, so the script refuses to
+  fall back to `HEAD` when that is the default branch — otherwise the claim would advertise
+  `Working branch: master` and never name the branch the work actually lands on.
+- Set `CLIO_CLAIM_ID` to a stable value for one logical run if that run can be retried. A retry
+  carrying the same id converges on its own claim (repairing a missing assignee or comment) instead
+  of being refused by it.
+- A non-zero exit is final: do not override it and do not proceed. Pick another issue, or ask the
+  holder — `./scripts/claim-issue.sh --status <issue-number>` prints who holds the claim and when
+  they took it.
+- If assignment fails on permissions, the claim fails too. Ask a maintainer to set the assignee and
+  re-run; do not start work on the strength of a comment alone.
+- Release the claim when the work is done or abandoned:
+  `./scripts/claim-issue.sh --release <issue-number>` (add `--force` to break a claim left behind by
+  a run that is gone — check `created-at` in `--status` first).
 - If there is no issue yet, create one first (see the PR workflow section in `CONTRIBUTING.md`),
   then claim it.
-- Reason: several scheduled agents run against this repository in parallel. The assignee plus the
-  comment are the only signals that tell another agent — or a human — that the issue is already
-  being worked on.
+- Reason: several scheduled agents run against this repository in parallel. The claim ref is what
+  actually prevents two of them from doing the same work; the assignee and the comment are what tell
+  a human.
+
+The protocol is covered by `scripts/tests/claim-issue.tests.sh` (run in CI for both
+implementations), which races two claimers against a real ref transaction and asserts a single
+winner, plus the fail-closed behaviour of every partial state.
 
 # ClioGate integration
 

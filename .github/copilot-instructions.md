@@ -193,7 +193,10 @@ public void TestName()
 ## Working on a GitHub issue
 
 [AGENTS.md](../AGENTS.md) is the authoritative instruction file for every agent in this repository.
-Before you start working on a GitHub issue, claim it: `./scripts/claim-issue.sh <issue-number>`
-(PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number>`). The script assigns the
-issue to the authenticated user and posts a comment saying the work has started, and refuses an issue
-that is already assigned to somebody else.
+Before you start working on a GitHub issue, claim it, passing the branch you are about to create:
+`./scripts/claim-issue.sh <issue-number> <planned-branch-name>`
+(PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number> -Branch <planned-branch-name>`).
+The script takes an exclusive claim on the issue, assigns it to the authenticated user and posts a
+comment saying the work has started. It exits non-zero when the issue is already claimed or when
+ownership cannot be established — that is final, pick another issue. Release the claim with
+`--release` when the work is done.

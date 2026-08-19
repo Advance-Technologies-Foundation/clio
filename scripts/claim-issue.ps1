@@ -1,79 +1,350 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-	Claim a GitHub issue before starting work on it.
+    Claim a GitHub issue before starting work on it, exclusively.
 .DESCRIPTION
-	Assigns the issue to the authenticated gh user and posts a short comment saying that
-	work has started. Safe to re-run: an issue already assigned to the current user is left
-	untouched and no duplicate comment is posted. An issue assigned to somebody else is
-	refused, so two agents cannot silently take the same issue.
+    PowerShell twin of scripts/claim-issue.sh, implementing the same protocol — read that
+    file's header for the reasoning. In short:
+
+    Several scheduled agents run against this repository in parallel, often under the SAME
+    GitHub identity, so "is this assigned to my login?" cannot arbitrate between them, and
+    neither can a check-then-assign or a post-then-read on comments. Arbitration uses the one
+    compare-and-swap primitive GitHub offers: a ref update. `git push --force-with-lease=<ref>:`
+    with an empty expected value creates the ref only if it does not exist, checked inside the
+    server's atomic ref transaction, so exactly one racing run wins.
+
+    The script exits 0 only when the claim ref is ours, the issue is assigned to us and a
+    re-read confirms it, and the machine-readable marker comment is present. Anything else
+    releases the ref and exits non-zero — an unresolved ownership must never be reported as a
+    successful claim. A partial state from an earlier run is repaired, not short-circuited.
+
+    Every native `gh` invocation goes through Invoke-Gh, which fails closed. This matters on
+    PowerShell: $ErrorActionPreference = 'Stop' does NOT make a failing native command
+    terminating unless $PSNativeCommandUseErrorActionPreference is enabled, which is false by
+    default on pwsh 7.6. Both are used here — the preference where the host supports it, plus
+    an unconditional $LASTEXITCODE check that does not depend on the host version.
 .PARAMETER IssueNumber
-	Number of the GitHub issue to claim.
+    Number of the GitHub issue to claim.
 .PARAMETER Branch
-	Working branch to mention in the comment. Defaults to the current git branch.
+    Working branch to record in the claim. Required in practice: claiming happens before the
+    branch is created, so HEAD is still the default branch and must not be published as the
+    working branch.
+.PARAMETER Status
+    Print the current claim state for the issue and exit.
+.PARAMETER Release
+    Release a claim held by this run (see CLIO_CLAIM_ID).
+.PARAMETER Force
+    With -Release, break a claim held by a different run.
 .EXAMPLE
-	./scripts/claim-issue.ps1 -IssueNumber 1234
+    ./scripts/claim-issue.ps1 -IssueNumber 1234 -Branch feature/1234-do-the-thing
+.EXAMPLE
+    ./scripts/claim-issue.ps1 -IssueNumber 1234 -Release
+.NOTES
+    Environment: CLIO_CLAIM_ID pins the identity of one logical run, so a retry converges on
+    its own claim instead of being refused by it.
 #>
 [CmdletBinding()]
 param(
-	[Parameter(Mandatory = $true, Position = 0)]
-	[ValidatePattern('^[0-9]+$')]
-	[string]$IssueNumber,
+    [Parameter(Mandatory = $true, Position = 0)]
+    [ValidatePattern('^[0-9]+$')]
+    [string]$IssueNumber,
 
-	[Parameter(Position = 1)]
-	[string]$Branch
+    [Parameter(Position = 1)]
+    [string]$Branch,
+
+    [switch]$Status,
+    [switch]$Release,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
-
-if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-	[Console]::Error.WriteLine('gh CLI is required but was not found in PATH.')
-	exit 3
+# Enabled where the host knows it; the explicit $LASTEXITCODE checks in Invoke-Gh do not rely on it.
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue) {
+    $global:PSNativeCommandUseErrorActionPreference = $true
 }
 
+$ExitLost = 1      # somebody else holds the claim, or ownership is unresolved
+$ExitUsage = 2
+$ExitPrereq = 3
+$MarkerPrefix = '<!-- clio-claim-id:'
+$ClaimRef = "refs/claims/issue-$IssueNumber"
+$PeekRef = "refs/clio-claim-peek/issue-$IssueNumber"
+
+function Write-Err { param([string[]]$Lines) foreach ($l in $Lines) { [Console]::Error.WriteLine($l) } }
+
+function Invoke-Gh {
+    <# Runs gh and fails closed. A native failure must never hand the caller an empty string
+       that reads as "no assignees" or "no comments". #>
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GhArgs)
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'   # let us inspect the exit code instead of throwing mid-pipe
+    try {
+        $output = & gh @GhArgs 2>&1
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($code -ne 0) {
+        throw "gh $($GhArgs -join ' ') failed with exit code ${code}: $($output -join [Environment]::NewLine)"
+    }
+    return ($output | ForEach-Object { [string]$_ })
+}
+
+function Invoke-GitQuiet {
+    <# Returns $true on success, $false on failure — for the git calls whose failure is a
+       meaningful outcome (the compare-and-swap push, the release). #>
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GitArgs)
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & git @GitArgs 2>&1 | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    }
+    finally { $ErrorActionPreference = $previous }
+}
+
+function Get-RemoteClaimSha {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $lines = & git ls-remote origin $ClaimRef 2>$null } finally { $ErrorActionPreference = $previous }
+    $first = @($lines | Where-Object { $_ }) | Select-Object -First 1
+    if (-not $first) { return $null }
+    return ($first -split '\s+')[0]
+}
+
+$script:ClaimObjectFetched = $false
+function Get-ClaimField {
+    param([string]$Field, [string]$Sha)
+    if (-not $script:ClaimObjectFetched) {
+        if (-not (Invoke-GitQuiet 'fetch' '--quiet' '--no-tags' 'origin' "+${ClaimRef}:${PeekRef}")) { return $null }
+        $script:ClaimObjectFetched = $true
+    }
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $body = & git log -1 --format=%B $Sha 2>$null } finally { $ErrorActionPreference = $previous }
+    $match = @($body | Where-Object { $_ -like "${Field}: *" }) | Select-Object -First 1
+    if (-not $match) { return $null }
+    return $match.Substring($Field.Length + 2)
+}
+
+function Format-RemoteClaim {
+    param([string]$Sha)
+    $id = Get-ClaimField -Field 'claim-id' -Sha $Sha
+    $who = Get-ClaimField -Field 'claimant' -Sha $Sha
+    $br = Get-ClaimField -Field 'branch' -Sha $Sha
+    $at = Get-ClaimField -Field 'created-at' -Sha $Sha
+    $unknown = '<unknown>'
+    return "claim-id=$(if ($id) { $id } else { '<unreadable>' }) claimant=$(if ($who) { $who } else { $unknown }) branch=$(if ($br) { $br } else { $unknown }) created-at=$(if ($at) { $at } else { $unknown }) ref=$Sha"
+}
+
+function Remove-Claim {
+    param([string]$ExpectedSha)
+    return (Invoke-GitQuiet 'push' '--quiet' "--force-with-lease=${ClaimRef}:${ExpectedSha}" 'origin' ":$ClaimRef")
+}
+
+foreach ($tool in @('git', 'gh')) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        Write-Err "$tool is required but was not found in PATH."
+        exit $ExitPrereq
+    }
+}
+if (-not (Invoke-GitQuiet 'rev-parse' '--git-dir')) {
+    Write-Err 'Not inside a git repository.'
+    exit $ExitPrereq
+}
+
+# ── -Status ───────────────────────────────────────────────────────────────
+if ($Status) {
+    $sha = Get-RemoteClaimSha
+    if (-not $sha) { Write-Host "Issue #$IssueNumber is not claimed ($ClaimRef does not exist)." }
+    else { Write-Host "Issue #$IssueNumber is claimed: $(Format-RemoteClaim -Sha $sha)" }
+    $assignees = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
+    Write-Host "Assignees: $(if ($assignees.Count) { $assignees -join ' ' } else { '<none>' })"
+    exit 0
+}
+
+$claimId = $env:CLIO_CLAIM_ID
+if (-not $claimId) {
+    $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+    $claimId = "$([System.Net.Dns]::GetHostName())-$PID-$stamp-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+}
+
+# ── -Release ──────────────────────────────────────────────────────────────
+if ($Release) {
+    $sha = Get-RemoteClaimSha
+    if (-not $sha) {
+        Write-Host "Issue #$IssueNumber is not claimed - nothing to release."
+        exit 0
+    }
+    $ownerId = Get-ClaimField -Field 'claim-id' -Sha $sha
+    if ($ownerId -ne $claimId -and -not $Force) {
+        Write-Err @(
+            "Issue #$IssueNumber is claimed by somebody else: $(Format-RemoteClaim -Sha $sha)",
+            'Refusing to release a claim this run does not own.',
+            'If the holder is gone (check created-at above), break it deliberately with -Release -Force.'
+        )
+        exit $ExitLost
+    }
+    if (Remove-Claim -ExpectedSha $sha) {
+        Write-Host "Released the claim on issue #$IssueNumber."
+        exit 0
+    }
+    Write-Err "Could not release the claim on issue #$IssueNumber - it changed under us, re-run to see the current holder."
+    exit $ExitLost
+}
+
+# ── acquire ───────────────────────────────────────────────────────────────
+# The marker comment names the working branch, and the policy is to claim BEFORE creating the
+# branch — so the branch cannot be read off HEAD, which is still the default branch then.
+$defaultBranch = (Invoke-Gh 'repo' 'view' '--json' 'defaultBranchRef' '-q' '.defaultBranchRef.name' | Select-Object -First 1)
 if (-not $Branch) {
-	$Branch = (git rev-parse --abbrev-ref HEAD 2>$null)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $Branch = (& git rev-parse --abbrev-ref HEAD 2>$null | Select-Object -First 1) } finally { $ErrorActionPreference = $previous }
+}
+if (-not $Branch -or $Branch -eq 'HEAD' -or $Branch -eq $defaultBranch) {
+    Write-Err @(
+        "Refusing to claim issue #$IssueNumber without a working branch name.",
+        "Claiming happens before the branch is created, so HEAD is still '$(if ($Branch) { $Branch } else { '<detached>' })' and would be",
+        'published as the working branch in the claim comment. Pass the branch you are about to create:',
+        "    ./scripts/claim-issue.ps1 -IssueNumber $IssueNumber -Branch <planned-branch-name>"
+    )
+    exit $ExitUsage
 }
 
-$me = gh api user -q .login
-$assignees = @(gh issue view $IssueNumber --json assignees -q '.assignees[].login' | Where-Object { $_ })
-
-if ($assignees -contains $me) {
-	Write-Host "Issue #$IssueNumber is already assigned to $me - nothing to do."
-	exit 0
+$me = (Invoke-Gh 'api' 'user' '-q' '.login' | Select-Object -First 1)
+if (-not $me) {
+    Write-Err 'Could not resolve the authenticated gh user.'
+    exit $ExitLost
 }
 
-if ($assignees.Count -gt 0) {
-	[Console]::Error.WriteLine("Issue #$IssueNumber is already assigned to: $($assignees -join ', ')")
-	[Console]::Error.WriteLine('Refusing to claim work owned by somebody else. Pick another issue, or ask the current assignee to hand it over.')
-	exit 1
+$weHoldClaim = $false
+$claimComplete = $false
+$claimSha = $null
+
+function Complete-Run {
+    param([int]$Code)
+    if ($Code -ne 0 -and $weHoldClaim -and -not $claimComplete) {
+        if (Remove-Claim -ExpectedSha $claimSha) {
+            Write-Err "Released the claim ref on issue #$IssueNumber - the claim did not complete, so the issue stays free."
+        }
+        else {
+            Write-Err "WARNING: could not release $ClaimRef after a failed claim. Run: ./scripts/claim-issue.ps1 -IssueNumber $IssueNumber -Release"
+        }
+    }
+    exit $Code
 }
 
-$body = "🤖 An automated agent started working on this issue."
-if ($Branch -and $Branch -ne 'HEAD') {
-	$body += "`n`nWorking branch: ``$Branch``"
-}
-$body += "`n`nThe issue is assigned to @$me, who is accountable for the result. Progress will be reported here and in the pull request that references this issue."
-
-# A failed assignment must not abort the claim: the comment still has to be posted.
-# On pwsh 7.4+ a non-zero native exit code throws while $ErrorActionPreference is 'Stop',
-# so the call needs both a try/catch and the $LASTEXITCODE check.
-$assignFailed = $false
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 try {
-	gh issue edit $IssueNumber --add-assignee $me | Out-Null
-	if ($LASTEXITCODE -ne 0) { $assignFailed = $true }
+    # --stdin with no input rather than a /dev/null vs NUL device path, so this works on any host.
+    $emptyTree = ('' | & git hash-object -w -t tree --stdin 2>$null | Select-Object -First 1)
 }
-catch {
-	$assignFailed = $true
+finally { $ErrorActionPreference = $previous }
+if (-not $emptyTree) {
+    Write-Err 'Could not create the empty tree object needed for the claim commit.'
+    exit $ExitLost
 }
 
-if ($assignFailed) {
-	Write-Warning "Could not assign issue #$IssueNumber to $me (insufficient permissions?)."
-	$body += "`n`nAssignment could not be set automatically - a maintainer needs to assign this issue to @$me."
+$now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+$env:GIT_AUTHOR_NAME = 'clio-claim'
+$env:GIT_AUTHOR_EMAIL = 'clio-claim@localhost'
+$env:GIT_AUTHOR_DATE = $now
+$env:GIT_COMMITTER_NAME = 'clio-claim'
+$env:GIT_COMMITTER_EMAIL = 'clio-claim@localhost'
+$env:GIT_COMMITTER_DATE = $now
+$claimSha = (& git commit-tree $emptyTree `
+        -m "clio-claim on issue #$IssueNumber" `
+        -m "claim-id: $claimId" `
+        -m "claimant: $me" `
+        -m "branch: $Branch" `
+        -m "created-at: $now" | Select-Object -First 1)
+if ($LASTEXITCODE -ne 0 -or -not $claimSha) {
+    Write-Err 'Could not create the claim commit object.'
+    exit $ExitLost
+}
+
+# Compare-and-swap: an empty expected value means "the ref must not exist yet", checked inside
+# the server's atomic ref transaction. Exactly one racing run gets a successful push.
+if (Invoke-GitQuiet 'push' '--quiet' "--force-with-lease=${ClaimRef}:" 'origin' "${claimSha}:${ClaimRef}") {
+    $weHoldClaim = $true
+    Write-Host "Claimed issue #$IssueNumber (claim-id $claimId)."
 }
 else {
-	Write-Host "Assigned issue #$IssueNumber to $me."
+    $existingSha = Get-RemoteClaimSha
+    if (-not $existingSha) {
+        Write-Err @(
+            "Could not create $ClaimRef on origin and no claim exists there.",
+            'The push was rejected - most likely this token cannot write refs outside refs/heads/*.',
+            'Failing closed: an unarbitrated claim is worse than no claim. Ask a maintainer to assign',
+            "issue #$IssueNumber to you manually, or grant ref write access."
+        )
+        exit $ExitLost
+    }
+    $ownerId = Get-ClaimField -Field 'claim-id' -Sha $existingSha
+    if ($ownerId -ne $claimId) {
+        Write-Err @(
+            "Issue #$IssueNumber is already claimed: $(Format-RemoteClaim -Sha $existingSha)",
+            'Refusing to work on an issue somebody else claimed. Pick another issue, or ask the holder to hand it over.'
+        )
+        exit $ExitLost
+    }
+    $weHoldClaim = $true
+    $claimSha = $existingSha
+    Write-Host "Issue #$IssueNumber is already claimed by this run (claim-id $claimId) - converging on the remaining steps."
 }
 
-gh issue comment $IssueNumber --body $body | Out-Null
-Write-Host "Posted the claim comment on issue #$IssueNumber."
+try {
+    # Ownership. Additive assignment is not arbitration (the claim ref already did that), but the
+    # assignee is what a human reads, so it must actually be set - and confirmed by a re-read,
+    # because a denied assignment can still report success on some gh/permission combinations.
+    $assignees = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
+    if ($assignees -notcontains $me) {
+        Invoke-Gh 'issue' 'edit' $IssueNumber '--add-assignee' $me | Out-Null
+        $assignees = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
+    }
+    if ($assignees -notcontains $me) {
+        Write-Err @(
+            "Issue #$IssueNumber could not be assigned to $me (insufficient permissions?).",
+            "Current assignees: $($assignees -join ' ')",
+            'Failing closed instead of reporting a claim: ownership is unresolved, so another agent must not',
+            "be told this issue is free. Ask a maintainer to assign it to @$me and re-run."
+        )
+        Complete-Run -Code $ExitLost
+    }
+    Write-Host "Issue #$IssueNumber is assigned to $me."
+
+    # The marker comment is the human-visible half of the claim, keyed by claim id so a repeated
+    # run repairs a missing marker instead of posting a duplicate.
+    $marker = "$MarkerPrefix $claimId "
+    $comments = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'comments' '-q' '.comments[].body')
+    if (($comments -join "`n").Contains($marker)) {
+        Write-Host "The claim comment for claim-id $claimId is already on issue #$IssueNumber."
+    }
+    else {
+        $body = @(
+            "$MarkerPrefix $claimId -->",
+            '🤖 An automated agent started working on this issue.',
+            '',
+            "Working branch: ``$Branch``",
+            '',
+            "The issue is assigned to @$me, who is accountable for the result. Progress will be reported here and in the pull request that references this issue.",
+            '',
+            "The exclusive claim is held at ``$ClaimRef``; it is released with ``pwsh ./scripts/claim-issue.ps1 -IssueNumber $IssueNumber -Release``."
+        ) -join "`n"
+        Invoke-Gh 'issue' 'comment' $IssueNumber '--body' $body | Out-Null
+        Write-Host "Posted the claim comment on issue #$IssueNumber."
+    }
+}
+catch {
+    Write-Err $_.Exception.Message
+    Complete-Run -Code $ExitLost
+}
+
+$claimComplete = $true
+Write-Host "Issue #$IssueNumber is claimed exclusively: ref $ClaimRef, assignee $me, branch $Branch."
+exit 0

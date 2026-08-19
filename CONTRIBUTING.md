@@ -212,13 +212,17 @@ When creating the issue:
 
 When starting the work:
 
-- Claim the issue before you touch any file: `./scripts/claim-issue.sh <issue-number>`
-  (PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number>`). It assigns the issue to
-  you and posts a comment saying the work has started, so nobody else — human or agent — picks it up in
-  parallel. This is mandatory for automated agents; see
-  [AGENTS.md](AGENTS.md#claiming-a-github-issue-before-you-start).
-- If the issue is already assigned to somebody else, the script refuses to claim it. Pick another issue
-  or ask the current assignee to hand it over.
+- Claim the issue before you touch any file, passing the branch you are about to create:
+  `./scripts/claim-issue.sh <issue-number> <planned-branch-name>`
+  (PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number> -Branch <planned-branch-name>`).
+  It takes an exclusive claim, assigns the issue to you and posts a comment saying the work has
+  started, so nobody else — human or agent — picks it up in parallel. This is mandatory for automated
+  agents; see [AGENTS.md](AGENTS.md#claiming-a-github-issue-before-you-start).
+- A non-zero exit means the claim was not taken — the issue is held by somebody else, or ownership
+  could not be established. Do not start work on it. `./scripts/claim-issue.sh --status <issue-number>`
+  shows who holds the claim.
+- Release the claim when you are done or you drop the work:
+  `./scripts/claim-issue.sh --release <issue-number>`.
 
 When opening the pull request:
 
