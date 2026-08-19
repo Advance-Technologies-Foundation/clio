@@ -67,6 +67,7 @@ internal class HelpArtifactConsistencyTests {
 	public void ClassicToFreedomSchemaCommands_ShouldBeClassifiedWithDescription_WhenCatalogBuilt() {
 		// Arrange
 		string[] verbs = [
+			"get-classic-list-columns",
 			"get-classic-page-sources",
 			"list-entity-client-schemas"
 		];
