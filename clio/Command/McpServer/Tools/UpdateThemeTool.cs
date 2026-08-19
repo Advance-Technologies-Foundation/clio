@@ -81,7 +81,7 @@ public sealed record UpdateThemeArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("id")]
-	[property: Description("Id of the existing theme to overwrite.")]
+	[property: Description("Id (a GUID) of the existing theme to overwrite.")]
 	[property: Required]
 	string? Id = null,
 

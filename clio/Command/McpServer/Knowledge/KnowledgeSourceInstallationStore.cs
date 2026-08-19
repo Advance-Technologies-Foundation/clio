@@ -30,6 +30,19 @@ internal sealed record KnowledgeSourceCurrentState(
 	KnowledgeSourceGenerationPointer Active,
 	KnowledgeSourceGenerationPointer? Previous);
 
+internal sealed record KnowledgeSourceStartupState(
+	KnowledgeSourceGenerationPointer Active,
+	DateTimeOffset? LastPublisherCheckAtUtc);
+
+internal sealed record KnowledgeSourcePublisherCheckState(
+	int SchemaVersion,
+	string SourceAlias,
+	string LibraryId,
+	ulong Sequence,
+	string BundleDigest,
+	string ResolvedRevision,
+	DateTimeOffset CheckedAtUtc);
+
 internal sealed record KnowledgeSourceInstallMetadata(
 	int SchemaVersion,
 	string SourceAlias,
@@ -99,6 +112,38 @@ internal interface IKnowledgeSourceInstallationStore {
 	/// <returns><see langword="true"/> when an activation marker is present.</returns>
 	bool IsBundleGenerationInstalled(string sourceAlias);
 
+	/// <summary>
+	/// Reads the activation pointer of <paramref name="sourceAlias"/> without any reconciliation.
+	/// </summary>
+	/// <remarks>
+	/// The staleness-reporting counterpart of <see cref="IsBundleGenerationInstalled"/>: it answers
+	/// "which generation would be activated, and when was it activated", not "is that generation
+	/// valid". Like that probe it is safe on the bounded startup path — it takes no mutation lock,
+	/// runs no interrupted-publication recovery, opens no bundle archive, and decisively performs no
+	/// network call. It reads the bounded activation marker and an optional bounded publisher-check
+	/// sidecar, returning <see langword="null"/> when the activation marker cannot be parsed rather than
+	/// surfacing an error to a startup caller. A bad sidecar is ignored. Callers that
+	/// need the reconciled state must use <see cref="ReadCurrent"/>, which is not startup-safe.
+	/// </remarks>
+	/// <param name="sourceAlias">The configured knowledge source alias.</param>
+	/// <returns>The recorded startup state, or <see langword="null"/> when none can be read.</returns>
+	KnowledgeSourceStartupState? TryReadStartupState(string sourceAlias);
+
+	/// <summary>
+	/// Renews the freshness timestamp of the expected active generation after the publisher confirms
+	/// that no newer generation is available.
+	/// </summary>
+	/// <remarks>
+	/// Publisher freshness is stored separately from generation identity so a successful check cannot
+	/// invalidate a concurrent publication compare-and-swap. The compare-and-swap keeps a slow update
+	/// check from renewing a generation that another process replaced while the transport call was in
+	/// flight. Recording is best-effort and never waits for the source mutation lock.
+	/// </remarks>
+	/// <param name="sourceAlias">The configured source alias.</param>
+	/// <param name="expectedActive">The generation that was current when the publisher check began.</param>
+	/// <returns><see langword="true"/> when the expected generation was still active and was renewed.</returns>
+	bool TryRecordPublisherCheck(string sourceAlias, KnowledgeSourceGenerationPointer expectedActive);
+
 	bool TryMigrateGitRepository(string sourceAlias, string targetAlias);
 
 	bool MigrateGitRepository(string sourceAlias, string targetAlias);
@@ -164,6 +209,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	private const string RootOwnerContent = "clio-knowledge-store-v1\n";
 	private const string SourceOwnerFileName = ".clio-knowledge-source";
 	private const string CurrentFileName = "current.json";
+	private const string PublisherCheckFileName = "publisher-check.json";
 	private const string LocksDirectoryName = ".locks";
 	private const string HistoryDirectoryName = ".history";
 	private const string BundleFileName = "bundle.zip";
@@ -220,6 +266,79 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			// A probe that cannot read the marker reports "nothing to activate" and lets the caller
 			// take the installing path; it must not surface a storage error on the startup budget.
 			return false;
+		}
+	}
+
+	public KnowledgeSourceStartupState? TryReadStartupState(string sourceAlias) {
+		KnowledgeSourceConfigurationValidator.ValidateAlias(sourceAlias);
+		try {
+			string sourceRoot = ResolveSourceRoot(sourceAlias, create: false);
+			KnowledgeSourceCurrentState? state = ReadCurrentMarker(sourceAlias, sourceRoot, out string? diagnostic);
+			return diagnostic is null && state is not null
+				? new KnowledgeSourceStartupState(state.Active, TryReadPublisherCheck(sourceRoot, sourceAlias, state.Active))
+				: null;
+		} catch (Exception exception) when (IsStorageException(exception)) {
+			// A probe that cannot read the marker reports "nothing is known about the active
+			// generation" so a startup caller can warn without failing on a storage error.
+			// A corrupt marker lands here too: JsonException is a storage exception by this store's
+			// classification, and recovering from one is ReadCurrent's job, not this probe's.
+			return null;
+		}
+	}
+
+	public bool TryRecordPublisherCheck(string sourceAlias, KnowledgeSourceGenerationPointer expectedActive) {
+		ArgumentNullException.ThrowIfNull(expectedActive);
+		bool recorded = false;
+		try {
+			bool acquired = TryExecuteWithSourceMutationLock(sourceAlias, () => {
+				string sourceRoot = ResolveSourceRoot(sourceAlias, create: false);
+				KnowledgeSourceCurrentState? current = ReadCurrentMarker(sourceAlias, sourceRoot, out string? diagnostic);
+				if (diagnostic is not null || current is null || current.Active != expectedActive) {
+					return;
+				}
+				KnowledgeSourcePublisherCheckState renewed = new(
+					SchemaVersion,
+					current.SourceAlias,
+					current.Active.LibraryId,
+					current.Active.Sequence,
+					current.Active.BundleDigest,
+					current.Active.ResolvedRevision,
+					DateTimeOffset.UtcNow);
+				WriteAtomicJson(sourceRoot, PublisherCheckFileName, JsonSerializer.SerializeToUtf8Bytes(
+					renewed,
+					KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourcePublisherCheckState));
+				recorded = true;
+			});
+			return acquired && recorded;
+		} catch (Exception exception) when (IsStorageException(exception)) {
+			return false;
+		}
+	}
+
+	private DateTimeOffset? TryReadPublisherCheck(
+		string sourceRoot,
+		string sourceAlias,
+		KnowledgeSourceGenerationPointer active) {
+		try {
+			string path = ResolveChild(sourceRoot, PublisherCheckFileName);
+			if (!_fileSystem.File.Exists(path)) {
+				return null;
+			}
+			EnsureNoReparsePoint(sourceRoot, path);
+			KnowledgeSourcePublisherCheckState? state = JsonSerializer.Deserialize(
+				ReadBoundedFile(path, MaxMarkerBytes),
+				KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourcePublisherCheckState);
+			return state is not null
+				&& state.SchemaVersion == SchemaVersion
+				&& string.Equals(state.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(state.LibraryId, active.LibraryId, StringComparison.Ordinal)
+				&& state.Sequence == active.Sequence
+				&& string.Equals(state.BundleDigest, active.BundleDigest, StringComparison.Ordinal)
+				&& string.Equals(state.ResolvedRevision, active.ResolvedRevision, StringComparison.Ordinal)
+					? state.CheckedAtUtc
+					: null;
+		} catch (Exception exception) when (IsStorageException(exception)) {
+			return null;
 		}
 	}
 
@@ -841,7 +960,11 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		EnsureNoReparsePoint(root, root);
 		string owner = ResolveChild(root, RootOwnerFileName);
 		if (_fileSystem.File.Exists(owner)) {
-			if (!string.Equals(_fileSystem.File.ReadAllText(owner), RootOwnerContent, StringComparison.Ordinal)) {
+			EnsureNoReparsePoint(root, owner);
+			if (!string.Equals(
+					Encoding.UTF8.GetString(ReadBoundedFile(owner, MaxMarkerBytes)),
+					RootOwnerContent,
+					StringComparison.Ordinal)) {
 				throw new InvalidOperationException("Knowledge root ownership marker is invalid.");
 			}
 			return;
@@ -857,9 +980,17 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		EnsureNoReparsePoint(root, sourceRoot);
 		string marker = ResolveChild(sourceRoot, SourceOwnerFileName);
 		if (!_fileSystem.File.Exists(marker)
-				|| !string.Equals(_fileSystem.File.ReadAllText(marker), sourceAlias + "\n", StringComparison.Ordinal)) {
+				|| !IsValidSourceOwnerMarker(root, marker, sourceAlias)) {
 			throw new InvalidOperationException($"Knowledge source root '{sourceAlias}' is not owned by Clio.");
 		}
+	}
+
+	private bool IsValidSourceOwnerMarker(string root, string marker, string sourceAlias) {
+		EnsureNoReparsePoint(root, marker);
+		return string.Equals(
+			Encoding.UTF8.GetString(ReadBoundedFile(marker, MaxMarkerBytes)),
+			sourceAlias + "\n",
+			StringComparison.Ordinal);
 	}
 
 	private string EnsureDirectory(string root, string name) {
@@ -1087,6 +1218,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	WriteIndented = true,
 	UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
 [JsonSerializable(typeof(KnowledgeSourceCurrentState))]
+[JsonSerializable(typeof(KnowledgeSourcePublisherCheckState))]
 [JsonSerializable(typeof(KnowledgeSourceInstallMetadata))]
 [JsonSerializable(typeof(KnowledgeLibraryHighWaterMark))]
 internal sealed partial class KnowledgeSourceInstallationJsonContext : JsonSerializerContext;

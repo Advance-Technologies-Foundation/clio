@@ -73,7 +73,14 @@ through `https://api.github.com/` — as an authoritative source with priority `
 used and no branch is read.** An already-published local generation is activated without any remote
 call, so a warm MCP start performs no network request at all. A missing generation gets a
 five-second startup installation budget before the MCP protocol handshake completes, so mandatory
-first-request guidance is available whenever that bounded bootstrap succeeds. An entry left by an
+first-request guidance is available whenever that bounded bootstrap succeeds. Because a warm start
+never contacts the publisher, one whose cached activation marker has an installation or last clean
+successful publisher check older than **3 days** logs a warning naming that marker's `libraryVersion`
+and the `update-knowledge --source creatio-curated` call that checks for a newer release. Startup still
+proceeds, so an operator with no network keeps working. A clean successful check renews freshness even
+when the published generation has not changed; a rejected publisher candidate does not.
+Every `get-guidance` article additionally carries the served `libraryVersion`, so an agent session can
+record or compare the active generation without shelling out to `info-knowledge --json`. An entry left by an
 earlier Clio under a different alias, or under the former Git transport, is migrated in place and
 keeps an operator's `enabled: false` kill switch. The source cannot be removed;
 set `enabled: false` or run `disable-knowledge-source --alias creatio-curated` to opt out. That

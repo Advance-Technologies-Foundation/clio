@@ -474,7 +474,11 @@ internal sealed class UnavailableKnowledgeBundleRuntime : IKnowledgeBundleRuntim
 internal sealed record KnowledgeBundleClientCapabilities(
 	Version ClioVersion,
 	Version McpToolContractVersion,
-	IReadOnlySet<string> Tools);
+	IReadOnlySet<string> Tools,
+	// LOCAL DEV TOGGLE (off by default): when true, a Git knowledge bundle whose manifest omits the
+	// explicit "sequence" field is accepted by synthesizing the sequence from libraryVersion. Sourced
+	// from the 'knowledge-allow-unsequenced' feature flag in the clio config.
+	bool AllowUnsequencedGitBundles = false);
 
 internal enum KnowledgeBundleActivationStatus {
 	Activated,
@@ -534,6 +538,7 @@ internal sealed record KnowledgeGuidanceDescriptor(
 internal sealed record KnowledgeArticleProvenance(
 	string SourceAlias,
 	string LibraryId,
+	string LibraryVersion,
 	string ItemId,
 	string TopicId,
 	ulong Sequence,

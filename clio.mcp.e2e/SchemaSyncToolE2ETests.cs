@@ -231,7 +231,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	[Description("Runs sync-schemas on a real sandbox environment with an IProgress sink and verifies it streams per-operation stage markers (e.g. '1/2: create-entity ...'), so MCP clients see semantic progress instead of one silent await (ENG-93087).")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas streams per-operation stage markers")]
-	[AllureDescription("Runs sync-schemas with two operations through the real clio MCP server with an IProgress sink and asserts the client observed a per-operation stage marker naming the operation index and type — proving the tool-level progress path is wired end to end (ENG-93087).")]
+	[AllureDescription("Runs sync-schemas with two operations through the real clio MCP server with an IProgress sink and asserts the client observed a per-operation stage marker naming the operation index and type — proving the tool-level progress path is wired end to end (ENG-93087). Batch success is asserted before the markers and the raw tool result is dumped, so an operation that failed on the environment is reported as that failure instead of as a missing marker.")]
 	public async Task SchemaSyncTool_Should_Stream_Per_Operation_Progress_Markers() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
@@ -273,15 +273,30 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			TestContext.Out.WriteLine($"[progress] {progressMessage}");
 		}
 
+		// Diagnostic: dump the raw tool result BEFORE any parsing/assertion. A batch operation that fails on
+		// the environment aborts the remaining operations (sync-schemas is stop-on-first-failure), so a missing
+		// stage marker is far more often a failed earlier operation than a broken progress path — and without
+		// the payload in the log that per-operation error is invisible in CI. Dumped from the raw result rather
+		// than through ExtractSchemaSyncResponse because that helper throws on an unparsable result, which is
+		// exactly the case this diagnostic exists for.
+		TestContext.Out.WriteLine($"[payload] {FormatRawToolResult(callResult)}");
+
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "sync-schemas should return a structured payload on the reachable sandbox environment");
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		string responsePayload = FormatPayload(response);
+		// Asserted BEFORE the marker expectations on purpose: the batch runs stop-on-first-failure, so a failed
+		// operation swallows every later marker. Checking batch success first makes the failure message name the
+		// operation that actually broke instead of reporting a missing marker as if the progress path were at fault.
+		response.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"every operation in the batch must succeed before the per-operation markers can be judged — a failed operation aborts the batch and suppresses the markers of the operations after it. Payload: {responsePayload}");
 		progress.Messages.Should().Contain(
 			message => message.Contains("1/", StringComparison.Ordinal) && message.Contains("create-entity", StringComparison.Ordinal),
-			because: "sync-schemas must stream a per-operation stage marker naming the operation index and type so the client can show which operation is running");
+			because: $"sync-schemas must stream a per-operation stage marker naming the operation index and type so the client can show which operation is running. Payload: {responsePayload}");
 		progress.Messages.Should().Contain(
 			message => message.Contains("2/", StringComparison.Ordinal) && message.Contains("create-lookup", StringComparison.Ordinal),
-			because: "sync-schemas must also stream a marker for the second operation naming its index and type");
+			because: $"sync-schemas must also stream a marker for the second operation naming its index and type. Payload: {responsePayload}");
 		List<string> orderedMessages = progress.Messages.ToList();
 		int firstOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("1/", StringComparison.Ordinal));
 		int secondOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("2/", StringComparison.Ordinal));
@@ -1045,6 +1060,23 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 	private static string FormatPayload(JsonElement payload) =>
 		JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false });
+
+	/// <summary>
+	/// Serializes the raw MCP tool result for a diagnostic log line — the error flag together with both payload
+	/// channels, matching the <c>DescribeCallResult</c> shape used across the other e2e suites. Deliberately
+	/// bypasses <see cref="ExtractSchemaSyncResponse"/>, which throws when the result is not a parsable
+	/// <c>SchemaSyncResponse</c>: that is precisely the case this dump has to survive. Any serialization failure
+	/// is returned as text so the diagnostic can never become the reported test failure and mask the real one.
+	/// </summary>
+	private static string FormatRawToolResult(CallToolResult callResult) {
+		object rawResult = new { callResult.IsError, callResult.StructuredContent, callResult.Content };
+
+		try {
+			return JsonSerializer.Serialize(rawResult, new JsonSerializerOptions { WriteIndented = false });
+		} catch (Exception ex) {
+			return $"<unserializable tool result: {ex.Message}>";
+		}
+	}
 
 	private static string[] GetMessageValues(JsonElement result) {
 		if (!result.TryGetProperty("messages", out JsonElement messagesElement) ||
