@@ -98,6 +98,42 @@ public class McpServerCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[NonParallelizable]
+	[Description("A closed stderr sink cannot turn an advisory stale-cache warning into MCP startup failure.")]
+	public void ReportCuratedKnowledgeBootstrap_ShouldContinue_WhenStandardErrorIsUnavailable() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		CuratedKnowledgeBootstrapResult stale = new(
+			true,
+			true,
+			true,
+			"ready from its local cache",
+			"cached library version 1.12.0; check with update-knowledge");
+		TextWriter originalError = Console.Error;
+		bool originalMcpMode = global::Clio.Program.IsMcpServerMode;
+
+		try {
+			global::Clio.Program.IsMcpServerMode = true;
+			Console.SetError(new ThrowingTextWriter());
+
+			// Act
+			Func<CuratedKnowledgeBootstrapResult> act = () =>
+				McpServerCommand.ReportCuratedKnowledgeBootstrap(stale, logger);
+
+			// Assert
+			act.Should().NotThrow(
+				because: "stderr is an optional diagnostic sink and cannot be allowed to abort the MCP handshake");
+			logger.ReceivedCalls().Should().ContainSingle(
+				call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning),
+				because: "the configured logger must still receive the warning when stderr is unavailable");
+		} finally {
+			Console.SetError(originalError);
+			global::Clio.Program.IsMcpServerMode = originalMcpMode;
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A successful warm start with a fresh cache emits no warning at all.")]
 	public void ReportCuratedKnowledgeBootstrap_ShouldNotWarn_WhenTheServedCacheIsFresh() {
 		// Arrange
@@ -116,6 +152,10 @@ public class McpServerCommandTests {
 			.ToArray();
 		warnings.Should().BeEmpty(
 			because: "warning about a cache that is already up to date would train operators to ignore staleness warnings");
+	}
+
+	private sealed class ThrowingTextWriter : StringWriter {
+		public override void WriteLine(string? value) => throw new IOException("stderr is closed");
 	}
 
 	[Test]

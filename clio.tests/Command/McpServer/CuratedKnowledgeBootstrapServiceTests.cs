@@ -439,14 +439,14 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	[Test]
-	[Description("A warm start reports the served generation as stale when its activation is older than the threshold.")]
+	[Description("A warm start reports the cached generation marker as stale when its freshness is older than the threshold.")]
 	public void InstallPreparedSource_ShouldReportStaleness_WhenCachedGenerationIsOlderThanThreshold() {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
 			_settings, _store, _management, clock);
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
-		_store.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias).Returns(Pointer(
+		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.12.0",
 			clock.UtcNow - TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays + 8)));
 
@@ -459,7 +459,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		result.StalenessWarning.Should().NotBeNull(
 			because: "the silent drift in issue #1100 is exactly what this warning exists to break");
 		result.StalenessWarning.Should().Contain("1.12.0",
-			because: "an operator cannot compare against the published release without the served version");
+			because: "an operator cannot compare against the published release without the cached candidate version");
 		result.StalenessWarning.Should().Contain(
 			$"update-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}",
 			because: "the warning has to name the exact call that clears it");
@@ -469,14 +469,14 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	[Test]
-	[Description("A warm start stays silent when the served generation was activated inside the staleness threshold.")]
+	[Description("A warm start stays silent when the cached generation was activated inside the staleness threshold.")]
 	public void InstallPreparedSource_ShouldNotReportStaleness_WhenCachedGenerationIsFresh() {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
 			_settings, _store, _management, clock);
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
-		_store.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias).Returns(Pointer(
+		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
 			clock.UtcNow - TimeSpan.FromHours(2)));
 
@@ -489,6 +489,49 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	[Test]
+	[Description("A successful publisher check keeps an older installed generation fresh for warm startup.")]
+	public void InstallPreparedSource_ShouldNotReportStaleness_WhenPublisherCheckIsFresh() {
+		// Arrange
+		BootstrapClock clock = new();
+		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
+			_settings, _store, _management, clock);
+		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
+			"1.13.21",
+			clock.UtcNow - TimeSpan.FromDays(10),
+			clock.UtcNow - TimeSpan.FromHours(2)));
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = service.Bootstrap();
+
+		// Assert
+		result.StalenessWarning.Should().BeNull(
+			because: "a recent clean publisher check confirms that the older installed generation remains current");
+	}
+
+	[Test]
+	[Description("A materially future cache timestamp reports clock skew instead of suppressing warnings indefinitely.")]
+	public void InstallPreparedSource_ShouldReportClockSkew_WhenFreshnessTimestampIsInFuture() {
+		// Arrange
+		BootstrapClock clock = new();
+		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
+			_settings, _store, _management, clock);
+		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
+			"1.13.21",
+			clock.UtcNow + TimeSpan.FromDays(10)));
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = service.Bootstrap();
+
+		// Assert
+		result.StalenessWarning.Should().Contain("future freshness timestamp",
+			because: "a bad clock must not silence cache-drift diagnostics until the future date passes");
+		result.StalenessWarning.Should().Contain("update-knowledge --source",
+			because: "the warning must give the operator a concrete way to re-establish freshness");
+	}
+
+	[Test]
 	[Description("A warm start stays silent when cache age is exactly the documented staleness threshold.")]
 	public void InstallPreparedSource_ShouldNotReportStaleness_WhenCacheAgeEqualsThreshold() {
 		// Arrange
@@ -496,7 +539,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
 			_settings, _store, _management, clock);
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
-		_store.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias).Returns(Pointer(
+		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
 			clock.UtcNow - TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays)));
 
@@ -509,14 +552,14 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 	}
 
 	[Test]
-	[Description("A warm start stays silent when the activation marker cannot be read at all.")]
-	public void InstallPreparedSource_ShouldNotReportStaleness_WhenActiveGenerationIsUnknown() {
+	[Description("A warm start warns when the present activation marker cannot be read.")]
+	public void InstallPreparedSource_ShouldReportUnreadableMarker_WhenActiveGenerationIsUnknown() {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
 			_settings, _store, _management, clock);
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
-		_store.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias).Returns((KnowledgeSourceGenerationPointer?)null);
+		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns((KnowledgeSourceStartupState?)null);
 
 		// Act
 		CuratedKnowledgeBootstrapResult result = service.Bootstrap();
@@ -524,8 +567,8 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "an unreadable marker must not turn a working warm start into a failure");
-		result.StalenessWarning.Should().BeNull(
-			because: "an unknown cache age is not evidence of a stale cache");
+		result.StalenessWarning.Should().Contain("unreadable activation marker",
+			because: "a present but unreadable cache marker must not leave the operator with a false ready signal");
 	}
 
 	[Test]
@@ -549,7 +592,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		result.StalenessWarning.Should().BeNull(
 			because: "an operator who disabled the source is not asked to refresh its retained cache");
 		_store.ReceivedCalls().Should().NotContain(
-			call => call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.TryReadActiveGeneration),
+			call => call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.TryReadStartupState),
 			because: "a disabled source must not inspect retained cache metadata during startup");
 	}
 
@@ -561,7 +604,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
 			_settings, _store, _management, clock);
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(false);
-		_store.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias).Returns(Pointer(
+		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
 			clock.UtcNow - TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays + 8)));
 		_management.Install(
@@ -594,6 +637,13 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		new string('a', 64),
 		"v" + libraryVersion,
 		activatedAtUtc);
+
+	private static KnowledgeSourceStartupState StartupState(
+		string libraryVersion,
+		DateTimeOffset activatedAtUtc,
+		DateTimeOffset? lastPublisherCheckAtUtc = null) => new(
+		Pointer(libraryVersion, activatedAtUtc),
+		lastPublisherCheckAtUtc);
 
 	/// <summary>A manually advanced clock, so budget exhaustion is deterministic rather than timing-dependent.</summary>
 	private sealed class BootstrapClock : TimeProvider {

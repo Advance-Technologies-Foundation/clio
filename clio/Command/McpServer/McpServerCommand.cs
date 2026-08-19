@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Knowledge;
@@ -97,9 +98,9 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		if (result.Success) {
 			logger.WriteDebug(result.Message);
 			if (!string.IsNullOrWhiteSpace(result.StalenessWarning)) {
-				// A stale cache is a successful start, so it is reported as a warning rather than a
-				// failure: the guidance being served is verified and usable, only possibly behind the
-				// published release. WriteDebug would keep the very silence this reports.
+				// A stale marker is a successful bootstrap, so it is reported as a warning rather than
+				// a failure. Later activation still validates the candidate and may fall back; WriteDebug
+				// would keep the very silence this reports.
 				WarnDuringStartup(result.StalenessWarning, logger);
 			}
 		} else {
@@ -125,9 +126,18 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	/// <param name="message">The warning text.</param>
 	/// <param name="logger">The host logger.</param>
 	private static void WarnDuringStartup(string message, ILogger logger) {
-		logger.WriteWarning(message);
+		string safeMessage = TextUtilities.SanitizeForDisplay(
+			SensitiveErrorTextRedactor.Redact(message),
+			maxLength: 1_000);
+		logger.WriteWarning(safeMessage);
 		if (Program.IsMcpServerMode) {
-			Console.Error.WriteLine($"[WAR] {message}");
+			try {
+				Console.Error.WriteLine($"[WAR] {safeMessage}");
+			} catch (IOException) {
+				// Stderr is an advisory host channel and may be closed by a detached launcher.
+			} catch (ObjectDisposedException) {
+				// Losing the advisory sink must never prevent the MCP transport from starting.
+			}
 		}
 	}
 

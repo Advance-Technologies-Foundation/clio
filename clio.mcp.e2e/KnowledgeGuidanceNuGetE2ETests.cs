@@ -91,9 +91,11 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		CallToolResult updateResult = await CallKnowledgeCommand(
 			context, KnowledgeManagementTools.UpdateKnowledgeToolName, new Dictionary<string, object?> { ["source"] = "synthetic" });
 		(CallToolResult updatedCall, GuidanceGetResponse updatedResponse) = await CallSelectedGuide(context);
+		DateTimeOffset? freshnessBeforeRejectedUpdate = ReadSyntheticPublisherFreshness();
 		_fixture.PublishInvalidSignature("1.2.0", sequence: 30, revision: "invalid");
 		CallToolResult rejectedUpdate = await CallKnowledgeCommand(
 			context, KnowledgeManagementTools.UpdateKnowledgeToolName, new Dictionary<string, object?> { ["source"] = "synthetic" });
+		DateTimeOffset? freshnessAfterRejectedUpdate = ReadSyntheticPublisherFreshness();
 		(CallToolResult retainedCall, GuidanceGetResponse retainedResponse) = await CallSelectedGuide(context);
 		CallToolResult disableResult = await CallKnowledgeCommand(
 			context, KnowledgeManagementTools.DisableKnowledgeSourceToolName, new Dictionary<string, object?> { ["alias"] = "synthetic" });
@@ -167,6 +169,8 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		AssertCommandSucceeded(updateResult, "the newer package should publish atomically through clio-run");
 		AssertSuccessfulDelivery(updatedCall, updatedResponse, updated, "updated package");
 		AssertCommandFailed(rejectedUpdate, "an invalid newer package must be rejected by the mechanics layer");
+		freshnessAfterRejectedUpdate.Should().Be(freshnessBeforeRejectedUpdate,
+			because: "rejecting a newer publisher release must not renew the retained generation's freshness");
 		AssertSuccessfulDelivery(retainedCall, retainedResponse, updated, "retained package after rejected update");
 		AssertCommandSucceeded(disableResult, "the source kill switch should be executable through clio-run");
 		disabledCall.IsError.Should().NotBeTrue(
@@ -202,6 +206,22 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		_fixture.Feed.CompletedRequests.Should().ContainSingle(path => path.EndsWith(
 			"/1.2.0/clio.synthetic.knowledge.1.2.0.nupkg",
 			StringComparison.Ordinal), because: "invalid-update retention is meaningful only after the corrupt package completed");
+	}
+
+	private DateTimeOffset? ReadSyntheticPublisherFreshness() {
+		string clioHome = _settings.ProcessEnvironmentVariables["CLIO_HOME"]!;
+		foreach (string markerPath in Directory.EnumerateFiles(
+				clioHome,
+				"publisher-check.json",
+				SearchOption.AllDirectories)) {
+			KnowledgeSourcePublisherCheckState? state = JsonSerializer.Deserialize(
+				File.ReadAllBytes(markerPath),
+				KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourcePublisherCheckState);
+			if (string.Equals(state?.SourceAlias, "synthetic", StringComparison.OrdinalIgnoreCase)) {
+				return state!.CheckedAtUtc;
+			}
+		}
+		return null;
 	}
 
 	// A refused read arrives as a JSON-RPC error, which the client surfaces as an exception rather than a

@@ -100,8 +100,9 @@ internal static class CuratedKnowledgeSourceDefaults {
 /// <param name="Installed">Whether local content is available to activate.</param>
 /// <param name="Message">The diagnostic text for the phase.</param>
 /// <param name="StalenessWarning">
-/// Set when the served cache is older than <see cref="CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays"/>,
-/// so a successful warm start still reports that its guidance may be behind the published release.
+/// Set when the cached activation candidate is older than
+/// <see cref="CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays"/>, so a successful warm start
+/// reports that the candidate may be behind the published release before later activation validates it.
 /// Trailing and optional: a caller that does not care about staleness is unaffected.
 /// </param>
 public sealed record CuratedKnowledgeBootstrapResult(
@@ -353,7 +354,7 @@ internal sealed class CuratedKnowledgeBootstrapService(
 		&& candidate.Participation == KnowledgeSourceParticipation.Authoritative;
 
 	/// <summary>
-	/// Describes the served cache when it is older than the staleness threshold.
+	/// Describes the cached activation marker when it is older than the staleness threshold.
 	/// </summary>
 	/// <remarks>
 	/// The whole point of this check is that it stays on the offline warm-start path: it reads the same
@@ -361,30 +362,45 @@ internal sealed class CuratedKnowledgeBootstrapService(
 	/// the injected clock, so it makes no transport call and adds no measurable time to the startup
 	/// budget. It is a report, never a decision — nothing here refreshes, deactivates, or rejects a
 	/// cache, because an operator with no network must keep serving the bundle they have. An unreadable
-	/// or absent marker yields no warning: the age of the cache is then simply unknown, and inventing a
-	/// warning from a failed read would train operators to ignore it.
+	/// marker is reported as unknown rather than silently treated as a valid warm cache.
 	/// </remarks>
-	/// <returns>The warning text, or <see langword="null"/> when the cache is fresh or its age is unknown.</returns>
+	/// <returns>The warning text, or <see langword="null"/> when the cache is fresh.</returns>
 	private string? DescribeStaleCache() {
-		KnowledgeSourceGenerationPointer? active =
-			installationStore.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias);
-		if (active is null) {
-			return null;
+		KnowledgeSourceStartupState? state =
+			installationStore.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias);
+		if (state is null) {
+			return $"Built-in knowledge source '{CuratedKnowledgeSourceDefaults.Alias}' has an unreadable activation "
+				+ $"marker; check for a valid cached generation with update-knowledge --source "
+				+ $"{CuratedKnowledgeSourceDefaults.Alias}.";
 		}
-		TimeSpan age = timeProvider.GetUtcNow() - active.ActivatedAtUtc;
+		KnowledgeSourceGenerationPointer active = state.Active;
+		DateTimeOffset freshness = state.LastPublisherCheckAtUtc is { } checkedAt
+			&& checkedAt > active.ActivatedAtUtc
+				? checkedAt
+				: active.ActivatedAtUtc;
+		DateTimeOffset now = timeProvider.GetUtcNow();
+		if (freshness > now + TimeSpan.FromMinutes(5)) {
+			return string.Format(
+				CultureInfo.InvariantCulture,
+				"Built-in knowledge source '{0}' cache marker has a future freshness timestamp ({1:u}); "
+				+ "check the system clock and run update-knowledge --source {0}.",
+				CuratedKnowledgeSourceDefaults.Alias,
+				freshness.UtcDateTime);
+		}
+		TimeSpan age = now - freshness;
 		if (age <= TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays)) {
 			return null;
 		}
 		return string.Format(
 			CultureInfo.InvariantCulture,
-			"Built-in knowledge source '{0}' is serving library version {1} (sequence {2}), installed or last "
+			"Built-in knowledge source '{0}' cache marker references library version {1} (sequence {2}), installed or last "
 			+ "confirmed current on {3:yyyy-MM-dd} and now {4} day(s) old; a warm start never checks the publisher, "
-			+ "so this guidance may be behind the "
+			+ "so the cached candidate may be behind the "
 			+ "current release. Check for updates with update-knowledge --source {0}.",
 			CuratedKnowledgeSourceDefaults.Alias,
 			TextUtilities.SanitizeForDisplay(active.LibraryVersion, maxLength: 128),
 			active.Sequence,
-			active.ActivatedAtUtc.UtcDateTime,
+			freshness.UtcDateTime,
 			(int)age.TotalDays);
 	}
 

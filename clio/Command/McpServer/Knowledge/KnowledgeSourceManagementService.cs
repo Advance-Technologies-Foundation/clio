@@ -348,7 +348,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			ExactRevision: context.Repair ? context.Current?.Active.ResolvedRevision : null));
 		search.CatalogFingerprint = retrieved.CatalogFingerprint ?? search.CatalogFingerprint;
 		if (retrieved.Status == KnowledgeTransportStatus.NoCandidate) {
-			if (context.Current is not null && !context.Repair) {
+			if (context.Current is not null && !context.Repair && search.Rejected.Count == 0) {
 				_store.TryRecordPublisherCheck(context.Alias, context.Current.Active);
 			}
 			return new ArtifactCandidateAttempt(null, StopSearch: true);
@@ -997,7 +997,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				diagnostic = $"Knowledge source '{sourceAlias}' is disabled.";
 				return false;
 			}
-			selected = [new KeyValuePair<string, KnowledgeSourceConfiguration>(sourceAlias, source)];
+			string canonicalAlias = configuration.Sources.Keys.Single(key =>
+				string.Equals(key, sourceAlias, StringComparison.OrdinalIgnoreCase));
+			selected = [new KeyValuePair<string, KnowledgeSourceConfiguration>(canonicalAlias, source)];
 			diagnostic = null;
 			return true;
 		}

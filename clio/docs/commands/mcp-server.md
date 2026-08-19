@@ -74,11 +74,11 @@ used and no branch is read.** An already-published local generation is activated
 call, so a warm MCP start performs no network request at all. A missing generation gets a
 five-second startup installation budget before the MCP protocol handshake completes, so mandatory
 first-request guidance is available whenever that bounded bootstrap succeeds. Because a warm start
-never contacts the publisher, one that activates a generation whose installation or last successful
-publisher check is older than **3 days** logs a warning naming the served `libraryVersion` and the
-`update-knowledge --source creatio-curated` call that checks for a newer release — the cache is still
-served, never rejected, so an operator with no network keeps working. A successful check renews the
-freshness timestamp even when the published generation has not changed.
+never contacts the publisher, one whose cached activation marker has an installation or last clean
+successful publisher check older than **3 days** logs a warning naming that marker's `libraryVersion`
+and the `update-knowledge --source creatio-curated` call that checks for a newer release. Startup still
+proceeds, so an operator with no network keeps working. A clean successful check renews freshness even
+when the published generation has not changed; a rejected publisher candidate does not.
 Every `get-guidance` article additionally carries the served `libraryVersion`, so an agent session can
 record or compare the active generation without shelling out to `info-knowledge --json`. An entry left by an
 earlier Clio under a different alias, or under the former Git transport, is migrated in place and

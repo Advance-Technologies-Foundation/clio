@@ -494,18 +494,19 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 
 	[Test]
 	[Description("The startup-safe generation probe returns the recorded active pointer for a published generation.")]
-	public void TryReadActiveGeneration_ShouldReturnActivePointer_WhenAGenerationIsPublished() {
+	public void TryReadStartupState_ShouldReturnActivePointer_WhenAGenerationIsPublished() {
 		// Arrange
 		byte[] bundle = Bundle(("guidance/alpha.md", "# alpha"));
 		Publish("alpha", "com.example.alpha", 1, bundle);
 
 		// Act
-		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration("alpha");
+		KnowledgeSourceStartupState? state = _store.TryReadStartupState("alpha");
 
 		// Assert
-		active.Should().NotBeNull(
+		state.Should().NotBeNull(
 			because: "a warm start must be able to learn which generation it would serve without any reconciliation");
-		active!.LibraryVersion.Should().Be("1.0.0",
+		KnowledgeSourceGenerationPointer active = state!.Active;
+		active.LibraryVersion.Should().Be("1.0.0",
 			because: "the served library version is what a staleness report and an agent session need to name");
 		active.Sequence.Should().Be(1,
 			because: "the recorded sequence identifies the generation the marker points at");
@@ -515,15 +516,15 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 
 	[Test]
 	[Description("The startup-safe generation probe reports nothing when the source has no activation marker.")]
-	public void TryReadActiveGeneration_ShouldReturnNull_WhenNothingIsInstalled() {
+	public void TryReadStartupState_ShouldReturnNull_WhenNothingIsInstalled() {
 		// Arrange
 		const string sourceAlias = "alpha";
 
 		// Act
-		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration(sourceAlias);
+		KnowledgeSourceStartupState? state = _store.TryReadStartupState(sourceAlias);
 
 		// Assert
-		active.Should().BeNull(
+		state.Should().BeNull(
 			because: "an absent marker means the age of the cache is unknown, not that a stale cache exists");
 	}
 
@@ -546,6 +547,8 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		// Act
 		bool recorded = _store.TryRecordPublisherCheck("alpha", before.Active);
 		KnowledgeSourceCurrentState? after = _store.ReadCurrent("alpha", out string? afterDiagnostic);
+		KnowledgeSourceStartupState? startup = _store.TryReadStartupState("alpha");
+		string currentMarker = File.ReadAllText(GetCurrentMarkerPath());
 
 		// Assert
 		publishedDiagnostic.Should().BeNull(
@@ -556,12 +559,71 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 			because: "renewing freshness must preserve a valid activation marker");
 		after.Should().NotBeNull(
 			because: "recording publisher freshness must not deactivate the generation");
-		after!.Active.ActivatedAtUtc.Should().BeAfter(before.Active.ActivatedAtUtc,
+		startup!.LastPublisherCheckAtUtc.Should().BeAfter(before.Active.ActivatedAtUtc,
 			because: "the warm-start warning must age from the latest successful publisher confirmation");
-		after.Active.Should().BeEquivalentTo(
-			before.Active,
-			options => options.Excluding(pointer => pointer.ActivatedAtUtc),
+		after!.Active.Should().BeEquivalentTo(before.Active,
 			because: "a freshness acknowledgement must not change bundle identity or provenance");
+		currentMarker.Should().NotContain("lastPublisherCheckAtUtc",
+			because: "released Clio readers reject unknown current-marker members, so freshness must stay in a sidecar");
+	}
+
+	[Test]
+	[Description("Publisher freshness recording is best-effort and never waits behind an active source mutation.")]
+	public void TryRecordPublisherCheck_ShouldReturnFalse_WhenSourceMutationLockIsBusy() {
+		// Arrange
+		byte[] bundle = Bundle(("guidance/alpha.md", "# alpha"));
+		Publish("alpha", "com.example.alpha", 1, bundle);
+		KnowledgeSourceCurrentState current = _store.ReadCurrent("alpha", out string? diagnostic)!;
+		bool? recorded = null;
+
+		// Act
+		_store.ExecuteWithSourceMutationLock("alpha", () => {
+			recorded = _store.TryRecordPublisherCheck("alpha", current.Active);
+			return true;
+		});
+
+		// Assert
+		diagnostic.Should().BeNull(
+			because: "the arranged active generation must be readable before simulating lock contention");
+		recorded.Should().BeFalse(
+			because: "an advisory freshness write must not extend a completed publisher check past its deadline");
+	}
+
+	[Test]
+	[Description("Recording publisher freshness does not invalidate publication compare-and-swap identity.")]
+	public void Publish_ShouldAcceptExpectedGeneration_AfterPublisherFreshnessWasRecorded() {
+		// Arrange
+		byte[] initialBundle = Bundle(("guidance/alpha.md", "# alpha"));
+		Publish("alpha", "com.example.alpha", 1, initialBundle);
+		KnowledgeSourceCurrentState current = _store.ReadCurrent("alpha", out string? diagnostic)!;
+		_store.TryRecordPublisherCheck("alpha", current.Active).Should().BeTrue(
+			because: "the interleaving requires a successful freshness acknowledgement");
+
+		// Act
+		KnowledgeInstallationResult updated = _store.Publish(new KnowledgeGenerationPublication {
+			SourceAlias = "alpha",
+			LibraryId = "com.example.alpha",
+			LibraryVersion = "2.0.0",
+			Sequence = 2,
+			TransportType = KnowledgeSourceTypeNames.NuGet,
+			Location = "https://example.invalid/v3/index.json",
+			ResolvedRevision = "2.0.0",
+			BundleBytes = Bundle(("guidance/alpha.md", "# alpha 2")),
+			IsUpdate = true,
+			ExpectedActive = current.Active,
+			AllowRepair = false
+		});
+		KnowledgeSourceStartupState? startup = _store.TryReadStartupState("alpha");
+
+		// Assert
+		diagnostic.Should().BeNull(
+			because: "the initial generation must be valid before exercising the compare-and-swap");
+		updated.Status.Should().Be(KnowledgeInstallationStatus.Updated,
+			because: "freshness metadata is not generation identity and cannot reject a concurrently downloaded release");
+		startup!.Active.Sequence.Should().Be(2,
+			because: "startup must select the newly published generation after the interleaving");
+		startup.LastPublisherCheckAtUtc.Should().BeNull(
+			because: "a freshness sidecar bound to generation one cannot mark generation two current");
 	}
 
 	[Test]
@@ -590,7 +652,7 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 
 	[Test]
 	[Description("The startup-safe generation probe swallows a corrupt activation marker instead of faulting startup.")]
-	public void TryReadActiveGeneration_ShouldReturnNull_WhenActivationMarkerIsCorrupt() {
+	public void TryReadStartupState_ShouldReturnNull_WhenActivationMarkerIsCorrupt() {
 		// Arrange
 		byte[] bundle = Bundle(("guidance/alpha.md", "# alpha"));
 		Publish("alpha", "com.example.alpha", 1, bundle);
@@ -598,10 +660,10 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		File.WriteAllText(Path.Combine(sourceRoot, "current.json"), "{ not json");
 
 		// Act
-		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration("alpha");
+		KnowledgeSourceStartupState? state = _store.TryReadStartupState("alpha");
 
 		// Assert
-		active.Should().BeNull(
+		state.Should().BeNull(
 			because: "a probe on the bounded startup path must never surface a parse failure to its caller");
 	}
 
