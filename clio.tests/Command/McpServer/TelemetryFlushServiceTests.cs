@@ -389,7 +389,7 @@ public sealed class TelemetryFlushServiceTests
 		// attribute survives the store-to-wire mapping, not which casing it was sent in.
 		AttributeString(attributes, "coding_agent").Should().Be("codex",
 			because: "agent metadata must survive the mapping");
-		AttributeString(attributes, "schema_version").Should().Be("1",
+		AttributeString(attributes, "schema_version").Should().Be("2",
 			because: "the schema_version enrichment must survive the mapping");
 	}
 

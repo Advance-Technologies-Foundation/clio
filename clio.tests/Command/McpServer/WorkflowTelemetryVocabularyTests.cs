@@ -581,10 +581,11 @@ public sealed class WorkflowTelemetryVocabularyTests
 		GrantConsent(service);
 
 		// Act
-		service.Send(CreateRequest("workflow_started") with { Workflow = "branding", CodingAgent = sent });
+		TelemetryEventResult result =
+			service.Send(CreateRequest("workflow_started") with { Workflow = "branding", CodingAgent = sent });
 
 		// Assert: one host must not split into several cohorts because two runs spelled it differently.
-		ReadStringAttribute(ReadNewestStoredEvent(), "coding_agent").Should().Be(expected,
+		ReadStringAttribute(ReadStoredEvent(result), "coding_agent").Should().Be(expected,
 			because: "adoption per host is only readable if the host name is one value, not a free-text spelling");
 	}
 
@@ -598,12 +599,104 @@ public sealed class WorkflowTelemetryVocabularyTests
 		GrantConsent(service);
 
 		// Act: a truncated name a run really did send. It could be Claude Code or Claude Desktop.
-		service.Send(CreateRequest("workflow_started") with { Workflow = "branding", CodingAgent = "claude" });
+		TelemetryEventResult result =
+			service.Send(CreateRequest("workflow_started") with { Workflow = "branding", CodingAgent = "claude" });
 
 		// Assert: kept as sent. Folding it into a canonical host would record a guess as measurement,
 		// which is the same failure as an invented plugin_version — worse than a value left odd.
-		ReadStringAttribute(ReadNewestStoredEvent(), "coding_agent").Should().Be("claude",
+		ReadStringAttribute(ReadStoredEvent(result), "coding_agent").Should().Be("claude",
 			because: "normalization may merge spellings of one name, never decide which name was meant");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts an event that omits coding_agent and plugin_version, which is what agents are told to do.")]
+	public void TelemetryService_Should_Accept_An_Event_Without_The_Identity_Fields()
+	{
+		// Arrange: the guidance article and the toolkit hook both say to OMIT these rather than send a
+		// guessed version or the placeholder `unknown`. Requiring them rejected every event from an agent
+		// that obeyed — worst of all the skill-less run with no toolkit context, the case this work exists
+		// for.
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act
+		TelemetryEventResult result = service.Send(new TelemetryEventRequest(
+			SessionId: "018f6e4a-0000-7000-9000-00000000000a",
+			EventName: "workflow_started") with { Workflow = "app-maintenance" });
+
+		// Assert
+		result.Success.Should().BeTrue(because: "omitting an unknown version is the documented behaviour");
+		result.Status.Should().Be("recorded");
+		JsonElement stored = ReadStoredEvent(result);
+		ReadStringAttribute(stored, "coding_agent").Should().BeNull(
+			because: "an absent attribute says 'not supplied'; an empty one reads as a real value");
+		ReadStringAttribute(stored, "plugin_version").Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Records an event with no workflow as unattributed rather than in an empty bucket.")]
+	public void TelemetryService_Should_Attribute_A_Missing_Workflow_To_Unattributed()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act — `workflow` is now the state key, so an empty one would give the event its own anchor
+		// bucket and drop it out of every GROUP BY workflow.
+		TelemetryEventResult result = service.Send(CreateRequest("workflow_started"));
+
+		// Assert
+		ReadStringAttribute(ReadStoredEvent(result), "workflow").Should().Be("unattributed",
+			because: "an unknown flow is a reserved value, not an empty string");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps a coding_agent that has no ASCII alphanumerics instead of erasing it.")]
+	public void TelemetryService_Should_Not_Erase_A_Non_Ascii_Coding_Agent()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act: a host name with nothing to slug. The split this canonicalization fixes is recoverable
+		// afterwards; an erased value is not.
+		TelemetryEventResult result = service.Send(CreateRequest("workflow_started") with {
+			Workflow = "branding", CodingAgent = "Редактор"
+		});
+
+		// Assert
+		ReadStringAttribute(ReadStoredEvent(result), "coding_agent").Should().Be("редактор",
+			because: "an unslugabble name is still a name; storing empty loses it for good");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats plan_blocked as the end of a run, matching the guidance article.")]
+	public void TelemetryService_Should_Treat_Plan_Blocked_As_A_Finished_Run()
+	{
+		// Arrange — a run blocked on its first check ends at plan_blocked per the guidance; if clio does
+		// not agree, the next run in that pair inherits this one's timestamps.
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-17T10:00:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromSeconds(30));
+		service.Send(CreateRequest("plan_blocked") with { Workflow = "app-maintenance" });
+
+		// Act — a new run, an hour later.
+		time.Advance(TimeSpan.FromHours(1));
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-maintenance" });
+		time.Advance(TimeSpan.FromSeconds(5));
+		TelemetryEventResult result =
+			service.Send(CreateRequest("workflow_completed") with { Workflow = "app-maintenance" });
+
+		// Assert
+		ReadIntAttribute(ReadStoredEvent(result), "duration_since_session_start_ms").Should().Be(5_000,
+			because: "the blocked run ended, so its start must not anchor the run that follows");
 	}
 
 	private TelemetryService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
@@ -630,6 +723,22 @@ public sealed class WorkflowTelemetryVocabularyTests
 			.OrderBy(path => path, StringComparer.Ordinal)
 			.Last();
 		return JsonDocument.Parse(File.ReadAllText(newest)).RootElement;
+	}
+
+	/// <summary>
+	/// Reads the event a <see cref="TelemetryService.Send"/> call actually wrote, by its returned id.
+	/// </summary>
+	/// <remarks>
+	/// File names are <c>yyyyMMddTHHmmssfffZ_&lt;guid&gt;</c>, so two events written in the same
+	/// millisecond tie-break on a random GUID and "the newest by name" can be the wrong one. Tests on the
+	/// real clock (the canonicalization cases) can collide with the consent event that way.
+	/// </remarks>
+	private JsonElement ReadStoredEvent(TelemetryEventResult result)
+	{
+		result.EventId.Should().NotBeNullOrWhiteSpace(because: "a recorded event always reports its id");
+		string eventsDirectory = TelemetryStoragePaths.EventsDirectory(_telemetryHome);
+		string path = Directory.GetFiles(eventsDirectory, $"*_{result.EventId}.json").Single();
+		return JsonDocument.Parse(File.ReadAllText(path)).RootElement;
 	}
 
 	private static string ReadStringAttribute(JsonElement storedEvent, string key) =>
