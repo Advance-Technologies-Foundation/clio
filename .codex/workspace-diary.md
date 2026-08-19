@@ -8781,7 +8781,7 @@ Discovery: The package collision originated in `UiProjectCreator.Create` calling
 Files: clio/Package/UiProjectCreator.cs, clio.tests/Package/UiProjectCreatorTests.cs, clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/docs/commands/new-ui-project.md, clio/help/en/new-ui-project.txt
 Impact: Package-first workspaces can add a Freedom UI project without rewriting existing package metadata or content, while invalid package paths and existing project directories fail before mutation.
 
-## 2026-08-18 – Reuse preinstalled SDKs in the release workflow
+## 2026-08-18 14:16 – Reuse preinstalled SDKs in the release workflow
 Context: The self-hosted release runner already has .NET 8 and .NET 10, but `actions/setup-dotnet` downloads both SDKs on every host and previously failed trying to write under `C:\Program Files\dotnet`.
 Decision: Remove `actions/setup-dotnet` and its install-directory override; fail fast with a read-only `dotnet --list-sdks` prerequisite check for major versions 8 and 10.
 Discovery: PowerShell remoting showed the GitHub runner service is `NT AUTHORITY\NETWORK SERVICE`; a one-time task under that exact SID passed the predicate with exit code 0 on `TS1-MRKT-WEB01`, where the system installation exposes SDKs 8.0.423, 10.0.204, and 10.0.302.
