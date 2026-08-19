@@ -27,8 +27,8 @@ public sealed class PageValidateTool(
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed-construct check for mobile). " +
-		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` for the contracts it enforces.")]
+	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed constructs, diff-apply, and placement checks for mobile — `type` must sit inside `values`, and a button in the Scaffold `actions` slot is flagged). " +
+		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` / `mobile-page-modification` for the contracts it enforces.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args,

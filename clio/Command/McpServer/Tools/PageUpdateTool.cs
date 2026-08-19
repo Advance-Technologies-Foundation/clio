@@ -27,7 +27,11 @@ public sealed class PageUpdateTool(
 	ISettingsRepository? settingsRepository = null)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
+	// BaseTool takes these two and exposes neither, so read them from fields: reading the primary-constructor
+	// parameters in the body instead makes the compiler capture them again alongside the base's copy (CS9107/CS9124).
+	private readonly ILogger _logger = logger;
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	private readonly IPageBodySamplingService _samplingService = samplingService;
 
 	internal const string ToolName = "update-page";
@@ -60,6 +64,7 @@ public sealed class PageUpdateTool(
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
 		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
 		SchemaValidationService.CustomCssPolicySummary + " " +
+		"MOBILE: a viewConfigDiff insert/set must carry its component `type` INSIDE `values` — the differ builds the element from `values` alone, so a type on the operation object is discarded and the save persists an element that never renders; this is rejected. A `crt.Button` inserted into `Scaffold`/`actions` is warned about: it saves but does not appear on the mobile designer canvas — place buttons in a page container's `items` with a `layoutConfig`. See get-guidance `mobile-page-modification`. " +
 		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only. " +
@@ -337,7 +342,7 @@ public sealed class PageUpdateTool(
 			return null;
 		}
 		try {
-			EnvironmentSettings settings = commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions {
+			EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions {
 				Environment = options.Environment,
 				Uri = options.Uri,
 				Login = options.Login,
@@ -357,7 +362,12 @@ public sealed class PageUpdateTool(
 		}
 	}
 
-	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
+	/// <summary>
+	/// Runs the client-side body validation that gates the save. Exposed as an internal seam (same pattern as
+	/// <see cref="ValidateRunProcessButtons"/>) so a test can prove a blocking validation error really aborts the
+	/// write instead of only proving the validator returns an error.
+	/// </summary>
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
 		PageUpdateOptions options, string? requestedVersion) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
 			// Mobile body validation requires async catalogs (CDN+cache) AND the
@@ -375,7 +385,7 @@ public sealed class PageUpdateTool(
 						// config (the own body survives the merge).
 						options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode,
 						// update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
-						Logger: logger))
+						Logger: _logger))
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
