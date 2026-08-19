@@ -93,6 +93,7 @@ internal sealed class GuidanceGetTool {
 						Uri = lookup.Article.Uri,
 						Text = lookup.Article.Text,
 						LibraryId = lookup.Provenance?.LibraryId,
+						LibraryVersion = lookup.Provenance?.LibraryVersion,
 						ItemId = lookup.Provenance?.ItemId,
 						TopicId = lookup.Provenance?.TopicId,
 						Sequence = lookup.Provenance?.Sequence,
@@ -236,6 +237,19 @@ public sealed class GuidanceArticle {
 	[JsonPropertyName("libraryId")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? LibraryId { get; init; }
+
+	/// <summary>
+	/// Gets the version of the active library generation that served this article.
+	/// </summary>
+	/// <remarks>
+	/// A warm MCP start serves whatever generation is cached locally and never contacts the publisher,
+	/// so an agent session has no other way to tell which guidance generation it is reading. Exposing
+	/// it here lets a consumer record or compare the served version without shelling out to
+	/// <c>info-knowledge --json</c>.
+	/// </remarks>
+	[JsonPropertyName("libraryVersion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? LibraryVersion { get; init; }
 
 	/// <summary>Gets the stable item identifier inside the publisher library.</summary>
 	[JsonPropertyName("itemId")]
