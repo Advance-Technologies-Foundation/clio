@@ -222,16 +222,19 @@ public sealed partial class McpWorkerCallDispatcher {
 		// wait: queueing behind a starter that may sit in handshake for the whole sticky call budget
 		// would spend minutes of the caller's patience to arrive at the same refusal with less
 		// information.
-		using IDisposable startGate = TryEnterStartGate(key);
-		if (startGate is null) {
-			return LongOperationInProgressResult(toolName, key.Family, environmentName);
-		}
-		// The RESERVATION answers first where there is one, and the order is load-bearing rather than
-		// arbitrary. It is keyed by target and therefore excludes across principals AND across families
-		// (a compile excludes an install-process-builder), which is strictly broader than the sticky key
-		// below; and its refusal makes the more specific statement — this ENVIRONMENT's configuration
-		// build is busy, not merely this caller's own operation. Letting the key check answer first would
-		// silently downgrade that envelope for compile and install-process-builder.
+		// THE RESERVATION IS TAKEN FIRST — before the per-key start gate below, not after it. The order is
+		// load-bearing and was corrected on 2026-08-19 after a review pointed at the race it decides.
+		//
+		// The reservation is keyed by TARGET, so it excludes across principals AND across families (a
+		// compile excludes an install-process-builder); the start gate is keyed by the sticky key, which is
+		// narrower. When two same-target configuration-build starters race, whichever check runs first is
+		// the one that answers — so with the gate first, the second caller was told
+		// 'clio-long-operation-in-progress' (your own family is busy) when the true and more useful answer
+		// is 'clio-configuration-build-in-progress' (this ENVIRONMENT is rebuilding, by anyone). Taking the
+		// broader claim first makes the refusal say the broader thing.
+		//
+		// A caller that then loses the start gate releases the reservation on that path, so nothing is
+		// stranded by winning the wrong one of the two.
 		SharedResourceReservationToken reservation = null;
 		if (metadata.SharedFileResource == McpToolSharedFileResource.ConfigurationBuild) {
 			// Keyed by the NORMALISED TARGET and the resource, never by the tenant key: Creatio's
@@ -243,6 +246,15 @@ public sealed partial class McpWorkerCallDispatcher {
 				return SharedResourceBusyResult(toolName, environmentName);
 			}
 		}
+
+		using IDisposable startGate = TryEnterStartGate(key);
+		if (startGate is null) {
+			// Losing the gate after winning the reservation must give the reservation back, or one refused
+			// racer would hold this target's configuration build until the reclaim ceiling.
+			_reservations.Release(reservation);
+			return LongOperationInProgressResult(toolName, key.Family, environmentName);
+		}
+
 
 		if (_stickyWorkers.TryReach(key, out StickyWorkerEntry existing)) {
 			if (!existing.IsCompleted) {

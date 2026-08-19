@@ -946,4 +946,31 @@ public sealed class McpWorkerCallDispatcherTests {
 			return take;
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A spawn refused because every worker slot is in use is reported as SATURATION through the dispatcher, not flattened into the generic relay failure that claims clio could not start a process.")]
+	public async Task DispatchAsync_ShouldReportSaturation_WhenTheAdmissionQueueWaitExpires() {
+		// Arrange — the supervisor's own named refusal, which carries the numbers R-10 promises.
+		_supervisor
+			.SpawnContainedAsync(Arg.Any<WorkerSpawnRequest>(), Arg.Any<CancellationToken>())
+			.Returns<Task<IWorkerLease>>(_ => throw new WorkerQueueWaitExpiredException(
+				waitEndured: TimeSpan.FromSeconds(60), configuredBound: TimeSpan.FromSeconds(60),
+				concurrencyCap: 4, queueDepth: 9));
+		McpWorkerCallDispatcher sut = CreateSut();
+
+		// Act
+		CallToolResult result = await sut.DispatchAsync(
+			WorkerRoute("get-page"),
+			new CallToolRequestParams { Name = "get-page" },
+			Substitute.For<IParentMcpSession>(),
+			CancellationToken.None);
+
+		// Assert
+		JsonNode payload = JsonNode.Parse(result.StructuredContent.Value.GetRawText());
+		payload["error-class"]?.GetValue<string>().Should().Be("clio-worker-saturated",
+			because: "the DISPATCHER must route the named refusal to the saturation envelope; asserting only on the envelope builder would leave this catch free to flatten it back into a relay failure with every test still green");
+		payload["queue-depth"]?.GetValue<int>().Should().Be(9,
+			because: "the depth has to survive the whole path to the caller, not merely exist on the exception");
+	}
 }

@@ -44,6 +44,11 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// </remarks>
 	internal const string BudgetExpiredErrorClass = "creatio-timeout";
 
+	/// <summary>
+	/// Error class for a call refused because every worker slot on this host is in use.
+	/// </summary>
+	internal const string WorkerSaturationErrorClass = "clio-worker-saturated";
+
 	/// <summary>Machine-readable error class emitted when the relay itself failed.</summary>
 	/// <remarks>
 	/// NOT the timeout class. A worker that crashed, closed its pipe, or answered a malformed result is a
@@ -293,6 +298,17 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		}
 		catch (OperationCanceledException) {
 			throw;
+		}
+		catch (WorkerQueueWaitExpiredException exception) {
+			// SATURATION IS NOT A RELAY FAILURE, and collapsing it into one throws away the whole point of
+			// the named exception. R-10 promises a refusal "carrying cap and queue depth… never an error
+			// that reads as a backend timeout" — and "the worker process could not be started" reads as a
+			// clio defect, sending an agent to hunt a bug in clio when the true answer is that the host is
+			// busy and the call is worth retrying in a moment. The numbers are the actionable part: they
+			// tell an operator whether to wait or to raise CLIO_MCP_WORKER_CONCURRENCY.
+			_logger.WriteWarning(
+				$"MCP worker for '{toolName}' was not started: {exception.Message}");
+			return WorkerSaturationResult(toolName, exception);
 		}
 		catch (Exception exception) {
 			_logger.WriteWarning(
@@ -646,4 +662,35 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// about a later state of the buffer than the one it is describing.
 	/// </remarks>
 	public sealed record WorkerStandardErrorTail(string Text, bool Truncated);
+
+	/// <summary>
+	/// Builds the envelope for a call that waited out the queue bound because the host was saturated.
+	/// </summary>
+	/// <param name="toolName">The refused tool.</param>
+	/// <param name="exception">The refusal, carrying the wait endured, the bound, the cap and the depth.</param>
+	/// <returns>The error result.</returns>
+	internal static CallToolResult WorkerSaturationResult(string toolName,
+		WorkerQueueWaitExpiredException exception) {
+		string text = $"'{toolName}' was not started. {exception.Message}";
+		JsonObject payload = new() {
+			["success"] = false,
+			["tool"] = toolName,
+			["error-class"] = WorkerSaturationErrorClass,
+			["worker-concurrency"] = exception.ConcurrencyCap,
+			["queue-depth"] = exception.QueueDepth,
+			["waited-seconds"] = Math.Round(exception.WaitEndured.TotalSeconds, 3),
+			["queue-wait-bound-seconds"] = Math.Round(exception.ConfiguredBound.TotalSeconds, 3),
+			// Unlike an indeterminate deploy, this one IS safe to retry: nothing was spawned and no request
+			// reached Creatio, so the call had no effect at all.
+			["retry-guidance"] = "The host is busy, not broken: nothing was spawned and no request reached "
+				+ "Creatio. Retry shortly, or raise CLIO_MCP_WORKER_CONCURRENCY if this host should run more "
+				+ "workers at once.",
+			["message"] = text
+		};
+		return new CallToolResult {
+			IsError = true,
+			Content = [new TextContentBlock { Text = text }],
+			StructuredContent = JsonSerializer.SerializeToElement(payload)
+		};
+	}
 }

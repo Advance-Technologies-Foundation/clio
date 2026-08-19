@@ -523,6 +523,215 @@ public sealed class StickyWorkerSupervisionTests {
 			because: "a worker inside its bound must survive the sweep, or the bound would be a periodic cull rather than a lifetime");
 	}
 
+	// ---------------------------------------------------------------------------------------------
+	// AC-04, the other half: the bound must take effect at the DEADLINE, with nobody calling
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("A sticky worker past its lifetime bound is reaped at the deadline with no further sticky dispatch of any kind, and the admission slot it was holding comes back — otherwise the bound only takes effect if more sticky traffic happens to arrive, and one idle expired worker denies every later long operation on a host whose sticky capacity is one.")]
+	public async Task DeadlineTimer_ShouldReapAnExpiredStickyWorkerAndReturnItsSlot_WhenNoFurtherDispatchArrives() {
+		// Arrange — a total cap of 2 puts the sticky ceiling at 1, so ONE long operation saturates the
+		// sticky pool and the slot under test is the only one there is. The clock is offset-based: it
+		// tracks real time and moves only when this test moves it, so nothing here waits out a bound that
+		// is half an hour by derivation.
+		ControllableClock clock = new();
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2, clock: clock);
+		await fixture.DispatchAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
+		WorkerSupervisorSnapshot beforeDeadline = fixture.Supervisor.GetSnapshot();
+		beforeDeadline.ActiveStickyWorkers.Should().Be(beforeDeadline.StickyConcurrencyCap,
+			because: "the case only discriminates with the sticky pool SATURATED: on a host with a spare slot the next long operation succeeds whether or not the expired worker was ever reaped");
+
+		// Act — the deadline passes and NOBODY calls. No poll, no second starter, no dispatch at all:
+		// this is exactly the idle host the defect strands, and the only thing that can act on it is the
+		// registry itself.
+		clock.Advance(StickyWorkerLifetimeBound.ExplicitMaximum + TimeSpan.FromMinutes(1));
+		await WaitUntilAsync(() => fixture.Supervisor.GetSnapshot().ActiveStickyWorkers == 0);
+		WorkerSupervisorSnapshot afterDeadline = fixture.Supervisor.GetSnapshot();
+		// Read BEFORE the proof below dispatches: that dispatch registers a worker of its own, so the
+		// count is only about the reaped one while it is the only thing that ever registered.
+		int supervisedAfterDeadline = fixture.StickyWorkers.Count;
+		CallToolResult nextLongOperation = await fixture.DispatchAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), "another-environment");
+
+		// Assert
+		afterDeadline.ActiveStickyWorkers.Should().Be(0,
+			because: "the ADMISSION SLOT is the resource a stranded worker holds, so the slot coming back is the property under test — a dictionary entry that merely vanished would leave the process, its authenticated session and its slot exactly where they were");
+		supervisedAfterDeadline.Should().Be(0,
+			because: "the registry must also stop pointing at a worker it has ended, or a later poll would be answered out of a session the bound declared over");
+		fixture.Children[0].HasExited.Should().BeTrue(
+			because: "reaping must end the PROCESS: a worker that lives past its bound goes on holding an authenticated Creatio session, which is the threat T-8 names and the reason the bound exists");
+		nextLongOperation.IsError.Should().NotBeTrue(
+			because: "the reclaimed slot must be genuinely reusable — a later long operation refused for want of capacity is what an unreaped worker looks like from outside");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A completion signal moves a sticky worker's expiry DOWN to the linger window, and the deadline is re-armed to it: the worker is reaped when the linger ends, without any further dispatch, rather than holding its slot until the far-off hard bound.")]
+	public async Task DeadlineTimer_ShouldReapAfterTheCompletionLinger_WhenNoFurtherDispatchArrives() {
+		// Arrange — the linger is five minutes and the hard bound is half an hour, so a deadline armed
+		// once at registration and never re-armed cannot fire inside the window this case advances
+		// through. That gap is what makes the case discriminate re-arming from mere scheduling.
+		ControllableClock clock = new();
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2,
+			completionLinger: TimeSpan.FromMinutes(5), clock: clock);
+		await fixture.DispatchAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
+
+		// Act — completion FIRST, then the clock. MarkCompleted stamps the linger against the real
+		// clock, so advancing before the signal arrived would put the offset ahead of the stamp and the
+		// worker would be born expired, proving nothing about re-arming.
+		await fixture.Children[0].SendCompletionSignalAsync(McpToolOperationFamily.ConfigurationBuild,
+			exitCode: 0);
+		await WaitUntilAsync(() => fixture.Reservations.HeldCount == 0);
+		clock.Advance(TimeSpan.FromMinutes(6));
+		await WaitUntilAsync(() => fixture.Supervisor.GetSnapshot().ActiveStickyWorkers == 0);
+
+		// Assert
+		fixture.Supervisor.GetSnapshot().ActiveStickyWorkers.Should().Be(0,
+			because: "the linger is what the worker's remaining life IS once it has reported completion, so the deadline must have moved down with it — holding the slot for the rest of the half-hour bound is the same stranding the bound exists to prevent, just shorter");
+		fixture.StickyWorkers.Count.Should().Be(0,
+			because: "a lingering worker whose window has closed has nothing left to answer: the poll it was kept alive for either arrived or never will");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The lifetime deadline is scheduled against the EARLIEST outstanding expiry: a worker registered with a nearer bound pulls the deadline in, and one registered with a later bound leaves it alone — so no entry waits behind another entry's expiry.")]
+	public async Task TryRegister_ShouldArmTheDeadlineAgainstTheEarliestOutstandingExpiry() {
+		// Arrange
+		ControllableClock clock = new();
+		SharedResourceReservation reservations = new();
+		using StickyWorkerRegistry registry = new(_logger, clock);
+		RegistryEntryProbe middle = await CreateRegistryEntryAsync(
+			clock.GetUtcNow().AddMinutes(20), reservations);
+		RegistryEntryProbe nearest = await CreateRegistryEntryAsync(
+			clock.GetUtcNow().AddMinutes(5), reservations);
+		RegistryEntryProbe furthest = await CreateRegistryEntryAsync(
+			clock.GetUtcNow().AddMinutes(45), reservations);
+
+		// Act
+		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.ConfigurationBuild, "tenant|a"),
+			middle.Entry).Should().BeTrue();
+		TimeSpan? armedForMiddle = clock.OnlyTimer.ArmedDelay;
+		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.Restart, "tenant|b"),
+			nearest.Entry).Should().BeTrue();
+		TimeSpan? armedForNearest = clock.OnlyTimer.ArmedDelay;
+		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.AppSectionCreate, "tenant|c"),
+			furthest.Entry).Should().BeTrue();
+		TimeSpan? armedForFurthest = clock.OnlyTimer.ArmedDelay;
+
+		// Assert
+		armedForMiddle.Should().NotBeNull(
+			because: "registering the first worker must arm the deadline at all: an unarmed registry reaps only when somebody happens to call, which is the defect");
+		armedForMiddle!.Value.Should().BeCloseTo(TimeSpan.FromMinutes(20), TimeSpan.FromSeconds(5),
+			because: "the only outstanding expiry is this worker's, so that is when the registry must next wake");
+		armedForNearest!.Value.Should().BeCloseTo(TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(5),
+			because: "a nearer expiry must PULL the deadline in — a registry that kept the old one would leave the new worker holding its slot for the fifteen minutes between the two bounds");
+		armedForFurthest!.Value.Should().BeCloseTo(TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(5),
+			because: "a later expiry must not push the deadline out, or one long-lived worker would postpone the reaping of every shorter-lived one behind it");
+
+		// Cleanup — these entries were built for the schedule, not for a worker, so they are released
+		// here rather than by a sweep.
+		await middle.Entry.ReleaseAsync();
+		await nearest.Entry.ReleaseAsync();
+		await furthest.Entry.ReleaseAsync();
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Category("Unit")]
+	[Description("A disposed registry runs no deadline callback: its timer is disposed and the deadline it was armed for passes with nothing reaped — a callback firing into a torn-down host is a crash on a thread with nobody above it to catch. Asserted on BOTH disposal paths, because which one the container takes is decided by how the host disposes its provider, not by this type.")]
+	public async Task Dispose_ShouldStopTheDeadlineTimer_SoNoCallbackRunsAfterTheRegistryIsGone(
+		bool disposeAsynchronously) {
+		// Arrange
+		ControllableClock clock = new();
+		SharedResourceReservation reservations = new();
+		StickyWorkerRegistry registry = new(_logger, clock);
+		RegistryEntryProbe probe = await CreateRegistryEntryAsync(
+			clock.GetUtcNow().AddMinutes(1), reservations);
+		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.ConfigurationBuild, "tenant|a"),
+			probe.Entry).Should().BeTrue(
+			because: "the deadline has to be armed before disposal, or 'nothing fired afterwards' would be true of a registry that never scheduled anything");
+		clock.OnlyTimer.ArmedDelay.Should().NotBeNull(
+			because: "the same reason stated as an observation rather than an assumption");
+
+		// Act
+		if (disposeAsynchronously) {
+			await registry.DisposeAsync();
+		}
+		else {
+			registry.Dispose();
+		}
+		clock.Advance(TimeSpan.FromMinutes(2));
+		// A callback that DID start would release on a background task, so settle briefly before
+		// asserting a negative. The wait can only produce a false PASS, never a false failure, and the
+		// structural assertion below is what carries the guarantee.
+		await Task.Delay(100);
+
+		// Assert
+		clock.OnlyTimer.IsDisposed.Should().BeTrue(
+			because: "disposal must take the timer with it: that is what makes 'no callback after disposal' structural rather than a race the flag happens to win");
+		probe.Disposals.Value.Should().Be(0,
+			because: "a deadline that passes after the registry is gone must reap nothing — the entries belong to a host that is shutting down, and touching them there is work on a half-torn-down object graph");
+		registry.Count.Should().Be(1,
+			because: "the registry must be inert after disposal rather than quietly emptying itself, so what happened is decidable from outside");
+
+		// Cleanup — nothing reaped this entry, by design, so this test owns its release.
+		await probe.Entry.ReleaseAsync();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deadline-driven reaping stays scoped to the ENTRY: the sweep ends the worker past its bound and no other, and a stale reap for that same worker, arriving after a successor has taken its key, leaves the successor running.")]
+	public async Task DeadlineTimer_ShouldReapOnlyTheExpiredEntry_WhenASuccessorTakesItsKey() {
+		// Arrange
+		ControllableClock clock = new();
+		SharedResourceReservation reservations = new();
+		using StickyWorkerRegistry registry = new(_logger, clock);
+		StickyWorkerKey contestedKey =
+			new(McpToolOperationFamily.ConfigurationBuild, $"tenant|{EnvironmentName}");
+		StickyWorkerKey bystanderKey = new(McpToolOperationFamily.Restart, "tenant|another-environment");
+		RegistryEntryProbe doomed = await CreateRegistryEntryAsync(
+			clock.GetUtcNow().AddMinutes(1), reservations);
+		RegistryEntryProbe bystander = await CreateRegistryEntryAsync(
+			clock.GetUtcNow().AddMinutes(45), reservations);
+		registry.TryRegister(contestedKey, doomed.Entry).Should().BeTrue();
+		registry.TryRegister(bystanderKey, bystander.Entry).Should().BeTrue();
+
+		// Act — the first worker's deadline passes with nobody calling, and the next operation on that
+		// same target takes the key it vacated.
+		clock.Advance(TimeSpan.FromMinutes(2));
+		await WaitUntilAsync(() => doomed.Disposals.Value == 1);
+		RegistryEntryProbe successor = await CreateRegistryEntryAsync(
+			clock.GetUtcNow().AddMinutes(45), reservations);
+		bool successorRegistered = registry.TryRegister(contestedKey, successor.Entry);
+		// The stale reap a caller holding the FINISHED worker issues — a poll that decided about the old
+		// entry before the sweep ran and acted on it afterwards.
+		await registry.ReapAsync(contestedKey, doomed.Entry);
+
+		// Assert
+		successorRegistered.Should().BeTrue(
+			because: "the sweep must free the KEY as well as the worker, or the next operation on that target would be refused by a registry still pointing at a worker it had already ended");
+		registry.TryReach(contestedKey, out StickyWorkerEntry reached).Should().BeTrue(
+			because: "the successor must remain reachable: a reap scoped to the key rather than to the entry would end whichever operation happened to hold it, which after a supersession is the NEW one");
+		reached.Should().BeSameAs(successor.Entry,
+			because: "and it must be the successor itself, so a later poll reaches the operation that is actually running");
+		successor.Disposals.Value.Should().Be(0,
+			because: "the damage a key-scoped reap does is not a dictionary edit but a killed operation, so the successor's PROCESS is the thing to state");
+		bystander.Disposals.Value.Should().Be(0,
+			because: "a worker inside its bound must survive a sweep aimed at another, or the deadline would be a periodic cull rather than a per-entry lifetime");
+		doomed.Disposals.Value.Should().Be(1,
+			because: "the expired worker must be released exactly once: the stale reap that followed must not double-release the entry it names");
+
+		// Cleanup
+		await successor.Entry.ReleaseAsync();
+		await bystander.Entry.ReleaseAsync();
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("A worker that reported completion stays reachable for the linger window, so the status poll the caller was told to make still reaches the process holding the operation record — while the target's configuration-build reservation is released at once, because a finished build must stop denying its environment immediately.")]
@@ -1196,14 +1405,17 @@ public sealed class StickyWorkerSupervisionTests {
 	}
 
 	private StickyFixture CreateFixture(int concurrencyCap, TimeSpan? completionLinger = null,
-		TimeSpan? handshakeDelay = null) {
+		TimeSpan? handshakeDelay = null, TimeProvider clock = null) {
 		// The delay is a STATED arrangement, not a sleep in a test: it holds a starter inside the
 		// spawn-to-register window long enough for a second starter of the same key to be there too, which
 		// is the only condition under which the lost race happens at all.
 		PipedContainment containment = new(handshakeDelay ?? TimeSpan.Zero);
 		WorkerProcessSupervisor supervisor = new(_logger, _processExecutor, containment, _pathProvider,
 			_staleWorkers, concurrencyCap, ShortQueueWaitBound);
-		StickyWorkerRegistry stickyWorkers = new(_logger);
+		// The clock is the registry's OWN seam: it judges expiry and schedules the lifetime deadline on
+		// it. Left null here, every existing case keeps the real clock and the real deadline, so nothing
+		// below is arranged by a fake unless it says so.
+		StickyWorkerRegistry stickyWorkers = new(_logger, clock);
 		SharedResourceReservation reservations = new();
 		StickyWorkerPoll poll = new(supervisor, stickyWorkers, _logger);
 		McpWorkerCallDispatcher dispatcher = new(supervisor, new WorkerChildTransportOwner(),
@@ -1697,6 +1909,185 @@ public sealed class StickyWorkerSupervisionTests {
 			if (result is not null) {
 				_fromChild.Writer.TryWrite(new JsonRpcResponse { Id = request.Id, Result = result });
 			}
+		}
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// Deadline-scheduling test seams
+	// ---------------------------------------------------------------------------------------------
+
+	/// <summary>
+	/// One hand-built registry entry and the only observation that says it was really ended.
+	/// </summary>
+	/// <param name="Entry">The entry.</param>
+	/// <param name="Disposals">
+	/// How often its lease was disposed — the ONE thing that kills the process and returns its admission
+	/// slot, so it is what a reap is asserted by rather than the dictionary having forgotten it.
+	/// </param>
+	private sealed record RegistryEntryProbe(StickyWorkerEntry Entry, StrongBox<int> Disposals);
+
+	/// <summary>
+	/// Builds a registered-shape sticky entry with a stated expiry, over a scripted transport and a
+	/// substituted lease.
+	/// </summary>
+	/// <param name="expiresAtUtc">The lifetime bound this entry carries.</param>
+	/// <param name="reservations">The reservation registry its release runs against.</param>
+	/// <returns>The entry and its disposal counter.</returns>
+	/// <remarks>
+	/// The scheduling cases turn on WHEN the registry acts, not on what a worker says, so a scripted
+	/// transport is the whole child they need. The piped fixture above is what proves the same behaviour
+	/// against real admission accounting.
+	/// </remarks>
+	private async Task<RegistryEntryProbe> CreateRegistryEntryAsync(DateTimeOffset expiresAtUtc,
+		ISharedResourceReservation reservations) {
+		WorkerMcpRelay relay = new(_logger);
+		WorkerRelaySession session = await relay.OpenAsync(new ScriptedPollTransport(),
+			new RecordingParentSession(), new WorkerRelayOptions { LivenessProbeTimeout = ProbeTimeout },
+			CancellationToken.None);
+		IWorkerLease lease = Substitute.For<IWorkerLease>();
+		lease.HasExited.Returns(false);
+		StrongBox<int> disposals = new(0);
+		lease.When(disposed => disposed.Dispose()).Do(_ => disposals.Value++);
+		return new RegistryEntryProbe(
+			new StickyWorkerEntry(lease, session, new WorkerStandardErrorDrain(null, 1024), expiresAtUtc,
+				reservation: null, reservations, _logger),
+			disposals);
+	}
+
+	/// <summary>
+	/// A clock that tracks real time through an OFFSET the test moves, and whose timers fire only when it
+	/// moves them.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Offset-based rather than frozen on purpose. The registry judges expiry against this clock, but
+	/// <see cref="StickyWorkerEntry.MarkCompleted"/> stamps its linger against the real one, so a clock
+	/// frozen at construction would place every completion in its own future and a case about lingers
+	/// would pass for the wrong reason. Tracking real time keeps the two agreed to within the
+	/// milliseconds a test takes, while <see cref="Advance"/> still moves half an hour in no time at all.
+	/// </para>
+	/// <para>
+	/// Callbacks are invoked with NO lock of this type held, which is what keeps the fake out of the lock
+	/// order: the registry arms the timer while holding its own gate, so a fake that fired callbacks
+	/// under its own lock would deadlock the very code it is here to observe.
+	/// </para>
+	/// </remarks>
+	private sealed class ControllableClock : TimeProvider {
+
+		private readonly List<ControllableTimer> _timers = [];
+		private readonly object _gate = new();
+		private long _offsetTicks;
+
+		public override DateTimeOffset GetUtcNow() =>
+			DateTimeOffset.UtcNow + TimeSpan.FromTicks(Interlocked.Read(ref _offsetTicks));
+
+		public override ITimer CreateTimer(TimerCallback callback, object state, TimeSpan dueTime,
+			TimeSpan period) {
+			ControllableTimer timer = new(this, callback, state);
+			lock (_gate) {
+				_timers.Add(timer);
+			}
+			timer.Change(dueTime, period);
+			return timer;
+		}
+
+		/// <summary>Gets the single timer the registry created.</summary>
+		internal ControllableTimer OnlyTimer {
+			get {
+				lock (_gate) {
+					return _timers.Single();
+				}
+			}
+		}
+
+		/// <summary>Moves the clock forward and fires every timer whose deadline that passed.</summary>
+		/// <param name="delta">How far forward.</param>
+		internal void Advance(TimeSpan delta) {
+			Interlocked.Add(ref _offsetTicks, delta.Ticks);
+			ControllableTimer[] timers;
+			lock (_gate) {
+				timers = [.. _timers];
+			}
+			DateTimeOffset now = GetUtcNow();
+			foreach (ControllableTimer timer in timers) {
+				timer.FireIfDue(now);
+			}
+		}
+	}
+
+	/// <summary>A one-shot timer that fires only when its clock is advanced past its deadline.</summary>
+	private sealed class ControllableTimer : ITimer {
+
+		private readonly ControllableClock _clock;
+		private readonly TimerCallback _callback;
+		private readonly object _state;
+		private readonly object _gate = new();
+		private DateTimeOffset? _dueAt;
+		private TimeSpan? _armedDelay;
+		private bool _disposed;
+
+		internal ControllableTimer(ControllableClock clock, TimerCallback callback, object state) {
+			_clock = clock;
+			_callback = callback;
+			_state = state;
+		}
+
+		/// <summary>Gets the delay this timer was last armed with, or null when it is disarmed.</summary>
+		internal TimeSpan? ArmedDelay {
+			get {
+				lock (_gate) {
+					return _armedDelay;
+				}
+			}
+		}
+
+		/// <summary>Gets a value indicating whether this timer has been disposed.</summary>
+		internal bool IsDisposed {
+			get {
+				lock (_gate) {
+					return _disposed;
+				}
+			}
+		}
+
+		public bool Change(TimeSpan dueTime, TimeSpan period) {
+			DateTimeOffset now = _clock.GetUtcNow();
+			lock (_gate) {
+				if (_disposed) {
+					return false;
+				}
+				if (dueTime == Timeout.InfiniteTimeSpan) {
+					_dueAt = null;
+					_armedDelay = null;
+					return true;
+				}
+				_dueAt = now + dueTime;
+				_armedDelay = dueTime;
+				return true;
+			}
+		}
+
+		public void Dispose() {
+			lock (_gate) {
+				_disposed = true;
+				_dueAt = null;
+				_armedDelay = null;
+			}
+		}
+
+		public ValueTask DisposeAsync() {
+			Dispose();
+			return ValueTask.CompletedTask;
+		}
+
+		internal void FireIfDue(DateTimeOffset now) {
+			lock (_gate) {
+				if (_disposed || _dueAt is null || now < _dueAt.Value) {
+					return;
+				}
+				_dueAt = null;
+			}
+			_callback(_state);
 		}
 	}
 }

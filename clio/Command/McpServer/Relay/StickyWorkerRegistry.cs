@@ -187,16 +187,21 @@ public interface IStickyWorkerRegistry {
 	/// <returns>How many entries were reaped.</returns>
 	/// <remarks>
 	/// <para>
-	/// Called on the dispatch path rather than from a timer: a timer would be a second lifetime to reason
-	/// about in a host that may be idle for hours, and the only thing that CARES whether a stale worker is
-	/// still holding a slot or a reservation is the next call that needs one.
+	/// <b>The registry sweeps itself AT THE DEADLINE; this is the second caller, not the only one.</b> An
+	/// earlier version was reached from the dispatch head alone, which made the lifetime bound conditional
+	/// on more sticky traffic arriving: with none, a worker that had finished — or one that simply hung —
+	/// outlived both its linger and its hard bound indefinitely, holding its process, its authenticated
+	/// Creatio session and its admission slot. On a host whose sticky ceiling is one or two, one idle
+	/// expired worker then denied every later long operation. A bound that only takes effect if somebody
+	/// happens to call again is a hint.
 	/// </para>
 	/// <para>
-	/// <b>AWAITED, not fire-and-forget.</b> The caller is about to ask for the very admission slot this
-	/// sweep returns, and a release that ran in the background would race it: the call that just freed
-	/// capacity would be refused for want of it, intermittently, on a loaded host. Reaping from the READ
-	/// LOOP is the case that must stay off-thread, and that one goes through
-	/// <see cref="SignalCompleted"/> instead.
+	/// <b>AWAITED here, not fire-and-forget.</b> The dispatch-path caller is about to ask for the very
+	/// admission slot this sweep returns, and a release that ran in the background would race it: the call
+	/// that just freed capacity would be refused for want of it, intermittently, on a loaded host. It is
+	/// kept beside the timer rather than replaced by it for exactly that reason — the timer removes the
+	/// stranding, the dispatch-head call removes the race. Reaping from the READ LOOP is the case that
+	/// must stay off-thread, and that one goes through <see cref="SignalCompleted"/> instead.
 	/// </para>
 	/// </remarks>
 	ValueTask<int> ReapExpiredAsync();
@@ -410,19 +415,41 @@ public sealed class StickyWorkerEntry {
 }
 
 /// <inheritdoc cref="IStickyWorkerRegistry"/>
-public sealed class StickyWorkerRegistry : IStickyWorkerRegistry {
+public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, IAsyncDisposable {
 
 	private readonly Dictionary<StickyWorkerKey, StickyWorkerEntry> _entries = [];
 	private readonly object _gate = new();
 	private readonly ILogger _logger;
+	private readonly TimeProvider _time;
+	private readonly ITimer _deadline;
+
+	/// <summary>
+	/// The sweeps this registry has scheduled, CHAINED rather than run in parallel, so disposal has one
+	/// task to await and a deadline arriving mid-sweep is queued behind it instead of dropped.
+	/// </summary>
+	private Task _sweeps = Task.CompletedTask;
+
+	private bool _disposed;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="StickyWorkerRegistry"/> class.
 	/// </summary>
 	/// <param name="logger">Host logger; reap diagnostics go here, never to standard output.</param>
+	/// <param name="timeProvider">
+	/// The clock expiry is judged against and the deadline is scheduled on. Optional so the container
+	/// supplies the registered <see cref="TimeProvider"/> (BindingsModule) and a test can supply a
+	/// controllable one; <see cref="TimeProvider.System"/> when absent.
+	/// </param>
 	/// <exception cref="ArgumentNullException"><paramref name="logger"/> is <see langword="null"/>.</exception>
-	public StickyWorkerRegistry(ILogger logger) =>
+	public StickyWorkerRegistry(ILogger logger, TimeProvider timeProvider = null) {
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
+		_time = timeProvider ?? TimeProvider.System;
+		// Created DISARMED. The callback closes over an instance this constructor has not finished
+		// building, and an infinite due time is what makes it unreachable until something is registered
+		// rather than merely unlikely to be reached.
+		_deadline = _time.CreateTimer(OnDeadlineReached, state: null,
+			Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+	}
 
 	/// <inheritdoc/>
 	public int Count {
@@ -442,6 +469,7 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry {
 				return false;
 			}
 			_entries[key] = entry;
+			RearmLocked();
 			return true;
 		}
 	}
@@ -452,11 +480,12 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry {
 		StickyWorkerEntry dead = null;
 		lock (_gate) {
 			if (_entries.TryGetValue(key, out StickyWorkerEntry found)) {
-				if (found.IsLive(DateTimeOffset.UtcNow)) {
+				if (found.IsLive(_time.GetUtcNow())) {
 					entry = found;
 					return true;
 				}
 				_entries.Remove(key);
+				RearmLocked();
 				dead = found;
 			}
 		}
@@ -472,6 +501,7 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry {
 		lock (_gate) {
 			if (_entries.TryGetValue(key, out StickyWorkerEntry registered) && ReferenceEquals(registered, entry)) {
 				_entries.Remove(key);
+				RearmLocked();
 			}
 		}
 		// Released even when the key now holds somebody else: this entry is then owned by nobody, and the
@@ -490,25 +520,41 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry {
 			return false;
 		}
 		lock (_gate) {
-			return _entries.TryGetValue(key, out StickyWorkerEntry registered)
-				&& ReferenceEquals(registered, entry)
-				&& registered.MarkCompleted(linger);
+			if (!_entries.TryGetValue(key, out StickyWorkerEntry registered)
+				|| !ReferenceEquals(registered, entry)
+				|| !registered.MarkCompleted(linger)) {
+				return false;
+			}
+			// Completion moved this worker's expiry DOWN, past the deadline the registry is currently
+			// armed for. Re-arming here is what makes the linger a window the registry acts on rather
+			// than a number written into an entry: without it the worker keeps its admission slot until
+			// the hard bound — half an hour after a build that finished in five minutes.
+			RearmLocked();
+			return true;
 		}
 	}
 
 	/// <inheritdoc/>
 	public async ValueTask<int> ReapExpiredAsync() {
 		List<(StickyWorkerKey Key, StickyWorkerEntry Entry)> expired = [];
-		DateTimeOffset utcNow = DateTimeOffset.UtcNow;
+		DateTimeOffset utcNow = _time.GetUtcNow();
 		lock (_gate) {
 			foreach (KeyValuePair<StickyWorkerKey, StickyWorkerEntry> pair in _entries) {
 				if (!pair.Value.IsLive(utcNow)) {
 					expired.Add((pair.Key, pair.Value));
 				}
 			}
-			foreach ((StickyWorkerKey key, _) in expired) {
-				_entries.Remove(key);
+			foreach ((StickyWorkerKey key, StickyWorkerEntry entry) in expired) {
+				// Entry-scoped, like ReapAsync. Collection and removal share this lock today, so no
+				// successor can slip in between them; the check states the invariant locally so that
+				// splitting the two later cannot quietly turn this into a key-scoped reap that ends the
+				// operation which just replaced the expired one.
+				if (_entries.TryGetValue(key, out StickyWorkerEntry registered)
+					&& ReferenceEquals(registered, entry)) {
+					_entries.Remove(key);
+				}
 			}
+			RearmLocked();
 		}
 		foreach ((StickyWorkerKey key, StickyWorkerEntry entry) in expired) {
 			try {
@@ -521,6 +567,153 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry {
 			}
 		}
 		return expired.Count;
+	}
+
+	/// <summary>
+	/// Stops the registry's own scheduling.
+	/// </summary>
+	/// <remarks>
+	/// <b>The flag goes up BEFORE the timer comes down, and that order is the guarantee.</b> Both the
+	/// callback and the sweep it starts test the flag under <see cref="_gate"/>, so a callback that had
+	/// already begun when disposal ran does nothing — the promise does not rest on what a particular
+	/// <see cref="ITimer"/> implementation does about in-flight callbacks. Disposing the timer is what
+	/// stops a new one from starting.
+	/// </remarks>
+	public void Dispose() {
+		lock (_gate) {
+			if (_disposed) {
+				return;
+			}
+			_disposed = true;
+		}
+		_deadline.Dispose();
+	}
+
+	/// <summary>
+	/// Stops the registry's own scheduling and awaits the sweep that was already running.
+	/// </summary>
+	/// <returns>A task that completes when no sweep this registry scheduled is still running.</returns>
+	/// <remarks>
+	/// The chain is read AFTER the timer has been disposed, because the timer callback is the only thing
+	/// that ever appends to it: reading it earlier could miss a sweep queued by a callback that was
+	/// running at the time. The entries themselves are deliberately NOT reaped here — their leases are
+	/// owned for the life of the operation, and ending live long operations because a container is being
+	/// torn down is a decision for the shutdown path, not for a disposal that only stops a timer.
+	/// </remarks>
+	public async ValueTask DisposeAsync() {
+		bool alreadyDisposed;
+		lock (_gate) {
+			alreadyDisposed = _disposed;
+			_disposed = true;
+		}
+		if (!alreadyDisposed) {
+			await _deadline.DisposeAsync().ConfigureAwait(false);
+		}
+		Task sweeps;
+		lock (_gate) {
+			sweeps = _sweeps;
+		}
+		try {
+			await sweeps.ConfigureAwait(false);
+		}
+		catch (Exception exception) {
+			// A faulted sweep must not throw out of container disposal, where the exception would be
+			// attributed to whatever the host was shutting down.
+			_logger.WriteWarning(
+				"A sticky MCP worker sweep failed while the registry was being disposed: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		}
+	}
+
+	/// <summary>
+	/// Re-arms the lifetime deadline against the EARLIEST outstanding expiry.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>Deadline-driven rather than polled, because the expiries are known exactly.</b> Every entry
+	/// carries the instant it must be gone by, so a fixed interval would be a choice between reaping late
+	/// (a slot held for up to one period past the bound) and waking a host that is idle for hours purely
+	/// to look at a dictionary. Scheduling against the earliest expiry costs one timer, wakes only when
+	/// something is actually due, and re-arms on the four events that can change what "earliest" means:
+	/// an entry added, an entry superseded or reaped, a completion moving an expiry DOWN, and the sweep
+	/// itself.
+	/// </para>
+	/// <para>
+	/// The one honest caveat: a wall-clock deadline can fire LATE — a suspended host, a loaded thread
+	/// pool. That only delays a reap, never causes an early one, because the sweep re-tests
+	/// <see cref="StickyWorkerEntry.IsLive"/> against the clock rather than trusting the timer.
+	/// </para>
+	/// <para>Callers hold <see cref="_gate"/>.</para>
+	/// </remarks>
+	private void RearmLocked() {
+		if (_disposed) {
+			return;
+		}
+		DateTimeOffset? earliest = null;
+		foreach (StickyWorkerEntry entry in _entries.Values) {
+			DateTimeOffset expiry = entry.ExpiresAtUtc;
+			if (earliest is null || expiry < earliest.Value) {
+				earliest = expiry;
+			}
+		}
+		if (earliest is null) {
+			_deadline.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+			return;
+		}
+		TimeSpan delay = earliest.Value - _time.GetUtcNow();
+		_deadline.Change(delay > TimeSpan.Zero ? delay : TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+	}
+
+	/// <summary>
+	/// Runs when the earliest outstanding lifetime bound is reached.
+	/// </summary>
+	/// <param name="state">Unused.</param>
+	/// <remarks>
+	/// <b>Nothing may escape this method.</b> It runs on a timer thread with no caller above it, so an
+	/// exception here is an unhandled exception on a pool thread — it ends the MCP host, which is a far
+	/// worse outcome than the stale worker the sweep was going to reap.
+	/// </remarks>
+	private void OnDeadlineReached(object state) {
+		try {
+			lock (_gate) {
+				if (_disposed) {
+					return;
+				}
+				_sweeps = _sweeps.ContinueWith(_ => SweepExpiredAsync(), CancellationToken.None,
+					TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+			}
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(
+				"Scheduling a sticky MCP worker lifetime sweep failed: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		}
+	}
+
+	/// <summary>
+	/// Reaps whatever the deadline was armed for, off the timer thread.
+	/// </summary>
+	/// <returns>A task that completes when the sweep is done.</returns>
+	/// <remarks>
+	/// Off the timer thread because a reap closes the worker's relay session, which joins its read loop:
+	/// blocking a pool thread on that is exactly what the drain and the session were built to avoid.
+	/// </remarks>
+	private async Task SweepExpiredAsync() {
+		bool disposed;
+		lock (_gate) {
+			disposed = _disposed;
+		}
+		if (disposed) {
+			return;
+		}
+		try {
+			await ReapExpiredAsync().ConfigureAwait(false);
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(
+				"Sweeping expired sticky MCP workers failed: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		}
 	}
 
 	/// <summary>
