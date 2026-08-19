@@ -316,32 +316,32 @@ internal static class PageBodyAstLinter {
 	}
 
 	// Rule 12: a `crt.HandleViewModelAttributeChangeRequest` handler entry that is NOT scoped to the
-	// triggering attribute but writes a view-model attribute through `$context.set(...)`. This request
+	// triggering attribute but writes a view-model attribute through a `$context` set call. This request
 	// fires on EVERY attribute change, so an unscoped handler that writes an attribute re-enters on its
 	// OWN write — with a value that is no longer the one it expected — and typically clears the field it
 	// just set (or loops). The canonical scope is an early attributeName guard that returns through next
 	// when the changed attribute is not the target (page-schema-handlers guidance). requestArgumentPropertyName
 	// does NOT scope this handler — it is silently ignored, which is exactly the trap this rule surfaces. No
 	// regex counterpart in SchemaValidationService / SchemaHandlerValidationService — the self-retrigger
-	// footgun is a data-flow shape, not a token match. Warning severity: the page still saves and renders;
-	// the field is just wiped at runtime.
+	// footgun is a data-flow shape, not a token match. Warning severity — the page still saves and renders,
+	// and the field is just wiped at runtime.
 	//
-	// Keyed off the handler entry ObjectExpression: `request` === the target literal, a `handler` function
-	// (arrow OR shorthand method), and — inside that function's subtree — a `$context.set(...)` write with NO
-	// `attributeName` reference. Referencing `attributeName` anywhere in the body (member access
-	// `request.attributeName`, destructuring, a comparison, or a COMPUTED bracket access
-	// `request["attributeName"]`) is treated as "author is scope-aware" and suppresses the warning. The bracket
-	// form is matched as a computed member access on the `"attributeName"` property literal, NOT as a bare
-	// `"attributeName"` string anywhere — an incidental literal must not suppress the warning.
+	// Keyed off the handler entry ObjectExpression: the request key equals the target literal, a handler
+	// function (arrow OR shorthand method), and — inside that function's subtree — a `$context` set-call write
+	// with NO attributeName reference. Referencing attributeName anywhere in the body (member access such as
+	// request dot attributeName, destructuring, a comparison, or a COMPUTED bracket access on the
+	// attributeName key) is treated as "author is scope-aware" and suppresses the warning. The bracket form is
+	// matched as a computed member access on the attributeName property literal, NOT as a bare attributeName
+	// string anywhere — an incidental literal must not suppress the warning.
 	//
 	// Heuristic limits (all acceptable for a non-blocking Warning; NOT "zero false positives"):
-	//   - False negative: the `attributeName` reference is a scope-awareness PROXY, not proof the write is
-	//     guarded — a handler reading `attributeName` for an unrelated purpose while writing UNCONDITIONALLY is
+	//   - False negative: the attributeName reference is a scope-awareness PROXY, not proof the write is
+	//     guarded — a handler reading attributeName for an unrelated purpose while writing UNCONDITIONALLY is
 	//     missed (pinned by Lint_ShouldNotWarn_WhenAttributeNameReferencedButWriteUnconditional). A write via a
-	//     local `$context` alias is also missed (see IsContextSetCall).
-	//   - False positive: a guard hidden behind a helper call (`if (!isTarget(request)) return ...`) is not
-	//     seen — detecting it needs inter-procedural data-flow analysis — so such a scoped handler is still
-	//     warned. The proxy trades these residuals for catching the common shapes.
+	//     local $context alias is also missed (see IsContextSetCall).
+	//   - False positive: a guard hidden behind a helper call — an early return driven by a helper predicate on
+	//     request — is not seen, since detecting it needs inter-procedural data-flow analysis, so such a scoped
+	//     handler is still warned. The proxy trades these residuals for catching the common shapes.
 	private static void CheckUnscopedAttributeChangeHandler(ObjectExpression obj, int depth, List<PageBodyLintFinding> findings) {
 		Property requestProp = null;
 		Property handlerProp = null;
