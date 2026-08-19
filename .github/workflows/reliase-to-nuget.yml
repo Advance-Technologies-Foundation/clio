@@ -40,11 +40,22 @@ jobs:
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+      - name: Verify required .NET SDKs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installedSdks = @(dotnet --list-sdks)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list installed .NET SDKs (exit code $LASTEXITCODE)."
+          }
+
+          foreach ($majorVersion in 8, 10) {
+            if (-not ($installedSdks -match "^$majorVersion\.\d+\.\d+\s")) {
+              throw "Required .NET $majorVersion SDK is not installed on this self-hosted runner. Installed SDKs: $($installedSdks -join '; ')"
+            }
+          }
+
+          Write-Host "Required .NET 8 and .NET 10 SDKs are already installed."
 
       - name: Extract Version from Tag
         id: extract_version

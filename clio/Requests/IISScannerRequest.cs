@@ -449,9 +449,28 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		}
 		XElement[] siteApps = [.. apps.Where(app => string.Equals(app.Attribute("SITE.NAME")!.Value, siteName,
 			StringComparison.OrdinalIgnoreCase))];
-		return siteApps.Length == 1 && string.Equals(siteApps[0].Attribute("APP.NAME")!.Value, $"{siteName}/",
-			StringComparison.OrdinalIgnoreCase);
+
+		// Deleting a non-nested target removes the whole site (RemoveSite -> "appcmd delete site"), which
+		// takes every application under it. The gate therefore asks whether the site holds any SIBLING
+		// application, matching the documented contract "can be removed without siblings"
+		// (docs/commands/uninstall-creatio.md). Creatio itself registers TWO applications per site - the
+		// root loader "<site>/" and the nested "<site>/0" - so requiring a single application rejected
+		// every Creatio environment and left uninstall-creatio unable to remove any Creatio IIS site.
+		//
+		// Ownership is decided by application NAME, not by application pool: an application deliberately
+		// added under a Creatio site is more likely to sit in that site's own pool than in a foreign one,
+		// and pool assignment is freely mutable, so it encodes nothing about ownership. A pool shared with
+		// another site is deliberately NOT refused here - the docs promise that uninstall then removes only
+		// the target and leaves the shared pool and its Windows profile intact, which CanDeleteAppPool and
+		// TryDeleteAppPoolIfUnused enforce downstream.
+		return siteApps.Any(app => IsCreatioSiteApplication(app, siteName, nested: false))
+			&& siteApps.All(app => IsCreatioSiteApplication(app, siteName, nested: false)
+				|| IsCreatioSiteApplication(app, siteName, nested: true));
 	}
+
+	private static bool IsCreatioSiteApplication(XElement app, string siteName, bool nested) =>
+		string.Equals(app.Attribute("APP.NAME")!.Value, nested ? $"{siteName}/0" : $"{siteName}/",
+			StringComparison.OrdinalIgnoreCase);
 
 	internal static bool IsIisTargetAbsent(string appsXml, string siteName) {
 		if (!TryReadCompleteApps(appsXml, out XElement[] apps) || string.IsNullOrWhiteSpace(siteName)) {

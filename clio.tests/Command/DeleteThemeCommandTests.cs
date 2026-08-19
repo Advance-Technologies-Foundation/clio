@@ -48,12 +48,12 @@ public sealed class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOption
 		StubDeleteThemeSuccess();
 
 		// Act
-		_command.Execute(new DeleteThemeOptions { Id = "ocean-theme" });
+		_command.Execute(new DeleteThemeOptions { Id = "d53a816b-65ed-4b5b-ad3b-f739280add45" });
 
 		// Assert
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Is<string>(u => u == "http://localhost/0/ServiceModel/ThemeService.svc/DeleteTheme"),
-			Arg.Is<string>(b => b.Contains("\"id\":\"ocean-theme\"")), 100_000, 3, 1);
+			Arg.Is<string>(b => b.Contains("\"id\":\"d53a816b-65ed-4b5b-ad3b-f739280add45\"")), 100_000, 3, 1);
 	}
 
 	[Test, Category("Unit")]
@@ -64,26 +64,26 @@ public sealed class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOption
 		StubDeleteThemeSuccess();
 
 		// Act
-		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "ocean-theme" });
+		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "d53a816b-65ed-4b5b-ad3b-f739280add45" });
 
 		// Assert
 		exitCode.Should().Be(0, because: "a success=true response means the theme was deleted");
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Is<string>(u => u == "http://localhost/ServiceModel/ThemeService.svc/DeleteTheme"),
-			Arg.Is<string>(b => b.Contains("\"id\":\"ocean-theme\"")), 100_000, 3, 1);
+			Arg.Is<string>(b => b.Contains("\"id\":\"d53a816b-65ed-4b5b-ad3b-f739280add45\"")), 100_000, 3, 1);
 	}
 
 	[Test, Category("Unit")]
-	[Description("Fails fast without any HTTP call when the id violates the format rule.")]
-	public void DeleteTheme_ShouldFailFastWithoutHttp_WhenIdInvalid() {
+	[Description("Fails fast without any HTTP call when the id is not a GUID — a readable slug was valid under the pre-ENG-91018 rule, so this pins the tightened contract on the delete path.")]
+	public void DeleteTheme_ShouldFailFastWithoutHttp_WhenIdIsNotAGuid() {
 		// Act
-		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "bad id" });
+		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "ocean-theme" });
 
 		// Assert
-		exitCode.Should().Be(1, because: "an invalid id is rejected before any service call");
+		exitCode.Should().Be(1, because: "a non-GUID id is rejected before any service call");
 		_applicationClient.DidNotReceive().ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("id")));
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("GUID")));
 	}
 
 	[Test, Category("Unit")]
@@ -96,7 +96,7 @@ public sealed class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOption
 			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"InvalidOperationException\",\"message\":\"theme not found\"}}");
 
 		// Act
-		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "ghost-theme" });
+		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0" });
 
 		// Assert
 		exitCode.Should().Be(1, because: "delete is not idempotent — an unknown id surfaces as a failure");
@@ -113,7 +113,7 @@ public sealed class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOption
 			.Returns("OK");
 
 		// Act
-		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "ocean-theme" });
+		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "d53a816b-65ed-4b5b-ad3b-f739280add45" });
 
 		// Assert
 		exitCode.Should().Be(1, because: "a non-JSON body signals the delete did not reach ThemeService and must surface as a failure");
@@ -130,7 +130,7 @@ public sealed class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOption
 			.Returns(string.Empty);
 
 		// Act
-		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "ocean-theme" });
+		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "d53a816b-65ed-4b5b-ad3b-f739280add45" });
 
 		// Assert
 		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful delete");
