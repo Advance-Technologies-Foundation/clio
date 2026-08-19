@@ -92,7 +92,10 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 			// in the clio config, synthesize a non-zero sequence from libraryVersion so ANY branch/tag
 			// loads for local testing without editing the knowledge repo. Default (flag off) keeps stock
 			// behavior: ValidateEnvelope rejects a missing sequence. Downstream identity/upgrade logic
-			// then sees a real monotonic number.
+			// then sees a non-zero, per-branch-monotonic number (see DeriveSequenceFromLibraryVersion for
+			// the ordering caveats). NOTE: the synthesized value is a deterministic function of
+			// libraryVersion, so re-loading edited content WITHOUT bumping libraryVersion is rejected as
+			// an active-sequence content mismatch — bump libraryVersion (or restart) between iterations.
 			if (manifest.Sequence == 0 && _capabilities.AllowUnsequencedGitBundles) {
 				manifest.Sequence = DeriveSequenceFromLibraryVersion(manifest.LibraryVersion);
 			}
@@ -186,15 +189,27 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 		}
 	}
 
-	// LOCAL TEST PATCH (not for release): pack libraryVersion (e.g. "1.13.21") into a non-zero, roughly
-	// monotonic sequence number so a knowledge branch/tag that omits the explicit "sequence" field still
-	// loads. Each dotted component is clamped to 3 digits: "1.13.21" -> ((1*1000+13)*1000+21) = 1013021.
+	// Cap the number of version components folded into the synthesized sequence. Each component
+	// contributes up to 3 digits (factor 1000), so four components stay well within ulong
+	// (max ~1e12); folding an unbounded segment count would overflow and wrap to a wrong value.
+	private const int MaxSequenceComponents = 4;
+
+	// LOCAL DEV AID (gated off by default via the 'knowledge-allow-unsequenced' flag): pack
+	// libraryVersion (e.g. "1.13.21") into a non-zero sequence so a knowledge branch/tag that omits
+	// the explicit "sequence" field still loads. Each dotted component is clamped to 3 digits and only
+	// the first MaxSequenceComponents are used: "1.13.21" -> ((1*1000+13)*1000+21) = 1013021. This is
+	// monotonic ONLY across versions that share the same shape (fixed segment count, every component
+	// < 1000) — enough for iterating a single local branch, which is the only supported use.
 	private static ulong DeriveSequenceFromLibraryVersion(string libraryVersion) {
 		if (string.IsNullOrWhiteSpace(libraryVersion)) {
 			return 1;
 		}
 		ulong accumulated = 0;
+		int consumed = 0;
 		foreach (string part in libraryVersion.Split('.')) {
+			if (consumed == MaxSequenceComponents) {
+				break;
+			}
 			ulong component = 0;
 			foreach (char character in part) {
 				if (character < '0' || character > '9') {
@@ -207,6 +222,7 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 				}
 			}
 			accumulated = accumulated * 1000 + component;
+			consumed++;
 		}
 		return accumulated == 0 ? 1 : accumulated;
 	}
