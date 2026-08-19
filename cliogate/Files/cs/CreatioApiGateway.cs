@@ -2,6 +2,7 @@
 using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -760,6 +761,9 @@ namespace cliogate.Files.cs
 		/// <param name="candidate">Method being considered.</param>
 		/// <param name="arguments">Arguments available to pass, in declaration order.</param>
 		/// <returns>The argument array to invoke with, or <c>null</c> when the method does not match.</returns>
+		[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+			Justification = "null means 'this candidate does not match'; an empty array is the legitimate call "
+				+ "argument list of a parameterless overload, so collapsing the two would invoke the wrong method.")]
 		private static object[] MatchArguments(MethodInfo candidate, object[] arguments){
 			ParameterInfo[] parameters = candidate.GetParameters();
 			if (parameters.Length > arguments.Length) {

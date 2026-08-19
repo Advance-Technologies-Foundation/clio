@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using Clio.Common;
@@ -228,6 +229,10 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 	/// <c>System.Text.Json</c> therefore refuses — every real payload would fail to parse and every projection
 	/// would be silently skipped. Newtonsoft accepts it.
 	/// </remarks>
+	[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+		Justification = "null means 'the payload is not JSON at all', which every caller branches on; an empty "
+			+ "JObject would be indistinguishable from a valid payload with no members and would make the "
+			+ "projections silently wrong instead of skipped.")]
 	private static JObject ParsePayload(string schemaData) {
 		try {
 			return JObject.Parse(schemaData);
