@@ -471,8 +471,81 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("A crt.HandleViewModelAttributeChangeRequest handler scoped declaratively via condition.attributeName must NOT raise the warning even when it writes an attribute")]
-	public void Lint_ShouldNotWarn_WhenAttributeChangeHandlerScopedByCondition() {
+	[Description("An unscoped attribute-change handler written as a shorthand METHOD (`async handler(request, next) {}` rather than `handler: (request, next) => {}`) that writes an attribute must still raise the warning — the entry lookup must accept method-form properties or the genuine ENG-95557 bug is missed when the author uses method syntax")]
+	public void Lint_ShouldWarn_WhenHandlerIsShorthandMethodAndUnscoped() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { converters: {}, validators: {}, handlers: [ { " +
+			"request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+			"async handler(request, next) { await request.$context.set(\"UsrCountryCode\", \"38\"); return next?.handle(request); } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite && f.Severity == LintSeverity.Warning,
+			because: "shorthand-method and init-property handler forms are semantically identical; the rule must not go blind to the self-retrigger footgun just because the author used method syntax");
+	}
+
+	[Test]
+	[Description("A crt.HandleViewModelAttributeChangeRequest handler scoped by an in-body BRACKET-access guard `request[\"attributeName\"]` must NOT raise the warning — the scope-awareness signal is a COMPUTED member access whose property literal is \"attributeName\", which the scan must treat like the identifier form")]
+	public void Lint_ShouldNotWarn_WhenGuardUsesBracketAccessAttributeName() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { converters: {}, validators: {}, handlers: [ { " +
+			"request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+			"handler: async (request, next) => { if (request[\"attributeName\"] !== \"UsrPhoneNumber\") { return next?.handle(request); } " +
+			"await request.$context.set(\"UsrCountryCode\", \"38\"); return next?.handle(request); } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite,
+			because: "request[\"attributeName\"] is the same scope-aware guard as request.attributeName, just via bracket access; the scan must recognise the computed member or it would falsely flag a correctly-scoped handler");
+	}
+
+	[Test]
+	[Description("Specificity of the bracket-access signal: a handler that references a DIFFERENT computed bracket key `request[\"someOtherField\"]` (not attributeName) and writes via $context.set is NOT scope-aware and MUST still raise the warning — proves the computed-member match is anchored to the \"attributeName\" property literal and does not suppress on an unrelated bracket key")]
+	public void Lint_ShouldWarn_WhenBracketAccessKeyIsNotAttributeNameAndWriteUnscoped() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { converters: {}, validators: {}, handlers: [ { " +
+			"request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+			"handler: async (request, next) => { const other = request[\"someOtherField\"]; " +
+			"await request.$context.set(\"UsrCountryCode\", other); return next?.handle(request); } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite && f.Severity == LintSeverity.Warning,
+			because: "the scope-awareness signal is a computed member access on the \"attributeName\" property specifically; a bracket read of an unrelated key does not scope the handler, so the unscoped write must still warn");
+	}
+
+	[Test]
+	[Description("Regression lock for the computed-member narrowing: an incidental \"attributeName\" STRING LITERAL in a non-guard position — here the write target `$context.set(\"attributeName\", ...)` — with NO request.attributeName / request[\"attributeName\"] guard MUST still raise the warning. This fails under the earlier bare-`Literal{Value:\"attributeName\"}`-anywhere match (which wrongly suppressed) and passes under the computed-MemberExpression match, so it pins the narrowing against a silent revert")]
+	public void Lint_ShouldWarn_WhenIncidentalAttributeNameLiteralButWriteUnscoped() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { converters: {}, validators: {}, handlers: [ { " +
+			"request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+			"handler: async (request, next) => { await request.$context.set(\"attributeName\", request.value); return next?.handle(request); } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite && f.Severity == LintSeverity.Warning,
+			because: "a bare \"attributeName\" string literal used as a $context.set target is NOT a scope guard; only a computed member access request[\"attributeName\"] (or request.attributeName) marks scope-awareness, so this unscoped write must warn — pinning the narrowing so a revert to the bare-literal match turns this test red");
+	}
+
+	[Test]
+	[Description("The removed condition suppressor stays removed: a handler carrying a `condition: { attributeName: \"X\" }` sibling but NO in-body attributeName reference, writing via $context.set, MUST now raise the warning — condition is a silently-ignored key (not in page-schema-handlers guidance) and must not scope the handler; this locks the inverse of the two deleted condition tests so an accidental reintroduction is caught")]
+	public void Lint_ShouldWarn_WhenHandlerScopedOnlyByConditionAndWriteUnscoped() {
 		// Arrange
 		string body =
 			"define(\"X\", [], function() { return { converters: {}, validators: {}, handlers: [ { " +
@@ -483,25 +556,9 @@ internal class PageBodyAstLinterTests {
 		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
 
 		// Assert
-		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite,
-			because: "condition.attributeName scopes the handler to the triggering attribute, so no self-retrigger is possible and the write is safe");
-	}
-
-	[Test]
-	[Description("A crt.HandleViewModelAttributeChangeRequest handler scoped by a predicate-form condition `(request) => request.attributeName === ...` must NOT raise the warning — the sibling condition is outside the handler subtree, so the rule must inspect a function-form condition too (avoids a false positive on a correctly-scoped handler)")]
-	public void Lint_ShouldNotWarn_WhenAttributeChangeHandlerScopedByPredicateCondition() {
-		// Arrange
-		string body =
-			"define(\"X\", [], function() { return { converters: {}, validators: {}, handlers: [ { " +
-			"request: \"crt.HandleViewModelAttributeChangeRequest\", condition: (request) => request.attributeName === \"UsrPhoneNumber\", " +
-			"handler: async (request, next) => { await request.$context.set(\"UsrCountryCode\", \"38\"); return next?.handle(request); } } ] }; });";
-
-		// Act
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		// Assert
-		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite,
-			because: "a predicate-form condition referencing request.attributeName scopes the handler just like the object form; ConditionHasAttributeName must scan an IFunction condition or it would falsely flag a correctly-scoped handler");
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite && f.Severity == LintSeverity.Warning,
+			because: "condition is not a documented scoping mechanism and is silently ignored by Freedom UI; the linter must not treat it as scope, or it would stay quiet on the exact ENG-95557 defect while advising a silently-ignored key");
 	}
 
 	[Test]
@@ -523,7 +580,7 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("Accepted false negative pinned deliberately: a handler that references request.attributeName for an unrelated purpose but STILL writes unconditionally is not flagged. The attributeName reference is a scope-awareness proxy (not a guard proof); the rule trades this rare miss for zero false positives on scoped handlers — see the rule doc comment")]
+	[Description("Accepted false negative pinned deliberately: a handler that references request.attributeName for an unrelated purpose but STILL writes unconditionally is not flagged. The attributeName reference is a scope-awareness proxy (not a guard proof); the rule accepts this rare miss to stay quiet on scoped handlers — see the rule doc comment's heuristic-limits block")]
 	public void Lint_ShouldNotWarn_WhenAttributeNameReferencedButWriteUnconditional() {
 		// Arrange
 		string body =
@@ -537,7 +594,7 @@ internal class PageBodyAstLinterTests {
 
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite,
-			because: "any attributeName reference suppresses the warning by design — this is the documented, test-pinned accepted false negative that keeps the zero-false-positive bias; tightening to a proof-of-guard would need data-flow analysis");
+			because: "any attributeName reference suppresses the warning by design — this is the documented, test-pinned accepted false negative in the rule's heuristic-limits block; tightening to a proof-of-guard would need data-flow analysis");
 	}
 
 	[Test]
@@ -575,7 +632,7 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("Accepted false negative pinned deliberately (second of two): a write through a LOCAL ALIAS of $context (const ctx = request.$context; ctx.set(...)) that drops the $context member is not detected, so an unscoped handler writing that way is not flagged — following aliases needs data-flow analysis and the rule keeps its zero-false-positive bias")]
+	[Description("Accepted false negative pinned deliberately (second of two): a write through a LOCAL ALIAS of $context (const ctx = request.$context; ctx.set(...)) that drops the $context member is not detected, so an unscoped handler writing that way is not flagged — following aliases needs data-flow analysis, consistent with the rule's documented heuristic limits")]
 	public void Lint_ShouldNotWarn_WhenAttributeChangeHandlerWritesViaAliasedContext() {
 		// Arrange
 		string body =
@@ -588,17 +645,17 @@ internal class PageBodyAstLinterTests {
 
 		// Assert
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerAttributeChangeUnscopedWrite,
-			because: "IsContextSetCall does not follow a local $context alias by design (same limitation as IsContextExecuteRequest); this test pins the accepted false negative so a future alias-following change must consciously revisit the zero-false-positive bias");
+			because: "IsContextSetCall does not follow a local $context alias by design (same limitation as IsContextExecuteRequest); this test pins the accepted false negative so a future alias-following change must consciously revisit the rule's documented heuristic limits");
 	}
 
 	[Test]
 	[Description("A handlers array with one scoped and one unscoped attribute-change-write entry yields EXACTLY one warning, anchored to the offending (unscoped) entry — mirrors the entity-data-source single-warning convention and pins per-entry independence")]
 	public void Lint_ShouldEmitSingleWarning_WhenHandlersArrayMixesScopedAndUnscoped() {
-		// Arrange — scoped entry on line 1, unscoped entry on line 2 (newline before it)
+		// Arrange — scoped entry (in-body attributeName guard) on line 1, unscoped entry on line 2 (newline before it)
 		string body =
 			"define(\"X\", [], function() { return { converters: {}, validators: {}, handlers: [ " +
-			"{ request: \"crt.HandleViewModelAttributeChangeRequest\", condition: { attributeName: \"UsrPhoneNumber\" }, " +
-			"handler: async (request, next) => { await request.$context.set(\"UsrCountryCode\", \"38\"); return next?.handle(request); } },\n" +
+			"{ request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+			"handler: async (request, next) => { if (request.attributeName !== \"UsrPhoneNumber\") { return next?.handle(request); } await request.$context.set(\"UsrCountryCode\", \"38\"); return next?.handle(request); } },\n" +
 			"{ request: \"crt.HandleViewModelAttributeChangeRequest\", " +
 			"handler: async (request, next) => { await request.$context.set(\"UsrOther\", request.value); return next?.handle(request); } } ] }; });";
 
