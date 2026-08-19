@@ -319,12 +319,13 @@ public sealed class InstallProcessBuilderToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		TextWriter originalError = Console.Error;
-		StringWriter capturedError = new();
+		SignallingStringWriter capturedError = new();
 		Console.SetError(capturedError);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("failing-tenant");
 		// exitCode 1, unlike every other case in this fixture: this is the ONLY arrangement that reaches
 		// ReportPostDeadlineFailure, whose guard is `ExitCode != 0 && callerAlreadyAnswered`.
+		// NOTE: capturedError is a SignallingStringWriter, not a plain StringWriter — see the class remark.
 		ManualResetEventSlim executeGate = new(false);
 		FakeInstallProcessBuilderCommand resolvedCommand = new(exitCode: 1) { ExecuteGate = executeGate };
 		commandResolver.Resolve<InstallProcessBuilderCommand>(Arg.Any<EnvironmentOptions>())
@@ -338,10 +339,12 @@ public sealed class InstallProcessBuilderToolTests {
 			await tool.InstallProcessBuilder(new InstallProcessBuilderArgs("sandbox"));
 			executeGate.Set();
 			// The report happens on the detached continuation, so wait for it rather than for a duration.
-			SpinWait.SpinUntil(() => capturedError.ToString().Contains("FAILED"), TimeSpan.FromSeconds(10));
+			capturedError.LineWritten.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue(
+				because: "the post-deadline report is the only observable effect left, so the test has to see the "
+					+ "detached continuation write it before asserting on the buffer");
 
 			// Assert
-			string stderr = capturedError.ToString();
+			string stderr = capturedError.Snapshot();
 			stderr.Should().Contain("FAILED",
 				because: "past the response deadline the caller has already been told the install is still "
 					+ "running, so the exit code has nowhere to travel. stderr is the only channel left, and "
@@ -394,6 +397,63 @@ public sealed class InstallProcessBuilderToolTests {
 			CapturedOptions = options;
 			ExecuteGate?.Wait();
 			return _exitCode;
+		}
+	}
+
+	/// <summary>
+	/// stderr capture for the post-deadline report, which is written from the DETACHED continuation on a pool
+	/// thread while the test thread reads the buffer. A <see cref="StringWriter"/> is a StringBuilder, and a
+	/// StringBuilder is not thread-safe: polling it with <c>ToString()</c> while the continuation appended threw
+	/// <c>ArgumentOutOfRangeException (chunkLength)</c> out of the poll loop in CI, failing the test for a reason
+	/// that had nothing to do with the behaviour under test. Both sides go through the same lock, and
+	/// <see cref="LineWritten"/> replaces the polling so the wait is deterministic (the same pattern as
+	/// <c>McpReadResponseDeadlineTests</c>).
+	/// </summary>
+	private sealed class SignallingStringWriter : StringWriter {
+		private readonly object _sync = new();
+
+		/// <summary>Set once the reporter has written its line.</summary>
+		public ManualResetEventSlim LineWritten { get; } = new(false);
+
+		public override void Write(char value) {
+			lock (_sync) {
+				base.Write(value);
+			}
+		}
+
+		public override void Write(char[] buffer, int index, int count) {
+			lock (_sync) {
+				base.Write(buffer, index, count);
+			}
+		}
+
+		public override void Write(string? value) {
+			lock (_sync) {
+				base.Write(value);
+			}
+		}
+
+		public override void WriteLine(string? value) {
+			lock (_sync) {
+				base.WriteLine(value);
+			}
+
+			LineWritten.Set();
+		}
+
+		/// <summary>Reads the buffer under the write lock; never call <c>ToString()</c> on this writer instead.</summary>
+		public string Snapshot() {
+			lock (_sync) {
+				return base.ToString();
+			}
+		}
+
+		protected override void Dispose(bool disposing) {
+			if (disposing) {
+				LineWritten.Dispose();
+			}
+
+			base.Dispose(disposing);
 		}
 	}
 

@@ -154,6 +154,7 @@ internal class Program {
 		typeof(ClientUnitSchemaUpdateOptions),
 		typeof(GetClientUnitSchemaOptions),
 		typeof(GetClassicPageSourcesOptions),
+		typeof(GetClassicListColumnsOptions),
 		typeof(ListEntityClientSchemasOptions),
 		typeof(SqlSchemaCreateOptions),
 		typeof(SqlSchemaGetOptions),
@@ -656,6 +657,7 @@ internal class Program {
 			ClientUnitSchemaUpdateOptions opts => Resolve<ClientUnitSchemaUpdateCommand>(opts).Execute(opts),
 			GetClientUnitSchemaOptions opts => Resolve<GetClientUnitSchemaCommand>(opts).Execute(opts),
 			GetClassicPageSourcesOptions opts => Resolve<GetClassicPageSourcesCommand>(opts).Execute(opts),
+			GetClassicListColumnsOptions opts => Resolve<GetClassicListColumnsCommand>(opts).Execute(opts),
 			ListEntityClientSchemasOptions opts => Resolve<ListEntityClientSchemasCommand>(opts).Execute(opts),
 			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
 			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
@@ -1890,5 +1892,4 @@ internal class Program {
 	#endregion
 
 }
-
 
