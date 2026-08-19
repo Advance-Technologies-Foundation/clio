@@ -312,7 +312,12 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 		// SILENCE cannot tell a six-minute database restore from a child that died. The refresh below is
 		// what makes silence mean "this worker has stopped talking".
 		using CancellationTokenSource liveness = new();
-		Task refreshing = StartLivenessRefresh(entry, startedAtUtc, liveness.Token);
+		// "Refreshing switched off" is carried by the ABSENCE of a task, not by a completed one: the bounded
+		// join below then has nothing to cancel and nothing to wait on, which is the same behaviour as before.
+		TimeSpan refreshInterval = LivenessRefreshInterval;
+		Task refreshing = refreshInterval > TimeSpan.Zero
+			? StartLivenessRefresh(entry, startedAtUtc, refreshInterval, liveness.Token)
+			: null;
 
 		int exitCode;
 		try {
@@ -351,8 +356,9 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	/// </summary>
 	/// <param name="entry">The stage that is about to run.</param>
 	/// <param name="startedAtUtc">The stage's own start, repeated verbatim on every refresh.</param>
+	/// <param name="interval">The refresh period; the caller only calls in when it is positive.</param>
 	/// <param name="cancellationToken">Cancelled the moment the stage ends.</param>
-	/// <returns>The refresh task, or <see langword="null"/> when refreshing is switched off.</returns>
+	/// <returns>The refresh task.</returns>
 	/// <remarks>
 	/// The refresh is an ORDINARY <c>running</c> transition for the CURRENT stage, byte-identical to the
 	/// one the stage opened with apart from its <c>sequence</c>. That is deliberate and it is the whole
@@ -361,12 +367,7 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	/// simply the next event of the run.
 	/// </remarks>
 	private Task StartLivenessRefresh(ClioStageManifestEntry entry, DateTimeOffset startedAtUtc,
-		CancellationToken cancellationToken) {
-		TimeSpan interval = LivenessRefreshInterval;
-		if (interval <= TimeSpan.Zero) {
-			return null;
-		}
-
+		TimeSpan interval, CancellationToken cancellationToken) {
 		// CancellationToken.None on Task.Run rather than the stage's token: a task cancelled before its
 		// body ran would surface as a faulted join instead of an orderly stop.
 		return Task.Run(async () => {
@@ -418,7 +419,10 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 		try {
 			// Returns false rather than throwing when the bound expires; an in-flight beat needs only to
 			// finish one sink call, so reaching the bound means the sink itself is not returning.
-			_ = refreshing.Wait(joinBound);
+			// CancellationToken.None is deliberate, not an oversight: this join exists to be BOUNDED by
+			// time alone. Handing it a token would let a cancelled stage skip the wait and emit its terminal
+			// transition with a beat still in flight — the ordering this whole join is here to keep.
+			_ = refreshing.Wait(joinBound, CancellationToken.None);
 		}
 		catch (AggregateException) {
 			// A refresh that could not reach the sink is a progress problem, never a stage problem: it must

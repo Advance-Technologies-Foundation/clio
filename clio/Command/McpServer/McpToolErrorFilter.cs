@@ -72,7 +72,7 @@ public static class McpToolErrorFilter
 				// one, so the caller's own params object goes to the worker unchanged — `_meta` and its
 				// progress token included.
 				return await decision.Dispatcher
-					.DispatchAsync(decision.Route!, context.Params!,
+					.DispatchAsync(decision.Route, context.Params,
 						new Relay.McpServerParentSession(context.Server), cancellationToken)
 					.ConfigureAwait(false);
 			}

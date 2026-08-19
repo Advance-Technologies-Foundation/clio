@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -123,12 +124,7 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 		if (!char.IsAsciiLetter(scheme[0])) {
 			return false;
 		}
-		foreach (char c in scheme) {
-			if (!char.IsAsciiLetterOrDigit(c) && c is not ('+' or '-' or '.')) {
-				return false;
-			}
-		}
-		return true;
+		return scheme.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '-' or '.');
 	}
 
 	// Splits an authority (userinfo already rejected) into its host and its ":port" suffix. Returns false
@@ -244,14 +240,7 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 		if (lastLabel.Length == 0) {
 			return false;
 		}
-		bool allDigits = true;
-		foreach (char c in lastLabel) {
-			if (!char.IsAsciiDigit(c)) {
-				allDigits = false;
-				break;
-			}
-		}
-		return allDigits || IsHexPrefixed(lastLabel);
+		return lastLabel.All(char.IsAsciiDigit) || IsHexPrefixed(lastLabel);
 	}
 
 	private static bool IsHexPrefixed(string label) {
@@ -279,10 +268,8 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 			if (label.Length > 1 && label[0] == '0') {
 				return false;
 			}
-			foreach (char c in label) {
-				if (!char.IsAsciiDigit(c)) {
-					return false;
-				}
+			if (!label.All(char.IsAsciiDigit)) {
+				return false;
 			}
 			// Cannot overflow: the length and all-digit checks above cap the label at 999.
 			if (int.Parse(label, CultureInfo.InvariantCulture) > 255) {

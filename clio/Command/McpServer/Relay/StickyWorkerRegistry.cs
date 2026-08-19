@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -676,10 +677,9 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 		List<CancellationTokenSource> watches = [];
 		DateTimeOffset utcNow = _time.GetUtcNow();
 		lock (_gate) {
-			foreach (KeyValuePair<StickyWorkerKey, StickyWorkerEntry> pair in _entries) {
-				if (!pair.Value.IsLive(utcNow)) {
-					expired.Add((pair.Key, pair.Value));
-				}
+			foreach (KeyValuePair<StickyWorkerKey, StickyWorkerEntry> pair in
+				_entries.Where(pair => !pair.Value.IsLive(utcNow))) {
+				expired.Add((pair.Key, pair.Value));
 			}
 			foreach ((StickyWorkerKey key, StickyWorkerEntry entry) in expired) {
 				// Entry-scoped, like ReapAsync. Collection and removal share this lock today, so no
@@ -798,13 +798,9 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 		if (_disposed) {
 			return;
 		}
-		DateTimeOffset? earliest = null;
-		foreach (StickyWorkerEntry entry in _entries.Values) {
-			DateTimeOffset expiry = entry.ExpiresAtUtc;
-			if (earliest is null || expiry < earliest.Value) {
-				earliest = expiry;
-			}
-		}
+		DateTimeOffset? earliest = _entries.Count == 0
+			? null
+			: _entries.Values.Min(entry => entry.ExpiresAtUtc);
 		if (earliest is null) {
 			_deadline.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
 			return;

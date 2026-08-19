@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -264,16 +265,15 @@ public sealed partial class McpWorkerCallDispatcher {
 		//
 		// A caller that then loses the start gate releases the reservation on that path, so nothing is
 		// stranded by winning the wrong one of the two.
+		// Keyed by the NORMALISED TARGET and the resource, never by the tenant key: Creatio's configuration
+		// build is server-wide, so two principals on one environment must exclude each other. This is the
+		// parent's dictionary, so it also excludes across worker PROCESSES — which the tool-side
+		// reservation, living in whichever child ran the tool, structurally cannot.
 		SharedResourceReservationToken reservation = null;
-		if (metadata.SharedFileResource == McpToolSharedFileResource.ConfigurationBuild) {
-			// Keyed by the NORMALISED TARGET and the resource, never by the tenant key: Creatio's
-			// configuration build is server-wide, so two principals on one environment must exclude each
-			// other. This is the parent's dictionary, so it also excludes across worker PROCESSES — which
-			// the tool-side reservation, living in whichever child ran the tool, structurally cannot.
-			if (!_reservations.TryReserve(McpToolSharedFileResource.ConfigurationBuild,
-					SafeTargetKey(options), out reservation)) {
-				return SharedResourceBusyResult(toolName, environmentName);
-			}
+		if (metadata.SharedFileResource == McpToolSharedFileResource.ConfigurationBuild
+			&& !_reservations.TryReserve(McpToolSharedFileResource.ConfigurationBuild,
+				SafeTargetKey(options), out reservation)) {
+			return SharedResourceBusyResult(toolName, environmentName);
 		}
 
 		using IDisposable startGate = TryEnterStartGate(key);
@@ -300,7 +300,7 @@ public sealed partial class McpWorkerCallDispatcher {
 			await _stickyWorkers.ReapAsync(key, existing).ConfigureAwait(false);
 		}
 
-		return await StartStickyWorkerAsync(toolName, key, environmentName, reservation, parameters,
+		return await StartStickyWorkerAsync(toolName, key, environmentName, reservation,
 			childParameters, parentSession, startGate, cancellationToken).ConfigureAwait(false);
 	}
 
@@ -345,7 +345,6 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// <param name="key">The key the worker is registered and later reached under.</param>
 	/// <param name="environmentName">The target the call named, for the refusal envelope.</param>
 	/// <param name="reservation">The shared-resource reservation this worker will hold, or null.</param>
-	/// <param name="parameters">The caller's params, for the per-call fallback.</param>
 	/// <param name="childParameters">The params to send to the worker.</param>
 	/// <param name="parentSession">The parent leg.</param>
 	/// <param name="startGate">
@@ -359,7 +358,6 @@ public sealed partial class McpWorkerCallDispatcher {
 		StickyWorkerKey key,
 		string environmentName,
 		SharedResourceReservationToken reservation,
-		CallToolRequestParams parameters,
 		CallToolRequestParams childParameters,
 		IParentMcpSession parentSession,
 		IDisposable startGate,
@@ -623,7 +621,9 @@ public sealed partial class McpWorkerCallDispatcher {
 		CallToolRequestParams parameters, string dispatchedToolName) {
 		IDictionary<string, JsonElement> arguments = parameters?.Arguments;
 		if (arguments is null) {
-			return null;
+			// Empty rather than null: every consumer only ever probes this map for named arguments, so an
+			// empty one reads exactly as "the caller supplied none" without pushing a null check outwards.
+			return new Dictionary<string, JsonElement>();
 		}
 		return TryReadEffectiveArguments(parameters, arguments, dispatchedToolName,
 			out IDictionary<string, JsonElement> inner)
@@ -708,10 +708,9 @@ public sealed partial class McpWorkerCallDispatcher {
 	private static IDictionary<string, JsonElement> WithoutCommandKey(
 		IDictionary<string, JsonElement> arguments) {
 		Dictionary<string, JsonElement> stripped = new(StringComparer.Ordinal);
-		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
-			if (!string.Equals(argument.Key, ExecutorCommandArgument, StringComparison.OrdinalIgnoreCase)) {
-				stripped[argument.Key] = argument.Value;
-			}
+		foreach (KeyValuePair<string, JsonElement> argument in arguments.Where(argument =>
+			!string.Equals(argument.Key, ExecutorCommandArgument, StringComparison.OrdinalIgnoreCase))) {
+			stripped[argument.Key] = argument.Value;
 		}
 		return stripped;
 	}
@@ -790,9 +789,9 @@ public sealed partial class McpWorkerCallDispatcher {
 				return argument.Value.GetString();
 			}
 		}
-		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
-			if (argument.Value.ValueKind == JsonValueKind.Object
-				&& argument.Value.TryGetProperty(argumentName, out JsonElement nested)
+		foreach (JsonElement value in arguments.Select(argument => argument.Value)) {
+			if (value.ValueKind == JsonValueKind.Object
+				&& value.TryGetProperty(argumentName, out JsonElement nested)
 				&& nested.ValueKind == JsonValueKind.String) {
 				return nested.GetString();
 			}

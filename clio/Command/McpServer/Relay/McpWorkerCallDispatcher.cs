@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -467,14 +468,7 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		if (meta is null) {
 			return parameters;
 		}
-		bool carriesSessionMetadata = false;
-		foreach (string key in ParentSessionMetadataKeys) {
-			if (meta.ContainsKey(key)) {
-				carriesSessionMetadata = true;
-				break;
-			}
-		}
-		if (!carriesSessionMetadata) {
+		if (!ParentSessionMetadataKeys.Any(meta.ContainsKey)) {
 			return parameters;
 		}
 		JsonObject relayMeta = meta.DeepClone().AsObject();

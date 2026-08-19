@@ -18,6 +18,19 @@ public sealed class GetClassicListColumnsTool(
 
 	/// <summary>Resolves a Classic section's effective default list columns without modifying Creatio data.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Classified like the other environment-bound reads: one bounded HTTP read per call, no operation family
+	// and no shared artifact. It arrived from master after the annotation wave, so the classification is
+	// added here rather than left to the gate. SharedFileResource stays None — nothing is written locally.
+	// Whether it ever RUNS in a worker is a separate, cohort-gated question, and this tool is not in the
+	// Stage 6 cohort: its hierarchy read goes through the schema designer, the read path
+	// McpWorkerCohort.SchemaDesignerReadsWithheldNames withdrew for read-after-write.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Resolve the effective default columns of a Classic section list through read-only Creatio APIs. " +
 		"Returns source=schema-default for static getGridDataColumns/initColumnsConfig paths, " +
