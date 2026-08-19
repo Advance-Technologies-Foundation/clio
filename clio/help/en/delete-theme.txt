@@ -20,7 +20,7 @@ SYNOPSIS
     clio delete-theme --id <id> [options]
 
 OPTIONS
-    --id                            Id of the theme to delete (required)
+    --id                            Id (a GUID) of the theme to delete (required)
 
     --uri               -u          Application uri
 
@@ -33,8 +33,8 @@ OPTIONS
     --Maintainer        -m          Maintainer name
 
 EXAMPLE
-    clio delete-theme --id ocean-theme -e myapp
-        delete the theme 'ocean-theme' from the environment registered as myapp
+    clio delete-theme --id d53a816b-65ed-4b5b-ad3b-f739280add45 -e myapp
+        delete the theme with that id from the environment registered as myapp
 
 NOTES
     - Find a theme's id with 'clio list-themes'.

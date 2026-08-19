@@ -14,7 +14,7 @@ namespace Clio.Command.Theming;
 public class DeleteThemeOptions : RemoteCommandOptions
 {
 	/// <summary>Id of the theme to delete (required).</summary>
-	[Option("id", Required = true, HelpText = "Id of the theme to delete")]
+	[Option("id", Required = true, HelpText = "Id (a GUID) of the theme to delete")]
 	public string Id { get; set; }
 }
 

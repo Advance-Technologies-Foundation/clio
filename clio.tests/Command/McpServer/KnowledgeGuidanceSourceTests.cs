@@ -112,6 +112,7 @@ public sealed class KnowledgeGuidanceSourceTests {
 		KnowledgeArticleProvenance provenance = new(
 			"creatio-curated",
 			"com.creatio.clio",
+			"1.13.21",
 			article.ItemId,
 			article.TopicId,
 			5,
