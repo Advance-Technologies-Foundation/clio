@@ -66,15 +66,22 @@ name instead of trying to edit a non-existent local `insert`.
     refused for the same reason: `insert` declares no required parameters, so the differ does not reject it
     — it persists a typeless element. A flat `set` is left to the differ, which refuses it for the missing
     required `values`.
-  - **Rejected — a `merge` that authors child elements inside `values`.** An array of item configs (objects
-    carrying a `name`) placed on a container slot such as `actions`, `leading`, `items` or `menuItems`. The
-    differ never applies it as intended: when the target already holds elements in that slot the whole
-    property is stripped from the merge, so the write succeeds and the elements never reach the page
-    (stand-verified for ENG-95429 — the button appeared zero times in the server-merged `viewConfig` while
-    remaining in the saved body); when the slot is empty or absent the array is written wholesale instead,
-    **replacing** the slot rather than adding to it. Author each child as its own `insert`. This is
-    `merge`-only: for `insert`/`set` the `values` object becomes the element, so children declared there are
-    the documented way to author a container.
+  - **Rejected — a `merge` that authors child elements in a Scaffold navigation slot.** An array (or a lone
+    object) of item configs — objects carrying a non-empty `name` — placed on `Scaffold`'s `actions` or
+    `leading`. Where the target already holds elements in a slot, the differ strips the whole property out of
+    the merge before copying anything, so the write succeeds and the children never reach the page.
+    Stand-verified for ENG-95429: the button appeared zero times in the server-merged `viewConfig` while
+    remaining in the saved body. Every shipped form template populates those two slots (`actions` carries its
+    Save button, `leading` its Close/Cancel), so a merge into them is always that case. Put the child in a page
+    container instead — its own `insert` with `propertyName: "items"` plus a `layoutConfig`.
+  - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
+    slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
+    `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.
+    clio validates `viewConfigDiff` against an empty base and cannot tell the two apart, so it steers rather
+    than refuses. To author into a slot the target genuinely lacks, use the platform's two-step idiom: a
+    `merge` creating the slot as an empty array (never flagged), then one `insert` per child — an `insert`
+    into a property the target does not carry throws. Both are `merge`-only: for `insert`/`set` the `values`
+    object becomes the element, so children declared there are the documented way to author a container.
   - **Warned — no type anywhere**, when `values` carries element properties but declares no `type`
     (an entry that authors nothing — absent or empty `values` — is silent by design).
   - **Warned — two DIFFERENT types**, one on the operation object and one inside `values`. The element still
@@ -90,7 +97,7 @@ name instead of trying to edit a non-existent local `insert`.
     button lives there), so the defect is design-time discoverability, not an invalid write.
   - If an offending entry came back from `get-page`, the page already carries the defect — correct it in the
     body you send back.
-  - **Not enforced:** the same type-placement defect breaks **web** pages identically and is not checked
+  - **Not enforced:** the same type-placement and merge-slot defects break **web** pages identically and are not checked
     there; `sync-pages` with `validate: false` skips these checks along with every other one.
   Call `clio get-guidance --name mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or

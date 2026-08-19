@@ -881,6 +881,12 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		// Assert
 		response.Valid.Should().BeTrue(
 			because: "an ordinary property merge must stay writable - the rule targets authored child elements only");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "the everyday designer-emitted merge must reach the save path with nothing to fix");
+		response.Validation.Warnings.Should().BeNullOrEmpty(
+			because: "a warning on the everyday designer-emitted merge would still push the agent to rewrite correct code");
 	}
 
 	[Test]

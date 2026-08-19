@@ -60,6 +60,35 @@ public sealed class PageUpdateToolMobileTypePlacementTests {
 		}
 		""";
 
+	// A merge on Scaffold whose values author a button inside the actions slot — the ENG-95429 shape the
+	// insert-scoped slot rule cannot see. Stand-verified: the write succeeds and the button reaches nothing.
+	private const string MobileBodyWithMergeAuthoredButton =
+		"""
+		{
+		  "viewConfigDiff": [
+		    { "operation": "merge", "name": "Scaffold",
+		      "values": { "actions": [ { "type": "crt.Button", "name": "UsrMergeProbeButton",
+		                                 "clicked": { "request": "crt.SaveRecordRequest" } } ] } }
+		  ],
+		  "viewModelConfigDiff": [],
+		  "modelConfigDiff": []
+		}
+		""";
+
+	// The same authoring through a slot the target may legitimately lack. Advisory, not blocking, because a
+	// merge is often the only single-operation route there — so the save must NOT abort.
+	private const string MobileBodyWithMergeAuthoredMenuItems =
+		"""
+		{
+		  "viewConfigDiff": [
+		    { "operation": "merge", "name": "UsrActionsButton",
+		      "values": { "menuItems": [ { "type": "crt.MenuItem", "name": "UsrExport" } ] } }
+		  ],
+		  "viewModelConfigDiff": [],
+		  "modelConfigDiff": []
+		}
+		""";
+
 	private static PageUpdateTool BuildTool() =>
 		new(
 			command: null,
@@ -104,6 +133,42 @@ public sealed class PageUpdateToolMobileTypePlacementTests {
 		// Assert
 		failure.Should().BeNull(
 			because: "the canonical shape must reach the save path untouched — an A/B pair differing only in type placement");
+	}
+
+	[Test]
+	[Description("ENG-95429 on the write path: update-page refuses a mobile body whose merge authors a button inside the Scaffold actions slot. Stand-verified that this write otherwise succeeds while the button reaches nothing, so only an aborted save proves the rule closes it.")]
+	public void ValidateBody_WhenMobileMergeAuthorsChildrenInScaffoldSlot_AbortsTheSave() {
+		// Arrange
+		PageUpdateTool tool = BuildTool();
+		PageUpdateOptions options = new() { SchemaName = "UsrTest_MobileFormPage", Body = MobileBodyWithMergeAuthoredButton };
+
+		// Act
+		(PageUpdateResponse failure, IReadOnlyList<string> _) = tool.ValidateBody(options, requestedVersion: null);
+
+		// Assert
+		failure.Should().NotBeNull(
+			because: "a blocking validation error must stop the write before the page command is ever resolved");
+		failure.Success.Should().BeFalse(
+			because: "the caller must see the save as failed, not as a success carrying a warning");
+		failure.Error.Should().Contain("UsrMergeProbeButton",
+			because: "the failure must name the child that goes missing, since the entry is named after the merged element");
+		failure.Error.Should().Contain("actions",
+			because: "the author needs the slot to locate the defect in a body with several merges");
+	}
+
+	[Test]
+	[Description("The advisory half does not abort the save: authoring into a slot the target may legitimately lack warns, because clio validates viewConfigDiff against an empty base and a merge is often the only single-operation route there.")]
+	public void ValidateBody_WhenMobileMergeAuthorsChildrenInAnOptionalSlot_DoesNotAbortTheSave() {
+		// Arrange
+		PageUpdateTool tool = BuildTool();
+		PageUpdateOptions options = new() { SchemaName = "UsrTest_MobileFormPage", Body = MobileBodyWithMergeAuthoredMenuItems };
+
+		// Act
+		(PageUpdateResponse failure, IReadOnlyList<string> _) = tool.ValidateBody(options, requestedVersion: null);
+
+		// Assert
+		failure.Should().BeNull(
+			because: "refusing a shape that frequently applies correctly would break legitimate mobile authoring");
 	}
 
 	[Test]
