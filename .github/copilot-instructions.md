@@ -189,3 +189,11 @@ public void TestName()
 - The CI/CD pipeline is configured in the `.github/workflows` directory.
 - Repository has runners that run on windows in the corporate infrastructure.
 - The CI/CD pipeline builds the solution, runs unit tests, and publishes the `clio
+
+## Working on a GitHub issue
+
+[AGENTS.md](../AGENTS.md) is the authoritative instruction file for every agent in this repository.
+Before you start working on a GitHub issue, claim it: `./scripts/claim-issue.sh <issue-number>`
+(PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number>`). The script assigns the
+issue to the authenticated user and posts a comment saying the work has started, and refuses an issue
+that is already assigned to somebody else.

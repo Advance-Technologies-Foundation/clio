@@ -4,6 +4,38 @@
 Read this file and `project-context.md` before doing any work. More specific nested `AGENTS.md` files, when present,
 may add rules for their subtree but must not duplicate or contradict this file.
 
+# Claiming a GitHub issue before you start
+
+Whenever you (agent or human) start working on a GitHub issue in this repository, claim it **first**,
+before editing any file or creating a branch:
+
+```bash
+./scripts/claim-issue.sh <issue-number>
+```
+
+On a host without bash, use the PowerShell equivalent:
+
+```powershell
+pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number>
+```
+
+The script assigns the issue to the authenticated `gh` user and posts a comment saying that an agent
+started working on it, naming the working branch. It is idempotent: an issue already assigned to the
+current user is left untouched and no duplicate comment is posted. An issue assigned to somebody else
+is refused with a non-zero exit code — do not override it, pick another issue or ask the current
+assignee to hand it over.
+
+Rules:
+
+- Claim the issue even for a small change, and even when you expect the work to take minutes.
+- If the assignment fails because of permissions, the script still posts the comment and asks a
+  maintainer to set the assignee. Do not treat that as a reason to skip the claim.
+- If there is no issue yet, create one first (see the PR workflow section in `CONTRIBUTING.md`),
+  then claim it.
+- Reason: several scheduled agents run against this repository in parallel. The assignee plus the
+  comment are the only signals that tell another agent — or a human — that the issue is already
+  being worked on.
+
 # ClioGate integration
 
 ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.

@@ -210,6 +210,16 @@ When creating the issue:
 - If your GitHub permissions do not allow you to set the issue type or labels, state the requested
   type and labels in the issue and ask a maintainer to apply them before review.
 
+When starting the work:
+
+- Claim the issue before you touch any file: `./scripts/claim-issue.sh <issue-number>`
+  (PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number>`). It assigns the issue to
+  you and posts a comment saying the work has started, so nobody else — human or agent — picks it up in
+  parallel. This is mandatory for automated agents; see
+  [AGENTS.md](AGENTS.md#claiming-a-github-issue-before-you-start).
+- If the issue is already assigned to somebody else, the script refuses to claim it. Pick another issue
+  or ask the current assignee to hand it over.
+
 When opening the pull request:
 
 - Open the pull request as a draft. Keep it in draft while implementation, validation,
