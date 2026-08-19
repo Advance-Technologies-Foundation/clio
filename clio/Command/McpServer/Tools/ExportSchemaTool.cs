@@ -39,8 +39,9 @@ public class ExportSchemaTool(
 				 related pages) which have no other read surface.
 
 				 A schema name is unique only per package, so a name that exists in several packages is
-				 REFUSED with the list of packages — re-run with `package-name`. Read-only: it writes a
-				 local folder and changes nothing on the environment.
+				 REFUSED with the list of packages — re-run with `package-name`. Nothing on the ENVIRONMENT
+				 is changed, but the command does write a bundle folder on the local disk, which is why it
+				 is not annotated as read-only.
 
 				 Requires cliogate 2.0.0.46 or newer on the environment.
 				 """)]

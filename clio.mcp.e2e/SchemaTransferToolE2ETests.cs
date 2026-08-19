@@ -1,7 +1,9 @@
+using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -81,9 +83,19 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 			},
 			arrangeContext.CancellationTokenSource.Token);
 
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
 		// Assert
 		callResult.Should().NotBeNull(
 			because: "an unknown environment must produce a tool response, not a transport failure");
+		// Asserting only NotBeNull would pass on a success envelope, on an empty error and on unrelated
+		// HTML — none of which is the behaviour this test claims to guard. The exit code and the message
+		// text are what make the failure readable, so both are asserted.
+		execution.ExitCode.Should().NotBe(0,
+			because: $"export-schema against a non-existent environment must report a failing exit code. Actual: {DescribeExecution(execution)}");
+		DescribeExecution(execution).Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|not registered)",
+			because: $"the failure must name the missing environment instead of failing silently. Actual: {DescribeExecution(execution)}");
 	}
 
 	[Category("McpE2E.NoEnvironment")]
@@ -109,8 +121,24 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 			},
 			arrangeContext.CancellationTokenSource.Token);
 
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
 		// Assert
 		callResult.Should().NotBeNull(
 			because: "a missing bundle is an ordinary input error and must stay inside the tool response envelope");
+		// Same reasoning as the export case above: a bare NotBeNull cannot fail, so the exit code and the
+		// message are asserted instead.
+		execution.ExitCode.Should().NotBe(0,
+			because: $"import-schema pointed at a path that holds no bundle must report a failing exit code. Actual: {DescribeExecution(execution)}");
+		DescribeExecution(execution).Should().MatchRegex(
+			$"(?is)({Regex.Escape(missingBundlePath)}|bundle|descriptor|not found|does not exist)",
+			because: $"the failure must explain that the bundle is missing. Actual: {DescribeExecution(execution)}");
+	}
+
+	private static string DescribeExecution(CommandExecutionEnvelope execution) {
+		string messages = execution.Output is null
+			? "<no messages>"
+			: string.Join(" | ", execution.Output.Select(message => $"{message.MessageType}: {message.Value}"));
+		return $"ExitCode={execution.ExitCode}; Messages={messages}";
 	}
 }

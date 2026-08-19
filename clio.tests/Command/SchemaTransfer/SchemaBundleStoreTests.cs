@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Clio.Command.SchemaTransfer;
 using Clio.Common;
 using FluentAssertions;
@@ -44,12 +45,14 @@ public class SchemaBundleStoreTests {
 		""";
 
 	private IFileSystem _fileSystem;
+	private ILogger _logger;
 	private SchemaBundleStore _sut;
 
 	[SetUp]
 	public void SetUp() {
 		_fileSystem = Substitute.For<IFileSystem>();
-		_sut = new SchemaBundleStore(_fileSystem);
+		_logger = Substitute.For<ILogger>();
+		_sut = new SchemaBundleStore(_fileSystem, _logger);
 	}
 
 	[TearDown]
@@ -68,6 +71,29 @@ public class SchemaBundleStoreTests {
 		result.Should().Be(BundleDirectory,
 			because: "the caller needs the folder path it can hand over or point import at");
 		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, PlatformPayload);
+	}
+
+	[Test]
+	[Description("Write completes and warns when a projection cannot be written, because the payload is already on disk")]
+	public void Write_Should_Complete_When_A_Projection_Write_Fails() {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		// Only the projections fail; the authoritative payload write succeeds. Letting the I/O error escape
+		// would abort an export that already produced its artifact, and the half-written folder would then
+		// trip the "already exists" guard on every retry.
+		_fileSystem
+			.When(fs => fs.WriteAllTextToFile(
+				Arg.Is<string>(path => path != SchemaDataPath && path != DescriptorPath), Arg.Any<string>()))
+			.Do(_ => throw new IOException("The disk is full."));
+
+		// Act
+		Action act = () => _sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), PlatformPayload));
+
+		// Assert
+		act.Should().NotThrow(
+			because: "projections are documented as best-effort and the authoritative payload is already written");
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, PlatformPayload);
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("The disk is full.")));
 	}
 
 	[Test]

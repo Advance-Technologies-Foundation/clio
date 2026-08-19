@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Clio.Common;
 using Newtonsoft.Json;
@@ -60,13 +61,16 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 	};
 
 	private readonly IFileSystem _fileSystem;
+	private readonly ILogger _logger;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="SchemaBundleStore"/> class.
 	/// </summary>
 	/// <param name="fileSystem">File system abstraction used for all reads and writes.</param>
-	public SchemaBundleStore(IFileSystem fileSystem) {
+	/// <param name="logger">Sink for the warning a skipped projection produces.</param>
+	public SchemaBundleStore(IFileSystem fileSystem, ILogger logger) {
 		_fileSystem = fileSystem;
+		_logger = logger;
 	}
 
 	/// <inheritdoc/>
@@ -82,7 +86,7 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 			SystemTextJson.JsonSerializer.Serialize(bundle.Descriptor, WriteOptions));
 		_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, SchemaDataFileName),
 			bundle.SchemaData);
-		WriteProjections(bundleDirectory, bundle.SchemaData);
+		TryWriteProjections(bundleDirectory, bundle.SchemaData);
 		return bundleDirectory;
 	}
 
@@ -153,6 +157,27 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 	/// authoritative <c>schema-data.json</c> has already been written, and losing a convenience view must not
 	/// cost the operator the artifact they came for.
 	/// </remarks>
+	/// <remarks>
+	/// The best-effort contract has to hold for EVERY way a projection can fail, not only for an
+	/// unparsable payload. The authoritative <c>schema-data.json</c> is already on disk by the time this
+	/// runs, so letting an I/O failure escape would abort a completed export and — because
+	/// <see cref="Write"/> refuses to overwrite an existing bundle folder — leave a half-written folder
+	/// that blocks every retry until the operator deletes it by hand. The failure is logged rather than
+	/// swallowed, so a missing projection is still visible in the run output.
+	/// </remarks>
+	private void TryWriteProjections(string bundleDirectory, string schemaData) {
+		try {
+			WriteProjections(bundleDirectory, schemaData);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+			or System.Security.SecurityException or NotSupportedException or JsonException) {
+			_logger?.WriteWarning(
+				$"The bundle in '{bundleDirectory}' was exported, but its human-readable projections could not "
+				+ $"be written: {exception.Message}. The authoritative {SchemaDataFileName} is intact and "
+				+ "import-schema only reads that file.");
+		}
+	}
+
 	private void WriteProjections(string bundleDirectory, string schemaData) {
 		JObject payload = ParsePayload(schemaData);
 		if (payload is null) {
