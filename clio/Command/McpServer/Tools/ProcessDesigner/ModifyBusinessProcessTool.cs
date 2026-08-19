@@ -171,8 +171,8 @@ public sealed record ModifyBusinessProcessArgs(
 
 	[property: JsonPropertyName("process-name")]
 	[property: Description("Process code (schema Name) to edit; provide exactly one of process-name or process-uid.")]
-	string ProcessName,
+	string? ProcessName = null,
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
-	string ProcessUid);
+	string? ProcessUid = null);
