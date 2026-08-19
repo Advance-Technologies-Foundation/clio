@@ -137,13 +137,10 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			ActiveKnowledgeSet active = Volatile.Read(ref _active);
 			KnowledgeLibrarySnapshot? current = active.Libraries.SingleOrDefault(library =>
 				string.Equals(library.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase));
-			if (current is not null && snapshot.Sequence == current.Sequence) {
-				if (!string.Equals(snapshot.ContentDigest, current.BundleDigest, StringComparison.Ordinal)) {
-					return Rejected(
-						KnowledgeBundleRejectionCode.InvalidContent,
-						snapshot.Sequence,
-						$"Git candidate sequence {snapshot.Sequence} has different content than the active sequence for source '{sourceAlias}'.");
-				}
+			bool unchanged = current is not null
+				&& snapshot.Sequence == current.Sequence
+				&& string.Equals(snapshot.ContentDigest, current.BundleDigest, StringComparison.Ordinal);
+			if (unchanged) {
 				KnowledgeLibrarySnapshot refreshed = current with {
 					LibraryId = snapshot.LibraryId,
 					LibraryVersion = snapshot.LibraryVersion,
@@ -167,11 +164,23 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 					snapshot.Sequence,
 					null);
 			}
-			if (current is not null && snapshot.Sequence < current.Sequence) {
-				return Rejected(
-					KnowledgeBundleRejectionCode.SequenceNotForward,
-					snapshot.Sequence,
-					$"Git candidate sequence {snapshot.Sequence} must not be lower than active sequence {current.Sequence} for source '{sourceAlias}'.");
+			// LOCAL DEV TOGGLE (knowledge-allow-unsequenced): when off, keep the stock monotonic guards -- a
+			// Git candidate must not reuse an active sequence with different content, nor go backwards. When
+			// on, a Git candidate ALWAYS replaces the active generation, so a branch can be re-synced or
+			// swapped for local testing regardless of the synthesized sequence order.
+			if (!_capabilities.AllowUnsequencedGitBundles) {
+				if (current is not null && snapshot.Sequence == current.Sequence) {
+					return Rejected(
+						KnowledgeBundleRejectionCode.InvalidContent,
+						snapshot.Sequence,
+						$"Git candidate sequence {snapshot.Sequence} has different content than the active sequence for source '{sourceAlias}'.");
+				}
+				if (current is not null && snapshot.Sequence < current.Sequence) {
+					return Rejected(
+						KnowledgeBundleRejectionCode.SequenceNotForward,
+						snapshot.Sequence,
+						$"Git candidate sequence {snapshot.Sequence} must not be lower than active sequence {current.Sequence} for source '{sourceAlias}'.");
+				}
 			}
 			KnowledgeLibrarySnapshot activated = new(
 				sourceAlias,
