@@ -217,7 +217,18 @@ public sealed class ClioPagesConcurrencyE2ETests {
 			Task reader = Task.Run(() => {
 				while (!stopReading.IsCancellationRequested) {
 					try {
-						string content = File.ReadAllText(appSettingsPath);
+						// FileShare.ReadWrite | FileShare.Delete, NOT the FileShare.Read that
+						// File.ReadAllText opens with. MEASURED on Windows 10.0.26200 (probe run
+						// 2026-08-19): a reader holding FileShare.Read makes File.Replace fail outright
+						// with "The process cannot access the file because it is being used by another
+						// process." — so this loop was refusing the very publish it then asserted had
+						// exited 0, encoding a guarantee the operating system forbids under its own
+						// arrangement. With delete sharing granted the same publish is ALLOWED, and the
+						// same probe settled the delete-pending worry too: a reader that opens the name
+						// while the old handle is still held gets the NEW generation, not a failure.
+						// The subject of this test is unaffected — a torn or unparseable catalog is still
+						// a torn catalog, whatever share mode observed it.
+						string content = ReadSharingDelete(appSettingsPath);
 						try {
 							JsonDocument.Parse(content).Dispose();
 							Interlocked.Increment(ref successfulReads);
@@ -314,4 +325,16 @@ public sealed class ClioPagesConcurrencyE2ETests {
 			$"TC-E-901 needs a reachable Creatio environment. Neither the configured sandbox environment '{configured}' nor the fallback '{FallbackEnvironmentName}' answered ping-app.");
 		return string.Empty;
 	}
+
+	// A read that does not block a concurrent publish. File.ReadAllText opens with FileShare.Read,
+	// which on Windows denies the destination's DELETE and refuses File.Replace; granting delete
+	// sharing is what lets a writer replace the file underneath a reader, and it is what every
+	// well-behaved clio reader of appsettings.json already does (see OpenCurrentSettings).
+	private static string ReadSharingDelete(string path) {
+		using FileStream stream = new(path, FileMode.Open, FileAccess.Read,
+			FileShare.ReadWrite | FileShare.Delete);
+		using StreamReader reader = new(stream);
+		return reader.ReadToEnd();
+	}
+
 }

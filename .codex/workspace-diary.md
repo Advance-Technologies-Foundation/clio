@@ -9336,3 +9336,31 @@ Files: clio/Common/FileSystem.cs, clio/Environment/ConfigurationOptions.cs,
   clio.tests/Command/SettingsRepositoryConcurrencyTests.cs, clio.tests/Common/FileSystem.Tests.cs
 Impact: when a retry turns a certainty into a probability, say which probability — a fix
   reported without its residual failure rate reads as closed when it is not.
+
+## 2026-08-19 21:30 – Measured on Windows: Replace and Move(overwrite) are not interchangeable
+Context: the settings-publish investigation left one question that macOS cannot answer — does
+  File.Replace succeed against a reader holding FileShare.Delete, or does delete-pending bite?
+  It decided whether changing the e2e reader would actually help.
+Access note: ts1-core-dev04 refuses my key (Permission denied, and no entry in ~/.ssh/config).
+  The Windows host that WORKS is `runner` = a_kravchuk2.tscrm.com, domain login tscrm\a.kravchuk,
+  same key, 32 cores, Windows 10.0.26200, .NET SDK 9 + runtime 10.0.10 (no SDK 10 yet). Almost
+  certainly the host the earlier MoveFileEx measurement was taken on; I had misremembered it.
+Measured (probe under net9.0, scratchpad/winprobe):
+                                   File.Replace     File.Move(overwrite: true)
+    reader FileShare.Read          REFUSED (IO)     REFUSED (UnauthorizedAccess)
+    reader ReadWrite | Delete      ALLOWED          REFUSED (UnauthorizedAccess)
+  And the delete-pending worry is unfounded: with the old handle still open, a second opener of
+  the same name gets the NEW generation, not a failure.
+Two consequences, both applied:
+  1. The e2e reader can and must grant delete sharing — it was opening FileShare.Read and then
+     asserting the publish it was itself refusing had exited 0, i.e. encoding a guarantee the OS
+     forbids under its own arrangement.
+  2. THE UNEXPECTED ONE: Move(overwrite) is refused even by a fully cooperating reader, so no
+     retry window can rescue it — nothing the reader can do makes it legal. Publishing over an
+     existing file now uses Replace whenever the file system is real. This mattered beyond the
+     test: SettingsBootstrapService writes with verifyExpectedContent=false, which took the Move
+     branch, so the bootstrap write was the one path a cooperative reader still could not save.
+Files: clio.mcp.e2e/ClioPagesConcurrencyE2ETests.cs, clio/Environment/ConfigurationOptions.cs
+Impact: measure the platform primitive before choosing between two that look equivalent. Move and
+  Replace differ in exactly the case that matters, and no amount of retrying substitutes for
+  picking the right one.

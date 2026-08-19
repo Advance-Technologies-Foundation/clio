@@ -825,8 +825,7 @@ namespace Clio
 		private static void CommitSettingsFile(IFileSystem fileSystem, string tempFilePath, string expectedContent,
 			bool verifyExpectedContent, bool isRealFileSystem, SettingsPublishRetryPolicy policy) {
 			if (!verifyExpectedContent) {
-				PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true),
-					policy);
+				PublishOverExisting(fileSystem, tempFilePath, isRealFileSystem, policy);
 				return;
 			}
 			if (expectedContent == null) {
@@ -847,7 +846,7 @@ namespace Clio
 					return;
 				}
 			}
-			PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true), policy);
+			PublishOverExisting(fileSystem, tempFilePath, isRealFileSystem, policy);
 		}
 
 		// The FIRST-WRITE branch, and it is retried like every other publish. It was not, and the gap was
@@ -861,6 +860,29 @@ namespace Clio
 		// because the destination now exists is not contention, it is somebody else having created the
 		// file, and retrying that would turn a correct "reload and try again" into a five-second stall
 		// ending in the same answer.
+		// MEASURED on Windows 10.0.26200, 2026-08-19, because the two are NOT interchangeable there and
+		// the difference decides whether a concurrent reader can be tolerated at all:
+		//
+		//   reader holds FileShare.Read              File.Replace REFUSED   File.Move(overwrite) REFUSED
+		//   reader holds ReadWrite | Delete          File.Replace ALLOWED   File.Move(overwrite) REFUSED
+		//
+		// So File.Move(overwrite: true) is refused even by a reader that cooperates fully, while
+		// File.Replace goes through — and no retry window can rescue Move, because nothing the reader
+		// can do makes it legal. Publishing over an EXISTING file therefore uses Replace whenever the
+		// file system is the real one. Move stays for the substituted file system, which has no Windows
+		// sharing semantics to respect, and for the case where the destination does not exist yet, which
+		// Replace cannot express (it requires a destination to replace).
+		private static void PublishOverExisting(IFileSystem fileSystem, string tempFilePath,
+			bool isRealFileSystem, SettingsPublishRetryPolicy policy) {
+			if (isRealFileSystem && fileSystem.File.Exists(AppSettingsFile)) {
+				PublishSettingsFile(() => fileSystem.File.Replace(tempFilePath, AppSettingsFile,
+					destinationBackupFileName: null, ignoreMetadataErrors: true), policy);
+				return;
+			}
+			PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true),
+				policy);
+		}
+
 		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath,
 			SettingsPublishRetryPolicy policy) {
 			try {
