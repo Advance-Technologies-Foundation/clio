@@ -9364,3 +9364,26 @@ Files: clio.mcp.e2e/ClioPagesConcurrencyE2ETests.cs, clio/Environment/Configurat
 Impact: measure the platform primitive before choosing between two that look equivalent. Move and
   Replace differ in exactly the case that matters, and no amount of retrying substitutes for
   picking the right one.
+
+## 2026-08-19 22:45 – The Windows host, and what it settled
+Context: three things on this branch could only be answered on Windows — the File.Replace /
+  FileShare question, the ClioRing NativeAOT gate, and whether the one red Ring test was really
+  macOS-only.
+Access, because I wasted time on this: ts1-core-dev04 REFUSES my key (Permission denied; no
+  entry in ~/.ssh/config either) although it is in known_hosts. The host that WORKS is
+  `runner` = a_kravchuk2.tscrm.com, domain login tscrm\a.kravchuk, same key. Windows 10.0.26200,
+  32 cores, MSVC present. It shipped with .NET SDK 9 + runtime 10.0.10; SDK 10.0.400 installed
+  into $env:USERPROFILE\.dotnet via dot.net/v1/dotnet-install.ps1 — no admin rights needed.
+  Branch cloned to C:\dev\clio (--depth 1 --single-branch).
+Results:
+  - NativeAOT publish (win-x64, self-contained, PublishAot=true): SUCCEEDED, clio-ring.exe
+    30.8 MB, ZERO IL2026/IL3050/IL2104/IL3053 and zero warnings of any kind.
+  - ClioRing.Tests on Windows: 156 passed, 0 failed — which confirms the single macOS failure
+    (ResolveContainedReceiptPath ... WhenRunKeyIsHostile) is a platform artefact: '\' is not a
+    separator on Unix, so the hostile run key never traverses there.
+Mistake worth not repeating: I started the Ring tests WHILE the AOT publish was still running on
+  the same tree and got CS2012 "Cannot open ClioRing.Ipc.pdb ... user-mapped section open" —
+  two builds fighting over one obj directory. Serialise builds on a shared checkout.
+Files: none in the repo; this is verification, recorded so the next person does not re-derive the
+  host, the SDK gap, or the macOS-only classification.
+Impact: `runner` is now a fully equipped Windows bench for this branch — SDK 10, MSVC, a clone.
