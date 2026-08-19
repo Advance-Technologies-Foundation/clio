@@ -534,6 +534,7 @@ internal sealed record KnowledgeGuidanceDescriptor(
 internal sealed record KnowledgeArticleProvenance(
 	string SourceAlias,
 	string LibraryId,
+	string LibraryVersion,
 	string ItemId,
 	string TopicId,
 	ulong Sequence,
