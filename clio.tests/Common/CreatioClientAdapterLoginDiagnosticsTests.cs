@@ -80,7 +80,10 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		adapter.DownloadFile("https://host/file", "/tmp/file", "data");
 
 		// Assert
-		diagnostics.Received(1).TrackRequest(Arg.Any<Action>());
+		Action recorded = () => diagnostics.Received(1).TrackRequest(Arg.Any<Action>());
+		recorded.Should().NotThrow(
+			because: "DownloadFile bypasses the reauth executor, so its recording has to be wired separately "
+				+ "and is the easiest one for a later refactor to drop unnoticed");
 	}
 
 	#endregion
@@ -98,7 +101,9 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		adapter.Login();
 
 		// Assert
-		diagnostics.Received(1).Track(Arg.Any<Action>(), LoginAttemptKind.Initial);
+		Action recorded = () => diagnostics.Received(1).Track(Arg.Any<Action>(), LoginAttemptKind.Initial);
+		recorded.Should().NotThrow(
+			because: "an explicit login must be distinguishable in CI output from the two automatic ones");
 	}
 
 	[Test]
@@ -119,7 +124,11 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		}
 
 		// Assert
-		diagnostics.Received().Track(Arg.Any<Action>(), LoginAttemptKind.Reauthentication);
+		Action recorded = () =>
+			diagnostics.Received().Track(Arg.Any<Action>(), LoginAttemptKind.Reauthentication);
+		recorded.Should().NotThrow(
+			because: "the re-login closure lives inside the default reauth executor, so nothing else in the "
+				+ "suite can reach it");
 	}
 
 	#endregion

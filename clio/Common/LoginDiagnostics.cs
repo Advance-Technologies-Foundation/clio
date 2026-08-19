@@ -63,13 +63,13 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 			login();
 		} catch (Exception exception)
 			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
-			// Only the login-rejection shape is decorated, exactly like the request path below. Anything
-			// else — a WebException, a TimeoutException, an OperationCanceledException, a fatal type —
-			// propagates as the same instance, so the typed handlers that key on it keep working
-			// (RemoteCommand.Login's catch (WebException) => return 1, BaseDataContextCommand's 404
-			// diagnostic, ExceptionReadableMessageExtension's InnerException walk,
-			// GetCreatioInfoCommand.IsRecoverable's fatal-type blocklist, and McpToolErrorFilter's
-			// deliberate OperationCanceledException rethrow for the ENG-93373 read-response deadline).
+			// Only the login-rejection shape is decorated, exactly like the request path below. Every
+			// other failure — a transport fault, a timeout, a cancellation, a fatal type — propagates as
+			// the same instance, so the callers that key on its type keep working: the remote command's
+			// transport-fault arm still returns its exit code, the data-context command still renders its
+			// not-found diagnostic, the readable-message extension still finds the inner transport fault,
+			// the info command's fatal-type blocklist still recognises a fatal failure, and the MCP tool
+			// error filter still lets a cancellation through for the ENG-93373 read-response deadline.
 			throw Decorate(exception, rejection, record);
 		} finally {
 			EndAttempt(record);
