@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.UserEnvironment;
 
 namespace Clio.Command.McpServer.Knowledge;
@@ -54,10 +55,11 @@ internal static class CuratedKnowledgeSourceDefaults {
 	/// How long a locally cached generation may stay active before a warm start reports it as stale.
 	/// </summary>
 	/// <remarks>
-	/// A warm artifact-backed start never contacts the publisher, so the age of the activation marker
+	/// A warm artifact-backed start never contacts the publisher, so the age of the activation marker's
+	/// last publication or successful publisher check
 	/// is the only staleness signal available without giving up the offline guarantee. Three days is
-	/// short enough to surface a missed release on the next working day and long enough that a bundle
-	/// which simply has not been republished does not warn on every start.
+	/// short enough to surface a missed release on the next working day while an explicit successful
+	/// update check renews the signal without replacing the active generation.
 	/// </remarks>
 	internal const int StaleCacheThresholdDays = 3;
 
@@ -370,16 +372,17 @@ internal sealed class CuratedKnowledgeBootstrapService(
 			return null;
 		}
 		TimeSpan age = timeProvider.GetUtcNow() - active.ActivatedAtUtc;
-		if (age < TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays)) {
+		if (age <= TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays)) {
 			return null;
 		}
 		return string.Format(
 			CultureInfo.InvariantCulture,
-			"Built-in knowledge source '{0}' is serving library version {1} (sequence {2}), activated {3:yyyy-MM-dd} "
-			+ "and {4} day(s) old; a warm start never checks the publisher, so this guidance may be behind the "
-			+ "current release. Refresh with update-knowledge --source {0}.",
+			"Built-in knowledge source '{0}' is serving library version {1} (sequence {2}), installed or last "
+			+ "confirmed current on {3:yyyy-MM-dd} and now {4} day(s) old; a warm start never checks the publisher, "
+			+ "so this guidance may be behind the "
+			+ "current release. Check for updates with update-knowledge --source {0}.",
 			CuratedKnowledgeSourceDefaults.Alias,
-			active.LibraryVersion,
+			TextUtilities.SanitizeForDisplay(active.LibraryVersion, maxLength: 128),
 			active.Sequence,
 			active.ActivatedAtUtc.UtcDateTime,
 			(int)age.TotalDays);

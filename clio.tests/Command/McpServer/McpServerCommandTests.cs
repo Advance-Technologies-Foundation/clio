@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -59,6 +60,40 @@ public class McpServerCommandTests {
 			.ToArray();
 		warnings.Should().ContainSingle(message => message.Contains("1.12.0", StringComparison.Ordinal),
 			because: "reporting the stale version at debug level would keep exactly the silence issue #1100 reports");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[NonParallelizable]
+	[Description("A stale-cache warning is written to stderr in stdio MCP mode without touching the protocol stream.")]
+	public void ReportCuratedKnowledgeBootstrap_ShouldWriteStandardError_WhenMcpUsesStdio() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		CuratedKnowledgeBootstrapResult stale = new(
+			true,
+			true,
+			true,
+			"ready from its local cache",
+			"serving library version 1.12.0; check with update-knowledge");
+		TextWriter originalError = Console.Error;
+		bool originalMcpMode = global::Clio.Program.IsMcpServerMode;
+		using StringWriter standardError = new();
+
+		try {
+			global::Clio.Program.IsMcpServerMode = true;
+			Console.SetError(standardError);
+
+			// Act
+			McpServerCommand.ReportCuratedKnowledgeBootstrap(stale, logger);
+
+			// Assert
+			standardError.ToString().Should().Contain("[WAR]", because: "stderr is the operator-visible channel in stdio mode");
+			standardError.ToString().Should().Contain("1.12.0",
+				because: "the stderr warning must identify the generation actually being served");
+		} finally {
+			Console.SetError(originalError);
+			global::Clio.Program.IsMcpServerMode = originalMcpMode;
+		}
 	}
 
 	[Test]

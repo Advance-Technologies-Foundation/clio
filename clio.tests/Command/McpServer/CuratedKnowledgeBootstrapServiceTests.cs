@@ -438,7 +438,6 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 			because: "startup must stay inside the advertised pre-serve budget even when both collaborators would block for thirty seconds");
 	}
 
-	/// <summary>A manually advanced clock, so budget exhaustion is deterministic rather than timing-dependent.</summary>
 	[Test]
 	[Description("A warm start reports the served generation as stale when its activation is older than the threshold.")]
 	public void InstallPreparedSource_ShouldReportStaleness_WhenCachedGenerationIsOlderThanThreshold() {
@@ -464,7 +463,9 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		result.StalenessWarning.Should().Contain(
 			$"update-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}",
 			because: "the warning has to name the exact call that clears it");
-		_management.DidNotReceiveWithAnyArgs().Install(default!, default, default);
+		_management.ReceivedCalls().Should().NotContain(
+			call => call.GetMethodInfo().Name == nameof(IKnowledgeSourceManagementService.Install),
+			because: "reporting stale cached guidance must not turn a warm start into a network-backed install");
 	}
 
 	[Test]
@@ -485,6 +486,26 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Assert
 		result.StalenessWarning.Should().BeNull(
 			because: "warning about a cache installed hours ago would train operators to ignore the warning");
+	}
+
+	[Test]
+	[Description("A warm start stays silent when cache age is exactly the documented staleness threshold.")]
+	public void InstallPreparedSource_ShouldNotReportStaleness_WhenCacheAgeEqualsThreshold() {
+		// Arrange
+		BootstrapClock clock = new();
+		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
+			_settings, _store, _management, clock);
+		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
+		_store.TryReadActiveGeneration(CuratedKnowledgeSourceDefaults.Alias).Returns(Pointer(
+			"1.13.21",
+			clock.UtcNow - TimeSpan.FromDays(CuratedKnowledgeSourceDefaults.StaleCacheThresholdDays)));
+
+		// Act
+		CuratedKnowledgeBootstrapResult result = service.Bootstrap();
+
+		// Assert
+		result.StalenessWarning.Should().BeNull(
+			because: "documentation promises a warning only when cache age is more than the threshold");
 	}
 
 	[Test]
@@ -527,7 +548,9 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 			because: "the kill switch is operator-owned and bootstrap must respect it");
 		result.StalenessWarning.Should().BeNull(
 			because: "an operator who disabled the source is not asked to refresh its retained cache");
-		_store.DidNotReceiveWithAnyArgs().TryReadActiveGeneration(default!);
+		_store.ReceivedCalls().Should().NotContain(
+			call => call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.TryReadActiveGeneration),
+			because: "a disabled source must not inspect retained cache metadata during startup");
 	}
 
 	[Test]
@@ -572,6 +595,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		"v" + libraryVersion,
 		activatedAtUtc);
 
+	/// <summary>A manually advanced clock, so budget exhaustion is deterministic rather than timing-dependent.</summary>
 	private sealed class BootstrapClock : TimeProvider {
 		private long _timestamp;
 

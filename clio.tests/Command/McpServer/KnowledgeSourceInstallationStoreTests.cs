@@ -516,12 +516,76 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 	[Test]
 	[Description("The startup-safe generation probe reports nothing when the source has no activation marker.")]
 	public void TryReadActiveGeneration_ShouldReturnNull_WhenNothingIsInstalled() {
+		// Arrange
+		const string sourceAlias = "alpha";
+
 		// Act
-		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration("alpha");
+		KnowledgeSourceGenerationPointer? active = _store.TryReadActiveGeneration(sourceAlias);
 
 		// Assert
 		active.Should().BeNull(
 			because: "an absent marker means the age of the cache is unknown, not that a stale cache exists");
+	}
+
+	[Test]
+	[Description("A successful publisher check renews only the generation that was active when the check began.")]
+	public void TryRecordPublisherCheck_ShouldRenewFreshness_WhenExpectedGenerationIsStillActive() {
+		// Arrange
+		byte[] bundle = Bundle(("guidance/alpha.md", "# alpha"));
+		Publish("alpha", "com.example.alpha", 1, bundle);
+		KnowledgeSourceCurrentState published = _store.ReadCurrent("alpha", out string? publishedDiagnostic)!;
+		KnowledgeSourceCurrentState before = published with {
+			Active = published.Active with { ActivatedAtUtc = DateTimeOffset.UtcNow - TimeSpan.FromDays(10) }
+		};
+		File.WriteAllBytes(
+			GetCurrentMarkerPath(),
+			JsonSerializer.SerializeToUtf8Bytes(
+				before,
+				KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourceCurrentState));
+
+		// Act
+		bool recorded = _store.TryRecordPublisherCheck("alpha", before.Active);
+		KnowledgeSourceCurrentState? after = _store.ReadCurrent("alpha", out string? afterDiagnostic);
+
+		// Assert
+		publishedDiagnostic.Should().BeNull(
+			because: "the arranged generation must be readable before its publisher freshness is renewed");
+		recorded.Should().BeTrue(
+			because: "the publisher confirmed that the still-active generation is current");
+		afterDiagnostic.Should().BeNull(
+			because: "renewing freshness must preserve a valid activation marker");
+		after.Should().NotBeNull(
+			because: "recording publisher freshness must not deactivate the generation");
+		after!.Active.ActivatedAtUtc.Should().BeAfter(before.Active.ActivatedAtUtc,
+			because: "the warm-start warning must age from the latest successful publisher confirmation");
+		after.Active.Should().BeEquivalentTo(
+			before.Active,
+			options => options.Excluding(pointer => pointer.ActivatedAtUtc),
+			because: "a freshness acknowledgement must not change bundle identity or provenance");
+	}
+
+	[Test]
+	[Description("A delayed publisher check cannot renew a different generation that became active while it was running.")]
+	public void TryRecordPublisherCheck_ShouldNotRenewFreshness_WhenActiveGenerationChanged() {
+		// Arrange
+		byte[] bundle = Bundle(("guidance/alpha.md", "# alpha"));
+		Publish("alpha", "com.example.alpha", 1, bundle);
+		KnowledgeSourceCurrentState current = _store.ReadCurrent("alpha", out string? beforeDiagnostic)!;
+		KnowledgeSourceGenerationPointer staleExpectation = current.Active with { ResolvedRevision = "older-check" };
+
+		// Act
+		bool recorded = _store.TryRecordPublisherCheck("alpha", staleExpectation);
+		KnowledgeSourceCurrentState? after = _store.ReadCurrent("alpha", out string? afterDiagnostic);
+
+		// Assert
+		beforeDiagnostic.Should().BeNull(
+			because: "the arranged active generation must be valid before simulating a concurrent change");
+		recorded.Should().BeFalse(
+			because: "a check for a different generation cannot establish freshness for the active one");
+		afterDiagnostic.Should().BeNull(
+			because: "rejecting a stale acknowledgement must leave the activation marker valid");
+		after.Should().BeEquivalentTo(current,
+			because: "a failed compare-and-swap must not mutate bundle identity or freshness");
 	}
 
 	[Test]

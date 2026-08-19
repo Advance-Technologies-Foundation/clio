@@ -115,6 +115,22 @@ internal interface IKnowledgeSourceInstallationStore {
 	/// <returns>The recorded active generation pointer, or <see langword="null"/> when none can be read.</returns>
 	KnowledgeSourceGenerationPointer? TryReadActiveGeneration(string sourceAlias);
 
+	/// <summary>
+	/// Renews the freshness timestamp of the expected active generation after the publisher confirms
+	/// that no newer generation is available.
+	/// </summary>
+	/// <remarks>
+	/// The activation pointer predates publisher freshness reporting, so its
+	/// <see cref="KnowledgeSourceGenerationPointer.ActivatedAtUtc"/> value is also the schema-compatible
+	/// freshness timestamp used by warm-start staleness warnings. The compare-and-swap keeps a slow
+	/// update check from renewing a generation that another process replaced while the transport call
+	/// was in flight.
+	/// </remarks>
+	/// <param name="sourceAlias">The configured source alias.</param>
+	/// <param name="expectedActive">The generation that was current when the publisher check began.</param>
+	/// <returns><see langword="true"/> when the expected generation was still active and was renewed.</returns>
+	bool TryRecordPublisherCheck(string sourceAlias, KnowledgeSourceGenerationPointer expectedActive);
+
 	bool TryMigrateGitRepository(string sourceAlias, string targetAlias);
 
 	bool MigrateGitRepository(string sourceAlias, string targetAlias);
@@ -252,6 +268,24 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			// classification, and recovering from one is ReadCurrent's job, not this probe's.
 			return null;
 		}
+	}
+
+	public bool TryRecordPublisherCheck(string sourceAlias, KnowledgeSourceGenerationPointer expectedActive) {
+		ArgumentNullException.ThrowIfNull(expectedActive);
+		return ExecuteWithSourceMutationLock(sourceAlias, () => {
+			string sourceRoot = ResolveSourceRoot(sourceAlias, create: false);
+			KnowledgeSourceCurrentState? current = ReadCurrentMarker(sourceAlias, sourceRoot, out string? diagnostic);
+			if (diagnostic is not null || current?.Active != expectedActive) {
+				return false;
+			}
+			KnowledgeSourceCurrentState renewed = current with {
+				Active = current.Active with { ActivatedAtUtc = DateTimeOffset.UtcNow }
+			};
+			WriteAtomicJson(sourceRoot, CurrentFileName, JsonSerializer.SerializeToUtf8Bytes(
+				renewed,
+				KnowledgeSourceInstallationJsonContext.Default.KnowledgeSourceCurrentState));
+			return true;
+		});
 	}
 
 	public bool TryMigrateGitRepository(string sourceAlias, string targetAlias) {

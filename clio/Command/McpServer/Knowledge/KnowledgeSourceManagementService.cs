@@ -348,6 +348,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			ExactRevision: context.Repair ? context.Current?.Active.ResolvedRevision : null));
 		search.CatalogFingerprint = retrieved.CatalogFingerprint ?? search.CatalogFingerprint;
 		if (retrieved.Status == KnowledgeTransportStatus.NoCandidate) {
+			if (context.Current is not null && !context.Repair) {
+				_store.TryRecordPublisherCheck(context.Alias, context.Current.Active);
+			}
 			return new ArtifactCandidateAttempt(null, StopSearch: true);
 		}
 		if (retrieved.Status == KnowledgeTransportStatus.Failed) {

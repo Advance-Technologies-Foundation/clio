@@ -513,6 +513,37 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
+	[Description("Updating an installed source records freshness when the publisher confirms there is no newer generation.")]
+	public void Update_ShouldRecordPublisherCheck_WhenNoNewCandidateExists() {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("alpha", Source("com.example.alpha", enabled: true))));
+		KnowledgeSourceCurrentState state = State("alpha", "com.example.alpha", 10, "1.0.0");
+		ConfigureCurrent(_ => state);
+		_transport.Retrieve(Arg.Any<KnowledgeTransportRequest>()).Returns(new KnowledgeTransportResult(
+			KnowledgeTransportStatus.NoCandidate,
+			null,
+			null,
+			null));
+		_store.TryRecordPublisherCheck("alpha", state.Active).Returns(true);
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("alpha");
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the publisher confirmed that the installed generation is current");
+		result.Sources.Should().ContainSingle()
+			.Which.Status.Should().Be("up-to-date",
+				because: "a no-candidate update remains a successful lifecycle result");
+		_store.ReceivedCalls().Count(call =>
+			call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.TryRecordPublisherCheck)
+			&& call.GetArguments()[0] as string == "alpha"
+			&& Equals(call.GetArguments()[1], state.Active)).Should().Be(1,
+			because: "a successful publisher check must clear the age warning only for the generation it actually checked");
+	}
+
+	[Test]
 	[Description("Info reports unknown update availability when the configured transport check fails.")]
 	public void GetInfo_ShouldReportUnknown_WhenUpdateCheckFails() {
 		// Arrange
