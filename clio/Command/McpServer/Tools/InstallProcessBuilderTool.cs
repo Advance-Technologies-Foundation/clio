@@ -150,7 +150,7 @@ public sealed class InstallProcessBuilderTool(
 				server,
 				requestContext?.Params?.ProgressToken,
 				InstallProcessBuilderToolName,
-				() => RunInstall(options, callerAlreadyAnswered, server),
+				() => RunInstall(options, callerAlreadyAnswered),
 				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
@@ -175,8 +175,7 @@ public sealed class InstallProcessBuilderTool(
 	// monitor, and releases the reservation where the REAL work ends — including the detached continuation
 	// past the response deadline — rather than where the tool method returned.
 	private CommandExecutionResult RunInstall(
-		InstallProcessBuilderOptions options, StrongBox<bool> callerAlreadyAnswered,
-		global::ModelContextProtocol.Server.McpServer server) {
+		InstallProcessBuilderOptions options, StrongBox<bool> callerAlreadyAnswered) {
 		// TARGET key, not tenant: the configuration build is server-wide, so this must exclude across
 		// principals too — and it must use the SAME key the worker-routed path reserves under, or the two
 		// stop excluding each other the moment one of them is routed to a worker and the other is not.
@@ -190,10 +189,8 @@ public sealed class InstallProcessBuilderTool(
 				+ "it to finish, then retry the process-designer tool you were using; it refuses again if the "
 				+ $"package is still missing, and only then call {InstallProcessBuilderToolName}.");
 		}
-		int installExitCode = -1;
 		try {
 			CommandExecutionResult result = InternalExecuteWithoutTenantLock<InstallProcessBuilderCommand>(options);
-			installExitCode = result.ExitCode;
 			if (result.ExitCode != 0 && callerAlreadyAnswered.Value) {
 				ReportPostDeadlineFailure(options.Environment, result.ExitCode);
 			}
@@ -201,13 +198,12 @@ public sealed class InstallProcessBuilderTool(
 		}
 		finally {
 			McpToolExecutionLock.ReleaseConfigurationBuild(buildKey, reservation);
-			// The PRIVATE completion signal (ADR rule 5), sent from where the REAL work ends — this finally
-			// runs on the detached, past-deadline continuation. install-process-builder has no operation
-			// registry at all, so without it the parent has no way to learn that this sticky worker has
-			// finished and could hold its admission slot until the lifetime bound expires. No-op outside a
-			// worker process.
-			WorkerOperationCompletionSignal.ReportCompleted(
-				server, McpToolOperationFamily.ConfigurationBuild, installExitCode);
+			// No completion signal is sent from here. install-process-builder has no operation registry at
+			// all, so the private signal (ADR rule 5) is the ONLY way the parent learns this sticky worker
+			// has finished — which is exactly why sending it from this finally was wrong: the reservation
+			// refusal above returns before it, and that refusal is the likeliest outcome when a build is
+			// already running. WorkerOperationCompletionSignal's choke point emits it around every exit, and
+			// the heartbeat helper leases this work so a past-deadline install is not read as finished.
 		}
 	}
 

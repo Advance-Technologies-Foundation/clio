@@ -179,7 +179,7 @@ public class RestartTool(
 				server,
 				requestContext?.Params?.ProgressToken,
 				waitContext.ToolName,
-				() => RunReadinessWait(options, requestResult, waitContext, tenantKey, operation.OperationId, server),
+				() => RunReadinessWait(options, requestResult, waitContext, tenantKey, operation.OperationId),
 				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
@@ -197,7 +197,7 @@ public class RestartTool(
 	// never observe an operation stuck "running" (mirrors CompileCreatioTool's registry.Finish guarantee).
 	private CommandExecutionResult RunReadinessWait(
 		RestartOptions options, CommandExecutionResult requestResult, RestartWaitContext waitContext,
-		string tenantKey, string operationId, global::ModelContextProtocol.Server.McpServer server) {
+		string tenantKey, string operationId) {
 		int readinessExitCode = 1;
 		// Pin the session container in-use for the wait (FR-08) WITHOUT taking the per-tenant lock (GetLock) —
 		// the readiness poll is read-only and must not serialize other same-tenant calls. Because no GetLock was
@@ -222,12 +222,13 @@ public class RestartTool(
 				exception, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
 		} finally {
 			McpToolExecutionLock.MarkSessionContainerAvailable(tenantKey);
-			// The PRIVATE completion signal (ADR rule 5), sent from where the readiness wait REALLY ends —
-			// this finally runs on the detached, past-deadline continuation. restart-by-credentials is the
-			// family member that most needs it: it is deliberately unreportable through restart-status, so
-			// there is no terminal status a parent could ever poll for it. No-op outside a worker process.
-			WorkerOperationCompletionSignal.ReportCompleted(
-				server, McpToolOperationFamily.Restart, readinessExitCode);
+			// No completion signal is sent from here. The private signal (ADR rule 5) matters most to this
+			// family — restart-by-credentials is deliberately unreportable through restart-status, so no
+			// terminal status exists for a parent to poll — but sending it HERE only covered the calls that
+			// reached the readiness wait. waitReady=false, a failed restart request, and both argument
+			// refusals return without ever getting here, and each stranded the sticky worker for its whole
+			// hard lifetime. WorkerOperationCompletionSignal's choke point now emits it around every exit,
+			// and the heartbeat helper leases THIS work so a past-deadline wait is not read as finished.
 		}
 	}
 

@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -28,61 +29,113 @@ public static class McpToolErrorFilter
 	/// <returns>Wrapped call-tool handler.</returns>
 	public static McpRequestHandler<CallToolRequestParams, CallToolResult> HandleCallToolErrors(
 		McpRequestHandler<CallToolRequestParams, CallToolResult> next) =>
-		async (context, cancellationToken) => {
-			if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
-				return argumentErrorResult;
+		async (context, cancellationToken) =>
+			// ENG-95262 story 7 — the completion-signal choke point, and it is deliberately the OUTERMOST
+			// thing here rather than a wrapper around tool execution. A sticky worker is registered by the
+			// parent (with the target's configuration-build reservation taken) BEFORE the tool method is
+			// invoked, so every exit below strands it if it returns unsignalled — including the two
+			// argument diagnostics and the routing refusals, which answer before any tool runs at all. A
+			// scope opened further in would reproduce the very defect class it exists to remove, one layer
+			// up. Inert unless this process is a worker AND the call is a sticky operation-STARTER, so a
+			// status poll (also sticky, starts nothing) and the whole in-process host are untouched.
+			// Installed inside this filter rather than as a second call-tool filter for the reason stated
+			// below on the routing question: filter composition order is SDK-defined and unverified.
+			await Tools.WorkerOperationCompletionSignal.RunToolCallAsync(
+				context.Server,
+				ResolveExecutionMetadata(context),
+				() => HandleCallToolErrorsCore(next, context, cancellationToken)).ConfigureAwait(false);
+
+	// The filter's original body, unchanged. Extracted so the completion-signal scope above can wrap every
+	// one of its exits without indenting the whole method.
+	private static async Task<CallToolResult> HandleCallToolErrorsCore(
+		McpRequestHandler<CallToolRequestParams, CallToolResult> next,
+		RequestContext<CallToolRequestParams> context,
+		CancellationToken cancellationToken) {
+		if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
+			return argumentErrorResult;
+		}
+		if (TryCreateMissingCompositeArgumentHint(context, out CallToolResult? hintResult)) {
+			return hintResult;
+		}
+		try {
+			// ENG-95262 dispatch site (a) of three — the MATCHED path. The routing question is asked here,
+			// inside the try, so anything unexpected it raises still leaves through the redacted catch
+			// below rather than reaching the SDK's default handler as raw text (threat model R-7 — the same
+			// reason a SECOND call-tool filter is not added: filter composition order is SDK-defined and
+			// unverified, so a router outside this catch could emit unredacted text into the transcript).
+			MatchedRouteDecision decision = ResolveMatchedRoute(context);
+			if (decision.Refusal is not null) {
+				return decision.Refusal;
 			}
-			if (TryCreateMissingCompositeArgumentHint(context, out CallToolResult? hintResult)) {
-				return hintResult;
+			if (decision.Dispatcher is not null) {
+				// The call is relayed VERBATIM: the matched primitive's name is already the canonical
+				// one, so the caller's own params object goes to the worker unchanged — `_meta` and its
+				// progress token included.
+				return await decision.Dispatcher
+					.DispatchAsync(decision.Route!, context.Params!,
+						new Relay.McpServerParentSession(context.Server), cancellationToken)
+					.ConfigureAwait(false);
 			}
-			try {
-				// ENG-95262 dispatch site (a) of three — the MATCHED path. The routing question is asked here,
-				// inside the try, so anything unexpected it raises still leaves through the redacted catch
-				// below rather than reaching the SDK's default handler as raw text (threat model R-7 — the same
-				// reason a SECOND call-tool filter is not added: filter composition order is SDK-defined and
-				// unverified, so a router outside this catch could emit unredacted text into the transcript).
-				MatchedRouteDecision decision = ResolveMatchedRoute(context);
-				if (decision.Refusal is not null) {
-					return decision.Refusal;
-				}
-				if (decision.Dispatcher is not null) {
-					// The call is relayed VERBATIM: the matched primitive's name is already the canonical
-					// one, so the caller's own params object goes to the worker unchanged — `_meta` and its
-					// progress token included.
-					return await decision.Dispatcher
-						.DispatchAsync(decision.Route!, context.Params!,
-							new Relay.McpServerParentSession(context.Server), cancellationToken)
-						.ConfigureAwait(false);
-				}
-				// ENG-93373: bound retry-safe (read-only, or the get-page local-write read; never idempotent server writes) tools by a wall-clock
-				// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
-				// returns a structured error-class=creatio-timeout result telling the agent the call is safe to
-				// retry. Destructive tools are excluded — they own their own timeout contract — and fall through
-				// to the unbounded call below. Only MATCHED (advertised) tools are classified here; the unmatched
-				// long-tail is bounded by the durable handler (McpDurableCallToolHandler) using the same gate.
-				if (IsRetrySafeMatchedTool(context)) {
-					return await McpReadResponseDeadline.RunAsync(
-						context.Params?.Name ?? UnknownToolName,
-						token => next(context, token),
-						cancellationToken).ConfigureAwait(false);
-				}
-				return await next(context, cancellationToken);
+			// ENG-93373: bound retry-safe (read-only, or the get-page local-write read; never idempotent server writes) tools by a wall-clock
+			// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
+			// returns a structured error-class=creatio-timeout result telling the agent the call is safe to
+			// retry. Destructive tools are excluded — they own their own timeout contract — and fall through
+			// to the unbounded call below. Only MATCHED (advertised) tools are classified here; the unmatched
+			// long-tail is bounded by the durable handler (McpDurableCallToolHandler) using the same gate.
+			if (IsRetrySafeMatchedTool(context)) {
+				return await McpReadResponseDeadline.RunAsync(
+					context.Params?.Name ?? UnknownToolName,
+					token => next(context, token),
+					cancellationToken).ConfigureAwait(false);
 			}
-			catch (OperationCanceledException) {
-				// Honour cooperative cancellation/timeout — let the host see a cancellation, not a tool error.
-				throw;
-			}
-			catch (Exception ex) {
-				// Without this, an unhandled tool-method exception reaches the SDK's default handler, which
-				// returns a generic "An error occurred invoking '<tool>'" with no detail — so an agent cannot
-				// see WHY the call failed (e.g. "Environment ... not found") and cannot self-correct. Surface
-				// the real (inner-most) message as a structured error result for EVERY tool uniformly — but
-				// redacted, because this text lands in the model/host transcript and inner-most messages
-				// routinely carry absolute paths, request URIs (target hosts), and credentials.
-				return CreateJsonErrorResult(
-					$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(ex))}");
-			}
-		};
+			return await next(context, cancellationToken);
+		}
+		catch (OperationCanceledException) {
+			// Honour cooperative cancellation/timeout — let the host see a cancellation, not a tool error.
+			throw;
+		}
+		catch (Exception ex) {
+			// Without this, an unhandled tool-method exception reaches the SDK's default handler, which
+			// returns a generic "An error occurred invoking '<tool>'" with no detail — so an agent cannot
+			// see WHY the call failed (e.g. "Environment ... not found") and cannot self-correct. Surface
+			// the real (inner-most) message as a structured error result for EVERY tool uniformly — but
+			// redacted, because this text lands in the model/host transcript and inner-most messages
+			// routinely carry absolute paths, request URIs (target hosts), and credentials.
+			return CreateJsonErrorResult(
+				$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetSurfacedMessage(ex))}");
+		}
+	}
+
+	/// <summary>
+	/// Reads the declared execution metadata of the tool this call names, for the completion-signal choke
+	/// point above.
+	/// </summary>
+	/// <param name="context">The call being served.</param>
+	/// <returns>The metadata, or <see langword="null"/> when the name is unclassified or unresolvable.</returns>
+	/// <remarks>
+	/// <para>
+	/// Service-located for the same reason the router is: this seam is a static delegate with no
+	/// constructor. The reader is registered on the transport-neutral <c>BindingsModule.RegisterInto</c>
+	/// path, so a worker always has it.
+	/// </para>
+	/// <para>
+	/// Keyed on the raw request name with no inner command, which is exactly right for the direct and the
+	/// deprecated-alias vectors (the reader canonicalises aliases itself). A sticky family reached through
+	/// <c>clio-run</c> is NOT covered here: the executor's own name is what arrives, and unwrapping it
+	/// would mean re-implementing that tool's two accepted wrapper shapes in this filter.
+	/// </para>
+	/// </remarks>
+	private static McpToolExecutionMetadata? ResolveExecutionMetadata(
+		RequestContext<CallToolRequestParams> context) {
+		if (context.Services?.GetService(typeof(IMcpToolExecutionMetadataReader))
+			is not IMcpToolExecutionMetadataReader reader) {
+			return null;
+		}
+		return reader.TryGetMetadata(context.Params?.Name, innerCommand: null,
+			out McpToolExecutionMetadata metadata)
+			? metadata
+			: null;
+	}
 
 	// True when the matched (advertised) tool is retry-safe and therefore eligible for the read-response
 	// deadline (ENG-93373). MatchedPrimitive is null for an unmatched name — those are bounded by the

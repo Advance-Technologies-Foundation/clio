@@ -295,9 +295,19 @@ internal static class McpProgressHeartbeat {
 		TimeSpan effectiveDeadline = deadline ?? DefaultResponseDeadline;
 		Action<string> reportStage = BuildStageReporter(channel);
 
+		// Lease the operation BEFORE scheduling it. This overload is the only mechanism by which the four
+		// long-running families detach work past the response deadline, so it is also the only place that
+		// can tell the completion ledger "this call left something running" — which is what stops
+		// WorkerOperationCompletionSignal reaping a sticky worker while its operation is still going. The
+		// lease is inert unless a sticky operation-starting tool call is open on this flow, so every other
+		// caller of this helper is unaffected. Taken here rather than inside the delegate because
+		// scheduling is not instantaneous and an empty window reads as "the call started nothing".
+		WorkerOperationCompletionSignal.WorkerOperationLease operationLease =
+			WorkerOperationCompletionSignal.BeginOperation();
+
 		// Start the work detached from the request lifetime so it can outlive both the deadline and a
 		// client disconnect (see the McpServer deadline overload's remarks).
-		Task<TResult> workTask = Task.Run(() => work(reportStage), CancellationToken.None);
+		Task<TResult> workTask = Task.Run(() => operationLease.Run(() => work(reportStage)), CancellationToken.None);
 
 		using CancellationTokenSource heartbeatCts =
 			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

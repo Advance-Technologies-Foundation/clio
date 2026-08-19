@@ -355,41 +355,35 @@ public sealed class ApplicationSectionCreateTool(
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionCreateToolName,
 				reportStage => {
-					// The PRIVATE completion signal (ADR rule 5), wrapped around the REAL work. This delegate
-					// runs on the detached, past-deadline continuation, so it — not the tool method's return —
-					// is where a create-app-section actually ends. OQ-4 is resolved in favour of the signal
-					// ALONE: create-app-section gains no operation registry here, because a registry with no
-					// status tool is unobservable state, and the observation path it would duplicate already
-					// exists and is the one the shipped [Description] names (poll list-app-sections /
-					// get-app-info). No-op outside a worker process.
-					int sectionExitCode = 1;
-					try {
-					ApplicationSectionCreateResult sectionResult = ExecuteWithCleanLog(options, () => {
-					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
-					// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-07).
-					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
-					return applicationSectionCreateService.CreateSection(
-						settings,
-						new ApplicationSectionCreateRequest(
-							args.ApplicationCode,
-							args.Caption,
-							args.Description,
-							args.EntitySchemaName,
-							args.WithMobilePages,
-							resolvedIconBackground,
-							args.CaptionCulture,
-							args.Code),
-						BackgroundInsertTimeoutMs,
-						BackgroundReadbackTimeoutMs,
-						enableContentionRetry: true,
-						reportStage: reportStage);
+					// No completion signal is sent from here. This delegate runs on the detached, past-deadline
+					// continuation, so it IS where a create-app-section's work ends — but it is not where the
+					// CALL ends, and the argument validation above returns without ever reaching it, which
+					// stranded the sticky worker. WorkerOperationCompletionSignal's choke point emits the private
+					// signal (ADR rule 5) around every exit, and the heartbeat helper leases this delegate so a
+					// past-deadline creation is not read as finished. OQ-4 stays resolved in favour of the signal
+					// ALONE: create-app-section gains no operation registry, because a registry with no status
+					// tool is unobservable state, and the observation path it would duplicate already exists and
+					// is the one the shipped [Description] names (poll list-app-sections / get-app-info).
+					return ExecuteWithCleanLog(options, () => {
+						// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+						// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-07).
+						EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+						return applicationSectionCreateService.CreateSection(
+							settings,
+							new ApplicationSectionCreateRequest(
+								args.ApplicationCode,
+								args.Caption,
+								args.Description,
+								args.EntitySchemaName,
+								args.WithMobilePages,
+								resolvedIconBackground,
+								args.CaptionCulture,
+								args.Code),
+							BackgroundInsertTimeoutMs,
+							BackgroundReadbackTimeoutMs,
+							enableContentionRetry: true,
+							reportStage: reportStage);
 					});
-					sectionExitCode = 0;
-					return sectionResult;
-					} finally {
-						WorkerOperationCompletionSignal.ReportCompleted(
-							server, McpToolOperationFamily.AppSectionCreate, sectionExitCode);
-					}
 				},
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);

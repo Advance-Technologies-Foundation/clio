@@ -80,6 +80,18 @@ public sealed class StickyWorkerSupervisionTests {
 	/// <summary>Ceiling on every wait here; a scripted child answers in milliseconds.</summary>
 	private static readonly TimeSpan AssertionTimeout = TimeSpan.FromSeconds(30);
 
+	/// <summary>
+	/// The supervision cadence the cases about a RETIRED session state for themselves.
+	/// </summary>
+	/// <remarks>
+	/// Six hundred times shorter than <see cref="AssertionTimeout"/>, so a loaded agent that misses many
+	/// passes still has hundreds left. Nothing asserts how fast a reap arrives — only that it arrives
+	/// without a dispatch and without the half-hour lifetime bound — so this cannot become a timing test.
+	/// The shipped cadence (<see cref="StickyWorkerRegistry.DefaultSupervisionInterval"/>) is deliberately
+	/// not used here: waiting it out would make every one of these cases fifteen seconds long.
+	/// </remarks>
+	private static readonly TimeSpan FastSupervisionInterval = TimeSpan.FromMilliseconds(50);
+
 	/// <summary>The JSON-RPC method a poll invokes on its worker.</summary>
 	private const string CallToolMethodName = "tools/call";
 
@@ -232,7 +244,14 @@ public sealed class StickyWorkerSupervisionTests {
 		// Act — the worker says its detached work has finished, on the private channel.
 		await fixture.Children[0].SendCompletionSignalAsync(McpToolOperationFamily.ConfigurationBuild,
 			exitCode: 0);
-		await WaitUntilAsync(() => fixture.Reservations.HeldCount == 0);
+		// Gated on the SLOT, not on the reservation, and the difference is a race rather than a
+		// preference. The reservation is released the instant completion is recorded, while the process,
+		// the session and the admission slot go on a sweep the registry schedules for itself — so a second
+		// starter issued on the reservation's signal can ask for the sticky slot while that sweep is still
+		// giving it back, and be refused for want of capacity by a worker that is already being reaped.
+		// The wait is bounded like every other here, so a reap that never happens still fails the case.
+		await WaitUntilAsync(() => fixture.Reservations.HeldCount == 0
+			&& fixture.Supervisor.GetSnapshot().ActiveStickyWorkers == 0);
 		CallToolResult second = await fixture.DispatchAsync(
 			InstallProcessBuilderToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
 				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
@@ -616,13 +635,13 @@ public sealed class StickyWorkerSupervisionTests {
 		// Act
 		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.ConfigurationBuild, "tenant|a"),
 			middle.Entry).Should().BeTrue();
-		TimeSpan? armedForMiddle = clock.OnlyTimer.ArmedDelay;
+		TimeSpan? armedForMiddle = clock.DeadlineTimer.ArmedDelay;
 		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.Restart, "tenant|b"),
 			nearest.Entry).Should().BeTrue();
-		TimeSpan? armedForNearest = clock.OnlyTimer.ArmedDelay;
+		TimeSpan? armedForNearest = clock.DeadlineTimer.ArmedDelay;
 		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.AppSectionCreate, "tenant|c"),
 			furthest.Entry).Should().BeTrue();
-		TimeSpan? armedForFurthest = clock.OnlyTimer.ArmedDelay;
+		TimeSpan? armedForFurthest = clock.DeadlineTimer.ArmedDelay;
 
 		// Assert
 		armedForMiddle.Should().NotBeNull(
@@ -656,7 +675,7 @@ public sealed class StickyWorkerSupervisionTests {
 		registry.TryRegister(new StickyWorkerKey(McpToolOperationFamily.ConfigurationBuild, "tenant|a"),
 			probe.Entry).Should().BeTrue(
 			because: "the deadline has to be armed before disposal, or 'nothing fired afterwards' would be true of a registry that never scheduled anything");
-		clock.OnlyTimer.ArmedDelay.Should().NotBeNull(
+		clock.DeadlineTimer.ArmedDelay.Should().NotBeNull(
 			because: "the same reason stated as an observation rather than an assumption");
 
 		// Act
@@ -673,7 +692,7 @@ public sealed class StickyWorkerSupervisionTests {
 		await Task.Delay(100);
 
 		// Assert
-		clock.OnlyTimer.IsDisposed.Should().BeTrue(
+		clock.DeadlineTimer.IsDisposed.Should().BeTrue(
 			because: "disposal must take the timer with it: that is what makes 'no callback after disposal' structural rather than a race the flag happens to win");
 		probe.Disposals.Value.Should().Be(0,
 			because: "a deadline that passes after the registry is gone must reap nothing — the entries belong to a host that is shutting down, and touching them there is work on a half-torn-down object graph");
@@ -730,6 +749,200 @@ public sealed class StickyWorkerSupervisionTests {
 		// Cleanup
 		await successor.Entry.ReleaseAsync();
 		await bystander.Entry.ReleaseAsync();
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// Entry-scoped supervision: an unusable worker is reaped WHEN IT BECOMES UNUSABLE, not at its bound
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("A sticky worker whose PROCESS exits is reaped at once — with no further sticky dispatch and without waiting out its lifetime bound — and the admission slot it was holding comes back, so the next long operation on that host is admitted rather than refused for the sake of a worker that no longer exists.")]
+	public async Task Supervision_ShouldReapAStickyWorkerAndReturnItsSlot_WhenItsProcessExits() {
+		// Arrange — a total cap of 2 puts the sticky ceiling at 1, so ONE long operation saturates the
+		// sticky pool and the slot under test is the only one there is. The clock is the REAL one on
+		// purpose: this case must not be reachable by advancing time, because "reaped at its lifetime
+		// bound" is exactly the behaviour it exists to distinguish itself from.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2);
+		await fixture.DispatchAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
+		WorkerSupervisorSnapshot beforeExit = fixture.Supervisor.GetSnapshot();
+		beforeExit.ActiveStickyWorkers.Should().Be(beforeExit.StickyConcurrencyCap,
+			because: "the case only discriminates with the sticky pool SATURATED: on a host with a spare slot the next long operation succeeds whether or not the dead worker was ever reaped");
+
+		// Act — the worker's process ends and NOBODY calls: no poll, no second starter, no dispatch at
+		// all, and no clock advanced anywhere. The pipes are deliberately left open, so the only thing
+		// that changed is the PROCESS — a session torn down at the same moment would let this pass
+		// through the retirement path instead.
+		fixture.Children[0].SimulateProcessExit();
+		await WaitUntilAsync(() => fixture.Supervisor.GetSnapshot().ActiveStickyWorkers == 0);
+		WorkerSupervisorSnapshot afterExit = fixture.Supervisor.GetSnapshot();
+		// Read BEFORE the proof below dispatches: that dispatch registers a worker of its own, so the
+		// count is only about the reaped one while it is the only thing that ever registered.
+		int supervisedAfterExit = fixture.StickyWorkers.Count;
+		CallToolResult nextLongOperation = await fixture.DispatchAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), "another-environment");
+
+		// Assert
+		afterExit.ActiveStickyWorkers.Should().Be(0,
+			because: "the ADMISSION SLOT is the resource a dead worker goes on holding, so the slot coming back is the property under test — a dictionary entry that merely vanished would leave the shared semaphore consumed by a process that no longer exists");
+		supervisedAfterExit.Should().Be(0,
+			because: "the registry must stop pointing at a worker it has ended, or a later poll would be answered out of a session belonging to a dead process");
+		nextLongOperation.IsError.Should().NotBeTrue(
+			because: "the reclaimed slot must be genuinely reusable — a later long operation refused for want of capacity is what an unreaped dead worker looks like from outside, and on a host whose sticky ceiling is one that refusal lasts the whole half-hour bound");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A sticky worker whose relay session is RETIRED while its process is still running is reaped by supervision alone, with no further dispatch and no lifetime deadline — a live process nothing can say anything to must not go on holding an admission slot and a shared-resource reservation.")]
+	public async Task Supervision_ShouldReapAStickyWorker_WhenItsSessionIsRetiredWhileItsProcessRuns() {
+		// Arrange — the cadence is STATED (50 ms) rather than inherited, so this case cannot depend on the
+		// shipped fifteen-second interval. It cannot flake either: nothing here asserts how FAST the reap
+		// happened, only that it happened without a dispatch and without the half-hour bound, and the wait
+		// below is bounded by AssertionTimeout, six hundred times the cadence.
+		using StickyFixture fixture = CreateFixture(concurrencyCap: 2,
+			supervisionInterval: FastSupervisionInterval);
+		await fixture.DispatchAsync(
+			CompileToolName, StarterMetadata(McpToolOperationFamily.ConfigurationBuild,
+				McpToolSharedFileResource.ConfigurationBuild), EnvironmentName);
+		StickyWorkerKey key = new(McpToolOperationFamily.ConfigurationBuild, $"tenant|{EnvironmentName}");
+		fixture.StickyWorkers.TryReach(key, out StickyWorkerEntry entry).Should().BeTrue(
+			because: "the arrangement must start from a reachable worker, or 'unreachable afterwards' and 'never registered' would be indistinguishable");
+		fixture.Reservations.HeldCount.Should().Be(1,
+			because: "the running compile holds its target's reservation, which is the second thing an unreachable worker would go on denying the environment");
+
+		// Act — the SESSION is retired and the process is left running. This is the state ADR 3.2a
+		// describes: a worker that is alive and permanently unreachable, which no process-exit event can
+		// ever report.
+		// Read BEFORE the session is retired, never after: the reap this case waits for ends the process
+		// itself, so a read taken afterwards would be racing the very supervision under test and would
+		// fail on a correct implementation. Nothing else can have ended this child — the scripted worker
+		// exits only through Kill, Dispose or SimulateProcessExit, none of which this case calls — so the
+		// pre-read states exactly the property: alive at the moment its session was retired.
+		bool processRunningWhenRetired = !fixture.Children[0].HasExited;
+		await entry.Session.DisposeAsync();
+		await WaitUntilAsync(() => fixture.Supervisor.GetSnapshot().ActiveStickyWorkers == 0);
+
+		// Assert
+		processRunningWhenRetired.Should().BeTrue(
+			because: "the case is about a session RETIRED while its process ran on: if the process had already gone, the exit watcher would have carried this and the retirement half would be untested");
+		fixture.Supervisor.GetSnapshot().ActiveStickyWorkers.Should().Be(0,
+			because: "a worker nothing can be said to must give its admission slot back when it becomes unreachable, not half an hour later at its lifetime bound");
+		fixture.StickyWorkers.Count.Should().Be(0,
+			because: "reaching such a worker could only hand the next poll a transport that will never be written to again");
+		fixture.Reservations.HeldCount.Should().Be(0,
+			because: "the reservation is released as part of the reap, so an environment is not left denied by a worker that can no longer be talked to");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An entry already reaped for another reason leaves no watcher behind: when that worker's process later ends, nothing is released a second time and the SUCCESSOR holding its key is untouched — a stray watcher would end the operation that replaced the one it was watching.")]
+	public async Task Supervision_ShouldLeaveNoWatcherBehind_WhenTheEntryWasAlreadyReaped() {
+		// Arrange — three entries, each over its own lease, and a clock the test moves. The cadence is the
+		// SHIPPED one here: on a controllable clock a supervision pass happens only when this test says
+		// so, which is what makes "nothing looked at the reaped worker" a fact rather than a race against
+		// a real timer. The canary makes the negatives mean something: it is registered live and then made
+		// dead, so waiting for IT to be reaped proves the pass this test triggered really ran.
+		ControllableClock clock = new();
+		SharedResourceReservation reservations = new();
+		using StickyWorkerRegistry registry = new(_logger, clock);
+		StickyWorkerKey contestedKey =
+			new(McpToolOperationFamily.ConfigurationBuild, $"tenant|{EnvironmentName}");
+		StickyWorkerKey canaryKey = new(McpToolOperationFamily.Restart, "tenant|canary-environment");
+		RegistryEntryProbe doomed = await CreateRegistryEntryAsync(
+			DateTimeOffset.UtcNow.AddMinutes(45), reservations);
+		RegistryEntryProbe successor = await CreateRegistryEntryAsync(
+			DateTimeOffset.UtcNow.AddMinutes(45), reservations);
+		RegistryEntryProbe canary = await CreateRegistryEntryAsync(
+			DateTimeOffset.UtcNow.AddMinutes(45), reservations);
+		registry.TryRegister(contestedKey, doomed.Entry).Should().BeTrue();
+		// PARKED before it is reaped, and that ordering is the whole arrangement. A watcher is started on a
+		// pool thread; reaping before its first pass would leave it with no cadence timer at all, and the
+		// stray pass this case looks for would then have happened BEFORE the count is taken. The clock
+		// publishes a timer only once it is armed, so two timers — the lifetime deadline and this
+		// watcher — means the watcher is waiting.
+		await WaitUntilAsync(() => clock.TimerCount >= 2);
+		registry.TryRegister(canaryKey, canary.Entry).Should().BeTrue();
+		await WaitUntilAsync(() => clock.TimerCount >= 3);
+
+		// Act — the first worker is reaped for a DIFFERENT reason (a poll ended it), its key is taken by
+		// the next operation on the same target, and only then does the reaped worker's process end.
+		await registry.ReapAsync(contestedKey, doomed.Entry);
+		registry.TryRegister(contestedKey, successor.Entry).Should().BeTrue(
+			because: "the reap must free the key, or the successor could not take it and the stray-watcher question would never arise");
+		await WaitUntilAsync(() => clock.TimerCount >= 4);
+		Volatile.Write(ref doomed.Exited.Value, true);
+		Volatile.Write(ref canary.Exited.Value, true);
+		// Read while NO pass can be in flight — the clock has not moved since the reap — so anything
+		// counted beyond it belongs to the pass triggered below. That trace is what the case turns on:
+		// reaping an entry that was already reaped is absorbed by an idempotent release and would prove
+		// nothing either way.
+		int doomedLooksBefore = doomed.LivenessReads.Value;
+		clock.Advance(StickyWorkerRegistry.DefaultSupervisionInterval + TimeSpan.FromSeconds(1));
+		// The canary is the gate rather than a sleep: it proves the pass happened at all, which a bare
+		// delay on a loaded agent cannot. The settle that follows is only there so a stray watcher woken
+		// by the SAME advance has finished its (much shorter) pass before the count is read.
+		await WaitUntilAsync(() => canary.Disposals.Value == 1);
+		await Task.Delay(250);
+
+		// Assert
+		canary.Disposals.Value.Should().Be(1,
+			because: "the control has to fire, or every negative below would be true of a registry whose supervision never ran");
+		doomed.LivenessReads.Value.Should().Be(doomedLooksBefore,
+			because: "a watcher torn down with its entry stops looking; one left behind goes on reading the lease of a worker nobody owns for as long as the host lives, and that read is the only trace it leaves");
+		doomed.Disposals.Value.Should().Be(1,
+			because: "the entry was released once by the reap that ended it, and exactly once is what an idempotent release plus a torn-down watcher produce together");
+		successor.Disposals.Value.Should().Be(0,
+			because: "the damage a stray watcher does is not a dictionary edit but a killed operation — the successor holds the contested key, and a reap that was not entry-scoped would end the operation that had just started");
+		registry.TryReach(contestedKey, out StickyWorkerEntry reached).Should().BeTrue(
+			because: "the successor must still be reachable so a later poll answers out of the process actually running the operation");
+		reached.Should().BeSameAs(successor.Entry,
+			because: "and it must be the successor itself rather than a resurrected predecessor");
+
+		// Cleanup — the successor was never reaped, by design, so this test owns its release.
+		await successor.Entry.ReleaseAsync();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A registry disposed while a watcher is pending reaps nothing when that worker later dies: the watchers are cancelled with the deadline timer and every pass re-tests the disposal flag, so no callback touches a half-torn-down object graph — while the same arrangement on a LIVE registry reaps at once, which is what makes this about disposal rather than about a watcher that never ran.")]
+	public async Task Supervision_ShouldReapNothing_WhenTheRegistryWasDisposedWhileAWatcherWasPending() {
+		// Arrange — two registries with the same arrangement, one disposed and one not. The live one is
+		// the control: without it, a green negative would also be produced by supervision that was simply
+		// not running.
+		SharedResourceReservation reservations = new();
+		StickyWorkerRegistry disposedRegistry = new(_logger, timeProvider: null,
+			supervisionInterval: FastSupervisionInterval);
+		using StickyWorkerRegistry liveRegistry = new(_logger, timeProvider: null,
+			supervisionInterval: FastSupervisionInterval);
+		StickyWorkerKey key = new(McpToolOperationFamily.ConfigurationBuild, $"tenant|{EnvironmentName}");
+		RegistryEntryProbe orphaned = await CreateRegistryEntryAsync(
+			DateTimeOffset.UtcNow.AddMinutes(45), reservations);
+		RegistryEntryProbe control = await CreateRegistryEntryAsync(
+			DateTimeOffset.UtcNow.AddMinutes(45), reservations);
+		disposedRegistry.TryRegister(key, orphaned.Entry).Should().BeTrue(
+			because: "a watcher has to be pending before disposal, or 'nothing fired afterwards' would be true of a registry that never watched anything");
+		liveRegistry.TryRegister(key, control.Entry).Should().BeTrue();
+
+		// Act — the host is torn down, and only then do both workers die.
+		await disposedRegistry.DisposeAsync();
+		Volatile.Write(ref orphaned.Exited.Value, true);
+		Volatile.Write(ref control.Exited.Value, true);
+		await WaitUntilAsync(() => control.Disposals.Value == 1);
+		await Task.Delay(FastSupervisionInterval + FastSupervisionInterval);
+
+		// Assert
+		control.Disposals.Value.Should().Be(1,
+			because: "the live registry must reap the same arrangement, or the negative below would say nothing about disposal");
+		orphaned.Disposals.Value.Should().Be(0,
+			because: "a watcher that acted after disposal would be working on an object graph the host has already torn down — the entries belong to a shutdown path, and reaping them is deliberately not what disposing a registry does");
+		disposedRegistry.Count.Should().Be(1,
+			because: "the disposed registry must be inert rather than quietly emptying itself, so what happened is decidable from outside");
+
+		// Cleanup — nothing reaped the orphaned entry, by design, so this test owns its release.
+		await orphaned.Entry.ReleaseAsync();
 	}
 
 	[Test]
@@ -1405,7 +1618,7 @@ public sealed class StickyWorkerSupervisionTests {
 	}
 
 	private StickyFixture CreateFixture(int concurrencyCap, TimeSpan? completionLinger = null,
-		TimeSpan? handshakeDelay = null, TimeProvider clock = null) {
+		TimeSpan? handshakeDelay = null, TimeProvider clock = null, TimeSpan? supervisionInterval = null) {
 		// The delay is a STATED arrangement, not a sleep in a test: it holds a starter inside the
 		// spawn-to-register window long enough for a second starter of the same key to be there too, which
 		// is the only condition under which the lost race happens at all.
@@ -1414,8 +1627,10 @@ public sealed class StickyWorkerSupervisionTests {
 			_staleWorkers, concurrencyCap, ShortQueueWaitBound);
 		// The clock is the registry's OWN seam: it judges expiry and schedules the lifetime deadline on
 		// it. Left null here, every existing case keeps the real clock and the real deadline, so nothing
-		// below is arranged by a fake unless it says so.
-		StickyWorkerRegistry stickyWorkers = new(_logger, clock);
+		// below is arranged by a fake unless it says so. The supervision interval is stated the same way:
+		// only a case about noticing a RETIRED session pays for it, and it states its own cadence rather
+		// than waiting out the shipped fifteen seconds.
+		StickyWorkerRegistry stickyWorkers = new(_logger, clock, supervisionInterval);
 		SharedResourceReservation reservations = new();
 		StickyWorkerPoll poll = new(supervisor, stickyWorkers, _logger);
 		McpWorkerCallDispatcher dispatcher = new(supervisor, new WorkerChildTransportOwner(),
@@ -1515,7 +1730,20 @@ public sealed class StickyWorkerSupervisionTests {
 			new(live.Lease, live.Session, live.StandardError, DateTimeOffset.UtcNow.AddMinutes(-1),
 				reservation: null, Reservations, _logger);
 
-		public void Dispose() => Containment.Dispose();
+		/// <summary>
+		/// Ends this scenario: the registry's own scheduling first, the scripted children second.
+		/// </summary>
+		/// <remarks>
+		/// <b>The order is what keeps one case out of the next one's way.</b> A registry left running owns
+		/// a lifetime deadline and one supervision watcher per worker it registered; killing the children
+		/// first would wake every one of those watchers at once, in the middle of whichever case runs
+		/// afterwards, to reap workers whose scenario is over. Stopping the registry first cancels them,
+		/// so a finished case contributes no background work to the ones behind it.
+		/// </remarks>
+		public void Dispose() {
+			StickyWorkers.Dispose();
+			Containment.Dispose();
+		}
 	}
 
 	/// <summary>
@@ -1647,6 +1875,18 @@ public sealed class StickyWorkerSupervisionTests {
 
 		public Task WaitForExitAsync(CancellationToken cancellationToken) =>
 			_exited.Task.WaitAsync(cancellationToken);
+
+		/// <summary>
+		/// Ends the process WITHOUT touching its pipes, as a worker that crashed does from the parent's
+		/// point of view.
+		/// </summary>
+		/// <remarks>
+		/// Deliberately not <see cref="Kill"/> and deliberately not <see cref="Dispose"/>: this must be the
+		/// PROCESS ending and nothing else, so a case about noticing an exit cannot be satisfied by a
+		/// session that was torn down at the same moment. Leaving the pipes open keeps the relay session
+		/// whole, which is what separates the exit signal from retirement.
+		/// </remarks>
+		internal void SimulateProcessExit() => _exited.TrySetResult(true);
 
 		public WorkerTerminationOutcome Kill() {
 			_exited.TrySetResult(true);
@@ -1924,7 +2164,18 @@ public sealed class StickyWorkerSupervisionTests {
 	/// How often its lease was disposed — the ONE thing that kills the process and returns its admission
 	/// slot, so it is what a reap is asserted by rather than the dictionary having forgotten it.
 	/// </param>
-	private sealed record RegistryEntryProbe(StickyWorkerEntry Entry, StrongBox<int> Disposals);
+	/// <param name="Exited">
+	/// Whether the worker's process has ended. Writable, so a case can kill a worker at the moment it
+	/// means to rather than at the moment a substitute was configured.
+	/// </param>
+	/// <param name="LivenessReads">
+	/// How often anything has asked this lease whether its worker is still there. It is the only
+	/// externally visible trace a supervision watcher leaves while it is running: a reap it performs on an
+	/// entry already reaped is absorbed by an idempotent release and proves nothing, so "is somebody still
+	/// looking at this worker" is the question a stray-watcher case has to ask.
+	/// </param>
+	private sealed record RegistryEntryProbe(StickyWorkerEntry Entry, StrongBox<int> Disposals,
+		StrongBox<bool> Exited, StrongBox<int> LivenessReads);
 
 	/// <summary>
 	/// Builds a registered-shape sticky entry with a stated expiry, over a scripted transport and a
@@ -1945,13 +2196,20 @@ public sealed class StickyWorkerSupervisionTests {
 			new RecordingParentSession(), new WorkerRelayOptions { LivenessProbeTimeout = ProbeTimeout },
 			CancellationToken.None);
 		IWorkerLease lease = Substitute.For<IWorkerLease>();
-		lease.HasExited.Returns(false);
+		StrongBox<bool> exited = new(false);
+		StrongBox<int> livenessReads = new(0);
+		// A counted, writable answer rather than a fixed one: a case needs to end this worker DURING the
+		// act, and it needs to be able to state whether anything is still watching it afterwards.
+		lease.HasExited.Returns(_ => {
+			Interlocked.Increment(ref livenessReads.Value);
+			return Volatile.Read(ref exited.Value);
+		});
 		StrongBox<int> disposals = new(0);
-		lease.When(disposed => disposed.Dispose()).Do(_ => disposals.Value++);
+		lease.When(disposed => disposed.Dispose()).Do(_ => Interlocked.Increment(ref disposals.Value));
 		return new RegistryEntryProbe(
 			new StickyWorkerEntry(lease, session, new WorkerStandardErrorDrain(null, 1024), expiresAtUtc,
 				reservation: null, reservations, _logger),
-			disposals);
+			disposals, exited, livenessReads);
 	}
 
 	/// <summary>
@@ -1984,18 +2242,49 @@ public sealed class StickyWorkerSupervisionTests {
 		public override ITimer CreateTimer(TimerCallback callback, object state, TimeSpan dueTime,
 			TimeSpan period) {
 			ControllableTimer timer = new(this, callback, state);
+			// ARMED BEFORE it is published, and the order is a flake fix rather than tidiness. A timer
+			// created on a pool thread — every supervision cadence is — could otherwise be seen by an
+			// Advance running between the two statements, be found unarmed, and then arm itself against the
+			// ALREADY-ADVANCED clock, so a single Advance would silently fail to fire it. Publishing last
+			// makes "registered" mean "armed".
+			timer.Change(dueTime, period);
 			lock (_gate) {
 				_timers.Add(timer);
 			}
-			timer.Change(dueTime, period);
 			return timer;
 		}
 
-		/// <summary>Gets the single timer the registry created.</summary>
-		internal ControllableTimer OnlyTimer {
+		/// <summary>
+		/// Gets the registry's lifetime-deadline timer — the FIRST timer created on this clock.
+		/// </summary>
+		/// <remarks>
+		/// It is the first because the registry creates it in its constructor, before any entry exists.
+		/// The list is no longer a single timer: each supervised entry parks on a cadence delay that also
+		/// runs on this clock, and <see cref="Advance"/> fires those too. That is intended — the cadence is
+		/// how a RETIRED session is noticed — and it is the reason this accessor names the one timer these
+		/// scheduling cases are about instead of asserting there is only one.
+		/// </remarks>
+		internal ControllableTimer DeadlineTimer {
 			get {
 				lock (_gate) {
-					return _timers.Single();
+					return _timers[0];
+				}
+			}
+		}
+
+		/// <summary>
+		/// Gets how many timers have been created on this clock — and therefore ARMED, since a timer is
+		/// published only after it has been.
+		/// </summary>
+		/// <remarks>
+		/// Read by a case that must move the clock past a timer armed on a POOL thread: advancing before
+		/// that timer exists fires nothing, and the case would then wait out its whole assertion timeout
+		/// for a pass it prevented itself.
+		/// </remarks>
+		internal int TimerCount {
+			get {
+				lock (_gate) {
+					return _timers.Count;
 				}
 			}
 		}

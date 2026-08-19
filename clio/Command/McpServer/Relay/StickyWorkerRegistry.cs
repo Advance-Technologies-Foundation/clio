@@ -122,6 +122,11 @@ public interface IStickyWorkerRegistry {
 	/// already held that key, in which case the caller owns the entry it passed and must reap it itself.
 	/// </returns>
 	/// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+	/// <remarks>
+	/// Registration also starts this entry's SUPERVISION: from here on the registry itself notices that
+	/// the worker exited or that its session was retired, and reaps it then rather than at its lifetime
+	/// bound. See <see cref="StickyWorkerRegistry.DefaultSupervisionInterval"/>.
+	/// </remarks>
 	bool TryRegister(StickyWorkerKey key, StickyWorkerEntry entry);
 
 	/// <summary>
@@ -375,8 +380,20 @@ public sealed class StickyWorkerEntry {
 	/// reporting it live would hand the next poll a transport that may hold half a JSON-RPC frame while
 	/// its admission slot and its shared-resource reservation stayed held until expiry.
 	/// </remarks>
-	public bool IsLive(DateTimeOffset utcNow) =>
-		!Lease.HasExited && !Session.IsRetired && utcNow < ExpiresAtUtc;
+	public bool IsLive(DateTimeOffset utcNow) => !HasStoppedBeingReachable && utcNow < ExpiresAtUtc;
+
+	/// <summary>
+	/// Gets a value indicating whether this worker has stopped being REACHABLE — its process has ended or
+	/// its session has been retired — as distinct from having run out of its lifetime bound.
+	/// </summary>
+	/// <remarks>
+	/// <b>The split is what lets supervision and the lifetime deadline stay disjoint.</b> Unreachability
+	/// is an EVENT that happens to a worker and is noticed per entry, the moment it happens; expiry is a
+	/// SCHEDULE the registry already keeps a single timer for. A supervision watcher that also reaped on
+	/// expiry would duplicate that timer's job and would end a worker the instant it was registered
+	/// whenever the clock a lease is stamped from and the clock the registry judges against disagree.
+	/// </remarks>
+	public bool HasStoppedBeingReachable => Lease.HasExited || Session.IsRetired;
 
 	/// <summary>
 	/// Releases everything this worker held, once. Safe to call twice — the second call does nothing.
@@ -417,10 +434,46 @@ public sealed class StickyWorkerEntry {
 /// <inheritdoc cref="IStickyWorkerRegistry"/>
 public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, IAsyncDisposable {
 
+	/// <summary>
+	/// How often a supervised worker's liveness is RE-READ while its process is still running.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>This is the retirement half only; process exit costs nothing and is not on this cadence.</b> A
+	/// worker that dies is noticed the moment its process ends, because
+	/// <see cref="IWorkerChannel.WaitForExitAsync"/> is an event the operating system raises. A session
+	/// that was RETIRED while its process kept running has no such event —
+	/// <see cref="WorkerRelaySession.IsRetired"/> is a property and nothing announces the transition — so
+	/// the one mechanism available to the registry is to look. Fifteen seconds is chosen against what the
+	/// slot is worth: a sticky ceiling of one or two means an unreachable worker denies the host's next
+	/// long operation, and the alternative to looking is the lifetime bound, which is HALF AN HOUR away.
+	/// </para>
+	/// <para>
+	/// A cheaper mechanism exists and is deliberately not built here: an awaitable retirement signal on
+	/// <see cref="WorkerRelaySession"/> would make this half event-driven too and delete the cadence
+	/// outright. That is a change to the relay, which this type does not own.
+	/// </para>
+	/// </remarks>
+	public static readonly TimeSpan DefaultSupervisionInterval = TimeSpan.FromSeconds(15);
+
 	private readonly Dictionary<StickyWorkerKey, StickyWorkerEntry> _entries = [];
+
+	/// <summary>
+	/// The supervision watcher of each entry, keyed by the ENTRY rather than by its key.
+	/// </summary>
+	/// <remarks>
+	/// Keyed by entry because a key outlives the worker registered under it: a watcher belongs to ONE
+	/// worker, and one filed under a key would be handed to — and cancelled by — that worker's successor.
+	/// <see cref="StickyWorkerEntry"/> overrides neither <see cref="object.Equals(object)"/> nor
+	/// <see cref="object.GetHashCode"/>, so this dictionary compares by identity, which is exactly the
+	/// question being asked.
+	/// </remarks>
+	private readonly Dictionary<StickyWorkerEntry, CancellationTokenSource> _watches = [];
+
 	private readonly object _gate = new();
 	private readonly ILogger _logger;
 	private readonly TimeProvider _time;
+	private readonly TimeSpan _supervisionInterval;
 	private readonly ITimer _deadline;
 
 	/// <summary>
@@ -440,10 +493,20 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 	/// supplies the registered <see cref="TimeProvider"/> (BindingsModule) and a test can supply a
 	/// controllable one; <see cref="TimeProvider.System"/> when absent.
 	/// </param>
+	/// <param name="supervisionInterval">
+	/// How often a running worker's liveness is re-read; <see cref="DefaultSupervisionInterval"/> when
+	/// absent or not positive. Stated by a test so a case about supervision does not have to wait out the
+	/// shipped cadence, and never configured in production — the shipped value is a property of the
+	/// admission slot's worth, not of a deployment.
+	/// </param>
 	/// <exception cref="ArgumentNullException"><paramref name="logger"/> is <see langword="null"/>.</exception>
-	public StickyWorkerRegistry(ILogger logger, TimeProvider timeProvider = null) {
+	public StickyWorkerRegistry(ILogger logger, TimeProvider timeProvider = null,
+		TimeSpan? supervisionInterval = null) {
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_time = timeProvider ?? TimeProvider.System;
+		_supervisionInterval = supervisionInterval is { } stated && stated > TimeSpan.Zero
+			? stated
+			: DefaultSupervisionInterval;
 		// Created DISARMED. The callback closes over an instance this constructor has not finished
 		// building, and an infinite due time is what makes it unreachable until something is registered
 		// rather than merely unlikely to be reached.
@@ -470,6 +533,7 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 			}
 			_entries[key] = entry;
 			RearmLocked();
+			WatchLocked(key, entry);
 			return true;
 		}
 	}
@@ -478,6 +542,7 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 	public bool TryReach(StickyWorkerKey key, out StickyWorkerEntry entry) {
 		ArgumentNullException.ThrowIfNull(key);
 		StickyWorkerEntry dead = null;
+		CancellationTokenSource watch = null;
 		lock (_gate) {
 			if (_entries.TryGetValue(key, out StickyWorkerEntry found)) {
 				if (found.IsLive(_time.GetUtcNow())) {
@@ -486,9 +551,11 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 				}
 				_entries.Remove(key);
 				RearmLocked();
+				watch = DetachWatchLocked(found);
 				dead = found;
 			}
 		}
+		StopWatch(watch);
 		ReleaseInBackground(dead, key);
 		entry = null;
 		return false;
@@ -498,12 +565,18 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 	public async ValueTask ReapAsync(StickyWorkerKey key, StickyWorkerEntry entry) {
 		ArgumentNullException.ThrowIfNull(key);
 		ArgumentNullException.ThrowIfNull(entry);
+		CancellationTokenSource watch;
 		lock (_gate) {
 			if (_entries.TryGetValue(key, out StickyWorkerEntry registered) && ReferenceEquals(registered, entry)) {
 				_entries.Remove(key);
 				RearmLocked();
 			}
+			// Detached UNCONDITIONALLY, unlike the removal above: this entry is being released whatever the
+			// key now holds, so leaving its watcher armed would leave a task observing a worker nobody owns
+			// and, when that worker's process finally ends, scheduling a reap for an entry already gone.
+			watch = DetachWatchLocked(entry);
 		}
+		StopWatch(watch);
 		// Released even when the key now holds somebody else: this entry is then owned by nobody, and the
 		// alternative to releasing it is a process, an admission slot and a reservation that nothing ever
 		// returns. Release is idempotent, so reaping an already-reaped entry costs nothing.
@@ -537,6 +610,7 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 	/// <inheritdoc/>
 	public async ValueTask<int> ReapExpiredAsync() {
 		List<(StickyWorkerKey Key, StickyWorkerEntry Entry)> expired = [];
+		List<CancellationTokenSource> watches = [];
 		DateTimeOffset utcNow = _time.GetUtcNow();
 		lock (_gate) {
 			foreach (KeyValuePair<StickyWorkerKey, StickyWorkerEntry> pair in _entries) {
@@ -553,8 +627,12 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 					&& ReferenceEquals(registered, entry)) {
 					_entries.Remove(key);
 				}
+				watches.Add(DetachWatchLocked(entry));
 			}
 			RearmLocked();
+		}
+		foreach (CancellationTokenSource watch in watches) {
+			StopWatch(watch);
 		}
 		foreach ((StickyWorkerKey key, StickyWorkerEntry entry) in expired) {
 			try {
@@ -577,16 +655,21 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 	/// callback and the sweep it starts test the flag under <see cref="_gate"/>, so a callback that had
 	/// already begun when disposal ran does nothing — the promise does not rest on what a particular
 	/// <see cref="ITimer"/> implementation does about in-flight callbacks. Disposing the timer is what
-	/// stops a new one from starting.
+	/// stops a new one from starting. The per-entry supervision watchers are ended the SAME way and for
+	/// the same reason: their tokens are cancelled so no new pass begins, and every pass re-tests the flag
+	/// so one already in flight reaps nothing.
 	/// </remarks>
 	public void Dispose() {
+		List<CancellationTokenSource> watches;
 		lock (_gate) {
 			if (_disposed) {
 				return;
 			}
 			_disposed = true;
+			watches = DetachEveryWatchLocked();
 		}
 		_deadline.Dispose();
+		StopEveryWatch(watches);
 	}
 
 	/// <summary>
@@ -602,10 +685,13 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 	/// </remarks>
 	public async ValueTask DisposeAsync() {
 		bool alreadyDisposed;
+		List<CancellationTokenSource> watches;
 		lock (_gate) {
 			alreadyDisposed = _disposed;
 			_disposed = true;
+			watches = DetachEveryWatchLocked();
 		}
+		StopEveryWatch(watches);
 		if (!alreadyDisposed) {
 			await _deadline.DisposeAsync().ConfigureAwait(false);
 		}
@@ -713,6 +799,256 @@ public sealed class StickyWorkerRegistry : IStickyWorkerRegistry, IDisposable, I
 			_logger.WriteWarning(
 				"Sweeping expired sticky MCP workers failed: "
 				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		}
+	}
+
+	/// <summary>
+	/// Starts the supervision watcher of ONE entry.
+	/// </summary>
+	/// <param name="key">The key the entry is registered under, so its reap stays entry-scoped.</param>
+	/// <param name="entry">The entry to watch.</param>
+	/// <remarks>
+	/// <para>
+	/// <b>Why an entry-scoped watcher exists at all.</b> <see cref="StickyWorkerEntry.IsLive"/> already
+	/// rejects a worker whose process has exited or whose session was retired — but nothing INVOKED it on
+	/// its own. The deadline timer is armed against <see cref="StickyWorkerEntry.ExpiresAtUtc"/> only, and
+	/// <see cref="TryReach"/> and <see cref="ReapExpiredAsync"/> run only when another sticky call
+	/// arrives. So a worker that crashed a second after its starter answered stayed OWNED until its
+	/// lifetime bound — up to half an hour — and the shared admission semaphore stayed consumed by a
+	/// process that no longer existed. On a host whose sticky ceiling is one, that is the next long
+	/// operation refused for the sake of a worker that is gone.
+	/// </para>
+	/// <para>
+	/// <b>Started under <see cref="_gate"/>, which is why the loop runs on the pool.</b> The watcher's
+	/// first act is to take that same gate, so calling it inline would run its first pass inside the
+	/// registration that created it.
+	/// </para>
+	/// <para>Callers hold <see cref="_gate"/>.</para>
+	/// </remarks>
+	private void WatchLocked(StickyWorkerKey key, StickyWorkerEntry entry) {
+		if (_disposed) {
+			return;
+		}
+		CancellationTokenSource watch = new();
+		_watches[entry] = watch;
+		CancellationToken token = watch.Token;
+		_ = Task.Run(() => SuperviseAsync(key, entry, token), CancellationToken.None);
+	}
+
+	/// <summary>
+	/// Watches one worker until it stops being usable, and reaps it then.
+	/// </summary>
+	/// <param name="key">The key the entry is registered under.</param>
+	/// <param name="entry">The entry being watched.</param>
+	/// <param name="watch">Cancelled when this entry is reaped for any other reason, or on disposal.</param>
+	/// <returns>A task that completes when this entry is no longer being watched.</returns>
+	/// <remarks>
+	/// <para>
+	/// <b><see cref="StickyWorkerEntry.HasStoppedBeingReachable"/> is the reap predicate, and never "the
+	/// exit task completed".</b> The task is a hint about WHEN to look, never the answer: a lease whose
+	/// owner has already disposed it returns a COMPLETED wait rather than throwing (by construction — see
+	/// the guard on the supervisor's <c>waitForExitAsync</c> delegate) and a substituted lease does the
+	/// same, so a watcher that trusted completion would reap live workers. Asking the entry is the
+	/// question in every case, and it also covers retirement, which is not an exit at all.
+	/// </para>
+	/// <para>
+	/// <b>Expiry is deliberately NOT part of it.</b> The lifetime bound has a timer of its own armed
+	/// against the earliest outstanding expiry; reaping on expiry here as well would duplicate that
+	/// schedule and would end a worker the instant it registered whenever the clock a lease is stamped
+	/// from and the clock this registry judges against disagree. The two mechanisms answer different
+	/// questions, and both may fire on one entry without harm — see <see cref="ScheduleWatchedReap"/>.
+	/// </para>
+	/// <para>
+	/// <b>Nothing may escape.</b> This runs on a pool thread with no caller above it, so an exception here
+	/// would end the MCP host — a far worse outcome than the stale worker it was going to reap.
+	/// </para>
+	/// </remarks>
+	private async Task SuperviseAsync(StickyWorkerKey key, StickyWorkerEntry entry, CancellationToken watch) {
+		try {
+			// Established ONCE. Process exit is an operating-system event, so while the worker is healthy
+			// this task is parked and the watcher costs nothing at all. If the worker never exits — the
+			// ordinary case for an operation that completes and is reaped by its completion signal — the
+			// task simply never completes, the watch is cancelled at the reap and the task is dropped.
+			Task exited = WaitForExitQuietlyAsync(entry, watch);
+			while (!watch.IsCancellationRequested) {
+				if (IsDisposed()) {
+					return;
+				}
+				if (entry.HasStoppedBeingReachable) {
+					ScheduleWatchedReap(key, entry);
+					return;
+				}
+				await WaitForTheNextLookAsync(exited, watch).ConfigureAwait(false);
+			}
+		}
+		catch (OperationCanceledException) {
+			// The watch was cancelled, which means this entry was reaped by somebody else — the deadline
+			// sweep, a poll, a supersession or disposal. There is nothing left to supervise and nothing to
+			// report: cancellation IS the teardown of this watcher.
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(string.Format(CultureInfo.InvariantCulture,
+				"Supervising the sticky MCP worker for operation family '{0}' stopped after a failure, so "
+				+ "it will now be reaped at its lifetime bound: {1}",
+				key.Family, SensitiveErrorTextRedactor.Redact(exception.Message)));
+		}
+	}
+
+	/// <summary>
+	/// Waits for whichever comes first: the worker's process ending, or the next scheduled look at its
+	/// session.
+	/// </summary>
+	/// <param name="exited">The parked process-exit wait.</param>
+	/// <param name="watch">Cancels both.</param>
+	/// <returns>A task that completes when the watcher should look again.</returns>
+	/// <remarks>
+	/// The cadence exists for RETIREMENT and for nothing else: a session retired while its process runs on
+	/// raises no event, so looking is the only mechanism available to a type that does not own the relay.
+	/// Its timer is cancelled as soon as the wait is over, rather than left to expire on its own — one
+	/// abandoned timer per worker per pass is a leak in a loop that runs for the whole life of an
+	/// operation.
+	/// </remarks>
+	private async Task WaitForTheNextLookAsync(Task exited, CancellationToken watch) {
+		using CancellationTokenSource cadence = CancellationTokenSource.CreateLinkedTokenSource(watch);
+		Task nextLook = Task.Delay(_supervisionInterval, _time, cadence.Token);
+		if (exited.IsCompleted) {
+			// The process wait can be complete while the worker is still live — a disposed or substituted
+			// lease answers that way — so racing it again would spin. The cadence is then the whole wait.
+			await nextLook.ConfigureAwait(false);
+			return;
+		}
+		await Task.WhenAny(exited, nextLook).ConfigureAwait(false);
+		await cadence.CancelAsync().ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Waits for the worker's process to end, reporting nothing if that wait cannot be established.
+	/// </summary>
+	/// <param name="entry">The entry whose lease is waited on.</param>
+	/// <param name="watch">Stops the wait; never stops the worker.</param>
+	/// <returns>A task that completes when the process ends, and NEVER faults.</returns>
+	/// <remarks>
+	/// A lease is a foreign object to this type — in a test it is a substitute, and in production it may
+	/// have been disposed by the caller that owns it. Both can hand back <see langword="null"/> or throw,
+	/// and neither is a reason to take a watcher (or the host) down: the question is re-asked as
+	/// <see cref="StickyWorkerEntry.IsLive"/> on the next pass, which is the authority anyway.
+	/// </remarks>
+	private static async Task WaitForExitQuietlyAsync(StickyWorkerEntry entry, CancellationToken watch) {
+		try {
+			Task exit = entry.Lease.WaitForExitAsync(watch);
+			if (exit is not null) {
+				await exit.ConfigureAwait(false);
+			}
+		}
+		catch (Exception) {
+			// Deliberately silent, and never rethrown: see the remarks.
+		}
+	}
+
+	/// <summary>
+	/// Queues the reap a watcher decided on, on the registry's own sweep chain.
+	/// </summary>
+	/// <param name="key">The key the entry is registered under.</param>
+	/// <param name="entry">The entry to reap.</param>
+	/// <remarks>
+	/// <b>The same chain the deadline uses, rather than a second mechanism.</b> Chaining gives disposal
+	/// one task to await, keeps a watcher's reap behind a sweep already running instead of racing it, and
+	/// puts the post-disposal check in exactly the place the timer work established it. It cannot
+	/// double-reap with the deadline either: both end at <see cref="ReapAsync"/>, whose removal is
+	/// reference-scoped and whose release is idempotent, so whichever runs second does nothing.
+	/// </remarks>
+	private void ScheduleWatchedReap(StickyWorkerKey key, StickyWorkerEntry entry) {
+		lock (_gate) {
+			if (_disposed) {
+				return;
+			}
+			_sweeps = _sweeps.ContinueWith(_ => ReapWatchedAsync(key, entry), CancellationToken.None,
+				TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+		}
+	}
+
+	/// <summary>
+	/// Reaps one watched entry, off the watcher's thread and never throwing out of the chain.
+	/// </summary>
+	/// <param name="key">The key the entry is registered under.</param>
+	/// <param name="entry">The entry to reap.</param>
+	/// <returns>A task that completes when the worker is gone.</returns>
+	private async Task ReapWatchedAsync(StickyWorkerKey key, StickyWorkerEntry entry) {
+		bool disposed;
+		lock (_gate) {
+			disposed = _disposed;
+		}
+		if (disposed) {
+			// Disposal ran between the decision and this continuation. The entries belong to a host that is
+			// shutting down, and reaping them here is the work Dispose deliberately does not do.
+			return;
+		}
+		try {
+			await ReapAsync(key, entry).ConfigureAwait(false);
+		}
+		catch (Exception exception) {
+			_logger.WriteWarning(string.Format(CultureInfo.InvariantCulture,
+				"Reaping the sticky MCP worker for operation family '{0}' after it stopped being usable "
+				+ "failed: {1}", key.Family, SensitiveErrorTextRedactor.Redact(exception.Message)));
+		}
+	}
+
+	/// <summary>Reads the disposal flag under the gate that writes it.</summary>
+	/// <returns><see langword="true"/> when this registry has been disposed.</returns>
+	private bool IsDisposed() {
+		lock (_gate) {
+			return _disposed;
+		}
+	}
+
+	/// <summary>Takes one entry's watcher out of the registry.</summary>
+	/// <param name="entry">The entry.</param>
+	/// <returns>The watcher, or <see langword="null"/> when it had none.</returns>
+	/// <remarks>Callers hold <see cref="_gate"/> and stop the returned watcher OUTSIDE it.</remarks>
+	private CancellationTokenSource DetachWatchLocked(StickyWorkerEntry entry) =>
+		_watches.Remove(entry, out CancellationTokenSource watch) ? watch : null;
+
+	/// <summary>Takes every watcher out of the registry.</summary>
+	/// <returns>The watchers.</returns>
+	/// <remarks>Callers hold <see cref="_gate"/> and stop the returned watchers OUTSIDE it.</remarks>
+	private List<CancellationTokenSource> DetachEveryWatchLocked() {
+		List<CancellationTokenSource> watches = [.. _watches.Values];
+		_watches.Clear();
+		return watches;
+	}
+
+	/// <summary>
+	/// Ends one watcher.
+	/// </summary>
+	/// <param name="watch">The watcher, or null.</param>
+	/// <remarks>
+	/// <b>Called with no lock held, deliberately.</b> Cancelling a token can run its registrations
+	/// synchronously on this thread, and those registrations belong to the watcher loop, which takes
+	/// <see cref="_gate"/>. Stopping watchers outside the gate keeps the fake-timer and continuation
+	/// scheduling of a host out of this type's lock order.
+	/// </remarks>
+	private void StopWatch(CancellationTokenSource watch) {
+		if (watch is null) {
+			return;
+		}
+		try {
+			watch.Cancel();
+		}
+		catch (Exception exception) {
+			// A watcher that could not be cancelled must not fail the reap that was cancelling it, still
+			// less throw out of container disposal.
+			_logger.WriteWarning(
+				"Stopping a sticky MCP worker's supervision failed: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		}
+		watch.Dispose();
+	}
+
+	/// <summary>Ends every watcher in <paramref name="watches"/>.</summary>
+	/// <param name="watches">The watchers.</param>
+	private void StopEveryWatch(List<CancellationTokenSource> watches) {
+		foreach (CancellationTokenSource watch in watches) {
+			StopWatch(watch);
 		}
 	}
 
