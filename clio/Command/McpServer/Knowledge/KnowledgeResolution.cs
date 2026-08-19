@@ -24,6 +24,7 @@ public enum KnowledgeSourceParticipation {
 internal sealed record KnowledgeLibrarySnapshot(
 	string SourceAlias,
 	string LibraryId,
+	string LibraryVersion,
 	int Priority,
 	KnowledgeSourceParticipation Participation,
 	ulong Sequence,
@@ -240,6 +241,7 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 			new KnowledgeArticleProvenance(
 				library.SourceAlias,
 				library.LibraryId,
+				library.LibraryVersion,
 				article.ItemId,
 				article.TopicId,
 				library.Sequence,

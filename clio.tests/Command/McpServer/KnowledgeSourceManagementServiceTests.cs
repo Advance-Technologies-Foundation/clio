@@ -513,6 +513,67 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
+	[Description("Updating an installed source records freshness when the publisher confirms there is no newer generation.")]
+	public void Update_ShouldRecordPublisherCheck_WhenNoNewCandidateExists() {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("alpha", Source("com.example.alpha", enabled: true))));
+		KnowledgeSourceCurrentState state = State("alpha", "com.example.alpha", 10, "1.0.0");
+		ConfigureCurrent(_ => state);
+		_transport.Retrieve(Arg.Any<KnowledgeTransportRequest>()).Returns(new KnowledgeTransportResult(
+			KnowledgeTransportStatus.NoCandidate,
+			null,
+			null,
+			null));
+		_store.TryRecordPublisherCheck("alpha", state.Active).Returns(true);
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("ALPHA");
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the publisher confirmed that the installed generation is current");
+		result.Sources.Should().ContainSingle()
+			.Which.Status.Should().Be("up-to-date",
+				because: "a no-candidate update remains a successful lifecycle result");
+		_store.ReceivedCalls().Count(call =>
+			call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.TryRecordPublisherCheck)
+			&& call.GetArguments()[0] as string == "alpha"
+			&& Equals(call.GetArguments()[1], state.Active)).Should().Be(1,
+			because: "a successful publisher check must use the configured alias and generation even when selection casing differs");
+	}
+
+	[Test]
+	[Description("Updating an installed source does not record freshness after the publisher offered a rejected release.")]
+	public void Update_ShouldNotRecordPublisherCheck_WhenNewerCandidateWasRejected() {
+		// Arrange
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(
+			("alpha", Source("com.example.alpha", enabled: true))));
+		KnowledgeSourceCurrentState state = State("alpha", "com.example.alpha", 10, "1.0.0");
+		ConfigureCurrent(_ => state);
+		_transport.Retrieve(Arg.Any<KnowledgeTransportRequest>()).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Rejected,
+				"1.2.0",
+				null,
+				null,
+				Diagnostic: "candidate signature is invalid"),
+			new KnowledgeTransportResult(KnowledgeTransportStatus.NoCandidate, null, null, null));
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("alpha");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a rejected newer release cannot confirm that the installed generation is current");
+		result.Sources.Should().ContainSingle().Which.Status.Should().Be("rejected",
+			because: "the terminal result must preserve the publisher candidate rejection");
+		_store.ReceivedCalls().Should().NotContain(
+			call => call.GetMethodInfo().Name == nameof(IKnowledgeSourceInstallationStore.TryRecordPublisherCheck),
+			because: "a failed publisher update must not suppress the stale-cache warning");
+	}
+
+	[Test]
 	[Description("Info reports unknown update availability when the configured transport check fails.")]
 	public void GetInfo_ShouldReportUnknown_WhenUpdateCheckFails() {
 		// Arrange

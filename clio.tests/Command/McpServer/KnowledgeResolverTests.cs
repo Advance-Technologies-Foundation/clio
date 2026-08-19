@@ -325,7 +325,7 @@ public sealed class KnowledgeResolverTests {
 	[Description("Feature-gated articles are absent from the resolvable name list.")]
 	public void GetNames_ShouldOmitGatedArticles_WhenAnEligibilityPredicateIsSupplied() {
 		// Arrange
-		KnowledgeLibrarySnapshot library = new("partner", "com.example.partner", 100,
+		KnowledgeLibrarySnapshot library = new("partner", "com.example.partner", "1.4.0", 100,
 			KnowledgeSourceParticipation.Authoritative, 7, "synthetic-digest",
 			[Article("esq", "creatio-esq"), GatedArticle("designer", "partner-designer", "process-designer")]);
 
@@ -359,7 +359,7 @@ public sealed class KnowledgeResolverTests {
 		int priority,
 		KnowledgeSourceParticipation participation,
 		KnowledgeArticle article) =>
-		new(alias, libraryId, priority, participation, 7, "synthetic-digest", [article]);
+		new(alias, libraryId, "1.4.0", priority, participation, 7, "synthetic-digest", [article]);
 
 	private static KnowledgeArticle Article(string topicId, string itemId, params string[] legacyUris) =>
 		new(
