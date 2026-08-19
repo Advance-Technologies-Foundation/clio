@@ -72,6 +72,18 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("emptyContainerRemoval")]
 	public EmptyContainerRemovalRule EmptyContainerRemoval { get; init; }
 
+	/// <summary>
+	/// Group: container NAMES that are NON-CONVERTING SCOPES on mobile (e.g. <c>MainHeader</c>). Such a container
+	/// yields no mobile element of its own; it is KEPT through template-chrome pruning (so its app-added descendants
+	/// keep it as an ancestor for a rule's <c>path</c>), its subtree is walked in scope mode, and any descendant a
+	/// conversion template does not RETARGET is dropped (not present on mobile). This is deliberately DECOUPLED from
+	/// <see cref="ComponentEquivalenceRule.Path"/> — <c>path</c> is a pure positive filter and never turns a
+	/// container into a drop-scope by itself, so a container whose name merely appears in some rule's path is NOT
+	/// made a scope. Empty or absent switches the behavior off (data-driven, like <see cref="EmptyContainerRemoval"/>).
+	/// </summary>
+	[JsonPropertyName("nonConvertingScopeContainers")]
+	public IReadOnlyList<string> NonConvertingScopeContainers { get; init; } = [];
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -379,11 +391,15 @@ public sealed class ComponentEquivalenceRule {
 	public IReadOnlyList<ElementFilterRule> Filters { get; init; } = [];
 
 	/// <summary>
-	/// Template-group entries only: ancestor-NAME scope. Empty (default) = the entry applies wherever its
-	/// <see cref="Filters"/> match. Non-empty = it applies only to a node whose SOURCE ancestor chain (outer→inner)
-	/// contains these names as an ORDERED SUBSEQUENCE at any depth — e.g. <c>["MainHeader"]</c> restricts the entry
-	/// to elements located anywhere under a container named <c>MainHeader</c>, and <c>["A","B"]</c> to a node under
-	/// an <c>A</c> that itself (any depth) contains a <c>B</c> above the node. AND-combined with <see cref="Filters"/>.
+	/// Template-group entries only: a PURE POSITIVE ancestor-NAME filter that narrows where the entry applies. Empty
+	/// (default) = the entry applies wherever its <see cref="Filters"/> match. Non-empty = it applies only to a node
+	/// whose SOURCE ancestor chain (outer→inner) contains these names as an ORDERED SUBSEQUENCE at any depth — e.g.
+	/// <c>["MainHeader"]</c> restricts the entry to elements located anywhere under a container named
+	/// <c>MainHeader</c>, and <c>["A","B"]</c> to a node under an <c>A</c> that itself (any depth) contains a
+	/// <c>B</c> above the node. AND-combined with <see cref="Filters"/>. This is ONLY a filter: it never turns a named
+	/// container into a non-converting drop-scope — that behavior is declared separately and explicitly by
+	/// <see cref="WebToMobilePageConversionRules.NonConvertingScopeContainers"/>, so a container whose name merely
+	/// appears here is unaffected on its own.
 	/// </summary>
 	[JsonPropertyName("path")]
 	public IReadOnlyList<string> Path { get; init; } = [];

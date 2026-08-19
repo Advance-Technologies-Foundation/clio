@@ -1611,22 +1611,19 @@ public static class WebToMobileAnalysisService {
 		IReadOnlySet<string> ScopeContainerNames);
 
 	/// <summary>
-	/// The set of container NAMES any conversion rule scopes to via <c>path</c>. Such a container is treated as a
-	/// NON-CONVERTING scope on mobile: it produces no element of its own, its subtree is walked in scope mode
-	/// (matching actions retarget, everything else drops), and it is KEPT through template-chrome pruning so its
-	/// descendants retain it as an ancestor for <c>path</c> matching (e.g. <c>MainHeader</c>).
+	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
+	/// <see cref="WebToMobilePageConversionRules.NonConvertingScopeContainers"/>, NOT inferred from any rule's
+	/// <c>path</c>. Such a container produces no element of its own, its subtree is walked in scope mode (a matching
+	/// action retargets, everything else drops), and it is KEPT through template-chrome pruning so its descendants
+	/// retain it as an ancestor for <c>path</c> matching (e.g. <c>MainHeader</c>). Decoupling this from <c>path</c>
+	/// is deliberate: a container whose name merely appears in some rule's path must NOT become a drop-everything
+	/// scope — otherwise a multi-element path like <c>["Outer","Inner"]</c> would make a standalone <c>Inner</c>
+	/// elsewhere silently drop its whole subtree.
 	/// </summary>
-	private static IReadOnlySet<string> CollectScopeContainerNames(WebToMobilePageConversionRules rules) {
-		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		foreach (ComponentEquivalenceRule entry in rules?.Components ?? []) {
-			foreach (string name in entry?.Path ?? []) {
-				if (!string.IsNullOrWhiteSpace(name)) {
-					set.Add(name);
-				}
-			}
-		}
-		return set;
-	}
+	private static IReadOnlySet<string> CollectScopeContainerNames(WebToMobilePageConversionRules rules) =>
+		new HashSet<string>(
+			(rules?.NonConvertingScopeContainers ?? []).Where(name => !string.IsNullOrWhiteSpace(name)),
+			StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -1944,8 +1941,12 @@ public static class WebToMobileAnalysisService {
 				Reason = leafReason
 			});
 			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
-			// components are converted rather than carried verbatim inside the leaf's values.
-			RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name));
+			// components are converted rather than carried verbatim inside the leaf's values. When the leaf itself
+			// was RETARGETED by a template, its subtree is descended IN SCOPE MODE so nested actions flatten to the
+			// same target (convert-or-drop) — the single placement rule shared with the non-converting-scope path,
+			// rather than nesting them under the moved element.
+			RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name),
+				inNonConvertingScope: leafRetargeted);
 		}
 	}
 
@@ -1971,12 +1972,25 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// True when a node carries a <c>clicked</c> event binding whose request the Creatio Mobile app supports — the
-	/// gate for converting a header action into a FAB menu item. A node with NO <c>clicked</c> (a container-only
-	/// dropdown) or an unsupported request is not itself converted (its nested menu items are still flattened).
+	/// True when a node's OWN <c>clicked</c> binding carries a request the Creatio Mobile app supports — the gate
+	/// for converting a header action into a FAB menu item. Only the <c>clicked</c> request is considered (a node
+	/// with no <c>clicked</c> — a container-only dropdown — or an unsupported <c>clicked</c> is not itself converted;
+	/// its nested menu items are still flattened). A DIFFERENT, secondary binding being unsupported does not disqualify
+	/// the action, so this deliberately does not reuse <see cref="UnsupportedRequestOf"/> (which scans every binding).
 	/// </summary>
 	private static bool HasSupportedClicked(ElementMapContext ctx, JObject node) =>
-		node["clicked"] is JObject && UnsupportedRequestOf(ctx, node) is null;
+		node["clicked"] is JObject clicked && IsEventBinding(clicked)
+		&& IsRequestSupported(ctx, clicked["request"].ToString());
+
+	/// <summary>
+	/// Whether a single web request is supported on mobile: the versioned <c>requests</c> map is authoritative (a
+	/// non-empty mobile target is supported, a cleared target unsupported), falling back to the bundled offline
+	/// <see cref="MobileSupportedRequests"/> set for a request the file does not cover.
+	/// </summary>
+	private static bool IsRequestSupported(ElementMapContext ctx, string webRequest) =>
+		ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
+			? !string.IsNullOrWhiteSpace(rule.Mobile)
+			: MobileSupportedRequests.Contains(webRequest);
 
 	/// <summary>
 	/// The source-ancestor chain (outer→inner web element names) for the children of <paramref name="name"/>, i.e.
@@ -1991,19 +2005,21 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// True when a property value is a nested array of child VIEW ELEMENTS — a <see cref="JArray"/> holding at
-	/// least one object whose <c>type</c> is a component type (a string starting with <c>crt.</c>). This is how the
-	/// walk recognises a child-element collection (<c>items</c>, <c>menuItems</c>, <c>tools</c>, …) generically,
-	/// without a hardcoded property-name list: a DATA array (grid column objects keyed by <c>code</c>, a grid
-	/// container's <c>columns</c> track-sizing strings, a data source's sort/filter) holds no <c>crt.*</c>-typed
-	/// object and is left to be carried as a value, and a string binding (<c>items: "$Attr"</c>) is not an array at
-	/// all. A property the mobile registry declares as a single <c>object</c> (e.g. <c>crt.List.itemLayout</c>,
-	/// whose web array wrapper is coerced to an object) is a nested CONFIG, not a collection to walk, so it is
-	/// excluded even though it holds a <c>crt.*</c> object. NOTE: only <c>crt.*</c> is recognised — a custom
-	/// <c>usr.*</c> component nested in such an array is not descended into (it is carried verbatim, as before).
+	/// True when a property value is a nested array of child VIEW ELEMENTS — a NON-EMPTY <see cref="JArray"/> in
+	/// which EVERY element is an object whose <c>type</c> is a component type (a string starting with <c>crt.</c>).
+	/// This is how the walk recognises a child-element collection (<c>items</c>, <c>menuItems</c>, <c>tools</c>, …)
+	/// generically, without a hardcoded property-name list. Requiring EVERY element to be <c>crt.*</c>-typed (not
+	/// just one) keeps it conservative: a DATA/config array (grid column objects keyed by <c>code</c>, a track-sizing
+	/// <c>columns</c> array of strings, a data source's sort/filter, or any array mixing components with non-component
+	/// objects) is NOT promoted to child elements — it is carried verbatim as a value, so nothing is silently
+	/// stripped. A string binding (<c>items: "$Attr"</c>) is not an array at all. A property the mobile registry
+	/// declares as a single <c>object</c> (e.g. <c>crt.List.itemLayout</c>, whose web array wrapper is coerced to an
+	/// object) is a nested CONFIG, not a collection to walk, so it is excluded even when its elements are
+	/// <c>crt.*</c>-typed. NOTE: only <c>crt.*</c> is recognised — an array containing a custom <c>usr.*</c> component
+	/// is not descended into (it is carried verbatim, as before).
 	/// </summary>
 	private static bool IsChildElementArray(ElementMapContext ctx, string mobileType, string propName, JToken value) {
-		if (value is not JArray array) {
+		if (value is not JArray array || array.Count == 0) {
 			return false;
 		}
 		// A registry-declared single-object slot (itemLayout, …) is carried and shape-coerced, never walked.
@@ -2013,13 +2029,13 @@ public static class WebToMobileAnalysisService {
 			return false;
 		}
 		foreach (JToken element in array) {
-			if (element is JObject obj
-				&& obj["type"]?.Type == JTokenType.String
-				&& obj["type"].ToString().StartsWith("crt.", StringComparison.OrdinalIgnoreCase)) {
-				return true;
+			if (element is not JObject obj
+				|| obj["type"]?.Type != JTokenType.String
+				|| !obj["type"].ToString().StartsWith("crt.", StringComparison.OrdinalIgnoreCase)) {
+				return false;
 			}
 		}
-		return false;
+		return true;
 	}
 
 	/// <summary>
@@ -2403,10 +2419,10 @@ public static class WebToMobileAnalysisService {
 			foreach (JProperty prop in node.Properties()) {
 				// A child-element array (items, menuItems, tools, … — recognised by shape, see IsChildElementArray)
 				// is the child view-element collection: structural, emitted by the tree walk, never carried as a
-				// value. `items` is also skipped by name so an EMPTY items array (no crt.* member to detect) is not
+				// value. `items` (items/menuItems/tools) is skipped too when EMPTY, so a slot the walk emptied is not
 				// carried either. The SAME key as a STRING is a real collection binding (e.g. items: "$Attr") and is
 				// carried like any other property below.
-				if ((prop.Value is JArray && string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase))
+				if ((prop.Value is JArray emptyArray && emptyArray.Count == 0)
 					|| IsChildElementArray(ctx, mobileType, prop.Name, prop.Value)) {
 					continue;
 				}

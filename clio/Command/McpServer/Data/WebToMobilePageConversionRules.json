@@ -185,6 +185,7 @@
       "crt.ExpansionPanel"
     ]
   },
+  "nonConvertingScopeContainers": ["MainHeader"],
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
