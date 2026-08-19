@@ -113,15 +113,15 @@ jobs:
           done
           exit "$status"
 
-      # The behaviour harness on Windows too, not only the parser check: the claim protocol runs on
-      # developer Windows machines, and git-bash is where the CRLF and path-shape differences bite.
+      # The behaviour harness on Windows too, not only the parser check: git-bash is where the CRLF
+      # and path-shape differences actually bite. Only the bash leg runs here — the fake `gh` is an
+      # extensionless script with a shebang, which git-bash executes and Windows PowerShell cannot,
+      # so the PowerShell leg would fail on the harness rather than on the code under test. The
+      # PowerShell implementation's behaviour is covered by the ubuntu Script Tests job, where pwsh
+      # runs the same fake; what Windows adds for it is the parser check below.
       - name: Claim protocol - bash implementation
         shell: bash
         run: ./scripts/tests/claim-issue.tests.sh sh
-
-      - name: Claim protocol - PowerShell implementation
-        shell: bash
-        run: ./scripts/tests/claim-issue.tests.sh ps1
 
       - name: PowerShell entrypoints parse
         shell: pwsh
