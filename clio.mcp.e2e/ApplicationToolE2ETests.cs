@@ -501,8 +501,10 @@ public sealed class ApplicationToolE2ETests {
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
 			because: $"a web-only create-app request should return structured application metadata. Actual result: {DescribeCallResult(actResult.CallResult)}");
+		// Envelope inlined so a failure is diagnosable from CI output alone (issue #1106).
 		actResult.Result.Success.Should().BeTrue(
-			because: "successful web-only create calls should return the core-style success envelope");
+			because: "successful web-only create calls should return the core-style success envelope. "
+				+ $"Actual create-app result: {DescribeCallResult(actResult.CallResult)}");
 		IReadOnlyList<ApplicationPageEnvelope> pages = actResult.Result.Pages ?? [];
 		pages.Should().NotBeEmpty(
 			because: "a web-only app still creates its web pages");
