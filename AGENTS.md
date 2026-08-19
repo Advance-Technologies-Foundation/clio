@@ -40,15 +40,26 @@ Rules:
   `Working branch: master` and never name the branch the work actually lands on.
 - Set `CLIO_CLAIM_ID` to a stable value for one logical run if that run can be retried. A retry
   carrying the same id converges on its own claim (repairing a missing assignee or comment) instead
-  of being refused by it.
+  of being refused by it. Do not share one id between two runs that can overlap: a replayed id is
+  not proof of ownership, so a run that finds the claim already carrying its id treats it as
+  adopted and will never release it on the way out — it is left for whoever created it.
+- `origin` and the repository `gh` resolves must be the same: the claim ref lives on `origin` while
+  `gh` picks its own repository (fork checkout, `GH_REPO`, `gh repo set-default`), and two forks
+  could otherwise each win their own lock while both acting on one upstream issue. The script
+  reconciles them up front and refuses (exit 3) when they disagree.
+- A failed read of the claim ref is never treated as "not claimed" — the script exits non-zero
+  instead, in both `--status` and `--release`.
 - A non-zero exit is final: do not override it and do not proceed. Pick another issue, or ask the
   holder — `./scripts/claim-issue.sh --status <issue-number>` prints who holds the claim and when
   they took it.
 - If assignment fails on permissions, the claim fails too. Ask a maintainer to set the assignee and
   re-run; do not start work on the strength of a comment alone.
 - Release the claim when the work is done or abandoned:
-  `./scripts/claim-issue.sh --release <issue-number>` (add `--force` to break a claim left behind by
-  a run that is gone — check `created-at` in `--status` first).
+  `./scripts/claim-issue.sh --release <issue-number>`. This works from the checkout that took the
+  claim even when `CLIO_CLAIM_ID` was never set — a generated id is recorded under `.git` on a
+  successful claim. From a different checkout or machine, pass that run's `CLIO_CLAIM_ID`, or use
+  `--release --force` to break a claim left behind by a run that is gone (check `created-at` in
+  `--status` first).
 - If there is no issue yet, create one first (see the PR workflow section in `CONTRIBUTING.md`),
   then claim it.
 - Reason: several scheduled agents run against this repository in parallel. The claim ref is what

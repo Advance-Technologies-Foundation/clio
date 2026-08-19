@@ -10,6 +10,7 @@
 #   FAKE_GH_DENY_ASSIGN  assignment exits 0 but silently does not take effect
 #   FAKE_GH_FAIL_COMMENT `gh issue comment` exits non-zero
 #   FAKE_GH_BARRIER      directory used to release N callers of `gh api user` together
+#   FAKE_GH_NWO          what `gh repo view --json nameWithOwner` reports (default acme/widgets)
 set -uo pipefail
 
 state="${FAKE_GH_STATE:?FAKE_GH_STATE must be set}"
@@ -45,7 +46,17 @@ case "${1:-}" in
         ;;
     repo)
         if [[ "${2:-}" == view ]]; then
-            printf '%s\n' "${FAKE_GH_DEFAULT_BRANCH:-master}"
+            # Which field is asked for decides the answer; --repo is accepted and ignored.
+            field=''
+            while (( $# )); do
+                [[ "$1" == --json ]] && field="${2:-}"
+                shift
+            done
+            case "$field" in
+                nameWithOwner)    printf '%s\n' "${FAKE_GH_NWO:-acme/widgets}" ;;
+                defaultBranchRef) printf '%s\n' "${FAKE_GH_DEFAULT_BRANCH:-master}" ;;
+                *) echo "fake gh: unsupported repo --json field: $field" >&2; exit 64 ;;
+            esac
             exit 0
         fi
         echo "fake gh: unsupported repo call: $*" >&2; exit 64

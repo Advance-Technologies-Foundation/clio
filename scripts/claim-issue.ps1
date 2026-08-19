@@ -72,6 +72,16 @@ $PeekRef = "refs/clio-claim-peek/issue-$IssueNumber"
 
 function Write-Err { param([string[]]$Lines) foreach ($l in $Lines) { [Console]::Error.WriteLine($l) } }
 
+function Get-NormalizedRemote {
+    <# owner/name out of any remote URL shape: the last two path segments once ':' is a separator. #>
+    param([string]$Url)
+    $u = $Url -replace '\.git$', '' -replace '/$', ''
+    $u = $u -replace ':', '/'
+    $parts = @($u -split '/' | Where-Object { $_ })
+    if ($parts.Count -lt 2) { return $u }
+    return "$($parts[-2])/$($parts[-1])"
+}
+
 function Invoke-Gh {
     <# Runs gh and fails closed. A native failure must never hand the caller an empty string
        that reads as "no assignees" or "no comments". #>
@@ -107,12 +117,22 @@ function Invoke-GitQuiet {
 }
 
 function Get-RemoteClaimSha {
+    <# Returns the sha, or '' when the ref is genuinely absent. THROWS when the remote could not
+       be read: stderr suppression plus an unchecked $LASTEXITCODE is how a network or auth
+       failure came back as "not claimed", which then reports a live claim as cleaned up. #>
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    try { $lines = & git ls-remote origin $ClaimRef 2>$null } finally { $ErrorActionPreference = $previous }
-    $first = @($lines | Where-Object { $_ }) | Select-Object -First 1
-    if (-not $first) { return $null }
-    return ($first -split '\s+')[0]
+    try {
+        $lines = & git ls-remote origin $ClaimRef 2>&1
+        $code = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previous }
+    if ($code -ne 0) {
+        throw "Could not read $ClaimRef from origin (exit ${code}): $($lines -join ' '). Failing closed - an unreadable claim is not an absent claim."
+    }
+    $first = @($lines | Where-Object { $_ -match '\S' }) | Select-Object -First 1
+    if (-not $first) { return '' }
+    return (([string]$first) -split '\s+')[0]
 }
 
 $script:ClaimObjectFetched = $false
@@ -156,39 +176,112 @@ if (-not (Invoke-GitQuiet 'rev-parse' '--git-dir')) {
     exit $ExitPrereq
 }
 
+# `gh` decides its own repository (remotes, GH_REPO, a configured default) while the claim ref is
+# pushed to `origin`. If those disagree, the lock arbitrates one repository and the issue lives in
+# another - two forks can each win their own CAS and both act on one upstream issue.
+try {
+    $CanonicalRepo = (Invoke-Gh 'repo' 'view' '--json' 'nameWithOwner' '-q' '.nameWithOwner' | Select-Object -First 1)
+}
+catch {
+    Write-Err $_.Exception.Message
+    exit $ExitPrereq
+}
+if (-not $CanonicalRepo) {
+    Write-Err 'Could not resolve the GitHub repository for this checkout.'
+    exit $ExitPrereq
+}
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+# The CONFIGURED url, not `git remote get-url`, which applies url.<base>.insteadOf rewriting -
+# that rewrite is transport, not identity, and would compare a local mirror path here.
+try { $originUrl = (& git config --get remote.origin.url 2>$null | Select-Object -First 1) } finally { $ErrorActionPreference = $previous }
+if (-not $originUrl) {
+    Write-Err "No 'origin' remote: the claim ref has nowhere to live."
+    exit $ExitPrereq
+}
+$originRepo = Get-NormalizedRemote -Url $originUrl
+if ($originRepo.ToLowerInvariant() -ne $CanonicalRepo.ToLowerInvariant()) {
+    Write-Err @(
+        'The claim lock and the issue would target different repositories, so the claim would not arbitrate anything.',
+        "  gh resolves:      $CanonicalRepo",
+        "  origin remote is: $originRepo ($originUrl)",
+        "Failing closed. Point origin at $CanonicalRepo, or set GH_REPO to the repository origin points at."
+    )
+    exit $ExitPrereq
+}
+
+function Invoke-GhIssue {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$IssueArgs)
+    $verb = $IssueArgs[0]
+    $rest = @($IssueArgs | Select-Object -Skip 1)
+    return (Invoke-Gh (@('issue', $verb, $IssueNumber, '--repo', $CanonicalRepo) + $rest))
+}
+
 # ── -Status ───────────────────────────────────────────────────────────────
 if ($Status) {
-    $sha = Get-RemoteClaimSha
-    if (-not $sha) { Write-Host "Issue #$IssueNumber is not claimed ($ClaimRef does not exist)." }
-    else { Write-Host "Issue #$IssueNumber is claimed: $(Format-RemoteClaim -Sha $sha)" }
-    $assignees = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
-    Write-Host "Assignees: $(if ($assignees.Count) { $assignees -join ' ' } else { '<none>' })"
+    try {
+        $sha = Get-RemoteClaimSha
+        if (-not $sha) { Write-Host "Issue #$IssueNumber is not claimed ($ClaimRef does not exist)." }
+        else { Write-Host "Issue #$IssueNumber is claimed: $(Format-RemoteClaim -Sha $sha)" }
+        $assignees = @(Invoke-GhIssue 'view' '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
+        Write-Host "Assignees: $(if ($assignees.Count) { $assignees -join ' ' } else { '<none>' })"
+    }
+    catch {
+        Write-Err $_.Exception.Message
+        exit $ExitLost
+    }
     exit 0
 }
 
+# The identity of this run. When CLIO_CLAIM_ID is unset the generated value is recorded under
+# .git on a successful claim, so the documented plain -Release from the same checkout knows what it
+# owns - otherwise every release would generate a new id, compare it to the stored one and refuse.
+$previous = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try { $gitCommonDir = (& git rev-parse --git-common-dir 2>$null | Select-Object -First 1) } finally { $ErrorActionPreference = $previous }
+if (-not $gitCommonDir) { $gitCommonDir = '.git' }
+$TokenFile = Join-Path (Join-Path $gitCommonDir 'clio-claims') "issue-$IssueNumber"
+
 $claimId = $env:CLIO_CLAIM_ID
+$claimIdSource = 'env'
+if (-not $claimId -and $Release -and (Test-Path -LiteralPath $TokenFile)) {
+    $claimId = (Get-Content -LiteralPath $TokenFile -Raw).Trim()
+    $claimIdSource = 'recorded'
+}
 if (-not $claimId) {
     $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
     $claimId = "$([System.Net.Dns]::GetHostName())-$PID-$stamp-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $claimIdSource = 'generated'
 }
 
 # ── -Release ──────────────────────────────────────────────────────────────
 if ($Release) {
-    $sha = Get-RemoteClaimSha
+    try { $sha = Get-RemoteClaimSha }
+    catch {
+        Write-Err $_.Exception.Message
+        exit $ExitLost
+    }
     if (-not $sha) {
+        Remove-Item -LiteralPath $TokenFile -Force -ErrorAction SilentlyContinue
         Write-Host "Issue #$IssueNumber is not claimed - nothing to release."
         exit 0
     }
     $ownerId = Get-ClaimField -Field 'claim-id' -Sha $sha
     if ($ownerId -ne $claimId -and -not $Force) {
-        Write-Err @(
+        $lines = @(
             "Issue #$IssueNumber is claimed by somebody else: $(Format-RemoteClaim -Sha $sha)",
-            'Refusing to release a claim this run does not own.',
-            'If the holder is gone (check created-at above), break it deliberately with -Release -Force.'
+            "Refusing to release a claim this run does not own (claim id from: $claimIdSource)."
         )
+        if ($claimIdSource -eq 'generated') {
+            $lines += 'No claim was recorded for this checkout, so the holder is another checkout or another machine.'
+            $lines += 'Release it from there, or pass its CLIO_CLAIM_ID.'
+        }
+        $lines += 'If the holder is gone (check created-at above), break it deliberately with -Release -Force.'
+        Write-Err $lines
         exit $ExitLost
     }
     if (Remove-Claim -ExpectedSha $sha) {
+        Remove-Item -LiteralPath $TokenFile -Force -ErrorAction SilentlyContinue
         Write-Host "Released the claim on issue #$IssueNumber."
         exit 0
     }
@@ -199,7 +292,7 @@ if ($Release) {
 # ── acquire ───────────────────────────────────────────────────────────────
 # The marker comment names the working branch, and the policy is to claim BEFORE creating the
 # branch — so the branch cannot be read off HEAD, which is still the default branch then.
-$defaultBranch = (Invoke-Gh 'repo' 'view' '--json' 'defaultBranchRef' '-q' '.defaultBranchRef.name' | Select-Object -First 1)
+$defaultBranch = (Invoke-Gh 'repo' 'view' '--repo' $CanonicalRepo '--json' 'defaultBranchRef' '-q' '.defaultBranchRef.name' | Select-Object -First 1)
 if (-not $Branch) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -221,13 +314,16 @@ if (-not $me) {
     exit $ExitLost
 }
 
-$weHoldClaim = $false
+# Only the invocation that CREATED the ref cleans it up. A run that adopted an existing claim
+# (same CLIO_CLAIM_ID) may be racing the worker that created it - a replayed id is not proof of
+# ownership - so deleting that ref here would hand a live claim to a third agent.
+$createdClaim = $false
 $claimComplete = $false
 $claimSha = $null
 
 function Complete-Run {
     param([int]$Code)
-    if ($Code -ne 0 -and $weHoldClaim -and -not $claimComplete) {
+    if ($Code -ne 0 -and $createdClaim -and -not $claimComplete) {
         if (Remove-Claim -ExpectedSha $claimSha) {
             Write-Err "Released the claim ref on issue #$IssueNumber - the claim did not complete, so the issue stays free."
         }
@@ -258,6 +354,11 @@ if (-not $emptyTree) {
 }
 
 $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+# A nonce unique to THIS invocation, so the claim commit is never byte-identical to one already on
+# the ref. Without it, a same-CLIO_CLAIM_ID retry inside the same second builds the same commit, and
+# pushing the value a ref already holds is a no-op that git reports as success - the lease is never
+# evaluated, so the retry looked like it had created the claim and then released somebody's live one.
+$attemptNonce = "$PID-$([guid]::NewGuid().ToString('N'))"
 $env:GIT_AUTHOR_NAME = 'clio-claim'
 $env:GIT_AUTHOR_EMAIL = 'clio-claim@localhost'
 $env:GIT_AUTHOR_DATE = $now
@@ -269,7 +370,8 @@ $claimSha = (& git commit-tree $emptyTree `
         -m "claim-id: $claimId" `
         -m "claimant: $me" `
         -m "branch: $Branch" `
-        -m "created-at: $now" | Select-Object -First 1)
+        -m "created-at: $now" `
+        -m "attempt: $attemptNonce" | Select-Object -First 1)
 if ($LASTEXITCODE -ne 0 -or -not $claimSha) {
     Write-Err 'Could not create the claim commit object.'
     exit $ExitLost
@@ -278,11 +380,17 @@ if ($LASTEXITCODE -ne 0 -or -not $claimSha) {
 # Compare-and-swap: an empty expected value means "the ref must not exist yet", checked inside
 # the server's atomic ref transaction. Exactly one racing run gets a successful push.
 if (Invoke-GitQuiet 'push' '--quiet' "--force-with-lease=${ClaimRef}:" 'origin' "${claimSha}:${ClaimRef}") {
-    $weHoldClaim = $true
+    $createdClaim = $true
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $TokenFile) | Out-Null
+    Set-Content -LiteralPath $TokenFile -Value $claimId -NoNewline
     Write-Host "Claimed issue #$IssueNumber (claim-id $claimId)."
 }
 else {
-    $existingSha = Get-RemoteClaimSha
+    try { $existingSha = Get-RemoteClaimSha }
+    catch {
+        Write-Err $_.Exception.Message
+        exit $ExitLost
+    }
     if (-not $existingSha) {
         Write-Err @(
             "Could not create $ClaimRef on origin and no claim exists there.",
@@ -300,19 +408,19 @@ else {
         )
         exit $ExitLost
     }
-    $weHoldClaim = $true
     $claimSha = $existingSha
-    Write-Host "Issue #$IssueNumber is already claimed by this run (claim-id $claimId) - converging on the remaining steps."
+    Write-Host "Issue #$IssueNumber already carries this run's claim id ($claimId) - converging on the remaining steps."
+    Write-Host 'Not treating it as freshly created: if another invocation replayed this id, its claim must survive our exit.'
 }
 
 try {
     # Ownership. Additive assignment is not arbitration (the claim ref already did that), but the
     # assignee is what a human reads, so it must actually be set - and confirmed by a re-read,
     # because a denied assignment can still report success on some gh/permission combinations.
-    $assignees = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
+    $assignees = @(Invoke-GhIssue 'view' '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
     if ($assignees -notcontains $me) {
-        Invoke-Gh 'issue' 'edit' $IssueNumber '--add-assignee' $me | Out-Null
-        $assignees = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
+        Invoke-GhIssue 'edit' '--add-assignee' $me | Out-Null
+        $assignees = @(Invoke-GhIssue 'view' '--json' 'assignees' '-q' '.assignees[].login' | Where-Object { $_ })
     }
     if ($assignees -notcontains $me) {
         Write-Err @(
@@ -328,7 +436,7 @@ try {
     # The marker comment is the human-visible half of the claim, keyed by claim id so a repeated
     # run repairs a missing marker instead of posting a duplicate.
     $marker = "$MarkerPrefix $claimId "
-    $comments = @(Invoke-Gh 'issue' 'view' $IssueNumber '--json' 'comments' '-q' '.comments[].body')
+    $comments = @(Invoke-GhIssue 'view' '--json' 'comments' '-q' '.comments[].body')
     if (($comments -join "`n").Contains($marker)) {
         Write-Host "The claim comment for claim-id $claimId is already on issue #$IssueNumber."
     }
@@ -343,7 +451,7 @@ try {
             '',
             "The exclusive claim is held at ``$ClaimRef``; it is released with ``pwsh ./scripts/claim-issue.ps1 -IssueNumber $IssueNumber -Release``."
         ) -join "`n"
-        Invoke-Gh 'issue' 'comment' $IssueNumber '--body' $body | Out-Null
+        Invoke-GhIssue 'comment' '--body' $body | Out-Null
         Write-Host "Posted the claim comment on issue #$IssueNumber."
     }
 }

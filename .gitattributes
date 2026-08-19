@@ -30,3 +30,5 @@ clio.tests/Command/McpServer/Fixtures/ClioStageEvent.contract.ndjson text eol=lf
 # core.autocrlf.
 scripts/*.sh       text eol=lf
 scripts/tests/*.sh text eol=lf
+
+scripts/tests/fake-gh  text eol=lf
