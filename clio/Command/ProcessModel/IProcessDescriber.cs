@@ -327,9 +327,14 @@ public sealed class DescribedEmail {
 	/// The custom-message body HTML, with the platform's process-macro image tokens DECODED back into the friendly
 	/// authoring placeholders (<c>[[param:Name]]</c> / <c>[[element:Element.Output(.Column)]]</c>) — the round-trip
 	/// of <c>email.body</c>, so a caller reads it in the same form it would author and can edit it in place on a
-	/// modify. <c>null</c> from a server that predates the body-macro feature (that older package reports only
-	/// <see cref="HasBody"/>); a macro token whose UIds no longer resolve is left as the raw <c>&lt;img&gt;</c> token
-	/// (the server's decode is best-effort). Can be large — use <see cref="HasBody"/> for a presence check.
+	/// modify — but the decode is NOT a guaranteed inverse of the create/modify resolve: a parameter renamed or
+	/// removed since describe read it, or literal <c>[[…]]</c> characters a human typed into the designer's content
+	/// editor (which decode echoes untouched), are REJECTED when written back, so a read-modify-write of a body the
+	/// caller never semantically changed can still fail the whole operation. <c>null</c> from a server that predates
+	/// the body-macro feature (that older package reports only <see cref="HasBody"/>); a macro token whose UIds no
+	/// longer resolve is left as the raw <c>&lt;img&gt;</c> token (the server's decode is best-effort). Can be large,
+	/// and there is NO opt-out — every <c>describe</c> on a process with email elements carries it — so
+	/// <see cref="HasBody"/> stays the cheap presence flag when the HTML itself is not needed.
 	/// </summary>
 	[JsonPropertyName("body")]
 	public string Body { get; set; }

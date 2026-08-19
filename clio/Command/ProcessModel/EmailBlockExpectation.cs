@@ -147,6 +147,91 @@ public static class EmailBlockExpectation {
 			+ "(clio install-process-builder) and re-apply the email block, or configure the element in the designer.";
 	}
 
+	/// <summary>
+	/// Element names whose build descriptor <c>email.body</c> carries at least one friendly process-macro
+	/// placeholder (<c>[[param:</c> / <c>[[element:</c>). These bodies must be verified after a build: a
+	/// CrtProcessBuilder that predates the body-macro feature stores the placeholder text verbatim and still
+	/// answers success, so the literal <c>[[…]]</c> would be emailed to the recipient.
+	/// </summary>
+	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
+	public static IReadOnlyList<string> MacroBodyElements(string descriptorJson) {
+		JsonObject? descriptor = TryParse(descriptorJson) as JsonObject;
+		if (descriptor?["elements"] is not JsonArray elements) {
+			return Array.Empty<string>();
+		}
+
+		List<string> names = [];
+		foreach (JsonNode? element in elements) {
+			if (element is not JsonObject candidate || candidate["email"] is not JsonObject email) {
+				continue;
+			}
+
+			string? body = email["body"] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+			if (!string.IsNullOrEmpty(body) && ContainsMacro(body)) {
+				string? name = candidate["name"]?.GetValue<string>();
+				if (!string.IsNullOrWhiteSpace(name)) {
+					names.Add(name);
+				}
+			}
+		}
+
+		return names;
+	}
+
+	/// <summary>
+	/// Of the elements whose sent body carried a macro (<see cref="MacroBodyElements"/>), those the read-back shows
+	/// were NOT resolved: the element reports a body (<c>HasBody == true</c>) yet its decoded <c>Body</c> came back
+	/// null/empty — the signature of a package that stored the HTML verbatim without resolving the macros. A healthy
+	/// build decodes the tokens back into a NON-null <c>[[…]]</c> body, so this never fires on a resolved body
+	/// (which is why the presence of <c>[[</c> in the read-back is NOT the signal — decode reproduces it). An element
+	/// absent from the read-back is not reported, matching <see cref="Missing"/>.
+	/// </summary>
+	/// <param name="described">The description read back after the successful build.</param>
+	/// <param name="macroElements">Element names returned by <see cref="MacroBodyElements"/>.</param>
+	public static IReadOnlyList<string> UnresolvedBodyMacros(
+			DescribeProcessResult described, IReadOnlyList<string> macroElements) {
+		if (macroElements.Count == 0 || described?.Elements is null) {
+			return Array.Empty<string>();
+		}
+
+		List<string> unresolved = [];
+		foreach (string name in macroElements) {
+			DescribedElement? element = described.Elements.FirstOrDefault(e =>
+				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
+
+			if (element?.Email is { HasBody: true } email && string.IsNullOrWhiteSpace(email.Body)) {
+				unresolved.Add(name);
+			}
+		}
+
+		return unresolved;
+	}
+
+	/// <summary>
+	/// The caller-facing warning for a body whose macros did not resolve. Returns null when nothing is unresolved,
+	/// so a caller can treat null as "no warning to emit".
+	/// </summary>
+	public static string? BuildMacroWarning(IReadOnlyList<string> unresolved) {
+		if (unresolved.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", unresolved);
+		string subject = unresolved.Count == 1 ? "element" : "elements";
+		return $"The operation reported success, but the Send email body for the {subject} '{elements}' carried "
+			+ "process-macro placeholders ([[param:…]] / [[element:…]]) that the read-back shows did NOT resolve "
+			+ "(the element reports a body but describe returned none). The usual cause is a deployed CrtProcessBuilder "
+			+ "that predates the body-macro feature: it stores the HTML verbatim, so the literal placeholder text "
+			+ "would be emailed to the recipient. Install a package that supports body macros "
+			+ "(clio install-process-builder) and re-apply the body, or insert the process data through the "
+			+ "designer's Content designer.";
+	}
+
+	private static bool ContainsMacro(string body) =>
+		body.IndexOf("[[param:", StringComparison.OrdinalIgnoreCase) >= 0
+		|| body.IndexOf("[[element:", StringComparison.OrdinalIgnoreCase) >= 0;
+
 	// Parsed defensively: an unparseable payload is the command's problem to report through the normal error
 	// path, not this check's. Returning null here just skips the verification rather than masking the real
 	// failure with a second, less useful message.
