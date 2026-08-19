@@ -40,26 +40,22 @@ jobs:
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
 
-      # actions/setup-dotnet installs into C:\Program Files\dotnet by default, which the
-      # self-hosted runner's service account cannot write:
-      #   "dotnet-install: The current user doesn't have write access to the installation root
-      #    'C:\Program Files\dotnet' to install .NET."
-      # This step was added on 2026-08-14 (b5d6429c), copying build.yml - but build.yml runs on
-      # GitHub-hosted runners where that root IS writable, while this job is the only one on
-      # self-hosted. Every release since 8.1.0.104 failed here before packing, so 8.1.0.105 and
-      # 8.1.0.106 were released on GitHub but never published to NuGet.
-      #
-      # DOTNET_INSTALL_DIR must be set at STEP scope: the `runner` context is not available in a
-      # job-level `env` key (only github, needs, strategy, matrix, vars, secrets, inputs), which
-      # makes the whole workflow file invalid rather than merely ineffective. setup-dotnet adds the
-      # directory to PATH and sets DOTNET_ROOT, so the later dotnet calls in this job use it too.
-      - uses: actions/setup-dotnet@v4
-        env:
-          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
-        with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+      - name: Verify required .NET SDKs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installedSdks = @(dotnet --list-sdks)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list installed .NET SDKs (exit code $LASTEXITCODE)."
+          }
+
+          foreach ($majorVersion in 8, 10) {
+            if (-not ($installedSdks -match "^$majorVersion\.\d+\.\d+\s")) {
+              throw "Required .NET $majorVersion SDK is not installed on this self-hosted runner. Installed SDKs: $($installedSdks -join '; ')"
+            }
+          }
+
+          Write-Host "Required .NET 8 and .NET 10 SDKs are already installed."
 
       - name: Extract Version from Tag
         id: extract_version
