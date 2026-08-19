@@ -469,4 +469,38 @@ public class PageBaselineStoreTests {
 		fs.Path.GetFullPath(lockPath).Should().NotStartWith(fs.Path.GetFullPath(schemaDir),
 			because: "get-page deletes .clio-pages/{schema}/ recursively — a sentinel inside it would be unlinked from under its holder on Unix and would make the delete fail against the open exclusive handle on Windows");
 	}
+
+	[Test]
+	[Description("A meta.json missing while a concurrent get-page rewrites the schema directory must NOT be read as 'no baseline': the gate has to be taken, or update-page runs with no expected checksum and silently overwrites an external change.")]
+	public void TryReadBaseline_ShouldTakeTheGate_WhenTheFileIsMissingButThePagesTreeExists() {
+		// Arrange — the transient state PageFileWriter creates: it deletes the whole schema directory while
+		// holding the gate, so the schema's meta.json is gone but the .clio-pages ROOT is not.
+		MockFileSystem fs = new();
+		string pagesRoot = fs.Path.GetDirectoryName(fs.Path.GetDirectoryName(MetaPath));
+		fs.AddDirectory(pagesRoot);
+        IInterprocessFileGate gate = Substitute.For<IInterprocessFileGate>();
+
+		// Act
+		PageBaselineStore.TryReadBaseline(fs, gate, MetaPath, out _);
+
+		// Assert
+		gate.ReceivedCalls().Should().NotBeEmpty(
+			because: "an absence inside an existing .clio-pages tree may be a get-page mid-rewrite, and answering it without the gate is how a stale-baseline write slips past conflict detection");
+	}
+
+	[Test]
+	[Description("With no .clio-pages tree at all the absence is definitive, so the gate must NOT be taken — acquiring it would create a .locks directory in a workspace that never captured a baseline.")]
+	public void TryReadBaseline_ShouldNotTakeTheGate_WhenThereIsNoPagesTreeAtAll() {
+		// Arrange — nothing on disk.
+		MockFileSystem fs = new();
+		IInterprocessFileGate gate = Substitute.For<IInterprocessFileGate>();
+
+		// Act
+		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fs, gate, MetaPath, out _);
+
+		// Assert
+		baseline.Should().BeNull(because: "no tree means no baseline was ever captured here");
+		gate.ReceivedCalls().Should().BeEmpty(
+			because: "the store promises never to materialise a .clio-pages tree as a side effect of looking for a baseline that does not exist");
+	}
 }

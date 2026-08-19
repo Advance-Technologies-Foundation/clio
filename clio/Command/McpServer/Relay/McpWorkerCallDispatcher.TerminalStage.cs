@@ -277,12 +277,21 @@ public sealed partial class McpWorkerCallDispatcher {
 			// The CALLER gave up. Cancellation stays cancellation — it is never reported as a timeout or as a
 			// result — but the state it leaves behind is still indeterminate, so the last stage reached is
 			// recorded where an operator can find it before the worker is killed.
+			// WHETHER THIS IS INDETERMINATE DEPENDS ON WHAT THE RUN ALREADY SAID. Cancellation can land during
+			// the post-terminal exit grace — the run has reported run-completed and the child is merely slow
+			// to exit — and telling an operator that a deploy which ANNOUNCED ITS OWN SUCCESS may be
+			// half-installed and must not be reused is a false alarm of the worst kind: it is the mirror of
+			// the failure this protocol exists to prevent, and it costs somebody an inspection or a rebuild
+			// of a healthy environment.
 			TerminalStageObservation observation = watch.Snapshot();
-			_logger.WriteWarning(
-				$"MCP tool '{toolName}' (pid {lease.ProcessId}) was cancelled by its caller before reporting a "
-				+ $"terminal stage. Last stage reached: {observation.LastStageDescription}. The outcome is "
-				+ "INDETERMINATE: the target environment may be half-installed and must not be reused without "
-				+ "inspection.");
+			_logger.WriteWarning(observation.TerminalObserved
+				? $"MCP tool '{toolName}' (pid {lease.ProcessId}) was cancelled by its caller AFTER the run "
+					+ $"reported terminal outcome '{observation.Outcome}'. The operation itself had already "
+					+ "finished, so the environment is NOT indeterminate; only the answer was abandoned."
+				: $"MCP tool '{toolName}' (pid {lease.ProcessId}) was cancelled by its caller before reporting "
+					+ $"a terminal stage. Last stage reached: {observation.LastStageDescription}. The outcome "
+					+ "is INDETERMINATE: the target environment may be half-installed and must not be reused "
+					+ "without inspection.");
 			KillQuietly(lease, toolName);
 			throw;
 		}

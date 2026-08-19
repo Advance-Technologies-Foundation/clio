@@ -142,10 +142,12 @@ internal static class PageBaselineStore {
 		string metaFilePath,
 		out string warning) {
 		warning = null;
-		if (string.IsNullOrWhiteSpace(metaFilePath) || !FileExistsQuietly(fileSystem, metaFilePath)) {
-			// Checked BEFORE taking the gate on purpose: acquiring it would create the `.locks` directory,
-			// and an update-page run in a directory that has no `.clio-pages` tree must not materialise one
-			// as a side effect of looking for a baseline that was never captured.
+		if (string.IsNullOrWhiteSpace(metaFilePath)
+			|| (!FileExistsQuietly(fileSystem, metaFilePath)
+				&& AbsenceIsDefinitive(fileSystem, metaFilePath))) {
+			// Answered without the gate ONLY when the absence is definitive — see AbsenceIsDefinitive. A
+			// missing file inside an existing .clio-pages tree may be a get-page mid-rewrite, and treating
+			// that as "no baseline" is how an update-page comes to run with no expected checksum.
 			return null;
 		}
 		try {
@@ -202,9 +204,12 @@ internal static class PageBaselineStore {
 		IInterprocessFileGate gate,
 		string metaFilePath,
 		PageBaselineInfo baseline) {
-		// See TryReadBaseline: the pre-gate existence check keeps the store's promise never to create a
-		// `.clio-pages` tree on the write path. The inner check still stands for the interleaving case.
-		if (string.IsNullOrWhiteSpace(metaFilePath) || !FileExistsQuietly(fileSystem, metaFilePath)) {
+		// See TryReadBaseline and AbsenceIsDefinitive: the pre-gate check keeps the store's promise never to
+		// create a `.clio-pages` tree, but only a DEFINITIVE absence may skip the gate. The inner check
+		// still stands for the interleaving case.
+		if (string.IsNullOrWhiteSpace(metaFilePath)
+			|| (!FileExistsQuietly(fileSystem, metaFilePath)
+				&& AbsenceIsDefinitive(fileSystem, metaFilePath))) {
 			return null;
 		}
 		try {
@@ -271,8 +276,10 @@ internal static class PageBaselineStore {
 	/// </summary>
 	/// <returns><c>null</c> on success or a legitimate no-op; otherwise a diagnostic to surface as a warning.</returns>
 	internal static string DeleteBaseline(IFileSystem fileSystem, IInterprocessFileGate gate, string metaFilePath) {
-		// See TryReadBaseline for why existence is checked before the gate is taken.
-		if (string.IsNullOrWhiteSpace(metaFilePath) || !FileExistsQuietly(fileSystem, metaFilePath)) {
+		// See TryReadBaseline and AbsenceIsDefinitive for why only a DEFINITIVE absence skips the gate.
+		if (string.IsNullOrWhiteSpace(metaFilePath)
+			|| (!FileExistsQuietly(fileSystem, metaFilePath)
+				&& AbsenceIsDefinitive(fileSystem, metaFilePath))) {
 			return null;
 		}
 		try {
@@ -341,4 +348,43 @@ internal static class PageBaselineStore {
 	}
 
 	private static string NormalizeUri(string uri) => uri.Trim().TrimEnd('/');
+
+	/// <summary>
+	/// True when a missing <c>meta.json</c> means "never captured" rather than "another clio is rewriting
+	/// it right now", so the caller may answer without taking the gate.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The pre-gate existence check exists to keep a promise: an <c>update-page</c> in a directory with no
+	/// <c>.clio-pages</c> tree must not materialise one — acquiring the gate creates a <c>.locks</c>
+	/// directory. That promise is worth keeping, but the check as written could not tell an absent baseline
+	/// from a TRANSIENT one: <c>PageFileWriter</c> deletes the whole schema directory while it rewrites
+	/// (its own remarks name the hazard), holding the gate throughout. A concurrent <c>update-page</c>
+	/// looking in that window saw "no baseline", ran with no expected checksum, and could overwrite an
+	/// external change — while the completing <c>get-page</c> left a baseline nobody compared against.
+	/// Silent, and precisely what conflict detection exists to prevent.
+	/// </para>
+	/// <para>
+	/// The discriminator is the <c>.clio-pages</c> ROOT, which the writer's per-schema delete never
+	/// removes. No root means no baseline was ever captured here: answer immediately and create nothing.
+	/// A root that exists with the schema's file missing may be mid-rewrite, so the caller takes the gate
+	/// and re-reads under it — which costs a lock only in the workspace that already has the tree the lock
+	/// would live in.
+	/// </para>
+	/// </remarks>
+	/// <param name="fileSystem">The file system.</param>
+	/// <param name="metaFilePath">Full path of the schema's <c>meta.json</c>.</param>
+	/// <returns><see langword="true"/> when the absence is definitive.</returns>
+	private static bool AbsenceIsDefinitive(IFileSystem fileSystem, string metaFilePath) {
+		try {
+			string schemaDirectory = fileSystem.Path.GetDirectoryName(metaFilePath);
+			string pagesRoot = string.IsNullOrWhiteSpace(schemaDirectory)
+				? null
+				: fileSystem.Path.GetDirectoryName(schemaDirectory);
+			return string.IsNullOrWhiteSpace(pagesRoot) || !fileSystem.Directory.Exists(pagesRoot);
+		} catch (Exception) {
+			// An unreadable path is not evidence a baseline exists; keep the old, cheaper answer.
+			return true;
+		}
+	}
 }
