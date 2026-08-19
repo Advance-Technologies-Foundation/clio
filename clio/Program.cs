@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -226,6 +226,8 @@ internal class Program {
 		typeof(CreateUserTaskOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
+		typeof(ExportSchemaOptions),
+		typeof(ImportSchemaOptions),
 		typeof(SetApplicationVersionOption),
 		typeof(SetApplicationIconOption),
 		typeof(RestartOptions),
@@ -613,6 +615,8 @@ internal class Program {
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
 			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
+			ExportSchemaOptions opts => Resolve<ExportSchemaCommand>(opts).Execute(opts),
+			ImportSchemaOptions opts => Resolve<ImportSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 			WatchCompilationOptions opts => Resolve<WatchCompilationCommand>(opts).Execute(opts),
