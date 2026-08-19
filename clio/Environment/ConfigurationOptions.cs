@@ -548,7 +548,13 @@ namespace Clio
 	{
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
-		internal const int SettingsLockTimeoutSeconds = 30;
+		// RAISED with the publish retry window, not independently. One lock hold can spend that window
+		// SettingsUpdateAttemptLimit times (3 x 5 s = 15 s), so at 30 s a SECOND process queued behind a
+		// worst-case holder still fits and a THIRD does not — and "the settings lock timed out" is a far
+		// more confusing failure than the contention it was queued behind. Doubling the publish window
+		// halved that headroom, so the timeout doubles with it and the relationship stays the one the
+		// comment on SettingsPublishRetryPolicy states: window x attempts must stay well under this.
+		internal const int SettingsLockTimeoutSeconds = 60;
 		internal const int SettingsUpdateAttemptLimit = 3;
 		private static readonly object SchemaFileLock = new ();
 		private static readonly ConcurrentDictionary<string, object> ProcessSettingsLocks = new();
@@ -824,7 +830,7 @@ namespace Clio
 				return;
 			}
 			if (expectedContent == null) {
-				MoveNewSettingsFile(fileSystem, tempFilePath);
+				MoveNewSettingsFile(fileSystem, tempFilePath, policy);
 				return;
 			}
 
@@ -844,9 +850,21 @@ namespace Clio
 			PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true), policy);
 		}
 
-		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath) {
+		// The FIRST-WRITE branch, and it is retried like every other publish. It was not, and the gap was
+		// invisible because the other branches are the ones the concurrency test exercises: this one runs
+		// when the caller has no expected content, which SettingsBootstrapService does on the path that
+		// creates the file. A first write races a reader exactly as a replacement does — the bootstrap
+		// probe itself reads the file — so leaving it bare meant "the settings publish is protected" was
+		// true of three branches out of four.
+		//
+		// The SettingsFileChangedException screen stays OUTSIDE the retry on purpose: a move refused
+		// because the destination now exists is not contention, it is somebody else having created the
+		// file, and retrying that would turn a correct "reload and try again" into a five-second stall
+		// ending in the same answer.
+		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath,
+			SettingsPublishRetryPolicy policy) {
 			try {
-				fileSystem.File.Move(tempFilePath, AppSettingsFile);
+				PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile), policy);
 			}
 			catch (IOException) when (fileSystem.File.Exists(AppSettingsFile)) {
 				throw new SettingsFileChangedException();

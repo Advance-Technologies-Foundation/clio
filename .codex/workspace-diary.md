@@ -9304,3 +9304,35 @@ Impact: when two claims conflict — a record a caller may still read, and capac
   hole remains and is recorded rather than fixed — a worker whose PROCESS dies mid-linger takes
   its record with it, because linger holds a lease, not a process. Unfixable by lingering; it
   needs the record to live outside the child.
+
+## 2026-08-19 20:15 – The settings publish retry, hardened — and a commit that swept in a neighbour
+Context: the reg-web-app publish retry took the AppSettings e2e from ~100% red to a MEASURED
+  ~5% red per run — the reader holds the file 84.4% of its 46 us cycle, and P(refused) is that
+  duty cycle raised to the attempt count. A 5%-per-run flake is not a closed defect.
+Decision: window 2.5 s -> 5 s (well under 1% by the same arithmetic), jitter on the CAPPED tail
+  only with the draw injected, and the exhausted failure WRAPPED with the destination path, the
+  elapsed retry time and the attempt count. That last one is the real deliverable: the BCL
+  message is "The process cannot access the file because it is being used by another process."
+  with no path, no operation and no hint that clio already retried — one pathless sentence that
+  cost a day of investigation.
+Discovery: (1) the retry covered three publish branches out of four — MoveNewSettingsFile, the
+  FIRST-WRITE path SettingsBootstrapService takes, went bare, so "the settings publish is
+  protected" was true of the branches the concurrency test happens to exercise. Now retried,
+  with the SettingsFileChangedException screen deliberately left OUTSIDE the retry: a move
+  refused because the destination now exists is not contention. (2) Doubling the window halved
+  the lock headroom — one hold can spend it SettingsUpdateAttemptLimit times, 3 x 5 s = 15 s —
+  so SettingsLockTimeoutSeconds doubles to 60 with it, because "the settings lock timed out" is
+  a more confusing failure than the contention behind it.
+  The honest limit is now stated where a tuner will read it: on Windows no API atomically
+  replaces a file a foreign process holds without FILE_SHARE_DELETE, FILE_RENAME_POSIX_SEMANTICS
+  does not rescue it, so clio CANNOT guarantee exit 0 and any reader outliving the window
+  defeats any window.
+Process note, my error: commit 726d0cc1c ("the status poll destroyed the record it had just
+  read") also swept in this settings work, because I ran `git add -A` while a parallel agent was
+  mid-task. The commit is pushed and carries two unrelated changes. Not rewritten — the branch
+  is shared with scheduled routines and a rebase would cost more than the muddled message. The
+  lesson is `git add <paths>` whenever an agent is running, and it is cheap to follow.
+Files: clio/Common/FileSystem.cs, clio/Environment/ConfigurationOptions.cs,
+  clio.tests/Command/SettingsRepositoryConcurrencyTests.cs, clio.tests/Common/FileSystem.Tests.cs
+Impact: when a retry turns a certainty into a probability, say which probability — a fix
+  reported without its residual failure rate reads as closed when it is not.
