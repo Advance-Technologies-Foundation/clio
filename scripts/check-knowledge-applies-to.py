@@ -50,34 +50,44 @@ def repo_root() -> str:
     return out.stdout.strip()
 
 
+def _front_matter_body(lines: list[str]) -> tuple[list[str] | None, list[str]]:
+    """The lines between the opening and closing ``---``, or ``None`` plus the reason why not."""
+    if not lines or lines[0].strip() != "---":
+        return None, ["no YAML front matter (the file must start with '---')"]
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
+        return None, ["front matter is never closed with '---'"]
+    return lines[1:end], []
+
+
+def _append_list_item(data: dict[str, object], key: str, raw: str) -> None:
+    """Append a ``- item`` line to ``key``, coercing a previously scalar value to a list."""
+    if not isinstance(data.get(key), list):
+        data[key] = []
+    data[key].append(raw.split("- ", 1)[1].strip().strip("'\""))
+
+
 def parse_front_matter(text: str) -> tuple[dict[str, object], list[str]]:
     """Minimal YAML front-matter reader: scalars and ``- item`` lists only.
 
     Deliberately not PyYAML: the workflow runs on a bare runner with no pip install step, and the
     schema in docs/knowledge/README.md is small enough that a real YAML parser buys nothing.
     """
-    problems: list[str] = []
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}, ["no YAML front matter (the file must start with '---')"]
-    try:
-        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
-    except StopIteration:
-        return {}, ["front matter is never closed with '---'"]
+    body, problems = _front_matter_body(text.splitlines())
+    if body is None:
+        return {}, problems
 
     data: dict[str, object] = {}
     key: str | None = None
-    for raw in lines[1:end]:
-        if not raw.strip() or raw.lstrip().startswith("#"):
+    for raw in body:
+        stripped = raw.lstrip()
+        if not raw.strip() or stripped.startswith("#"):
             continue
-        if raw.lstrip().startswith("- "):
+        if stripped.startswith("- "):
             if key is None:
                 problems.append(f"list item outside of any key: {raw.strip()}")
-                continue
-            data.setdefault(key, [])
-            if not isinstance(data[key], list):
-                data[key] = []
-            data[key].append(raw.split("- ", 1)[1].strip().strip("'\""))
+            else:
+                _append_list_item(data, key, raw)
             continue
         if ":" not in raw:
             problems.append(f"unparsable front-matter line: {raw.strip()}")
@@ -94,6 +104,48 @@ def scalar(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _applies_to_list(value: object) -> list[str]:
+    """``applies-to`` as a list of non-empty entries, whatever shape the front matter had."""
+    if isinstance(value, str):
+        return [value] if value else []
+    return [entry for entry in (value or []) if entry]
+
+
+def _schema_problems(record: Record) -> list[str]:
+    """Everything the schema in docs/knowledge/README.md requires but this record lacks."""
+    problems: list[str] = []
+    if not record.description:
+        problems.append("missing 'description'")
+    if not record.applies_to:
+        problems.append("missing 'applies-to' (at least one path is required)")
+    if not record.date:
+        problems.append("missing 'date'")
+    for entry in record.applies_to:
+        if entry.startswith("/") or (len(entry) > 1 and entry[1] == ":"):
+            problems.append(f"absolute path in applies-to: {entry}")
+        if any(ch in entry for ch in "*?["):
+            problems.append(f"glob in applies-to (literal paths only): {entry}")
+    return problems
+
+
+def _read_record(abs_path: str, root: str) -> Record:
+    rel = os.path.relpath(abs_path, root).replace(os.sep, "/")
+    with open(abs_path, encoding="utf-8") as handle:
+        data, problems = parse_front_matter(handle.read())
+    record = Record(
+        path=rel,
+        # A key present but empty parses as [] (see parse_front_matter), which must read as
+        # absent rather than as the string "[]".
+        description=scalar(data.get("description")),
+        ticket=scalar(data.get("ticket")),
+        date=scalar(data.get("date")),
+        applies_to=_applies_to_list(data.get("applies-to")),
+        problems=problems,
+    )
+    record.problems.extend(_schema_problems(record))
+    return record
+
+
 def load_records(root: str) -> list[Record]:
     base = os.path.join(root, KNOWLEDGE_DIR)
     records: list[Record] = []
@@ -101,35 +153,7 @@ def load_records(root: str) -> list[Record]:
         for name in sorted(filenames):
             if not name.endswith(".md") or name.upper() == "README.MD":
                 continue
-            abs_path = os.path.join(dirpath, name)
-            rel = os.path.relpath(abs_path, root).replace(os.sep, "/")
-            with open(abs_path, encoding="utf-8") as handle:
-                data, problems = parse_front_matter(handle.read())
-            applies = data.get("applies-to") or []
-            if isinstance(applies, str):
-                applies = [applies] if applies else []
-            record = Record(
-                path=rel,
-                # A key present but empty parses as [] (see parse_front_matter), which must read as
-                # absent rather than as the string "[]".
-                description=scalar(data.get("description")),
-                ticket=scalar(data.get("ticket")),
-                date=scalar(data.get("date")),
-                applies_to=[a for a in applies if a],
-                problems=problems,
-            )
-            if not record.description:
-                record.problems.append("missing 'description'")
-            if not record.applies_to:
-                record.problems.append("missing 'applies-to' (at least one path is required)")
-            if not record.date:
-                record.problems.append("missing 'date'")
-            for entry in record.applies_to:
-                if entry.startswith("/") or (len(entry) > 1 and entry[1] == ":"):
-                    record.problems.append(f"absolute path in applies-to: {entry}")
-                if any(ch in entry for ch in "*?["):
-                    record.problems.append(f"glob in applies-to (literal paths only): {entry}")
-            records.append(record)
+            records.append(_read_record(os.path.join(dirpath, name), root))
     return sorted(records, key=lambda r: r.path)
 
 
@@ -174,6 +198,62 @@ def dead_paths(root: str, record: Record) -> list[str]:
     ]
 
 
+def _touched_section(records: list[Record], base: str) -> tuple[list[str], int]:
+    """The diff-intersection section and how many records the diff touched."""
+    changed, error = changed_files(base)
+    if error:
+        return [f"> Diff intersection skipped: {error}", ""], 0
+
+    hits: list[tuple[Record, list[str]]] = []
+    for record in records:
+        touched = sorted({m for entry in record.applies_to for m in matches(entry, changed)})
+        if touched:
+            hits.append((record, touched))
+    if not hits:
+        return ["No knowledge record covers the files changed in this pull request.", ""], 0
+
+    lines = [
+        f"This pull request touches code covered by **{len(hits)}** knowledge record(s).",
+        "Update or delete each one in this pull request if the fact changed"
+        " - and if nothing changed, no action is needed.",
+        "",
+    ]
+    for record, touched in hits:
+        lines.append(f"- [`{record.path}`]({record.path}) - {record.description}")
+        lines.extend(f"  - touched: `{f}`" for f in touched)
+    lines.append("")
+    return lines, len(hits)
+
+
+def _dead_section(root: str, records: list[Record]) -> list[str]:
+    dead = [(r, d) for r in records if (d := dead_paths(root, r))]
+    if not dead:
+        return []
+    lines = [
+        f"### Records pointing at paths that no longer exist ({len(dead)})",
+        "",
+        "Either the path moved (fix `applies-to`) or the fact is gone (delete the record).",
+        "",
+    ]
+    for record, missing in dead:
+        lines.append(f"- [`{record.path}`]({record.path})")
+        lines.extend(f"  - missing: `{entry}`" for entry in missing)
+    lines.append("")
+    return lines
+
+
+def _malformed_section(records: list[Record]) -> list[str]:
+    malformed = [r for r in records if r.problems]
+    if not malformed:
+        return []
+    lines = [f"### Records that do not match the schema ({len(malformed)})", ""]
+    for record in malformed:
+        lines.append(f"- [`{record.path}`]({record.path})")
+        lines.extend(f"  - {problem}" for problem in record.problems)
+    lines.append("")
+    return lines
+
+
 def build_report(root: str, records: list[Record], base: str | None, dead_only: bool) -> tuple[str, int]:
     lines: list[str] = [MARKER, "## Knowledge base check", ""]
     touched_count = 0
@@ -185,56 +265,12 @@ def build_report(root: str, records: list[Record], base: str | None, dead_only: 
         ]
 
     if not dead_only and base and records:
-        changed, error = changed_files(base)
-        if error:
-            lines += [f"> Diff intersection skipped: {error}", ""]
-        else:
-            hits: list[tuple[Record, list[str]]] = []
-            for record in records:
-                touched = sorted({m for entry in record.applies_to for m in matches(entry, changed)})
-                if touched:
-                    hits.append((record, touched))
-            touched_count = len(hits)
-            if hits:
-                lines += [
-                    f"This pull request touches code covered by **{len(hits)}** knowledge record(s).",
-                    "Update or delete each one in this pull request if the fact changed"
-                    " - and if nothing changed, no action is needed.",
-                    "",
-                ]
-                for record, touched in hits:
-                    lines.append(f"- [`{record.path}`]({record.path}) - {record.description}")
-                    for f in touched:
-                        lines.append(f"  - touched: `{f}`")
-                lines.append("")
-            else:
-                lines += [
-                    "No knowledge record covers the files changed in this pull request.",
-                    "",
-                ]
+        section, touched_count = _touched_section(records, base)
+        lines += section
 
-    dead = [(r, d) for r in records if (d := dead_paths(root, r))]
-    if dead:
-        lines += [
-            f"### Records pointing at paths that no longer exist ({len(dead)})",
-            "",
-            "Either the path moved (fix `applies-to`) or the fact is gone (delete the record).",
-            "",
-        ]
-        for record, missing in dead:
-            lines.append(f"- [`{record.path}`]({record.path})")
-            for entry in missing:
-                lines.append(f"  - missing: `{entry}`")
-        lines.append("")
-
-    malformed = [r for r in records if r.problems]
-    if malformed:
-        lines += [f"### Records that do not match the schema ({len(malformed)})", ""]
-        for record in malformed:
-            lines.append(f"- [`{record.path}`]({record.path})")
-            for problem in record.problems:
-                lines.append(f"  - {problem}")
-        lines.append("")
+    dead = _dead_section(root, records)
+    malformed = _malformed_section(records)
+    lines += dead + malformed
 
     if records and not dead and not malformed and (dead_only or not base):
         lines += [f"All {len(records)} record(s) resolve and match the schema.", ""]
