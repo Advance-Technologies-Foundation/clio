@@ -23,19 +23,40 @@ passed=0
 failed=0
 current_case=''
 
-pass() { printf '  ok   %s\n' "$1"; passed=$((passed + 1)); }
-fail() { printf '  FAIL %s\n' "$1" >&2; failed=$((failed + 1)); }
+# Named so the same assertion label is not repeated as a literal across the cases.
+readonly LABEL_COMMENTS='claim comments'
+readonly LABEL_ASSIGNEES='assignees'
+readonly LABEL_CLAIM_REF='claim ref released'
+
+pass() {
+    local message="$1"
+    printf '  ok   %s\n' "$message"
+    passed=$((passed + 1))
+    return 0
+}
+
+fail() {
+    local message="$1"
+    printf '  FAIL %s\n' "$message" >&2
+    failed=$((failed + 1))
+    return 0
+}
 
 expect_eq() {
     local what="$1" expected="$2" actual="$3"
-    if [[ "$expected" == "$actual" ]]; then pass "$current_case: $what == $expected"
-    else fail "$current_case: $what expected '$expected', got '$actual'"; fi
+    if [[ "$expected" == "$actual" ]]; then
+        pass "$current_case: $what == $expected"
+    else
+        fail "$current_case: $what expected '$expected', got '$actual'"
+    fi
+    return 0
 }
 
 # ── sandbox ───────────────────────────────────────────────────────────────
 sandbox=''
 new_sandbox() {
-    current_case="$1"
+    local case_name="$1"
+    current_case="$case_name"
     printf '\n%s\n' "$current_case"
     sandbox="$(mktemp -d)"
     mkdir -p "$sandbox/bin" "$sandbox/state"
@@ -45,8 +66,14 @@ new_sandbox() {
     git -C "$sandbox/work" -c user.email=t@t -c user.name=t commit --quiet --allow-empty -m init
     git -C "$sandbox/work" remote add origin "$sandbox/origin.git"
     git -C "$sandbox/work" push --quiet origin master
+    return 0
 }
-drop_sandbox() { [[ -n "$sandbox" ]] && rm -rf "$sandbox"; sandbox=''; }
+
+drop_sandbox() {
+    [[ -n "$sandbox" ]] && rm -rf "$sandbox"
+    sandbox=''
+    return 0
+}
 
 # Runs the implementation under test inside the sandbox and echoes its exit code.
 claim() {
@@ -76,14 +103,37 @@ claim() {
         } >&2
     fi
     echo "$rc"
+    return 0
 }
 
-# grep -c exits 1 on zero matches, so the count is taken through a subshell that swallows it.
-count_lines() { local f="$1"; [[ -f "$f" ]] || { echo 0; return; }; grep -c . "$f" 2>/dev/null | head -1 || true; }
-claim_count()      { count_lines "$sandbox/state/comments"; }
-assignee_count()   { count_lines "$sandbox/state/assignees"; }
+# grep -c exits 1 on zero matches, so the count is taken through a pipe that swallows it.
+count_lines() {
+    local file="$1"
+    if [[ ! -f "$file" ]]; then
+        echo 0
+        return 0
+    fi
+    grep -c . "$file" 2>/dev/null | head -1 || true
+    return 0
+}
+
+claim_count() {
+    count_lines "$sandbox/state/comments"
+    return 0
+}
+
+assignee_count() {
+    count_lines "$sandbox/state/assignees"
+    return 0
+}
+
 claim_ref_exists() {
-    if git -C "$sandbox/work" ls-remote origin "refs/claims/issue-$issue" 2>/dev/null | grep -q .; then echo yes; else echo no; fi
+    if git -C "$sandbox/work" ls-remote origin "refs/claims/issue-$issue" 2>/dev/null | grep -q .; then
+        echo yes
+    else
+        echo no
+    fi
+    return 0
 }
 
 # ── 1. Two synchronized claimers: exactly one winner ──────────────────────
@@ -91,11 +141,13 @@ claim_ref_exists() {
 new_sandbox '1. two racing claimers produce exactly one winner'
 mkdir -p "$sandbox/barrier"
 run_racer() {
-    local id="$1" out="$2" rc=0
+    local id="$1" out="$2"
+    local rc=0
     ( cd "$sandbox/work" && PATH="$sandbox/bin:$PATH" FAKE_GH_STATE="$sandbox/state" \
         FAKE_GH_BARRIER="$sandbox/barrier" FAKE_GH_BARRIER_COUNT=2 CLIO_CLAIM_ID="$id" \
         bash "$repo_root/scripts/claim-issue.sh" "$issue" "$work_branch" ) >"$out" 2>&1 || rc=$?
     echo "$rc" >"$out.rc"
+    return 0
 }
 run_racer racer-a "$sandbox/a" & pid_a=$!
 run_racer racer-b "$sandbox/b" & pid_b=$!
@@ -103,8 +155,8 @@ wait "$pid_a" "$pid_b"
 rc_a="$(cat "$sandbox/a.rc")"; rc_b="$(cat "$sandbox/b.rc")"
 winners=0; [[ "$rc_a" == 0 ]] && winners=$((winners + 1)); [[ "$rc_b" == 0 ]] && winners=$((winners + 1))
 expect_eq 'winners' 1 "$winners"
-expect_eq 'claim comments' 1 "$(claim_count)"
-expect_eq 'assignees' 1 "$(assignee_count)"
+expect_eq "$LABEL_COMMENTS" 1 "$(claim_count)"
+expect_eq "$LABEL_ASSIGNEES" 1 "$(assignee_count)"
 drop_sandbox
 
 # ── 2. A second agent sharing the same GitHub identity is refused ──────────
@@ -115,7 +167,7 @@ export CLIO_CLAIM_ID=agent-two
 rc="$(claim "$work_branch")"
 unset CLIO_CLAIM_ID
 expect_eq 'second run on the same login' 1 "$rc"
-expect_eq 'claim comments' 1 "$(claim_count)"
+expect_eq "$LABEL_COMMENTS" 1 "$(claim_count)"
 drop_sandbox
 
 # ── 3. A retry of the same run converges instead of refusing itself ────────
@@ -124,7 +176,7 @@ export CLIO_CLAIM_ID=stable-run
 expect_eq 'first run' 0 "$(claim "$work_branch")"
 expect_eq 'retry' 0 "$(claim "$work_branch")"
 unset CLIO_CLAIM_ID
-expect_eq 'claim comments' 1 "$(claim_count)"
+expect_eq "$LABEL_COMMENTS" 1 "$(claim_count)"
 drop_sandbox
 
 # ── 4. Assignment denied: fail closed, no fallback comment, issue stays free ─
@@ -135,7 +187,7 @@ expect_eq 'first attempt' 1 "$(CLIO_CLAIM_ID=denied-one claim "$work_branch")"
 expect_eq 'second attempt' 1 "$(CLIO_CLAIM_ID=denied-two claim "$work_branch")"
 unset FAKE_GH_DENY_ASSIGN
 expect_eq 'fallback comments' 0 "$(claim_count)"
-expect_eq 'claim ref released' no "$(claim_ref_exists)"
+expect_eq "$LABEL_CLAIM_REF" no "$(claim_ref_exists)"
 drop_sandbox
 
 # ── 5. A failing gh call is fatal, not silently successful ────────────────
@@ -145,7 +197,7 @@ export FAKE_GH_FAIL_VIEW=1
 expect_eq 'ownership read failure' 1 "$(CLIO_CLAIM_ID=view-fail claim "$work_branch")"
 unset FAKE_GH_FAIL_VIEW
 expect_eq 'assignees after a failed read' 0 "$(assignee_count)"
-expect_eq 'claim ref released' no "$(claim_ref_exists)"
+expect_eq "$LABEL_CLAIM_REF" no "$(claim_ref_exists)"
 
 export FAKE_GH_FAIL_ASSIGN=1
 expect_eq 'assignment failure' 1 "$(CLIO_CLAIM_ID=assign-fail claim "$work_branch")"
@@ -170,8 +222,8 @@ drop_sandbox
 # Review: "Following this instruction from master therefore publishes Working branch: master".
 new_sandbox '7. claiming from the default branch without a branch name is refused'
 expect_eq 'exit code' 2 "$(claim '')"
-expect_eq 'assignees' 0 "$(assignee_count)"
-expect_eq 'claim comments' 0 "$(claim_count)"
+expect_eq "$LABEL_ASSIGNEES" 0 "$(assignee_count)"
+expect_eq "$LABEL_COMMENTS" 0 "$(claim_count)"
 expect_eq 'no claim ref' no "$(claim_ref_exists)"
 drop_sandbox
 
