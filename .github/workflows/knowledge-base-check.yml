@@ -1,0 +1,64 @@
+# Advisory check for docs/knowledge/ (see docs/knowledge/README.md).
+#
+# It never fails the pull request. AGENTS.md makes updating a record a rule for the author, not the
+# CI; a blocking check would only produce cosmetic edits to records, because touching a file for an
+# unrelated reason is legitimate and frequent.
+#
+# `pull_request` (not `pull_request_target`) is deliberate: clio is a public repository, and
+# `pull_request_target` would run with a write token in the base-repo context. The cost is that on
+# a fork pull request GITHUB_TOKEN is read-only and the comment cannot be posted - so the comment
+# step is written to fail soft, and the report is always in the job summary regardless.
+name: Knowledge base check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  knowledge:
+    name: applies-to
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # the diff base has to be reachable; a shallow clone breaks merge-base
+
+      - name: Run the check
+        id: check
+        run: |
+          python3 scripts/check-knowledge-applies-to.py \
+            --base "origin/${{ github.event.pull_request.base.ref }}" \
+            --markdown "$RUNNER_TEMP/knowledge-report.md"
+          cat "$RUNNER_TEMP/knowledge-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on the pull request
+        # Fork pull requests get a read-only token, so this 403s there by design. The report is
+        # already in the job summary; do not let it colour the check.
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- knowledge-applies-to-check -->';
+            const body = fs.readFileSync(process.env.RUNNER_TEMP + '/knowledge-report.md', 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            try {
+              // One sticky comment, updated in place. A new comment per push would flood the
+              // thread that the PR-driving routines read.
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number, per_page: 100,
+              });
+              const existing = comments.find(c => c.body && c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              }
+            } catch (error) {
+              core.warning(`Could not post the knowledge-base comment (expected on fork pull requests): ${error.message}`);
+            }

@@ -419,30 +419,60 @@ Treat custom `CLIO*` diagnostics as actionable and rely on `clio/.editorconfig` 
 - Use `[ResolvedDynamically]` only for services genuinely resolved via reflection or from another assembly (e.g. `clio.mcp.server`).
 - See the "Using [ResolvedDynamically]" callout in `project-context.md` for the full what/when/when-not guidance.
 
-# Workspace diary
+# Knowledge base
 
-Keep a persistent engineering diary to speed up future tasks.
+Keep a searchable base of the things the code does **not** say, so the next engineer or agent does
+not rediscover them.
 
-Canonical diary file:
-- `./.codex/workspace-diary.md`
+Canonical location:
+- `./docs/knowledge/<category>/<slug>.md` — **one file is one fact.** Read
+  [docs/knowledge/README.md](docs/knowledge/README.md) for the schema and the category layout.
+
+> `docs/knowledge/` is **internal repository knowledge**. It has nothing to do with the shipped
+> guidance library (`clio-knowledge`, the `get-guidance` MCP tool,
+> `clio/Command/McpServer/Knowledge/`), which is a product surface delivered to users and agents.
+> Nothing in `docs/knowledge/` is shipped or reachable through `get-guidance`, and a guidance
+> change is still a pull request in the `clio-knowledge` repository. Do not conflate the two.
 
 Mandatory agent behavior:
-- For any non-trivial task, read the latest relevant diary entries before implementing changes.
-- After completion of non-trivial work, append a new diary entry.
-- Keep entries concise, factual, and path-referenced.
-- Do not rewrite history; append only.
-- If a task is exploratory and no code changes are made, still record key discoveries.
+- Before non-trivial work, read `docs/knowledge/<module you are changing>/` — it is 10–30 small
+  files — and `grep docs/knowledge/` for the symbols, paths and error text involved.
+- Write a record **only** when the code does not say it: a workaround, a temporary decision,
+  implicit behaviour whose failure is silent, an external fact (server, stand, TeamCity, platform),
+  or a rejected alternative someone will predictably return to. Anything else is not written —
+  in particular not what a PR did, a merge, a rebase, a review round, or a CI/Sonar fix.
+- Add the record **in the same pull request** that introduces the thing being recorded.
+- When you change a file listed in a record's `applies-to`, update or delete that record in the
+  same pull request. A fact that stopped being true is deleted, not hedged.
+- `make check-knowledge` (`scripts/check-knowledge-applies-to.py`) reports which records your diff
+  touches and which records point at paths that no longer exist; the `Knowledge base check`
+  workflow posts the same report on the pull request. It is advisory and never turns the pull
+  request red.
 
-Entry format:
+Record format:
 ```markdown
+---
+description: one line, this is what grep matches on
+applies-to:
+  - clio/Common/Foo.cs
+ticket: ENG-XXXXX
+date: 2026-08-19
+---
 
-## YYYY-MM-DD HH:mm – <short title>
-Context: <why this work happened>
-Decision: <important decision or approach>
-Discovery: <important behavior/constraint learned>
-Files: <path1>, <path2>
-Impact: <how this helps future tasks>
+**What is true** — the fact itself.
+
+**Why it is this way** — the constraint that forced it.
+
+**What breaks if you ignore it** — the concrete failure. Without this paragraph the record is a
+restatement of the code.
 ```
+
+`applies-to` takes literal repository-relative paths or directory prefixes ending in `/` — no
+globs and no absolute paths.
+
+The former chronological diary is archived read-only at
+`./.codex/archive/workspace-diary-2026-08.md`, for `grep` and for the specification documents that
+cite it. **Do not append to it.**
 
 # Code review
 

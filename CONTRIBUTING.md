@@ -245,4 +245,8 @@ All PRs run through SonarCloud. Resolve all new issues before requesting review.
 - [AGENTS.md](AGENTS.md) — full engineering policies (DI, testing, docs, MCP, analyzers)
 - [docs/DevFlowReadme.md](docs/DevFlowReadme.md) — end-to-end developer workflow with Creatio environments
 - [spec/create-dev-env-4-mac.md](spec/create-dev-env-4-mac.md) — macOS environment setup
-- [.codex/workspace-diary.md](.codex/workspace-diary.md) — engineering decision log
+- [docs/knowledge/](docs/knowledge/README.md) — internal knowledge base: workarounds, implicit
+  behaviour and external facts the code does not state. One file per fact; add yours in the same
+  pull request. (Not the shipped `clio-knowledge` guidance library.)
+- [.codex/archive/workspace-diary-2026-08.md](.codex/archive/workspace-diary-2026-08.md) — the
+  retired chronological engineering diary, read-only, kept for `grep`
