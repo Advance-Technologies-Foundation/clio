@@ -18,17 +18,21 @@ public sealed class GetClassicListColumnsTool(
 
 	/// <summary>Resolves a Classic section's effective default list columns without modifying Creatio data.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	// Classified like the other environment-bound reads: one bounded HTTP read per call, no operation family
-	// and no shared artifact. It arrived from master after the annotation wave, so the classification is
-	// added here rather than left to the gate. SharedFileResource stays None — nothing is written locally.
-	// Whether it ever RUNS in a worker is a separate, cohort-gated question, and this tool is not in the
-	// Stage 6 cohort: its hierarchy read goes through the schema designer, the read path
-	// McpWorkerCohort.SchemaDesignerReadsWithheldNames withdrew for read-after-write.
+	// InProcess, and NOT because the tool is cheap — it makes a bounded HTTP read like its Worker-classified
+	// neighbours. It is InProcess because of WHAT the read goes through: the hierarchy comes from the schema
+	// designer (IPageDesignerHierarchyClient), which is the read path McpWorkerCohort's
+	// SchemaDesignerReadsWithheldNames withdrew on 2026-08-19. A worker authenticates on its own Creatio
+	// session, and a schema-designer read on a second session is not guaranteed to see a write the
+	// host-resident writers just made — measured at 14 s stale, which arms a conflict baseline against a
+	// superseded generation. Declaring Worker here would leave that constraint encoded only in a comment, and
+	// "never relayed to a worker" is exactly what InProcess means, so the next cohort expansion cannot admit
+	// this read by reasoning over the classification. This tool arrived from master after the annotation
+	// wave, which is why the classification lands here rather than with the others.
 	[McpToolExecution(
-		Location = McpToolExecutionLocation.Worker,
-		Lifetime = McpToolExecutionLifetime.PerCall,
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
 		OperationFamily = McpToolOperationFamily.None,
-		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
