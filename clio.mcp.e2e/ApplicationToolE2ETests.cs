@@ -38,6 +38,23 @@ public sealed class ApplicationToolE2ETests {
 	private const int CanonicalMainEntityReadbackAttempts = 40;
 	private static readonly TimeSpan CanonicalMainEntityReadbackPollInterval = TimeSpan.FromSeconds(3);
 
+	/// <summary>
+	/// The service-level stage markers create-app streams, in execution order (ENG-93087).
+	/// </summary>
+	private static readonly string[] PerPhaseMarkers = [
+		"enriching application model",
+		"creating application package",
+		"loading application metadata"
+	];
+
+	/// <summary>
+	/// Bound on the wait for already-sent <c>notifications/progress</c> messages to reach the typed sink.
+	/// This covers only client-side dispatch latency — the tool call has already returned by then — so a
+	/// short bound is generous; the value exists so a genuinely missing marker fails with a diagnostic
+	/// listing what did arrive, instead of hanging until the fixture cancellation token fires.
+	/// </summary>
+	private static readonly TimeSpan ProgressDeliveryTimeout = TimeSpan.FromSeconds(30);
+
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-apps, and verifies structured installed application items when the environment exposes at least one installed application.")]
@@ -400,34 +417,51 @@ public sealed class ApplicationToolE2ETests {
 			progress,
 			arrangeContext.CancellationTokenSource.Token);
 
-		// Diagnostic: surface the exact progress stream the client received so a failure shows the markers.
-		foreach (string progressMessage in progress.Messages) {
-			TestContext.Out.WriteLine($"[progress] {progressMessage}");
-		}
+		// Diagnostic: dump the raw result BEFORE parsing it. A create that fails on the environment (or
+		// returns the over-deadline "in-progress, poll" envelope) leaves IsError unset, so without the
+		// payload that failure used to be reported as a missing marker instead of as itself.
+		TestContext.Out.WriteLine($"[payload] {DescribeCallResult(callResult)}");
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: $"a valid create-app request should return structured application metadata. Actual result: {DescribeCallResult(callResult)}");
-		progress.Messages.Should().Contain(
-			m => m.Contains("enriching application model", StringComparison.Ordinal),
-			because: "create-app must stream the 'enriching application model' marker first so the client sees the initial enrichment phase (ENG-93087)");
-		progress.Messages.Should().Contain(
-			message => message.Contains("creating application package", StringComparison.Ordinal),
-			because: "create-app must stream the 'creating application package' stage marker so the client can show the package-creation phase (ENG-93087)");
-		progress.Messages.Should().Contain(
-			message => message.Contains("loading application metadata", StringComparison.Ordinal),
-			because: "create-app must stream the 'loading application metadata' stage marker so the client can show the metadata-load phase (ENG-93087)");
+		// Assert the create SUCCEEDED before expecting its markers: the stage markers are pushed as the
+		// phases run, so a create that dies in an early phase legitimately never streams the later ones.
+		// Checking success first reports that failure with its own error instead of blaming the progress path.
+		ApplicationContextResponseEnvelope createEnvelope = ApplicationResultParser.ExtractInfo(callResult);
+		createEnvelope.Success.Should().BeTrue(
+			because: "create-app must succeed before its per-phase stage markers can be expected. "
+				+ $"Actual create-app payload: {DescribeCallResult(callResult)}");
+
+		// Wait for all three markers instead of asserting on whatever the sink held when the call returned:
+		// tool completion and notification dispatch use independent SDK continuations, so the final marker
+		// can still be in flight at that instant — which is how 'loading application metadata' went missing
+		// (issue #1103). Waiting on the CONJUNCTION means the timeout message names every
+		// marker that did arrive, so a genuinely missing marker is still reported precisely.
+		Func<Task> awaitAllMarkers = async () => await progress.WaitForMessagesAsync(
+			messages => PerPhaseMarkers.All(
+				marker => messages.Any(message => message.Contains(marker, StringComparison.Ordinal))),
+			ProgressDeliveryTimeout,
+			arrangeContext.CancellationTokenSource.Token);
+		await awaitAllMarkers.Should().NotThrowAsync(
+			because: "create-app must stream the 'enriching application model', 'creating application package' and "
+				+ "'loading application metadata' stage markers so the client can show each phase (ENG-93087)");
+
+		// Diagnostic: surface the settled progress stream the client received so a failure shows the markers.
+		foreach (string progressMessage in progress.Messages) {
+			TestContext.Out.WriteLine($"[progress] {progressMessage}");
+		}
+
+		// Index the markers off the same PerPhaseMarkers array the wait used, so the expected marker text
+		// lives in exactly one place and the presence and ordering checks can never drift apart.
 		List<string> orderedMessages = progress.Messages.ToList();
-		int enrichingMarkerIndex = orderedMessages.FindIndex(
-			message => message.Contains("enriching application model", StringComparison.Ordinal));
-		int creatingPackageMarkerIndex = orderedMessages.FindIndex(
-			message => message.Contains("creating application package", StringComparison.Ordinal));
-		int loadingMetadataMarkerIndex = orderedMessages.FindIndex(
-			message => message.Contains("loading application metadata", StringComparison.Ordinal));
+		int enrichingMarkerIndex = IndexOfMarker(orderedMessages, PerPhaseMarkers[0]);
+		int creatingPackageMarkerIndex = IndexOfMarker(orderedMessages, PerPhaseMarkers[1]);
+		int loadingMetadataMarkerIndex = IndexOfMarker(orderedMessages, PerPhaseMarkers[2]);
 		enrichingMarkerIndex.Should().BeLessThan(creatingPackageMarkerIndex,
-			because: "the 'enriching application model' marker must reach the client before 'creating application package', matching execution order (ENG-93087)");
+			because: $"the '{PerPhaseMarkers[0]}' marker must reach the client before '{PerPhaseMarkers[1]}', matching execution order (ENG-93087)");
 		creatingPackageMarkerIndex.Should().BeLessThan(loadingMetadataMarkerIndex,
-			because: "the 'creating application package' marker must reach the client before 'loading application metadata', matching execution order (ENG-93087)");
+			because: $"the '{PerPhaseMarkers[1]}' marker must reach the client before '{PerPhaseMarkers[2]}', matching execution order (ENG-93087)");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -520,6 +554,22 @@ public sealed class ApplicationToolE2ETests {
 				optionalTemplateDataJson: null),
 			"application creation",
 			arrangeContext.CancellationTokenSource.Token);
+		// Diagnostic: dump the create payload before anything consumes it, so a create that failed on the
+		// environment is visible in the run output even if a later step throws while parsing.
+		TestContext.Out.WriteLine($"[create payload] {DescribeCallResult(createResult.CallResult)}");
+		// The create precondition is asserted HERE, immediately after the create and BEFORE sync-schemas,
+		// because everything downstream only makes sense once the application exists. When creation fails,
+		// sync-schemas then fails too and the readback poll below burns its full timeout waiting for an
+		// entity that will never appear — so the run used to report "success is False" minutes late, with no
+		// create-app error to act on. That is exactly how this failure read as an unexplained flake
+		// (issue #1103). The raw payload is inlined in the reason on purpose: create-app reports WHY it
+		// failed in `error`, and without it the failure message is only "found False" — which is precisely
+		// what CI showed: an ~11s failure on a freshly deployed, dedicated stand with no error text at all.
+		createResult.Result.Success.Should().BeTrue(
+			because: "the regression scenario requires a successfully created application before sync-schemas "
+				+ "mutates the canonical main entity. "
+				+ $"Actual create-app error: '{createResult.Result.Error}'. "
+				+ $"Actual create-app payload: {DescribeCallResult(createResult.CallResult)}");
 
 		// Act
 		CallToolResult schemaSyncCallResult = await AwaitWithTestProgressAsync(
@@ -534,13 +584,12 @@ public sealed class ApplicationToolE2ETests {
 			"schema synchronization",
 			arrangeContext.CancellationTokenSource.Token);
 		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
-		// The two arrange preconditions are asserted HERE rather than in the Assert block below, because
-		// everything after this point only makes sense once sync-schemas actually applied the mutation. When
-		// it did not, the readback poll below spends its full timeout waiting for an entity that will never
-		// appear and the run then reports the arrange failure three minutes late, with no per-operation error
-		// to act on — which is exactly how a `success: false` here read as an unexplained flake.
-		createResult.Result.Success.Should().BeTrue(
-			because: "the regression scenario requires a successfully created application before sync-schemas mutates the canonical main entity");
+		// The sync-schemas arrange preconditions are asserted HERE rather than in the Assert block below,
+		// because everything after this point only makes sense once sync-schemas actually applied the
+		// mutation. When it did not, the readback poll below spends its full timeout waiting for an entity
+		// that will never appear and the run then reports the arrange failure three minutes late, with no
+		// per-operation error to act on — which is exactly how a `success: false` here read as an
+		// unexplained flake. (The create precondition is asserted earlier, right after the create.)
 		schemaSyncCallResult.IsError.Should().NotBeTrue(
 			because: $"sync-schemas should return a structured payload for the canonical-main-entity regression scenario. Actual result: {DescribeCallResult(schemaSyncCallResult)}");
 		// The raw payload is inlined in the reason on purpose: sync-schemas reports WHY it failed per
@@ -1237,6 +1286,13 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		return await operation;
+	}
+
+	/// <summary>
+	/// Position of the first progress message containing <paramref name="marker"/>, or -1 when absent.
+	/// </summary>
+	private static int IndexOfMarker(List<string> messages, string marker) {
+		return messages.FindIndex(message => message.Contains(marker, StringComparison.Ordinal));
 	}
 
 	private static string DescribeCallResult(CallToolResult callResult) {
