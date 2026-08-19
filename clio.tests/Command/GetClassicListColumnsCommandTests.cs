@@ -8,6 +8,8 @@ using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -19,6 +21,9 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 	private const string SchemaUId = "11111111-1111-1111-1111-111111111111";
 	private const string PackageUId = "22222222-2222-2222-2222-222222222222";
 	private const string BaseSchemaUId = "33333333-3333-3333-3333-333333333333";
+	private const string ProfileUrl = "http://test/DataService/json/SyncReply/QueryProfile";
+	private const string UserInfoUrl = "http://test/ServiceModel/UserInfoService.svc/GetCurrentUserInfo";
+	private const string ContactId = "44444444-4444-4444-4444-444444444444";
 
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
@@ -912,6 +917,329 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 			because: "the serialized response is the command's only output channel");
 		written.Should().Contain("\"origin\":\"getGridDataColumns\"",
 			because: "the provenance field has to survive serialization to reach the consumer");
+	}
+
+	[Test]
+	[Description("TryResolve reports the saved grid profile as the column source and prefers it over the section's static declaration.")]
+	public void TryResolve_ShouldReturnProfile_WhenSavedGridProfileDeclaresColumns() {
+		// Arrange — the body declares a NARROWER set on purpose: a product section's getGridDataColumns is a
+		// load-adding layer, not the view definition, so the profile answer has to win rather than merge.
+		ArrangeSection("""
+			entitySchemaName: "Account",
+			getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+			""", "Account", "Name", Column("Name", "Entity title"));
+		ArrangeProfile(ActiveView("GridDataView"), ModernProfile(false,
+			listed: [("Name", "Name"), ("PrimaryContact", "Primary contact"), ("Phone", "Primary phone")],
+			tiled: [("Name", "Name"), ("Web", "Web")]));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		bool result = _command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a saved profile is a supported source; error: {0}", response.Error);
+		response.Source.Should().Be("profile",
+			because: "the saved profile holds what the list renders, so it outranks the static declaration");
+		response.Columns.Select(column => column.Name).Should().Equal(["Name", "PrimaryContact", "Phone"],
+			because: "the reported set and its order must be the stored configuration's, not the body's");
+		response.Columns[1].Caption.Should().Be("Primary contact",
+			because: "the caption the profile stores is the header the user actually sees");
+		response.View.Should().Be("GridDataView", because: "the consumer has to know which view answered");
+		response.ViewType.Should().Be("listed",
+			because: "a grid stores a listed and a tiled configuration with different sets, so the answer is "
+				+ "incomplete without naming the one used");
+		response.ProfileScope.Should().Be("shared",
+			because: "no personal row exists for the caller, so this is the section's shared default");
+	}
+
+	[Test]
+	[Description("TryResolve reports the tiled configuration when the saved profile marks the grid as tiled.")]
+	public void TryResolve_ShouldReportTheTiledConfiguration_WhenTheProfileMarksTheGridTiled() {
+		// Arrange
+		ArrangeSection("entitySchemaName: 'Contact', diff: []", "Contact", "Name", Column("Name", "Full name"));
+		ArrangeProfile(ActiveView("GridDataView"), ModernProfile(true,
+			listed: [("Name", "Name")],
+			tiled: [("Name", "Name"), ("Job", "Job title")]));
+		var options = new GetClassicListColumnsOptions { SchemaName = "ContactSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.ViewType.Should().Be("tiled", because: "the stored isTiled flag selects which configuration renders");
+		response.Columns.Select(column => column.Name).Should().Equal(["Name", "Job"],
+			because: "the tiled configuration carries its own set and order");
+	}
+
+	[Test]
+	[Description("TryResolve falls back to the other stored configuration and notes it when the active one is empty.")]
+	public void TryResolve_ShouldFallBackToTheOtherConfiguration_WhenTheActiveOneIsEmpty() {
+		// Arrange — a stand can store an empty active configuration; reporting nothing would then hand the
+		// answer to the static branch even though the profile plainly holds a usable set.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("GridDataView"), ModernProfile(true, listed: [("Name", "Name")], tiled: []));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "a usable stored configuration is still a profile answer");
+		response.ViewType.Should().Be("listed",
+			because: "viewType must name the configuration actually reported, not the active flag");
+		response.Notes.Should().Contain(note => note.Contains("is empty"),
+			because: "substituting the inactive configuration changes the answer and must not be silent");
+	}
+
+	[Test]
+	[Description("TryResolve reads the legacy profile shape where the configurations are top-level JSON arrays.")]
+	public void TryResolve_ShouldReadTheLegacyProfileShape_WhenConfigurationsAreTopLevelArrays() {
+		// Arrange — older profile keys keep the two configurations at the top level as arrays of cells, with the
+		// binding nested under key[].name.bindTo instead of a flat bindTo.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Entity title"));
+		const string legacy = """
+			{
+			  "isTiled": false,
+			  "listedColumnsConfig": "[{\"metaPath\":\"Name\"},{\"key\":[{\"name\":{\"bindTo\":\"Type\"},\"caption\":\"Type\"}]}]",
+			  "tiledColumnsConfig": "[[{\"metaPath\":\"Web\"}]]"
+			}
+			""";
+		ArrangeProfile(ActiveView("mainView"), legacy);
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "a legacy stored configuration is still the rendered set");
+		response.Columns.Select(column => column.Name).Should().Equal(["Name", "Type"],
+			because: "both the flat metaPath cell and the nested key[].name.bindTo cell must be harvested");
+		response.Columns[0].Caption.Should().Be("Entity title",
+			because: "a legacy cell without a stored caption falls back to the entity column title");
+		response.View.Should().Be("mainView", because: "the active view name comes from the profile, not a constant");
+	}
+
+	[Test]
+	[Description("TryResolve flattens a legacy tiled profile configuration, which nests one array per rendered row.")]
+	public void TryResolve_ShouldFlattenLegacyTiledRows_WhenTheLegacyProfileIsTiled() {
+		// Arrange — the legacy tiled shape is an array of ROWS, each an array of cells, while the legacy listed
+		// shape is flat. Without flattening, a tiled legacy profile yields no columns at all and the answer
+		// silently falls through to the static declaration.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		const string legacyTiled = """
+			{
+			  "isTiled": true,
+			  "listedColumnsConfig": "[{\"metaPath\":\"Ignored\"}]",
+			  "tiledColumnsConfig": "[[{\"metaPath\":\"Name\",\"caption\":\"Name\"}],[{\"metaPath\":\"Web\",\"caption\":\"Web\"},{\"metaPath\":\"City\",\"caption\":\"City\"}]]"
+			}
+			""";
+		ArrangeProfile(ActiveView("mainView"), legacyTiled);
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "a legacy tiled configuration is still the rendered set");
+		response.ViewType.Should().Be("tiled", because: "the stored isTiled flag selects the tiled configuration");
+		response.Columns.Select(column => column.Name).Should().Equal(["Name", "Web", "City"],
+			because: "cells of every rendered row must be flattened into one ordered list, and the listed "
+				+ "configuration must not contribute");
+	}
+
+	[Test]
+	[Description("TryResolve marks a profile answer as user-scoped and warns when the calling user has a personal row for the list.")]
+	public void TryResolve_ShouldMarkTheProfileUserScoped_WhenTheCallerHasAPersonalRow() {
+		// Arrange
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("GridDataView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []),
+			personalRowExists: true);
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.ProfileScope.Should().Be("user",
+			because: "a personal row means the layout can be this user's own rather than the section's default");
+		response.Notes.Should().Contain(note => note.Contains("personal profile"),
+			because: "presenting one user's saved layout as the canonical set is exactly what must not happen "
+				+ "silently");
+	}
+
+	[Test]
+	[Description("TryResolve reports an unknown profile scope and notes it when the calling user's contact cannot be read.")]
+	public void TryResolve_ShouldReportUnknownScope_WhenTheCallersContactCannotBeRead() {
+		// Arrange — the scope check is two extra reads; losing them must cost the classification, not the answer.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("GridDataView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []));
+		_applicationClient.ExecutePostRequest(UserInfoUrl, Arg.Any<string>()).Returns("{}");
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "an unclassifiable profile is still the rendered set");
+		response.ProfileScope.Should().Be("unknown",
+			because: "claiming 'shared' without evidence would understate the risk of reporting a personal layout");
+		response.Notes.Should().Contain(note => note.Contains("personal or shared"),
+			because: "the lost distinction has to be visible to the consumer");
+	}
+
+	[Test]
+	[Description("TryResolve notes a malformed stored configuration and still answers from the static declaration.")]
+	public void TryResolve_ShouldNoteMalformedProfileJson_AndFallThroughToTheStaticDeclaration() {
+		// Arrange
+		ArrangeSection("""
+			entitySchemaName: "Account",
+			getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+			""", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("GridDataView"),
+			"""{ "isTiled": false, "listedColumnsConfig": "not json", "tiledColumnsConfig": "" }""");
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("schema-default",
+			because: "an unreadable profile must not block the answer the section itself declares");
+		response.Notes.Should().Contain(note => note.Contains("not valid JSON"),
+			because: "an unreadable stored configuration and an absent one lead to the same fallback, so only "
+				+ "the note tells them apart");
+		response.ViewType.Should().BeNull(because: "a non-profile answer must not advertise a stored view type");
+	}
+
+	[Test]
+	[Description("TryResolve resolves the static declaration when the stand holds no profile for the section.")]
+	public void TryResolve_ShouldReturnSchemaDefault_WhenTheStandHoldsNoProfile() {
+		// Arrange — the ordinary case for a section nobody has opened: QueryProfile answers with an empty object.
+		ArrangeSection("""
+			entitySchemaName: "UsrThing",
+			getGridDataColumns: function() { return { UsrName: { path: "UsrName" } }; }
+			""", "UsrThing", "UsrName", Column("UsrName", "Name"));
+		ArrangeProfile("{}", "{}");
+		var options = new GetClassicListColumnsOptions { SchemaName = "UsrThingSection" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("schema-default",
+			because: "an absent profile is not a failure, it just hands the answer to the next source");
+		response.Notes.Should().BeEmpty(
+			because: "an absent profile is the normal case and must not add noise to every custom section");
+		response.ProfileScope.Should().BeNull(because: "there is no profile to classify");
+	}
+
+	[Test]
+	[Description("TryResolve skips the profile entirely and reports only statically declared columns when ignore-profile is set.")]
+	public void TryResolve_ShouldSkipTheProfile_WhenIgnoreProfileIsSet() {
+		// Arrange — the profile is deliberately stubbed with a WIDER set, so passing the flag has to be what
+		// changes the answer rather than the stand happening to hold nothing.
+		ArrangeSection("""
+			entitySchemaName: "Account",
+			getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+			""", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("GridDataView"),
+			ModernProfile(false, listed: [("Name", "Name"), ("Phone", "Primary phone")], tiled: []));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2", IgnoreProfile = true };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("schema-default",
+			because: "ignore-profile answers the narrower question of what the section declares in code");
+		response.Columns.Select(column => column.Name).Should().Equal(["Name"],
+			because: "the stored configuration must not leak into the static answer");
+		_applicationClient.DidNotReceive().ExecutePostRequest(ProfileUrl, Arg.Any<string>());
+		response.View.Should().BeNull(because: "a static answer has no stored view to report");
+	}
+
+	[Test]
+	[Description("TryResolve keeps the skipped-layer degradation note off a profile answer, where it would be a false claim.")]
+	public void TryResolve_ShouldNotReportSkippedLayers_WhenTheAnswerComesFromAProfile() {
+		// Arrange — one unparseable layer plus a readable one. The note it produces is about the BODIES, so it
+		// must not travel with columns that came out of a stored configuration.
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			Schema("Top", "entitySchemaName: 'Account', diff: []"),
+			Schema("Broken", "function( {", BaseSchemaUId)
+		]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties("Account", "Name", Column("Name", "Name")));
+		ArrangeProfile(ActiveView("GridDataView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "the stored configuration still answers");
+		response.Notes.Should().NotContain(note => note.Contains("may be incomplete"),
+			because: "a layer that could not be parsed says nothing about a profile-sourced set, so claiming the "
+				+ "columns may be incomplete would be affirmatively false");
+	}
+
+	// The profile reader talks to three different endpoints, so the substitute is arranged PER URL: a single
+	// catch-all response would let these tests pass without ever exercising the routing.
+	private void ArrangeProfile(string activeViewResponse, string gridResponse, bool personalRowExists = false) {
+		_serviceUrlBuilder.Build(ClassicListProfileReader.QueryProfileUrl).Returns(ProfileUrl);
+		_serviceUrlBuilder.Build(CreatioServicePaths.GetCurrentUserInfo).Returns(UserInfoUrl);
+		// The personal-row check goes through SelectQueryHelper, which asks for the route by ENUM while the
+		// hierarchy walk asks for the same endpoint by path — both have to be stubbed or the check silently
+		// degrades to an unknown scope and the assertions below stop testing anything.
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		_applicationClient
+			.ExecutePostRequest(ProfileUrl, Arg.Is<string>(body => body.Contains("ActiveViewSettingsProfile")))
+			.Returns(activeViewResponse);
+		_applicationClient
+			.ExecutePostRequest(ProfileUrl, Arg.Is<string>(body => body.Contains("GridSettings")))
+			.Returns(gridResponse);
+		_applicationClient.ExecutePostRequest(UserInfoUrl, Arg.Any<string>())
+			.Returns($$"""{ "success": true, "userInfo": { "contactId": "{{ContactId}}" } }""");
+		_applicationClient
+			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("SysProfileData")))
+			.Returns(personalRowExists
+				? $$"""{ "success": true, "rows": [{ "Id": "{{ContactId}}" }] }"""
+				: """{ "success": true, "rows": [] }""");
+	}
+
+	private void ArrangeSection(
+		string body,
+		string entity,
+		string primaryDisplayColumn,
+		params EntitySchemaPropertyColumnInfo[] columns) {
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([Schema("Top", body)]);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			Properties(entity, primaryDisplayColumn, columns));
+	}
+
+	private static string ActiveView(string viewName) => $$"""{ "activeViewName": "{{viewName}}" }""";
+
+	// Builds the modern profile payload: the two configurations are JSON *strings* nested under DataGrid, which
+	// is where the authoritative isTiled flag lives too. The outer isTiled is deliberately left true in every
+	// payload — a stock section really does ship it disagreeing with the inner one, and reading the outer flag
+	// silently returns the wrong view, so the fixture has to keep that trap in place.
+	private static string ModernProfile(
+		bool isTiled,
+		(string path, string caption)[] listed,
+		(string path, string caption)[] tiled) {
+		static string Items((string path, string caption)[] columns) => columns.Length == 0
+			? "{}"
+			: new JObject {
+				["items"] = new JArray(columns.Select(column =>
+					new JObject { ["bindTo"] = column.path, ["caption"] = column.caption }))
+			}.ToString(Formatting.None);
+		return new JObject {
+			["isTiled"] = true,
+			["DataGrid"] = new JObject {
+				["isTiled"] = isTiled,
+				["listedConfig"] = Items(listed),
+				["tiledConfig"] = Items(tiled)
+			}
+		}.ToString(Formatting.None);
 	}
 
 	// Execute's only output channel is the container-registered ILogger, so the assertions read what it received.

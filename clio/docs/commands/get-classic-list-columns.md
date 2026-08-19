@@ -10,16 +10,45 @@ get-classic-list-columns - Resolve the effective default columns of a Classic se
 
 ## Description
 
-The `get-classic-list-columns` command resolves a Classic section's default visible column set through
+The `get-classic-list-columns` command resolves a Classic section's effective list column set through
 read-only Creatio APIs. It returns JSON with the requested `sectionSchema`, resolved `entity`, ordered
-`columns`, explanatory `notes`, and one of these source values:
+`columns`, explanatory `notes`, and one of these source values, tried in this order:
 
+- `profile` — the saved grid profile, which is what the list actually **renders**. A `profile` result also
+  carries `view`, `viewType` and `profileScope` (see below);
 - `schema-default` — static paths declared by `getGridDataColumns` or `initColumnsConfig` in the section hierarchy;
 - `entity-default` — the entity primary display column, used when the section has no static column declaration;
-- `none` — neither source exists. This is a successful result with an empty `columns` array.
+- `none` — no source exists. This is a successful result with an empty `columns` array.
 
-The command intentionally does not read or write `SysProfileData`. It does not change packages, schemas,
-profile settings, or application data. Dynamic JavaScript expressions are not executed.
+**A product section normally resolves to `profile`, and the difference is large.** `AccountSectionV2` declares
+`Name` and `PrimaryContact` in code while its list opens with five columns, and two of the columns the user sees
+(`Web`, `Phone`) appear nowhere in the section's JavaScript. In a product section `getGridDataColumns` /
+`initColumnsConfig` are a small load-adding layer, not the view definition, so the static branches answer a
+narrower question: *what does the section declare?* Pass `--ignore-profile` when that is the question you mean.
+
+The command reads profile data but never writes it. It does not change packages, schemas, profile settings, or
+application data. Dynamic JavaScript expressions are not executed.
+
+### The saved profile, and why `profileScope` matters
+
+The profile is read over the platform's own `QueryProfile` DataService route, which resolves the **active view**
+(`<Section>ActiveViewSettingsProfile`) and then that view's stored grid configuration
+(`<Section>GridSettings<ViewName>`). A grid stores a `listed` and a `tiled` configuration with **different sets
+and orders**, so `viewType` names the one reported; when the active configuration is empty the other one is
+reported instead and `notes` says so.
+
+`QueryProfile` answers for the **calling user** and silently falls back to the shared product/system row, so the
+payload alone cannot say which one it served. `profileScope` supplies that:
+
+| Value | Meaning |
+|---|---|
+| `shared` | Only the product/system row exists — this is the section's shared default. |
+| `user` | The calling user also has a personal row for this list, so the set may be that user's own customization. `notes` says so too. |
+| `unknown` | The distinction could not be established (the contact or the row check failed). `notes` says why. |
+
+A consumer that needs the section's canonical set must treat `user` as "ask before adopting". There is
+deliberately **no** option to read another user's profile: the platform route ignores a supplied contact and
+always answers for the caller, so an option promising otherwise would be a false contract.
 
 ### Column provenance, and what the merge does when a section declares both methods
 
@@ -71,6 +100,9 @@ clio get-classic-list-columns [options]
 --schema-name                      Classic section schema name, for example
                                    'ContactSectionV2' (required)
 
+--ignore-profile                   Skip the saved grid profile and resolve only
+                                   statically declared columns
+
 --uri                    -u       Application uri
 
 --Password               -p       User password
@@ -85,29 +117,59 @@ clio get-classic-list-columns [options]
 ## Example
 
 ```bash
-clio get-classic-list-columns -e dev --schema-name ContactSectionV2
+clio get-classic-list-columns -e dev --schema-name AccountSectionV2
 ```
 
-Example result:
+Example result — the set the list actually renders:
 
 ```json
 {
   "success": true,
-  "sectionSchema": "ContactSectionV2",
-  "entity": "Contact",
-  "source": "entity-default",
+  "sectionSchema": "AccountSectionV2",
+  "entity": "Account",
+  "source": "profile",
+  "view": "GridDataView",
+  "viewType": "listed",
+  "profileScope": "shared",
   "columns": [
-    { "name": "Name", "caption": "Full name" }
+    { "name": "Name", "caption": "Name" },
+    { "name": "PrimaryContact", "caption": "Primary contact" },
+    { "name": "Phone", "caption": "Primary phone" },
+    { "name": "Type", "caption": "Type" },
+    { "name": "AccountCategory", "caption": "Category" }
   ],
-  "notes": [
-    "The section schema does not define static list columns; using the entity primary display column."
-  ]
+  "notes": []
+}
+```
+
+The same section with the profile taken out of the resolution order:
+
+```bash
+clio get-classic-list-columns -e dev --schema-name AccountSectionV2 --ignore-profile
+```
+
+```json
+{
+  "success": true,
+  "sectionSchema": "AccountSectionV2",
+  "entity": "Account",
+  "source": "schema-default",
+  "columns": [
+    { "name": "Name", "caption": "Name", "origin": "getGridDataColumns" },
+    { "name": "PrimaryContact", "caption": "Primary contact", "origin": "getGridDataColumns" }
+  ],
+  "notes": []
 }
 ```
 
 ### Captions
 
-`caption` is enriched from the section entity's own column metadata, keyed by direct column name. A **dotted
+On a `profile` result the caption the profile itself stored wins — that is the header text the user sees,
+including one they renamed — and the entity column title fills only the gaps. `origin` is omitted on a `profile`
+result: no Classic column method declared those paths, so naming one would be a false claim about the body.
+
+On the static branches `caption` is enriched from the section entity's own column metadata, keyed by direct
+column name. A **dotted
 lookup-traversal path** (`Account.PrimaryContact.Name`) therefore comes back with `caption` omitted — the name
 belongs to another entity, and attaching the last segment's local title would be a caption from the wrong
 place. Read a missing `caption` as "traversal path", not as "unknown column".

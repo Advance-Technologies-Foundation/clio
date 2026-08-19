@@ -12,8 +12,11 @@ public interface IClassicListColumnResolver {
 
 	/// <summary>Resolves the requested Classic section schema.</summary>
 	/// <param name="sectionSchemaName">Classic section client-unit schema name.</param>
+	/// <param name="ignoreProfile">
+	/// <see langword="true"/> to skip the saved grid profile and report only statically declared columns.
+	/// </param>
 	/// <returns>A successful result including its resolution source.</returns>
-	GetClassicListColumnsResponse Resolve(string sectionSchemaName);
+	GetClassicListColumnsResponse Resolve(string sectionSchemaName, bool ignoreProfile = false);
 }
 
 /// <summary>Reads the Classic section hierarchy and resolves its default list-column source.</summary>
@@ -22,14 +25,16 @@ internal sealed class ClassicListColumnResolver(
 	IServiceUrlBuilder serviceUrlBuilder,
 	IPageDesignerHierarchyClient hierarchyClient,
 	IRemoteEntitySchemaColumnManager columnManager,
-	IClassicListColumnParser parser) : IClassicListColumnResolver {
+	IClassicListColumnParser parser,
+	IClassicListProfileReader profileReader) : IClassicListColumnResolver {
 
+	internal const string ProfileSource = "profile";
 	internal const string SchemaDefaultSource = "schema-default";
 	internal const string EntityDefaultSource = "entity-default";
 	internal const string NoneSource = "none";
 
 	/// <inheritdoc />
-	public GetClassicListColumnsResponse Resolve(string sectionSchemaName) {
+	public GetClassicListColumnsResponse Resolve(string sectionSchemaName, bool ignoreProfile = false) {
 		if (string.IsNullOrWhiteSpace(sectionSchemaName)) {
 			// No `nameof` argument: ArgumentException appends "(Parameter 'sectionSchemaName')" to Message, and
 			// this message travels into the machine-consumed `error` field of the response.
@@ -63,20 +68,41 @@ internal sealed class ClassicListColumnResolver(
 
 		EntitySchemaPropertiesInfo properties = columnManager.GetSchemaProperties(
 			new GetEntitySchemaPropertiesOptions { SchemaName = entity });
-		if (parsed.UnparsedLayerCount > 0) {
-			// Without this the drop is invisible: a most-derived layer that is skipped would silently hand the
-			// answer to an ancestor layer — or to the entity fallback — and the caller would read that as the
-			// section's real column set. The two reasons are worded apart: claiming a body "could not be parsed
-			// as JavaScript" when it parsed fine sends the reader looking for a syntax error that is not there.
-			int invalid = parsed.UnparsedLayerCount - parsed.UnanchoredLayerCount;
-			string reason = (invalid, parsed.UnanchoredLayerCount) switch {
-				(0, _) => "did not expose a Classic schema object",
-				(_, 0) => "could not be parsed as JavaScript",
-				_ => $"were skipped ({invalid} could not be parsed as JavaScript, "
-					+ $"{parsed.UnanchoredLayerCount} exposed no Classic schema object)"
-			};
-			notes.Add($"{parsed.UnparsedLayerCount} of {bodies.Length} section schema layers {reason} " +
-				"and were skipped; the resolved columns may be incomplete.");
+		// Built here but appended only on a STATIC answer: a skipped layer says nothing about a profile-sourced
+		// set, and "the resolved columns may be incomplete" is an affirmatively false claim about columns that
+		// came out of a stored configuration rather than out of the bodies.
+		string skippedLayerNote = BuildSkippedLayerNote(parsed, bodies.Length);
+		// The saved grid profile leads the order because it is the only source that holds what the section
+		// RENDERS. In a product section `getGridDataColumns` / `initColumnsConfig` are a small load-adding
+		// layer, not the view definition — AccountSectionV2 declares Name and PrimaryContact in code while its
+		// list opens with five columns — so the static branches answer a narrower question and cannot stand in
+		// for this one. Deliberately AFTER the hierarchy walk: `entity` is part of the contract and a section
+		// that declares no entitySchemaName is reported as a failure whether or not a profile exists.
+		if (!ignoreProfile) {
+			ClassicListProfileResult profile = profileReader.Read(normalizedName);
+			notes.AddRange(profile.Notes);
+			if (profile.Columns.Count > 0) {
+				if (string.Equals(profile.Scope, ClassicListProfileReader.UserScope, StringComparison.Ordinal)) {
+					// A per-user row exists for the calling user, so this layout can be that user's own and not
+					// the section's shared default. Saying so is the whole reason `profileScope` exists.
+					notes.Add("The calling user has a personal profile for this list, so the reported set may be " +
+						"that user's own customization rather than the section's shared default.");
+				}
+				return new GetClassicListColumnsResponse {
+					Success = true,
+					SectionSchema = normalizedName,
+					Entity = entity,
+					Source = ProfileSource,
+					View = profile.ViewName,
+					ViewType = profile.ViewType,
+					ProfileScope = profile.Scope,
+					Columns = BuildProfileColumnInfo(profile.Columns, properties.Columns),
+					Notes = notes
+				};
+			}
+		}
+		if (skippedLayerNote is not null) {
+			notes.Add(skippedLayerNote);
 		}
 		IReadOnlyList<string> schemaColumns = parsed.Columns;
 		if (schemaColumns.Count > 0) {
@@ -158,14 +184,58 @@ internal sealed class ClassicListColumnResolver(
 		return full.Count > 0 ? full : initial;
 	}
 
+	/// <summary>Words the dropped-layer degradation, or returns <see langword="null"/> when nothing was dropped.</summary>
+	/// <remarks>
+	/// Without this the drop is invisible: a most-derived layer that is skipped would silently hand the answer to
+	/// an ancestor layer — or to the entity fallback — and the caller would read that as the section's real column
+	/// set. The two reasons are worded apart: claiming a body "could not be parsed as JavaScript" when it parsed
+	/// fine sends the reader looking for a syntax error that is not there.
+	/// </remarks>
+	private static string BuildSkippedLayerNote(ClassicListColumnParseResult parsed, int bodyCount) {
+		if (parsed.UnparsedLayerCount == 0) {
+			return null;
+		}
+		int invalid = parsed.UnparsedLayerCount - parsed.UnanchoredLayerCount;
+		string reason = (invalid, parsed.UnanchoredLayerCount) switch {
+			(0, _) => "did not expose a Classic schema object",
+			(_, 0) => "could not be parsed as JavaScript",
+			_ => $"were skipped ({invalid} could not be parsed as JavaScript, "
+				+ $"{parsed.UnanchoredLayerCount} exposed no Classic schema object)"
+		};
+		return $"{parsed.UnparsedLayerCount} of {bodyCount} section schema layers {reason} " +
+			"and were skipped; the resolved columns may be incomplete.";
+	}
+
+	/// <summary>Maps profile columns, preferring the caption the profile itself stored.</summary>
+	/// <remarks>
+	/// The profile caption is what the user sees in the column header, including a caption they renamed, so it
+	/// wins over the entity title. The entity title fills only the gaps, and `origin` stays omitted: no Classic
+	/// column method declared these paths, and naming one would be a false claim about the section body.
+	/// </remarks>
+	private static IReadOnlyList<ClassicListColumnInfo> BuildProfileColumnInfo(
+		IReadOnlyList<ClassicListProfileColumn> columns,
+		IReadOnlyList<EntitySchemaPropertyColumnInfo> metadata) {
+		Dictionary<string, string> captions = BuildCaptionMap(metadata);
+		return columns
+			.Select(column => new ClassicListColumnInfo(
+				column.Path,
+				string.IsNullOrWhiteSpace(column.Caption)
+					? captions.GetValueOrDefault(column.Path)
+					: column.Caption))
+			.ToArray();
+	}
+
+	private static Dictionary<string, string> BuildCaptionMap(IReadOnlyList<EntitySchemaPropertyColumnInfo> metadata) =>
+		(metadata ?? [])
+		.Where(column => !string.IsNullOrWhiteSpace(column.Name))
+		.GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+		.ToDictionary(group => group.Key, group => group.First().Title, StringComparer.OrdinalIgnoreCase);
+
 	private static IReadOnlyList<ClassicListColumnInfo> BuildColumnInfo(
 		IEnumerable<string> paths,
 		IReadOnlyList<EntitySchemaPropertyColumnInfo> metadata,
 		IReadOnlyDictionary<string, string> origins = null) {
-		var captions = (metadata ?? [])
-			.Where(column => !string.IsNullOrWhiteSpace(column.Name))
-			.GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
-			.ToDictionary(group => group.Key, group => group.First().Title, StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, string> captions = BuildCaptionMap(metadata);
 		// KNOWN LIMITATION — a dotted lookup-traversal path (`Account.PrimaryContact.Name`, which the parser
 		// deliberately harvests) has no entry in this map: the metadata describes the section's OWN entity, keyed
 		// by direct column name. Such a column comes back with `caption` omitted, which the doc states so a
