@@ -8781,6 +8781,13 @@ Discovery: The package collision originated in `UiProjectCreator.Create` calling
 Files: clio/Package/UiProjectCreator.cs, clio.tests/Package/UiProjectCreatorTests.cs, clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/docs/commands/new-ui-project.md, clio/help/en/new-ui-project.txt
 Impact: Package-first workspaces can add a Freedom UI project without rewriting existing package metadata or content, while invalid package paths and existing project directories fail before mutation.
 
+## 2026-08-18 – Reuse preinstalled SDKs in the release workflow
+Context: The self-hosted release runner already has .NET 8 and .NET 10, but `actions/setup-dotnet` downloads both SDKs on every host and previously failed trying to write under `C:\Program Files\dotnet`.
+Decision: Remove `actions/setup-dotnet` and its install-directory override; fail fast with a read-only `dotnet --list-sdks` prerequisite check for major versions 8 and 10.
+Discovery: PowerShell remoting showed the GitHub runner service is `NT AUTHORITY\NETWORK SERVICE`; a one-time task under that exact SID passed the predicate with exit code 0 on `TS1-MRKT-WEB01`, where the system installation exposes SDKs 8.0.423, 10.0.204, and 10.0.302.
+Files: .github/workflows/reliase-to-nuget.yml
+Impact: Release runs reuse provisioned system SDKs and no longer download or install .NET.
+
 ## 2026-08-18 14:10 – Theme ids are GUIDs now: follow ENG-91018 through clio instead of guessing at the symptom
 Context: the `CLIO MCP e2e tests` trunk baseline went red between builds 15889154 (green, 17:50 on 08-17) and 15890679 (first red, 01:23 on 08-18) — four `ThemingSandboxE2ETests.*`, all on `create-theme`, all with the same server message: `CreateThemeRequest ... The value 'e2e-brand-theme-<hex>' cannot be parsed as the type 'Guid'`. The clio revisions in that range (`801059c60..0fbd280b8`) touch no theming code, so the change was not ours.
 Decision: found the source rather than adapting the tests to the symptom. `core@79b7098c118` (ENG-91018, d.nagayko, 08-13) retyped `Id` from `string` to `Guid` on `UpdateThemeRequest` (which `CreateThemeRequest` inherits), `DeleteThemeRequest` and `ThemeDescriptorDto`, and its own message says so: "Theme ids are now GUIDs everywhere ... breaks backward compatibility with string theme ids". The matching `PackageStore` schemas landed as r380007 (08-14), were reverted, and were restored as r380041 on 08-17 11:31 — which is why the stand only started refusing at 01:23 on 08-18, five days after the core commit.
