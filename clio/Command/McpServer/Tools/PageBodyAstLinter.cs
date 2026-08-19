@@ -439,14 +439,15 @@ internal static class PageBodyAstLinter {
 		}
 	}
 
-	// `<ctx>.set(...)` where `<ctx>` is the live ViewModel context: either the destructured `$context`
-	// identifier or a `*.$context` member (typically `request.$context`).
+	// Matches a set call on the live ViewModel context: the callee is a set member either on the
+	// destructured $context identifier or on a member access whose inner property is $context (typically
+	// request.$context).
 	//
 	// Accepted false negative (deliberate, second of two): a write through a LOCAL ALIAS that drops the
 	// $context member — assigning request.$context to a local variable and calling set on that variable —
-	// is NOT detected, so an unscoped handler writing that way is not flagged. Following aliases needs data-flow analysis;
-	// this mirrors the same alias limitation on `IsContextExecuteRequest` and preserves the rule's
-	// zero-false-positive bias. Pinned by Lint_ShouldNotWarn_WhenAttributeChangeHandlerWritesViaAliasedContext.
+	// is NOT detected, so an unscoped handler writing that way is not flagged. Following aliases needs
+	// data-flow analysis, mirroring the same alias limitation on IsContextExecuteRequest and preserving the
+	// rule zero-false-positive bias. Pinned by Lint_ShouldNotWarn_WhenAttributeChangeHandlerWritesViaAliasedContext.
 	private static bool IsContextSetCall(Node callee) =>
 		callee is MemberExpression { Property: Identifier { Name: "set" }, Computed: false, Object: var target }
 		&& target switch {
