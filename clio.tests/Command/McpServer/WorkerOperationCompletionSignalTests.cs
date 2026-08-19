@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -711,7 +712,7 @@ public sealed class WorkerOperationCompletionSignalTests {
 
 		internal global::ModelContextProtocol.Server.McpServer Server { get; }
 
-		private int Count {
+		internal int Count {
 			get {
 				lock (_signals) {
 					return _signals.Count;
@@ -785,5 +786,83 @@ public sealed class WorkerOperationCompletionSignalTests {
 
 		[McpServerTool(Name = CompileCreatioTool.CompileCreatioToolName, ReadOnly = false, Destructive = true)]
 		public string Execute() => "unused";
+	}
+
+	[Test]
+	[Description("A sticky starter invoked through clio-run — which is how every non-resident sticky tool is actually reached — must open the completion ledger from the INNER command, or the choke point covers every path except the one real callers use.")]
+	public void ResolveExecutionMetadata_ShouldSeeTheStickyInnerCommand_WhenTheCallArrivesThroughClioRun() {
+		// Arrange — the executor's wrapped shape: the target sits under "args", two levels down.
+		IMcpToolExecutionMetadataReader reader =
+			new McpToolExecutionMetadataReader(new McpToolCompatibilityCatalog());
+
+		// Act — the dialled name is the executor's; the inner command is what decides stickiness.
+		bool wrapped = reader.TryGetMetadata("clio-run", innerCommand: "compile-creatio",
+			out McpToolExecutionMetadata metadataForInner);
+		bool executorOnly = reader.TryGetMetadata("clio-run", innerCommand: null,
+			out McpToolExecutionMetadata metadataForExecutor);
+
+		// Assert
+		wrapped.Should().BeTrue(because: "the reader must resolve the inner command when one is supplied");
+		metadataForInner.Lifetime.Should().Be(McpToolExecutionLifetime.Sticky,
+			because: "compile-creatio is the sticky starter, and it is its metadata — not the executor's — that decides whether a completion ledger opens");
+		metadataForInner.StartsOperation.Should().BeTrue(
+			because: "the ledger predicate is Sticky AND StartsOperation, so both halves have to survive the unwrap");
+		if (executorOnly) {
+			metadataForExecutor.Lifetime.Should().NotBe(McpToolExecutionLifetime.Sticky,
+				because: "the executor's own metadata is not sticky — which is exactly why reading only the dialled name left every wrapped starter without a ledger");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The live path: every sticky tool is NON-RESIDENT, so the worker is dialled as clio-run and the inner command is what makes the call sticky. The filter must unwrap it, or the choke point covers every path except the one real callers use.")]
+	public async Task HandleCallToolErrors_ShouldSignalCompletion_WhenAStickyStarterArrivesWrappedInClioRun() {
+		// Arrange — the executor's wrapped shape, with the target two object levels down.
+		RecordingWorkerSession session = new();
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => new ValueTask<CallToolResult>(new CallToolResult { Content = [] }));
+		Dictionary<string, System.Text.Json.JsonElement> wrapped = new() {
+			["args"] = JsonSerializer.SerializeToElement(new {
+				command = CompileCreatioTool.CompileCreatioToolName,
+				args = new { environmentName = "sandbox" }
+			})
+		};
+		RequestContext<CallToolRequestParams> context =
+			McpRequestContextTestFactory.CreateCallToolContext(ClioRunTool.ToolName, wrapped);
+		context.Server = session.Server;
+		context.Services = McpRequestContextTestFactory.CreateExecutionMetadataServices();
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		session.WaitForSignals(1).Should().Be(1,
+			because: "reading only the dialled name yields clio-run's own non-sticky metadata, so no ledger opens and the worker keeps its admission slot and the target's configuration-build reservation until the thirty-minute bound — on exactly the path every real caller takes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An ordinary tool that happens to carry a `command` argument must NOT be re-read as an executor wrapper: the unwrap is keyed on the executor names, not on the presence of a property.")]
+	public async Task HandleCallToolErrors_ShouldNotUnwrap_WhenAnOrdinaryToolCarriesACommandArgument() {
+		// Arrange — a non-sticky tool whose arguments innocently include "command".
+		RecordingWorkerSession session = new();
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => new ValueTask<CallToolResult>(new CallToolResult { Content = [] }));
+		Dictionary<string, System.Text.Json.JsonElement> arguments = new() {
+			["command"] = JsonSerializer.SerializeToElement(CompileCreatioTool.CompileCreatioToolName)
+		};
+		RequestContext<CallToolRequestParams> context =
+			McpRequestContextTestFactory.CreateCallToolContext("get-page", arguments);
+		context.Server = session.Server;
+		context.Services = McpRequestContextTestFactory.CreateExecutionMetadataServices();
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		session.Count.Should().Be(0,
+			because: "get-page is not a sticky starter, and treating any tool with a `command` argument as a clio-run wrapper would make an ordinary read report completion for an operation that never existed");
 	}
 }

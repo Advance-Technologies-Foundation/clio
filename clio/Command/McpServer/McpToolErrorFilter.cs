@@ -131,10 +131,71 @@ public static class McpToolErrorFilter
 			is not IMcpToolExecutionMetadataReader reader) {
 			return null;
 		}
-		return reader.TryGetMetadata(context.Params?.Name, innerCommand: null,
+		// The INNER command, not just the dialled name. Every sticky tool is NON-RESIDENT, so the real
+		// caller reaches it through clio-run and the worker sees `clio-run` here — whose own metadata is
+		// not sticky. The ledger then never opens, the completion notification is never sent, and the
+		// worker keeps its admission slot and the target's configuration-build reservation until the
+		// thirty-minute lifetime bound, refusing every later long operation for that target. In other
+		// words the choke point would have covered every path except the one real callers use.
+		//
+		// This is the same shape as the sticky-KEY defect found earlier on this branch, and it is
+		// unwrapped the same way rather than by a third convention.
+		return reader.TryGetMetadata(context.Params?.Name, ReadWrappedCommand(context.Params),
 			out McpToolExecutionMetadata metadata)
 			? metadata
 			: null;
+	}
+
+	/// <summary>
+	/// Reads the inner command name from an executor-wrapped call, or <see langword="null"/> for an
+	/// ordinary one.
+	/// </summary>
+	/// <remarks>
+	/// Mirrors <c>ClioRunTool.RecoverWrappedCall</c>: the command is a string property named
+	/// <c>command</c>, which sits either at the top of the arguments or one level down under <c>args</c>.
+	/// Only the two shapes that tool accepts are recognised, and only for the two executor names — an
+	/// ordinary tool that happens to carry a <c>command</c> argument must never be re-read as a wrapper.
+	/// </remarks>
+	/// <param name="parameters">The call parameters.</param>
+	/// <returns>The inner command name, or <see langword="null"/>.</returns>
+	private static string ReadWrappedCommand(CallToolRequestParams parameters) {
+		string dialled = parameters?.Name?.Trim();
+		if (!string.Equals(dialled, Tools.ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(dialled, Tools.ClioRunDestructiveTool.ToolName,
+				StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+		if (parameters?.Arguments is not { } arguments) {
+			return null;
+		}
+		foreach (KeyValuePair<string, JsonElement> argument in arguments) {
+			if (TryReadCommand(argument.Value, out string command)) {
+				return command;
+			}
+			if (string.Equals(argument.Key, "command", StringComparison.OrdinalIgnoreCase)
+				&& argument.Value.ValueKind == JsonValueKind.String) {
+				string flat = argument.Value.GetString();
+				if (!string.IsNullOrWhiteSpace(flat)) {
+					return flat;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static bool TryReadCommand(JsonElement candidate, out string command) {
+		command = null;
+		if (candidate.ValueKind != JsonValueKind.Object
+			|| !candidate.TryGetProperty("command", out JsonElement element)
+			|| element.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		string value = element.GetString();
+		if (string.IsNullOrWhiteSpace(value)) {
+			return false;
+		}
+		command = value;
+		return true;
 	}
 
 	// True when the matched (advertised) tool is retry-safe and therefore eligible for the read-response
