@@ -953,23 +953,32 @@ public static class SchemaValidationService
 		bool targetsScaffold = TryGetStringProperty(entry, "name", out string mergeTarget)
 			&& string.Equals(mergeTarget, ScaffoldElementName, StringComparison.Ordinal);
 		string subject = DescribeViewConfigDiffEntry(entry, index);
-		int reported = 0;
+		int advisoryReported = 0;
+		bool capNoted = false;
 		foreach (JsonProperty slot in values.EnumerateObject()) {
 			if (!TryGetAuthoredElementName(slot.Value, out string childName)) {
 				continue;
 			}
+			bool blocks = targetsScaffold && ScaffoldNavigationSlots.Contains(slot.Name);
 			// One hostile body must not be able to flood the agent transcript through a single entry: the tools
 			// flatten diagnostics with "; " into one string, so an unbounded per-entry fan-out is an injection
-			// surface as much as a memory one. The cap is per entry, so a legitimate body never reaches it.
-			if (reported == MaxMergeSlotDiagnosticsPerEntry) {
-				result.Warnings.Add(
-					$"{subject} authors child elements in more slots than are listed above; only the first "
-					+ $"{MaxMergeSlotDiagnosticsPerEntry} are reported.");
-				return;
+			// surface as much as a memory one. The cap bounds ADVISORY diagnostics only, and the loop keeps
+			// scanning past it: capping blocking ones would let a body that lists enough advisory slots first
+			// suppress the very defect this rule exists to refuse (raised in review of PR #1124). Slot order is
+			// document order, so that ordering is attacker-chosen.
+			if (!blocks) {
+				if (advisoryReported == MaxMergeSlotDiagnosticsPerEntry) {
+					if (!capNoted) {
+						capNoted = true;
+						result.Warnings.Add(
+							$"{subject} authors child elements in further slots not listed here; only the first "
+							+ $"{MaxMergeSlotDiagnosticsPerEntry} advisory slots are reported.");
+					}
+					continue;
+				}
+				advisoryReported++;
 			}
-			reported++;
 			string slotName = Sanitize(slot.Name);
-			bool blocks = targetsScaffold && ScaffoldNavigationSlots.Contains(slot.Name);
 			string diagnostic =
 				$"{subject} is a \"{MergeOperationName}\" whose \"{ValuesPropertyName}\" authors child elements in "
 				+ $"\"{slotName}\" (starting with '{Sanitize(childName)}'). Where the target already holds elements "
