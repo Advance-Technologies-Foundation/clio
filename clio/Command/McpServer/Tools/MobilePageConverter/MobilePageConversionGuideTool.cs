@@ -65,6 +65,8 @@ public sealed class MobilePageConversionGuideTool {
 		"are detected and reported as not yet supported (Classic UI must first be converted to a Freedom UI web page " +
 		"with a separate classic-web -> freedom-web converter). " +
 		"ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk. It returns a guide with: " +
+		"betaNotice (Beta-release notes — SURFACE every betaNotice.notes message VERBATIM at the top of the conversion plan, " +
+		"before any other detail, so the user sees the Beta status and Mobile-canvas-only scope up front), " +
 		"sourceType (detected), recommendedMobileTemplate + containerMap (web->mobile container names), sourceStructure " +
 		"(the full resolved component tree incl. inherited template components), componentSuggestions (per source component " +
 		"type: category directMapping/withAdaptation/alternativeAvailable/unsupported/requiresManualDecision + suggested " +

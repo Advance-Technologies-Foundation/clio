@@ -50,6 +50,15 @@ public static class WebToMobileAnalysisService {
 
 	private const string GuidanceArticleName = "freedom-page-web-to-mobile-conversion";
 
+	// Beta-release notes (ENG-94250) surfaced at the top of every conversion plan. Verbatim wording
+	// owned by the ticket; the converter tool is reachable only while the mobile-page-converter feature
+	// is enabled, so a successful guide always carries these.
+	private static readonly IReadOnlyList<string> BetaNoticeMessages = [
+		"⚠️ You are using this feature in **Beta mode**. Some functionality may be limited or subject to change.",
+		"📱 The Converter currently supports the **Mobile canvas** only. Tablet support is on the roadmap and will be available in a future release.",
+		"🔔 Heads up! Enabling this feature will activate the agent in **Beta mode**. Please be aware that behavior may vary and improvements are ongoing.",
+	];
+
 	/// <summary>Source page type this analyzer handles.</summary>
 	public const string SourceTypeFreedomWeb = "freedom-web";
 
@@ -279,6 +288,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> resourceStrings = CollectResourceStrings(elementMap, modelConfig, viewModelConfig, resources);
 
 		return new MobilePageConversionGuide {
+			BetaNotice = new BetaNoticeInfo { Notes = BetaNoticeMessages },
 			SourcePage = sourcePage,
 			SourceType = SourceTypeFreedomWeb,
 			SourceTemplate = string.IsNullOrWhiteSpace(sourceTemplate) ? null : sourceTemplate,

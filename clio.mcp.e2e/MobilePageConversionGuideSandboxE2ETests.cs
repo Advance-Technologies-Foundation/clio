@@ -80,6 +80,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"get-mobile-page-conversion-guide should convert the seeded page '{sourceSchemaName}'. Error: {response.Error}");
 		response.Guide.Should().NotBeNull(
 			because: "a successful conversion must carry the guide inline so the caller can paste its diffs");
+		response.Guide!.BetaNotice.Should().NotBeNull(
+			because: "the converter runs only under the enabled feature, so every guide must announce Beta mode (ENG-94250)");
+		response.Guide!.BetaNotice!.Notes.Should().HaveCount(3,
+			because: "the guide surfaces exactly the three Beta-release notes at the top of the conversion plan");
+		response.Guide!.BetaNotice!.Notes.Should().Contain(n => n.Contains("Mobile canvas"),
+			because: "the plan must tell the user only the Mobile canvas is supported today (Tablet later)");
 		AssertSplitShape(response.Guide!.ModelConfigDiff, "modelConfigDiff");
 		AssertSplitShape(response.Guide!.ViewModelConfigDiff, "viewModelConfigDiff");
 		response.Guide!.ElementMap.Should().NotContain(

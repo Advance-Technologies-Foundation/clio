@@ -313,6 +313,18 @@ public sealed class SectionRegistrationInfo {
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
 /// </summary>
 public sealed class MobilePageConversionGuide {
+	// ── Beta release notice ───────────────────────────────────────────
+	/// <summary>
+	/// Beta-release notes for the Mobile Page Converter (ENG-94250). Always present on a successful
+	/// guide: the converter tool is reachable only while the <c>mobile-page-converter</c> feature is
+	/// enabled, and enabling that feature runs the agent in Beta mode. SURFACE every message in
+	/// <see cref="BetaNoticeInfo.Notes"/> VERBATIM at the top of the conversion plan, before any
+	/// per-element detail, so the user sees the Beta status and the Mobile-canvas-only scope up front.
+	/// </summary>
+	[JsonPropertyName("betaNotice")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public BetaNoticeInfo BetaNotice { get; init; }
+
 	// ── Source analysis ───────────────────────────────────────────────
 	[JsonPropertyName("sourcePage")]
 	public string SourcePage { get; init; }
@@ -551,6 +563,20 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("suggestedTargetSchemaName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string SuggestedTargetSchemaName { get; init; }
+}
+
+/// <summary>
+/// Beta-release notes for the Mobile Page Converter (ENG-94250). Advisory only — the model presents
+/// <see cref="Notes"/> to the user; nothing here changes the converted body.
+/// </summary>
+public sealed class BetaNoticeInfo {
+	/// <summary>
+	/// The Beta-release messages to show, in order, VERBATIM at the top of the conversion plan:
+	/// (1) the feature runs in Beta mode, (2) only the Mobile canvas is supported today (Tablet later),
+	/// (3) enabling the feature activates Beta mode.
+	/// </summary>
+	[JsonPropertyName("notes")]
+	public IReadOnlyList<string> Notes { get; init; } = [];
 }
 
 /// <summary>

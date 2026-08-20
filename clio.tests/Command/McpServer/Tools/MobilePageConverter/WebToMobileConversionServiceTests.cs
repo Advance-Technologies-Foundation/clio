@@ -339,6 +339,33 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("Every successful guide carries the three Beta-release notes (ENG-94250) verbatim, in order, for the conversion plan.")]
+	public void Analyze_GuideCarriesBetaReleaseNotes() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		// Assert
+		guide.BetaNotice.Should().NotBeNull(
+			because: "the converter is reachable only while the feature is enabled, so every guide announces Beta mode");
+		guide.BetaNotice.Notes.Should().HaveCount(3,
+			because: "the ticket defines exactly three Beta-release notes to surface in the plan");
+		guide.BetaNotice.Notes.Should().ContainSingle(n => n.Contains("Beta mode") && n.Contains("limited or subject to change"),
+			because: "note 1 tells the user the feature runs in Beta mode");
+		guide.BetaNotice.Notes.Should().ContainSingle(n => n.Contains("Mobile canvas") && n.Contains("Tablet support"),
+			because: "note 2 tells the user only the Mobile canvas is supported today, with Tablet on the roadmap");
+		guide.BetaNotice.Notes.Should().ContainSingle(n => n.Contains("Enabling this feature") && n.Contains("Beta mode"),
+			because: "note 3 tells the user that enabling the feature activates Beta mode");
+		guide.BetaNotice.Notes[0].Should().Contain("Beta mode",
+			because: "the Beta-mode note must come first so it heads the conversion plan");
+	}
+
+	[Test]
 	[Description("A supplied SectionRegistrationInfo is carried into the guide unchanged.")]
 	public void Analyze_CarriesSectionRegistrationIntoGuide() {
 		PageBundleInfo bundle = Bundle("""
