@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -92,6 +92,7 @@ internal sealed class CommandHelpCatalog {
 			["create-lookup"] = "Create a lookup entity schema in a remote Creatio package",
 			["get-app-hash"] = "Calculate the hash of an application package",
 			["get-page"] = "Read a Freedom UI page as a merged bundle plus raw schema body",
+			["get-process-page-facts"] = "Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs",
 			["list-app-sections"] = "List sections of an existing installed application",
 			["list-pages"] = "List Freedom UI page schemas in a Creatio environment",
 			[GetEntitySchemaProperties] = "Get properties from a remote Creatio entity schema",
@@ -289,6 +290,7 @@ internal sealed class CommandHelpCatalog {
 			"new-ui-project",
 			"open-settings",
 			"get-page",
+			"get-process-page-facts",
 			"list-pages",
 			"update-client-unit-schema",
 			"update-page",

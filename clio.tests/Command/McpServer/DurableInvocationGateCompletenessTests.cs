@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -86,6 +86,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-identity-service-config",
 		"get-mobile-page-conversion-guide",
 		"get-page-hierarchy",
+		"get-process-page-facts",
 		"get-process-signature",
 		"get-record-rights",
 		"get-related-page-addon",

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Clio.Mcp.E2E;
 
 namespace Clio.Tests.Command.McpServer;
@@ -306,6 +306,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-mobile-page-conversion-guide"] = PassthroughClassification.NotApplicable, // ENG-91228 advisory guide tool; resolver-backed (class b), read-only, not part of the ENG-93347 passthrough audit
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
+			["get-process-page-facts"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,

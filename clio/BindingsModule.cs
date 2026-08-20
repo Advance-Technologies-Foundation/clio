@@ -1,4 +1,4 @@
-#pragma warning disable CLIO001 // This is DI class, warning not applicable
+﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -438,6 +438,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<ProcessPageFactsCommand>();
 		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs

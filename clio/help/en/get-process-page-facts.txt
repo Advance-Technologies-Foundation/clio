@@ -1,0 +1,35 @@
+NAME
+    get-process-page-facts, page-facts - read the facts a Pre-configured page process element needs about a
+    Freedom UI page
+
+SYNOPSIS
+    clio get-process-page-facts --schema-name <name> -e <environment> [--culture <culture>]
+
+DESCRIPTION
+    Reports two things about a Freedom UI page, both of which a Pre-configured page process element needs and
+    neither of which can be derived on the server:
+
+      completingButtonCandidates  the buttons that could complete the page, each with the caption the process
+                                  designer records ("Save | SaveButton") and the requests its click handler
+                                  issues
+      dataSources                 the page-scoped entity data sources
+
+    Both answers are only knowable from the MERGED page, because a page inherits its buttons from its template
+    chain. The platform performs that merge in the browser and exposes no server-side equivalent, so the
+    CrtProcessBuilder package cannot see them. Pass the results verbatim into the process descriptor's
+    preconfiguredPage.buttons / .dataSources.
+
+    Choosing WHICH candidates complete the page remains a decision. A candidate is reported when its handler
+    issues crt.SaveRecordRequest, crt.ClosePageRequest or crt.CancelRecordChangesRequest, or when it declares no
+    requests at all.
+
+    Fails for a Classic UI page, which completes through the buttons its own page designer marks instead.
+
+OPTIONS
+    --schema-name       Freedom UI page schema name, e.g. 'UsrMyApp_FormPage' (required)
+    --culture           Culture used to resolve resource-backed button captions (default en-US)
+    -e, --environment   Registered environment name
+
+EXAMPLES
+    clio get-process-page-facts --schema-name UsrRequestReview_FormPage -e dev
+    clio page-facts --schema-name UsrRequestReview_FormPage --culture de-DE -e dev
