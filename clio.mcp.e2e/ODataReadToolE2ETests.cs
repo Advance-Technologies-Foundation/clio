@@ -98,8 +98,10 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 			because: "argument validation failures use the odata-read structured response envelope");
 		response.Success.Should().BeFalse(
 			because: "a raw filter must fail over the real stdio binding path instead of being discarded");
-		response.Error.Should().Contain("'filter' -> 'filters'",
-			because: "the clio-run dispatch must preserve the actionable structured-filter hint");
+		response.Error.Should().Contain("raw filter strings are not accepted",
+			because: "the clio-run dispatch must explain that a raw string cannot simply be renamed");
+		response.Error.Should().Contain("filters: {\"all\"",
+			because: "the clio-run dispatch should preserve a valid structured-filter example");
 		response.Error.Should().NotContain(invalidEnvironmentName,
 			because: "argument validation must run before environment resolution or remote access");
 	}
@@ -135,6 +137,114 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 			because: "the structured response should identify the supported filter group");
 		response.Error.Should().NotContain(invalidEnvironmentName,
 			because: "nested filter validation must run before environment resolution or remote access");
+	}
+
+	[Test]
+	[Description("Rejects an explicitly null filters object through the real stdio binding path.")]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read rejects null filters over stdio")]
+	public async Task ODataRead_Should_Reject_Null_Filters_Through_ClioRun() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ODataReadTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["entity"] = "Contact",
+					["filters"] = null
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "explicit null must fail instead of widening to an unfiltered read");
+		response.Error.Should().Contain("null is not supported",
+			because: "the real binder must preserve filters member presence");
+		response.Error.Should().NotContain(invalidEnvironmentName,
+			because: "null-filter validation must run before environment resolution or remote access");
+	}
+
+	[Test]
+	[Description("Rejects OData grammar embedded in a structured field through the real stdio binding path.")]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read rejects filter field grammar over stdio")]
+	public async Task ODataRead_Should_Reject_Filter_Field_Grammar_Through_ClioRun() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ODataReadTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["entity"] = "Contact",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> {
+								["field"] = "Id ne null or Name",
+								["value"] = "Acme"
+							}
+						}
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "structured fields must not carry OData operators that broaden the request");
+		response.Error.Should().Contain("must be an OData member path",
+			because: "the real binder must preserve and reject the unsafe field expression");
+		response.Error.Should().NotContain(invalidEnvironmentName,
+			because: "field validation must run before environment resolution or remote access");
+	}
+
+	[Test]
+	[Description("Preserves an explicit null comparison value through stdio binding and reaches normal environment resolution.")]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read preserves explicit null filter value over stdio")]
+	public async Task ODataRead_Should_Preserve_Null_Filter_Value_Through_ClioRun() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ODataReadTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["entity"] = "Contact",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> {
+								["field"] = "Name",
+								["op"] = "eq",
+								["value"] = null
+							}
+						}
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the intentionally missing environment should fail after argument validation succeeds");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "explicit null must remain a present comparison value through the real binder");
+		response.Error.Should().NotContain("exactly one of value or in",
+			because: "explicit null is a valid comparison value, not an omitted member");
 	}
 
 	[Test]

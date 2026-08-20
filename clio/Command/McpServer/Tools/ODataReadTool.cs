@@ -33,7 +33,6 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 
 	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["filter"] = "filters",
 			["environmentName"] = "environment-name",
 			["environment_name"] = "environment-name",
 			["orderBy"] = "order-by",
@@ -105,6 +104,11 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	}
 
 	private static string? ValidateArguments(ODataReadArgs args) {
+		if (args.ExtensionData?.ContainsKey("filter") == true) {
+			return "Argument 'filter' is unsupported because raw filter strings are not accepted. " +
+				"Use a structured filter, for example: " +
+				"filters: {\"all\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"Acme\"}]}.";
+		}
 		string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData,
 			ArgumentAliases,
@@ -115,6 +119,9 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 		if (args.Skip is < 0) {
 			return $"skip must be zero or greater (got {args.Skip}).";
+		}
+		if (args.FiltersProvided && args.Filters is null) {
+			return "filters must be a structured object containing at least one condition in all or any; null is not supported.";
 		}
 		if (args.Filters is null) {
 			return null;
@@ -168,10 +175,16 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		if (string.IsNullOrWhiteSpace(condition.Field)) {
 			return $"{path}.field is required.";
 		}
-		if (condition.Value.HasValue == condition.InValues.HasValue) {
+		if (!ODataKeyFormatter.IsValidMemberPath(condition.Field)) {
+			return $"{path}.field must be an OData member path containing only letters, digits, underscores, and '/' separators.";
+		}
+		bool hasValue = condition.Value.ValueKind != JsonValueKind.Undefined;
+		bool hasInValues = condition.InValues.ValueKind != JsonValueKind.Undefined;
+		if (hasValue == hasInValues) {
 			return $"{path} must provide exactly one of value or in.";
 		}
-		if (condition.InValues is { } inValues) {
+		if (hasInValues) {
+			JsonElement inValues = condition.InValues;
 			if (inValues.ValueKind != JsonValueKind.Array || inValues.GetArrayLength() == 0) {
 				return $"{path}.in must be a non-empty array.";
 			}
@@ -213,17 +226,17 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			return null;
 		}
 		string field = c.Field;
-		if (c.InValues.HasValue && c.InValues.Value.ValueKind == JsonValueKind.Array) {
-			List<string> inParts = c.InValues.Value.EnumerateArray()
+		if (c.InValues.ValueKind == JsonValueKind.Array) {
+			List<string> inParts = c.InValues.EnumerateArray()
 				.Select(v => $"{field} eq {LiteralFor(field, v)}")
 				.ToList();
 			return JoinConditions(inParts, " or ");
 		}
-		if (!c.Value.HasValue) {
+		if (c.Value.ValueKind == JsonValueKind.Undefined) {
 			return null;
 		}
 		string op = string.IsNullOrWhiteSpace(c.Op) ? "eq" : c.Op;
-		JsonElement val = c.Value.Value;
+		JsonElement val = c.Value;
 		if (op is "contains" or "startswith" or "endswith") {
 			return $"{op}({field},{LiteralFor(field, val)})";
 		}
@@ -328,6 +341,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 /// Arguments for <see cref="ODataReadTool"/>.
 /// </summary>
 public sealed record ODataReadArgs {
+	private ODataFilters? _filters;
+
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account, Activity).</summary>
 	[JsonPropertyName("entity")]
 	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity). Call dataforge-find-tables to discover available names.")]
@@ -379,7 +394,17 @@ public sealed record ODataReadArgs {
 		"GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted; strings are single-quoted. " +
 		"in array expands to OR-joined equality clauses. " +
 		"Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }")]
-	public ODataFilters? Filters { get; init; }
+	public ODataFilters? Filters {
+		get => _filters;
+		init {
+			_filters = value;
+			FiltersProvided = true;
+		}
+	}
+
+	/// <summary>Whether the JSON request explicitly supplied the filters member.</summary>
+	[JsonIgnore]
+	internal bool FiltersProvided { get; private set; }
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
@@ -448,12 +473,12 @@ public sealed record ODataFilterCondition {
 	/// <summary>Value to compare against.</summary>
 	[JsonPropertyName("value")]
 	[Description("Comparison value. GUIDs in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Strings get single-quoted. Numbers and booleans are unquoted.")]
-	public JsonElement? Value { get; init; }
+	public JsonElement Value { get; init; }
 
 	/// <summary>Array of values for in-list OR expansion.</summary>
 	[JsonPropertyName("in")]
 	[Description("Array of values that expand to OR-joined equality clauses: field eq v1 or field eq v2.")]
-	public JsonElement? InValues { get; init; }
+	public JsonElement InValues { get; init; }
 
 	/// <summary>Unbound condition members, rejected before any Creatio request.</summary>
 	[JsonExtensionData]

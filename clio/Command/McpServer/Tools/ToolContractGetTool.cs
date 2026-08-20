@@ -2011,7 +2011,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("skip-range", "invalid-skip", "skip",
 						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
 					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
-						Context: "When filters is present it must contain at least one condition in all or any. Every condition requires field and exactly one of value or in; unknown group/condition members and unsupported op values are rejected before any Creatio request.")
+						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

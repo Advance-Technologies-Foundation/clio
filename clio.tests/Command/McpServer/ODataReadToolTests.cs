@@ -138,8 +138,85 @@ public sealed class ODataReadToolTests {
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "a raw filter must fail loudly instead of being discarded and widening the query");
-		response.Error.Should().Contain("'filter' -> 'filters'",
-			because: "the caller needs an actionable rename toward the supported structured filter");
+		response.Error.Should().Contain("raw filter strings are not accepted",
+			because: "the caller must not be told that renaming an incompatible raw string is sufficient");
+		response.Error.Should().Contain("filters: {\"all\"",
+			because: "the failure should show the supported structured-filter shape");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an explicitly null filters member before resolving an environment or issuing HTTP.")]
+	public void Read_Should_Reject_Explicitly_Null_Filters_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","filters":null}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an explicitly null filter must not become an unfiltered request");
+		response.Error.Should().Contain("null is not supported",
+			because: "the failure should distinguish malformed filters from an omitted optional filter");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts an explicit JSON null comparison value and emits the intended OData null literal.")]
+	public void Read_Should_Preserve_Explicit_Null_Filter_Value_From_Json() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[]}");
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","filters":{"all":[{"field":"Name","op":"eq","value":null}]}}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "explicit null is a valid value for eq and ne comparisons");
+		serviceUrlBuilder.Received(1).Build("odata/Contact?$filter=Name%20eq%20null&$top=25");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects OData grammar embedded in a structured filter field before remote access.")]
+	public void Read_Should_Reject_OData_Grammar_In_Filter_Field_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Filters = new ODataFilters {
+				All = [new ODataFilterCondition {
+					Field = "Id ne null or Name",
+					Value = JsonSerializer.SerializeToElement("Acme")
+				}]
+			}
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a structured field must not inject operators that broaden the filter");
+		response.Error.Should().Contain("must be an OData member path",
+			because: "the failure should explain the safe field shape");
 		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
 	}
 

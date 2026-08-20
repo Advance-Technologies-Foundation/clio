@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Linq;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
@@ -77,5 +78,31 @@ public sealed class ODataKeyFormatterTests {
 		ODataKeyFormatter.IsValidEntityName("Contact(1)").Should().BeFalse(because: "key segments must not be smuggled via the entity name");
 		ODataKeyFormatter.IsValidEntityName("1Contact").Should().BeFalse(because: "a leading digit is not a valid identifier");
 		ODataKeyFormatter.IsValidEntityName(" ").Should().BeFalse(because: "blank names are invalid");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts simple OData member paths and rejects embedded OData grammar or malformed segments.")]
+	public void IsValidMemberPath_Should_Accept_Only_Identifier_Segments() {
+		// Arrange
+		string[] validPaths = ["Name", "Account/Id", "_Owner/UsrCode2"];
+		string[] invalidPaths = [
+			"Id ne null or Name",
+			"Name eq 'Acme'",
+			"Account//Id",
+			"/Id",
+			"Account/Id ",
+			"Name?$top=100"
+		];
+
+		// Act
+		bool[] validResults = validPaths.Select(ODataKeyFormatter.IsValidMemberPath).ToArray();
+		bool[] invalidResults = invalidPaths.Select(ODataKeyFormatter.IsValidMemberPath).ToArray();
+
+		// Assert
+		validResults.Should().OnlyContain(result => result,
+			because: "ordinary fields and navigation paths must remain usable");
+		invalidResults.Should().OnlyContain(result => !result,
+			because: "filter fields must not carry OData operators, delimiters, empty segments, or whitespace");
 	}
 }
