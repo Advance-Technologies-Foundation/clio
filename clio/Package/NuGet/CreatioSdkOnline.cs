@@ -1,6 +1,7 @@
 ﻿using Clio.Common;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -22,6 +23,11 @@ namespace Clio.Project.NuGet
 			"unknown. Check connectivity to api.nuget.org (a proxy or a corporate perimeter can block it), or " +
 			"set ApplicationVersion in .clio/workspaceSettings.json explicitly.";
 
+		// NuGet's well-known public API host, not a configurable deployment target.
+		[SuppressMessage("Major Code Smell", "S1075:URIs should not be hardcoded",
+			Justification = "This is NuGet's well-known public API endpoint, not a configurable resource path.")]
+		private const string NuGetApiBaseAddress = "https://api.nuget.org";
+
 		private List<Version> Versions {
 			get {
 				// A failed lookup caches an EMPTY list, and an empty cache is re-fetched rather than treated
@@ -39,7 +45,7 @@ namespace Clio.Project.NuGet
 				// Disposed on every path: the empty-list gate above lets a failed lookup be retried, so an
 				// undisposed client per failed attempt would leak a handler and its sockets.
 				using var client = new HttpClient() {
-					BaseAddress = new Uri("https://api.nuget.org"),
+					BaseAddress = new Uri(NuGetApiBaseAddress),
 					// The default is 100 s. A perimeter that drops packets rather than refusing the
 					// connection would otherwise make a workspace command look hung for that long.
 					Timeout = TimeSpan.FromSeconds(15)

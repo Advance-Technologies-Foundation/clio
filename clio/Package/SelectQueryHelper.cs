@@ -86,7 +86,8 @@ internal static class SelectQueryHelper
 		int allowedAttempts = requestTimeout == Timeout.Infinite
 			? TransientFailureAttempts
 			: BoundedCallAttempts;
-		for (int attempt = 1; ; attempt++)
+		int attempt = 1;
+		while (true)
 		{
 			string responseJson = client.ExecutePostRequest(
 				url,
@@ -108,6 +109,7 @@ internal static class SelectQueryHelper
 				throw new InvalidOperationException($"SelectQuery failed: {detail}");
 			}
 			Thread.Sleep(TransientFailureRetryDelay);
+			attempt++;
 		}
 	}
 
