@@ -312,19 +312,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			}
 
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
-				int count = valueEl.ValueKind == JsonValueKind.Array ? valueEl.GetArrayLength() : 1;
-				long? totalCount = root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
-					&& totalCountElement.TryGetInt64(out long parsedTotalCount)
-					? parsedTotalCount
-					: null;
-				if (countRequested && !totalCount.HasValue) {
-					return ODataReadResponse.Failure(
-						"Creatio did not return @odata.count for count=true; total count cannot be verified.");
-				}
-				string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nl)
-					? nl.GetString()
-					: null;
-				return new ODataReadResponse(true, null, count, valueEl.Clone(), nextLink, totalCount);
+				return ParseCollectionResponse(root, valueEl, countRequested);
 			}
 
 			// Single-entity response (no value wrapper)
@@ -336,6 +324,25 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			}
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
 		}
+	}
+
+	private static ODataReadResponse ParseCollectionResponse(
+		JsonElement root,
+		JsonElement valueElement,
+		bool countRequested) {
+		int count = valueElement.ValueKind == JsonValueKind.Array ? valueElement.GetArrayLength() : 1;
+		long? totalCount = root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
+			&& totalCountElement.TryGetInt64(out long parsedTotalCount)
+			? parsedTotalCount
+			: null;
+		if (countRequested && !totalCount.HasValue) {
+			return ODataReadResponse.Failure(
+				"Creatio did not return @odata.count for count=true; total count cannot be verified.");
+		}
+		string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
+			? nextLinkElement.GetString()
+			: null;
+		return new ODataReadResponse(true, null, count, valueElement.Clone(), nextLink, totalCount);
 	}
 
 }
