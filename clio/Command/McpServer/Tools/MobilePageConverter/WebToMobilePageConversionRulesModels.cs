@@ -438,19 +438,24 @@ public sealed class ElementFilterRule {
 /// There is no <c>meta.*</c> root and no <c>{{ item }}</c> alias: an unresolvable path yields nothing, so a
 /// template written against either would be dropped or, for a placement field, skipped WHOLE and silently.
 /// <para>
-/// <c>parentName</c> and <c>propertyName</c> are READ-ONLY views: a template may echo them so the shape it
-/// produces can be read in place, but it must never SET them — a rules file deciding an element's parent would
-/// desynchronize it from every other <c>parentName</c> in the element map, so a template that does is refused
-/// entirely rather than partly honoured.
+/// <c>parentName</c> and <c>propertyName</c> DRIVE placement. A template may ECHO the converter's own value
+/// (<c>"{{ diff.parentName }}"</c>) to leave the element where the walk found it, or it may render a DIFFERENT
+/// value to RETARGET the element — it is then emitted as an insert into that declared container/property (appended,
+/// no index) instead of its walked position. This is how a source element is regrouped elsewhere on mobile (e.g. a
+/// MainHeader button → <c>FloatingActionButton.menuItems</c>). A template that declares neither field, or only
+/// echoes, changes nothing. When a retarget names a parent the target mobile template does not provide, the
+/// converter drops the element with a diagnostic rather than emitting an unresolvable insert.
 /// </para>
 /// </remarks>
 public sealed class ViewConfigTemplateRule {
 
-	/// <summary>Echo of the element's computed parent — <c>"{{ diff.parentName }}"</c>, or absent.</summary>
+	/// <summary>Target parent to place the element under — <c>"{{ diff.parentName }}"</c> to keep the walked parent,
+	/// or a different value / name to RETARGET the element there (e.g. <c>"FloatingActionButton"</c>). Absent = keep.</summary>
 	[JsonPropertyName("parentName")]
 	public string ParentName { get; init; }
 
-	/// <summary>Echo of the parent's computed slot — <c>"{{ diff.propertyName }}"</c>, or absent.</summary>
+	/// <summary>Target slot on the parent — <c>"{{ diff.propertyName }}"</c> to keep the walked slot, or a different
+	/// value to place into that slot when retargeting (e.g. <c>"menuItems"</c>). Absent = keep.</summary>
 	[JsonPropertyName("propertyName")]
 	public string PropertyName { get; init; }
 

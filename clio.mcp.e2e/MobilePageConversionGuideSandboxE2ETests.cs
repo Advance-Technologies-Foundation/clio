@@ -164,8 +164,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// guaranteed to carry a header button, so this asserts the contract only when one actually converted.
 	/// </summary>
 	private static void AssertHeaderActionsConvertToFab(MobilePageConversionGuide guide) {
-		foreach (ElementMapEntry entry in guide.ElementMap.Where(e =>
-			e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems")) {
+		List<ElementMapEntry> fabEntries = guide.ElementMap.Where(e =>
+			e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems").ToList();
+		foreach (ElementMapEntry entry in fabEntries) {
 			entry.MobileType.Should().Be("crt.MenuItem",
 				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
 			if (entry.MobileValues is JsonObject values) {
@@ -176,6 +177,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				values.ContainsKey("color").Should().BeFalse(
 					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
 			}
+		}
+		// AC 4.5: once header actions convert, the MainHeader scope container itself produces NO mobile element —
+		// it is neither inserted nor merged (a non-converting scope emits nothing of its own). Asserted only when a
+		// FAB conversion actually happened, so a page without a header still passes vacuously.
+		if (fabEntries.Count > 0) {
+			guide.ElementMap.Should().NotContain(
+				e => e.WebName == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
+				because: "a non-converting scope container (MainHeader) is never emitted as a mobile element (AC 4.5)");
 		}
 	}
 

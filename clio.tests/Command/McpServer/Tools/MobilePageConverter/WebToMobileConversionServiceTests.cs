@@ -1400,8 +1400,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("An EMPTY child-element array (e.g. menuItems: []) is neither descended into nor carried as a value — the walk emits no child entry and BuildMobileValues drops the empty slot, so a mobile element never leaks an empty structural collection like \"menuItems\": [].")]
-	public void Analyze_ShouldNotLeakEmptyChildArray_AsValue() {
+	[Description("An EMPTY array is never a child-element collection (IsChildElementArray requires non-empty), so the walk emits no child entry and the empty array is CARRIED verbatim as a value — only `items` as an array is dropped. An empty array (menuItems: [] here, or a data array like options: []) is preserved, both as a legitimate empty collection and so a mobile diff can clear a non-empty template default.")]
+	public void Analyze_ShouldCarryEmptyChildArray_Verbatim() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
@@ -1419,8 +1419,85 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.ElementMap.Should().NotContain(e => e.ParentName == "OrderButton",
 			because: "an empty menuItems array has no child element to emit");
 		ElementMapEntry button = Element(guide, "OrderButton");
-		button.MobileValues!.AsObject().ContainsKey("menuItems").Should().BeFalse(
-			because: "an empty structural collection is not carried as a value — only a non-empty data array would be");
+		JsonObject buttonValues = button.MobileValues!.AsObject();
+		buttonValues.ContainsKey("menuItems").Should().BeTrue(
+			because: "an empty array is not a walked-out structural slot, so it is carried verbatim as a value");
+		buttonValues["menuItems"]!.AsArray().Count.Should().Be(0,
+			because: "the empty collection is carried exactly as authored");
+	}
+
+	[Test]
+	[Description("A genuinely EMPTY data array (options: []) is carried verbatim on the element — the earlier blanket empty-array drop stripped it, which could not distinguish a consumed structural slot from a legitimately empty data/config array.")]
+	public void Analyze_ShouldCarryEmptyDataArray_Verbatim() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "Rating", "type": "crt.Input", "options": [] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle);
+
+		// Assert
+		JsonObject fieldValues = Element(guide, "Rating").MobileValues!.AsObject();
+		fieldValues.ContainsKey("options").Should().BeTrue(
+			because: "an empty data array must not be silently dropped — it is carried verbatim");
+		fieldValues["options"]!.AsArray().Count.Should().Be(0,
+			because: "the empty data collection is preserved so a mobile diff can clear a non-empty template default");
+	}
+
+	[Test]
+	[Description("A body-level crt.Button's menuItems whose crt.MenuItem members have NO mobile counterpart in this scope (no matching template, not registry-declared) are NOT walked out into Drop entries that would strip the slot — the whole menuItems array is carried verbatim on the button (a valid mobile input), so a body-level dropdown keeps its menu.")]
+	public void Analyze_BodyLevelButtonMenu_WithUnresolvableItems_IsCarriedVerbatim() {
+		// Arrange — a registry that supports the button but NOT crt.MenuItem (the shipped registry omits it), and
+		// no FAB rule, so nothing can convert the nested crt.MenuItem here.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
+				  "menuItems": [ { "name": "PrintItem", "type": "crt.MenuItem",
+					"caption": "#ResourceString(PrintItem_caption)#" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: new WebToMobilePageConversionRules());
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.WebName == "PrintItem",
+			because: "a nested crt.MenuItem with no mobile counterpart is not walked out into its own (dropped) entry");
+		ElementMapEntry button = Element(guide, "OrderButton");
+		JsonArray menu = button.MobileValues!.AsObject()["menuItems"]!.AsArray();
+		menu.Count.Should().Be(1,
+			because: "the menuItems array is carried verbatim as a value so the dropdown keeps its menu");
+		menu[0]!.AsObject()["type"]!.GetValue<string>().Should().Be("crt.MenuItem",
+			because: "the carried member is preserved exactly, a valid crt.Button.menuItems entry on mobile");
+	}
+
+	[Test]
+	[Description("When the mobile registry is unavailable (mobileByType null), a crt.List's itemLayout array of crt.ListItem is NOT promoted to a walked-out child collection — with no registry to declare it an object slot, the member-resolves guard keeps it carried, so itemLayout survives as a value rather than being stripped, so the mobile-list row behavior does not regress on a degraded catalog.")]
+	public void Analyze_ItemLayoutArray_RegistryDegraded_IsCarriedNotWalked() {
+		// Arrange — no mobileByType (registry unavailable), so ResolveExpectedShape cannot flag itemLayout as an
+		// object slot; the resolve guard must still keep it carried because crt.ListItem resolves to nothing here.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SimilarLeadList", "type": "crt.List", "items": "$SimilarLeadList",
+				  "itemLayout": [ { "type": "crt.ListItem", "title": "$DS_LeadName" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.List"
+		};
+
+		// Act — mobileByType is null (the degraded path).
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.PropertyName == "itemLayout",
+			because: "with no registry and no rule to convert crt.ListItem, itemLayout is not walked out into a child entry");
+		JsonObject listValues = Element(guide, "SimilarLeadList").MobileValues!.AsObject();
+		listValues.ContainsKey("itemLayout").Should().BeTrue(
+			because: "itemLayout is carried as a value on a degraded catalog, not stripped");
 	}
 
 	#endregion
@@ -1456,7 +1533,7 @@ public sealed class WebToMobileConversionServiceTests {
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input", "crt.Button", "crt.MenuItem" };
 
 	[Test]
-	[Description("A crt.Button under a path-scoped non-converting container (MainHeader) with a supported clicked is retargeted into FloatingActionButton.menuItems as a crt.MenuItem; an identical button OUTSIDE the scope is untouched (kept as its own type).")]
+	[Description("A crt.Button under a declared non-converting scope container (MainHeader, in nonConvertingScopeContainers) with a supported clicked is retargeted into FloatingActionButton.menuItems as a crt.MenuItem; an identical button OUTSIDE the scope is untouched (kept as its own type).")]
 	public void Analyze_Fab_ScopedButtonRetargets_OutsideButtonUntouched() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
@@ -1479,7 +1556,7 @@ public sealed class WebToMobileConversionServiceTests {
 		order.PropertyName.Should().Be("menuItems", because: "into the FAB's menuItems slot");
 		order.Index.Should().BeNull(because: "converted entries are appended after any existing static menuItems");
 		Element(guide, "OtherBtn").MobileType.Should().Be("crt.Button",
-			because: "Body is not a path-scoped container, so the same button outside the header is untouched");
+			because: "Body is not a declared non-converting scope container, so the same button outside the header is untouched");
 		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
 			because: "a non-converting scope container produces no mobile element of its own");
 	}
@@ -1579,7 +1656,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A path-scoped container that is ALSO inherited web-template chrome (MainHeader) is preserved through template pruning — otherwise its buttons would be hoisted out and lose the ancestor the path needs — so the header button still converts to a FAB menu item.")]
+	[Description("A declared non-converting scope container that is ALSO inherited web-template chrome (MainHeader) is preserved through template pruning — otherwise its buttons would be hoisted out and lose the ancestor the path filter needs — so the header button still converts to a FAB menu item.")]
 	public void Analyze_Fab_ScopeContainer_SurvivesTemplatePruning() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
@@ -1596,7 +1673,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		ElementMapEntry order = Element(guide, "OrderBtn");
 		order.Operation.Should().Be("insert",
-			because: "MainHeader is kept through chrome pruning because a rule scopes to it, so its button is still reachable and converts");
+			because: "MainHeader is kept through chrome pruning because it is a declared non-converting scope container, so its button is still reachable and converts");
 		order.ParentName.Should().Be("FloatingActionButton", because: "the converted header button lands in the FAB");
 		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
 			because: "the preserved scope container is still non-converting");
@@ -1716,6 +1793,217 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the supported header action is retyped to a mobile menu item");
 		order.ParentName.Should().Be("FloatingActionButton",
 			because: "the supported header action retargets into the FAB rather than being dropped");
+	}
+
+	/// <summary>FabRule plus a versioned requests map, so scope-mode request handling can be exercised.</summary>
+	private static WebToMobilePageConversionRules FabRuleWithRequests(
+		string[] path, string[] scope, IReadOnlyList<RequestMappingRule> requests, params string[] filterTypes) {
+		WebToMobilePageConversionRules baseRule = FabRule(path, scope, filterTypes);
+		return new WebToMobilePageConversionRules {
+			NonConvertingScopeContainers = baseRule.NonConvertingScopeContainers,
+			Components = baseRule.Components,
+			Requests = requests
+		};
+	}
+
+	[Test]
+	[Description("A header button whose clicked request is UNKNOWN/custom (not in the map, not bundled) still CONVERTS into the FAB and is FLAGGED for review — aligning scope conversion with ProcessOneEventBinding — instead of vanishing, which used to lose exactly the custom-action buttons the feature must convert.")]
+	public void Analyze_Fab_HeaderButton_CustomRequest_ConvertsAndFlags() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CustomBtn", "type": "crt.Button", "caption": "#ResourceString(CustomBtn_caption)#",
+				  "clicked": { "request": "usr.MyCustomRequest", "params": {} } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry custom = Element(guide, "CustomBtn");
+		custom.Operation.Should().Be("insert",
+			because: "a header button with a custom clicked converts (kept + flagged), not dropped");
+		custom.ParentName.Should().Be("FloatingActionButton", because: "the custom action still retargets into the FAB");
+		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
+			r.ElementName == "CustomBtn" && r.Request == "usr.MyCustomRequest",
+			because: "an unknown request is kept verbatim and flagged for review on mobile");
+	}
+
+	[Test]
+	[Description("A header button whose clicked request the versioned map explicitly CLEARS (unsupported on mobile) is DROPPED, the drop reason NAMES the request, and the lost action is recorded in requestConversions.droppedRequests so the loss is visible rather than collapsed into a generic reason.")]
+	public void Analyze_Fab_HeaderButton_ExplicitlyUnsupportedRequest_Drops_AndRecords() {
+		// Arrange — the request maps to an EMPTY mobile target = explicitly unsupported.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PrintBtn", "type": "crt.Button", "caption": "#ResourceString(PrintBtn_caption)#",
+				  "clicked": { "request": "crt.PrintablesRequest", "params": {} } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = FabRuleWithRequests(["MainHeader"], ["MainHeader"],
+			[new RequestMappingRule { Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported", Note = "Printables are web-only." }],
+			"crt.Button");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: rules);
+
+		// Assert
+		ElementMapEntry print = Element(guide, "PrintBtn");
+		print.Operation.Should().Be("drop", because: "an explicitly-unsupported clicked cannot become a live action");
+		print.Reason.Should().Contain("crt.PrintablesRequest",
+			because: "the drop reason names the offending request instead of a generic message");
+		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+			r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
+			because: "the lost header action must surface in requestConversions, not disappear silently");
+	}
+
+	[Test]
+	[Description("The scope drop reason is built FROM DATA — it names the scope container (nonConvertingScopeContainers entry) rather than hard-coding \"header\", so a second scope container reads correctly.")]
+	public void Analyze_Fab_ScopeDropReason_NamesScopeContainer() {
+		// Arrange — a non-action component (crt.Label) under the header has nothing to convert.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "HeaderLabel", "type": "crt.Label", "caption": "#ResourceString(HeaderLabel_caption)#" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry label = Element(guide, "HeaderLabel");
+		label.Operation.Should().Be("drop", because: "a non-action component under a non-converting scope is dropped");
+		label.Reason.Should().Contain("MainHeader",
+			because: "the reason names the scope container it fell under, built from data");
+		label.Reason.Should().Contain("scope",
+			because: "the wording is scope-agnostic (\"scope\"), not header-specific");
+	}
+
+	[Test]
+	[Description("A header button's visible binding is carried onto the converted FAB menu item, AND the viewModelConfig attribute it references is KEPT even though the source-tree consumer walk credited it to the dropped dropdown parent — because attributes referenced by a surviving element's MobileValues are always kept.")]
+	public void Analyze_Fab_FlattenedMenuItem_VisibleBindingCarried_AndAttributeKept() {
+		// Arrange — a dropdown (dropped) whose menu item (surviving, flattened into the FAB) is gated by $CanPrint.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "MoreBtn", "type": "crt.Button", "caption": "#ResourceString(MoreBtn_caption)#",
+				  "menuItems": [
+					{ "name": "PrintItem", "type": "crt.MenuItem", "caption": "#ResourceString(PrintItem_caption)#",
+					  "visible": "$CanPrint", "clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "CanPrint": { "modelConfig": { "path": "PDS.CanPrint" } } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
+
+		// Assert
+		JsonObject printValues = Element(guide, "PrintItem").MobileValues!.AsObject();
+		printValues["visible"]!.GetValue<string>().Should().Be("$CanPrint",
+			because: "the template carries source.visible onto the converted menu item");
+		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
+		attrs.ContainsKey("CanPrint").Should().BeTrue(
+			because: "the surviving flattened menu item still binds $CanPrint, so the attribute is kept even though its dropped dropdown parent was the only source-tree consumer");
+	}
+
+	[Test]
+	[Description("A header button whose clicked request maps to a DIFFERENT mobile request with a paramMap converts into a FAB menu item carrying the MOBILE request name and RENAMED params, and the conversion is recorded in requestConversions — pinning the template-render vs ProcessEventBindings ordering.")]
+	public void Analyze_Fab_HeaderButton_ClickedRenamed_WithParamMap() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenBtn", "type": "crt.Button", "caption": "#ResourceString(OpenBtn_caption)#",
+				  "clicked": { "request": "crt.LegacyOpenRequest", "params": { "recordId": "$Id" } } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = FabRuleWithRequests(["MainHeader"], ["MainHeader"],
+			[new RequestMappingRule {
+				Web = "crt.LegacyOpenRequest", Mobile = "crt.OpenPageRequest", Category = "WithAdaptation",
+				ParamMap = new Dictionary<string, string> { ["recordId"] = "id" }
+			}],
+			"crt.Button");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: rules);
+
+		// Assert
+		JsonObject open = Element(guide, "OpenBtn").MobileValues!.AsObject();
+		JsonObject clicked = open["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
+			because: "ProcessEventBindings overwrites the template-rendered clicked with the mapped MOBILE request");
+		clicked["params"]!.AsObject().ContainsKey("id").Should().BeTrue(because: "the param was renamed per paramMap");
+		clicked["params"]!.AsObject().ContainsKey("recordId").Should().BeFalse(because: "the web param key was renamed away");
+		guide.RequestConversions!.ConvertedRequests.Should().ContainSingle(r =>
+			r.ElementName == "OpenBtn" && r.WebRequest == "crt.LegacyOpenRequest" && r.MobileRequest == "crt.OpenPageRequest",
+			because: "the rename is recorded in requestConversions");
+	}
+
+	[Test]
+	[Description("When the mobile template is known (its component names probed) but has NO FloatingActionButton, a retarget into it is NOT emitted as an unresolvable insert — the header button is dropped with a diagnostic naming the missing target, and its lost action is recorded.")]
+	public void Analyze_Fab_RetargetTargetMissingOnMobileTemplate_Drops() {
+		// Arrange — the mobile template's names are probed (non-empty) but lack FloatingActionButton.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("MainContainer", "crt.GridContainer")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("drop",
+			because: "the FAB target is absent on the mobile template, so an unresolvable insert must not be emitted");
+		order.Reason.Should().Contain("FloatingActionButton",
+			because: "the diagnostic names the missing conversion target");
+		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r => r.ElementName == "OrderBtn",
+			because: "the action lost to a missing target is recorded");
+	}
+
+	[Test]
+	[Description("When the probed mobile template DOES provide a FloatingActionButton (found via the object/array slot collectors, e.g. Scaffold.floatAction), the retarget is accepted and the header button converts.")]
+	public void Analyze_Fab_RetargetTargetPresentOnMobileTemplate_Converts() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert",
+			because: "the retarget target exists on the mobile template, so the conversion proceeds");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the header action lands in the present FAB");
+	}
+
+	[Test]
+	[Description("The mobile-template collectors descend NON-items slots, so a FloatingActionButton the template declares in the Scaffold's floatAction OBJECT slot (not items) is discovered by name — proving a retarget target in an object slot is validated as present.")]
+	public void Analyze_MobileCollectors_DescendObjectSlots_ForFab() {
+		// Arrange — a mobile template viewConfig where the FAB lives under floatAction (an object slot), not items.
+		JsonArray mobileTemplate = JsonNode.Parse("""
+			[ { "name": "Scaffold", "type": "crt.Scaffold",
+				"floatAction": { "name": "FloatingActionButton", "type": "crt.FloatingActionButton" },
+				"items": [ { "name": "MainContainer", "type": "crt.GridContainer" } ] } ]
+			""")!.AsArray();
+
+		// Act
+		IReadOnlyDictionary<string, string> types =
+			WebToMobileAnalysisService.CollectComponentTypesByName(mobileTemplate);
+
+		// Assert
+		types.ContainsKey("FloatingActionButton").Should().BeTrue(
+			because: "the collector descends the floatAction object slot, not only items, so the FAB is discoverable");
+		types["FloatingActionButton"].Should().Be("crt.FloatingActionButton",
+			because: "the discovered slot carries the FAB type");
 	}
 
 	#endregion
