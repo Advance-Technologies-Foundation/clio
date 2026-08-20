@@ -1991,7 +1991,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, resolve lookup primary values, verify records by Id, or inspect selected fields.",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2001,11 +2001,17 @@ internal static class ToolContractCatalog {
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
-					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed.")
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
+					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
+					Field("count", BooleanType, "When true, requests the total number of matching records before top/skip paging. The response returns it as total-count; response count remains the number of records in this page.")
 				],
 				Validators: [
-					new ToolContractValidator(LimitFieldName, "invalid-top", "top",
-						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false.")
+					new ToolContractValidator("top-range", "invalid-top", "top",
+						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false."),
+					new ToolContractValidator("skip-range", "invalid-skip", "skip",
+						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
+					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
+						Context: "When filters is present it must contain at least one condition in all or any. Every condition requires field and exactly one of value or in; unknown group/condition members and unsupported op values are rejected before any Creatio request.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2014,12 +2020,19 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field(CountFieldName, NumberType, "Number of records returned."),
+				Field(CountFieldName, NumberType, "Number of records returned in this page."),
+				Field("total-count", NumberType, "Total records matching the filter before top/skip paging; present when count=true."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
-				Field("next-link", StringType, "OData next-link URL when more records are available.")
+				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool.")
 			),
 			CommonErrorContract,
-			[],
+			[
+				Alias(ParameterScope, FiltersFieldName, "filter", RejectedStatus,
+					"Raw filter strings are not supported. Use the structured 'filters' object shown in this contract."),
+				Alias(ParameterScope, "top", LimitFieldName, RejectedStatus, "Use 'top' instead of 'limit'."),
+				Alias(ParameterScope, "order-by", "orderBy", RejectedStatus, "Use 'order-by' instead of 'orderBy'."),
+				EnvironmentNameParameterAlias()
+			],
 			[],
 			[
 				Example("Resolve a lookup row by display value", new Dictionary<string, object?> {
@@ -2049,7 +2062,9 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					[SelectFieldName] = new[] { "Id", "Name", "AccountId" },
 					["order-by"] = "Name asc",
-					["top"] = 10
+					["top"] = 10,
+					["skip"] = 20,
+					["count"] = true
 				}),
 				Example("Query records where a text field contains a value", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
