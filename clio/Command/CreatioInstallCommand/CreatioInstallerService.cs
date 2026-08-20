@@ -533,7 +533,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 		};
 
-		CancellationTokenSource progressCancellationTokenSource = new();
+		using CancellationTokenSource progressCancellationTokenSource = new();
 		Task progressTask = Task.CompletedTask;
 		if (!Program.IsDebugMode) {
 			progressTask = Task.Run(async () => {
