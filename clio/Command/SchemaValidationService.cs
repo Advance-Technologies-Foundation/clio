@@ -960,40 +960,10 @@ public static class SchemaValidationService
 				continue;
 			}
 			bool blocks = targetsScaffold && ScaffoldNavigationSlots.Contains(slot.Name);
-			// One hostile body must not be able to flood the agent transcript through a single entry: the tools
-			// flatten diagnostics with "; " into one string, so an unbounded per-entry fan-out is an injection
-			// surface as much as a memory one. The cap bounds ADVISORY diagnostics only, and the loop keeps
-			// scanning past it: capping blocking ones would let a body that lists enough advisory slots first
-			// suppress the very defect this rule exists to refuse (raised in review of PR #1124). Slot order is
-			// document order, so that ordering is attacker-chosen.
-			if (!blocks) {
-				if (advisoryReported == MaxMergeSlotDiagnosticsPerEntry) {
-					if (!capNoted) {
-						capNoted = true;
-						result.Warnings.Add(
-							$"{subject} authors child elements in further slots not listed here; only the first "
-							+ $"{MaxMergeSlotDiagnosticsPerEntry} advisory slots are reported.");
-					}
-					continue;
-				}
-				advisoryReported++;
+			if (!blocks && !TryReserveAdvisoryDiagnostic(ref advisoryReported, ref capNoted, subject, result)) {
+				continue;
 			}
-			string slotName = Sanitize(slot.Name);
-			string diagnostic =
-				$"{subject} is a \"{MergeOperationName}\" whose \"{ValuesPropertyName}\" authors child elements in "
-				+ $"\"{slotName}\" (starting with '{Sanitize(childName)}'). Where the target already holds elements "
-				+ "in that slot the differ strips the whole property out of the merge, so the write succeeds and the "
-				+ "children never reach the page (ENG-95429). Where the slot is absent or empty the merge does apply "
-				+ "— clio validates viewConfigDiff against an empty base and cannot tell the two apart. "
-				+ (blocks
-					? "Place the child in a page container instead: its own "
-						+ $"\"{InsertOperationName}\" with \"{PropertyNamePropertyName}\": \"items\" on a container "
-						+ "this page or its template declares, plus a \"layoutConfig\". A button in the Scaffold "
-						+ "navigation slots is not shown on the mobile designer canvas even when it does apply."
-					: "To author into a slot the target genuinely lacks, use the platform's two-step idiom: a "
-						+ $"\"{MergeOperationName}\" that creates the slot as an empty array, then one "
-						+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
-						+ $"\"{InsertOperationName}\" into a property the target does not carry throws.");
+			string diagnostic = DescribeMergeSlotAuthoring(subject, slot.Name, childName, blocks);
 			if (blocks) {
 				result.IsValid = false;
 				result.Errors.Add(diagnostic);
@@ -1002,6 +972,55 @@ public static class SchemaValidationService
 			}
 		}
 	}
+
+	/// <summary>
+	/// Claims room for one ADVISORY merge-slot diagnostic on the current entry, adding the "there were more" note
+	/// once when the bound is reached. Returns <c>false</c> when the caller must skip the slot.
+	/// </summary>
+	/// <remarks>
+	/// Blocking diagnostics are deliberately NOT counted and the caller keeps scanning past the bound. Slots are
+	/// enumerated in document order, so capping blocking ones would let a body that lists enough advisory slots
+	/// first suppress the very defect the rule exists to refuse (raised in review of PR #1124). The bound exists
+	/// because the tools flatten diagnostics with <c>"; "</c> into one string, which makes an unbounded per-entry
+	/// fan-out an injection surface as much as a memory one; a legitimate body never reaches it.
+	/// </remarks>
+	private static bool TryReserveAdvisoryDiagnostic(
+		ref int advisoryReported, ref bool capNoted, string subject, SchemaValidationResult result) {
+		if (advisoryReported < MaxMergeSlotDiagnosticsPerEntry) {
+			advisoryReported++;
+			return true;
+		}
+		if (!capNoted) {
+			capNoted = true;
+			result.Warnings.Add(
+				$"{subject} authors child elements in further slots not listed here; only the first "
+				+ $"{MaxMergeSlotDiagnosticsPerEntry} advisory slots are reported.");
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// Builds the merge-slot diagnostic. Both outcomes of the mechanism are stated because clio cannot tell which
+	/// one a given body is in, and the remedy differs by severity: a Scaffold navigation slot is never the right
+	/// destination, while any other slot may simply not exist on the target yet.
+	/// </summary>
+	private static string DescribeMergeSlotAuthoring(
+		string subject, string rawSlotName, string childName, bool blocks) =>
+		$"{subject} is a \"{MergeOperationName}\" whose \"{ValuesPropertyName}\" authors child elements in "
+		+ $"\"{Sanitize(rawSlotName)}\" (starting with '{Sanitize(childName)}'). Where the target already holds "
+		+ "elements in that slot the differ strips the whole property out of the merge, so the write succeeds and "
+		+ "the children never reach the page (ENG-95429). Where the slot is absent or empty the merge does apply "
+		+ "— clio validates viewConfigDiff against an empty base and cannot tell the two apart. "
+		+ (blocks
+			? "Place the child in a page container instead: its own "
+				+ $"\"{InsertOperationName}\" with \"{PropertyNamePropertyName}\": \"items\" on a container "
+				+ "this page or its template declares, plus a \"layoutConfig\". A button in the Scaffold "
+				+ "navigation slots is not shown on the mobile designer canvas even when it does apply."
+			: "To author into a slot the target genuinely lacks, use the platform's two-step idiom: a "
+				+ $"\"{MergeOperationName}\" that creates the slot as an empty array, then one "
+				+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
+				+ $"\"{InsertOperationName}\" into a property the target does not carry throws.");
+
 
 	/// <summary>
 	/// Whether a merged-in property value authors view elements, and if so the alias of the first one — the entry is
