@@ -8807,6 +8807,61 @@ Discovery: the e2e used the id as the css-class-name as well (`["id"] = themeId,
 Files: clio/Theming/ThemeParameterValidator.cs, clio/Command/Theming/{CreateThemeCommand,UpdateThemeCommand,DeleteThemeCommand}.cs, clio/Command/McpServer/Tools/{CreateThemeTool,UpdateThemeTool,DeleteThemeTool}.cs, clio/docs/commands/{create,update,delete}-theme.md, clio/help/en/{create,update,delete}-theme.txt, clio.tests/Theming/ThemeParameterValidatorTests.cs, clio.tests/Command/{CreateThemeCommandTests,UpdateThemeCommandTests,DeleteThemeCommandTests,ThemeRequestBuilderTests}.cs, clio.mcp.e2e/ThemingSandboxE2ETests.cs
 Impact: `~Theme|~HelpArtifact|~CommandHelp|~Wiki` 430 green; full unit suite 8983 passed / 20 failed / 42 skipped against a clean-master baseline of 8980 / 20 / 42 — the same 20 pre-existing macOS-platform failures (Windows paths, IIS, NetFramework HTTPS), so three net new tests and no regression. Generalisation: when an e2e goes red with a server-side deserialization message, diff the server repo before touching the test — the commit that broke it may say "breaks backward compatibility" in its own message, and the client-side contract text (help, docs, MCP `[Description]`) is part of what has to move with it.
 
+## 2026-08-18 14:20 – Fix flaky application progress-marker e2e assertions (issue #1103)
+Context: Three `clio.mcp.e2e` application tests painted every clio PR red on the shared TeamCity stand
+while trunk stayed green; all three are muted in `Team_Atf` with `resolution=whenFixed`.
+Decision: Fix the CLIENT side of the two progress tests rather than the server. Added
+`MessageCollectingProgress.WaitForMessagesAsync` / `WaitForCountAsync` — the typed-sink counterpart of the
+existing `McpServerSession.WaitForCapturedProgressAsync` — and replaced the immediate
+`progress.Count` / `progress.Messages.Should().Contain(...)` assertions with a bounded wait. Assert
+create-app success BEFORE expecting its markers, and moved the create precondition in the sync-schemas
+test to immediately after the create so the real create error is reported instead of a late timeout.
+Discovery: (1) The root cause is stated in the repo already — `McpServerSession.cs` documents that "tool
+completion and notification dispatch use independent SDK continuations", so a completed `tools/call` does
+NOT mean the sink has drained. (2) `McpProgressHeartbeat.PumpChannelAsync` delays BEFORE its first beat,
+so a heartbeat is only guaranteed when work outlasts the interval — at the test's forced 0.05 s override a
+backend round-trip always qualifies, which is why a client-side wait is the complete fix for the keep-alive
+test and no immediate-first-beat change is needed. (3) The stage markers are pushed as each phase runs, so
+a create that dies early legitimately never streams the later markers — the old test blamed the progress
+path for what was an environment failure (same finding as PR #1083 for sync-schemas).
+Discovery: local macOS baseline for these two fixtures is 14 failed / 13 skipped on a clean master
+worktree (no sandbox configured — `TestConfiguration.EnsureSandboxIsConfigured` fails); the branch matches
+it exactly, so local runs prove no regression but cannot exercise the sandbox tests.
+Files: clio.mcp.e2e/Support/Mcp/MessageCollectingProgress.cs,
+clio.mcp.e2e/MessageCollectingProgressWaitTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs,
+clio.mcp.e2e/ApplicationSectionToolE2ETests.cs
+Impact: Gives the e2e project a reusable bounded wait for typed progress assertions — any future
+notifications/progress test should use it instead of asserting on the post-call snapshot. Also records that
+a muted `whenFixed` test reports a GREEN build whether or not a fix works, so validating a flake fix means
+reading per-test status, not build status.
+
+## 2026-08-18 15:55 – e2e job DOES isolate the stand per build (corrects issue #1103)
+Context: Issue #1103 blamed the flaky application e2e tests on 10+ concurrent builds contending for one
+shared Creatio sandbox, and proposed serialising the job or provisioning an isolated stand per build.
+Alex asked why that regressed, since a per-run site was the original design.
+Discovery: it did NOT regress — isolation is in place and working. `teamcity api
+/app/rest/builds/id:<id>/resulting-properties` on the three builds cited in the issue shows
+`DeployedUrl=http://ts1-agent<N>:88/studioenu_<buildId>_<MMDD>`, matching `DeployedDatabaseName` and
+`ApplicationPoolName`, with `DeployCreatioBuild=true`, `env.ApplicationAlreadyDeployed=False`,
+`PublishServerName=%env.COMPUTERNAME%`, `UseSharingDBMS/UseSharingIIS=false`. Concurrent builds were each
+on a different agent (ts1-agent06/18/27/37/45/51/54/60).
+Discovery: what makes this LOOK like a shared stand — (a) at buildType level `DeployedUrl`,
+`DeployedDatabaseName` and `BuildPath` are EMPTY (auto-derived per run), so reading
+`/app/rest/buildTypes/<id>/parameters` suggests nothing is configured; you must read a build's
+`resulting-properties`. (b) `env.McpE2E__Sandbox__EnvironmentName=dev` is a constant, but it is only the
+clio ENV NAME, registered against the per-build URL.
+Discovery: intra-build contention is ruled out too — `clio.mcp.e2e.runsettings` sets
+`NumberOfTestWorkers=2`, but only 25 of 135 fixtures are `[Parallelizable]` and both application fixtures
+are `[NonParallelizable]`.
+Discovery: consequently `ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync` is UNEXPLAINED —
+build 15893413 shows an ~11.2s `create-app` failure with `found False` and no error text, on a fresh
+dedicated stand. Post-deploy warm-up is a guess, not verified.
+Files: (no code change) — issue #1103 body + comment, PR #1104 body, test comments in
+clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionToolE2ETests.cs
+Impact: Do NOT attribute a clio.mcp.e2e failure to other builds on the stand, and do not propose job
+serialisation for it. Read `resulting-properties` of a build, never the buildType `/parameters`, when
+checking how a TeamCity job provisions its environment.
+
 ## 2026-08-18 14:10 – ENG-95429 round-3 review: a partial crash fix and a test that could not see it
 Context: Three parallel reviewers over the full PR #1086 diff, after the slot rule and the SonarCloud dedup landed.
 Decision: Applied all Medium findings. The slot rule now reads the button type from `values.type` ONLY (not the lenient `GetMobileEntryType`) and matches the operation case-sensitively — that single change removed a double-diagnostic on the canonical ENG-95429 body, a whitespace disagreement between the two rules, and a pair of contradictory warnings on a mis-cased operation. Removed the concrete `MainContainer` from the remedy text: an agent obeying it on a page without that container gets an insert the differ silently drops — clio's own advice reproducing the failure class the ticket is about. Routed every echoed body value through the file's existing `Truncate` + control-character stripping (I had REJECTED truncation in round 1 on "no injection sink" grounds; the round-3 argument is different and correct — the file already ships the convention with a written rationale about the MCP transcript and the flattened `"; "` join).
@@ -8854,6 +8909,95 @@ Discovery (from d-krestov's CHANGES_REQUESTED review, all four fixed): (1) an ea
 Files: clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs
 Impact: `~PageBodyAstLinter` 38 green (added shorthand-method-warns, bracket-access-no-warn, bracket-key-specificity-warns, incidental-literal regression lock, condition-only-warns; removed two condition tests, retargeted the mixed-array test's scoped entry to an in-body guard); `Category=Unit&Module=McpServer` 3463 passed / 1 skipped; new e2e `PageValidateTool_Should_Warn_On_Unscoped_AttributeChange_Handler_Write` 1/1 (net10). SonarCloud PR #1107: Quality Gate OK, 0 bugs / 0 vulns / 0 smells. Generalisation: a linter suppressor must scope on a signal the platform actually honors — before teaching a rule to stay quiet on a config key, prove the key exists in the shipped guidance and that the runtime respects it, or the rule advises a footgun while going blind to the exact defect it targets; and anchor a token-based suppressor to its real syntactic position (a computed member access), never a bare literal match, or an incidental occurrence silences it.
 
+## 2026-08-19 16:20 – Login-failure diagnostics for GH #1106 flaky e2e
+Context: GitHub issue #1106 items 3/4 — clio MCP e2e `create-app-section` / `update-app-section`
+intermittently fail with `Unauthorized ***** for [uri]`. Prior pass proposed no fix because the
+concurrent-login theory could not be confirmed from static analysis.
+Decision: ship instrumentation only (operator's call). Decorate a rejected login with timing +
+concurrency context so the next TeamCity reproduction proves or kills the theory. No behavioral
+change; `SectionCreateSerializationGuard` scope deliberately left alone (ADR-level).
+Discovery (three facts, all verified, two of them by decompiling creatio.client 1.0.38):
+1. `CreatioClient.Login()` throws `UnauthorizedAccessException("Unauthorized {user} for {url}")` when
+   the login response body contains `"Code":1` — so the e2e failures are a SERVER-side login
+   rejection, not a gap in `ReauthExecutor`. It also assigns `_authCookie = new CookieContainer()`
+   BEFORE the request, so a failed login destroys an existing valid session.
+2. `CreatioClient.InitAuthCookie()` logs in IMPLICITLY from inside every request method when the
+   client has no auth cookie yet. This is the dominant path in the MCP surface (every tool call
+   builds its own `IApplicationClient`), and it is invisible to adapter-level `Login()` wrapping.
+   Found only by a runtime check against a fake Creatio — static reading had missed it.
+3. `SurfacedExceptionMessage.Resolve` (MCP boundary) and `Exception.GetBaseException()` (application
+   -section commands) BOTH reduce to the inner-most exception. A wrapper that keeps the original as
+   its InnerException therefore has its message silently discarded — so `CreatioLoginFailedException`
+   is deliberately inner-less, with the original in `Exception.Data`.
+Runtime verification: local fake Creatio (returns `"Code":1` on the login URL; login-page HTML on
+data URLs) reproduced both shapes through the real `CreatioClient` and showed the decorated message
+for `kind=implicit` and `kind=reauth`.
+Files: clio/Common/LoginDiagnostics.cs, clio/Common/ILoginDiagnostics.cs,
+clio/Common/LoginAttemptKind.cs, clio/Common/CreatioLoginFailedException.cs,
+clio/Common/CreatioClientAdapter.cs, clio/BindingsModule.cs,
+clio.tests/Common/LoginDiagnosticsTests.cs
+Impact: any future "Unauthorized … for …" in CI now carries kind / client id / ordinal /
+in-flight-logins / in-flight-requests / timestamps, so the concurrent-login question is answerable
+from the log alone. Reusable pattern: when a diagnostic must survive to an MCP caller, the carrying
+exception must be the inner-most one.
+
+## 2026-08-19 – GH #1106 login diagnostics: review round (blast radius of the decoration)
+Context: PR #1117 review (m-dymytrova) requested changes with two Blockers sharing one root cause —
+the recorder replaced the surfaced exception type on paths that were never in scope. Every claim was
+re-verified against the merged tree before fixing; all seven findings were warranted except the
+process-wide-counter one, which is answered instead of changed.
+Decision (two steps, both required, in this order):
+(a) `LoginDiagnostics.Track` no longer catches `Exception` unconditionally — it now uses the same
+    login-rejection predicate as `TrackRequest`, so a `WebException` / `TimeoutException` /
+    `OperationCanceledException` / fatal type propagates as the SAME instance. That restores
+    `RemoteCommand.Login`'s `catch (WebException) => return 1` (a control-flow change, not a message
+    change — the premise "no CLI command calls adapter.Login() explicitly" was wrong: there are seven
+    production callers), `BaseDataContextCommand`'s 404 arm, `ExceptionReadableMessageExtension`'s
+    InnerException walk, `GetCreatioInfoCommand.IsRecoverable`'s fatal-type blocklist, and
+    `McpToolErrorFilter`'s deliberate `OperationCanceledException` rethrow (ENG-93373). It also removes
+    the `elapsed-ms=401` substring-classifier interaction the PR body had flagged as Low.
+(b) Only THEN `CreatioLoginFailedException : UnauthorizedAccessException`. Deriving before narrowing
+    would have reclassified a login timeout as "credentials refused" at `ServerReadinessWaiter`,
+    killing the warm-up tolerance its comment protects. With (a) in place everything decorated really
+    is a credential rejection, so the four classifiers that key on the type keep matching:
+    `ServerReadinessWaiter` (AuthenticationRejected → fail fast instead of burning the readiness budget
+    on further rejected logins, each of which destroys a live session), `GetCreatioInfoCommand`,
+    `SchemaNamePrefixTool` (an MCP-VISIBLE result-content change — the "MCP reviewed, no update
+    required" claim only becomes true again with this step) and `SysSettingsCommand.CategorizeError`.
+    Deriving preserves the inner-less invariant, so `GetBaseException().Message` and
+    `SurfacedExceptionMessage.Resolve` still surface the context.
+Discovery: the filter was exact-type + prefix with no chain unwrapping, while this repo documents the
+opposite arrival shape for this very client — `Creatio.Client` runs transport via `Task.Result`, so
+faults arrive wrapped in `AggregateException` (`EntitySchemaPublishHelper`,
+`TransientNetworkFailureClassifier`, `GetCreatioInfoCommand`, `ApplicationSectionCreateCommand`,
+`UserThemeApplier` all unwrap it). All 20 original tests threw BARE, so the suite could not tell
+"the filter matches in production" from "the feature never fires". New
+`TryFindLoginRejection(Exception, out UnauthorizedAccessException)` flattens and walks; the message is
+built from the FOUND rejection (an `AggregateException`'s own "One or more errors occurred." would
+have replaced the primary server signal) and the wrapper is recorded as `wrapped-in=`.
+Also: `ILoginDiagnostics` got an injection seam (an extra internal ctor where the reauth executor MAY
+be null — the only way to reach the `Reauthentication` closure the DEFAULT executor owns), the
+eight-fold `_reauthExecutor.Execute(() => _loginDiagnostics.TrackRequest(...))` composition collapsed
+into one `ExecuteRequest` helper (non-generic: the session-expired predicate inspects a response body,
+so it is string-only), a `void TrackRequest(Action)` overload removed `DownloadFile`'s `return null`
+contortion, and the `Reauthentication` XML doc now records that its `in-flight-requests` excludes the
+request that triggered the re-login (`ReauthExecutor` runs the request to completion first, so
+`0/0` means "no OTHER traffic").
+Not changed: the process-wide counters stay in the caller-facing message. Scoping them per tenant is
+not reachable without new plumbing — the adapter's private ctor holds only a `Lazy<CreatioClient>`,
+and the bearer/passthrough construction paths carry no credential identity at all — and moving them to
+`Exception.Data` only would defeat the PR's whole goal ("diagnosable from CI output alone"). Left as
+an open call.
+Files: clio/Common/LoginDiagnostics.cs, clio/Common/ILoginDiagnostics.cs,
+clio/Common/LoginAttemptKind.cs, clio/Common/CreatioLoginFailedException.cs,
+clio/Common/CreatioClientAdapter.cs, clio.tests/Common/LoginDiagnosticsTests.cs,
+clio.tests/Common/CreatioClientAdapterLoginDiagnosticsTests.cs
+Impact: `~LoginDiagnostics|~CreatioClientAdapter` 46/46; the classifier-adjacent suites
+(`~ServerReadiness|~GetInfoCommand|~SchemaNamePrefix|~SysSettings|~Reauth|~McpToolError|~ApplicationClientFactory`)
+305/305; full `Category=Unit` 9103 passed with the same 20 pre-existing macOS-only failures
+(9085 → 9103). Generalisation: an exception decorator's blast radius is the set of `catch` clauses that
+key on the type it replaces — narrow the decoration to the exact shape it claims to describe, then
+derive from the type the callers already classify, so the wrapper adds information without removing any.
 
 ## 2026-08-19 15:10 – ENG-95429 third silent shape: merge that authors children in a slot
 Context: a tester found ValidateMobileButtonSlotPlacement never fires on the body the agent actually produced — it matches operation=="insert" and the agent used "merge" on Scaffold with the button nested in values.actions[].
