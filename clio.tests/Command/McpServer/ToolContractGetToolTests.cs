@@ -2618,6 +2618,17 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "parameters"
 				&& field.Description.Contains("valueSource", StringComparison.Ordinal),
 			because: "the parameters field must explain the valueSource probe annotation so an agent fills environment-dependent values from the named probe, never from memory");
+		ToolContractField baseParameters = contract.OutputContract.Fields.Single(field => field.Name == "baseParameters");
+		baseParameters.Description.Should().Contain("Current BaseRequest fields and producer metadata",
+			because: "the contract must describe a producer-driven field surface instead of a fixed BaseRequest list");
+		baseParameters.Description.Should().Contain("deprecated/deprecationReason",
+			because: "the contract must tell agents to honor producer deprecation metadata");
+		baseParameters.Description.Should().Contain("honor that guidance",
+			because: "publishing deprecation keys is insufficient unless the contract tells agents to act on them");
+		baseParameters.Description.Should().Contain("must NEVER be passed via params",
+			because: "producer-owned BaseRequest fields are not part of the authorable request surface");
+		baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
+			because: "the contract prose must not restore a fixed list of known producer fields");
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
 		contract.AntiPatterns!.Should().Contain(pattern =>

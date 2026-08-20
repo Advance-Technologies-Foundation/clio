@@ -9124,3 +9124,17 @@ Decision: Bind optional JSON values to locals before asserting them, pin the com
 Discovery: FluentAssertions cannot execute after a null-conditional chain short-circuits; a local null value is required so `Should().Be(...)` actually fails.
 Files: clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md
 Impact: removing the builder-to-config link or adding another project setup entry now fails the regression, and fresh-scaffold behavior is explicit to users.
+
+## 2026-08-21 01:20 – GH #1139 validate custom output payload binding
+Context: Issue #1139 asked how a Freedom UI remote-module `@CrtOutput` payload reaches a request handler and reported possible duplicate invocation.
+Decision: Publish the supported `@event.detail` request-parameter binding in clio-knowledge and make Clio's request catalog describe BaseRequest fields as producer-defined metadata rather than a fixed list.
+Discovery: Creatio UI source at `e8c0882bea89923e493c8476f1ecc177c7c22bd1` resolves nested `@event` expressions, passes Angular Elements output payloads through `event.detail`, and marks `$initialEvent` deprecated in favor of event binding expressions. One configured output creates one request binding, so duplicate invocation remains unconfirmed without a reproducible page/component/version.
+Files: clio/Command/McpServer/Tools/RequestInfoTool.cs, clio/Command/McpServer/Tools/RequestInfoCatalog.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/RequestInfoToolTests.cs, clio.mcp.e2e/RequestInfoToolE2ETests.cs, clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json
+Impact: Agents receive the current producer-owned BaseRequest surface including deprecation metadata, while the canonical guidance teaches payload binding without relying on deprecated `$initialEvent` access.
+
+## 2026-08-21 01:31 – GH #1139 close review coverage gaps
+Context: The comprehensive pre-PR review found that tests covered the curated tool contract but not the native `tools/list` description, and the first guidance draft retained an explicitly excluded generic payload guard.
+Decision: Pin the exact producer-driven wording on both MCP discovery surfaces, assert `$initialEvent` metadata from the checked-in producer snapshot, add Allure steps to the changed E2E paths, and remove the unproven guard from clio-knowledge.
+Discovery: Synthetic request-registry fixtures alone cannot protect the live producer evidence boundary; the pinned snapshot must assert the deprecation flag and reason directly.
+Files: clio.tests/Command/McpServer/RequestRegistrySnapshotTests.cs, clio.tests/Command/McpServer/RequestInfoToolTests.cs, clio.mcp.e2e/RequestInfoToolE2ETests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs
+Impact: A stale fixed BaseRequest list now fails unit and wire-level discovery tests, and the published guidance contains only behavior established by Creatio source.
