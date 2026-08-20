@@ -878,6 +878,31 @@ public static class WebToMobileAnalysisService {
 		return null;
 	}
 
+	/// <summary>
+	/// The mobile type a template-group entry declares for a node it matches: the first
+	/// <c>viewConfigTemplates[].value.type</c> of the <c>components</c> entry whose <c>filters</c> match. This is
+	/// how a grid — whose entry carries no web/mobile pair — resolves to <c>crt.List</c>, the same
+	/// <c>value.type</c> that then gates the template in <see cref="ApplyConversionTemplates"/>. Null when no
+	/// template-group entry matches.
+	/// </summary>
+	private static string ResolveTemplateTargetType(WebToMobilePageConversionRules rules, JObject node) {
+		if (rules?.Components is null) {
+			return null;
+		}
+		foreach (ComponentEquivalenceRule entry in rules.Components) {
+			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates || !MatchesAnyFilter(entry.Filters, node)) {
+				continue;
+			}
+			foreach (ViewConfigTemplateRule template in templates) {
+				if (template.Value is { } value && value.ValueKind == JsonValueKind.Object
+					&& value.TryGetProperty("type", out JsonElement type) && type.ValueKind == JsonValueKind.String) {
+					return type.GetString();
+				}
+			}
+		}
+		return null;
+	}
+
 	private static ComponentMappingCategory ParseCategory(string category) =>
 		Enum.TryParse(category, ignoreCase: true, out ComponentMappingCategory parsed)
 			? parsed
@@ -1380,6 +1405,9 @@ public static class WebToMobileAnalysisService {
 	private static readonly Regex ResourceStringsRefPattern =
 		new(@"\$Resources\.Strings\.([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled, RegexTimeout);
 
+	/// <summary>The parent slot every converted element is inserted into.</summary>
+	private const string ItemsPropertyName = "items";
+
 	/// <summary>
 	/// Every viewModelConfig attribute a node references — both plain <c>$Attr</c> bindings AND
 	/// <c>$Resources.Strings.&lt;attr&gt;</c> label/caption references (the platform auto-provides that
@@ -1753,12 +1781,17 @@ public static class WebToMobileAnalysisService {
 				//    inserts into the mobile Tabs as a new tab; a positional sibling inserts into the mobile
 				//    anchor's parent (± index) instead of the walk parent.
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
+				// Resolved BEFORE the values are built: a view-config template may ECHO the placement so the
+				// shape it declares can be read in place, and echoing needs the value the entry will carry.
+				string containerParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
+					containerParent, ItemsPropertyName);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
-					ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
+					ParentName = containerParent, PropertyName = ItemsPropertyName,
 					Index = isPositional ? place.Index : null,
 					CaptionResource = containerCaption,
-					MobileValues = BuildMobileValues(ctx, node, name, type, containerCaption),
+					MobileValues = containerValues,
 					Reason = isPositional
 						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
 						: "container; mobile-supported"
@@ -1776,21 +1809,31 @@ public static class WebToMobileAnalysisService {
 			// other leaf. Dropping it here used to remove whole detail sections — and, because emptiness
 			// cascades, their wrapper containers with them.
 			bool leafSupported = !string.IsNullOrEmpty(type) && ctx.MobileTypes.Contains(type);
-			string leafMobileType = leafSupported ? type : FindRule(ctx.Rules, type)?.Mobile?.FirstOrDefault();
+			// Conversion templates have PRIORITY: a component matched by a components[].filters group is converted
+			// via its template (whose value.type is the mobile type) BEFORE the registry-support check — the
+			// template path then builds the values inside BuildMobileValues. Only a component with no matching
+			// template falls back: kept as-is when the mobile registry supports it, else mapped by a
+			// type-equivalence rule (rule.Mobile[0], e.g. crt.Checkbox→crt.Toggle), else dropped.
+			string leafMobileType = ResolveTemplateTargetType(ctx.Rules, node)
+				?? (leafSupported ? type : FindRule(ctx.Rules, type)?.Mobile?.FirstOrDefault());
 			if (string.IsNullOrEmpty(leafMobileType)) {
 				ctx.Out.Add(Drop(name, type, $"type '{type}' not in mobile registry"));
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
+			string leafParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
+				leafParent, ItemsPropertyName);
+			string leafReason = isPositional
+				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+				: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
-				ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
+				ParentName = leafParent, PropertyName = ItemsPropertyName,
 				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
-				MobileValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption),
-				Reason = isPositional
-					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-					: "field/leaf; mobile-supported"
+				MobileValues = leafValues,
+				Reason = leafReason
 			});
 		}
 	}
@@ -2127,6 +2170,17 @@ public static class WebToMobileAnalysisService {
 	};
 
 	/// <summary>
+	/// The keys held back when a <c>preserveSourceProperties</c> template copies the whole source node: only the
+	/// element's identity (<c>name</c>) and its resolved <c>type</c> (set from the template's <c>value.type</c>).
+	/// Unlike <see cref="ExcludedSourceProps"/> this KEEPS the value binding (<c>control</c>/<c>value</c>), so a
+	/// like-for-like field conversion (crt.Checkbox → crt.Toggle) carries its binding across instead of leaving it
+	/// to the caller — which is the whole point of opting a template into the full copy.
+	/// </summary>
+	private static readonly HashSet<string> PreserveExcludedProps = new(StringComparer.OrdinalIgnoreCase) {
+		"name", "type"
+	};
+
+	/// <summary>
 	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule: carry
 	/// EVERY source property verbatim, dropping only the element identity/type and the value binding (see
 	/// <see cref="ExcludedSourceProps"/>) and event bindings (converted separately). A property is NOT dropped
@@ -2138,30 +2192,54 @@ public static class WebToMobileAnalysisService {
 	/// (e.g. crt.List <c>itemLayout</c> array→object). <c>type</c> is set and, for field components,
 	/// <c>label</c> is synthesized. Returns null for an unknown mobile type.
 	/// </summary>
-	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName, string mobileType, CaptionResource caption) {
+	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName,
+		string mobileType, CaptionResource caption, string parentName, string propertyName) {
 		if (string.IsNullOrEmpty(mobileType)) {
 			return null;
 		}
 		var values = new JObject { ["type"] = mobileType };
-		foreach (JProperty prop in node.Properties()) {
-			// `items` as an ARRAY is the child view-element collection — structural, emitted by the tree
-			// walk, not a value. `items` as a STRING is a real collection binding (e.g. "$Attr") and is
-			// carried like any other property below.
-			if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
-				continue;
+		var roots = new TemplateRoots(
+			new JObject { ["name"] = mobileName, ["parentName"] = parentName, ["propertyName"] = propertyName },
+			node);
+		// The conversion templates that govern this element (matched by filters + declared target type + placement
+		// echo). Resolved up front because whether — and how much of — the source is carried depends on them.
+		IReadOnlyList<ViewConfigTemplateRule> templates = MatchingConversionTemplates(ctx, node, mobileType, roots);
+		bool hasTemplate = templates.Count > 0;
+		bool preserve = templates.Any(t => t.PreserveSourceProperties);
+		// Carry the source properties when there is NO template (a registry-supported leaf or a type-equivalence
+		// rule — the mobile shape is the source shape retyped, and the caller adds the value binding), OR when a
+		// template opts into the full copy with preserveSourceProperties (keeping every source property except the
+		// ones the template names — the value binding included). An AUTHORITATIVE template (present, no flag)
+		// carries nothing here: its values are formed exclusively from what it declares. Either way layoutConfig is
+		// copied just below, since it is layout placement rather than a component property.
+		if (!hasTemplate || preserve) {
+			HashSet<string> excluded = preserve ? PreserveExcludedProps : ExcludedSourceProps;
+			foreach (JProperty prop in node.Properties()) {
+				// `items` as an ARRAY is the child view-element collection — structural, emitted by the tree
+				// walk, not a value. `items` as a STRING is a real collection binding (e.g. "$Attr") and is
+				// carried like any other property below.
+				if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+					continue;
+				}
+				if (excluded.Contains(prop.Name)) {
+					continue;
+				}
+				// Event bindings (clicked / valueChange / updated …) carry a request — they are converted
+				// deliberately by ProcessEventBindings below, so skip them here.
+				if (IsEventBinding(prop.Value)) {
+					continue;
+				}
+				// Carry the property verbatim. Do NOT prune against the mobile registry — while it is incomplete
+				// (ENG-91859) a registry-absent property is treated as supported, not web-only. CoerceToDeclaredShape
+				// only reshapes (object vs array) a property the registry DOES describe; otherwise it is a no-op.
+				values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
 			}
-			if (ExcludedSourceProps.Contains(prop.Name)) {
-				continue;
-			}
-			// Event bindings (clicked / valueChange / updated …) carry a request — they are converted
-			// deliberately by ProcessEventBindings below, so skip them here.
-			if (IsEventBinding(prop.Value)) {
-				continue;
-			}
-			// Carry the property verbatim. Do NOT prune against the mobile registry — while it is incomplete
-			// (ENG-91859) a registry-absent property is treated as supported, not web-only. CoerceToDeclaredShape
-			// only reshapes (object vs array) a property the registry DOES describe; otherwise it is a no-op.
-			values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+		}
+		// layoutConfig is layout PLACEMENT, not a component property — always copy it (even an authoritative
+		// template governs the component's values, not where it sits). The adaptive pass may later fold it into a
+		// per-breakpoint form; a template that explicitly names layoutConfig still wins via the overlay below.
+		if (values["layoutConfig"] is null && node["layoutConfig"] is JObject sourceLayout) {
+			values["layoutConfig"] = sourceLayout.DeepClone();
 		}
 		// Re-key the carried caption token ONLY when the source references a key different from this element's
 		// unique key (the collision case, e.g. OverviewTab carrying GeneralInfoTab_caption): emit a plain
@@ -2173,6 +2251,16 @@ public static class WebToMobileAnalysisService {
 				values["caption"] = "#ResourceString(" + caption.Key + ")#";
 			}
 		}
+		// Apply the conversion templates that govern this element: authoritatively (over just its type +
+		// layoutConfig) by default, or laid over the copied source when preserveSourceProperties. A template
+		// declares the mobile structure the web node has no counterpart for — e.g. a grid → list row
+		// (ENG-95046) — or simply the target type for a like-for-like field conversion.
+		foreach (ViewConfigTemplateRule template in templates) {
+			RenderOne(ctx, template, values, roots);
+		}
+		// A converted element still CARRIES its source properties, including ones the mobile type does not
+		// declare. Removing them per-rule would be a second pruning mechanism beside the registry one, and the
+		// registry is the right owner once ENG-91859 makes it complete.
 		ProcessEventBindings(ctx, node, values, mobileName);
 		// Synthesize a field label ONLY as a fallback — when the source did not carry one. Most fields carry
 		// their own web `label` verbatim above (e.g. "$Resources.Strings.<attribute>", which auto-resolves to
@@ -2189,6 +2277,379 @@ public static class WebToMobileAnalysisService {
 		} catch (System.Text.Json.JsonException) {
 			return null;
 		}
+	}
+
+
+	/// <summary>
+	/// A <c>{{ … }}</c> reference. The captured path is whatever sits between the braces, because it is JSON
+	/// PATH — indexes and slices (<c>columns[0].code</c>, <c>columns[1:]</c>) are part of it. An earlier version
+	/// spelled out an identifier grammar, which silently failed to MATCH a bracketed path at all and shipped the
+	/// literal <c>{{ … }}</c> into the page as a value. Validating the path here would duplicate the JSON
+	/// library's own parser; an unresolvable one already drops its key.
+	/// </summary>
+	private static readonly Regex TemplateTokenPattern =
+		new(@"\{\{\s*([^{}]+?)\s*\}\}", RegexOptions.Compiled, RegexTimeout);
+
+	/// <summary>
+	/// The conversion templates that govern this element: from every <c>components</c> entry whose
+	/// <c>filters</c> match the node, the <see cref="ViewConfigTemplateRule"/>s whose declared <c>value.type</c>
+	/// equals the resolved mobile type and whose placement echoes the converter's own.
+	/// </summary>
+	/// <remarks>
+	/// Because templates have priority in leaf resolution (<see cref="ResolveTemplateTargetType"/> runs before
+	/// the registry check), the resolved type for a matched component IS the template's <c>value.type</c>, so the
+	/// type gate passes; the filters narrow which source elements an entry applies to, they do not authorize. A
+	/// template declares the mobile structure the web node has no counterpart for — e.g. a grid → list
+	/// <c>crt.ListItem</c> under <c>itemLayout</c> — and, for a field conversion, the full target shape. Its
+	/// placement is READ-ONLY: a template whose <c>parentName</c>/<c>propertyName</c> is anything but the
+	/// converter's own value is skipped WHOLE (<see cref="EchoesItsOwnPlacement"/>), since honouring the value
+	/// while ignoring where it asked to go would ship a shape the rules file believes it placed elsewhere.
+	/// </remarks>
+	private static IReadOnlyList<ViewConfigTemplateRule> MatchingConversionTemplates(
+		ElementMapContext ctx, JObject node, string mobileType, TemplateRoots roots) {
+		if (ctx.Rules?.Components is not { Count: > 0 } components) {
+			return [];
+		}
+		var matches = new List<ViewConfigTemplateRule>();
+		foreach (ComponentEquivalenceRule entry in components) {
+			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates || !MatchesAnyFilter(entry.Filters, node)) {
+				continue;
+			}
+			foreach (ViewConfigTemplateRule template in templates) {
+				if (DeclaresTargetType(template.Value, mobileType) && EchoesItsOwnPlacement(template, roots)) {
+					matches.Add(template);
+				}
+			}
+		}
+		return matches;
+	}
+
+	private static void RenderOne(ElementMapContext ctx, ViewConfigTemplateRule template,
+		JObject values, TemplateRoots roots) {
+		// The template resolves source.* straight off the web node (roots.Source): its positional paths —
+		// source.columns[0], source.columns[1:] — address the node's own arrays directly. There is no
+		// projection step and nothing to validate: a column code IS a real attribute name in the source
+		// config, so an entry never needs dropping, reordering, or repairing before the template sees it.
+		if (RenderTemplateToken(JToken.Parse(template.Value!.Value.GetRawText()), roots) is not JObject rendered) {
+			return;
+		}
+		// Real authored content wins over anything synthesized. Only the STRUCTURE a template introduces counts —
+		// a rendered value that is an object declaring its own type, i.e. the thing the web node had no
+		// counterpart for. Comparing every key instead would be wrong: the generic copy already carried `items`
+		// and the rest, so any template naming them would look "authored" and never apply at all.
+		if (rendered.Properties().Any(p => p.Value is JObject nested
+			&& nested["type"] is not null && values[p.Name] is not null)) {
+			return;
+		}
+		// The element's own resolved type, which the values already carry as their first key — the shape guard
+		// reshapes against the component the value is landing on, not against the one it came from.
+		OverlayRenderedValues(ctx, values, values["type"]?.ToString(), rendered);
+		ValidateIntroducedStructure(ctx, values, rendered);
+	}
+
+	/// <summary>
+	/// Validates the structure a template introduced against the mobile registry. Located by the type the
+	/// template DECLARES for it, so nothing has to say where the structure lands.
+	/// </summary>
+	/// <remarks>
+	/// It catches the one failure nothing else sees — a scalar the registry declares emitted in the wrong
+	/// shape, e.g. a row title written as the <c>{ "value": … }</c> BODY form, which RENDERS and leaves only
+	/// the Title column empty (ENG-95046).
+	/// </remarks>
+	private static void ValidateIntroducedStructure(ElementMapContext ctx, JObject values, JObject rendered) {
+		foreach (JProperty prop in rendered.Properties()) {
+			if (prop.Value is not JObject introduced || introduced["type"]?.ToString() is not { Length: > 0 } type) {
+				continue;
+			}
+			if (values[prop.Name] is JObject shipped) {
+				DropValuesContradictingDeclaredScalars(ctx, type, shipped);
+			}
+			return;
+		}
+	}
+
+	/// <summary>
+	/// True when the template's own <c>value.type</c> is the mobile type the element resolved to. This is what
+	/// gates a template: the mapping decides WHICH mobile type an element becomes, the template decides what
+	/// that type's values look like, and neither needs a second declaration tying them together.
+	/// </summary>
+	private static bool DeclaresTargetType(JsonElement? declared, string mobileType) =>
+		declared is { } value && !string.IsNullOrWhiteSpace(mobileType)
+		&& value.ValueKind == JsonValueKind.Object
+		&& value.TryGetProperty("type", out JsonElement type)
+		&& type.ValueKind == JsonValueKind.String
+		&& string.Equals(type.GetString(), mobileType, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>The roots a view-config template resolves its paths against, for ONE converted element.</summary>
+	/// <param name="Diff">
+	/// The operation being produced — <c>name</c>, <c>parentName</c>, <c>propertyName</c>. Read-only: a template
+	/// may echo these so the shape it declares can be read in place, but writing them is refused, because a
+	/// rules file that decided an element's identity or parent would desynchronize it from every other
+	/// <c>parentName</c> in the element map.
+	/// </param>
+	/// <param name="Source">The WEB node being converted; <c>source.*</c> paths read off it directly.</param>
+	private sealed record TemplateRoots(JObject Diff, JObject Source);
+
+	private const string DiffRoot = "diff.";
+	private const string SourceRoot = "source.";
+
+	/// <summary>
+	/// Resolves one template path. A path prefixed <c>diff.</c> or <c>source.</c> reads the matching root;
+	/// anything else is read against <paramref name="item"/>, the member a <c>$each</c> is currently on. Both
+	/// roots go through the JSON library's own path syntax, so indexes and slices work without a template
+	/// engine. An unresolvable path yields nothing rather than its own text, so a typo drops a key instead of
+	/// shipping <c>{{ … }}</c> into the page as a value.
+	/// </summary>
+	private static JToken ResolveTemplatePath(string path, TemplateRoots roots, JToken item) {
+		try {
+			if (path.StartsWith(DiffRoot, StringComparison.Ordinal)) {
+				return roots.Diff.SelectToken(path[DiffRoot.Length..]);
+			}
+			if (path.StartsWith(SourceRoot, StringComparison.Ordinal)) {
+				return roots.Source.SelectToken(path[SourceRoot.Length..]);
+			}
+			return item?.SelectToken(path);
+		}
+		catch (JsonException) {
+			// A malformed path is a defect in the rules DATA, which is resolved at runtime and may come from
+			// outside this binary. Dropping the key matches every other unresolvable path rather than failing a
+			// whole page's conversion over one property.
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Resolves the COLLECTION a <c>$each</c> repeats over. Separate from
+	/// <see cref="ResolveTemplatePath"/> because a slice yields many tokens where an index yields one, and the
+	/// library exposes those as different calls — asking for a single token would silently return the first
+	/// entry of a slice and repeat once instead of once per member.
+	/// </summary>
+	private static IReadOnlyList<JToken> ResolveTemplateCollection(string path, TemplateRoots roots, JToken item) {
+		try {
+			if (path.StartsWith(DiffRoot, StringComparison.Ordinal)) {
+				return roots.Diff.SelectTokens(path[DiffRoot.Length..]).ToList();
+			}
+			if (path.StartsWith(SourceRoot, StringComparison.Ordinal)) {
+				return roots.Source.SelectTokens(path[SourceRoot.Length..]).ToList();
+			}
+			return item?.SelectTokens(path).ToList() ?? [];
+		}
+		catch (JsonException) {
+			return [];
+		}
+	}
+
+	/// <summary>
+	/// True when the template leaves identity and placement to the converter. Each field must either be absent
+	/// or resolve to the value the converter already computed — a rules file able to set them would rename or
+	/// reparent an element behind the element map's back. Refusing the WHOLE template is deliberate: honouring
+	/// its value while ignoring where it asked to go would ship a shape the rules file believes it placed
+	/// somewhere else.
+	/// </summary>
+	private static bool EchoesItsOwnPlacement(ViewConfigTemplateRule template, TemplateRoots roots) =>
+		EchoesRoot(template.ParentName, roots, "parentName")
+		&& EchoesRoot(template.PropertyName, roots, "propertyName");
+
+	private static bool EchoesRoot(string declared, TemplateRoots roots, string field) {
+		if (string.IsNullOrWhiteSpace(declared)) {
+			return true;
+		}
+		JToken rendered = RenderTemplateString(declared, roots, item: null);
+		string expected = roots.Diff[field]?.ToString();
+		return string.Equals(rendered?.ToString(), expected, StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Lays the rendered structure over the values: a key the template names WINS, a key it does not name
+	/// survives. The element's identity and its value binding are the exception — the copy rule refuses to carry
+	/// them on purpose, so filling that gap from a template would let the rules file rename an element or prebuild
+	/// the type-specific binding (which a like-for-like conversion carries via preserveSourceProperties instead).
+	/// </summary>
+	private static void OverlayRenderedValues(ElementMapContext ctx, JObject target, string mobileType,
+		JObject rendered) {
+		foreach (JProperty prop in rendered.Properties()) {
+			if (ExcludedSourceProps.Contains(prop.Name)) {
+				continue;
+			}
+			// The same two guards the copy rule applies, for the same reasons. `items` as an ARRAY is the child
+			// view-element collection — structural, emitted by the tree walk — so writing it here would nest a
+			// whole child tree inside its parent's values; as a STRING it is a real collection binding and is
+			// written like anything else. And the value is reshaped to what the registry declares, so a template
+			// that writes an object where the mobile component wants an array does not ship the wrong container.
+			if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+				continue;
+			}
+			target[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+		}
+	}
+
+	/// <summary>True when any filter matches the node, or the mapping declares none (match everything).</summary>
+	private static bool MatchesAnyFilter(IReadOnlyList<ElementFilterRule> filters, JObject node) {
+		if (filters is not { Count: > 0 }) {
+			return true;
+		}
+		string type = node["type"]?.ToString();
+		return filters.Any(f => !string.IsNullOrWhiteSpace(f?.Type)
+			&& string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>
+	/// How deep a template may nest before rendering gives up on the branch. Well past anything a real skeleton
+	/// needs — the shipped one nests three.
+	/// </summary>
+	/// <remarks>
+	/// The rules file is resolved at RUNTIME (<see cref="WebToMobilePageConversionRulesCatalog"/> fetches it and
+	/// falls back to the bundled copy), so a template is input from outside this binary. The JSON reader already
+	/// refuses to parse past its own depth limit and the catalog treats that as an unusable payload, so this is
+	/// not what stands between the process and a stack overflow — it is defence in depth for the recursion, and
+	/// it bounds DEPTH only. It does NOT bound the cost of nested <c>$each</c> repeats, which multiply: three
+	/// repeats over fifty entries is depth four and 125 000 nodes, well inside this budget. A node budget would
+	/// answer that, and there is none today.
+	/// </remarks>
+	private const int MaxTemplateDepth = 32;
+
+	/// <summary>
+	/// Renders one template node. A string interpolates its <c>{{ path }}</c>s — a string that is EXACTLY one
+	/// path yields that path's own value, so a slot can carry a non-string; an object carrying <c>$each</c>
+	/// repeats its <c>as</c> body once per member of the resolved collection; any other object and array
+	/// recurse. A path resolving to nothing drops its key.
+	/// </summary>
+	/// <param name="item">
+	/// The current <c>$each</c> member, or null outside one. ONE method handles both cases on purpose: while
+	/// there were two, only the outer one knew about <c>$each</c>, so a nested repeat fell through to the plain
+	/// object branch and wrote its own <c>$each</c>/<c>as</c> keys into the page as data.
+	/// </param>
+	private static JToken RenderTemplateToken(JToken template, TemplateRoots roots, JToken item = null,
+		int depth = 0) {
+		// Degrades the same way an unresolvable path does — the branch yields nothing and its key is dropped —
+		// rather than throwing, because the surrounding contract is that bad rules data costs a property, never
+		// the conversion and never the process.
+		if (depth > MaxTemplateDepth) {
+			return null;
+		}
+		switch (template) {
+			case JValue { Type: JTokenType.String } value:
+				return RenderTemplateString(value.ToString(), roots, item);
+			case JObject obj when obj["$each"] is { } collectionPath:
+				return RenderEach(collectionPath.ToString(), obj["as"], roots, item, depth);
+			case JObject obj: {
+				var rendered = new JObject();
+				foreach (JProperty prop in obj.Properties()) {
+					if (RenderTemplateToken(prop.Value, roots, item, depth + 1) is { Type: not JTokenType.Null } value) {
+						rendered[prop.Name] = value;
+					}
+				}
+				return rendered;
+			}
+			case JArray arr:
+				return new JArray(arr
+					.Select(element => RenderTemplateToken(element, roots, item, depth + 1))
+					.Where(t => t is not null));
+			default:
+				return template;
+		}
+	}
+
+	/// <summary>
+	/// Repeats <paramref name="body"/> once per member of the resolved collection, rendering the body against
+	/// the member. An empty or unresolvable collection yields an empty array rather than nothing, so a grid with
+	/// a single column still ships the collection its row declares instead of omitting the key.
+	/// </summary>
+	private static JToken RenderEach(string collectionPath, JToken body, TemplateRoots roots, JToken outerItem,
+		int depth) {
+		if (body is null) {
+			return new JArray();
+		}
+		return new JArray(ResolveTemplateCollection(collectionPath, roots, outerItem)
+			.Select(member => RenderTemplateToken(body, roots, member, depth + 1))
+			.Where(t => t is not null));
+	}
+
+	/// <summary>
+	/// Interpolates a template string. A string that is EXACTLY one path returns that path's raw value (so a
+	/// reference may be an object, an array or a number); otherwise every path is substituted textually and the
+	/// result is a string — which is what makes <c>"${{ code }}"</c> work as a literal <c>$</c> followed by the
+	/// binding, and <c>"{{ diff.name }}_ListItem"</c> work as a name with a suffix. A single path resolving to
+	/// nothing returns null so its key is dropped.
+	/// </summary>
+	private static JToken RenderTemplateString(string template, TemplateRoots roots, JToken item) {
+		Match single = TemplateTokenPattern.Match(template);
+		if (single.Success && single.Length == template.Trim().Length) {
+			return ResolveTemplatePath(single.Groups[1].Value, roots, item);
+		}
+		// A string that references something absent yields NOTHING, so its key is dropped — the same rule as a
+		// lone path, extended to interpolation. Substituting the empty string instead would keep the key and
+		// ship the literal part alone: the mandated skeleton writes the binding prefix outside the braces
+		// ("${{ … }}"), so a row with no acceptable lead value would carry title "$" — a present property of the
+		// right type and no meaning, which is worse than an absent one and invisible to a shape check.
+		bool resolvedEverything = true;
+		string rendered = TemplateTokenPattern.Replace(template, m => {
+			JToken value = ResolveTemplatePath(m.Groups[1].Value, roots, item);
+			if (value is null or { Type: JTokenType.Null }) {
+				resolvedEverything = false;
+				return string.Empty;
+			}
+			return value.ToString();
+		});
+		// The cast is load-bearing: without it the conditional types as string, and the implicit string->JToken
+		// conversion turns a null string into a JSON NULL — a PRESENT key of the wrong shape rather than an
+		// absent one. The two JSON stacks then disagree about whether the property exists.
+		return resolvedEverything ? (JToken)rendered : null;
+	}
+
+	/// <summary>
+	/// Removes any property of a SYNTHESIZED row whose value contradicts a scalar the mobile registry declares
+	/// for <paramref name="mobileType"/> — e.g. a <c>crt.ListItem.title</c> emitted as
+	/// <c>{ "value": … }</c> (the BODY entry shape) where the registry declares a plain string.
+	/// </summary>
+	/// <remarks>
+	/// This is the one failure mode nothing else catches. An object-wrapped title RENDERS: the list shows its
+	/// body rows and only the Title column comes up empty, so it reads as a data problem rather than a shape
+	/// one, and <c>validate-page</c>'s client-engine simulation — which does catch the neighbouring mistake of
+	/// addressing <c>itemLayout</c> as a child slot, because that breaks the build — passes it (ENG-95046).
+	/// Dropping rather than throwing is deliberate: the guide is a report, not a build, and killing a whole
+	/// page's conversion over one slot would cost the caller far more than an absent title, which
+	/// <c>validate-page</c> then flags for the caller to set in the designer.
+	/// Verifies against the registry rather than a hardcoded name, so it keeps holding if the producer
+	/// changes the declared shape.
+	/// </remarks>
+	private static void DropValuesContradictingDeclaredScalars(ElementMapContext ctx, string mobileType, JObject row) {
+		if (string.IsNullOrWhiteSpace(mobileType) || ctx?.MobileByType is null
+			|| !ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry) || entry is null) {
+			return;
+		}
+		foreach (JProperty prop in row.Properties().ToList()) {
+			if (DeclaresScalarString(entry, prop.Name) && prop.Value is not JValue { Type: JTokenType.String }) {
+				row.Remove(prop.Name);
+			}
+		}
+	}
+
+	/// <summary>
+	/// True when the registry entry declares <paramref name="propName"/> as a plain <c>string</c>. Deliberately
+	/// separate from <see cref="ResolveExpectedShape"/>, which answers a different question — which CONTAINER
+	/// (object vs array) a value belongs in — and must keep returning null for scalars so
+	/// <see cref="CoerceToDeclaredShape"/> leaves them alone.
+	/// </summary>
+	private static bool DeclaresScalarString(ComponentRegistryEntry entry, string propName) {
+		if (entry.Inputs is not null) {
+			foreach (KeyValuePair<string, JsonElement> input in entry.Inputs) {
+				if (string.Equals(input.Key, propName, StringComparison.OrdinalIgnoreCase)) {
+					return input.Value.ValueKind == JsonValueKind.Object
+						&& input.Value.TryGetProperty("type", out JsonElement t)
+						&& t.ValueKind == JsonValueKind.String
+						&& string.Equals(t.GetString(), "string", StringComparison.OrdinalIgnoreCase);
+				}
+			}
+		}
+		if (entry.Properties is not null) {
+			foreach (KeyValuePair<string, ComponentPropertyDefinition> prop in entry.Properties) {
+				if (string.Equals(prop.Key, propName, StringComparison.OrdinalIgnoreCase)) {
+					return string.Equals(prop.Value.Type, "string", StringComparison.OrdinalIgnoreCase);
+				}
+			}
+		}
+		return false;
 	}
 
 	/// <summary>
