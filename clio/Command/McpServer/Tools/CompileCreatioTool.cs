@@ -39,6 +39,14 @@ public sealed class CompileCreatioTool(
 	/// Compiles Creatio fully or rebuilds a single package for a registered environment.
 	/// </summary>
 	[McpServerTool(Name = CompileCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.Sticky,
+		OperationFamily = McpToolOperationFamily.ConfigurationBuild,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild,
+		StartsOperation = true)]
 	[Description("BEFORE CALLING: compilation is a HEAVY operation that forces a runtime reload affecting EVERY user connected to the environment. Every time (not once per session), first warn the user of that impact and ask whether to compile now or postpone; call this tool ONLY after the user confirms. A repeated or explicit request to compile is NOT itself that confirmation, and a prior in-session warning or answer is NOT standing consent — re-ask before every call, including an identical repeat. If the user postpones, do NOT call this tool — tell them it can be run later. Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`. Long-running: streams notifications/progress while compiling. If the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the compile is still running server-side; do NOT retry, poll compile-status instead.")]
 	public async Task<CommandExecutionResult> CompileCreatio(
 		[Description("Compilation parameters")] [Required] CompileCreatioArgs args,
@@ -63,7 +71,14 @@ public sealed class CompileCreatioTool(
 		// every unrelated same-tenant tool for the multi-minute (past-deadline detached) compile duration.
 		// Reserved BEFORE registry.Begin so a rejected duplicate creates no tracked record (also curbs the
 		// unbounded-record growth a bogus-env loop could cause).
-		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation))
+		// TARGET key for the RESERVATION, tenant key for the REGISTRY — deliberately two keys, because they
+		// answer different questions (cross-call-state §3). The registry answers "whose operation is this"
+		// and stays per-tenant; the configuration build is server-wide, so its reservation must exclude
+		// across principals AND must match the key the worker-routed path reserves under. When compile is
+		// routed to a worker and install-process-builder is not, a tenant-keyed reservation here would stop
+		// excluding it entirely.
+		string buildKey = commandResolver.GetTargetKey(new EnvironmentOptions { Environment = args.EnvironmentName });
+		if (!McpToolExecutionLock.TryReserveConfigurationBuild(buildKey, out McpToolExecutionLock.BuildReservation reservation))
 		{
 			return new CommandExecutionResult(1, [
 				new ErrorMessage(CompileAlreadyInProgressMessage(args.EnvironmentName))
@@ -102,9 +117,17 @@ public sealed class CompileCreatioTool(
 						// heartbeat work delegate, so it runs on the (possibly detached, past-deadline)
 						// continuation — spanning the real compile duration — and covers a resolution throw too
 						// (which happens before Execute's own try/finally is ever entered).
-						McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
+						McpToolExecutionLock.ReleaseConfigurationBuild(buildKey, reservation);
 					}
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
+					// No completion signal is sent from here (ADR rule 5). compile-creatio DOES have an
+					// operation registry, but that registry lives in whichever process ran the tool — inside the
+					// worker, once this tool routes to one — so the parent cannot read it to decide when to reap;
+					// the private signal is the one thing that crosses the boundary. It is emitted by
+					// WorkerOperationCompletionSignal's choke point, which the call-tool filter runs around EVERY
+					// exit of this call — including the two refusals above, which used to return without it and
+					// strand the worker for its whole hard lifetime. The heartbeat helper below leases this work,
+					// so a compile still running past the response deadline is not mistaken for one that ended.
 					return result;
 				},
 				deadline: ResponseDeadlineOverride,

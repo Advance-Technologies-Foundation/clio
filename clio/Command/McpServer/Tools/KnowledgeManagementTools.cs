@@ -34,19 +34,44 @@ internal sealed class KnowledgeManagementTools {
 		_referenceExamples = referenceExamples ?? throw new ArgumentNullException(nameof(referenceExamples));
 	}
 
+	// Every tool in this class manages LOCAL knowledge state (clio settings plus the Clio-managed cache under
+	// the clio home directory). None of them resolves a Creatio environment, so none can block on one — the
+	// remote transports they contact are GitHub / NuGet, not Creatio. Rule 11 also keeps the knowledge
+	// lifecycle host-side, since a worker inherits the parent's frozen knowledge/tool generation.
 	[McpServerTool(Name = InstallKnowledgeToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Installs verified local knowledge for one configured source, or all enabled sources when source is omitted.")]
 	public KnowledgeSourceBatchResult Install(
 		KnowledgeSourceSelectorArgs args,
 		CancellationToken cancellationToken = default) => _service.Install(args.Source, cancellationToken);
 
 	[McpServerTool(Name = UpdateKnowledgeToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Updates verified local knowledge for one configured source, or all enabled sources when source is omitted.")]
 	public KnowledgeSourceBatchResult Update(
 		KnowledgeSourceSelectorArgs args,
 		CancellationToken cancellationToken = default) => _service.Update(args.Source, cancellationToken);
 
 	[McpServerTool(Name = InfoKnowledgeToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Reports local trusted-source and installed-generation status; set checkUpdates=true to contact configured transports.")]
 	public KnowledgeSourceInfoResult Info(
 		KnowledgeInfoArgs args,
@@ -54,6 +79,13 @@ internal sealed class KnowledgeManagementTools {
 		_service.GetInfo(args.Source, args.CheckUpdates, cancellationToken);
 
 	[McpServerTool(Name = DeleteKnowledgeToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Deletes Clio-managed installed knowledge for one source or all enabled sources, retaining source configuration.")]
 	public KnowledgeSourceBatchResult Delete(
 		KnowledgeConfirmedSourceArgs args,
@@ -61,6 +93,13 @@ internal sealed class KnowledgeManagementTools {
 		_service.Delete(args.Source, args.Confirmed, cancellationToken);
 
 	[McpServerTool(Name = AddKnowledgeSourceToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Adds one trusted knowledge publisher after confirmation: a signed GitHub Release asset (github-release, no Git CLI), a Git repository, or a signed NuGet package.")]
 	public KnowledgeSourceCommandResult Add(KnowledgeSourceAddArgs args) => !args.Confirmed
 		? new KnowledgeSourceCommandResult(
@@ -86,23 +125,58 @@ internal sealed class KnowledgeManagementTools {
 		args.Participation));
 
 	[McpServerTool(Name = RemoveKnowledgeSourceToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Removes one trusted source and its Clio-managed cache after explicit confirmation. The built-in com.creatio.clio source cannot be removed; disable it instead.")]
 	public KnowledgeSourceCommandResult Remove(KnowledgeConfirmedAliasArgs args) =>
 		_service.Remove(args.Alias, args.Confirmed);
 
 	[McpServerTool(Name = EnableKnowledgeSourceToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Enables a configured knowledge source without deleting or reinstalling its cache.")]
 	public KnowledgeSourceCommandResult Enable(KnowledgeAliasArgs args) => _service.Enable(args.Alias);
 
 	[McpServerTool(Name = DisableKnowledgeSourceToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Immediately stops serving a configured knowledge source while retaining its cache.")]
 	public KnowledgeSourceCommandResult Disable(KnowledgeAliasArgs args) => _service.Disable(args.Alias);
 
 	[McpServerTool(Name = ListKnowledgeSourcesToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Lists all configured knowledge sources, including disabled sources.")]
 	public KnowledgeSourceListResult List() => _service.List();
 
 	[McpServerTool(Name = ListKnowledgeExamplesToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Lists reference examples registered in active local knowledge catalogs, including immutable repository coordinates, without cloning repositories or contacting remote services.")]
 	public KnowledgeReferenceExampleListResult ListExamples(KnowledgeReferenceExampleListArgs args) =>
 		_referenceExamples.List(new KnowledgeReferenceExampleQuery(

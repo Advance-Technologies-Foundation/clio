@@ -41,6 +41,13 @@ public sealed class GetUserCultureTool(
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured culture-resolution signal.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Resolve the logged-in Creatio user's profile culture (e.g. en-US, uk-UA) for an environment, " +
 		"read from ApplicationInfoService.svc/GetApplicationInfo (no cliogate required). " +
 		"Call this ONCE per session before creating applications, objects, pages, sections, lookups, or columns, " +

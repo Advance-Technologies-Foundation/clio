@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Common;
 using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -219,6 +223,204 @@ public sealed class SettingsRepositoryConcurrencyTests {
 		// the non-repairing read follows the same scripted sequence.
 		public SettingsBootstrapResult GetResultWithoutRepairs() {
 			return GetResult();
+		}
+	}
+
+	[Test]
+	[Description("A settings publish that a contending reader refuses is retried until it lands instead of failing the command.")]
+	public void ConfigureEnvironment_ShouldRetryThePublish_WhenAContendingReaderRefusesIt() {
+		// Arrange
+		// The refusal shape is the one Windows produces when a FOREIGN reader holds appsettings.json:
+		// File.ReadAllText opens with FileShare.Read, which denies the DELETE access the publish needs, and
+		// the BCL reports it as a PATH-LESS IOException (File.Move/File.Replace pass no path to
+		// Win32Marshal). The repository is constructed BEFORE the script is armed so the bootstrap's own
+		// migration write is not counted as a publish attempt.
+		ScriptedPublishFailureFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+		fileSystem.ArmPublishRefusals(new IOException(
+			"The process cannot access the file because it is being used by another process."), 3);
+
+		// Act
+		deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		fileSystem.PublishAttempts.Should().Be(4,
+			because: "the publish must be re-attempted after each refusal — three refusals and one success is four calls, and without the retry the count would be one and the command would have failed");
+		new SettingsRepository(fileSystem).GetAllEnvironments().Should().ContainKey("deployed",
+			because: "a registration must survive a reader that momentarily refuses the publish, not be lost with it");
+	}
+
+	[Test]
+	[Description("A publish failure that is not contention surfaces on the first attempt instead of being spun on until the deadline.")]
+	public void ConfigureEnvironment_ShouldNotRetryThePublish_WhenTheFailureIsNotContention() {
+		// Arrange
+		ScriptedPublishFailureFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem);
+		fileSystem.ArmPublishRefusals(new FileNotFoundException("The temporary settings file vanished."), 1);
+
+		// Act
+		Action act = () => deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		act.Should().Throw<FileNotFoundException>(
+			because: "a vanished temporary file is a real error, not a contending handle, so it must reach the caller unchanged");
+		fileSystem.PublishAttempts.Should().Be(1,
+			because: "a non-contention failure must not be retried into a multi-second delay before the same error is reported anyway");
+	}
+
+	[Test]
+	[Description("A publish that stays refused for the whole window must name appsettings.json, say that clio retried and for how long, and keep the original refusal reachable, instead of surfacing the BCL's pathless sentence.")]
+	public void ConfigureEnvironment_ShouldNameTheFileAndTheRetryInTheFailure_WhenTheRefusalNeverClears() {
+		// Arrange
+		// The BCL gives this failure NO path and NO stack — File.Move and File.Replace pass no path to
+		// Win32Marshal — so the single sentence below is everything the user and the next investigator got.
+		IOException refusal = new("The process cannot access the file because it is being used by another process.");
+		ScriptedPublishFailureFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem,
+			new SettingsRepository.SettingsPublishRetryPolicy(ShortPublishRetryWindow, _ => 0));
+		fileSystem.ArmPublishRefusals(refusal, int.MaxValue);
+
+		// Act
+		Action act = () => deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		IOException thrown = act.Should().Throw<IOException>(
+			because: "an exhausted publish is still a failure; the retry buys probability, not a guarantee, and the caller must be told the registration did not land")
+			.Which;
+		thrown.Message.Should().Contain(SettingsRepository.AppSettingsFile,
+			because: "the refusal the platform raises names no file at all, so the destination clio was publishing has to come from clio");
+		ReportedRetrySeconds(thrown.Message).Should().BeGreaterThanOrEqualTo(ShortPublishRetryWindow.TotalSeconds,
+			because: "without the retry duration the message reads like a one-shot failure, and the next investigator repeats the work of discovering that clio already waited");
+		thrown.Message.ToLowerInvariant().Should().Contain("another process",
+			because: "a foreign handle on the file is the usual cause, and naming it is what turns the message into something the user can act on");
+		thrown.InnerException.Should().BeSameAs(refusal,
+			because: "the platform refusal carries the real error code and must stay reachable rather than being swallowed by the friendlier wrapper");
+	}
+
+	[Test]
+	[Description("A refused publish keeps re-attempting for the whole configured window rather than a fixed number of tries, so the window is what decides how much contention clio absorbs.")]
+	public void ConfigureEnvironment_ShouldKeepRetryingForTheWholeWindow_WhenTheRefusalNeverClears() {
+		// Arrange
+		ScriptedPublishFailureFileSystem fileSystem = new();
+		SeedExistingSettings(fileSystem);
+		SettingsRepository deployment = new(fileSystem,
+			new SettingsRepository.SettingsPublishRetryPolicy(ShortPublishRetryWindow, _ => 0));
+		fileSystem.ArmPublishRefusals(
+			new IOException("The process cannot access the file because it is being used by another process."),
+			int.MaxValue);
+		// Derived from the backoff rather than restated: the longest a single wait can be is the capped
+		// sleep plus its jitter, so the window must pay for at least this many attempts.
+		int guaranteedAttempts = (int)(ShortPublishRetryWindow.TotalMilliseconds
+			/ (AtomicPublishRetry.BackoffCapMilliseconds + AtomicPublishRetry.BackoffJitterMilliseconds));
+		Stopwatch elapsed = Stopwatch.StartNew();
+
+		// Act
+		Action act = () => deployment.ConfigureEnvironment("deployed",
+			new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		act.Should().Throw<IOException>(
+			because: "the arrangement never lets the publish through, so the window has to end somewhere");
+		elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(ShortPublishRetryWindow,
+			because: "giving up before the window is spent throws away exactly the tail of contention the window was widened to cover");
+		fileSystem.PublishAttempts.Should().BeGreaterThanOrEqualTo(guaranteedAttempts,
+			because: $"the bound is a deadline, not an attempt count, so a {ShortPublishRetryWindow.TotalMilliseconds} ms window must buy at least {guaranteedAttempts} attempts however the backoff curve is later retuned");
+	}
+
+	[Test]
+	[Description("The publish window must stay small enough that spending it on every update attempt cannot outlast the settings lock, or raising it would only move the failure to a concurrent clio process timing out on the lock.")]
+	public void DefaultPublishRetryWindow_ShouldLeaveHeadroomUnderTheSettingsLock_WhenEveryUpdateAttemptSpendsIt() {
+		// Arrange
+		// ExecuteWithSettingsLock holds the lock across the publish, and UpdateSettingsIfChanged can run
+		// the mutation SettingsUpdateAttemptLimit times inside one hold when another writer keeps winning.
+		TimeSpan lockTimeout = TimeSpan.FromSeconds(SettingsRepository.SettingsLockTimeoutSeconds);
+
+		// Act
+		TimeSpan worstCaseHold = SettingsRepository.SettingsPublishRetryPolicy.Default.Window
+			* SettingsRepository.SettingsUpdateAttemptLimit;
+
+		// Assert
+		worstCaseHold.Should().BeLessThan(lockTimeout,
+			because: $"a {worstCaseHold.TotalSeconds} s worst-case hold against a {lockTimeout.TotalSeconds} s lock timeout is the actual ceiling on this window — past it, widening the retry stops rescuing the writer and starts failing whoever is waiting for the lock");
+	}
+
+	// Short enough to keep the suite fast, long enough to reach the capped tail of the backoff. The
+	// subject of these tests is that the window ENDS and what it says when it does, not how long
+	// production waits, so burning the production window here would buy nothing.
+	private static readonly TimeSpan ShortPublishRetryWindow = TimeSpan.FromMilliseconds(400);
+
+	// Reads back the retry duration clio reported, so the assertion pins the PROPERTY (at least the
+	// window elapsed) rather than restating whatever the message is formatted as.
+	private static double ReportedRetrySeconds(string message) {
+		Match match = Regex.Match(message, @"([0-9]+(?:\.[0-9]+)?) s\b");
+		match.Success.Should().BeTrue(
+			because: $"the failure must state how long clio retried, and '{message}' carries no duration in seconds");
+		return double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+	}
+
+	private static void SeedExistingSettings(MockFileSystem fileSystem) {
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(JsonConvert.SerializeObject(
+			new Settings {
+				ActiveEnvironmentKey = "existing",
+				Environments = new Dictionary<string, EnvironmentSettings> {
+					["existing"] = new() { Uri = "https://existing.example.com" }
+				}
+			})));
+	}
+
+	// Substitutes the PUBLISH of appsettings.json so the contended path runs on every platform.
+	//
+	// LIMIT OF THIS DOUBLE, stated because it is easy to over-read: a substituted file system is not
+	// System.IO.Abstractions.FileSystem, so SaveSettingsUnlocked treats it as not-real and commits through
+	// the File.Move branch of CommitSettingsFile rather than the File.Replace branch a real CLI takes. Both
+	// go through the same PublishSettingsFile wrapper, and that wrapper is what these tests pin. The
+	// platform semantic of the replace itself is not reproducible here and needs a Windows host.
+	private sealed class ScriptedPublishFailureFileSystem : MockFileSystem {
+
+		private readonly ScriptedPublishFailureFile _file;
+
+		public ScriptedPublishFailureFileSystem() {
+			_file = new ScriptedPublishFailureFile(this);
+		}
+
+		public override IFile File => _file;
+
+		public int PublishAttempts => _file.PublishAttempts;
+
+		public void ArmPublishRefusals(Exception refusal, int refusalCount) =>
+			_file.Arm(refusal, refusalCount);
+	}
+
+	private sealed class ScriptedPublishFailureFile(IMockFileDataAccessor fileDataAccessor)
+		: MockFile(fileDataAccessor) {
+
+		private Exception _refusal;
+		private int _refusalsRemaining;
+
+		public int PublishAttempts { get; private set; }
+
+		public void Arm(Exception refusal, int refusalCount) {
+			_refusal = refusal;
+			_refusalsRemaining = refusalCount;
+			PublishAttempts = 0;
+		}
+
+		public override void Move(string sourceFileName, string destFileName, bool overwrite) {
+			if (_refusal is not null
+				&& string.Equals(destFileName, SettingsRepository.AppSettingsFile, StringComparison.Ordinal)) {
+				PublishAttempts++;
+				if (_refusalsRemaining > 0) {
+					_refusalsRemaining--;
+					throw _refusal;
+				}
+			}
+			base.Move(sourceFileName, destFileName, overwrite);
 		}
 	}
 

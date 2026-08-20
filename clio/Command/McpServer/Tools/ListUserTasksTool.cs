@@ -22,6 +22,13 @@ public class ListUserTasksTool(
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <returns>The command execution result; the log output lists each task as <c>name\tuid</c>.</returns>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ListUserTasksToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		 OpenWorld = false),
 	 Description("List the user-facing user tasks available on a Creatio environment (the process designer "

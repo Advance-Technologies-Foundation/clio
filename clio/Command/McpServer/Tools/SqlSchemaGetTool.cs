@@ -22,6 +22,13 @@ public sealed class SqlSchemaGetTool(
 	// otherwise. ReadOnly is not consumed by ClioRing (it parses only {Resident, Destructive}), so this flip
 	// changes no Ring-consumed contract.
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Read the body and metadata of a SQL script schema from a remote Creatio environment. " +
 		"Use before update-sql-schema to inspect current content. " +

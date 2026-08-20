@@ -18,6 +18,16 @@ public sealed class PageGetTool(
 	internal const string ToolName = "get-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// SharedFileResource: the .clio-pages/{schema}/meta.json baseline this tool writes is the same file
+	// update-page and sync-pages read-modify-write, so once the call runs outside the host two processes can
+	// race it (inventory §5.3).
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description(
 		"Get a Freedom UI page. Writes body.js (editable own-body for update-page), bundle.json (full merged view; minified JSON — parse with jq/json, not grep), and meta.json to .clio-pages/{schema-name}/ and returns file paths. " +
 		"Pass output-directory to anchor output at your project root. " +

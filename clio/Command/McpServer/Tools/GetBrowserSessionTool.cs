@@ -21,6 +21,15 @@ public sealed class GetBrowserSessionTool(IToolCommandResolver commandResolver) 
 
 	/// <summary>Obtains (or reuses) an authenticated browser session and returns its file path.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	// SharedFileResource: the session (storageState) file under the clio home directory is written by this tool
+	// and read by every agent it hands the path to, so a second process running it concurrently races that file.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.BrowserSessionCache)]
 	[Description("Obtain an authenticated Creatio browser session (Playwright storageState) for an environment. " +
 		"Returns the absolute path to the session file in 'session-file-path' — cookie values are never returned. " +
 		"Feed the file to Playwright's storageState option to open Creatio already authenticated (no login page). " +

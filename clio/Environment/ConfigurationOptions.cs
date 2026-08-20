@@ -548,8 +548,14 @@ namespace Clio
 	{
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
-		private const int SettingsLockTimeoutSeconds = 30;
-		private const int SettingsUpdateAttemptLimit = 3;
+		// RAISED with the publish retry window, not independently. One lock hold can spend that window
+		// SettingsUpdateAttemptLimit times (3 x 5 s = 15 s), so at 30 s a SECOND process queued behind a
+		// worst-case holder still fits and a THIRD does not — and "the settings lock timed out" is a far
+		// more confusing failure than the contention it was queued behind. Doubling the publish window
+		// halved that headroom, so the timeout doubles with it and the relationship stays the one the
+		// comment on SettingsPublishRetryPolicy states: window x attempts must stay well under this.
+		internal const int SettingsLockTimeoutSeconds = 60;
+		internal const int SettingsUpdateAttemptLimit = 3;
 		private static readonly object SchemaFileLock = new ();
 		private static readonly ConcurrentDictionary<string, object> ProcessSettingsLocks = new();
 		[ThreadStatic]
@@ -562,6 +568,7 @@ namespace Clio
 		// non-interactive host. Null only for the internal/direct (non-DI) construction sites that
 		// never call GetEnvironment; those fall back to RealInteractiveConsole.Shared.
 		private readonly IInteractiveConsole _interactiveConsole;
+		private readonly SettingsPublishRetryPolicy _publishRetryPolicy = SettingsPublishRetryPolicy.Default;
 		public static string AppSettingsFolderPath {
 			get {
 				// CLIO_HOME, when set, overrides the entire root verbatim. This is the single
@@ -609,6 +616,17 @@ namespace Clio
 			EnsureSettingsCollections();
 			AttachDbServers(_settings);
 			TrySaveSchema(_fileSystem);
+		}
+
+		/// <summary>
+		/// Initializes a repository whose contended-publish retry policy is stated explicitly, so a test
+		/// can observe the exhausted-publish path without waiting out the production deadline.
+		/// </summary>
+		/// <param name="fileSystem">The file system the repository reads and writes settings through.</param>
+		/// <param name="publishRetryPolicy">The window and jitter draw a refused publish retries with.</param>
+		internal SettingsRepository(IFileSystem fileSystem, SettingsPublishRetryPolicy publishRetryPolicy)
+			: this(fileSystem) {
+			_publishRetryPolicy = publishRetryPolicy;
 		}
 
 		/// <inheritdoc />
@@ -680,15 +698,16 @@ namespace Clio
 		}
 
 		internal static void SaveSettings(IFileSystem fileSystem, Settings settings, string expectedContent = null,
-			bool verifyExpectedContent = false) {
+			bool verifyExpectedContent = false, SettingsPublishRetryPolicy publishRetryPolicy = null) {
+			SettingsPublishRetryPolicy policy = publishRetryPolicy ?? SettingsPublishRetryPolicy.Default;
 			ExecuteWithSettingsLock(fileSystem, () => {
-				SaveSettingsUnlocked(fileSystem, settings, expectedContent, verifyExpectedContent);
+				SaveSettingsUnlocked(fileSystem, settings, expectedContent, verifyExpectedContent, policy);
 				return true;
 			});
 		}
 
 		private static void SaveSettingsUnlocked(IFileSystem fileSystem, Settings settings, string expectedContent,
-			bool verifyExpectedContent) {
+			bool verifyExpectedContent, SettingsPublishRetryPolicy policy) {
 			if (!fileSystem.Directory.Exists(AppSettingsFolderPath)) {
 				fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
 			}
@@ -701,7 +720,7 @@ namespace Clio
 				WriteSettingsTempFile(fileSystem, tempFilePath, settings, isRealFileSystem,
 					windowsFileSecurity, unixFileMode);
 				CommitSettingsFile(fileSystem, tempFilePath, expectedContent, verifyExpectedContent,
-					isRealFileSystem);
+					isRealFileSystem, policy);
 			}
 			finally {
 				if (fileSystem.File.Exists(tempFilePath)) {
@@ -738,14 +757,79 @@ namespace Clio
 				: (null, System.IO.File.GetUnixFileMode(AppSettingsFile));
 		}
 
+		// Publishing the finished temp file over appsettings.json is rename(2) on Unix and
+		// MoveFileEx / ReplaceFile on Windows. Only the second can be REFUSED by a reader that already holds
+		// the destination open: it needs DELETE access there, and File.ReadAllText opens with FileShare.Read,
+		// a share mode that denies exactly that.
+		//
+		// This is the same defect, and the same measurement, as FileSystem.PublishAtomicReplacement — six
+		// concurrent writers against one reader loop failed 108-113 of 180 publishes on Windows 11 with a
+		// bare move and 0 of 180 with this retry, while the identical probe on macOS failed 0 of 180 either
+		// way. It surfaced here only after story 20 fixed the e2e fixture's inert isolation: while those
+		// registrations were landing in the SHARED suite catalog, the failure was attributed to fixtures
+		// fighting each other, and the test could not show that clio's own writer has the same exposure.
+		//
+		// Bounded by a DEADLINE rather than an attempt count, for the reason measured there: an earlier
+		// 12-attempt version was observed needing 13, 15 and 16. Only contention shapes are retried, so a
+		// genuine ACL error still surfaces unchanged, and SettingsFileChangedException — the optimistic
+		// concurrency signal — is deliberately NOT caught: it means another writer won, which is a real
+		// answer the caller must see rather than something to spin on.
+		//
+		// The window, the backoff curve and the wording of the exhausted-publish failure come from
+		// Clio.Common.AtomicPublishRetry so this loop and FileSystem.PublishAtomicReplacement cannot
+		// drift. READ THE COMMENT ON AtomicPublishRetry.DefaultWindow BEFORE TUNING IT: the retry is the
+		// only mechanism Windows offers against a foreign reader, so no window makes exit 0 a guarantee.
+		// One bound is local, though — ExecuteWithSettingsLock holds the settings lock across the
+		// publish, and UpdateSettingsIfChanged can spend the window SettingsUpdateAttemptLimit times
+		// inside one lock hold, so Window * SettingsUpdateAttemptLimit must stay well under
+		// SettingsLockTimeoutSeconds or a concurrent clio process starts timing out on the lock instead.
+		/// <summary>
+		/// The window and the jitter draw a contended settings publish uses. Injected as a whole so a
+		/// test can bound the contended path without waiting out the production deadline and without
+		/// mutating process-wide state.
+		/// </summary>
+		/// <param name="Window">How long a refused publish keeps retrying.</param>
+		/// <param name="NextBackoffJitterMilliseconds">
+		/// Draws the jittered tail of the backoff, given an exclusive upper bound.
+		/// </param>
+		internal sealed record SettingsPublishRetryPolicy(TimeSpan Window,
+			Func<int, int> NextBackoffJitterMilliseconds) {
+
+			internal static SettingsPublishRetryPolicy Default { get; } =
+				new(AtomicPublishRetry.DefaultWindow, Random.Shared.Next);
+		}
+
+		private static void PublishSettingsFile(Action publish, SettingsPublishRetryPolicy policy) {
+			long startedAt = Stopwatch.GetTimestamp();
+			for (int attempt = 1; ; attempt++) {
+				try {
+					publish();
+					return;
+				}
+				catch (Exception e) when (e is not SettingsFileChangedException
+					&& (e is UnauthorizedAccessException || (e is IOException && e is not FileNotFoundException
+						&& e is not DirectoryNotFoundException))) {
+					TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
+					if (elapsed >= policy.Window) {
+						if (!AtomicPublishRetry.CanDescribeExhausted(e)) {
+							throw;
+						}
+						throw AtomicPublishRetry.DescribeExhausted(e, AppSettingsFile, elapsed, attempt);
+					}
+					Thread.Sleep(AtomicPublishRetry.NextBackoffMilliseconds(attempt,
+						policy.NextBackoffJitterMilliseconds));
+				}
+			}
+		}
+
 		private static void CommitSettingsFile(IFileSystem fileSystem, string tempFilePath, string expectedContent,
-			bool verifyExpectedContent, bool isRealFileSystem) {
+			bool verifyExpectedContent, bool isRealFileSystem, SettingsPublishRetryPolicy policy) {
 			if (!verifyExpectedContent) {
-				fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+				PublishOverExisting(fileSystem, tempFilePath, isRealFileSystem, policy);
 				return;
 			}
 			if (expectedContent == null) {
-				MoveNewSettingsFile(fileSystem, tempFilePath);
+				MoveNewSettingsFile(fileSystem, tempFilePath, policy);
 				return;
 			}
 
@@ -757,17 +841,52 @@ namespace Clio
 					throw new SettingsFileChangedException();
 				}
 				if (isRealFileSystem) {
-					fileSystem.File.Replace(tempFilePath, AppSettingsFile, destinationBackupFileName: null,
-						ignoreMetadataErrors: true);
+					PublishSettingsFile(() => fileSystem.File.Replace(tempFilePath, AppSettingsFile,
+						destinationBackupFileName: null, ignoreMetadataErrors: true), policy);
 					return;
 				}
 			}
-			fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+			PublishOverExisting(fileSystem, tempFilePath, isRealFileSystem, policy);
 		}
 
-		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath) {
+		// The FIRST-WRITE branch, and it is retried like every other publish. It was not, and the gap was
+		// invisible because the other branches are the ones the concurrency test exercises: this one runs
+		// when the caller has no expected content, which SettingsBootstrapService does on the path that
+		// creates the file. A first write races a reader exactly as a replacement does — the bootstrap
+		// probe itself reads the file — so leaving it bare meant "the settings publish is protected" was
+		// true of three branches out of four.
+		//
+		// The SettingsFileChangedException screen stays OUTSIDE the retry on purpose: a move refused
+		// because the destination now exists is not contention, it is somebody else having created the
+		// file, and retrying that would turn a correct "reload and try again" into a five-second stall
+		// ending in the same answer.
+		// MEASURED on Windows 10.0.26200, 2026-08-19, because the two are NOT interchangeable there and
+		// the difference decides whether a concurrent reader can be tolerated at all:
+		//
+		//   reader holds FileShare.Read              File.Replace REFUSED   File.Move(overwrite) REFUSED
+		//   reader holds ReadWrite | Delete          File.Replace ALLOWED   File.Move(overwrite) REFUSED
+		//
+		// So File.Move(overwrite: true) is refused even by a reader that cooperates fully, while
+		// File.Replace goes through — and no retry window can rescue Move, because nothing the reader
+		// can do makes it legal. Publishing over an EXISTING file therefore uses Replace whenever the
+		// file system is the real one. Move stays for the substituted file system, which has no Windows
+		// sharing semantics to respect, and for the case where the destination does not exist yet, which
+		// Replace cannot express (it requires a destination to replace).
+		private static void PublishOverExisting(IFileSystem fileSystem, string tempFilePath,
+			bool isRealFileSystem, SettingsPublishRetryPolicy policy) {
+			if (isRealFileSystem && fileSystem.File.Exists(AppSettingsFile)) {
+				PublishSettingsFile(() => fileSystem.File.Replace(tempFilePath, AppSettingsFile,
+					destinationBackupFileName: null, ignoreMetadataErrors: true), policy);
+				return;
+			}
+			PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true),
+				policy);
+		}
+
+		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath,
+			SettingsPublishRetryPolicy policy) {
 			try {
-				fileSystem.File.Move(tempFilePath, AppSettingsFile);
+				PublishSettingsFile(() => fileSystem.File.Move(tempFilePath, AppSettingsFile), policy);
 			}
 			catch (IOException) when (fileSystem.File.Exists(AppSettingsFile)) {
 				throw new SettingsFileChangedException();
@@ -949,7 +1068,8 @@ namespace Clio
 		// Returns false only when the optimistic-concurrency check failed and another attempt remains.
 		private bool TrySaveMutatedSettings(string expectedContent, int attempt) {
 			try {
-				SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
+				SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true,
+					_publishRetryPolicy);
 				return true;
 			}
 			catch (SettingsFileChangedException) {

@@ -21,6 +21,7 @@ using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
+using Clio.Common.McpWorker;
 using Clio.Help;
 using Clio.Package;
 using Clio.Query;
@@ -291,6 +292,22 @@ internal class Program {
 
 	internal static bool IsCfgOpenCommand;
 	internal static bool IsMcpServerMode { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this process is an MCP WORKER child — an
+	/// <c>mcp-server --worker</c> spawned by an MCP host to serve one call.
+	/// </summary>
+	/// <remarks>
+	/// Read from a plain argument scan during startup, because the composition root needs it BEFORE the
+	/// parser runs: the container decides between the live and the frozen feature-toggle service, and that
+	/// same service gates which verbs the parser is even offered. Stored on
+	/// <see cref="McpWorkerEnvironment.IsWorkerProcess"/> so the composition root does not have to reach
+	/// back into <see cref="Program"/>; this property is the named entry point for it.
+	/// </remarks>
+	internal static bool IsMcpWorkerMode {
+		get => McpWorkerEnvironment.IsWorkerProcess;
+		set => McpWorkerEnvironment.IsWorkerProcess = value;
+	}
 	public static IAppUpdater _appUpdater;
 
 	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
@@ -1278,6 +1295,17 @@ internal class Program {
 			}
 			bool isMcp = IsMcpCommand(clearArgs);
 			IsMcpServerMode = isMcp;
+			// Scoped to the MCP verb on purpose: a --worker option added to some unrelated verb later must not
+			// put the whole process into worker mode.
+			IsMcpWorkerMode = isMcp && McpWorkerEnvironment.IsWorkerModeArgv(clearArgs);
+			// ENG-95262 Stage 6 — the worker execution boundary is STDIO-ONLY, so the transport has to be
+			// declared before any routing question is asked. IsMcpCommand matches mcp-server / mcp only; the
+			// HTTP host declares itself in McpHttpServerCommand.Run, and everything else stays Unknown,
+			// which is the fail-closed answer.
+			if (isMcp) {
+				Clio.Command.McpServer.McpHostTransport.Current =
+					Clio.Command.McpServer.McpHostTransportKind.Stdio;
+			}
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
 			// Detect json output early (before the background updater logs) so decorated diagnostics are

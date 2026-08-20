@@ -47,6 +47,13 @@ internal sealed class GuidanceGetTool {
 	/// <summary>
 	/// Resolves one named guidance article and returns its plain-text content.
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns a named guidance article from active trusted knowledge, or lists all available guide names when the requested name is unknown.")]
 	public Task<GuidanceGetResponse> GetGuidance(

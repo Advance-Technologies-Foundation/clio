@@ -48,7 +48,9 @@ public interface IMcpDurableCallToolHandler {
 public sealed class McpDurableCallToolHandler(
 	IMcpToolInvokerRegistry toolRegistry,
 	IMcpToolCompatibilityCatalog compatibilityCatalog,
-	IClioRunExecutor executor) : IMcpDurableCallToolHandler {
+	IClioRunExecutor executor,
+	IMcpExecutionRouter executionRouter,
+	Relay.IMcpWorkerCallDispatcher workerCallDispatcher = null) : IMcpDurableCallToolHandler {
 
 	// Stable machine-readable outcome codes (mirrored in StructuredContent, never only prose) so an
 	// agent — or a downstream harness — can branch on the outcome without parsing English.
@@ -87,6 +89,20 @@ public sealed class McpDurableCallToolHandler(
 		// tool OUTCOME. Only expected outcomes are returned as structured results; a broken precondition
 		// stays a fail-fast programming error.
 		ArgumentNullException.ThrowIfNull(request);
+		// The "unmatched only" property this handler is built on — and which the execution router now
+		// DEPENDS on, because it is what makes the alias resolution below the authoritative canonical name —
+		// was SDK behaviour documented in prose (see the type remarks and the alias comment below) and
+		// enforced nowhere in code. A router that depends on an invariant must assert it rather than inherit
+		// it: a matched primitive here would mean the SDK invoked the unmatched seam for an advertised tool,
+		// which would route the call twice (dispatch site (a) already decided it) on a name this handler is
+		// about to re-resolve. Same class as the null-request throw above: a broken precondition, not a tool
+		// OUTCOME, so it fails fast instead of returning a structured result.
+		if (request.MatchedPrimitive is not null) {
+			throw new InvalidOperationException(
+				"McpDurableCallToolHandler was invoked for a MATCHED primitive "
+				+ $"('{request.MatchedPrimitive.Id}'). The SDK invokes this handler only on a tool-collection "
+				+ "miss; a matched call is routed and bounded by McpToolErrorFilter instead.");
+		}
 		string correlationId = Guid.NewGuid().ToString();
 		// Sanitized for prose reflection: an arbitrary caller-supplied name is later interpolated into
 		// model-visible Content, so control characters are stripped and the length capped — a
@@ -124,6 +140,33 @@ public sealed class McpDurableCallToolHandler(
 				request.Params?.Arguments,
 				toolRegistry.IsDestructive(canonicalName),
 				correlationId);
+		}
+
+		// ENG-95262 dispatch site (b) of three — the UNMATCHED path, and the only one of the three with a
+		// real ordering constraint (ADR rule 9). It sits AFTER alias/registry resolution, so the router keys
+		// on the canonical name rather than on the alias the caller happened to use, and AFTER the
+		// write-capability gate above, which IS the destructive-confirmation seam rule 9 names — it keys on
+		// readOnlyHint, not destructiveHint (issue #953), so an additive write such as odata-create is gated
+		// too. Routing before it would hand a write to a worker and bypass host gating entirely.
+		McpExecutionRoute route = executionRouter.Resolve(canonicalName, innerCommand: null);
+		if (!route.ExecutesInProcess) {
+			if (workerCallDispatcher is null) {
+				// Fail-closed: a site with no dispatcher refuses rather than running a worker-routed call in
+				// the host process, which would silently bypass the execution boundary.
+				return McpExecutionRouter.WorkerPathNotWiredResult(route);
+			}
+			// Relayed under the CANONICAL name rather than the alias the caller used, so the worker resolves
+			// the same tool this handler resolved (TC-U-402: both seams route, and they agree). When the
+			// caller already used the canonical name the caller's own params object is handed over
+			// untouched, which is the only way to keep every field it carries — `_meta` and its progress
+			// token, and 2.2.0's InputResponses / RequestState — rather than the three this handler knows
+			// to copy. The advisory is still attached afterwards, so a deprecated alias behaves the same
+			// whether its tool ran in the host or in a worker.
+			CallToolResult relayed = await workerCallDispatcher
+				.DispatchAsync(route, RelayParams(request.Params, canonicalName),
+					new Relay.McpServerParentSession(request.Server), cancellationToken)
+				.ConfigureAwait(false);
+			return AttachAdvisory(relayed, requestedName, canonicalName, viaAlias, correlationId);
 		}
 
 		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) long-tail dispatch by
@@ -169,6 +212,33 @@ public sealed class McpDurableCallToolHandler(
 			requestedName,
 			ClioRunExecutor.BuildSuggestions(requestedName, toolRegistry),
 			correlationId);
+	}
+
+	/// <summary>
+	/// Returns the params to relay to a worker: the caller's own object when the name it carries is
+	/// already canonical, or a minimal copy renamed to the canonical tool when the caller used an alias.
+	/// </summary>
+	/// <remarks>
+	/// The identity case is the one worth protecting. Rebuilding params costs every field this handler does
+	/// not know about — the SDK's own additions grow with each release — so it is done ONLY when something
+	/// must actually change, and then it copies <c>Meta</c> explicitly, because dropping it drops the
+	/// caller's progress token and ClioRing correlates on that token ordinally and fails silently.
+	/// </remarks>
+	/// <param name="original">The caller's params.</param>
+	/// <param name="canonicalName">The canonical tool name the worker must execute.</param>
+	/// <returns>The params to relay.</returns>
+	private static CallToolRequestParams RelayParams(CallToolRequestParams original, string canonicalName) {
+		if (original is null) {
+			return new CallToolRequestParams { Name = canonicalName };
+		}
+		if (string.Equals(original.Name, canonicalName, StringComparison.Ordinal)) {
+			return original;
+		}
+		return new CallToolRequestParams {
+			Name = canonicalName,
+			Arguments = original.Arguments,
+			Meta = original.Meta
+		};
 	}
 
 	// Appends the model-visible advisory to Content (the channel the model actually reads — result

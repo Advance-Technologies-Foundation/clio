@@ -25,6 +25,13 @@ public class ModifyBusinessProcessTool(
 	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ModifyBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
 	 Description("Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of "

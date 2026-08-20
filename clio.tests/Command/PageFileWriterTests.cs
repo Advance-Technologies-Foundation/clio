@@ -1,4 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using FluentAssertions;
@@ -16,6 +17,7 @@ public sealed class PageFileWriterTests {
 	private const string OutputDirectory = "/ws";
 
 	private MockFileSystem _fileSystem;
+	private RecordingFileGate _fileGate;
 	private PageFileWriter _writer;
 	// Built through the same GetFullPath + Combine normalization the writer uses, so path comparisons
 	// stay OS-agnostic (the Windows CI adds a drive prefix and uses backslashes; macOS/Linux do not).
@@ -25,7 +27,8 @@ public sealed class PageFileWriterTests {
 	[SetUp]
 	public void SetUp() {
 		_fileSystem = new MockFileSystem();
-		_writer = new PageFileWriter(_fileSystem);
+		_fileGate = new RecordingFileGate();
+		_writer = new PageFileWriter(_fileSystem, _fileGate);
 		_clioPagesDir = _fileSystem.Path.Combine(_fileSystem.Path.GetFullPath(OutputDirectory), ".clio-pages");
 		_schemaDir = _fileSystem.Path.Combine(_clioPagesDir, SchemaName);
 	}
@@ -169,7 +172,7 @@ public sealed class PageFileWriterTests {
 	[TestCase("..")]
 	[TestCase("with space")]
 	[TestCase("")]
-	[Description("WritePageFiles must reject a schema name carrying path separators or out-of-charset characters before performing the recursive directory delete, so the destructive write cannot escape .clio-pages/.")]
+	[Description("WritePageFiles must reject a schema name carrying path separators or out-of-charset characters before touching any directory, so neither the published tree nor its staging counterpart can escape .clio-pages/.")]
 	public void WritePageFiles_ShouldReturnFailureAndNotWrite_WhenSchemaNameIsUnsafe(string unsafeName) {
 		// Arrange
 		PageGetResponse response = CreateResponse();
@@ -182,5 +185,69 @@ public sealed class PageFileWriterTests {
 		written.Error.Should().Contain("schema name",
 			because: "the error must explain that the schema name was rejected");
 		_fileSystem.AllFiles.Should().BeEmpty(because: "a refused write must not create any page files on disk");
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// ENG-95262 H-1: get-page's destructive prepare-and-write is one unit of work over files another
+	// clio process may be reading, so it runs under the schema's interprocess sentinel.
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Description("WritePageFiles must hold the schema's interprocess gate across the three staged file writes AND the swap that publishes them, in a single acquisition.")]
+	public void WritePageFiles_ShouldHoldTheSchemaGateAcrossPrepareAndWrite_WhenWritingPageFiles() {
+		// Arrange
+		PageGetResponse response = CreateResponse();
+
+		// Act
+		_writer.WritePageFiles(response, SchemaName, "dev", null, OutputDirectory);
+
+		// Assert
+		_fileGate.EnteredLockPaths.Should().HaveCount(1,
+			because: "the staged writes and the swap are one indivisible sequence — a second acquisition would let a reader observe the schema directory between the two renames that publish it");
+		_fileGate.IsHeld.Should().BeFalse(because: "the gate must be released once the write returns");
+	}
+
+	[Test]
+	[Description("The get-page sentinel must live outside .clio-pages/{schema}/, because that directory is replaced wholesale on every get-page.")]
+	public void WritePageFiles_ShouldUseASentinelOutsideTheDeletedDirectory_WhenWritingPageFiles() {
+		// Arrange
+		PageGetResponse response = CreateResponse();
+
+		// Act
+		_writer.WritePageFiles(response, SchemaName, "dev", null, OutputDirectory);
+
+		// Assert
+		string lockPath = _fileGate.EnteredLockPaths.Single();
+		_fileSystem.Path.GetFileName(lockPath).Should().Be($"{SchemaName}.lock",
+			because: "the sentinel is per schema, so a get-page of one page never waits on another");
+		_fileSystem.Path.GetFullPath(lockPath).Should().NotStartWith(_fileSystem.Path.GetFullPath(_schemaDir),
+			because: "a sentinel inside the replaced subtree would be moved out from under its holder on Unix, and on Windows would make the swap fail against the open exclusive handle and turn a working get-page into an error");
+		_fileSystem.Path.GetFullPath(lockPath).Should().StartWith(_fileSystem.Path.GetFullPath(_clioPagesDir),
+			because: "the sentinel still belongs to the workspace's .clio-pages tree, which the generated .gitignore already excludes wholesale");
+	}
+
+	[Test]
+	[Description("WritePageFiles must report a failure rather than throwing when the schema gate cannot be acquired, so a concurrent operation surfaces as a normal error response.")]
+	public void WritePageFiles_ShouldReturnFailure_WhenTheGateTimesOut() {
+		// Arrange
+		PageFileWriter writer = new(_fileSystem, new TimingOutFileGate());
+		PageGetResponse response = CreateResponse();
+
+		// Act
+		PageGetResponse written = writer.WritePageFiles(response, SchemaName, "dev", null, OutputDirectory);
+
+		// Assert
+		written.Success.Should().BeFalse(because: "a page whose files could not be written must not report success");
+		written.Error.Should().Contain("still using",
+			because: "the caller needs to understand that another clio operation holds the page directory, not that the read failed");
+	}
+
+	// Stands in for a gate whose lock is held by another clio process for longer than the timeout.
+	private sealed class TimingOutFileGate : Clio.Command.McpServer.Tools.IInterprocessFileGate {
+		public T Enter<T>(string lockFilePath, System.Func<T> action) =>
+			throw new System.TimeoutException($"Timed out waiting for the file lock '{lockFilePath}'.");
+
+		public void Enter(string lockFilePath, System.Action action) =>
+			throw new System.TimeoutException($"Timed out waiting for the file lock '{lockFilePath}'.");
 	}
 }

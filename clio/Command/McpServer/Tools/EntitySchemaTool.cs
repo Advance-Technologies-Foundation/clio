@@ -58,6 +58,13 @@ public sealed class CreateEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = CreateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
 
@@ -214,6 +221,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	/// </summary>
 	[McpServerTool(Name = CreateLookupToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
 
@@ -308,6 +322,13 @@ public sealed class UpdateEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
 		"The batch is published and the OData entities are rebuilt automatically, so changed columns become reachable over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
 		"An INHERITED column can have only its caption/description overridden (title-localizations / description-localizations); its name, type, and flags stay read-only. " +
@@ -438,6 +459,13 @@ public sealed class GetEntitySchemaPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaPropertiesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns structured properties for a remote Creatio entity schema. "
 		+ "Omit package-name for the MERGED/EFFECTIVE view (columns from all packages) — use this for column discovery; "
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
@@ -473,6 +501,13 @@ public sealed class SetEntitySchemaPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = SetEntitySchemaPropertiesToolName, ReadOnly = false, Destructive = true,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Sets schema-level properties on a remote Creatio entity schema. "
 		+ "Currently supports primary-display-column: the column (own or inherited, resolved by name) shown as the "
 		+ "record's display value in lookups and links. The change is saved and published (OData rebuilt) like the "
@@ -512,6 +547,13 @@ public sealed class FindEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = FindEntitySchemaToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Searches for entity schemas in a Creatio environment without needing to know the package name. "
 		+ "Returns schema name, package, maintainer, and parent schema for each match. "
@@ -548,6 +590,13 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaColumnPropertiesToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns structured properties for the specified remote Creatio entity schema column. "
 		+ "For a lookup column with a Const default, the returned default-value-config is enriched with "
 		+ "display-value (the referenced record's display value, resolved in the connected user's culture) "
@@ -583,6 +632,13 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	/// </summary>
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
 		+ "The change is published and the OData entities are rebuilt automatically, so the column becomes reachable "
 		+ "over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or "

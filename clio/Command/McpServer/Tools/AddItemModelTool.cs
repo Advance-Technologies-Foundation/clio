@@ -32,6 +32,13 @@ public sealed class AddItemModelTool(
 	/// </summary>
 	[McpServerTool(Name = AddItemModelToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Generates all C# entity models from the specified Creatio environment into the provided local folder.")]
 	public CommandExecutionResult AddItemModel(
 		[Description("add-item model parameters")]
