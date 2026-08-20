@@ -9090,3 +9090,10 @@ Decision: Use the registered `vbg` environment for a disposable empty workspace,
 Discovery: The built CLI returned success with the new warning and preserved `packages/placeholder.txt` against `vbg`. The shared E2E harness has stale sandbox URL/readiness configuration, so it fails before invoking the branch; the direct CLI boundary proved the empty path while the E2E now covers partial-restore preservation in CI.
 Files: clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, clio.tests/Package/PackageDownloaderTests.cs, clio.tests/Workspace/WorkspaceRestorerTests.cs
 Impact: Both empty and partial restore regressions are pinned, and the final module gate passes 3,806 tests.
+
+## 2026-08-21 00:11 – GH #1136 Angular Jest setup ownership
+Context: Fresh `new-ui-project` scaffolds failed every real Angular spec because the template and `@angular-builders/jest` both initialized TestBed.
+Decision: Keep the Angular 19 Jest builder and the project-specific setup hook, but reduce both shipped `setup-jest.ts` files to the JIT compiler import so the builder is the single test-environment owner.
+Discovery: `@angular-builders/jest` 19.0.1 concatenates custom `setupFilesAfterEnv` with its own setup. A token-substituted shipped template with locked dependencies passed a real `TestBed` component test after the duplicate initializer was removed. A zero-spec scaffold still reports Jest's normal `No tests found`; `passWithNoTests` is deliberately not enabled.
+Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
+Impact: both default and empty scaffolds retain their Jest extension point while real specs can execute; structural tests prevent either template from reintroducing a second initializer.

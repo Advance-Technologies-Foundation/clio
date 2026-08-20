@@ -175,6 +175,35 @@ public class UiProjectCreatorIntegrationTests {
 		cleanScript.Should().Contain("packages/UsrRssReader/Files/src/js/rss_reader");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Delegates Angular test-environment initialization to the configured Jest builder for every shipped UI template.")]
+	public void Create_ShouldDelegateAngularTestEnvironmentSetupToJestBuilder_WhenTemplateIsScaffolded(
+		bool isEmpty) {
+		// Arrange
+		string projectPath = Path.Combine(_tempDir, "projects", ProjectName);
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, isEmpty, string.Empty, _ => false);
+
+		// Assert
+		string setupContent = File.ReadAllText(Path.Combine(projectPath, "setup-jest.ts"));
+		setupContent.Should().Contain("import '@angular/compiler';",
+			because: "the generated Jest setup should retain the Angular JIT compiler import")
+			.And.NotContain("setupZoneTestEnv",
+				because: "@angular-builders/jest already initializes the Angular test environment");
+
+		string jestConfig = File.ReadAllText(Path.Combine(projectPath, "jest.config.ts"));
+		jestConfig.Should().Contain("setupFilesAfterEnv: ['<rootDir>/setup-jest.ts']",
+			because: "the generated project should retain its extension point for project-specific Jest setup");
+
+		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "angular.json"))).AsObject();
+		string testBuilder = angularJson["projects"]?[ProjectName]?["architect"]?["test"]?["builder"]?
+			.GetValue<string>();
+		testBuilder.Should().Be("@angular-builders/jest:run",
+			because: "the builder must remain the single owner of Angular test-environment initialization");
+	}
+
 	#endregion
 
 	#region Methods: Private
