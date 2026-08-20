@@ -119,6 +119,66 @@ public sealed class ODataReadToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a string OData next-link without tying it to the disposed response document.")]
+	public void Read_Should_Return_Next_Link_When_Server_Provides_It() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=1");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.nextLink\":\"https://creatio/odata/Contact?$skip=1\",\"value\":[{\"Id\":\"1\"}]}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = 1
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a valid collection page with a next-link should remain successful");
+		response.NextLink.Should().Be("https://creatio/odata/Contact?$skip=1",
+			because: "callers need the server paging annotation advertised by the response contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Ignores a malformed non-string next-link annotation without discarding an otherwise valid page.")]
+	public void Read_Should_Ignore_Non_String_Next_Link() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=1");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.nextLink\":42,\"value\":[{\"Id\":\"1\"}]}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = 1
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a malformed optional paging annotation must not discard valid records");
+		response.Count.Should().Be(1,
+			because: "the valid page contents should still be returned");
+		response.NextLink.Should().BeNull(
+			because: "only string next-link annotations can be exposed safely");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects the removed raw filter argument with a structured-filter hint before resolving an environment or issuing HTTP.")]
 	public void Read_Should_Reject_Raw_Filter_Argument_Before_Remote_Access() {
 		// Arrange

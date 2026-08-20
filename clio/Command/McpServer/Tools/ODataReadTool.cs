@@ -340,6 +340,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 				"Creatio did not return @odata.count for count=true; total count cannot be verified.");
 		}
 		string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
+			&& nextLinkElement.ValueKind == JsonValueKind.String
 			? nextLinkElement.GetString()
 			: null;
 		return new ODataReadResponse(true, null, count, valueElement.Clone(), nextLink, totalCount);
