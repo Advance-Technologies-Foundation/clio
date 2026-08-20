@@ -92,15 +92,15 @@ internal class Cp
                             tarOutputStream.PutNextEntry(entry);
                             await inputFileStream.CopyToAsync(tarOutputStream, cancellationToken);
                             tarOutputStream.CloseEntry();
-                            tarOutputStream.Dispose();
+                            await tarOutputStream.DisposeAsync();
                         }
                         catch
                         {
                             // Best-effort cleanup only: an entry left half-written after the exception above
-                            // (most commonly cancellation) makes Dispose() throw its own "entry closed before
-                            // N bytes written" exception. Swallow that secondary failure so the exception
-                            // being unwound here — rethrown as-is — is what callers actually observe.
-                            try { tarOutputStream.Dispose(); } catch { /* ignored: see comment above */ }
+                            // (most commonly cancellation) makes DisposeAsync() throw its own "entry closed
+                            // before N bytes written" exception. Swallow that secondary failure so the
+                            // exception being unwound here — rethrown as-is — is what callers actually observe.
+                            try { await tarOutputStream.DisposeAsync(); } catch { /* ignored: see comment above */ }
                             throw;
                         }
                     }
