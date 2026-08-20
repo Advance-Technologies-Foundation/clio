@@ -34,6 +34,12 @@ internal static class ApplicationToolTestInvocationExtensions {
 		this ApplicationCreateTool tool, ApplicationCreateArgs args) =>
 		tool.ApplicationCreate(args, server: null, requestContext: null, cancellationToken: default);
 
+	// Overload for tests that must verify the exact caller-supplied token reaches downstream calls
+	// (e.g. Data Forge enrichment) rather than CancellationToken.None.
+	public static Task<ApplicationContextResponse> ApplicationCreate(
+		this ApplicationCreateTool tool, ApplicationCreateArgs args, CancellationToken cancellationToken) =>
+		tool.ApplicationCreate(args, server: null, requestContext: null, cancellationToken: cancellationToken);
+
 	public static Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
 		this ApplicationSectionCreateTool tool,
 		ApplicationSectionCreateArgs args,
