@@ -81,6 +81,7 @@ def parse_front_matter(text: str) -> tuple[dict[str, object], list[str]]:
         return {}, problems
 
     data: dict[str, object] = {}
+    seen: set[str] = set()
     key: str | None = None
     for raw in body:
         stripped = raw.lstrip()
@@ -98,6 +99,11 @@ def parse_front_matter(text: str) -> tuple[dict[str, object], list[str]]:
         key, _, value = raw.partition(":")
         key = key.strip()
         value = value.strip().strip("'\"")
+        # A repeated key overwrites the earlier one, so the first value disappears with nothing
+        # to show for it - report it rather than let half the front matter go missing quietly.
+        if key in seen:
+            problems.append(f"duplicate front-matter key (the later value wins): {key}")
+        seen.add(key)
         data[key] = value if value else []
     return data, problems
 
@@ -131,6 +137,23 @@ def _schema_problems(record: Record) -> list[str]:
     return problems
 
 
+def _directory_entry_problems(record: Record, root: str) -> list[str]:
+    """Directory entries that lack the trailing ``/`` the schema requires.
+
+    Without it ``matches`` compares for equality, so the entry can never intersect a changed file,
+    while ``dead_paths`` still sees the directory on disk and stays quiet - the record silently
+    covers nothing at all. Naming it is the only way it ever gets noticed. Entries that escape the
+    tree never reach the filesystem here either - ``dead_paths`` already reports those.
+    """
+    return [
+        f"directory in applies-to needs a trailing '/': {entry}"
+        for entry in record.applies_to
+        if not entry.endswith("/")
+        and _within_root(root, entry)
+        and os.path.isdir(os.path.join(root, entry))
+    ]
+
+
 def _read_record(abs_path: str, root: str) -> Record:
     rel = os.path.relpath(abs_path, root).replace(os.sep, "/")
     with open(abs_path, encoding="utf-8") as handle:
@@ -146,6 +169,7 @@ def _read_record(abs_path: str, root: str) -> Record:
         problems=problems,
     )
     record.problems.extend(_schema_problems(record))
+    record.problems.extend(_directory_entry_problems(record, root))
     return record
 
 
