@@ -61,6 +61,20 @@ stories:
     depends_on: []
     blocks: []
 
+  - id: story-get-info-cliogate-diagnostics-1
+    title: "Use capability-first cliogate diagnostics in get-info"
+    feature: "get-info-cliogate-diagnostics"
+    repo: "clio"
+    size: S
+    status: review
+    issue: 1138
+    file: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-story.md
+    prd: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-spec.md
+    adr: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-plan.md
+    test_plan: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-qa.md
+    depends_on: []
+    blocks: []
+
   - id: story-mcp-progress-wait-timeout-1
     title: "Make MCP progress waits notification-driven and timeout-safe"
     feature: "mcp-progress-wait-timeout"
