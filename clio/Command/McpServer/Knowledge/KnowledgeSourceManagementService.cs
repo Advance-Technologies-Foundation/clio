@@ -28,7 +28,6 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeArtifactTransport> _artifactTransports;
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeRepositoryTransport> _repositoryTransports;
 	private readonly IFileSystem _fileSystem;
-	private readonly KnowledgeBundleClientCapabilities _capabilities;
 
 	public KnowledgeSourceManagementService(
 		ISettingsRepository settingsRepository,
@@ -37,8 +36,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		IKnowledgeGitRepositoryReader gitReader,
 		IEnumerable<IKnowledgeArtifactTransport> artifactTransports,
 		IEnumerable<IKnowledgeRepositoryTransport> repositoryTransports,
-		IFileSystem fileSystem,
-		KnowledgeBundleClientCapabilities capabilities) {
+		IFileSystem fileSystem) {
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_store = store ?? throw new ArgumentNullException(nameof(store));
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -46,7 +44,6 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		_artifactTransports = IndexTransports(artifactTransports);
 		_repositoryTransports = IndexTransports(repositoryTransports);
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
-		_capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
 	}
 
 	private static IReadOnlyDictionary<KnowledgeSourceType, TTransport> IndexTransports<TTransport>(
@@ -525,11 +522,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return FailedOperation(alias,
 				$"{diagnostic ?? "Git knowledge repository is invalid."} {rollback}".Trim());
 		}
-		// LOCAL DEV TOGGLE (knowledge-allow-unsequenced): the forward-only sequence guard blocks
-		// re-testing a branch (same libraryVersion -> same synthesized sequence, new content) or
-		// switching branches. When the flag is on, skip it so a Git candidate always installs.
-		if (previousSnapshot is not null && !_capabilities.AllowUnsequencedGitBundles
-				&& IsSequenceRegression(snapshot, previousSnapshot)) {
+		if (previousSnapshot is not null && IsSequenceRegression(snapshot, previousSnapshot)) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
 				$"Git knowledge source '{alias}' rejected sequence {snapshot.Sequence}; "
