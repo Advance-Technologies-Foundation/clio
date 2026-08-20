@@ -599,6 +599,36 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("validate-page does NOT warn about entity-data-source-static-filters when a generated Dashboard's `_designOptions` block carries both entitySchemaName and a filters array — `_designOptions` is designer-owned dashboard metadata, not a crt.EntityDataSource config, even though it shares the same co-located-key signature (GH-1125). Proves the false-positive carve-out reaches the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page does not warn about a Dashboard's _designOptions.filters")]
+	[AllureDescription("Sends a body whose viewConfigDiff registers a Dashboards entry with a _designOptions block carrying entitySchemaName + filters and verifies validate-page returns valid=true with no entity-data-source-static-filters warning — the block is designer-generated dashboard metadata, not a crt.EntityDataSource config.")]
+	public async Task PageValidateTool_Should_Not_Warn_On_Dashboard_DesignOptions_Filters() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithDashboardDesignOptions = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"merge\",\"name\":\"Dashboards\",\"values\":{" +
+				"\"_designOptions\":{\"entitySchemaName\":\"UsrExample\",\"dependencies\":[],\"filters\":[]}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithDashboardDesignOptions);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the Dashboard's generated _designOptions block is a legitimate shape, not a lint violation of any kind");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().BeNullOrEmpty(
+			because: "the _designOptions.filters array is designer-generated dashboard metadata, not a crt.EntityDataSource config key — warning about it as an ignored EntityDataSource filter would misdirect the agent toward a non-existent fix");
+	}
+
+	[Test]
 	[Description("validate-page returns a WARNING (not a hard failure) when a crt.HandleViewModelAttributeChangeRequest handler is not scoped to an attribute but writes a view-model attribute via $context.set(...) — the unscoped handler re-fires on its own write and clears the field at runtime (ENG-95557). Proves the handler-attribute-change-unscoped-write lint rule surfaces through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page warns about an unscoped attribute-change handler that writes an attribute")]
