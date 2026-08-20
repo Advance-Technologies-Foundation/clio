@@ -598,6 +598,40 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the warning to the related-list static-filter guidance");
 	}
 
+	[Test]
+	[Description("validate-page returns a WARNING (not a hard failure) when a crt.HandleViewModelAttributeChangeRequest handler is not scoped to an attribute but writes a view-model attribute via $context.set(...) — the unscoped handler re-fires on its own write and clears the field at runtime (ENG-95557). Proves the handler-attribute-change-unscoped-write lint rule surfaces through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about an unscoped attribute-change handler that writes an attribute")]
+	[AllureDescription("Sends a body whose SCHEMA_HANDLERS array holds an unscoped crt.HandleViewModelAttributeChangeRequest handler that calls $context.set(...) and verifies validate-page surfaces an advisory WARNING carrying handler-attribute-change-unscoped-write while keeping valid=true — the self-retrigger footgun is a runtime clear, not a structural break.")]
+	public async Task PageValidateTool_Should_Warn_On_Unscoped_AttributeChange_Handler_Write() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithUnscopedHandler = ValidPageBody.Replace(
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"handlers: /**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+				"handler: async (request, next) => { await request.$context.set(\"UsrCountryCode\", request.value); " +
+				"return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithUnscopedHandler);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an unscoped attribute-change handler that writes an attribute is a runtime self-retrigger footgun, not a structural break — validate-page must advise rather than block so the page still saves");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a Warning-severity lint finding must not demote content-ok — only Error findings block");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must flag the unscoped attribute-change write as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("handler-attribute-change-unscoped-write", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the warning to the page-schema-handlers scoping guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -680,6 +714,148 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Errors!.Should().Contain(
 			e => e.Contains("ProductsList") && e.Contains("is not a container for other items"),
 			because: "validate-page must surface the server-faithful differ exception so the agent fixes the diff before writing");
+	}
+
+	[Test]
+	[Description("ENG-95429: returns valid=false for a mobile JSON body whose viewConfigDiff insert declares its component type on the operation object instead of inside 'values'. The Creatio differ builds the element from 'values' only, so the type is dropped and the page would persist a button that never renders while the write reports success.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile insert whose type sits outside values")]
+	[AllureDescription("Sends the ENG-95429 shape — a run-process button whose 'type' is a sibling of 'values' rather than a member of it — and verifies validate-page blocks it end-to-end instead of accepting an unrenderable element.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Insert_With_Type_Outside_Values() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMisplacedType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton", "type": "crt.Button",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithMisplacedType);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the differ discards an operation-level type, so the write would persist a button the mobile runtime cannot render");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().NotBeNullOrEmpty(
+			because: "the misplaced type must be surfaced as an actionable validation error");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("RunProcessButton") && e.Contains("values"),
+			because: "validate-page must name the element and point at 'values' so the agent fixes the insert before writing");
+	}
+
+	[Test]
+	[Description("A mobile body whose insert declares no component type anywhere passes validation but comes back with the advisory. This is the only end-to-end proof that a warning raised by ValidateMobilePage reaches Validation.Warnings on a MOBILE body — the other warning e2e cases here use web bodies, and the mobile warning e2e that used to cover this wire went with the reverted Scaffold/actions rule.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page surfaces a mobile warning without blocking")]
+	[AllureDescription("Sends a mobile body with an insert that carries element properties but no type, and verifies validate-page returns valid=true with the typeless-element warning present.")]
+	public async Task PageValidateTool_Should_Surface_Mobile_Warning_Without_Blocking() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithTypelessInsert = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "MysteryElement",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "visible": true } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithTypelessInsert);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a missing type is advisory — it is not provably a misplacement, so it must not block the write");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().Contain(w => w.Contains("MysteryElement"),
+			because: "the mobile warning wire must be proven end to end, not only in unit scope");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "nothing in this body is a blocking defect");
+	}
+
+	[Test]
+	[Description("ENG-95429: a well-formed crt.Button insert into Scaffold/actions passes validation (valid=true) but comes back with the placement warning. This is the body a coding agent actually produced; the type-placement rule correctly stays silent on it, so the slot advisory is the only thing that can steer the author to a placement the mobile designer canvas can show.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about a mobile button in the Scaffold actions slot")]
+	[AllureDescription("Sends the stand-verified ENG-95429 body — type inside values, correct operation case, inserted into Scaffold/actions — and verifies validate-page accepts it but returns the non-blocking placement warning pointing at a page container's items with a layoutConfig.")]
+	public async Task PageValidateTool_Should_Warn_About_Mobile_Button_In_Scaffold_Actions() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithButtonInActions = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton",
+			      "parentName": "Scaffold", "propertyName": "actions",
+			      "values": { "type": "crt.Button",
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrSomeProcess",
+			                                           "processRunType": "RegardlessOfThePage" } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithButtonInActions);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the placement is undiscoverable in the designer, not invalid — the rule steers rather than refuses");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().NotBeNullOrEmpty(
+			because: "the whole point of the rule is that this body is otherwise clean and would pass unremarked");
+		response.Validation.Warnings!.Should().Contain(
+			w => w.Contains("RunProcessButton") && w.Contains("layoutConfig"),
+			because: "the agent must reach the working placement from the warning alone, without another round-trip");
+	}
+
+	[Test]
+	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]
+	[AllureDescription("Sends the corrected ENG-95429 shape (type inside 'values', everything else identical to the rejected body) and verifies validate-page accepts it end-to-end with no errors.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Insert_With_Type_Inside_Values() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithCorrectType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.Button",
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithCorrectType);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a type inside 'values' is exactly what the differ applies, so the canonical shape must keep passing");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "the type-placement rule must not fire on a correctly authored insert");
+		response.Validation.Warnings.Should().BeNullOrEmpty(
+			because: "the canonical shape must come back completely clean — a warning here would still push the agent to 'fix' correct code");
 	}
 
 	[Test]

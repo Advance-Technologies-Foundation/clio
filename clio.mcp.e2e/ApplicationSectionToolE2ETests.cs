@@ -26,6 +26,14 @@ public sealed class ApplicationSectionToolE2ETests {
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
+	/// <summary>
+	/// Bound on the wait for an already-sent <c>notifications/progress</c> to reach the typed sink.
+	/// This covers only client-side dispatch latency — the tool call has already returned by then — so the
+	/// healthy path resolves in milliseconds and never spends this budget. The bound exists so a genuinely
+	/// broken keep-alive path fails with a diagnostic instead of hanging until the fixture token fires.
+	/// </summary>
+	private static readonly TimeSpan ProgressDeliveryTimeout = TimeSpan.FromSeconds(30);
+
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server with an isolated settings file pointing at an unreachable Creatio URI and verifies that create-app-section returns the classified transport error envelope.")]
@@ -762,10 +770,21 @@ public sealed class ApplicationSectionToolE2ETests {
 			progress,
 			cancellationTokenSource.Token);
 
+		// Diagnostic: dump the payload BEFORE asserting on progress. When the backend fails fast the tool
+		// returns a structured error envelope with IsError unset, so zero notifications is then correct
+		// behavior rather than a broken keep-alive path — and only the payload tells the two apart.
+		TestContext.Out.WriteLine($"[payload] {DescribeCallResult(callResult)}");
+
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: $"a structured list-app-sections result should not surface as an MCP-level error. Actual: {DescribeCallResult(callResult)}");
-		progress.Count.Should().BeGreaterThanOrEqualTo(1,
+		// Wait for the beat instead of asserting on whatever the sink happened to hold when the call
+		// returned: tool completion and notification dispatch use independent SDK continuations, so the
+		// server can have sent the beat while the typed IProgress handler has not run yet. Asserting
+		// immediately made this test fail on roughly half of the recent CI runs (issue #1103).
+		Func<Task> awaitFirstBeat = async () => await progress.WaitForCountAsync(
+			minimumCount: 1, ProgressDeliveryTimeout, cancellationTokenSource.Token);
+		await awaitFirstBeat.Should().NotThrowAsync(
 			because: "a long-running application tool must stream at least one progress notification so the client resets its inactivity timeout instead of timing out");
 	}
 
