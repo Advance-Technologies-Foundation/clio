@@ -121,4 +121,4 @@ public sealed record CreateBusinessProcessArgs(
 
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional package name that overrides the descriptor's packageName.")]
-	string PackageName);
+	string? PackageName = null);

@@ -752,7 +752,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("A mobile body whose insert declares no component type anywhere passes validation but comes back with the advisory. This is the only end-to-end proof that a warning raised by ValidateMobilePage reaches Validation.Warnings on a MOBILE body — the other warning e2e cases here use web bodies, and the mobile warning e2e that used to cover this wire went with the reverted Scaffold/actions rule.")]
+	[Description("A mobile body whose insert declares no component type anywhere passes validation but comes back with the advisory. One of the end-to-end proofs that a warning raised by ValidateMobilePage reaches Validation.Warnings on a MOBILE body; the Scaffold/actions case below covers the same wire.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page surfaces a mobile warning without blocking")]
 	[AllureDescription("Sends a mobile body with an insert that carries element properties but no type, and verifies validate-page returns valid=true with the typeless-element warning present.")]
@@ -821,6 +821,163 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Warnings!.Should().Contain(
 			w => w.Contains("RunProcessButton") && w.Contains("layoutConfig"),
 			because: "the agent must reach the working placement from the warning alone, without another round-trip");
+	}
+
+	[Test]
+	[Description("ENG-95429: a merge that authors a button inside values.actions is REJECTED end to end. Verified on a stand before the rule existed - the write succeeded, the operation persisted in the page body, and the button appeared zero times in the server-merged viewConfig, because the differ strips a slot the target already populates. The slot-placement rule cannot see this shape: it matches insert only.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile merge that authors children in a Scaffold slot")]
+	[AllureDescription("Sends the stand-verified merge shape - a crt.Button nested in values.actions of a merge on Scaffold - and verifies validate-page refuses it with an error naming the slot and the child that would go missing.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Merge_Authoring_Children_In_Slot() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMergeAuthoredButton = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "Scaffold",
+			      "values": { "actions": [ { "type": "crt.Button", "name": "UsrMergeProbeButton",
+			                                 "clicked": { "request": "crt.SaveRecordRequest" } } ] } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithMergeAuthoredButton);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the elements are provably never created, so accepting the body would let the silent failure through again");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("UsrMergeProbeButton") && e.Contains("actions"),
+			because: "the author must see which child goes missing and from which slot, not just that the merge is wrong");
+	}
+
+	[Test]
+	[Description("Companion to the merge-slot rejection: a merge that sets only scalar properties stays valid end to end. This is the shape the mobile designer emits throughout a real page, so a false positive here would refuse almost every mobile write.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts a mobile merge that sets scalar properties")]
+	[AllureDescription("Sends a layoutConfig-only merge taken from a real mobile page body and verifies validate-page accepts it, proving the merge-slot rule is scoped to authored child elements.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Merge_Of_Scalar_Properties() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithScalarMerge = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "AreaProfileContainer",
+			      "values": { "layoutConfig": { "column": 1, "colSpan": 1, "row": 1, "rowSpan": 1 } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithScalarMerge);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an ordinary property merge must stay writable - the rule targets authored child elements only");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "the everyday designer-emitted merge must reach the save path with nothing to fix");
+		response.Validation.Warnings.Should().BeNullOrEmpty(
+			because: "a warning on the everyday designer-emitted merge would still push the agent to rewrite correct code");
+	}
+
+	[Test]
+	[Description("ENG-95347: returns valid=true for a mobile list body whose item-scope attributes are declared ONLY inside the collection attribute's nested viewModelConfig.attributes map and bound from the list's itemLayout. Before this fix the binding validator collected only top-level attribute names, rejected this body as undeclared, and pushed authors to re-declare the attributes at page root — creating the duplicate declarations that break mobile-runtime saves.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts itemLayout bindings to nested item-scope attributes")]
+	[AllureDescription("Sends a mobile list body where the itemLayout binds to an attribute declared only in the collection attribute's viewModelConfig.attributes, and verifies validate-page returns valid=true end-to-end with no undeclared-binding error.")]
+	public async Task PageValidateTool_Should_Accept_ItemLayout_Binding_To_Nested_Collection_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithNestedItemScopeAttributes = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_LeadName" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithNestedItemScopeAttributes);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "SimilarLeadListDS_LeadName is declared in the collection attribute's nested viewModelConfig.attributes — the item scope the itemLayout binding resolves against at mobile runtime — so no root-level duplicate declaration is required");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "a correctly-nested item-scope declaration must not be reported as an undeclared binding");
+	}
+
+	[Test]
+	[Description("ENG-95347 counterpart guard: returns valid=false when the itemLayout binds to a name absent from BOTH the root attributes map and the collection attribute's nested viewModelConfig.attributes — accepting nested declarations must not turn the undeclared-binding check off.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page still rejects an itemLayout binding to an undeclared attribute")]
+	[AllureDescription("Sends the same nested-declaration mobile list body but binds the itemLayout title to a name declared nowhere, and verifies validate-page returns valid=false with the undeclared-binding error naming it.")]
+	public async Task PageValidateTool_Should_Reject_ItemLayout_Binding_To_Undeclared_Nested_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithUndeclaredNestedBinding = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_NotDeclared" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithUndeclaredNestedBinding);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "SimilarLeadListDS_NotDeclared is declared neither at the root attributes map nor in the nested item-scope attributes, so the binding cannot resolve at mobile runtime");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("SimilarLeadListDS_NotDeclared"),
+			because: "the undeclared-binding error must name the attribute so the agent can fix the declaration before writing");
 	}
 
 	[Test]
