@@ -88,6 +88,104 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				+ "non-primary page data source must convert — the drop used to remove whole detail sections and, "
 				+ "because emptiness cascades, their wrapper containers with them");
 		AssertConvertedListsCarryTheirRow(response.Guide!);
+		AssertHeaderActionsConvertToFab(response.Guide!);
+	}
+
+	[Test]
+	[Description("Non-vacuous MainHeader->FAB guard (ENG-93152): converts real seeded pages until one yields a FloatingActionButton.menuItems entry, then asserts at least one real header-action conversion and its crt.MenuItem/denylist contract. When NO seeded page carries a header action it IGNORES with an explicit reason instead of passing silently, so a regression that stops MainHeader->FAB is caught on any header page and missing seed coverage is surfaced rather than hidden.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide converts MainHeader actions into the floating action button")]
+	[AllureDescription("Iterates the seeded application's pages, converts each through the real clio MCP server, and asserts the header-action -> FloatingActionButton.menuItems contract on the first page that produces one; a conversion failure fails the test, and no header-action page at all degrades to Ignore (never a vacuous pass).")]
+	public async Task MobilePageConversionGuideTool_Should_Convert_MainHeaderActions_Into_Fab() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one yields a FAB conversion; a conversion FAILURE is a regression, not a seed gap.
+		int fabEntryCount = 0;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			if (callResult.IsError == true) {
+				failedCandidates.Add($"'{schemaName}': transport-level error");
+				continue;
+			}
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			if (!response.Success) {
+				failedCandidates.Add($"'{schemaName}': {response.Error}");
+				continue;
+			}
+			int fab = (response.Guide?.ElementMap ?? []).Count(e =>
+				e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems");
+			if (fab > 0) {
+				AssertHeaderActionsConvertToFab(response.Guide!);
+				fabEntryCount = fab;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		if (fabEntryCount == 0) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "carries a MainHeader action, so MainHeader->FAB could not be exercised end to end. Add a seeded page with a "
+				+ "header button (crt.Button under MainHeader) to guard this integration.");
+		}
+		fabEntryCount.Should().BeGreaterThan(0,
+			because: $"the seeded page '{convertedSchemaName}' carries a MainHeader action that must convert into the FloatingActionButton");
+	}
+
+	/// <summary>
+	/// Any element retargeted into <c>FloatingActionButton.menuItems</c> — a converted MainHeader action
+	/// (ENG-93152) — must be a <c>crt.MenuItem</c> insert carrying no visual properties (style/color/icon): the
+	/// header-button → FAB denylist. A page with no header actions passes vacuously — the seeded page set is not
+	/// guaranteed to carry a header button, so this asserts the contract only when one actually converted.
+	/// </summary>
+	private static void AssertHeaderActionsConvertToFab(MobilePageConversionGuide guide) {
+		List<ElementMapEntry> fabEntries = guide.ElementMap.Where(e =>
+			e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems").ToList();
+		foreach (ElementMapEntry entry in fabEntries) {
+			entry.MobileType.Should().Be("crt.MenuItem",
+				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
+			if (entry.MobileValues is JsonObject values) {
+				values.ContainsKey("style").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+				values.ContainsKey("icon").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+				values.ContainsKey("color").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+			}
+		}
+		// AC 4.5: once header actions convert, the MainHeader scope container itself produces NO mobile element —
+		// it is neither inserted nor merged (a non-converting scope emits nothing of its own). Asserted only when a
+		// FAB conversion actually happened, so a page without a header still passes vacuously.
+		if (fabEntries.Count > 0) {
+			guide.ElementMap.Should().NotContain(
+				e => e.WebName == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
+				because: "a non-converting scope container (MainHeader) is never emitted as a mobile element (AC 4.5)");
+		}
 	}
 
 	/// <summary>

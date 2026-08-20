@@ -1538,13 +1538,18 @@ public static class SchemaValidationService
 
 	private static void CollectAttributesFromArraySection(JsonElement section, HashSet<string> attributes) {
 		foreach (JsonElement entry in section.EnumerateArray()) {
-			if (entry.ValueKind != JsonValueKind.Object || !ShouldScanAsAttributesContainer(entry)) {
+			if (entry.ValueKind != JsonValueKind.Object) {
 				continue;
 			}
 			// Merge-into-attributes pattern: { "operation":"merge", "path":["attributes"], "values":{...} }
+			// and the targeted item-scope form whose path ends in a nested attributes map:
+			// { "operation":"merge", "path":["attributes","<collection>","viewModelConfig","attributes"], "values":{...} }
+			if (!ShouldScanAsAttributesContainer(entry) && !TargetsNestedAttributesMap(entry)) {
+				continue;
+			}
 			if (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) &&
 				values.ValueKind == JsonValueKind.Object) {
-				AddObjectPropertyNames(values, attributes);
+				AddAttributeNames(values, attributes);
 			}
 		}
 	}
@@ -1552,14 +1557,67 @@ public static class SchemaValidationService
 	private static void CollectAttributesFromObjectSection(JsonElement section, HashSet<string> attributes) {
 		if (section.TryGetProperty(AttributesPropertyName, out JsonElement attrs) &&
 			attrs.ValueKind == JsonValueKind.Object) {
-			AddObjectPropertyNames(attrs, attributes);
+			AddAttributeNames(attrs, attributes);
 		}
 	}
 
-	private static void AddObjectPropertyNames(JsonElement obj, HashSet<string> attributes) {
+	/// <summary>
+	/// Adds every attribute name declared in <paramref name="obj"/> (an attributes map), including
+	/// item-scope attributes nested inside a collection attribute's <c>viewModelConfig.attributes</c>
+	/// (a list column bound from the list's <c>itemLayout</c>). Those resolve at runtime in the
+	/// collection's item scope, so a binding to them is declared — collecting only the top-level
+	/// names would falsely reject a correctly-nested list body and push its column attributes to be
+	/// re-declared at page root, where they duplicate the nested ones and break mobile-runtime saves.
+	/// </summary>
+	private static void AddAttributeNames(JsonElement obj, HashSet<string> attributes) {
 		foreach (JsonProperty attr in obj.EnumerateObject()) {
 			attributes.Add(attr.Name);
+			if (attr.Value.ValueKind == JsonValueKind.Object &&
+				attr.Value.TryGetProperty(ViewModelConfigPropertyName, out JsonElement itemViewModelConfig) &&
+				itemViewModelConfig.ValueKind == JsonValueKind.Object &&
+				itemViewModelConfig.TryGetProperty(AttributesPropertyName, out JsonElement itemAttributes) &&
+				itemAttributes.ValueKind == JsonValueKind.Object) {
+				AddAttributeNames(itemAttributes, attributes);
+			}
 		}
+	}
+
+	/// <summary>
+	/// True when a diff operation's path is an all-string array whose first segment is
+	/// <c>attributes</c> and whose last two segments are <c>viewModelConfig</c>, <c>attributes</c> —
+	/// then its <c>values</c> declare item-scope attribute names. The canonical shape is the
+	/// four-segment collection path <c>["attributes","SimilarLeadList","viewModelConfig","attributes"]</c>,
+	/// but the check is deliberately shape-only (first / penultimate / last segment, any length above
+	/// one): a shorter or deeper path that satisfies it also matches, which can only over-accept —
+	/// consistent with the validator's lenient posture. What must never match are paths carrying an
+	/// attribute's BODY, and they never do: ending in <c>attributes</c> through another sub-property
+	/// (<c>["attributes","X","modelConfig","attributes"]</c>) fails the penultimate check, drilling
+	/// into a sub-property (<c>["attributes","X","modelConfig"]</c>) or one level past the nested map
+	/// (<c>[...,"viewModelConfig","attributes","LeadName"]</c>) fails the last-segment check.
+	/// </summary>
+	private static bool TargetsNestedAttributesMap(JsonElement operation) {
+		if (!operation.TryGetProperty("path", out JsonElement pathElement) ||
+			pathElement.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		string? first = null;
+		string? beforeLast = null;
+		string? last = null;
+		int count = 0;
+		foreach (JsonElement segment in pathElement.EnumerateArray()) {
+			if (segment.ValueKind != JsonValueKind.String) {
+				return false;
+			}
+			string? value = segment.GetString();
+			first ??= value;
+			beforeLast = last;
+			last = value;
+			count++;
+		}
+		return count > 1 &&
+			string.Equals(first, AttributesPropertyName, StringComparison.OrdinalIgnoreCase) &&
+			string.Equals(beforeLast, ViewModelConfigPropertyName, StringComparison.OrdinalIgnoreCase) &&
+			string.Equals(last, AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static HashSet<string> CollectMobileViewBindings(JsonElement root) {

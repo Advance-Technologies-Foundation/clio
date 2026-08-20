@@ -137,7 +137,13 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 
 	public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
 		WorkspaceOptions restoreWorkspaceOptions) {
-		Version creatioSdkVersion = _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion);
+		// Resolved up front so an unreachable SDK feed still fails BEFORE any package is written to disk, but
+		// only when the NuGet restore step will actually run: resolving it reaches api.nuget.org, and doing
+		// that unconditionally made a restore WITHOUT --IsNugetRestore - which downloads packages from the
+		// environment and touches no feed - fail on a host that cannot reach it (issue #1119).
+		Version creatioSdkVersion = restoreWorkspaceOptions.IsNugetRestore == true
+			? _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion)
+			: null;
 		IEnumerable<string> packagesToDownload = _workspacePackageFilter
 			.FilterPackages(workspaceSettings.Packages, workspaceSettings);
 		IList<string> externalPackages = workspaceSettings.ExternalPackages;
