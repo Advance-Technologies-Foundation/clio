@@ -2540,7 +2540,7 @@ public static class WebToMobileAnalysisService {
 		// source.columns[0], source.columns[1:] — address the node's own arrays directly. There is no
 		// projection step and nothing to validate: a column code IS a real attribute name in the source
 		// config, so an entry never needs dropping, reordering, or repairing before the template sees it.
-		if (RenderTemplateToken(JToken.Parse(template.Value!.Value.GetRawText()), roots) is not JObject rendered) {
+		if (RenderTemplateToken(JToken.Parse(template.Value.Value.GetRawText()), roots) is not JObject rendered) {
 			return;
 		}
 		// Real authored content wins over anything synthesized. Only the STRUCTURE a template introduces counts —
