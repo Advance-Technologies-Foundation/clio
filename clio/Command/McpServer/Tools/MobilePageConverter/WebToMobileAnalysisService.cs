@@ -678,10 +678,50 @@ public static class WebToMobileAnalysisService {
 		return collected;
 	}
 
+	/// <summary>
+	/// The NON-<c>items</c> child-element nodes of a Newtonsoft node, as a fresh JArray of CLONES: every property
+	/// value that is a component object (<c>crt.*</c> <c>type</c>) or a member of a collection of them
+	/// (<c>tools</c>, <c>menuItems</c>, …). Clones so the result can be walked read-only without reparenting the
+	/// source tree. A DATA/config array or object (no <c>crt.*</c> type) is excluded. Used by the read-only
+	/// structure/baseline passes so they see components in non-items slots the same way the element-map walk does.
+	/// </summary>
+	private static JArray ChildComponentSlots(JObject node) {
+		var collected = new JArray();
+		foreach (JProperty prop in node.Properties()) {
+			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			if (prop.Value is JObject single && IsComponentObject(single)) {
+				collected.Add(single.DeepClone());
+			} else if (prop.Value is JArray array) {
+				foreach (JToken element in array) {
+					if (element is JObject component && IsComponentObject(component)) {
+						collected.Add(component.DeepClone());
+					}
+				}
+			}
+		}
+		return collected;
+	}
+
 	/// <summary>True when a System.Text.Json object is a view component — carries a string <c>type</c> starting
 	/// with <c>crt.</c>.</summary>
 	private static bool IsComponentObject(JsonObject obj) =>
 		StringProp(obj, "type") is { Length: > 0 } type && type.StartsWith("crt.", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>True when a Newtonsoft object is a view component — a string <c>type</c> starting <c>crt.</c>.</summary>
+	private static bool IsComponentObject(JObject obj) =>
+		obj["type"]?.Type == JTokenType.String
+		&& obj["type"].ToString().StartsWith("crt.", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// A STRUCTURAL child-element array (Newtonsoft): a non-empty array in which every element is a component
+	/// object. Unlike <see cref="IsChildElementArray"/> this does NOT require the members to resolve to a mobile
+	/// type — it is the "is this a nested component collection to VISIT?" test used by the chrome-prune pass (which
+	/// runs before any registry/rules context and must visit every nested component regardless of convertibility).
+	/// </summary>
+	private static bool IsComponentArray(JArray array) =>
+		array.Count > 0 && array.All(element => element is JObject obj && IsComponentObject(obj));
 
 	/// <summary>
 	/// Collects a name → component-TYPE map for every named component in a merged viewConfig tree
@@ -2279,46 +2319,6 @@ public static class WebToMobileAnalysisService {
 	/// <summary>True when the node resolves to a mobile type (see <see cref="ResolveConvertedMobileType"/>).</summary>
 	private static bool ResolvesToMobileType(ElementMapContext ctx, JObject node, IReadOnlyList<string> sourceAncestors) =>
 		!string.IsNullOrEmpty(ResolveConvertedMobileType(ctx, node, sourceAncestors));
-
-	/// <summary>
-	/// The NON-<c>items</c> child-element nodes of a Newtonsoft node, as a fresh JArray of CLONES: every property
-	/// value that is a component object (<c>crt.*</c> <c>type</c>) or a member of a collection of them
-	/// (<c>tools</c>, <c>menuItems</c>, …). Clones so the result can be walked read-only without reparenting the
-	/// source tree. A DATA/config array or object (no <c>crt.*</c> type) is excluded. Used by the read-only
-	/// structure/baseline passes so they see components in non-items slots the same way the element-map walk does.
-	/// </summary>
-	private static JArray ChildComponentSlots(JObject node) {
-		var collected = new JArray();
-		foreach (JProperty prop in node.Properties()) {
-			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
-				continue;
-			}
-			if (prop.Value is JObject single && IsComponentObject(single)) {
-				collected.Add(single.DeepClone());
-			} else if (prop.Value is JArray array) {
-				foreach (JToken element in array) {
-					if (element is JObject component && IsComponentObject(component)) {
-						collected.Add(component.DeepClone());
-					}
-				}
-			}
-		}
-		return collected;
-	}
-
-	/// <summary>True when a Newtonsoft object is a view component — a string <c>type</c> starting <c>crt.</c>.</summary>
-	private static bool IsComponentObject(JObject obj) =>
-		obj["type"]?.Type == JTokenType.String
-		&& obj["type"].ToString().StartsWith("crt.", StringComparison.OrdinalIgnoreCase);
-
-	/// <summary>
-	/// A STRUCTURAL child-element array (Newtonsoft): a non-empty array in which every element is a component
-	/// object. Unlike <see cref="IsChildElementArray"/> this does NOT require the members to resolve to a mobile
-	/// type — it is the "is this a nested component collection to VISIT?" test used by the chrome-prune pass (which
-	/// runs before any registry/rules context and must visit every nested component regardless of convertibility).
-	/// </summary>
-	private static bool IsComponentArray(JArray array) =>
-		array.Count > 0 && array.All(element => element is JObject obj && IsComponentObject(obj));
 
 	/// <summary>
 	/// The reason line for a template-mapped component twin: the rule's business <c>note</c> (what the
