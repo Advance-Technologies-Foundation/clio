@@ -33,12 +33,25 @@ When `validate` is `true` (the default), the body is checked client-side before 
     all). The Creatio differ builds the element from `values` alone, so the type is discarded and the
     element never renders even though the save succeeds. A flat `set` is left to the differ, which refuses
     it for the missing required `values`.
+  - **Rejected** — a `merge` whose `values` authors child elements on `Scaffold`'s `actions`, `leading` or
+    `items` (an array, or a lone object, of item configs carrying a non-empty `name`). `items` is the page body,
+    filled with a `MainContainer` by every non-blank template; the same slot on any other container stays
+    advisory. Every shipped *form* template
+    populates those slots, so the differ strips the property out of the merge and nothing is created even
+    though the write succeeds. Put the child in a page container with its own `insert` plus a `layoutConfig`.
+    clio validates `viewConfigDiff` against an empty base and cannot see the target, so a page built from
+    `BlankMobilePageTemplate` — a bare Scaffold whose slots may be empty — is refused as well, even though the
+    merge would have applied there.
+  - **Warned** — the same authoring in any other slot. There the target may legitimately lack the slot, in
+    which case the merge creates it and the authoring works; clio validates against an empty base and cannot
+    distinguish the two. Both are `merge`-only — for `insert`/`set` the `values` object becomes the element,
+    so children declared there are created.
   - **Warned** — no type anywhere while `values` carries element properties; two DIFFERENT types (the
     element still renders, as the `values` copy); and an operation whose letter case does not match the
     differ's exact-case dispatch; and a `crt.Button` inserted into `parentName: "Scaffold"`,
     `propertyName: "actions"`, which saves but does not appear on the mobile designer canvas (ENG-95429) —
     place it in a page container's `items` with a `layoutConfig` instead.
-  - **Not enforced** — the same type-placement defect breaks **web** pages identically and is not checked
+  - **Not enforced** — the same type-placement and merge-slot defects break **web** pages identically and are not checked
     there, and `validate: false` skips these checks along with every other one, re-opening the
     silent-persist path; do not use it to get past a rejection.
   Call `clio get-guidance --name mobile-page-modification` for details.
