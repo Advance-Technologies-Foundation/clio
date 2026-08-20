@@ -594,6 +594,14 @@ public sealed class TelemetryService : ITelemetryService
 			"workflow_completed" => PreferredKnown(sessionState, BuildStartedEvent, PlanApprovedEvent, WorkflowStartedEvent),
 			"workflow_failed" => PreferredKnown(sessionState, BuildStartedEvent, PlanApprovedEvent, WorkflowStartedEvent),
 			"changes_applied" => FirstKnown(sessionState, "changes_requested"),
+			// Deliberately unmapped: `work_item_completed` REPEATS within a run, so any anchor would
+			// measure the gap since the previous REPORTED unit rather than the cost of this one. An
+			// agent that finishes several units and then reports them together would produce spans of
+			// milliseconds each - indistinguishable from genuinely fast work, and worse than an absent
+			// field because it is confidently wrong. Per-unit cost is still available to a consumer:
+			// every stored event carries its own timestamp, so it is the difference between consecutive
+			// `work_item_completed` events of the same (session_id, workflow) pair, computed where the
+			// reporting cadence is visible instead of frozen into one interpretation here.
 			_ => null
 		};
 		if (string.IsNullOrWhiteSpace(startEventName)

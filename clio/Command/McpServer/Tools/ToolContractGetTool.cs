@@ -1207,7 +1207,7 @@ internal static class ToolContractCatalog {
 					Field("coding_agent", StringType, "Optional agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor. Send the value your toolkit supplies, verbatim; OMIT it rather than guessing. Stored canonicalised to a lowercase slug so one host is one cohort."),
 					Field("plugin_version", StringType, "Optional product plugin version, taken verbatim from the toolkit that supplies it. OMIT it when nothing supplies one — a guessed version or a placeholder such as 'unknown' lands real runs in a cohort that never existed."),
 					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
-					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
+					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can. A stage that repeats within one run (work_item_completed) carries no inferred duration: the cost of a single unit is the interval between consecutive such events, which a consumer computes from their timestamps, because an anchor here would instead measure the gap since the previously REPORTED unit and would collapse to milliseconds whenever an agent reports several units together.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,

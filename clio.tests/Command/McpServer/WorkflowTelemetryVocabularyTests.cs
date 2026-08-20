@@ -699,6 +699,39 @@ public sealed class WorkflowTelemetryVocabularyTests
 			because: "the blocked run ended, so its start must not anchor the run that follows");
 	}
 
+	[Test]
+	[Description("A repeating stage carries no inferred duration_ms, only total elapsed, so a batched report cannot pass itself off as fast work.")]
+	public void WorkItemCompleted_CarriesNoInferredDuration()
+	{
+		// Anchoring this stage would measure the gap since the previously REPORTED unit rather than the
+		// cost of this one: an agent that finishes several units and reports them together would
+		// produce spans of milliseconds each, indistinguishable from genuinely fast work and worse
+		// than an absent field. Per-unit cost stays derivable from consecutive event timestamps.
+		// Pinned because the behaviour follows from an unmapped switch arm, which the next person to
+		// add a mapping would change without noticing.
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-20T09:00:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-creation" });
+		time.Advance(TimeSpan.FromSeconds(10));
+		service.Send(CreateRequest("build_started") with { Workflow = "app-creation" });
+		time.Advance(TimeSpan.FromSeconds(20));
+		service.Send(CreateRequest("work_item_completed") with {
+			Workflow = "app-creation", Variant = "entity-column"
+		});
+		time.Advance(TimeSpan.FromSeconds(5));
+		TelemetryEventResult second = service.Send(CreateRequest("work_item_completed") with {
+			Workflow = "app-creation", Variant = "page"
+		});
+
+		JsonElement stored = ReadStoredEvent(second);
+		ReadIntAttribute(stored, "duration_ms").Should().BeNull(
+			because: "a stage that repeats has no single prior stage whose span means anything");
+		ReadIntAttribute(stored, "duration_since_session_start_ms").Should().Be(35_000,
+			because: "total elapsed still places the unit within its run");
+	}
+
 	private TelemetryService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
 
 	private TelemetryService CreateService(TimeProvider timeProvider) =>
