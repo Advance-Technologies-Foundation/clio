@@ -69,17 +69,20 @@ public sealed class WorkspaceSyncToolE2ETests {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("Creates a workspace and package with the real clio CLI, pushes it through MCP, deletes the local package files, restores into the same workspace, and verifies the package metadata is recreated from the environment.")]
+	[Description("Creates a workspace and package with the real clio CLI, restores the configured package through MCP, and verifies its metadata while unrelated package content is preserved.")]
 	[AllureTag(PushToolName)]
 	[AllureTag(RestoreToolName)]
-	[AllureName("Restore workspace recreates the pushed package in the same workspace")]
-	[AllureDescription("Uses the real clio CLI to create a workspace and package locally, pushes it through MCP, removes the local package folder, restores through MCP into the same workspace, and verifies the restored package descriptor matches the pushed package.")]
-	public async Task RestoreWorkspace_Should_Recreate_Pushed_Package_In_Same_Workspace() {
+	[AllureName("Restore workspace recreates the pushed package and preserves unrelated package content")]
+	[AllureDescription("Uses the real clio CLI to create a workspace and package locally, pushes it through MCP, removes the local package folder, restores through MCP into the same workspace, verifies the restored package descriptor, and confirms unrelated package content remains unchanged.")]
+	public async Task RestoreWorkspace_ShouldRecreatePackageAndPreserveUnrelatedContent_WhenPackageIsConfigured() {
 		// Arrange - the package is already pushed once for the fixture (ENG-92459); push assertions are
 		// covered by PushWorkspace_Should_Publish_Arranged_Package_And_GetPkgList_Should_Return_It.
 		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSharedRestoreWorkspaceAsync();
 		string descriptorPath = FindPackageDescriptorPath(arrangeContext.WorkspacePath, arrangeContext.PackageName);
 		string packageDirectoryPath = Directory.GetParent(descriptorPath)!.FullName;
+		string sentinelPath = Path.Combine(arrangeContext.WorkspacePath, "packages", "preserved-content", "sentinel.txt");
+		Directory.CreateDirectory(Path.GetDirectoryName(sentinelPath)!);
+		await File.WriteAllTextAsync(sentinelPath, "preserve me");
 
 		// Act
 		DeletePackageDirectory(packageDirectoryPath);
@@ -92,6 +95,8 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertCommandExitCode(restoreResult, 0, "restore-workspace should succeed for a valid sandbox environment and existing workspace settings");
 		AssertIncludesInfoMessage(restoreResult, "successful restore-workspace execution should emit progress output");
 		AssertRestoredPackageMatchesSourceMetadata(arrangeContext.WorkspacePath, arrangeContext.PackageName, arrangeContext.PackageMetadata);
+		AssertFileContent(sentinelPath, "preserve me",
+			"restoring one configured package must not clear unrelated content from the shared packages root");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -100,7 +105,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 	[AllureTag(RestoreToolName)]
 	[AllureName("Restore workspace warns and preserves packages placeholder when package list is empty")]
 	[AllureDescription("Uses the real create-workspace command to produce Packages: [] and packages/placeholder.txt, invokes restore-workspace through MCP against the sandbox, and verifies success-with-warning without deleting the placeholder.")]
-	public async Task RestoreWorkspace_Should_Warn_And_Preserve_Placeholder_When_Package_List_Is_Empty() {
+	public async Task RestoreWorkspace_ShouldWarnAndPreservePlaceholder_WhenPackageListIsEmpty() {
 		// Arrange
 		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync(includePackage: false);
 		string placeholderPath = Path.Combine(arrangeContext.WorkspacePath, "packages", "placeholder.txt");
@@ -394,6 +399,11 @@ public sealed class WorkspaceSyncToolE2ETests {
 	[AllureStep("Assert file exists")]
 	private static void AssertFileExists(string path, string because) {
 		File.Exists(path).Should().BeTrue(because: because);
+	}
+
+	[AllureStep("Assert unrelated package content is preserved")]
+	private static void AssertFileContent(string path, string expectedContent, string because) {
+		File.ReadAllText(path).Should().Be(expectedContent, because: because);
 	}
 
 	[AllureStep("Assert invalid environment diagnostics mention the missing environment name")]

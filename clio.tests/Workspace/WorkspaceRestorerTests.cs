@@ -96,7 +96,7 @@ public class WorkspaceRestorerTests {
 
 	[Test]
 	[Description("Warns and skips package download when workspace settings contain no eligible packages, preventing a no-op restore from clearing local package content.")]
-	public void Restore_Should_Warn_And_Skip_Package_Download_When_No_Packages_Are_Eligible() {
+	public void Restore_ShouldWarnAndSkipPackageDownload_WhenNoPackagesAreEligible() {
 		// Arrange
 		WorkspaceSettings workspaceSettings = new();
 		WorkspaceOptions options = new() {

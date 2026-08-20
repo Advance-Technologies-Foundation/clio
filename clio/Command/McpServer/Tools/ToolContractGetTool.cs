@@ -5575,7 +5575,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRestoreWorkspace() {
 		return new ToolContractDefinition(
 			RestoreWorkspaceTool.RestoreWorkspaceToolName,
-			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and preserves existing packages content. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[
@@ -5604,7 +5604,7 @@ internal static class ToolContractCatalog {
 				"The environment is registered (see list-environments / reg-web-app).",
 				"cliogate is installed on the target environment; if restore fails with a missing-cliogate error, run install-gate and retry.",
 				"workspace-path is a local absolute path to an existing directory (network-share paths are not supported).",
-				"Only packages eligible from .clio/workspaceSettings.json are downloaded; when none are eligible, the tool warns and leaves packages content unchanged."
+				"Only packages eligible from .clio/workspaceSettings.json are downloaded; when none are eligible, the tool warns and does not clear or delete existing package directories."
 			]);
 	}
 

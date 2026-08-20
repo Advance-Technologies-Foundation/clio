@@ -2177,8 +2177,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should not imply that restore-workspace downloads every package in the environment");
 		restore.Preconditions.Should().Contain(precondition =>
 			precondition.Contains("none are eligible", StringComparison.Ordinal) &&
-			precondition.Contains("unchanged", StringComparison.Ordinal),
-			because: "callers should understand the successful warning and preservation behavior before invoking restore-workspace");
+			precondition.Contains("does not clear or delete", StringComparison.Ordinal),
+			because: "callers should understand the successful warning and directory-preservation behavior before invoking restore-workspace");
 
 		ToolContractDefinition assert = result.Tools!.Single(contract =>
 			contract.Name == AssertInfrastructureTool.AssertInfrastructureToolName);

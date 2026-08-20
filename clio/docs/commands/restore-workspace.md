@@ -15,7 +15,7 @@ restore-workspace downloads the packages listed in `.clio/workspaceSettings.json
 from a Creatio environment and sets up the local development environment.
 
 When no packages are eligible after applying ignore and external-package settings,
-the command reports a warning and leaves existing `packages/` content unchanged.
+the command reports a warning and does not clear or delete existing package directories.
 
 The command performs the following operations:
 - Downloads eligible package source code from the Creatio environment
@@ -209,7 +209,7 @@ development experience
 
     Warning: "No packages are eligible for restore":
         Add the intended package names to .clio/workspaceSettings.json -> Packages,
-        or review IgnorePackages and ExternalPackages. Existing packages content is preserved.
+        or review IgnorePackages and ExternalPackages. Existing package directories are not cleared or deleted.
 
 ## See Also
 

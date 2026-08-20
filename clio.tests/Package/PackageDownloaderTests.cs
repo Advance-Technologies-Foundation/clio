@@ -2,12 +2,12 @@ using System;
 using System.Linq;
 using Clio.Common;
 using Clio.Package;
+using Clio.Tests.Command;
 using Clio.WebApplication;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 using IClioFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Tests.Package;
@@ -18,59 +18,65 @@ namespace Clio.Tests.Package;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Package")]
-public sealed class PackageDownloaderTests {
+public sealed class PackageDownloaderTests : BaseClioModuleTests {
 
-	[Test]
-	[Description("Downloads and overwrites the requested package directory without clearing unrelated content from the shared destination root.")]
-	public void DownloadPackages_Should_Not_Clear_Shared_Destination_Root() {
-		// Arrange
-		const string destinationPath = @"C:\workspace\packages";
-		const string tempPath = @"C:\temp";
-		const string packageName = "PkgOne";
-		const string packageZipPath = @"C:\temp\PkgOne.zip";
-		EnvironmentSettings environmentSettings = new();
+	private IClioFileSystem _clioFileSystem;
+	private IPackageArchiver _packageArchiver;
+	private IPackageDownloader _packageDownloader;
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		applicationClientFactory.CreateClient(environmentSettings).Returns(applicationClient);
-		IPackageArchiver packageArchiver = Substitute.For<IPackageArchiver>();
+		applicationClientFactory.CreateClient(EnvironmentSettings).Returns(applicationClient);
+		_packageArchiver = Substitute.For<IPackageArchiver>();
 		IApplicationDownloader applicationDownloader = Substitute.For<IApplicationDownloader>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>(), environmentSettings)
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>(), EnvironmentSettings)
 			.Returns("https://example.invalid/package");
 		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		workingDirectoriesProvider
 			.When(provider => provider.CreateTempDirectory(Arg.Any<Action<string>>()))
-			.Do(call => call.Arg<Action<string>>()(tempPath));
+			.Do(call => call.Arg<Action<string>>()(FileSystem.Path.Combine("temp")));
 		IApplicationPing applicationPing = Substitute.For<IApplicationPing>();
-		applicationPing.Ping(environmentSettings).Returns(true);
-		IClioFileSystem fileSystem = Substitute.For<IClioFileSystem>();
-		fileSystem.GetCurrentDirectoryIfEmpty(destinationPath).Returns(destinationPath);
-		IAbstractionsFileSystem abstractionsFileSystem = Substitute.For<IAbstractionsFileSystem>();
-		abstractionsFileSystem.Path.Combine(tempPath, $"{packageName}.zip").Returns(packageZipPath);
-		PackageDownloader downloader = new(
-			environmentSettings,
-			applicationClientFactory,
-			packageArchiver,
-			applicationDownloader,
-			serviceUrlBuilder,
-			workingDirectoriesProvider,
-			applicationPing,
-			fileSystem,
-			abstractionsFileSystem,
-			Substitute.For<ILogger>());
+		applicationPing.Ping(EnvironmentSettings).Returns(true);
+		_clioFileSystem = Substitute.For<IClioFileSystem>();
+
+		containerBuilder.AddSingleton(applicationClientFactory);
+		containerBuilder.AddSingleton(_packageArchiver);
+		containerBuilder.AddSingleton(applicationDownloader);
+		containerBuilder.AddSingleton(serviceUrlBuilder);
+		containerBuilder.AddSingleton(workingDirectoriesProvider);
+		containerBuilder.AddSingleton(applicationPing);
+		containerBuilder.AddSingleton(_clioFileSystem);
+		containerBuilder.AddTransient<IPackageDownloader, PackageDownloader>();
+	}
+
+	public override void Setup() {
+		base.Setup();
+		_packageDownloader = Container.GetRequiredService<IPackageDownloader>();
+	}
+
+	[Test]
+	[Description("Downloads and overwrites the requested package directory without clearing unrelated content from the shared destination root.")]
+	public void DownloadPackages_ShouldPreserveSharedDestinationRoot_WhenPackageIsRequested() {
+		// Arrange
+		const string packageName = "PkgOne";
+		string destinationPath = FileSystem.Path.Combine("workspace", "packages");
+		string packageZipPath = FileSystem.Path.Combine("temp", $"{packageName}.zip");
+		_clioFileSystem.GetCurrentDirectoryIfEmpty(destinationPath).Returns(destinationPath);
 
 		// Act
-		downloader.DownloadPackages([packageName], environmentSettings, destinationPath);
+		_packageDownloader.DownloadPackages([packageName], EnvironmentSettings, destinationPath);
 
 		// Assert
-		fileSystem.ReceivedCalls()
+		_clioFileSystem.ReceivedCalls()
 			.Where(call => call.GetMethodInfo().Name == nameof(IClioFileSystem.CreateOrOverwriteExistsDirectoryIfNeeded))
 			.Should().BeEmpty(
 				because: "restore must preserve ignored, external, and placeholder content in the shared packages root");
-		packageArchiver.ReceivedCalls().Should().ContainSingle(call =>
+		_packageArchiver.ReceivedCalls().Should().ContainSingle(call =>
 			call.GetMethodInfo().Name == nameof(IPackageArchiver.UnZipPackages) &&
-			Equals(call.GetArguments()[0], packageZipPath) &&
-			Equals(call.GetArguments()[5], destinationPath),
-			because: "the requested package should still be overwritten through the package-scoped archiver path");
+			call.GetArguments().SequenceEqual(new object[] {
+				packageZipPath, true, true, true, false, destinationPath
+			}), because: "the requested package must still be overwritten through the package-scoped archiver path");
 	}
 }

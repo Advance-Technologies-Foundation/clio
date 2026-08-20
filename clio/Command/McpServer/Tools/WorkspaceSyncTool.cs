@@ -146,7 +146,7 @@ public sealed class RestoreWorkspaceTool(
 	/// </summary>
 	[McpServerTool(Name = RestoreWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Restores packages listed in `.clio/workspaceSettings.json` at `workspace-path` from the specified Creatio environment. When no packages are eligible, returns success with a warning and preserves existing `packages/` content.")]
+	[Description("Restores packages listed in `.clio/workspaceSettings.json` at `workspace-path` from the specified Creatio environment. When no packages are eligible, returns success with a warning and does not clear or delete existing package directories.")]
 	public CommandExecutionResult RestoreWorkspace(
 		[Description("Restore-workspace parameters")] [Required] RestoreWorkspaceArgs args
 	) {
