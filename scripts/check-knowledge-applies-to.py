@@ -70,6 +70,25 @@ def _append_list_item(data: dict[str, object], key: str, raw: str) -> None:
     data[key].append(raw.split("- ", 1)[1].strip().strip("'\""))
 
 
+def _assign_key(
+    data: dict[str, object], seen: set[str], problems: list[str], raw: str,
+) -> str | None:
+    """Record a ``key: value`` line and return the key that later ``- item`` lines belong to."""
+    if ":" not in raw:
+        problems.append(f"unparsable front-matter line: {raw.strip()}")
+        return None
+    key, _, value = raw.partition(":")
+    key = key.strip()
+    value = value.strip().strip("'\"")
+    # A repeated key overwrites the earlier one, so the first value disappears with nothing to
+    # show for it - report it rather than let half the front matter go missing quietly.
+    if key in seen:
+        problems.append(f"duplicate front-matter key (the later value wins): {key}")
+    seen.add(key)
+    data[key] = value if value else []
+    return key
+
+
 def parse_front_matter(text: str) -> tuple[dict[str, object], list[str]]:
     """Minimal YAML front-matter reader: scalars and ``- item`` lists only.
 
@@ -93,18 +112,7 @@ def parse_front_matter(text: str) -> tuple[dict[str, object], list[str]]:
             else:
                 _append_list_item(data, key, raw)
             continue
-        if ":" not in raw:
-            problems.append(f"unparsable front-matter line: {raw.strip()}")
-            continue
-        key, _, value = raw.partition(":")
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        # A repeated key overwrites the earlier one, so the first value disappears with nothing
-        # to show for it - report it rather than let half the front matter go missing quietly.
-        if key in seen:
-            problems.append(f"duplicate front-matter key (the later value wins): {key}")
-        seen.add(key)
-        data[key] = value if value else []
+        key = _assign_key(data, seen, problems, raw) or key
     return data, problems
 
 
