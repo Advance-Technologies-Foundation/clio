@@ -131,7 +131,8 @@ namespace Clio.Package
 				foreach (string packageName in packagesNames) {
 					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory, true);
 				}
-				_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationPath, true);
+				// Each requested package directory is overwritten by PackageArchiver.Unpack. Clearing the shared
+				// destination root here would also delete ignored, external, and placeholder content.
 				foreach (string packageName in packagesNames) {
 					string packageZipPath = GetPackageZipPath(packageName, tempDirectory);
 					_packageArchiver.UnZipPackages(packageZipPath, true, true, true, 
