@@ -1332,10 +1332,13 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// True when a diff operation's multi-segment path targets an attributes map nested inside a
-	/// declared attribute — first and last segments are both <c>attributes</c>, e.g.
+	/// declared attribute — first segment is <c>attributes</c> and the path ends in
+	/// <c>viewModelConfig</c>, <c>attributes</c>, e.g.
 	/// <c>["attributes","SimilarLeadList","viewModelConfig","attributes"]</c> — so its <c>values</c>
-	/// declare item-scope attribute names. Other sub-property paths
-	/// (<c>["attributes","X","modelConfig"]</c>) carry an attribute's BODY, not attribute names.
+	/// declare item-scope attribute names. Other sub-property paths that merely end in
+	/// <c>attributes</c> (<c>["attributes","X","modelConfig","attributes"]</c>) or drill into an
+	/// attribute's sub-property (<c>["attributes","X","modelConfig"]</c>) carry an attribute's BODY,
+	/// not attribute names.
 	/// </summary>
 	private static bool TargetsNestedAttributesMap(JsonElement operation) {
 		if (!operation.TryGetProperty("path", out JsonElement pathElement) ||
@@ -1343,6 +1346,7 @@ public static class SchemaValidationService
 			return false;
 		}
 		string? first = null;
+		string? beforeLast = null;
 		string? last = null;
 		int count = 0;
 		foreach (JsonElement segment in pathElement.EnumerateArray()) {
@@ -1351,11 +1355,13 @@ public static class SchemaValidationService
 			}
 			string? value = segment.GetString();
 			first ??= value;
+			beforeLast = last;
 			last = value;
 			count++;
 		}
 		return count > 1 &&
 			string.Equals(first, AttributesPropertyName, StringComparison.OrdinalIgnoreCase) &&
+			string.Equals(beforeLast, ViewModelConfigPropertyName, StringComparison.OrdinalIgnoreCase) &&
 			string.Equals(last, AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
 	}
 
