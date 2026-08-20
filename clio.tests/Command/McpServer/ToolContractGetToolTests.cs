@@ -2173,6 +2173,12 @@ public sealed class ToolContractGetToolTests {
 			precondition.Contains("cliogate", StringComparison.Ordinal) &&
 			precondition.Contains("install-gate", StringComparison.Ordinal),
 			because: "restore-workspace should tell callers how to satisfy the cliogate prerequisite");
+		restore.Description.Should().Contain("workspaceSettings.json",
+			because: "the contract should not imply that restore-workspace downloads every package in the environment");
+		restore.Preconditions.Should().Contain(precondition =>
+			precondition.Contains("none are eligible", StringComparison.Ordinal) &&
+			precondition.Contains("does not clear or delete", StringComparison.Ordinal),
+			because: "callers should understand the successful warning and directory-preservation behavior before invoking restore-workspace");
 
 		ToolContractDefinition assert = result.Tools!.Single(contract =>
 			contract.Name == AssertInfrastructureTool.AssertInfrastructureToolName);

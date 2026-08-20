@@ -9076,3 +9076,17 @@ Decision: move the four canonical skill bodies to `.ai/skills` and keep identica
 Discovery: Claude's independent review confirmed the shared-pointer structure and identified the Codex-specific consultation and worktree wording that had to become model-neutral. A focused contract test now extracts each wrapper's declared redirect and proves it resolves to the canonical body.
 Files: .ai/skills/clio-issue-workflow/SKILL.md, .ai/skills/claim-clio-issue/SKILL.md, .ai/skills/investigate-clio-issue/SKILL.md, .ai/skills/repair-clio-issue/SKILL.md, .codex/skills/, .claude/skills/, .codex/agents/reviewer.toml, clio.tests/Command/McpServer/SharedIssueWorkflowSkillTests.cs, AGENTS.md, CONTRIBUTING.md
 Impact: both supported agents discover the same workflow and cannot silently drift; the shared body remains model-neutral and the repository's default reviewer model can evolve without a hardcoded pin.
+
+## 2026-08-20 22:21 – Preserve workspace content on empty restore (issue #1137)
+Context: `restore-workspace` reported `Done` and deleted `packages/placeholder.txt` when `.clio/workspaceSettings.json` contained no packages.
+Decision: Materialize the eligible package list, warn and skip package download when it is empty, and remove the redundant packages-root clear because the archiver already overwrites each requested package directory.
+Discovery: The shared-root clear also removed ignored and external package content during partial restores; package-scoped overwrite preserves those directories without weakening refresh semantics. The local MCP sandbox E2E target is configured but not registered on this machine, so the new real-server test compiles but requires the configured TeamCity sandbox to execute.
+Files: clio/Workspace/WorkspaceRestorer.cs, clio/Package/PackageDownloader.cs, clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs
+Impact: Empty restores are explicit, preserve workspace placeholders, and no longer let a successful exit imply that environment packages were downloaded.
+
+## 2026-08-20 23:08 – Verify workspace restore repair against vbg
+Context: Issue #1137 required real-environment proof and a comprehensive pre-PR review after the repair.
+Decision: Use the registered `vbg` environment for a disposable empty workspace, and strengthen the existing MCP sandbox E2E with unrelated package content during a non-empty restore.
+Discovery: The built CLI returned success with the new warning and preserved `packages/placeholder.txt` against `vbg`. The shared E2E harness has stale sandbox URL/readiness configuration, so it fails before invoking the branch; the direct CLI boundary proved the empty path while the E2E now covers partial-restore preservation in CI.
+Files: clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, clio.tests/Package/PackageDownloaderTests.cs, clio.tests/Workspace/WorkspaceRestorerTests.cs
+Impact: Both empty and partial restore regressions are pinned, and the final module gate passes 3,806 tests.
