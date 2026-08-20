@@ -143,6 +143,10 @@ public sealed class SchemaSyncTool(
 					CollectCandidateTerms(operations),
 					CollectLookupHints(operations),
 					cancellationToken);
+			} catch (OperationCanceledException) {
+				// Cancellation is a caller-initiated abort, not an operational enrichment failure — it must
+				// propagate rather than be degraded into a warning and let the batch continue (review #1143).
+				throw;
 			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
 				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here

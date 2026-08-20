@@ -66,6 +66,10 @@ public sealed class DataForgeEnrichmentBuilder(IToolCommandResolver commandResol
 				Coverage: context.Coverage,
 				Warnings: context.Warnings,
 				ContextSummary: BuildSummary(context));
+		} catch (OperationCanceledException) {
+			// Cancellation is a caller-initiated abort, not an operational enrichment failure — it must
+			// propagate to the caller instead of being degraded into a "dataforge:" warning (review #1143).
+			throw;
 		} catch (Exception ex) {
 			return new ApplicationDataForgeResult(
 				Used: true,

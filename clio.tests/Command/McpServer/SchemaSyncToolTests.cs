@@ -1728,6 +1728,39 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Propagates OperationCanceledException from enrichment instead of degrading it into a dataforge: warning and letting the batch continue, and confirms the exact caller-supplied token — not CancellationToken.None — reaches Enrich (review #1143 on PR #1143).")]
+	public async Task SchemaSync_Should_Propagate_Cancellation_From_Enrichment_Instead_Of_Continuing_Batch() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		using CancellationTokenSource cts = new();
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		// Configured against the EXACT token (not Arg.Any<CancellationToken>()) on purpose: if SchemaSync
+		// ever regresses to forwarding CancellationToken.None instead of the caller-supplied token, this
+		// setup silently stops matching, Enrich returns the NSubstitute default (null) instead of throwing,
+		// and the assertions below fail — catching exactly the wiring regression this test guards against.
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>(), cts.Token)
+			.Throws(new OperationCanceledException(cts.Token));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		Func<Task> act = async () => await tool.SchemaSync(args, cts.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "cancellation must propagate rather than be degraded into a dataforge: warning that lets the batch continue");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "the batch must never reach the tenant lock or execute an operation once enrichment observes cancellation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Retries a transient network failure on the first attempt and continues the batch when the retry succeeds (ENG-93374 AC1).")]
 	public async Task SchemaSync_Should_Retry_Transient_Failure_And_Continue_Batch() {
 		// Arrange
