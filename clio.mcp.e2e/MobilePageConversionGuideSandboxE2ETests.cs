@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -86,6 +87,43 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "a mobile page carries the same multi-data-source structure as web, so an element bound to a "
 				+ "non-primary page data source must convert — the drop used to remove whole detail sections and, "
 				+ "because emptiness cascades, their wrapper containers with them");
+		AssertConvertedListsCarryTheirRow(response.Guide!);
+	}
+
+	/// <summary>
+	/// Every inserted mobile list must arrive with its row PREBUILT (ENG-95046). The row is what makes the list
+	/// render: a <c>crt.ListItem</c> under <c>itemLayout</c> whose <c>title</c> is a plain <c>$binding</c>
+	/// STRING. Both failure shapes are asserted, because they look different in the designer and only one of
+	/// them is obvious — a missing row leaves the whole list blank, while a title wrapped as
+	/// <c>{ "value": … }</c> fills the body rows and leaves only the Title column empty. Also asserts the web
+	/// grid's own properties do not ride along, since mobile <c>crt.List</c> has no equivalent for them.
+	/// A page with no converted list passes vacuously — the seeded page set is not guaranteed to carry one.
+	/// </summary>
+	private static void AssertConvertedListsCarryTheirRow(MobilePageConversionGuide guide) {
+		foreach (ElementMapEntry list in guide.ElementMap.Where(e =>
+			e.Operation == "insert" && e.MobileType == "crt.List" && e.MobileValues is not null)) {
+			JsonNode? row = list.MobileValues!["itemLayout"];
+			row.Should().NotBeNull(
+				because: $"'{list.WebName}' converts to a mobile list, whose row has no web counterpart to copy — "
+					+ "the converter must build it from the grid's columns, and when that was left to the caller "
+					+ "the list arrived with no title and no body");
+			row!["type"]?.GetValue<string>().Should().Be("crt.ListItem",
+				because: $"'{list.WebName}' must carry the mobile row element the list renders each record with");
+			// The row leads with the FIRST column whatever its type (title-type selection was removed by
+			// decision), so a title is present whenever the grid has any column at all — a title is absent only
+			// for a column-less grid. The shape is asserted only when a title exists: asserting unconditionally
+			// is what made this fail against a seeded page whose grid had no columns.
+			if (row["title"] is { } title) {
+				title.GetValueKind().Should().Be(JsonValueKind.String,
+					because: $"the registry declares crt.ListItem.title as a string binding, and on '{list.WebName}' "
+						+ "an object wrapper would render an empty Title column while the body rows still looked fine");
+			}
+			// Deliberately NOT asserted non-empty: a single-column grid legitimately yields a title and no body
+			// rows, and this runs against whichever page the sandbox happens to seed.
+			row["body"].Should().NotBeNull(
+				because: $"the row on '{list.WebName}' must carry the body collection, even when the grid had only "
+					+ "the one display column and it is therefore empty");
+		}
 	}
 
 	[Test]
