@@ -9104,3 +9104,10 @@ Decision: Document `npm test` / `ng test` as the supported runner path in both s
 Discovery: The generated `jest.config.ts` is an extension consumed by `@angular-builders/jest`, not a supported standalone test entry point.
 Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
 Impact: maintainers and generated-project users can see the single-owner contract, while regression coverage protects the configuration link that makes it work.
+
+## 2026-08-21 00:48 – GH #1136 Claude rereview: make config assertions effective
+Context: Claude found that null-conditional chaining could skip the new `configPath` and `tsConfig` assertions when a node was missing, and that the generated README omitted the intentional zero-spec exit behavior.
+Decision: Bind optional JSON values to locals before asserting them, pin the complete project Jest configuration, and disclose the initial `No tests found` non-zero result in both READMEs.
+Discovery: FluentAssertions cannot execute after a null-conditional chain short-circuits; a local null value is required so `Should().Be(...)` actually fails.
+Files: clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md
+Impact: removing the builder-to-config link or adding another project setup entry now fails the regression, and fresh-scaffold behavior is explicit to users.
