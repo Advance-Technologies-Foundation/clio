@@ -47,7 +47,8 @@ public sealed class RequestInfoToolTests {
 	    "baseParameters": {
 	      "$context": { "type": "ViewModelContext", "description": "Platform-injected view-model context." },
 	      "scopes": { "type": "array", "items": { "type": "string" }, "description": "Platform-populated scope chain." },
-	      "type": { "type": "string", "description": "Request type discriminator." }
+	      "type": { "type": "string", "description": "Request type discriminator." },
+	      "$initialEvent": { "type": "unknown", "description": "The original UI event.", "deprecated": true, "deprecationReason": "use event binding expression instead." }
 	    },
 	    "typeDefinitions": {
 	      "RequestBindingConfig": {
@@ -101,6 +102,28 @@ public sealed class RequestInfoToolTests {
 	  }
 	}
 	""";
+
+	[Test]
+	[Description("The native get-request-info MCP description keeps BaseRequest fields producer-driven instead of publishing a stale fixed list.")]
+	public void GetRequestInfo_Description_ShouldKeepBaseParametersProducerDriven_WhenToolIsDiscovered() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(RequestInfoTool).GetMethod(nameof(RequestInfoTool.GetRequestInfo))!;
+
+		// Act
+		string description = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single()
+			.Description;
+
+		// Assert
+		description.Should().Contain(
+			"'baseParameters' publishes the current BaseRequest fields and their producer metadata",
+			because: "native MCP discovery must tell agents that the field surface follows the producer catalog");
+		description.Should().Contain("deprecated/deprecationReason",
+			because: "native discovery must tell agents how to recognize and honor producer deprecation metadata");
+		description.Should().NotContain("($context, scopes, type)",
+			because: "a fixed BaseRequest field list drifts when the producer adds or deprecates fields");
+	}
 
 	[Test]
 	[Description("Omitting request-type returns list mode with every cataloged request, ordered alphabetically, and honest latest-fallback version markers on a bare call.")]
@@ -185,7 +208,7 @@ public sealed class RequestInfoToolTests {
 	}
 
 	[Test]
-	[Description("baseParameters are surfaced as a SEPARATE field and never merged into parameters — $context/scopes/type are platform-injected, and merging would teach an AI consumer to author them via the binding's params block. This is a deliberate divergence from the component catalog's baseInputs merge.")]
+	[Description("Producer-defined baseParameters and their metadata are surfaced as a SEPARATE field and never merged into parameters, because merging would teach an AI consumer to author platform-injected values through the binding's params block.")]
 	public async Task GetRequestInfo_ShouldSurfaceBaseParametersSeparately_WhenGlobalReferencesArePublished() {
 		// Arrange
 		RequestInfoTool tool = CreateTool();
@@ -198,10 +221,19 @@ public sealed class RequestInfoToolTests {
 			because: "the registry publishes root references.baseParameters");
 		response.BaseParameters!.Should().ContainKey("$context",
 			because: "the platform-injected context field must be visible for handler-authoring context");
+		response.BaseParameters.Should().ContainKey("$initialEvent",
+			because: "the response must follow the producer's current BaseRequest surface instead of a hard-coded field list");
+		response.BaseParameters["$initialEvent"].GetProperty("deprecated").GetBoolean().Should().BeTrue(
+			because: "the producer marks $initialEvent as deprecated and consumers need that metadata");
+		response.BaseParameters["$initialEvent"].GetProperty("deprecationReason").GetString().Should()
+			.Be("use event binding expression instead.",
+				because: "the response must preserve the producer's replacement guidance verbatim");
 		response.Parameters.Should().NotContainKey("$context",
 			because: "baseParameters must NOT merge into parameters — the request accepts no authorable params");
 		response.Parameters.Should().NotContainKey("scopes",
 			because: "platform-populated fields never belong to the authorable parameters surface");
+		response.Parameters.Should().NotContainKey("$initialEvent",
+			because: "even deprecated BaseRequest fields remain platform-injected rather than authorable params");
 	}
 
 	[Test]
