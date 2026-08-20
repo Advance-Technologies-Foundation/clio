@@ -58,17 +58,17 @@ public sealed record DescribeProcessArgs(
 
 	[property: JsonPropertyName("process-name")]
 	[property: Description("Process code (schema Name), e.g. UsrProcess_493d4c9. Provide exactly one identity.")]
-	string ProcessName,
+	string? ProcessName = null,
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process UId (GUID). Provide exactly one identity.")]
-	string ProcessUid,
+	string? ProcessUid = null,
 
 	[property: JsonPropertyName("process-caption")]
 	[property: Description("Process caption (display name). Provide exactly one identity.")]
-	string ProcessCaption,
+	string? ProcessCaption = null,
 
 	[property: JsonPropertyName("culture")]
 	[property: Description("Optional culture used to resolve localized captions (default en-US).")]
-	string Culture
+	string? Culture = null
 );

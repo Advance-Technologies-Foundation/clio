@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -86,6 +87,141 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "a mobile page carries the same multi-data-source structure as web, so an element bound to a "
 				+ "non-primary page data source must convert — the drop used to remove whole detail sections and, "
 				+ "because emptiness cascades, their wrapper containers with them");
+		AssertConvertedListsCarryTheirRow(response.Guide!);
+		AssertHeaderActionsConvertToFab(response.Guide!);
+	}
+
+	[Test]
+	[Description("Non-vacuous MainHeader->FAB guard (ENG-93152): converts real seeded pages until one yields a FloatingActionButton.menuItems entry, then asserts at least one real header-action conversion and its crt.MenuItem/denylist contract. When NO seeded page carries a header action it IGNORES with an explicit reason instead of passing silently, so a regression that stops MainHeader->FAB is caught on any header page and missing seed coverage is surfaced rather than hidden.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide converts MainHeader actions into the floating action button")]
+	[AllureDescription("Iterates the seeded application's pages, converts each through the real clio MCP server, and asserts the header-action -> FloatingActionButton.menuItems contract on the first page that produces one; a conversion failure fails the test, and no header-action page at all degrades to Ignore (never a vacuous pass).")]
+	public async Task MobilePageConversionGuideTool_Should_Convert_MainHeaderActions_Into_Fab() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one yields a FAB conversion; a conversion FAILURE is a regression, not a seed gap.
+		int fabEntryCount = 0;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			if (callResult.IsError == true) {
+				failedCandidates.Add($"'{schemaName}': transport-level error");
+				continue;
+			}
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			if (!response.Success) {
+				failedCandidates.Add($"'{schemaName}': {response.Error}");
+				continue;
+			}
+			int fab = (response.Guide?.ElementMap ?? []).Count(e =>
+				e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems");
+			if (fab > 0) {
+				AssertHeaderActionsConvertToFab(response.Guide!);
+				fabEntryCount = fab;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		if (fabEntryCount == 0) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "carries a MainHeader action, so MainHeader->FAB could not be exercised end to end. Add a seeded page with a "
+				+ "header button (crt.Button under MainHeader) to guard this integration.");
+		}
+		fabEntryCount.Should().BeGreaterThan(0,
+			because: $"the seeded page '{convertedSchemaName}' carries a MainHeader action that must convert into the FloatingActionButton");
+	}
+
+	/// <summary>
+	/// Any element retargeted into <c>FloatingActionButton.menuItems</c> — a converted MainHeader action
+	/// (ENG-93152) — must be a <c>crt.MenuItem</c> insert carrying no visual properties (style/color/icon): the
+	/// header-button → FAB denylist. A page with no header actions passes vacuously — the seeded page set is not
+	/// guaranteed to carry a header button, so this asserts the contract only when one actually converted.
+	/// </summary>
+	private static void AssertHeaderActionsConvertToFab(MobilePageConversionGuide guide) {
+		List<ElementMapEntry> fabEntries = guide.ElementMap.Where(e =>
+			e.Operation == "insert" && e.ParentName == "FloatingActionButton" && e.PropertyName == "menuItems").ToList();
+		foreach (ElementMapEntry entry in fabEntries) {
+			entry.MobileType.Should().Be("crt.MenuItem",
+				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
+			if (entry.MobileValues is JsonObject values) {
+				values.ContainsKey("style").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+				values.ContainsKey("icon").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+				values.ContainsKey("color").Should().BeFalse(
+					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
+			}
+		}
+		// AC 4.5: once header actions convert, the MainHeader scope container itself produces NO mobile element —
+		// it is neither inserted nor merged (a non-converting scope emits nothing of its own). Asserted only when a
+		// FAB conversion actually happened, so a page without a header still passes vacuously.
+		if (fabEntries.Count > 0) {
+			guide.ElementMap.Should().NotContain(
+				e => e.WebName == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
+				because: "a non-converting scope container (MainHeader) is never emitted as a mobile element (AC 4.5)");
+		}
+	}
+
+	/// <summary>
+	/// Every inserted mobile list must arrive with its row PREBUILT (ENG-95046). The row is what makes the list
+	/// render: a <c>crt.ListItem</c> under <c>itemLayout</c> whose <c>title</c> is a plain <c>$binding</c>
+	/// STRING. Both failure shapes are asserted, because they look different in the designer and only one of
+	/// them is obvious — a missing row leaves the whole list blank, while a title wrapped as
+	/// <c>{ "value": … }</c> fills the body rows and leaves only the Title column empty. Also asserts the web
+	/// grid's own properties do not ride along, since mobile <c>crt.List</c> has no equivalent for them.
+	/// A page with no converted list passes vacuously — the seeded page set is not guaranteed to carry one.
+	/// </summary>
+	private static void AssertConvertedListsCarryTheirRow(MobilePageConversionGuide guide) {
+		foreach (ElementMapEntry list in guide.ElementMap.Where(e =>
+			e.Operation == "insert" && e.MobileType == "crt.List" && e.MobileValues is not null)) {
+			JsonNode? row = list.MobileValues!["itemLayout"];
+			row.Should().NotBeNull(
+				because: $"'{list.WebName}' converts to a mobile list, whose row has no web counterpart to copy — "
+					+ "the converter must build it from the grid's columns, and when that was left to the caller "
+					+ "the list arrived with no title and no body");
+			row!["type"]?.GetValue<string>().Should().Be("crt.ListItem",
+				because: $"'{list.WebName}' must carry the mobile row element the list renders each record with");
+			// The row leads with the FIRST column whatever its type (title-type selection was removed by
+			// decision), so a title is present whenever the grid has any column at all — a title is absent only
+			// for a column-less grid. The shape is asserted only when a title exists: asserting unconditionally
+			// is what made this fail against a seeded page whose grid had no columns.
+			if (row["title"] is { } title) {
+				title.GetValueKind().Should().Be(JsonValueKind.String,
+					because: $"the registry declares crt.ListItem.title as a string binding, and on '{list.WebName}' "
+						+ "an object wrapper would render an empty Title column while the body rows still looked fine");
+			}
+			// Deliberately NOT asserted non-empty: a single-column grid legitimately yields a title and no body
+			// rows, and this runs against whichever page the sandbox happens to seed.
+			row["body"].Should().NotBeNull(
+				because: $"the row on '{list.WebName}' must carry the body collection, even when the grid had only "
+					+ "the one display column and it is therefore empty");
+		}
 	}
 
 	[Test]
