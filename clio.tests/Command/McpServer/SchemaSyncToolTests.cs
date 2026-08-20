@@ -1741,9 +1741,18 @@ public sealed class SchemaSyncToolTests {
 		// ever regresses to forwarding CancellationToken.None instead of the caller-supplied token, this
 		// setup silently stops matching, Enrich returns the NSubstitute default (null) instead of throwing,
 		// and the assertions below fail — catching exactly the wiring regression this test guards against.
+		// The mock actually cancels cts before throwing (rather than just constructing an already-"canceled"
+		// exception without ever cancelling the source) so cancellationToken.IsCancellationRequested is
+		// genuinely true when SchemaSyncTool's `when (cancellationToken.IsCancellationRequested)` filter
+		// runs — this is what distinguishes real caller cancellation from an unrelated OperationCanceledException
+		// (e.g. TaskCanceledException from an independent enrichment-side timeout), which must NOT propagate
+		// (see SchemaSync_Should_Degrade_Independent_Enrichment_Timeout_Into_Warning_When_CallerToken_Is_Not_Canceled).
 		enrichmentService
 			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>(), cts.Token)
-			.Throws(new OperationCanceledException(cts.Token));
+			.Returns(_ => {
+				cts.Cancel();
+				throw new OperationCanceledException(cts.Token);
+			});
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
@@ -1757,6 +1766,45 @@ public sealed class SchemaSyncToolTests {
 			because: "cancellation must propagate rather than be degraded into a dataforge: warning that lets the batch continue");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
 			because: "the batch must never reach the tenant lock or execute an operation once enrichment observes cancellation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still degrades an independent enrichment-side timeout (TaskCanceledException, which derives from OperationCanceledException) into a dataforge: warning and lets the batch continue, when the CALLER's own token was never canceled — distinguishing it from real caller cancellation (review #1143 follow-up).")]
+	public async Task SchemaSync_Should_Degrade_Independent_Enrichment_Timeout_Into_Warning_When_CallerToken_Is_Not_Canceled() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		using CancellationTokenSource callerCts = new();
+		// Never canceled: models the CALLER's own token staying live while an unrelated internal
+		// enrichment-side operation independently times out (e.g. Data Forge's own 60s HTTP timeout).
+		using CancellationTokenSource unrelatedTimeoutCts = new();
+		unrelatedTimeoutCts.Cancel();
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>(), callerCts.Token)
+			.Throws(new TaskCanceledException("Data Forge request timed out", null, unrelatedTimeoutCts.Token));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args, callerCts.Token);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an enrichment-side timeout unrelated to the caller's own token must not fail an otherwise-valid batch");
+		response.DataForge.Should().NotBeNull(
+			because: "the degraded enrichment result must still be attached so the timeout warning surfaces");
+		response.DataForge!.Warnings.Should().ContainSingle(warning => warning.StartsWith("dataforge:", StringComparison.Ordinal),
+			because: "an independent timeout is an operational enrichment failure and must be reported as a dataforge: warning, not propagated");
+		fakeCreateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the batch must continue and execute the operation once the degraded enrichment result is attached");
 	}
 
 	[Test]
