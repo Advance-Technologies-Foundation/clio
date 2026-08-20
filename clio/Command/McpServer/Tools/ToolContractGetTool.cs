@@ -5192,7 +5192,7 @@ internal static class ToolContractCatalog {
 					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step."),
 				new ToolAntiPattern(
 					$"{ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"A business process is interpreted; a process showing `NeedInstall = true` is its normal pre-publish state, not a compile trigger. Compile only when the process carries a Script Task (custom C#). Never read the raw process record (odata/esq on the process table) to decide whether to compile — use `describe-business-process`.")
+					"Do not decide to compile from a raw status column read off the process record (odata/esq) — use `describe-business-process`. `NeedInstall` is a package DB-install marker (on bound-data / SQL-script records, not a process field) and is never a compile trigger; inferring `compile` from a column name is the trap. Within a process, compile only for C# you authored — a Script Task, or a user task with an after-activity-save script; everything else runs with no compile.")
 			],
 			Preconditions: [
 				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
@@ -5200,7 +5200,7 @@ internal static class ToolContractCatalog {
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
-				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries a Script Task (custom C#) — that is the `C# schemas were added or modified` case above. A process without a Script Task is interpreted and needs no compilation, and a bare `NeedInstall = true` on the process record is its normal pre-publish state, NOT a compile trigger."
+				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw `NeedInstall` column is a package DB-install marker (not a process field), never a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 
