@@ -707,8 +707,10 @@ namespace cliogate.Files.cs
 			}
 			Type importerInterface = typeof(SchemaImporter).GetInterfaces()
 				.FirstOrDefault(contract => contract.Name == "ISchemaImporter");
+			// Public only: the TYPE is internal to the core assembly, but interface MEMBERS are always public,
+			// so no accessibility has to be bypassed to find the method on the contract itself.
 			MethodInfo interfaceMethod = importerInterface?.GetMethod(interfaceMethodName,
-				BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+				BindingFlags.Public | BindingFlags.Instance);
 			if (interfaceMethod != null) {
 				object[] callArguments = MatchArguments(interfaceMethod, interfaceArguments);
 				if (callArguments != null) {

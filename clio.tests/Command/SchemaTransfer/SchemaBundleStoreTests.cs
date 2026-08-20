@@ -227,6 +227,118 @@ public class SchemaBundleStoreTests {
 				because: "the caller must be told which file is missing, not just that something is wrong");
 	}
 
+	[Test]
+	[Description("Write completes when MetaData is an object, because Value<string> throws InvalidCastException there")]
+	public void Write_Should_Complete_When_Metadata_Is_Not_A_String() {
+		// Arrange
+		// The payload parses, so ParsePayload succeeds and the JsonException guard never fires; reading
+		// MetaData as a string is what fails. Letting that escape would abort an export whose authoritative
+		// schema-data.json is already on disk, and the half-written folder then blocks every retry.
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		const string payloadWithObjectMetadata = """
+			{
+			  "UId": "8375dacb-4ea5-4103-b07a-d365f8d276f3",
+			  "ManagerName": "AddonSchemaManager",
+			  "Name": "UsrProbeSchema",
+			  "MetaData": {"MetaData": {"Schema": {"A2": "UsrProbeSchema"}}},
+			  "Properties": [{"Name": "AddonName", "Value": "BusinessRule"}]
+			}
+			""";
+
+		// Act
+		Action act = () => _sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(),
+			payloadWithObjectMetadata));
+
+		// Assert
+		act.Should().NotThrow(because: "a projection of the wrong shape is skipped, not fatal to the export");
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, payloadWithObjectMetadata);
+		_fileSystem.Received(1).WriteAllTextToFile(
+			System.IO.Path.Combine(BundleDirectory, "properties.json"), Arg.Any<string>());
+		_fileSystem.DidNotReceive().WriteAllTextToFile(
+			System.IO.Path.Combine(BundleDirectory, "metadata.json"), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Read survives a payload whose identity members are objects rather than strings")]
+	public void Read_Should_Not_Throw_When_Identity_Members_Are_Not_Strings() {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(true);
+		_fileSystem.ExistsFile(SchemaDataPath).Returns(true);
+		_fileSystem.ReadAllText(SchemaDataPath).Returns("""{"Name":{"unexpected":true}}""");
+		_fileSystem.ExistsFile(DescriptorPath).Returns(false);
+
+		// Act
+		SchemaBundle result = _sut.Read(BundleDirectory);
+
+		// Assert
+		result.Descriptor.SchemaName.Should().BeNull(
+			because: "a member of the wrong shape carries no identity, and reading it must not throw");
+	}
+
+	[Test]
+	[Description("Read takes the identity from the payload, because the payload is what import writes")]
+	public void Read_Should_Prefer_Payload_Identity_Over_Descriptor() {
+		// Arrange
+		// The descriptor only fills in what it alone knows — source package, environment, timestamp.
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(true);
+		_fileSystem.ExistsFile(SchemaDataPath).Returns(true);
+		_fileSystem.ReadAllText(SchemaDataPath).Returns(PlatformPayload);
+		_fileSystem.ExistsFile(DescriptorPath).Returns(true);
+		_fileSystem.ReadAllText(DescriptorPath).Returns(
+			"""{"schemaName":"UsrProbeSchema","sourcePackageName":"UsrProbePackage"}""");
+
+		// Act
+		SchemaBundle result = _sut.Read(BundleDirectory);
+
+		// Assert
+		result.Descriptor.SchemaUId.Should().Be("8375dacb-4ea5-4103-b07a-d365f8d276f3",
+			because: "the descriptor did not carry a uId, so the payload's identity is what the plan uses");
+		result.Descriptor.ManagerName.Should().Be("AddonSchemaManager",
+			because: "the manager narrows the layer lookup and is read from the payload");
+		result.Descriptor.SourcePackageName.Should().Be("UsrProbePackage",
+			because: "provenance the payload cannot carry still comes from the descriptor");
+	}
+
+	[Test]
+	[Description("Read refuses a descriptor that names a different schema than the payload")]
+	public void Read_Should_Refuse_When_Descriptor_Contradicts_Payload() {
+		// Arrange
+		// A hand-edited or copy-pasted descriptor must be a loud error, not a silent retarget: the plan would
+		// otherwise describe one schema while the import writes another.
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(true);
+		_fileSystem.ExistsFile(SchemaDataPath).Returns(true);
+		_fileSystem.ReadAllText(SchemaDataPath).Returns(PlatformPayload);
+		_fileSystem.ExistsFile(DescriptorPath).Returns(true);
+		_fileSystem.ReadAllText(DescriptorPath).Returns(
+			"""{"schemaName":"UsrOtherSchema","schemaUId":"0d3f7a6e-1b2c-4d5e-8f90-1a2b3c4d5e6f"}""");
+
+		// Act
+		Action act = () => _sut.Read(BundleDirectory);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*UsrOtherSchema*UsrProbeSchema*",
+				because: "the operator has to be told which two identities disagree, not just that one does");
+	}
+
+	[Test]
+	[Description("Read accepts a descriptor that differs only in uId letter case, which is the same identity")]
+	public void Read_Should_Accept_Descriptor_With_Differently_Cased_UId() {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(true);
+		_fileSystem.ExistsFile(SchemaDataPath).Returns(true);
+		_fileSystem.ReadAllText(SchemaDataPath).Returns(PlatformPayload);
+		_fileSystem.ExistsFile(DescriptorPath).Returns(true);
+		_fileSystem.ReadAllText(DescriptorPath).Returns(
+			"""{"schemaName":"UsrProbeSchema","schemaUId":"8375DACB-4EA5-4103-B07A-D365F8D276F3"}""");
+
+		// Act
+		Action act = () => _sut.Read(BundleDirectory);
+
+		// Assert
+		act.Should().NotThrow(because: "a Guid is the same identity however it is spelled");
+	}
+
 	private static SchemaBundleDescriptor BuildDescriptor() =>
 		new() {
 			SchemaName = SchemaName,

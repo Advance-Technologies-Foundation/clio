@@ -95,7 +95,7 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 			}
 			IReadOnlyList<SchemaLayerDto> existingLayers =
 				_schemaTransferClient.FindLayers(schemaName, bundle.Descriptor.ManagerName);
-			SchemaImportAction action = ResolveAction(schemaName, targetPackage, existingLayers,
+			SchemaImportAction action = ResolveAction(bundle.Descriptor, targetPackage, existingLayers,
 				options.AllowNewLayer);
 			_logger.WriteInfo(Describe(action, schemaName, targetPackage, existingLayers));
 			if (options.DryRun) {
@@ -127,13 +127,16 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 	/// sometimes the <c>IU_Name_Manager_Package</c> duplicate-key defect this feature was written for, and the
 	/// two are indistinguishable from here — so it is refused by default and named in the message.
 	/// </remarks>
-	private static SchemaImportAction ResolveAction(string schemaName, string targetPackage,
+	private static SchemaImportAction ResolveAction(SchemaBundleDescriptor bundleIdentity, string targetPackage,
 		IReadOnlyList<SchemaLayerDto> existingLayers, bool allowNewLayer) {
+		string schemaName = bundleIdentity.SchemaName;
 		if (existingLayers.Count == 0) {
 			return SchemaImportAction.Create;
 		}
-		if (existingLayers.Any(layer =>
-				string.Equals(layer.PackageName, targetPackage, StringComparison.OrdinalIgnoreCase))) {
+		SchemaLayerDto targetPackageLayer = existingLayers.FirstOrDefault(layer =>
+			string.Equals(layer.PackageName, targetPackage, StringComparison.OrdinalIgnoreCase));
+		if (targetPackageLayer is not null) {
+			EnsureLayerIsTheSameSchema(bundleIdentity, targetPackage, targetPackageLayer);
 			return SchemaImportAction.Replace;
 		}
 		if (!allowNewLayer) {
@@ -145,6 +148,49 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 		}
 		return SchemaImportAction.NewLayer;
 	}
+
+	/// <summary>
+	/// Refuses a REPLACE whose target-package layer is a different schema than the bundle.
+	/// </summary>
+	/// <remarks>
+	/// Matching the package alone is not enough to call an import a replacement. A boxed layer, or one restored
+	/// from another environment, can own the same name in the target package under a different <c>UId</c> — and
+	/// the platform importer preserves the bundle's <c>UId</c>, so writing it there produces a second row with
+	/// the same (name, manager, package) triple and the <c>IU_Name_Manager_Package</c> duplicate key rejects it.
+	/// Reporting "Plan: REPLACE" and a successful <c>--dry-run</c> for that case is exactly what makes the plan
+	/// untrustworthy, so the mismatch is named here instead.
+	/// </remarks>
+	private static void EnsureLayerIsTheSameSchema(SchemaBundleDescriptor bundleIdentity, string targetPackage,
+		SchemaLayerDto targetPackageLayer) {
+		if (!UIdsDisagree(bundleIdentity.SchemaUId, targetPackageLayer.SchemaUId)
+			&& !ManagersDisagree(bundleIdentity.ManagerName, targetPackageLayer.ManagerName)) {
+			return;
+		}
+		throw new InvalidOperationException(
+			$"Package '{targetPackage}' already owns a schema named '{bundleIdentity.SchemaName}', but it is not "
+			+ $"the one in this bundle: the bundle carries uId={OrUnknown(bundleIdentity.SchemaUId)} "
+			+ $"(manager {OrUnknown(bundleIdentity.ManagerName)}) while '{targetPackage}' owns "
+			+ $"uId={OrUnknown(targetPackageLayer.SchemaUId)} (manager "
+			+ $"{OrUnknown(targetPackageLayer.ManagerName)}). Importing would not replace that layer — the "
+			+ "platform preserves the bundle's uId, so it would add a second row with the same name in the same "
+			+ "package, which the IU_Name_Manager_Package index rejects. Import into a package that does not own "
+			+ "this name, or delete the conflicting schema first.");
+	}
+
+	private static bool UIdsDisagree(string bundleUId, string layerUId) {
+		if (string.IsNullOrWhiteSpace(bundleUId) || string.IsNullOrWhiteSpace(layerUId)) {
+			return false;
+		}
+		return Guid.TryParse(bundleUId, out Guid parsedBundleUId) && Guid.TryParse(layerUId, out Guid parsedLayerUId)
+			? parsedBundleUId != parsedLayerUId
+			: !string.Equals(bundleUId.Trim(), layerUId.Trim(), StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool ManagersDisagree(string bundleManagerName, string layerManagerName) =>
+		!string.IsNullOrWhiteSpace(bundleManagerName) && !string.IsNullOrWhiteSpace(layerManagerName)
+		&& !string.Equals(bundleManagerName.Trim(), layerManagerName.Trim(), StringComparison.OrdinalIgnoreCase);
+
+	private static string OrUnknown(string value) => string.IsNullOrWhiteSpace(value) ? "<unknown>" : value;
 
 	private static string Describe(SchemaImportAction action, string schemaName, string targetPackage,
 		IReadOnlyList<SchemaLayerDto> existingLayers) =>

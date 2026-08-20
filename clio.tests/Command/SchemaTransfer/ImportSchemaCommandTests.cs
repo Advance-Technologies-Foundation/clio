@@ -19,6 +19,7 @@ public class ImportSchemaCommandTests : BaseCommandTests<ImportSchemaOptions> {
 	private const string OtherPackage = "UsrOtherPackage";
 	private const string BundlePath = "/tmp/bundles/UsrProbeSchema";
 	private const string Payload = """{"Name":"UsrProbeSchema"}""";
+	private const string ForeignSchemaUId = "0d3f7a6e-1b2c-4d5e-8f90-1a2b3c4d5e6f";
 
 	private ISchemaTransferClient _schemaTransferClient;
 	private ISchemaBundleStore _schemaBundleStore;
@@ -165,6 +166,83 @@ public class ImportSchemaCommandTests : BaseCommandTests<ImportSchemaOptions> {
 		// Assert
 		result.Should().Be(1, because: "without a schema name the create-versus-replace plan cannot be resolved");
 		_schemaTransferClient.DidNotReceive().Import(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a REPLACE when the target package owns the name under a different schema uId")]
+	public void Execute_Should_Refuse_When_Target_Package_Layer_Is_A_Different_Schema() {
+		// Arrange
+		// The boxed-layer case: the target package owns this name, but as a different SysSchema row. The
+		// platform importer preserves the bundle's uId, so this is not a replacement — it is a second row with
+		// the same (name, manager, package) triple, which IU_Name_Manager_Package rejects.
+		List<SchemaLayerDto> layers = BuildLayers(TargetPackage);
+		layers[0].SchemaUId = ForeignSchemaUId;
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(layers);
+
+		// Act
+		int result = _sut.Execute(BuildOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "matching the package alone does not make the layer the same schema as the bundle");
+		_schemaTransferClient.DidNotReceive().Import(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A dry run reports the same refusal, so the plan never claims a REPLACE that would fail")]
+	public void Execute_Should_Refuse_Dry_Run_When_Target_Package_Layer_Is_A_Different_Schema() {
+		// Arrange
+		List<SchemaLayerDto> layers = BuildLayers(TargetPackage);
+		layers[0].SchemaUId = ForeignSchemaUId;
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(layers);
+		ImportSchemaOptions options = BuildOptions();
+		options.DryRun = true;
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "reporting 'Plan: REPLACE' for an import the platform would reject is what makes a dry run "
+				+ "untrustworthy");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a REPLACE when the target package layer belongs to a different schema manager")]
+	public void Execute_Should_Refuse_When_Target_Package_Layer_Has_Another_Manager() {
+		// Arrange
+		List<SchemaLayerDto> layers = BuildLayers(TargetPackage);
+		layers[0].ManagerName = "ClientUnitSchemaManager";
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(layers);
+
+		// Act
+		int result = _sut.Execute(BuildOptions());
+
+		// Assert
+		result.Should().Be(1, because: "a same-named schema under another manager is not the bundle's schema");
+		_schemaTransferClient.DidNotReceive().Import(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still replaces when the layer reports no uId, because an unknown identity is not a mismatch")]
+	public void Execute_Should_Import_When_Target_Package_Layer_Reports_No_UId() {
+		// Arrange
+		// An older gate, or a layer the gate could not resolve a uId for, must not turn an ordinary update into
+		// a refusal — only a uId that is present and different is evidence of another schema.
+		List<SchemaLayerDto> layers = BuildLayers(TargetPackage);
+		layers[0].SchemaUId = null;
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(layers);
+
+		// Act
+		int result = _sut.Execute(BuildOptions());
+
+		// Assert
+		result.Should().Be(0, because: "an absent uId is no evidence that the layer is a different schema");
+		_schemaTransferClient.Received(1).Import(Payload, TargetPackage);
 	}
 
 	private static ImportSchemaOptions BuildOptions() =>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Clio.Common;
@@ -114,9 +115,72 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 		if (string.IsNullOrWhiteSpace(schemaData)) {
 			throw new InvalidOperationException($"'{schemaDataPath}' is empty.");
 		}
-		SchemaBundleDescriptor descriptor = ReadDescriptor(bundleDirectory) ?? DescribeFromPayload(schemaData);
+		SchemaBundleDescriptor descriptor = ResolveIdentity(DescribeFromPayload(schemaData),
+			ReadDescriptor(bundleDirectory), schemaDataPath);
 		return new SchemaBundle(descriptor, schemaData);
 	}
+
+	/// <summary>
+	/// Combines the identity read from the payload with the provenance read from <c>descriptor.json</c>.
+	/// </summary>
+	/// <remarks>
+	/// The payload is the authority for identity, because it is the only thing import writes: anything else lets
+	/// the plan (and <c>--dry-run</c>) describe a different schema than the import performs. The descriptor keeps
+	/// the fields it alone knows — source package, source environment, export timestamp, clio version. When the
+	/// two disagree about identity the bundle is refused rather than silently retargeted, so a hand-edited or
+	/// copy-pasted descriptor is a loud error instead of a wrong import.
+	/// </remarks>
+	/// <exception cref="InvalidOperationException">Thrown when the descriptor names a different schema.</exception>
+	private static SchemaBundleDescriptor ResolveIdentity(SchemaBundleDescriptor payloadIdentity,
+		SchemaBundleDescriptor fileDescriptor, string schemaDataPath) {
+		if (fileDescriptor is null) {
+			return payloadIdentity;
+		}
+		EnsureIdentityAgrees(payloadIdentity, fileDescriptor, schemaDataPath);
+		fileDescriptor.SchemaName = payloadIdentity.SchemaName ?? fileDescriptor.SchemaName;
+		fileDescriptor.SchemaUId = payloadIdentity.SchemaUId ?? fileDescriptor.SchemaUId;
+		fileDescriptor.ManagerName = payloadIdentity.ManagerName ?? fileDescriptor.ManagerName;
+		fileDescriptor.Caption = payloadIdentity.Caption ?? fileDescriptor.Caption;
+		return fileDescriptor;
+	}
+
+	private static void EnsureIdentityAgrees(SchemaBundleDescriptor payloadIdentity,
+		SchemaBundleDescriptor fileDescriptor, string schemaDataPath) {
+		List<string> disagreements = [];
+		AddDisagreement(disagreements, "schemaName", fileDescriptor.SchemaName, payloadIdentity.SchemaName,
+			NamesAgree);
+		AddDisagreement(disagreements, "schemaUId", fileDescriptor.SchemaUId, payloadIdentity.SchemaUId,
+			UIdsAgree);
+		AddDisagreement(disagreements, "managerName", fileDescriptor.ManagerName, payloadIdentity.ManagerName,
+			NamesAgree);
+		if (disagreements.Count == 0) {
+			return;
+		}
+		throw new InvalidOperationException(
+			$"The {DescriptorFileName} of this bundle describes a different schema than its "
+			+ $"{SchemaDataFileName}: {string.Join("; ", disagreements)}. "
+			+ $"'{schemaDataPath}' is what the import writes, so the mismatch is refused rather than importing "
+			+ $"under one identity while reporting another. Remove or correct {DescriptorFileName} — it is "
+			+ "provenance only and import reads the payload without it.");
+	}
+
+	private static void AddDisagreement(List<string> disagreements, string field, string descriptorValue,
+		string payloadValue, Func<string, string, bool> agree) {
+		if (string.IsNullOrWhiteSpace(descriptorValue) || string.IsNullOrWhiteSpace(payloadValue)
+			|| agree(descriptorValue, payloadValue)) {
+			return;
+		}
+		disagreements.Add($"{field} is '{descriptorValue}' in {DescriptorFileName} "
+			+ $"but '{payloadValue}' in {SchemaDataFileName}");
+	}
+
+	private static bool NamesAgree(string descriptorValue, string payloadValue) =>
+		string.Equals(descriptorValue.Trim(), payloadValue.Trim(), StringComparison.OrdinalIgnoreCase);
+
+	private static bool UIdsAgree(string descriptorValue, string payloadValue) =>
+		Guid.TryParse(descriptorValue, out Guid descriptorUId) && Guid.TryParse(payloadValue, out Guid payloadUId)
+			? descriptorUId == payloadUId
+			: NamesAgree(descriptorValue, payloadValue);
 
 	private SchemaBundleDescriptor ReadDescriptor(string bundleDirectory) {
 		if (string.IsNullOrEmpty(bundleDirectory)) {
@@ -137,17 +201,31 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 	}
 
 	/// <summary>
-	/// Recovers the schema identity from the payload, for a bundle whose descriptor is missing or damaged.
+	/// Reads the schema identity out of the payload, which is the authority for what an import writes.
 	/// </summary>
 	private static SchemaBundleDescriptor DescribeFromPayload(string schemaData) {
 		JObject payload = ParsePayload(schemaData);
 		return new SchemaBundleDescriptor {
-			SchemaName = payload?.Value<string>("Name"),
-			SchemaUId = payload?.Value<string>("UId"),
-			Caption = payload?.Value<string>("Caption"),
-			ManagerName = payload?.Value<string>("ManagerName")
+			SchemaName = ReadString(payload, "Name"),
+			SchemaUId = ReadString(payload, "UId"),
+			Caption = ReadString(payload, "Caption"),
+			ManagerName = ReadString(payload, "ManagerName")
 		};
 	}
+
+	/// <summary>
+	/// Reads one string member of a payload, treating a non-string member as absent.
+	/// </summary>
+	/// <remarks>
+	/// <c>JToken.Value&lt;string&gt;</c> throws <see cref="InvalidCastException"/> — not a
+	/// <see cref="JsonException"/> — when the member is an object or an array, so a payload that parses but
+	/// carries, say, an object in <c>MetaData</c> would otherwise take down whichever operation is reading it.
+	/// A member of the wrong shape is nothing this class can use, so it reads as missing.
+	/// </remarks>
+	private static string ReadString(JObject payload, string propertyName) =>
+		payload?[propertyName] is JValue { Value: not null } value
+			? Convert.ToString(value.Value, CultureInfo.InvariantCulture)
+			: null;
 
 	/// <summary>
 	/// Writes the human-readable projections of the payload: the metadata document, the properties list and the
@@ -171,7 +249,8 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 			WriteProjections(bundleDirectory, schemaData);
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-			or System.Security.SecurityException or NotSupportedException or JsonException) {
+			or System.Security.SecurityException or NotSupportedException or JsonException
+			or InvalidCastException) {
 			_logger?.WriteWarning(
 				$"The bundle in '{bundleDirectory}' was exported, but its human-readable projections could not "
 				+ $"be written: {exception.Message}. The authoritative {SchemaDataFileName} is intact and "
@@ -184,7 +263,7 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 		if (payload is null) {
 			return;
 		}
-		string metadata = payload.Value<string>("MetaData");
+		string metadata = ReadString(payload, "MetaData");
 		if (!string.IsNullOrWhiteSpace(metadata)) {
 			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, MetadataFileName),
 				Prettify(metadata));
@@ -203,7 +282,7 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 		}
 		Dictionary<string, JArray> byCulture = new(StringComparer.OrdinalIgnoreCase);
 		foreach (JToken value in localizableValues.Where(item => item is not null)) {
-			string culture = value.Value<string>("Culture") ?? "unknown";
+			string culture = ReadString(value as JObject, "Culture") ?? "unknown";
 			if (!byCulture.TryGetValue(culture, out JArray bucket)) {
 				bucket = [];
 				byCulture[culture] = bucket;
