@@ -9103,3 +9103,24 @@ Decision: Use the registered `vbg` environment for a disposable empty workspace,
 Discovery: The built CLI returned success with the new warning and preserved `packages/placeholder.txt` against `vbg`. The shared E2E harness has stale sandbox URL/readiness configuration, so it fails before invoking the branch; the direct CLI boundary proved the empty path while the E2E now covers partial-restore preservation in CI.
 Files: clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, clio.tests/Package/PackageDownloaderTests.cs, clio.tests/Workspace/WorkspaceRestorerTests.cs
 Impact: Both empty and partial restore regressions are pinned, and the final module gate passes 3,806 tests.
+
+## 2026-08-21 00:11 – GH #1136 Angular Jest setup ownership
+Context: Fresh `new-ui-project` scaffolds failed every real Angular spec because the template and `@angular-builders/jest` both initialized TestBed.
+Decision: Keep the Angular 19 Jest builder and the project-specific setup hook, but reduce both shipped `setup-jest.ts` files to the JIT compiler import so the builder is the single test-environment owner.
+Discovery: `@angular-builders/jest` 19.0.1 concatenates custom `setupFilesAfterEnv` with its own setup. A token-substituted shipped template with locked dependencies passed a real `TestBed` component test after the duplicate initializer was removed. A zero-spec scaffold still reports Jest's normal `No tests found`; `passWithNoTests` is deliberately not enabled.
+Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
+Impact: both default and empty scaffolds retain their Jest extension point while real specs can execute; structural tests prevent either template from reintroducing a second initializer.
+
+## 2026-08-21 00:37 – GH #1136 Claude review: make runner ownership explicit
+Context: Claude agreed with the Jest-builder ownership fix but found that direct `jest` invocation would bypass the builder-owned Angular test environment and that the regression did not pin `configPath`.
+Decision: Document `npm test` / `ng test` as the supported runner path in both setup files and READMEs, assert the complete setup contract, and pin the Angular builder's `configPath` and `tsConfig`.
+Discovery: The generated `jest.config.ts` is an extension consumed by `@angular-builders/jest`, not a supported standalone test entry point.
+Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
+Impact: maintainers and generated-project users can see the single-owner contract, while regression coverage protects the configuration link that makes it work.
+
+## 2026-08-21 00:48 – GH #1136 Claude rereview: make config assertions effective
+Context: Claude found that null-conditional chaining could skip the new `configPath` and `tsConfig` assertions when a node was missing, and that the generated README omitted the intentional zero-spec exit behavior.
+Decision: Bind optional JSON values to locals before asserting them, pin the complete project Jest configuration, and disclose the initial `No tests found` non-zero result in both READMEs.
+Discovery: FluentAssertions cannot execute after a null-conditional chain short-circuits; a local null value is required so `Should().Be(...)` actually fails.
+Files: clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md
+Impact: removing the builder-to-config link or adding another project setup entry now fails the regression, and fresh-scaffold behavior is explicit to users.
