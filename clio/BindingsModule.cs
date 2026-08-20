@@ -467,6 +467,8 @@ public class BindingsModule {
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
 		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
+		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
+		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();

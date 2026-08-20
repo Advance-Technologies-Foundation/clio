@@ -26,6 +26,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	private IPageDesignerHierarchyClient _hierarchyClient;
 	private IClassicSectionSchemaResolver _sectionResolver;
 	private IClassicDetailEditPageResolver _childPageResolver;
+	private IClassicEnumVocabularyResolver _enumVocabularyResolver;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
 
@@ -51,6 +52,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		_sectionResolver = Substitute.For<IClassicSectionSchemaResolver>();
 		_childPageResolver = Substitute.For<IClassicDetailEditPageResolver>();
+		_enumVocabularyResolver = Substitute.For<IClassicEnumVocabularyResolver>();
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://localhost/svc");
@@ -70,12 +72,19 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			.Returns(ci => new ClassicChildPageLookup(
 				Array.Empty<ClassicChildPage>(), Array.Empty<string>(), null,
 				ci.Arg<IReadOnlyCollection<string>>().ToList()));
+		// Default: no enum vocabulary resolved (no HTTP call is made in these tests), so the pre-existing tests keep
+		// asserting an unchanged manifest with no enumVocabulary block. The enum-vocabulary-specific tests configure
+		// this explicitly.
+		_enumVocabularyResolver.Resolve().Returns(
+			new ClassicEnumVocabularyParseResult(
+				new Dictionary<string, IReadOnlyDictionary<string, long>>(), Array.Empty<string>()));
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton(_columnManager);
 		containerBuilder.AddSingleton(_hierarchyClient);
 		containerBuilder.AddSingleton(_sectionResolver);
 		containerBuilder.AddSingleton(_childPageResolver);
+		containerBuilder.AddSingleton(_enumVocabularyResolver);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
 	}
@@ -1836,6 +1845,79 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		detail["editPage"]!.Value<bool>().Should().BeFalse(
 			because: "the only candidate is the page being assembled, which is never nested — naming it would point the " +
 				"engine at a page the manifest does not carry, so the metadata answer collapses to a verified none");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources echoes the resolver's enumVocabulary into the manifest verbatim and counts it in the response summary.")]
+	public void TryAssemblePageSources_ShouldEchoEnumVocabulary_WhenResolverSucceeds() {
+		// Arrange
+		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
+		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		_enumVocabularyResolver.Resolve().Returns(new ClassicEnumVocabularyParseResult(
+			new Dictionary<string, IReadOnlyDictionary<string, long>> {
+				["ViewItemType"] = new Dictionary<string, long> { ["GRID_LAYOUT"] = 0, ["DETAIL"] = 2 },
+				["ContentType"] = new Dictionary<string, long> { ["LONG_TEXT"] = 0 }
+			},
+			Array.Empty<string>()));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a resolvable page assembles successfully regardless of the enum-vocabulary echo");
+		response.EnumVocabularyCount.Should().Be(2, because: "two of the three enum tables were resolved from the stand");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["enumVocabulary"]!["ViewItemType"]!["GRID_LAYOUT"]!.Value<long>().Should().Be(0,
+			because: "the stand's own measured member/value pairs land in the manifest verbatim");
+		manifest["enumVocabulary"]!["ViewItemType"]!["DETAIL"]!.Value<long>().Should().Be(2);
+		manifest["enumVocabulary"]!["ContentType"]!["LONG_TEXT"]!.Value<long>().Should().Be(0);
+		manifest["enumVocabulary"]!["DataValueType"].Should().BeNull(
+			because: "an enum the resolver could not resolve is omitted, never emitted as an empty object");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources omits enumVocabulary entirely and still succeeds, surfacing the resolver's warning to the caller, when the stand's enum vocabulary cannot be resolved at all.")]
+	public void TryAssemblePageSources_ShouldOmitEnumVocabulary_AndWarn_WhenResolverFindsNothing() {
+		// Arrange
+		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
+		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		_enumVocabularyResolver.Resolve().Returns(new ClassicEnumVocabularyParseResult(
+			new Dictionary<string, IReadOnlyDictionary<string, long>>(),
+			["Could not fetch sysenums.js from the stand; enumVocabulary omitted."]));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the enum vocabulary is a best-effort enricher and must never fail the whole collection");
+		response.EnumVocabularyCount.Should().Be(0);
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["enumVocabulary"].Should().BeNull(because: "an empty enumVocabulary block must be omitted, not written as {}");
+		response.Warnings.Should().ContainSingle(w => w.Contains("sysenums.js"),
+			because: "an MCP caller never sees the logger, so the resolver's specific reason must reach the response");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources still succeeds and reports a warning, without throwing, when the enum-vocabulary resolver itself throws.")]
+	public void TryAssemblePageSources_ShouldDegrade_WhenEnumVocabularyResolverThrows() {
+		// Arrange
+		AddLayer("UsrTestPage", "uid-top", "UsrApp", 200);
+		AddSchema("uid-top", "define(\"UsrTestPage\", [], function() { return { entitySchemaName: \"UsrTest\" }; });", EmptyGuid, "UsrApp");
+		StubEntityColumns();
+		_enumVocabularyResolver.Resolve().Returns(_ => throw new InvalidOperationException("boom"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrTestPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "an unexpected resolver failure must degrade the enricher, not the whole command");
+		response.EnumVocabularyCount.Should().Be(0);
+		response.Warnings.Should().ContainSingle(w => w.Contains("enum vocabulary"));
 	}
 
 	// --- fake-environment helpers ------------------------------------------------------------------
