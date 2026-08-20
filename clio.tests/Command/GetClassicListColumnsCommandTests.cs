@@ -1247,8 +1247,9 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		// Assert
 		response.Success.Should().BeTrue(because: "the static declaration is still a usable answer");
 		response.Source.Should().Be("schema-default", because: "no profile could be read");
-		response.Notes.Should().Contain(note => note.Contains("could not be read"),
-			because: "a failed read that reports nothing is the one degradation the caller cannot detect");
+		response.Notes.Should().Contain(note => note.Contains("could not be read") && note.Contains("403 Forbidden"),
+			because: "a failed read that reports nothing is the one degradation the caller cannot detect, and "
+				+ "without the reason a permission-gated route is indistinguishable from a pristine stand");
 		response.View.Should().BeNull(because: "no view was read, so naming one would be a false claim");
 	}
 
@@ -1269,8 +1270,10 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 		// Assert
 		response.Source.Should().Be("profile", because: "the grid read still answered under the default view name");
 		response.View.Should().Be("GridDataView", because: "the platform default is the assumed fallback");
-		response.Notes.Should().Contain(note => note.Contains("active view could not be read"),
-			because: "reporting a view nobody read as the section's active view is exactly the silent claim to avoid");
+		response.Notes.Should().Contain(
+			note => note.Contains("active view could not be read") && note.Contains("session expired"),
+			because: "reporting a view nobody read as the section's active view is exactly the silent claim to "
+				+ "avoid, and the failure's own reason is what tells a broken session from an unconfigured one");
 	}
 
 	[Test]
@@ -1369,6 +1372,29 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 			because: "claiming `shared` on a failed check would assert something the command did not establish");
 		response.Notes.Should().Contain(note => note.Contains("could not be classified as personal or shared"),
 			because: "the reason the scope is unknown belongs in the answer");
+	}
+
+	[Test]
+	[Description("TryResolve carries the contact read's own failure reason into the scope note when that read throws.")]
+	public void TryResolve_ShouldNoteTheContactReadFailureReason_WhenTheContactReadThrows() {
+		// Arrange — an empty user-info body and a throwing one both cost the classification, but only the second
+		// one carries a diagnosis; dropping it leaves a broken session looking like a stand that answers blankly.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("GridDataView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []));
+		_applicationClient
+			.ExecutePostRequest(UserInfoUrl, Arg.Any<string>())
+			.Returns(_ => throw new InvalidOperationException("401 Unauthorized"));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "the columns were read; only their classification failed");
+		response.ProfileScope.Should().Be("unknown", because: "the caller's contact never came back");
+		response.Notes.Should().Contain(
+			note => note.Contains("personal or shared") && note.Contains("401 Unauthorized"),
+			because: "the operator needs to see an authorization failure as such, not as a silent 'unknown'");
 	}
 
 	// The profile reader talks to three different endpoints, so the substitute is arranged PER URL: a single

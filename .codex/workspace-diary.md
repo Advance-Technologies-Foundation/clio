@@ -9054,3 +9054,11 @@ Discovery: TryGetStringProperty rejects whitespace and non-string values, but th
 Discovery: a mis-cased "Merge" was diagnosed by nothing at all — ReportOperationCaseMismatch allowlisted only insert/set. Merge added, with a guard because a correctly-cased merge also reaches that reporter.
 Files: clio/Command/SchemaValidationService.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageUpdateToolMobileTypePlacementTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, docs + help + three tool descriptions
 Impact: the blocking half is now narrow enough to be defensible, and the advisory half carries the two-step idiom the platform actually supports.
+
+## 2026-08-20 16:20 – ENG-95229 review round 2: a swallowed exception is a lost diagnosis
+Context: review round 1 made every profile-read degradation *visible* (a note per failure path), but the notes said only that the read failed, never why — the two bare `catch { }` clauses in ClassicListProfileReader discarded the exception before the note was written.
+Decision: thread the failure's own message out of the catch instead of logging it there. `TryQueryProfile` and `ReadCurrentUserContactId` gained an `out string failureReason`; the three notes interpolate it through one `Describe` helper that renders nothing when the reason is absent, so a failure without a message keeps the previous wording.
+Discovery: the distinction the caller needs is not failed-vs-absent (round 1 gave that) but 401/403-vs-missing-route-vs-malformed-body — all three still collapse into `source: schema-default`, and the note is the only place they can be told apart. `ResolveScope` already had the pattern (`catch (Exception exception)` + `({exception.Message})`); the two remaining bare catches were the inconsistency, not the precedent.
+Discovery: the two existing failure tests already threw with distinctive messages ("403 Forbidden", "session expired") but asserted only the note's prose, so they passed both before and after the message was dropped. Asserting the message turns them into real pins.
+Files: clio/Command/ClassicListProfileReader.cs, clio.tests/Command/GetClassicListColumnsCommandTests.cs
+Impact: an operator reading `source: schema-default` now sees whether the stand has no profile or their session is broken.

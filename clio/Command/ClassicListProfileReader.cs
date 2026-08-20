@@ -92,20 +92,21 @@ internal sealed class ClassicListProfileReader(
 		}
 		var notes = new List<string>();
 		string section = sectionSchemaName.Trim();
-		if (!TryReadActiveViewName(section, out string viewName)) {
+		if (!TryReadActiveViewName(section, out string viewName, out string activeViewFailureReason)) {
 			// Reporting `view` without this note would be a claim about a read that never happened: the name used
 			// below is the platform default assumed on the caller's behalf, not the view the section named.
 			notes.Add($"The section's active view could not be read, so the platform default view "
 				+ $"'{DefaultViewName}' was assumed; the reported columns may belong to a different view than the "
-				+ "one the section opens with.");
+				+ $"one the section opens with{Describe(activeViewFailureReason)}.");
 		}
 		string gridKey = $"{section}{GridSettingsKeyInfix}{viewName}";
-		if (!TryQueryProfile(gridKey, out JObject profile)) {
+		if (!TryQueryProfile(gridKey, out JObject profile, out string gridFailureReason)) {
 			// A FAILED read is not "no profile". Without this branch a transient 403, an expired session serving
 			// an HTML login page or a missing route is byte-identical on the wire to a pristine stand, and the
 			// caller adopts the narrow `schema-default` answer this whole change exists to replace.
-			notes.Add("The saved grid profile could not be read (the QueryProfile request failed), so the answer "
-				+ "falls back to the section's static declaration and may be narrower than the set the list renders.");
+			notes.Add($"The saved grid profile could not be read — the QueryProfile request failed"
+				+ $"{Describe(gridFailureReason)} — so the answer falls back to the section's static declaration "
+				+ "and may be narrower than the set the list renders.");
 			return new ClassicListProfileResult([], null, null, null, notes);
 		}
 		// An absent profile is the ordinary case for a section nobody has opened, so it earns no note: the
@@ -134,13 +135,14 @@ internal sealed class ClassicListProfileReader(
 	/// <summary>Reads the view the section opens with, falling back to the platform default view name.</summary>
 	/// <param name="section">Classic section client-unit schema name.</param>
 	/// <param name="viewName">The view the section opens with, or <see cref="DefaultViewName"/> when unread.</param>
+	/// <param name="failureReason">The read failure's message, or <see langword="null"/> when the read succeeded.</param>
 	/// <returns>
 	/// <see langword="false"/> when the read itself failed, so the caller can say that the returned name is an
 	/// assumption rather than the section's answer.
 	/// </returns>
-	private bool TryReadActiveViewName(string section, out string viewName) {
+	private bool TryReadActiveViewName(string section, out string viewName, out string failureReason) {
 		viewName = DefaultViewName;
-		if (!TryQueryProfile($"{section}{ActiveViewKeySuffix}", out JObject activeView)) {
+		if (!TryQueryProfile($"{section}{ActiveViewKeySuffix}", out JObject activeView, out failureReason)) {
 			return false;
 		}
 		string name = activeView?["activeViewName"]?.ToString();
@@ -153,14 +155,16 @@ internal sealed class ClassicListProfileReader(
 	/// <summary>Posts one <c>QueryProfile</c> read.</summary>
 	/// <param name="key">Profile key to read.</param>
 	/// <param name="profile">The stored payload, or <see langword="null"/> when the stand holds none.</param>
+	/// <param name="failureReason">The read failure's message, or <see langword="null"/> when the read succeeded.</param>
 	/// <returns>
 	/// <see langword="false"/> when the read FAILED — a transport error, an expired session serving an HTML page,
 	/// or a stand without the route. A failure still degrades to "no columns" rather than failing the whole
 	/// command, because the static declaration remains a usable answer; the caller turns this into a note so the
 	/// degradation is never silent.
 	/// </returns>
-	private bool TryQueryProfile(string key, out JObject profile) {
+	private bool TryQueryProfile(string key, out JObject profile, out string failureReason) {
 		profile = null;
+		failureReason = null;
 		try {
 			string url = serviceUrlBuilder.Build(QueryProfileUrl);
 			string body = new JObject { ["key"] = key }.ToString(Newtonsoft.Json.Formatting.None);
@@ -172,7 +176,11 @@ internal sealed class ClassicListProfileReader(
 			profile = JObject.Parse(response);
 			return true;
 		}
-		catch {
+		catch (Exception exception) {
+			// The reason travels back to the caller instead of dying here: without it an expired session, a
+			// permission-gated route and a stand without the route are one indistinguishable "no profile", and
+			// the operator's only signal is a narrower column set.
+			failureReason = exception.Message;
 			return false;
 		}
 	}
@@ -342,10 +350,10 @@ internal sealed class ClassicListProfileReader(
 	/// contract words the claim narrowly.
 	/// </remarks>
 	private string ResolveScope(string gridKey, List<string> notes) {
-		string contactId = ReadCurrentUserContactId();
+		string contactId = ReadCurrentUserContactId(out string contactFailureReason);
 		if (string.IsNullOrWhiteSpace(contactId)) {
 			notes.Add("The current user's contact could not be read, so the profile could not be classified as " +
-				"personal or shared.");
+				$"personal or shared{Describe(contactFailureReason)}.");
 			return ClassicListProfileResult.UnknownScope;
 		}
 		try {
@@ -372,7 +380,8 @@ internal sealed class ClassicListProfileReader(
 		}
 	}
 
-	private string ReadCurrentUserContactId() {
+	private string ReadCurrentUserContactId(out string failureReason) {
+		failureReason = null;
 		try {
 			string url = serviceUrlBuilder.Build(CreatioServicePaths.GetCurrentUserInfo);
 			string response = applicationClient.ExecutePostRequest(url, "{}");
@@ -380,10 +389,15 @@ internal sealed class ClassicListProfileReader(
 				? null
 				: JObject.Parse(response)["userInfo"]?["contactId"]?.ToString();
 		}
-		catch {
+		catch (Exception exception) {
+			failureReason = exception.Message;
 			return null;
 		}
 	}
+
+	/// <summary>Renders a read failure's reason for a note, or nothing when the failure carried none.</summary>
+	private static string Describe(string failureReason) =>
+		string.IsNullOrWhiteSpace(failureReason) ? string.Empty : $" ({failureReason.Trim()})";
 
 	private sealed class SysProfileDataRowsResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
 
