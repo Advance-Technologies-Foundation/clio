@@ -9077,6 +9077,19 @@ Discovery: Claude's independent review confirmed the shared-pointer structure an
 Files: .ai/skills/clio-issue-workflow/SKILL.md, .ai/skills/claim-clio-issue/SKILL.md, .ai/skills/investigate-clio-issue/SKILL.md, .ai/skills/repair-clio-issue/SKILL.md, .codex/skills/, .claude/skills/, .codex/agents/reviewer.toml, clio.tests/Command/McpServer/SharedIssueWorkflowSkillTests.cs, AGENTS.md, CONTRIBUTING.md
 Impact: both supported agents discover the same workflow and cannot silently drift; the shared body remains model-neutral and the repository's default reviewer model can evolve without a hardcoded pin.
 
+## 2026-08-20 23:44 – Strict odata-read filtering and paging contract
+Context: GitHub issue #1135 reported that raw filter, skip, and count arguments were silently discarded, widening reads without an error.
+Decision: retain the supported structured filters model and reject raw filter strings; reject unknown top-level and nested filter members; add first-class skip and count inputs and expose the server total separately as total-count.
+Discovery: the original tool accepted raw filter, but the structured-filter migration removed that property without strict binding and left stale wording. System.Text.Json also discarded misspelled nested filter members, and incomplete conditions were omitted by query construction. Live vbg proof showed the pre-fix disputed call returned the same first page, while the repaired build rejected raw filter, returned zero for an impossible structured Id, and returned distinct ordered pages with the same total of 13.
+Files: clio/Command/McpServer/Tools/ODataReadTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/ODataReadToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ODataReadToolE2ETests.cs
+Impact: odata-read can no longer silently broaden a query because of unsupported argument names or malformed structured filters, and agents can page and request a verified total through the published contract.
+
+## 2026-08-20 23:58 – Close structured-filter widening edge cases
+Context: the mandatory comprehensive pre-PR review of issue #1135 found three binder and grammar edge cases in the first repair commit.
+Decision: preserve JSON member presence with Undefined-valued JsonElement fields and an explicit filters-presence flag; reject present-null filters; allow only identifier-segment member paths; give raw filter callers a concrete structured example.
+Discovery: nullable JsonElement loses the distinction between an omitted value and explicit JSON null, making eq/ne null unreachable. A filter field was also an OData grammar boundary, not merely a column label; an injected field broadened an impossible vbg filter from zero to all 13 contacts before the allowlist was added.
+Files: clio/Command/McpServer/Tools/ODataKeyFormatter.cs, clio/Command/McpServer/Tools/ODataReadTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/ODataKeyFormatterTests.cs, clio.tests/Command/McpServer/ODataReadToolTests.cs, clio.mcp.e2e/ODataReadToolE2ETests.cs
+Impact: explicit null comparisons remain usable, while null filters and field-expression injection fail before environment resolution or HTTP; live vbg verification confirms all three boundaries.
 ## 2026-08-20 22:21 – Preserve workspace content on empty restore (issue #1137)
 Context: `restore-workspace` reported `Done` and deleted `packages/placeholder.txt` when `.clio/workspaceSettings.json` contained no packages.
 Decision: Materialize the eligible package list, warn and skip package download when it is empty, and remove the redundant packages-root clear because the archiver already overwrites each requested package directory.
