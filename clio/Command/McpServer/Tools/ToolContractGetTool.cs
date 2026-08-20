@@ -1234,7 +1234,7 @@ internal static class ToolContractCatalog {
 				new ToolErrorCodeContract("unsupported-fields",
 					"The payload contains fields outside the documented product telemetry fields."),
 				new ToolErrorCodeContract("missing-required-field",
-					"A required telemetry field (session_id, event_name, coding_agent, or plugin_version) is blank."),
+					"A required telemetry field (session_id or event_name) is blank. coding_agent and plugin_version are optional: omitting them is accepted, guessing them is not."),
 				new ToolErrorCodeContract("unknown-event-name",
 					"event_name is not one of the documented product event names."),
 				new ToolErrorCodeContract("unknown-consent",
