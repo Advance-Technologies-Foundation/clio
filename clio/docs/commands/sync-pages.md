@@ -33,10 +33,15 @@ When `validate` is `true` (the default), the body is checked client-side before 
     all). The Creatio differ builds the element from `values` alone, so the type is discarded and the
     element never renders even though the save succeeds. A flat `set` is left to the differ, which refuses
     it for the missing required `values`.
-  - **Rejected** — a `merge` whose `values` authors child elements on `Scaffold`'s `actions` or `leading`
-    (an array, or a lone object, of item configs carrying a non-empty `name`). Every form template populates
-    those slots, so the differ strips the property out of the merge and nothing is created even though the
-    write succeeds. Put the child in a page container with its own `insert` plus a `layoutConfig`.
+  - **Rejected** — a `merge` whose `values` authors child elements on `Scaffold`'s `actions`, `leading` or
+    `items` (an array, or a lone object, of item configs carrying a non-empty `name`). `items` is the page body,
+    filled with a `MainContainer` by every non-blank template; the same slot on any other container stays
+    advisory. Every shipped *form* template
+    populates those slots, so the differ strips the property out of the merge and nothing is created even
+    though the write succeeds. Put the child in a page container with its own `insert` plus a `layoutConfig`.
+    clio validates `viewConfigDiff` against an empty base and cannot see the target, so a page built from
+    `BlankMobilePageTemplate` — a bare Scaffold whose slots may be empty — is refused as well, even though the
+    merge would have applied there.
   - **Warned** — the same authoring in any other slot. There the target may legitimately lack the slot, in
     which case the merge creates it and the authoring works; clio validates against an empty base and cannot
     distinguish the two. Both are `merge`-only — for `insert`/`set` the `values` object becomes the element,

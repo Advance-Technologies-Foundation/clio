@@ -33,20 +33,24 @@ public static class SchemaValidationService
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
 	private const string MergeOperationName = "merge";
-	private const string ScaffoldLeadingSlot = "leading";
-	private const int MaxMergeSlotDiagnosticsPerEntry = 10;
 	private const string ParentNamePropertyName = "parentName";
 	private const string PropertyNamePropertyName = "propertyName";
 	private const string ScaffoldElementName = "Scaffold";
 	private const string ScaffoldActionsSlot = "actions";
+	private const string ScaffoldLeadingSlot = "leading";
+	private const string ScaffoldItemsSlot = "items";
+	private const int MaxMergeSlotDiagnosticsPerEntry = 10;
 	private const string ButtonComponentType = "crt.Button";
 
 	/// <summary>
-	/// The Scaffold navigation slots every shipped form template already populates, which is what makes a merge
-	/// authoring into them the discard case rather than the create case.
+	/// The Scaffold slots a shipped template already populates, which is what makes a merge authoring into them the
+	/// discard case rather than the create case: <c>actions</c> carries the form templates' Save button,
+	/// <c>leading</c> their Close/Cancel, and <c>items</c> is the page body, which every non-blank template fills
+	/// with a MainContainer. Membership only matters when the merge targets the Scaffold itself, so an
+	/// <c>items</c> slot on any other container is unaffected.
 	/// </summary>
-	private static readonly HashSet<string> ScaffoldNavigationSlots = new(StringComparer.Ordinal) {
-		ScaffoldActionsSlot, ScaffoldLeadingSlot
+	private static readonly HashSet<string> ScaffoldTemplatePopulatedSlots = new(StringComparer.Ordinal) {
+		ScaffoldActionsSlot, ScaffoldLeadingSlot, ScaffoldItemsSlot
 	};
 
 	private static readonly string[] DiffPropertyNames = {
@@ -852,10 +856,7 @@ public static class SchemaValidationService
 		// Exact-case operation, matching the differ's switch and the type-placement rule. Going through the
 		// case-INsensitive IsOperation here would contradict the sibling rule: a mis-cased operation is discarded
 		// wholesale, so telling its author where to move the button is advice that cannot change the outcome.
-		if (entry.ValueKind != JsonValueKind.Object
-			|| !string.Equals(
-				TryGetStringProperty(entry, OperationPropertyName, out string operation) ? operation : null,
-				InsertOperationName, StringComparison.Ordinal)) {
+		if (!IsExactOperation(entry, InsertOperationName)) {
 			return;
 		}
 		// The type is read from `values` ONLY — the copy the differ actually applies. Resolving it through the
@@ -933,13 +934,17 @@ public static class SchemaValidationService
 	/// </para>
 	/// </remarks>
 	/// <param name="body">Plain-JSON mobile page body.</param>
-	/// <returns>A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending slot.</returns>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending slot, up to the per-entry
+	/// advisory bound described on <see cref="TryReserveAdvisoryDiagnostic"/>.
+	/// </returns>
 	public static SchemaValidationResult ValidateMobileMergeSlotAuthoring(string body) =>
 		ScanMobileViewConfigDiffEntries(body, ValidateMobileMergeSlotAuthoringEntry);
 
 	/// <summary>
-	/// Per-entry half of <see cref="ValidateMobileMergeSlotAuthoring"/>; reports every offending slot on the entry
-	/// rather than stopping at the first, so one pass fixes the whole operation.
+	/// Per-entry half of <see cref="ValidateMobileMergeSlotAuthoring"/>; reports each offending slot on the entry
+	/// rather than stopping at the first, so one pass fixes the whole operation. Advisory diagnostics are bounded
+	/// per entry — see <see cref="TryReserveAdvisoryDiagnostic"/>; blocking ones never are.
 	/// </summary>
 	private static void ValidateMobileMergeSlotAuthoringEntry(
 		JsonElement entry, int index, SchemaValidationResult result) {
@@ -954,16 +959,29 @@ public static class SchemaValidationService
 			&& string.Equals(mergeTarget, ScaffoldElementName, StringComparison.Ordinal);
 		string subject = DescribeViewConfigDiffEntry(entry, index);
 		int advisoryReported = 0;
-		bool capNoted = false;
+		int blockingReported = 0;
+		bool advisoryCapNoted = false;
+		bool blockingCapNoted = false;
 		foreach (JsonProperty slot in values.EnumerateObject()) {
 			if (!TryGetAuthoredElementName(slot.Value, out string childName)) {
 				continue;
 			}
-			bool blocks = targetsScaffold && ScaffoldNavigationSlots.Contains(slot.Name);
-			if (!blocks && !TryReserveAdvisoryDiagnostic(ref advisoryReported, ref capNoted, subject, result)) {
+			bool blocks = targetsScaffold && ScaffoldTemplatePopulatedSlots.Contains(slot.Name);
+			// Both channels are bounded, but separately and for different reasons. IsValid latches on the first
+			// blocking slot, so bounding the blocking channel cannot suppress the refusal however the author
+			// orders the slots — and JsonDocument preserves DUPLICATE property names, which would otherwise let
+			// one entry emit an unbounded run of ~650-character errors into the "; "-joined Error string.
+			bool reserved = blocks
+				? TryReserveDiagnostic(ref blockingReported, ref blockingCapNoted, subject, isAdvisory: false, result)
+				: TryReserveDiagnostic(ref advisoryReported, ref advisoryCapNoted, subject, isAdvisory: true, result);
+			if (!reserved) {
+				if (blocks) {
+					result.IsValid = false;
+				}
 				continue;
 			}
-			string diagnostic = DescribeMergeSlotAuthoring(subject, slot.Name, childName, blocks);
+			string diagnostic = DescribeMergeSlotAuthoring(
+				subject, slot.Name, childName, blocks, slot.Value.ValueKind == JsonValueKind.Object);
 			if (blocks) {
 				result.IsValid = false;
 				result.Errors.Add(diagnostic);
@@ -974,27 +992,30 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Claims room for one ADVISORY merge-slot diagnostic on the current entry, adding the "there were more" note
-	/// once when the bound is reached. Returns <c>false</c> when the caller must skip the slot.
+	/// Claims room for one merge-slot diagnostic on the current entry, adding the "there were more" note once when
+	/// the bound is reached. Returns <c>false</c> when the caller must skip emitting for that slot.
 	/// </summary>
 	/// <remarks>
-	/// Blocking diagnostics are deliberately NOT counted and the caller keeps scanning past the bound. Slots are
-	/// enumerated in document order, so capping blocking ones would let a body that lists enough advisory slots
-	/// first suppress the very defect the rule exists to refuse (raised in review of PR #1124). The bound exists
-	/// because the tools flatten diagnostics with <c>"; "</c> into one string, which makes an unbounded per-entry
-	/// fan-out an injection surface as much as a memory one; a legitimate body never reaches it.
+	/// The two channels are counted SEPARATELY, which is what makes bounding the blocking one safe: slots are
+	/// enumerated in document order, so a shared counter would let a body that lists enough advisory slots first
+	/// suppress the very defect the rule exists to refuse (raised in review of PR #1124). With separate counters
+	/// the caller still latches <c>IsValid</c> on every blocking slot, bound or no bound. The bounds themselves
+	/// keep one entry from burying the agent's transcript; on the error channel that also caps a real amplifier,
+	/// since <c>JsonDocument</c> preserves duplicate property names and the tools flatten errors into a single
+	/// <c>"; "</c>-joined string. A legitimate body never reaches either bound.
 	/// </remarks>
-	private static bool TryReserveAdvisoryDiagnostic(
-		ref int advisoryReported, ref bool capNoted, string subject, SchemaValidationResult result) {
-		if (advisoryReported < MaxMergeSlotDiagnosticsPerEntry) {
-			advisoryReported++;
+	private static bool TryReserveDiagnostic(
+		ref int reported, ref bool capNoted, string subject, bool isAdvisory, SchemaValidationResult result) {
+		if (reported < MaxMergeSlotDiagnosticsPerEntry) {
+			reported++;
 			return true;
 		}
 		if (!capNoted) {
 			capNoted = true;
+			string channel = isAdvisory ? "advisory" : "blocking";
 			result.Warnings.Add(
 				$"{subject} authors child elements in further slots not listed here; only the first "
-				+ $"{MaxMergeSlotDiagnosticsPerEntry} advisory slots are reported.");
+				+ $"{MaxMergeSlotDiagnosticsPerEntry} {channel} slots are reported.");
 		}
 		return false;
 	}
@@ -1005,7 +1026,7 @@ public static class SchemaValidationService
 	/// destination, while any other slot may simply not exist on the target yet.
 	/// </summary>
 	private static string DescribeMergeSlotAuthoring(
-		string subject, string rawSlotName, string childName, bool blocks) =>
+		string subject, string rawSlotName, string childName, bool blocks, bool slotHoldsLoneObject) =>
 		$"{subject} is a \"{MergeOperationName}\" whose \"{ValuesPropertyName}\" authors child elements in "
 		+ $"\"{Sanitize(rawSlotName)}\" (starting with '{Sanitize(childName)}'). Where the target already holds "
 		+ "elements in that slot the differ strips the whole property out of the merge, so the write succeeds and "
@@ -1016,10 +1037,15 @@ public static class SchemaValidationService
 				+ $"\"{InsertOperationName}\" with \"{PropertyNamePropertyName}\": \"items\" on a container "
 				+ "this page or its template declares, plus a \"layoutConfig\". A button in the Scaffold "
 				+ "navigation slots is not shown on the mobile designer canvas even when it does apply."
-			: "To author into a slot the target genuinely lacks, use the platform's two-step idiom: a "
-				+ $"\"{MergeOperationName}\" that creates the slot as an empty array, then one "
-				+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
-				+ $"\"{InsertOperationName}\" into a property the target does not carry throws.");
+			: slotHoldsLoneObject
+				? "This slot holds a single element rather than a collection, so a merge is the ONLY route to it: "
+					+ $"an \"{InsertOperationName}\" needs a container and throws on a property that is null or "
+					+ "absent. It applies when the target's slot is null or absent, and is discarded when the "
+					+ "target already holds an element there. Do NOT convert it to an array."
+				: "To author into a collection slot the target genuinely lacks, use the platform's two-step idiom: "
+					+ $"a \"{MergeOperationName}\" that creates the slot as an empty array, then one "
+					+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
+					+ $"\"{InsertOperationName}\" into a property the target does not carry throws.");
 
 
 	/// <summary>
@@ -1028,7 +1054,8 @@ public static class SchemaValidationService
 	/// </summary>
 	/// <remarks>
 	/// Mirrors the applier's <c>isItemConfig</c> predicate (an object whose <c>name</c> is not empty, per its own
-	/// <c>IsEmpty</c> — which rejects only a zero-length string, so whitespace and non-string names both count) and
+	/// <c>IsEmpty</c> — which rejects a zero-length string, an empty array, and null, so whitespace and scalar
+	/// non-string names both count) and
 	/// its acceptance of a lone object where a collection is expected. It does NOT mirror WHERE the applier looks:
 	/// the applier tests the first child of the TARGET's property, while only the incoming payload is available
 	/// here. That makes this a proxy, so it scans EVERY item rather than just the first — a named child behind an
@@ -1063,6 +1090,9 @@ public static class SchemaValidationService
 		switch (nameElement.ValueKind) {
 			case JsonValueKind.Null or JsonValueKind.Undefined:
 				return false;
+			// The applier's IsEmpty rejects an empty array too, so an empty-array name is not an item config.
+			case JsonValueKind.Array when nameElement.GetArrayLength() == 0:
+				return false;
 			case JsonValueKind.String:
 				name = nameElement.GetString();
 				return !string.IsNullOrEmpty(name);
@@ -1074,8 +1104,8 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Whether the entry declares exactly <paramref name="operationName"/>, compared ordinally to match the differ's
-	/// case-sensitive dispatch. Shared by the <c>viewConfigDiff</c> rules so the comparison and its rationale have
-	/// one owner.
+	/// case-sensitive dispatch. Used by the rules that only need the yes/no answer; the type-placement rule keeps
+	/// its own comparison because it also needs the operation string itself for the case-mismatch diagnostic.
 	/// </summary>
 	private static bool IsExactOperation(JsonElement entry, string operationName) =>
 		entry.ValueKind == JsonValueKind.Object

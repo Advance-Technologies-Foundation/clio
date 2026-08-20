@@ -157,18 +157,20 @@ public sealed class PageUpdateToolMobileTypePlacementTests {
 	}
 
 	[Test]
-	[Description("The advisory half does not abort the save: authoring into a slot the target may legitimately lack warns, because clio validates viewConfigDiff against an empty base and a merge is often the only single-operation route there.")]
+	[Description("The advisory half does not abort the save, AND the advisory reaches the caller. Warning the author is the entire value of this branch, so the write path must be shown to carry it, not merely to let the save through.")]
 	public void ValidateBody_WhenMobileMergeAuthorsChildrenInAnOptionalSlot_DoesNotAbortTheSave() {
 		// Arrange
 		PageUpdateTool tool = BuildTool();
 		PageUpdateOptions options = new() { SchemaName = "UsrTest_MobileFormPage", Body = MobileBodyWithMergeAuthoredMenuItems };
 
 		// Act
-		(PageUpdateResponse failure, IReadOnlyList<string> _) = tool.ValidateBody(options, requestedVersion: null);
+		(PageUpdateResponse failure, IReadOnlyList<string> warnings) = tool.ValidateBody(options, requestedVersion: null);
 
 		// Assert
 		failure.Should().BeNull(
 			because: "refusing a shape that frequently applies correctly would break legitimate mobile authoring");
+		warnings.Should().Contain(w => w.Contains("menuItems") && w.Contains("UsrExport"),
+			because: "a save that goes through silently leaves the author with the payload the differ may drop");
 	}
 
 	[Test]

@@ -7956,6 +7956,8 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		result.IsValid.Should().BeTrue(
 			because: "an empty array creates no element, so there is nothing for the author to move to an insert");
+		result.Warnings.Should().BeEmpty(
+			because: "this is the first half of the platform's own two-step idiom, and warning on it would contradict the advice the rule itself gives");
 	}
 
 	[Test]
@@ -8016,6 +8018,8 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		result.IsValid.Should().BeTrue(
 			because: "telling the author to move a child out of an operation that never runs is advice that cannot change the outcome");
+		result.Warnings.Should().BeEmpty(
+			because: "this rule owns neither channel for a mis-cased operation — reporting it as a warning here would double up on the case-mismatch reporter");
 	}
 
 	[Test]
@@ -8187,7 +8191,7 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "malformed values shapes are reported by ValidateMobileBody; duplicating them here would bury that diagnostic");
+			because: "these shapes are not this rule's to report — the differ treats a non-object values as a no-op, and a merge with no values at all is caught by its required-parameter check and surfaced by the apply oracle");
 		result.Errors.Should().BeEmpty(
 			because: "the guard must return quietly rather than throw on a hostile or half-written body");
 	}
@@ -8231,8 +8235,8 @@ public sealed class SchemaValidationServiceTests
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
 
 		// Assert
-		result.Warnings.Should().HaveCountLessThan(20,
-			because: "an unbounded per-entry fan-out is an injection surface once the tools flatten diagnostics with a separator that also occurs inside clio's own text");
+		result.Warnings.Should().HaveCount(11,
+			because: "the bound is ten advisory diagnostics plus exactly one note that more were found; asserting a loose ceiling would stay green if the bound were quietly raised");
 		result.Warnings.Should().Contain(w => w.Contains("further slots not listed here"),
 			because: "silently truncating would read as 'that was all of them'");
 	}
@@ -8257,6 +8261,117 @@ public sealed class SchemaValidationServiceTests
 			because: "the navigation-slot defect must still be reported in full, not summarised away by the cap");
 		result.Warnings.Should().Contain(w => w.Contains("only the first"),
 			because: "the advisory half is still capped, and silently truncating would read as 'that was all of them'");
+	}
+
+	[Test]
+	[Description("Scaffold's items slot blocks like actions and leading: it is the page body, and every non-blank template fills it with a MainContainer, so a merge authoring into it is the discard case. It is also the slot an agent is most likely to pick, since the component registry tells it to patch the Scaffold with a merge.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenScaffoldItemsAuthorsChildren_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold",
+		                   "values":{"items":[{"type":"crt.GridContainer","name":"UsrNewContainer"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a real Scaffold carries MainContainer in items, so the differ strips the property and the container reaches the page zero times");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrNewContainer") && e.Contains("items"),
+			because: "the author must see which child goes missing and from which slot");
+	}
+
+	[Test]
+	[Description("An items slot on any other container stays advisory: membership of the blocking set is only consulted when the merge targets the Scaffold itself, so crt.QuickFilterGroup and crt.Timeline are unaffected.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenNonScaffoldItemsAuthorsChildren_WarnsWithoutBlocking() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"UsrQuickFilters",
+		                   "values":{"items":[{"type":"crt.QuickFilter","name":"UsrByOwner"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "only the Scaffold's own slots are known to be template-populated; elsewhere the merge may legitimately create the slot");
+		result.Warnings.Should().ContainSingle(
+			because: "the author still needs to know the payload is dropped when the slot is already populated");
+	}
+
+	[Test]
+	[Description("An object-valued slot gets object-shaped advice. Scaffold.floatAction holds a single element, and telling the author to create it as an empty array would produce an array where the runtime expects an object.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenSlotHoldsALoneObject_AdvisesAgainstConvertingItToAnArray() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"UsrCard",
+		                   "values":{"floatAction":{"type":"crt.FloatingActionButton","name":"UsrFab"}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.Warnings.Should().ContainSingle(w => w.Contains("Do NOT convert it to an array"),
+			because: "an insert cannot reach a null or absent single-element slot, so a merge is the only route and the array idiom would corrupt the shape");
+		result.Warnings.Should().NotContain(w => w.Contains("empty array"),
+			because: "the collection idiom must not be offered for a slot that holds one element");
+	}
+
+	[Test]
+	[Description("Duplicate JSON keys cannot turn the blocking channel into an amplifier. JsonDocument preserves duplicates and the tools flatten errors into one semicolon-joined string, so the bound applies to both channels — and IsValid still latches.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenBlockingSlotIsDuplicated_BoundsTheErrorsAndStillBlocks() {
+		// Arrange
+		string duplicated = string.Join(",", Enumerable.Range(0, 40)
+			.Select(_ => "\"actions\":[{\"type\":\"crt.Button\",\"name\":\"UsrDup\"}]"));
+		string body =
+			"{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Scaffold\",\"values\":{"
+			+ duplicated + "}}]}";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the refusal must latch on every blocking slot, bound or no bound");
+		result.Errors.Should().HaveCount(10,
+			because: "an unbounded run of ~650-character errors would be flattened into one Error string by the write tools");
+		result.Warnings.Should().Contain(w => w.Contains("blocking"),
+			because: "silently dropping the rest would read as 'that was all of them'");
+	}
+
+	[Test]
+	[Description("An empty-array name is not an item config: the applier's IsEmpty rejects an empty array as well as a zero-length string, so mirroring it means not reporting this child.")]
+	public void ValidateMobileMergeSlotAuthoring_WhenChildNameIsAnEmptyArray_IsNotReported() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold","values":{"actions":[{"type":"crt.Button","name":[]}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileMergeSlotAuthoring(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the applier would not treat this child as an item config either, and inventing a stricter test would refuse a shape the differ leaves alone");
 	}
 
 	[Test]
@@ -8286,7 +8401,7 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeTrue(
 			because: "this body was read back from a live stand; a blocking rule that fires on it would refuse ordinary mobile writes");
 		result.Warnings.Should().BeEmpty(
-			because: "a warning on a designer-produced page would train authors to ignore the rule entirely");
+			because: "this body is what a real page stores after both designer and agent edits, so a warning here would train authors to ignore the rule entirely");
 	}
 
 	[Test]

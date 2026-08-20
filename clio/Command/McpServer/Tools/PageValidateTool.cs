@@ -20,7 +20,7 @@ public sealed class PageValidateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
-	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed constructs, diff-apply, and placement checks for mobile — `type` must sit inside `values`, a `merge` must not author child elements in a Scaffold navigation slot, and a button in the Scaffold `actions` slot is flagged). " +
+	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed constructs, diff-apply, and placement checks for mobile — `type` must sit inside `values`, a `merge` must not author child elements in a Scaffold slot the template already fills, and a button in the Scaffold `actions` slot is flagged). " +
 		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` / `mobile-page-modification` for the contracts it enforces.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]

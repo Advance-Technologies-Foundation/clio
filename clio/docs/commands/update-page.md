@@ -66,14 +66,20 @@ name instead of trying to edit a non-existent local `insert`.
     refused for the same reason: `insert` declares no required parameters, so the differ does not reject it
     — it persists a typeless element. A flat `set` is left to the differ, which refuses it for the missing
     required `values`.
-  - **Rejected — a `merge` that authors child elements in a Scaffold navigation slot.** An array (or a lone
-    object) of item configs — objects carrying a non-empty `name` — placed on `Scaffold`'s `actions` or
-    `leading`. Where the target already holds elements in a slot, the differ strips the whole property out of
+  - **Rejected — a `merge` that authors child elements in a Scaffold slot the template already fills.** An array
+    (or a lone object) of item configs — objects carrying a non-empty `name` — placed on `Scaffold`'s `actions`,
+    `leading` or `items`. `items` is the page body: every non-blank template puts a `MainContainer` there, so a
+    merge authoring into it is discarded just like the navigation slots. (Membership is only consulted when the
+    merge targets the Scaffold itself, so an `items` slot on any other container stays advisory.) Where the target already holds elements in a slot, the differ strips the whole property out of
     the merge before copying anything, so the write succeeds and the children never reach the page.
     Stand-verified for ENG-95429: the button appeared zero times in the server-merged `viewConfig` while
-    remaining in the saved body. Every shipped form template populates those two slots (`actions` carries its
-    Save button, `leading` its Close/Cancel), so a merge into them is always that case. Put the child in a page
-    container instead — its own `insert` with `propertyName: "items"` plus a `layoutConfig`.
+    remaining in the saved body. Those two slots are blocked rather than warned about because every shipped
+    *form* template populates them — `actions` carries its Save button, `leading` its Close/Cancel — so in
+    practice a merge into them is the discard case. Put the child in a page container instead: its own `insert`
+    with `propertyName: "items"` plus a `layoutConfig`. **Residual:** `BlankMobilePageTemplate` ships a bare
+    Scaffold with no content, so on a page built from it those slots may be empty, the merge would apply, and
+    clio still refuses — it validates `viewConfigDiff` against an empty base and cannot see which case a body is
+    in. Author the child with an `insert` there too rather than reaching for `validate: false`.
   - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
     slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
     `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.

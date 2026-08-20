@@ -752,7 +752,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("A mobile body whose insert declares no component type anywhere passes validation but comes back with the advisory. This is the only end-to-end proof that a warning raised by ValidateMobilePage reaches Validation.Warnings on a MOBILE body — the other warning e2e cases here use web bodies, and the mobile warning e2e that used to cover this wire went with the reverted Scaffold/actions rule.")]
+	[Description("A mobile body whose insert declares no component type anywhere passes validation but comes back with the advisory. One of the end-to-end proofs that a warning raised by ValidateMobilePage reaches Validation.Warnings on a MOBILE body; the Scaffold/actions case below covers the same wire.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page surfaces a mobile warning without blocking")]
 	[AllureDescription("Sends a mobile body with an insert that carries element properties but no type, and verifies validate-page returns valid=true with the typeless-element warning present.")]
