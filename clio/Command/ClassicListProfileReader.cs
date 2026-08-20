@@ -20,13 +20,17 @@ public sealed record ClassicListProfileColumn(string Path, string Caption);
 /// </param>
 /// <param name="ViewName">Active view name the profile named, for example <c>GridDataView</c>.</param>
 /// <param name="ViewType">
-/// Which configuration inside the profile the columns came from: <c>listed</c> or <c>tiled</c>. This reports the
-/// configuration ACTUALLY used, which can differ from the active flag when the active one is empty.
+/// Which configuration inside the profile the columns came from: <see cref="ListedViewType"/> or
+/// <see cref="TiledViewType"/>. This reports the configuration ACTUALLY used, which can differ from the active
+/// flag when the active one is empty.
 /// </param>
 /// <param name="Scope">
-/// <c>user</c> when the calling user has a personal profile row for this grid, so the set may be that user's
-/// own customization rather than the section's shared default; <c>shared</c> when only the product/system row
-/// exists; <c>unknown</c> when the distinction could not be established.
+/// Classifies the GRID-SETTINGS row the columns came from, and nothing else: <see cref="UserScope"/> when the
+/// calling user has a personal row for this grid, so the set may be that user's own customization rather than the
+/// section's shared default; <see cref="SharedScope"/> when only the product/system row exists;
+/// <see cref="UnknownScope"/> when the distinction could not be established. It does NOT classify the
+/// active-view profile that selects WHICH view is reported, so a personal active-view selection can still steer a
+/// <see cref="SharedScope"/> answer.
 /// </param>
 /// <param name="Notes">Non-fatal details worth reporting, such as a malformed or empty stored configuration.</param>
 public sealed record ClassicListProfileResult(
@@ -34,7 +38,26 @@ public sealed record ClassicListProfileResult(
 	string ViewName,
 	string ViewType,
 	string Scope,
-	IReadOnlyList<string> Notes);
+	IReadOnlyList<string> Notes) {
+
+	// The scope and view-type vocabularies belong to this contract rather than to one reader: every
+	// implementation of IClassicListProfileReader is required to produce these values, and every consumer reads
+	// them off this record, so a second (or test) implementation must not have to reach into a concrete reader.
+	/// <summary>Scope value for a profile the calling user has a personal row for.</summary>
+	public const string UserScope = "user";
+
+	/// <summary>Scope value for a profile served from the product/system row.</summary>
+	public const string SharedScope = "shared";
+
+	/// <summary>Scope value used when personal-vs-shared could not be established.</summary>
+	public const string UnknownScope = "unknown";
+
+	/// <summary>View type of the grid's listed (row) configuration.</summary>
+	public const string ListedViewType = "listed";
+
+	/// <summary>View type of the grid's tiled configuration.</summary>
+	public const string TiledViewType = "tiled";
+}
 
 /// <summary>Reads a Classic section's saved list-column profile through read-only Creatio APIs.</summary>
 public interface IClassicListProfileReader {
@@ -54,17 +77,13 @@ internal sealed class ClassicListProfileReader(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder) : IClassicListProfileReader {
 
-	internal const string UserScope = "user";
-	internal const string SharedScope = "shared";
-	internal const string UnknownScope = "unknown";
-	internal const string ListedViewType = "listed";
-	internal const string TiledViewType = "tiled";
 	internal const string DefaultViewName = "GridDataView";
 	internal const string QueryProfileUrl = "/DataService/json/SyncReply/QueryProfile";
 
 	private const string ActiveViewKeySuffix = "ActiveViewSettingsProfile";
 	private const string GridSettingsKeyInfix = "GridSettings";
 	private const string SysProfileDataSchemaName = "SysProfileData";
+	private const string BindToProperty = "bindTo";
 
 	/// <inheritdoc />
 	public ClassicListProfileResult Read(string sectionSchemaName) {
@@ -73,17 +92,38 @@ internal sealed class ClassicListProfileReader(
 		}
 		var notes = new List<string>();
 		string section = sectionSchemaName.Trim();
-		string viewName = ReadActiveViewName(section);
+		if (!TryReadActiveViewName(section, out string viewName)) {
+			// Reporting `view` without this note would be a claim about a read that never happened: the name used
+			// below is the platform default assumed on the caller's behalf, not the view the section named.
+			notes.Add($"The section's active view could not be read, so the platform default view "
+				+ $"'{DefaultViewName}' was assumed; the reported columns may belong to a different view than the "
+				+ "one the section opens with.");
+		}
 		string gridKey = $"{section}{GridSettingsKeyInfix}{viewName}";
-		JObject profile = QueryProfile(gridKey);
+		if (!TryQueryProfile(gridKey, out JObject profile)) {
+			// A FAILED read is not "no profile". Without this branch a transient 403, an expired session serving
+			// an HTML login page or a missing route is byte-identical on the wire to a pristine stand, and the
+			// caller adopts the narrow `schema-default` answer this whole change exists to replace.
+			notes.Add("The saved grid profile could not be read (the QueryProfile request failed), so the answer "
+				+ "falls back to the section's static declaration and may be narrower than the set the list renders.");
+			return new ClassicListProfileResult([], null, null, null, notes);
+		}
 		// An absent profile is the ordinary case for a section nobody has opened, so it earns no note: the
 		// reported source already tells the caller the answer did not come from a profile. Only a profile that
 		// EXISTS and still yields nothing is worth explaining, because that one looks like a parser failure.
 		if (profile is null || !profile.HasValues) {
-			return Empty();
+			return new ClassicListProfileResult([], null, null, null, notes);
 		}
+		int notesBeforeParse = notes.Count;
 		(IReadOnlyList<ClassicListProfileColumn> columns, string viewType) = ParseColumns(profile, notes);
 		if (columns.Count == 0) {
+			if (notes.Count == notesBeforeParse) {
+				// The invariant stated above, now implemented: a stored payload whose shape the parser does not
+				// understand must not be indistinguishable from a stand that simply holds no profile.
+				notes.Add("A saved profile exists for this list, but no column configuration could be read out of "
+					+ "it, so the answer falls back to the section's static declaration; the stored payload may use "
+					+ "a shape this reader does not understand.");
+			}
 			return new ClassicListProfileResult([], viewName, null, null, notes);
 		}
 		return new ClassicListProfileResult(columns, viewName, viewType, ResolveScope(gridKey, notes), notes);
@@ -92,25 +132,48 @@ internal sealed class ClassicListProfileReader(
 	private static ClassicListProfileResult Empty() => new([], null, null, null, []);
 
 	/// <summary>Reads the view the section opens with, falling back to the platform default view name.</summary>
-	private string ReadActiveViewName(string section) {
-		JObject activeView = QueryProfile($"{section}{ActiveViewKeySuffix}");
+	/// <param name="section">Classic section client-unit schema name.</param>
+	/// <param name="viewName">The view the section opens with, or <see cref="DefaultViewName"/> when unread.</param>
+	/// <returns>
+	/// <see langword="false"/> when the read itself failed, so the caller can say that the returned name is an
+	/// assumption rather than the section's answer.
+	/// </returns>
+	private bool TryReadActiveViewName(string section, out string viewName) {
+		viewName = DefaultViewName;
+		if (!TryQueryProfile($"{section}{ActiveViewKeySuffix}", out JObject activeView)) {
+			return false;
+		}
 		string name = activeView?["activeViewName"]?.ToString();
-		return string.IsNullOrWhiteSpace(name) ? DefaultViewName : name.Trim();
+		if (!string.IsNullOrWhiteSpace(name)) {
+			viewName = name.Trim();
+		}
+		return true;
 	}
 
-	/// <summary>Posts one <c>QueryProfile</c> read; returns <see langword="null"/> when it cannot be read.</summary>
-	private JObject QueryProfile(string key) {
+	/// <summary>Posts one <c>QueryProfile</c> read.</summary>
+	/// <param name="key">Profile key to read.</param>
+	/// <param name="profile">The stored payload, or <see langword="null"/> when the stand holds none.</param>
+	/// <returns>
+	/// <see langword="false"/> when the read FAILED — a transport error, an expired session serving an HTML page,
+	/// or a stand without the route. A failure still degrades to "no columns" rather than failing the whole
+	/// command, because the static declaration remains a usable answer; the caller turns this into a note so the
+	/// degradation is never silent.
+	/// </returns>
+	private bool TryQueryProfile(string key, out JObject profile) {
+		profile = null;
 		try {
 			string url = serviceUrlBuilder.Build(QueryProfileUrl);
 			string body = new JObject { ["key"] = key }.ToString(Newtonsoft.Json.Formatting.None);
 			string response = applicationClient.ExecutePostRequest(url, body);
-			return string.IsNullOrWhiteSpace(response) ? null : JObject.Parse(response);
+			if (string.IsNullOrWhiteSpace(response)) {
+				// An empty body is the route answering "nothing stored for this key", not a failure.
+				return true;
+			}
+			profile = JObject.Parse(response);
+			return true;
 		}
 		catch {
-			// A transport failure, an expired session serving an HTML page, or a stand without the route must
-			// degrade to "no profile answer" rather than fail the whole command: the static declaration is still
-			// a usable answer, and the reported source names it honestly.
-			return null;
+			return false;
 		}
 	}
 
@@ -135,52 +198,72 @@ internal sealed class ClassicListProfileReader(
 		Func<JToken, IReadOnlyList<ClassicListProfileColumn>> parseItems,
 		List<string> notes) {
 		bool isTiled = container["isTiled"]?.Type == JTokenType.Boolean && container["isTiled"].Value<bool>();
-		string activeType = isTiled ? TiledViewType : ListedViewType;
+		string activeType = isTiled
+			? ClassicListProfileResult.TiledViewType
+			: ClassicListProfileResult.ListedViewType;
 		string activeProperty = isTiled ? tiledProperty : listedProperty;
 		string fallbackProperty = isTiled ? listedProperty : tiledProperty;
 		IReadOnlyList<ClassicListProfileColumn> active =
-			parseItems(ParseEmbeddedJson(container[activeProperty], activeProperty, notes));
+			TryParseEmbeddedJson(container[activeProperty], activeProperty, notes, out JToken activeConfig)
+				? parseItems(activeConfig)
+				: [];
 		if (active.Count > 0) {
 			return (active, activeType);
 		}
 		IReadOnlyList<ClassicListProfileColumn> fallback =
-			parseItems(ParseEmbeddedJson(container[fallbackProperty], fallbackProperty, notes));
+			TryParseEmbeddedJson(container[fallbackProperty], fallbackProperty, notes, out JToken fallbackConfig)
+				? parseItems(fallbackConfig)
+				: [];
 		if (fallback.Count == 0) {
 			return ([], null);
 		}
-		string fallbackType = isTiled ? ListedViewType : TiledViewType;
+		string fallbackType = isTiled
+			? ClassicListProfileResult.ListedViewType
+			: ClassicListProfileResult.TiledViewType;
 		notes.Add($"The saved profile's active '{activeType}' configuration is empty, so the '{fallbackType}' " +
 			"configuration was reported instead; the rendered set may differ from what the section opens with.");
 		return (fallback, fallbackType);
 	}
 
 	/// <summary>Parses a configuration stored as a JSON string inside the profile payload.</summary>
-	private static JToken ParseEmbeddedJson(JToken value, string propertyName, List<string> notes) {
+	/// <param name="value">The stored configuration token.</param>
+	/// <param name="propertyName">Property the token was read from, for the note.</param>
+	/// <param name="notes">Collects the non-fatal degradation notes.</param>
+	/// <param name="parsed">The parsed configuration when this returns <see langword="true"/>.</param>
+	/// <returns><see langword="false"/> when the property holds nothing usable.</returns>
+	private static bool TryParseEmbeddedJson(
+		JToken value,
+		string propertyName,
+		List<string> notes,
+		out JToken parsed) {
+		parsed = null;
 		if (value is null || value.Type == JTokenType.Null) {
-			return null;
+			return false;
 		}
 		if (value.Type != JTokenType.String) {
-			return value;
+			parsed = value;
+			return true;
 		}
 		string text = value.Value<string>();
 		if (string.IsNullOrWhiteSpace(text)) {
-			return null;
+			return false;
 		}
 		try {
-			return JToken.Parse(text);
+			parsed = JToken.Parse(text);
+			return true;
 		}
 		catch (Newtonsoft.Json.JsonReaderException) {
 			// Loud rather than silent: an unreadable stored configuration and an absent one lead to the same
 			// fallback, and only the note tells the two apart.
 			notes.Add($"The saved profile's '{propertyName}' value is not valid JSON and was skipped.");
-			return null;
+			return false;
 		}
 	}
 
 	/// <summary>Reads <c>items[]</c> of a modern <c>listedConfig</c> / <c>tiledConfig</c> object.</summary>
 	private static IReadOnlyList<ClassicListProfileColumn> ParseModernItems(JToken config) =>
 		Distinct((config as JObject)?["items"] as JArray, item => (
-			ReadFirstString(item, "bindTo", "metaPath", "path", "columnName"),
+			ReadFirstString(item, BindToProperty, "metaPath", "path", "columnName"),
 			ReadCaption(item)));
 
 	/// <summary>Reads a legacy configuration, which is an array of cells or an array of tiled rows.</summary>
@@ -194,10 +277,13 @@ internal sealed class ClassicListProfileReader(
 			? new JArray(array.SelectMany<JToken, JToken>(item => item is JArray row ? row.Children() : [item]))
 			: array;
 		return Distinct(cells, cell => (
-			ReadFirstString(cell, "metaPath", "columnName", "bindTo")
-			?? ReadFirstString((cell["key"] as JArray)?.FirstOrDefault(), "bindTo", "name"),
-			ReadCaption(cell) ?? ReadCaption((cell["key"] as JArray)?.FirstOrDefault())));
+			ReadFirstString(cell, "metaPath", "columnName", BindToProperty)
+			?? ReadFirstString(ReadKeyCell(cell), BindToProperty, "name"),
+			ReadCaption(cell) ?? ReadCaption(ReadKeyCell(cell))));
 	}
+
+	/// <summary>Reads a legacy cell's nested <c>key[0]</c>, tolerating cells that are not objects.</summary>
+	private static JToken ReadKeyCell(JToken cell) => ((cell as JObject)?["key"] as JArray)?.FirstOrDefault();
 
 	private static IReadOnlyList<ClassicListProfileColumn> Distinct(
 		JArray items,
@@ -217,15 +303,23 @@ internal sealed class ClassicListProfileReader(
 		return result;
 	}
 
+	/// <summary>Reads the first non-empty string property, tolerating elements that are not objects.</summary>
+	/// <remarks>
+	/// The cast to <see cref="JObject"/> is load-bearing, not defensive noise: indexing a bare
+	/// <see cref="JToken"/> with a string throws for a <c>JValue</c> element (a literal in <c>items[]</c>) and for
+	/// a <c>JArray</c> (a legacy row that survived the one-level flatten), which would turn a parseable payload
+	/// into a total command failure and lose the static answer the command could still have given.
+	/// </remarks>
 	private static string ReadFirstString(JToken source, params string[] propertyNames) {
+		var container = source as JObject;
 		foreach (string propertyName in propertyNames) {
-			JToken value = source?[propertyName];
+			JToken value = container?[propertyName];
 			if (value?.Type == JTokenType.String && !string.IsNullOrWhiteSpace(value.Value<string>())) {
 				return value.Value<string>().Trim();
 			}
 			// A legacy cell can nest the binding one level deeper as `name: { bindTo: … }`.
 			if (value is JObject nested) {
-				string bindTo = ReadFirstString(nested, "bindTo");
+				string bindTo = ReadFirstString(nested, BindToProperty);
 				if (!string.IsNullOrWhiteSpace(bindTo)) {
 					return bindTo;
 				}
@@ -237,19 +331,22 @@ internal sealed class ClassicListProfileReader(
 	private static string ReadCaption(JToken source) => ReadFirstString(source, "caption");
 
 	/// <summary>
-	/// Establishes whether the returned profile can be this user's own customization or is the shared default.
+	/// Establishes whether the returned GRID-SETTINGS profile can be this user's own customization or is the
+	/// shared default.
 	/// </summary>
 	/// <remarks>
 	/// <c>QueryProfile</c> answers for the CALLING user and silently falls back to the system row, so the payload
 	/// alone cannot say which one it served. The row existence check supplies that, and it is deliberately
-	/// non-fatal: losing the distinction is worth a note, not the whole answer.
+	/// non-fatal: losing the distinction is worth a note, not the whole answer. Scope covers the grid-settings row
+	/// ONLY — the active-view profile that selects which view is reported is not classified, which is why the
+	/// contract words the claim narrowly.
 	/// </remarks>
 	private string ResolveScope(string gridKey, List<string> notes) {
 		string contactId = ReadCurrentUserContactId();
 		if (string.IsNullOrWhiteSpace(contactId)) {
 			notes.Add("The current user's contact could not be read, so the profile could not be classified as " +
 				"personal or shared.");
-			return UnknownScope;
+			return ClassicListProfileResult.UnknownScope;
 		}
 		try {
 			object query = SelectQueryHelper.BuildSelectQuery(
@@ -265,11 +362,13 @@ internal sealed class ClassicListProfileReader(
 			SysProfileDataRowsResponse response =
 				SelectQueryHelper.ExecuteSelectQuery<SysProfileDataRowsResponse>(
 					applicationClient, serviceUrlBuilder, query);
-			return response.Rows.Count > 0 ? UserScope : SharedScope;
+			return response.Rows.Count > 0
+				? ClassicListProfileResult.UserScope
+				: ClassicListProfileResult.SharedScope;
 		}
 		catch (Exception exception) {
 			notes.Add($"The saved profile could not be classified as personal or shared ({exception.Message}).");
-			return UnknownScope;
+			return ClassicListProfileResult.UnknownScope;
 		}
 	}
 

@@ -20,6 +20,10 @@ read-only Creatio APIs. It returns JSON with the requested `sectionSchema`, reso
 - `entity-default` — the entity primary display column, used when the section has no static column declaration;
 - `none` — no source exists. This is a successful result with an empty `columns` array.
 
+On a **failure** envelope (`success: false`) the response carries `error` and `source` is `null`: no source
+was resolved, so none is named. `view`, `viewType` and `profileScope` are omitted entirely there, as they are
+on every non-`profile` answer.
+
 **A product section normally resolves to `profile`, and the difference is large.** `AccountSectionV2` declares
 `Name` and `PrimaryContact` in code while its list opens with five columns, and two of the columns the user sees
 (`Web`, `Phone`) appear nowhere in the section's JavaScript. In a product section `getGridDataColumns` /
@@ -37,16 +41,24 @@ The profile is read over the platform's own `QueryProfile` DataService route, wh
 and orders**, so `viewType` names the one reported; when the active configuration is empty the other one is
 reported instead and `notes` says so.
 
+When a profile read **fails** — a transport error, an expired session, or a stand without the route — the answer
+falls back to the static declaration and `notes` says the profile could not be read, so a failed read is never
+reported as "this stand holds no profile". The same applies to a profile that exists but yields no column
+configuration: `notes` names it rather than letting an unrecognised payload shape look like a pristine stand.
+
 `QueryProfile` answers for the **calling user** and silently falls back to the shared product/system row, so the
 payload alone cannot say which one it served. `profileScope` supplies that:
 
 | Value | Meaning |
 |---|---|
-| `shared` | Only the product/system row exists — this is the section's shared default. |
+| `shared` | Only the product/system row exists for the grid settings — this is the section's shared default. |
 | `user` | The calling user also has a personal row for this list, so the set may be that user's own customization. `notes` says so too. |
 | `unknown` | The distinction could not be established (the contact or the row check failed). `notes` says why. |
 
-A consumer that needs the section's canonical set must treat `user` as "ask before adopting". There is
+`profileScope` classifies the **grid-settings** row only (`<Section>GridSettings<ViewName>`). The active-view
+profile that selects *which* view is reported is not classified, so a caller with a personal active-view
+selection can receive that view's columns under `profileScope: shared`. A consumer that needs the section's
+canonical set must treat `user` as "ask before adopting". There is
 deliberately **no** option to read another user's profile: the platform route ignores a supplied contact and
 always answers for the caller, so an option promising otherwise would be a false contract.
 

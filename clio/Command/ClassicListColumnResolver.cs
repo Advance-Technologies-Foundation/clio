@@ -79,26 +79,9 @@ internal sealed class ClassicListColumnResolver(
 		// for this one. Deliberately AFTER the hierarchy walk: `entity` is part of the contract and a section
 		// that declares no entitySchemaName is reported as a failure whether or not a profile exists.
 		if (!ignoreProfile) {
-			ClassicListProfileResult profile = profileReader.Read(normalizedName);
-			notes.AddRange(profile.Notes);
-			if (profile.Columns.Count > 0) {
-				if (string.Equals(profile.Scope, ClassicListProfileReader.UserScope, StringComparison.Ordinal)) {
-					// A per-user row exists for the calling user, so this layout can be that user's own and not
-					// the section's shared default. Saying so is the whole reason `profileScope` exists.
-					notes.Add("The calling user has a personal profile for this list, so the reported set may be " +
-						"that user's own customization rather than the section's shared default.");
-				}
-				return new GetClassicListColumnsResponse {
-					Success = true,
-					SectionSchema = normalizedName,
-					Entity = entity,
-					Source = ProfileSource,
-					View = profile.ViewName,
-					ViewType = profile.ViewType,
-					ProfileScope = profile.Scope,
-					Columns = BuildProfileColumnInfo(profile.Columns, properties.Columns),
-					Notes = notes
-				};
+			GetClassicListColumnsResponse fromProfile = ResolveFromProfile(normalizedName, entity, properties, notes);
+			if (fromProfile is not null) {
+				return fromProfile;
 			}
 		}
 		if (skippedLayerNote is not null) {
@@ -134,6 +117,40 @@ internal sealed class ClassicListColumnResolver(
 		notes.Add(
 			"The section schema does not define static list columns and the entity has no primary display column.");
 		return Success(normalizedName, entity, NoneSource, [], notes);
+	}
+
+	/// <summary>Answers from the saved grid profile, or <see langword="null"/> when it holds no columns.</summary>
+	/// <remarks>
+	/// Extracted from <see cref="Resolve"/> so the profile branch can grow its own diagnostics without pushing the
+	/// resolution ladder past the cognitive-complexity budget the repo gate enforces.
+	/// </remarks>
+	private GetClassicListColumnsResponse ResolveFromProfile(
+		string normalizedName,
+		string entity,
+		EntitySchemaPropertiesInfo properties,
+		List<string> notes) {
+		ClassicListProfileResult profile = profileReader.Read(normalizedName);
+		notes.AddRange(profile.Notes);
+		if (profile.Columns.Count == 0) {
+			return null;
+		}
+		if (string.Equals(profile.Scope, ClassicListProfileResult.UserScope, StringComparison.Ordinal)) {
+			// A per-user row exists for the calling user, so this layout can be that user's own and not the
+			// section's shared default. Saying so is the whole reason `profileScope` exists.
+			notes.Add("The calling user has a personal profile for this list, so the reported set may be that "
+				+ "user's own customization rather than the section's shared default.");
+		}
+		return new GetClassicListColumnsResponse {
+			Success = true,
+			SectionSchema = normalizedName,
+			Entity = entity,
+			Source = ProfileSource,
+			View = profile.ViewName,
+			ViewType = profile.ViewType,
+			ProfileScope = profile.Scope,
+			Columns = BuildProfileColumnInfo(profile.Columns, properties.Columns),
+			Notes = notes
+		};
 	}
 
 	// The fifth near-verbatim copy of the name -> UId -> design-package -> re-anchor walk, alongside

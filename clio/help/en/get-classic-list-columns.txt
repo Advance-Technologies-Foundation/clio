@@ -27,11 +27,20 @@ DESCRIPTION
     for the narrower question of what the section declares in code.
 
     profileScope is what keeps one user's saved layout from being read as the
-    section's canonical set: shared means only the product/system profile row
+    section's canonical set: shared means only the product/system grid-settings row
     exists, user means the calling user also has a personal row for this list, and
-    unknown means the distinction could not be established. The profile is read
-    for the CALLING user; there is no option to read another user's profile,
-    because the platform route the command uses always answers for the caller.
+    unknown means the distinction could not be established. It classifies the
+    grid-settings row only - the active-view profile that selects WHICH view is
+    reported is not classified, so a personal active-view selection can still steer
+    a shared answer. The profile is read for the CALLING user; there is no option to
+    read another user's profile, because the platform route the command uses always
+    answers for the caller.
+
+    A profile read that FAILS is never reported as "no profile exists": the answer
+    falls back to the static declaration and notes says the profile could not be
+    read. A profile that exists but yields no column configuration is named in notes
+    too. On a failure response (success false) source is null and view, viewType and
+    profileScope are omitted.
 
     The command reads profile data but never writes it, and does not change
     packages, schemas, or application data.

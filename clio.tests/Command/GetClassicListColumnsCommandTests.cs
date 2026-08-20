@@ -1182,6 +1182,195 @@ internal class GetClassicListColumnsCommandTests : BaseCommandTests<GetClassicLi
 				+ "columns may be incomplete would be affirmatively false");
 	}
 
+	[Test]
+	[Description("TryResolve composes the exact profile keys it reads: <Section>ActiveViewSettingsProfile and <Section>GridSettings<ActiveView>.")]
+	public void TryResolve_ShouldPinTheComposedProfileKeys_WhenReadingASavedProfile() {
+		// Arrange — the fixture matches request bodies loosely on purpose (a stub cannot know the key before the
+		// active view is read), so the KEY CONTRACT is pinned here instead: without this, dropping the section
+		// prefix or the resolved view suffix leaves every profile test green while the live read returns nothing
+		// and the command silently reverts to schema-default — the exact defect ENG-95229 was filed for.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("mainView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "the arranged profile answers");
+		_applicationClient.Received(1).ExecutePostRequest(ProfileUrl,
+			Arg.Is<string>(body => JObject.Parse(body).Value<string>("key") == "AccountSectionV2ActiveViewSettingsProfile"));
+		_applicationClient.Received(1).ExecutePostRequest(ProfileUrl,
+			Arg.Is<string>(body => JObject.Parse(body).Value<string>("key") == "AccountSectionV2GridSettingsmainView"));
+	}
+
+	[Test]
+	[Description("TryResolve filters the personal-row check on both the composed grid key and the calling user's contact.")]
+	public void TryResolve_ShouldPinTheScopeFilters_WhenClassifyingTheProfile() {
+		// Arrange — the contact filter is the mechanism the ticket's privacy constraint rests on: a scope query
+		// that dropped it would report `user` for a row belonging to somebody else, so the filters are asserted
+		// rather than left to a substring stub that matches either way.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("mainView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []),
+			personalRowExists: true);
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.ProfileScope.Should().Be("user", because: "the arranged personal row exists for the caller");
+		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body =>
+			body.Contains("SysProfileData")
+			&& body.Contains("AccountSectionV2GridSettingsmainView")
+			&& body.Contains(ContactId)));
+	}
+
+	[Test]
+	[Description("TryResolve reports a FAILED profile read as a note instead of letting it read as 'this stand holds no profile'.")]
+	public void TryResolve_ShouldNoteAFailedProfileRead_WhenQueryProfileThrows() {
+		// Arrange — an expired session, a permission-gated route or a transport error must not be indistinguishable
+		// from a pristine stand: both answer schema-default, and only the note tells the caller which one it got.
+		ArrangeSection("""
+			entitySchemaName: "Account",
+			getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+			""", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("mainView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []));
+		_applicationClient
+			.ExecutePostRequest(ProfileUrl, Arg.Is<string>(body => body.Contains("GridSettings")))
+			.Returns(_ => throw new InvalidOperationException("403 Forbidden"));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the static declaration is still a usable answer");
+		response.Source.Should().Be("schema-default", because: "no profile could be read");
+		response.Notes.Should().Contain(note => note.Contains("could not be read"),
+			because: "a failed read that reports nothing is the one degradation the caller cannot detect");
+		response.View.Should().BeNull(because: "no view was read, so naming one would be a false claim");
+	}
+
+	[Test]
+	[Description("TryResolve says the active view was assumed when its own read failed, so `view` is never presented as an answer that was read.")]
+	public void TryResolve_ShouldNoteAnAssumedActiveView_WhenTheActiveViewReadFails() {
+		// Arrange — the active-view read and the grid read are separate round-trips; only the first one fails here.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("mainView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []));
+		_applicationClient
+			.ExecutePostRequest(ProfileUrl, Arg.Is<string>(body => body.Contains("ActiveViewSettingsProfile")))
+			.Returns(_ => throw new InvalidOperationException("session expired"));
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "the grid read still answered under the default view name");
+		response.View.Should().Be("GridDataView", because: "the platform default is the assumed fallback");
+		response.Notes.Should().Contain(note => note.Contains("active view could not be read"),
+			because: "reporting a view nobody read as the section's active view is exactly the silent claim to avoid");
+	}
+
+	[Test]
+	[Description("TryResolve explains a profile that EXISTS but yields no columns, the case the reader's own invariant singles out.")]
+	public void TryResolve_ShouldNoteAnUnreadableProfileShape_WhenAnExistingProfileYieldsNoColumns() {
+		// Arrange — a present payload whose configuration keys are none the parser knows. Without a note this is
+		// byte-identical on the wire to a stand that holds no profile at all.
+		ArrangeSection("""
+			entitySchemaName: "Account",
+			getGridDataColumns: function() { return { Name: { path: "Name" } }; }
+			""", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("mainView"), """{ "someUnknownShape": { "columns": [] } }""");
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("schema-default", because: "no columns came out of the stored payload");
+		response.Notes.Should().Contain(note => note.Contains("no column configuration could be read"),
+			because: "a payload shape the parser does not understand looks like a parser failure and must say so");
+	}
+
+	[Test]
+	[Description("TryResolve keeps answering when a modern stored configuration holds literals instead of item objects.")]
+	public void TryResolve_ShouldSurviveNonObjectItems_WhenTheStoredConfigurationHoldsLiterals() {
+		// Arrange — indexing a bare JToken with a string throws for a JValue, so one string or null element used
+		// to take down the whole read-only command and lose the static answer it could still have given.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Phone", "Phone"));
+		const string literals = """
+			{
+			  "isTiled": true,
+			  "DataGrid": {
+			    "isTiled": false,
+			    "listedConfig": "{\"items\":[\"Name\",null,17,{\"bindTo\":\"Phone\",\"caption\":\"Phone\"}]}",
+			    "tiledConfig": "{}"
+			  }
+			}
+			""";
+		ArrangeProfile(ActiveView("mainView"), literals);
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "one unexpected element type must not fail a read-only command");
+		response.Source.Should().Be("profile", because: "the readable items still answer");
+		response.Columns.Select(column => column.Name).Should().Equal(["Phone"],
+			because: "the literal elements carry no binding and are skipped, not fatal");
+	}
+
+	[Test]
+	[Description("TryResolve keeps answering when a legacy configuration nests deeper than the one level the flatten removes.")]
+	public void TryResolve_ShouldSurviveDeeplyNestedLegacyRows_WhenOneFlattenLevelIsNotEnough() {
+		// Arrange — the flatten removes exactly one level, so a doubly nested row survives as a JArray cell, and
+		// indexing that with a string key throws ArgumentException.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		const string nested = """
+			{
+			  "isTiled": false,
+			  "listedColumnsConfig": "[[{\"metaPath\":\"Name\"}],[[{\"metaPath\":\"Web\"}]]]",
+			  "tiledColumnsConfig": "[]"
+			}
+			""";
+		ArrangeProfile(ActiveView("mainView"), nested);
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an unexpected nesting depth must not fail the command");
+		response.Columns.Select(column => column.Name).Should().Equal(["Name"],
+			because: "the cells one level down are still harvested and the deeper array is skipped");
+	}
+
+	[Test]
+	[Description("TryResolve reports an unknown scope with a note when the personal-row check itself fails.")]
+	public void TryResolve_ShouldReportUnknownScope_WhenTheScopeQueryFails() {
+		// Arrange — SelectQueryHelper throws on a success:false envelope, and that branch decides between the
+		// honest `unknown` and an unsupported `shared` claim, so it is pinned rather than left to inspection.
+		ArrangeSection("entitySchemaName: 'Account', diff: []", "Account", "Name", Column("Name", "Name"));
+		ArrangeProfile(ActiveView("mainView"), ModernProfile(false, listed: [("Name", "Name")], tiled: []));
+		_applicationClient
+			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("SysProfileData")))
+			.Returns("""{ "success": false, "errorInfo": { "message": "profile lookup refused" } }""");
+		var options = new GetClassicListColumnsOptions { SchemaName = "AccountSectionV2" };
+
+		// Act
+		_command.TryResolve(options, out GetClassicListColumnsResponse response);
+
+		// Assert
+		response.Source.Should().Be("profile", because: "the columns were read; only their classification failed");
+		response.ProfileScope.Should().Be("unknown",
+			because: "claiming `shared` on a failed check would assert something the command did not establish");
+		response.Notes.Should().Contain(note => note.Contains("could not be classified as personal or shared"),
+			because: "the reason the scope is unknown belongs in the answer");
+	}
+
 	// The profile reader talks to three different endpoints, so the substitute is arranged PER URL: a single
 	// catch-all response would let these tests pass without ever exercising the routing.
 	private void ArrangeProfile(string activeViewResponse, string gridResponse, bool personalRowExists = false) {

@@ -184,12 +184,13 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 			because: "reading a saved grid profile is a valid read-only request");
 		response.Success.Should().BeTrue(
 			because: $"section '{sectionSchema}' should resolve. Error: {response.Error}");
-		if (response.Source != "profile") {
-			Assert.Ignore($"Sandbox section '{sectionSchema}' resolved as '{response.Source}', so the stand holds "
-				+ "no saved grid profile for it; point McpE2E:Sandbox:ClassicEntityDefaultSectionSchema at a "
-				+ "product section to run the profile-source assertions.");
-			return;
-		}
+		// Asserted, never ignored: skipping on the value under test is what would make this test unable to fail
+		// for the regression it exists to catch — a wrong QueryProfile key, a payload shape change, an inverted
+		// ignore-profile or a session degraded into the reader's failure path all land on a non-profile source,
+		// and reporting that as "ignored" would read as a stand-configuration problem instead of a defect.
+		response.Source.Should().Be("profile",
+			because: $"section '{sectionSchema}' must resolve from its saved grid profile on a seeded stand; "
+				+ $"notes: {string.Join(" | ", response.Notes ?? [])}");
 		response.Columns.Should().NotBeEmpty(
 			because: "a profile source means a stored configuration was read, so it carries columns");
 		response.View.Should().NotBeNullOrWhiteSpace(

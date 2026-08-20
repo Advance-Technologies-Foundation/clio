@@ -62,6 +62,8 @@ public sealed class GetClassicListColumnsResponse {
 
 	/// <summary>
 	/// Resolution source: <c>profile</c>, <c>schema-default</c>, <c>entity-default</c>, or <c>none</c>.
+	/// <see langword="null"/> on a failure response, where no source was resolved and naming one would be a
+	/// claim the command cannot make.
 	/// </summary>
 	[JsonPropertyName("source")]
 	public string Source { get; set; }
@@ -87,7 +89,9 @@ public sealed class GetClassicListColumnsResponse {
 	/// Whether a profile answer is the shared default (<c>shared</c>), possibly the calling user's own
 	/// customization (<c>user</c>), or unclassifiable (<c>unknown</c>). Omitted unless the columns came from a
 	/// profile. This is the field that keeps the command from presenting one user's saved layout as the
-	/// section's canonical set.
+	/// section's canonical set. It classifies the GRID-SETTINGS row only: the active-view profile that selects
+	/// which view is reported is not classified, so a personal active-view selection can still steer a
+	/// <c>shared</c> answer.
 	/// </summary>
 	[JsonPropertyName("profileScope")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
