@@ -2405,7 +2405,7 @@ public static class WebToMobileAnalysisService {
 		// The conversion templates that govern this element (matched by filters + path scope + declared target type +
 		// placement echo). Resolved up front because whether — and how much of — the source is carried depends on them.
 		IReadOnlyList<ViewConfigTemplateRule> templates =
-			MatchingConversionTemplates(ctx, node, mobileType, roots, sourceAncestors);
+			MatchingConversionTemplates(ctx, node, mobileType, sourceAncestors);
 		bool hasTemplate = templates.Count > 0;
 		bool preserve = templates.Any(t => t.PreserveSourceProperties);
 		// Carry the source properties when there is NO template (a registry-supported leaf or a type-equivalence
@@ -2511,8 +2511,7 @@ public static class WebToMobileAnalysisService {
 	/// than being refused; the value is applied regardless.
 	/// </remarks>
 	private static IReadOnlyList<ViewConfigTemplateRule> MatchingConversionTemplates(
-		ElementMapContext ctx, JObject node, string mobileType, TemplateRoots roots,
-		IReadOnlyList<string> sourceAncestors) {
+		ElementMapContext ctx, JObject node, string mobileType, IReadOnlyList<string> sourceAncestors) {
 		if (ctx.Rules?.Components is not { Count: > 0 } components) {
 			return [];
 		}
@@ -2666,7 +2665,7 @@ public static class WebToMobileAnalysisService {
 		var roots = new TemplateRoots(
 			new JObject { ["name"] = mobileName, ["parentName"] = computedParent, ["propertyName"] = computedProperty },
 			node);
-		foreach (ViewConfigTemplateRule template in MatchingConversionTemplates(ctx, node, mobileType, roots, sourceAncestors)) {
+		foreach (ViewConfigTemplateRule template in MatchingConversionTemplates(ctx, node, mobileType, sourceAncestors)) {
 			string parent = RenderPlacementField(template.ParentName, roots) ?? computedParent;
 			string property = RenderPlacementField(template.PropertyName, roots) ?? computedProperty;
 			if (!string.Equals(parent, computedParent, StringComparison.Ordinal)
@@ -3453,7 +3452,7 @@ public static class WebToMobileAnalysisService {
 				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
 					continue;
 				}
-				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason());
+				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason);
 				removed.Add(entry.WebName);
 				removedMobileNames.Add(entry.MobileName);
 				anyRemovedThisRound = true;
@@ -3481,8 +3480,7 @@ public static class WebToMobileAnalysisService {
 	/// none of its children — items OR tools — survived; each discarded child already carries its own drop entry, so
 	/// the loss is visible without naming it again on the parent.
 	/// </summary>
-	private static string EmptyContainerDropReason() =>
-		"empty container — no mobile content survived conversion";
+	private const string EmptyContainerDropReason = "empty container — no mobile content survived conversion";
 
 	/// <summary>
 	/// Re-compacts positional insert indexes after the drop passes: <c>:top</c> siblings of an anchor are
