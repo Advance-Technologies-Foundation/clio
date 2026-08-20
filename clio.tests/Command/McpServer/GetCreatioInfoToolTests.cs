@@ -193,6 +193,10 @@ public sealed class GetCreatioInfoToolTests {
 			because: "the description should point the agent at the field-catalogue guidance");
 		description.Description.Should().Contain("authentication failures",
 			because: "the tool contract should tell agents that required-probe failures are classified actionably");
+		description.Description.Should().Contain("GetSysInfo is probed directly",
+			because: "the MCP contract must not tell agents that package metadata can veto a working cliogate endpoint");
+		description.Description.Should().Contain("only to diagnose a failed capability probe",
+			because: "the MCP contract should explain when cliogate version metadata affects the warning");
 	}
 
 }
