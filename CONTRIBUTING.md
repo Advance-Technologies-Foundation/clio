@@ -212,22 +212,22 @@ When creating the issue:
 
 When starting the work:
 
-- Claim the issue before you touch any file, passing the branch you are about to create:
-  `./scripts/claim-issue.sh <issue-number> <planned-branch-name>`
-  (PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number> -Branch <planned-branch-name>`).
-  It takes an exclusive claim, assigns the issue to you and posts a comment saying the work has
-  started, so nobody else — human or agent — picks it up in parallel. This is mandatory for automated
-  agents; see [AGENTS.md](AGENTS.md#claiming-a-github-issue-before-you-start).
-- A non-zero exit means the claim was not taken — the issue is held by somebody else, or ownership
-  could not be established. Do not start work on it. `./scripts/claim-issue.sh --status <issue-number>`
-  shows who holds the claim.
-- Release the claim when you are done or you drop the work:
-  `./scripts/claim-issue.sh --release <issue-number>`.
+- Assign the issue to yourself before editing files. If another person is assigned, coordinate with
+  them instead of taking over the issue.
+- Create and link the predictable Development branch `<github-login>/issue-<number>` from the
+  current default branch.
+- Set the organization-level `Mitigation stage` issue field to `Investigating`. Keep it current as
+  work moves through `Fixing`, `QA`, or `Waiting for human approval`.
+- If investigation proves that another `Advance-Technologies-Foundation` repository owns the fix,
+  open or reuse the downstream issue there and mark the original Clio issue as `blocked by` it.
+- Codex users should invoke the `clio-issue-workflow` skill, which applies these rules and routes
+  defects owned by `clio-knowledge` or referenced example repositories.
 
 When opening the pull request:
 
-- Open the pull request as a draft. Keep it in draft while implementation, validation,
-  documentation, or the project's external review process is still in progress.
+- Open the pull request as a draft after the first meaningful investigation or repair artifact is
+  committed and the mandatory pre-PR review has passed. Keep it in draft while implementation,
+  validation, documentation, or the project's external review process is still in progress.
 - Reference at least one issue in the pull request description. Prefer a closing keyword such as
   `Fixes #123` or `Closes #123` when the pull request fully resolves the issue.
 - Assign the pull request to yourself. If your GitHub permissions do not allow this, ask a

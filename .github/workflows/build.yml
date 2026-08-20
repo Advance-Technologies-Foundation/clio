@@ -29,7 +29,6 @@ jobs:
       tests:       ${{ steps.filter.outputs.tests }}
       analyzers:   ${{ steps.filter.outputs.analyzers }}
       cliogate:    ${{ steps.filter.outputs.cliogate }}
-      scripts:     ${{ steps.filter.outputs.scripts }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -52,89 +51,6 @@ jobs:
             cliogate:
               - 'cliogate/**'
               - 'cliogate.tests/**'
-            scripts:
-              - 'scripts/**'
-              - '.gitattributes'
-
-  # ── Repository scripts (issue-claim protocol) ─────────────────────────
-  # These scripts are the arbitration between the parallel agents that work on this
-  # repository, so their behaviour needs a gate of its own: nothing else in this workflow
-  # executes them. The harness replaces `gh` with a fake and uses a real local bare
-  # repository as `origin`, so the compare-and-swap that decides the claim is exercised for
-  # real. It runs against both implementations, and the Windows leg checks the thing that
-  # actually broke once: a CRLF checkout that `bash -n` cannot parse.
-  script-tests:
-    name: Script Tests
-    needs: changes
-    if: >-
-      needs.changes.outputs.scripts == 'true' ||
-      github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
-      - name: Claim protocol - bash implementation
-        shell: bash
-        run: ./scripts/tests/claim-issue.tests.sh sh
-
-      - name: Claim protocol - PowerShell implementation
-        shell: bash
-        run: ./scripts/tests/claim-issue.tests.sh ps1
-
-  script-checkout-windows:
-    name: Script Checkout (Windows)
-    needs: changes
-    if: >-
-      needs.changes.outputs.scripts == 'true' ||
-      github.ref == 'refs/heads/master'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
-      # The file as materialized on a Windows checkout, not the blob in git: a CRLF working-tree
-      # copy makes `bash -n` exit 2 on an otherwise valid script.
-      - name: Shell entrypoints parse as checked out
-        shell: bash
-        run: |
-          set -euo pipefail
-          status=0
-          # fake-gh is listed explicitly: it is executable and has a shebang but no .sh suffix, so a
-          # glob-only scan misses it — and a CRLF copy of it fails as `/usr/bin/env: bash\r`.
-          for f in scripts/*.sh scripts/tests/*.sh scripts/tests/fake-gh; do
-            if grep -q $'\r' "$f"; then
-              echo "::error file=$f::checked out with CRLF - .gitattributes must pin it to LF"
-              status=1
-            fi
-            bash -n "$f" || { echo "::error file=$f::bash -n failed on the checked-out file"; status=1; }
-          done
-          exit "$status"
-
-      # The behaviour harness on Windows too, not only the parser check: git-bash is where the CRLF
-      # and path-shape differences actually bite. Only the bash leg runs here — the fake `gh` is an
-      # extensionless script with a shebang, which git-bash executes and Windows PowerShell cannot,
-      # so the PowerShell leg would fail on the harness rather than on the code under test. The
-      # PowerShell implementation's behaviour is covered by the ubuntu Script Tests job, where pwsh
-      # runs the same fake; what Windows adds for it is the parser check below.
-      - name: Claim protocol - bash implementation
-        shell: bash
-        run: ./scripts/tests/claim-issue.tests.sh sh
-
-      - name: PowerShell entrypoints parse
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Get-ChildItem -Path scripts -Filter *.ps1 -Recurse | ForEach-Object {
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
-            if ($errors) {
-              $errors | ForEach-Object { Write-Host "::error file=$($_.Extent.File)::$($_.Message)" }
-              throw "Parse errors in $($_.FullName)"
-            }
-          }
 
   # ── Unit tests (fast gate — runs on every push) ───────────────────────
   unit-tests:

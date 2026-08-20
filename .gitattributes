@@ -22,13 +22,3 @@ clio.tests/Theming/Fixtures/*.json         text eol=lf
 # byte-for-byte against System.Text.Json output and mirrored byte-identically into the Ring
 # repo; pin it to LF so the parity gate never depends on each machine's core.autocrlf.
 clio.tests/Command/McpServer/Fixtures/ClioStageEvent.contract.ndjson text eol=lf
-
-# Shell entrypoints must stay LF in the working tree on every platform. The Windows checkout
-# used to materialize scripts/*.sh as CRLF, and `bash -n` on such a file exits 2 with
-# "unexpected end of file" — the script is unusable on the very host that checked it out,
-# while the LF blob in git parses fine. Pin it rather than depending on each machine's
-# core.autocrlf.
-scripts/*.sh       text eol=lf
-scripts/tests/*.sh text eol=lf
-
-scripts/tests/fake-gh  text eol=lf

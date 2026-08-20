@@ -188,15 +188,18 @@ public void TestName()
 ## CI/CD
 - The CI/CD pipeline is configured in the `.github/workflows` directory.
 - Repository has runners that run on windows in the corporate infrastructure.
-- The CI/CD pipeline builds the solution, runs unit tests, and publishes the `clio
+- The CI/CD pipeline builds the solution, runs unit tests, and publishes the `clio`
 
 ## Working on a GitHub issue
 
-[AGENTS.md](../AGENTS.md) is the authoritative instruction file for every agent in this repository.
-Before you start working on a GitHub issue, claim it, passing the branch you are about to create:
-`./scripts/claim-issue.sh <issue-number> <planned-branch-name>`
-(PowerShell: `pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number> -Branch <planned-branch-name>`).
-The script takes an exclusive claim on the issue, assigns it to the authenticated user and posts a
-comment saying the work has started. It exits non-zero when the issue is already claimed or when
-ownership cannot be established — that is final, pick another issue. Release the claim with
-`--release` when the work is done.
+- Use GitHub's existing visibility primitives only: assignee, the organization-level
+  `Mitigation stage` issue field, Development links, issue relationships, and draft pull requests.
+- When you start work, assign the issue to yourself, create the linked Development branch
+  `<github-login>/issue-<number>`, and set `Mitigation stage` to `Investigating`.
+- If another person is already assigned, do not take over the issue. Check whether their predictable
+  branch exists and report the mismatch if it does not.
+- If investigation shows the defect belongs in another `Advance-Technologies-Foundation`
+  repository, create or reuse the downstream issue there and mark the original Clio issue as
+  `blocked by` that work.
+- Open the draft pull request after the first meaningful investigation or repair artifact is
+  committed and the required pre-PR review has passed.

@@ -4,71 +4,16 @@
 Read this file and `project-context.md` before doing any work. More specific nested `AGENTS.md` files, when present,
 may add rules for their subtree but must not duplicate or contradict this file.
 
-# Claiming a GitHub issue before you start
+# GitHub issue mitigation workflow
 
-Whenever you (agent or human) start working on a GitHub issue in this repository, claim it **first**,
-before editing any file. Pass the branch you are about to create — the claim records it:
+When the user authorizes taking, triaging, fixing, implementing, or resolving a GitHub issue
+submitted to `Advance-Technologies-Foundation/clio`, use the `clio-issue-workflow` Codex skill.
+Do not claim an issue during brainstorming, planning, explanation, or review-only work.
 
-```bash
-./scripts/claim-issue.sh <issue-number> <planned-branch-name>
-```
-
-On a host without bash, use the PowerShell equivalent:
-
-```powershell
-pwsh ./scripts/claim-issue.ps1 -IssueNumber <issue-number> -Branch <planned-branch-name>
-```
-
-The script takes an **exclusive** claim, then assigns the issue to the authenticated `gh` user and
-posts a comment saying that an agent started working on it. It exits 0 only when all three hold:
-the claim is ours, the assignee is confirmed by a re-read, and the claim comment is on the issue.
-Anything else exits non-zero and leaves the issue free, so the next agent is never told an issue is
-available when its ownership is actually unresolved.
-
-Exclusivity does not come from the assignee: several of these agents run under the SAME GitHub
-identity, and "assigned to my login" cannot tell two of them apart — nor can a check-then-assign or
-a post-then-read on comments, because two runs can pass either check at once. Arbitration uses the
-one compare-and-swap GitHub offers: `git push --force-with-lease=refs/claims/issue-<n>:` with an
-empty expected value creates the ref only if it does not exist, checked inside the server's atomic
-ref transaction. Exactly one racing run wins; the rest are refused.
-
-Rules:
-
-- Claim the issue even for a small change, and even when you expect the work to take minutes.
-- Pass the planned branch name. Claiming happens before the branch exists, so the script refuses to
-  fall back to `HEAD` when that is the default branch — otherwise the claim would advertise
-  `Working branch: master` and never name the branch the work actually lands on.
-- Set `CLIO_CLAIM_ID` to a stable value for one logical run if that run can be retried. A retry
-  carrying the same id converges on its own claim (repairing a missing assignee or comment) instead
-  of being refused by it. Do not share one id between two runs that can overlap: a replayed id is
-  not proof of ownership, so a run that finds the claim already carrying its id treats it as
-  adopted and will never release it on the way out — it is left for whoever created it.
-- `origin` and the repository `gh` resolves must be the same: the claim ref lives on `origin` while
-  `gh` picks its own repository (fork checkout, `GH_REPO`, `gh repo set-default`), and two forks
-  could otherwise each win their own lock while both acting on one upstream issue. The script
-  reconciles them up front and refuses (exit 3) when they disagree.
-- A failed read of the claim ref is never treated as "not claimed" — the script exits non-zero
-  instead, in both `--status` and `--release`.
-- A non-zero exit is final: do not override it and do not proceed. Pick another issue, or ask the
-  holder — `./scripts/claim-issue.sh --status <issue-number>` prints who holds the claim and when
-  they took it.
-- If assignment fails on permissions, the claim fails too. Ask a maintainer to set the assignee and
-  re-run; do not start work on the strength of a comment alone.
-- Release the claim when the work is done or abandoned:
-  `./scripts/claim-issue.sh --release <issue-number>`. This works from the checkout that took the
-  claim even when `CLIO_CLAIM_ID` was never set — a generated id is recorded under `.git` on a
-  successful claim. From a different checkout or machine, pass that run's `CLIO_CLAIM_ID`, or use
-  `--release --force` to break a claim left behind by a run that is gone (check `created-at` in
-  `--status` first).
-- If there is no issue yet, create one first (see the PR workflow section in `CONTRIBUTING.md`),
-  then claim it.
-- Reason: several scheduled agents run against this repository in parallel. The claim ref is what
-  actually prevents two of them from doing the same work; the assignee and the comment are what tell
-  a human.
-
-The protocol is covered by `scripts/tests/claim-issue.tests.sh` (run in CI for both
-implementations), which races two claimers against a real ref transaction and asserts a single
-winner, plus the fail-closed behaviour of every partial state.
+The workflow uses GitHub's assignee, the organization-level `Mitigation stage` issue field,
+Development links, issue relationships, and draft pull requests. Do not add a custom locking or
+claim protocol. The required field must be provisioned as described in
+`.codex/skills/clio-issue-workflow/SKILL.md`; the skill fails before any GitHub write until it is ready.
 
 # ClioGate integration
 
