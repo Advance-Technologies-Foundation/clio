@@ -1170,6 +1170,47 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-95429 on the WRITE path: update-page refuses to save a mobile body whose merge authors a button inside the Scaffold actions slot. The insert-scoped slot rule cannot see this shape, and a stand run proved the write otherwise succeeds while the button reaches the merged config zero times.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects a mobile merge that authors children in a Scaffold slot")]
+	[AllureDescription("Sends the stand-verified merge shape through the real MCP server and verifies update-page returns success=false naming the child that would go missing.")]
+	public async Task PageUpdateTool_Should_Reject_Mobile_Merge_Authoring_Children_In_Scaffold_Slot() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMergeAuthoredButton = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "Scaffold",
+			      "values": { "actions": [ { "type": "crt.Button", "name": "UsrMergeProbeButton",
+			                                 "clicked": { "request": "crt.SaveRecordRequest" } } ] } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBodyWithMergeAuthoredButton
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a validation failure is a structured tool result, not a protocol error");
+		response.Success.Should().BeFalse(
+			because: "the differ strips the slot out of the merge, so the save must abort instead of persisting an operation that creates nothing");
+		response.Error.Should().Contain("UsrMergeProbeButton",
+			because: "the entry is named after the merged element, so only the child name locates the defect");
+	}
+
+	[Test]
 	[Description("ENG-95429 on the WRITE path: update-page refuses to save a mobile body whose viewConfigDiff insert carries its component type on the operation object instead of inside 'values'. The defect being fixed is a write that SUCCEEDS while persisting an unrenderable element, so this asserts the save is actually aborted end to end — unit coverage of the validator alone cannot show that.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects a mobile insert whose type sits outside values")]
