@@ -133,10 +133,11 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 		if (existingLayers.Count == 0) {
 			return SchemaImportAction.Create;
 		}
-		SchemaLayerDto targetPackageLayer = existingLayers.FirstOrDefault(layer =>
-			string.Equals(layer.PackageName, targetPackage, StringComparison.OrdinalIgnoreCase));
-		if (targetPackageLayer is not null) {
-			EnsureLayerIsTheSameSchema(bundleIdentity, targetPackage, targetPackageLayer);
+		IReadOnlyList<SchemaLayerDto> targetPackageLayers = existingLayers
+			.Where(layer => string.Equals(layer.PackageName, targetPackage, StringComparison.OrdinalIgnoreCase))
+			.ToList();
+		if (targetPackageLayers.Count > 0) {
+			EnsureOneLayerIsTheSameSchema(bundleIdentity, targetPackage, targetPackageLayers);
 			return SchemaImportAction.Replace;
 		}
 		if (!allowNewLayer) {
@@ -150,7 +151,7 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 	}
 
 	/// <summary>
-	/// Refuses a REPLACE whose target-package layer is a different schema than the bundle.
+	/// Refuses a REPLACE unless one of the target package's own layers is the schema in the bundle.
 	/// </summary>
 	/// <remarks>
 	/// Matching the package alone is not enough to call an import a replacement. A boxed layer, or one restored
@@ -159,22 +160,29 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 	/// the same (name, manager, package) triple and the <c>IU_Name_Manager_Package</c> duplicate key rejects it.
 	/// Reporting "Plan: REPLACE" and a successful <c>--dry-run</c> for that case is exactly what makes the plan
 	/// untrustworthy, so the mismatch is named here instead.
+	/// <para>
+	/// Every layer the package owns is considered, not just the first: the uniqueness constraint is
+	/// (name, manager, package), so one package can legitimately own this name twice under two managers — and
+	/// when the bundle carries no <c>ManagerName</c> the gate's lookup does not narrow by manager, so both come
+	/// back. Testing only the first match would refuse (or replace) against an arbitrary one of them.
+	/// </para>
 	/// </remarks>
-	private static void EnsureLayerIsTheSameSchema(SchemaBundleDescriptor bundleIdentity, string targetPackage,
-		SchemaLayerDto targetPackageLayer) {
-		if (!UIdsDisagree(bundleIdentity.SchemaUId, targetPackageLayer.SchemaUId)
-			&& !ManagersDisagree(bundleIdentity.ManagerName, targetPackageLayer.ManagerName)) {
+	private static void EnsureOneLayerIsTheSameSchema(SchemaBundleDescriptor bundleIdentity, string targetPackage,
+		IReadOnlyList<SchemaLayerDto> targetPackageLayers) {
+		if (targetPackageLayers.Any(layer => !UIdsDisagree(bundleIdentity.SchemaUId, layer.SchemaUId)
+			&& !ManagersDisagree(bundleIdentity.ManagerName, layer.ManagerName))) {
 			return;
 		}
+		string owned = string.Join(", ", targetPackageLayers
+			.Select(layer => $"uId={OrUnknown(layer.SchemaUId)} (manager {OrUnknown(layer.ManagerName)})"));
 		throw new InvalidOperationException(
 			$"Package '{targetPackage}' already owns a schema named '{bundleIdentity.SchemaName}', but it is not "
 			+ $"the one in this bundle: the bundle carries uId={OrUnknown(bundleIdentity.SchemaUId)} "
-			+ $"(manager {OrUnknown(bundleIdentity.ManagerName)}) while '{targetPackage}' owns "
-			+ $"uId={OrUnknown(targetPackageLayer.SchemaUId)} (manager "
-			+ $"{OrUnknown(targetPackageLayer.ManagerName)}). Importing would not replace that layer — the "
-			+ "platform preserves the bundle's uId, so it would add a second row with the same name in the same "
-			+ "package, which the IU_Name_Manager_Package index rejects. Import into a package that does not own "
-			+ "this name, or delete the conflicting schema first.");
+			+ $"(manager {OrUnknown(bundleIdentity.ManagerName)}) while '{targetPackage}' owns {owned}. "
+			+ "Importing would not replace that layer — the platform preserves the bundle's uId, so it would add "
+			+ "a second row with the same name in the same package, which the IU_Name_Manager_Package index "
+			+ "rejects. Import into a package that does not own this name, or delete the conflicting schema "
+			+ "first.");
 	}
 
 	private static bool UIdsDisagree(string bundleUId, string layerUId) {

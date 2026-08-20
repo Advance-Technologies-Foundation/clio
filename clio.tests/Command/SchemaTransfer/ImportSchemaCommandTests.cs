@@ -245,6 +245,61 @@ public class ImportSchemaCommandTests : BaseCommandTests<ImportSchemaOptions> {
 		_schemaTransferClient.Received(1).Import(Payload, TargetPackage);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Replaces the matching layer when the target package owns the name twice, under two managers")]
+	public void Execute_Should_Import_When_One_Of_Several_Target_Package_Layers_Matches() {
+		// Arrange
+		// The uniqueness constraint is (name, manager, package), so one package can own this name twice. When the
+		// bundle carries no manager the gate does not narrow by manager either, so both layers come back and the
+		// plan has to be resolved against the one that actually matches, not against whichever is first.
+		SchemaBundleDescriptor bundleWithoutManager = new() {
+			SchemaName = SchemaName,
+			SchemaUId = "8375dacb-4ea5-4103-b07a-d365f8d276f3"
+		};
+		_schemaBundleStore.Read(Arg.Any<string>())
+			.Returns(new SchemaBundle(bundleWithoutManager, Payload));
+		List<SchemaLayerDto> layers = BuildLayers(TargetPackage);
+		layers.Insert(0, new SchemaLayerDto {
+			SchemaName = SchemaName,
+			SchemaUId = ForeignSchemaUId,
+			ManagerName = "SourceCodeSchemaManager",
+			PackageName = TargetPackage
+		});
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(layers);
+
+		// Act
+		int result = _sut.Execute(BuildOptions());
+
+		// Assert
+		result.Should().Be(0,
+			because: "one of the layers the package owns is the bundle's own schema, so this is a replacement");
+		_schemaTransferClient.Received(1).Import(Payload, TargetPackage);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses and names every layer when none of the target package's layers is the bundle's schema")]
+	public void Execute_Should_Refuse_When_No_Target_Package_Layer_Matches() {
+		// Arrange
+		List<SchemaLayerDto> layers = BuildLayers(TargetPackage);
+		layers[0].SchemaUId = ForeignSchemaUId;
+		layers.Add(new SchemaLayerDto {
+			SchemaName = SchemaName,
+			SchemaUId = "1c9f2b3d-4e5a-6b7c-8d9e-0f1a2b3c4d5e",
+			ManagerName = "SourceCodeSchemaManager",
+			PackageName = TargetPackage
+		});
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(layers);
+
+		// Act
+		int result = _sut.Execute(BuildOptions());
+
+		// Assert
+		result.Should().Be(1, because: "none of the layers the package owns is the schema in the bundle");
+		_schemaTransferClient.DidNotReceive().Import(Arg.Any<string>(), Arg.Any<string>());
+	}
+
 	private static ImportSchemaOptions BuildOptions() =>
 		new() {
 			Path = BundlePath,
