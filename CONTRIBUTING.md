@@ -220,8 +220,8 @@ When starting the work:
   work moves through `Fixing`, `QA`, or `Waiting for human approval`.
 - If investigation proves that another `Advance-Technologies-Foundation` repository owns the fix,
   open or reuse the downstream issue there and mark the original Clio issue as `blocked by` it.
-- Codex users should invoke the `clio-issue-workflow` skill, which applies these rules and routes
-  defects owned by `clio-knowledge` or referenced example repositories.
+- Codex and Claude users should invoke the repository's `clio-issue-workflow` skill, which applies
+  these rules and routes defects owned by `clio-knowledge` or referenced example repositories.
 
 When opening the pull request:
 
