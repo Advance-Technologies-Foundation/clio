@@ -9033,3 +9033,10 @@ Discovery: TryGetStringProperty rejects whitespace and non-string values, but th
 Discovery: a mis-cased "Merge" was diagnosed by nothing at all — ReportOperationCaseMismatch allowlisted only insert/set. Merge added, with a guard because a correctly-cased merge also reaches that reporter.
 Files: clio/Command/SchemaValidationService.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageUpdateToolMobileTypePlacementTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, docs + help + three tool descriptions
 Impact: the blocking half is now narrow enough to be defensible, and the advisory half carries the two-step idiom the platform actually supports.
+
+## 2026-08-20 19:20 – Capability-first get-info cliogate diagnostics
+Context: GitHub issue #1138 reported a false absent/incompatible warning while cliogate 2.0.0.45 and other gate-dependent commands worked.
+Decision: Probe GetSysInfo as the authoritative optional capability; consult the lowest-alias package version only after a failed probe to distinguish absent, below-minimum, installed-but-unreadable, and inconclusive states.
+Discovery: The shared RequiredPackageChecker intentionally selects the lowest installed cliogate/cliogate_netcore alias, so it is correct for hard requirements but can falsely veto a working runtime endpoint when used as a preflight.
+Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs, clio/Command/McpServer/Tools/GetCreatioInfoTool.cs, clio.mcp.e2e/GetCreatioInfoToolE2ETests.cs, spec/get-info-cliogate-diagnostics/
+Impact: get-info now reports the detected version and actual read boundary without recommending a pointless install-gate; CLI, MCP, guidance, and ClioRing contracts remain aligned.
