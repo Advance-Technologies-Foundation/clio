@@ -1871,8 +1871,10 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		JObject manifest = JObject.Parse(ReadManifest(response));
 		manifest["enumVocabulary"]!["ViewItemType"]!["GRID_LAYOUT"]!.Value<long>().Should().Be(0,
 			because: "the stand's own measured member/value pairs land in the manifest verbatim");
-		manifest["enumVocabulary"]!["ViewItemType"]!["DETAIL"]!.Value<long>().Should().Be(2);
-		manifest["enumVocabulary"]!["ContentType"]!["LONG_TEXT"]!.Value<long>().Should().Be(0);
+		manifest["enumVocabulary"]!["ViewItemType"]!["DETAIL"]!.Value<long>().Should().Be(2,
+			because: "every resolved member of a resolved enum lands in the manifest, not just the first one");
+		manifest["enumVocabulary"]!["ContentType"]!["LONG_TEXT"]!.Value<long>().Should().Be(0,
+			because: "a second resolved enum table is echoed alongside the first");
 		manifest["enumVocabulary"]!["DataValueType"].Should().BeNull(
 			because: "an enum the resolver could not resolve is omitted, never emitted as an empty object");
 	}
@@ -1894,7 +1896,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		ok.Should().BeTrue(because: "the enum vocabulary is a best-effort enricher and must never fail the whole collection");
-		response.EnumVocabularyCount.Should().Be(0);
+		response.EnumVocabularyCount.Should().Be(0, because: "no enum table was resolved");
 		JObject manifest = JObject.Parse(ReadManifest(response));
 		manifest["enumVocabulary"].Should().BeNull(because: "an empty enumVocabulary block must be omitted, not written as {}");
 		response.Warnings.Should().ContainSingle(w => w.Contains("sysenums.js"),
@@ -1916,8 +1918,9 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 
 		// Assert
 		ok.Should().BeTrue(because: "an unexpected resolver failure must degrade the enricher, not the whole command");
-		response.EnumVocabularyCount.Should().Be(0);
-		response.Warnings.Should().ContainSingle(w => w.Contains("enum vocabulary"));
+		response.EnumVocabularyCount.Should().Be(0, because: "the resolver threw before returning any enum table");
+		response.Warnings.Should().ContainSingle(w => w.Contains("enum vocabulary"),
+			because: "an unexpected exception must still be explained to the caller, not swallowed silently");
 	}
 
 	// --- fake-environment helpers ------------------------------------------------------------------

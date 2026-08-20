@@ -47,17 +47,12 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 		"valueOf", "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable"
 	};
 
-	// NAME: 123 (or NAME: -1) followed by a comma or the closing brace. Comments are stripped before this runs, so a
-	// JSDoc line mentioning a colon and a digit cannot be mistaken for a member.
+	// NAME: 123 (or NAME: -1) followed by a comma or the closing brace. Comments AND string-literal contents are
+	// blanked out before this runs (SanitizeForMemberScan), so neither a JSDoc line nor a quoted description
+	// mentioning a colon and a digit can be mistaken for a member.
 	private static readonly Regex MemberRegex = new(
 		@"(?<![\w$])([A-Za-z_$][\w$]*)\s*:\s*(-?\d+)\s*(?=,|\}|$)",
 		RegexOptions.Compiled, TimeSpan.FromSeconds(2));
-
-	private static readonly Regex BlockCommentRegex = new(
-		@"/\*.*?\*/", RegexOptions.Compiled | RegexOptions.Singleline, TimeSpan.FromSeconds(2));
-
-	private static readonly Regex LineCommentRegex = new(
-		@"//[^\r\n]*", RegexOptions.Compiled, TimeSpan.FromSeconds(2));
 
 	/// <inheritdoc />
 	public ClassicEnumVocabularyParseResult Parse(string sysEnumsJsContent) {
@@ -97,6 +92,12 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 			int markerIndex = content.IndexOf(marker, searchFrom, StringComparison.Ordinal);
 			if (markerIndex < 0) {
 				return null;
+			}
+			if (markerIndex > 0 && IsIdentifierChar(content[markerIndex - 1])) {
+				// The match is the tail of a longer identifier (e.g. a hypothetical XTerrasoft.ViewItemType) — advance
+				// by one so the next search still finds a real, later occurrence of the marker.
+				searchFrom = markerIndex + 1;
+				continue;
 			}
 			int afterMarker = markerIndex + marker.Length;
 			if (afterMarker < content.Length && IsIdentifierChar(content[afterMarker])) {
@@ -179,14 +180,17 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 		return i + 1; // past the closing quote (or past the end, on an unterminated literal)
 	}
 
-	// Members only — comments stripped first so a JSDoc line cannot be mistaken for `NAME: number`. Non-numeric
-	// values (there are none in the real source, but nothing guarantees that forever) are simply not matched by
-	// MemberRegex and are silently ignored, per the engine contract. A duplicate name keeps its LAST occurrence,
-	// mirroring plain JS object-literal semantics.
+	// Members only — comments AND string-literal contents are blanked out first (same char-level scan FindMatchingBrace
+	// uses, so the two can never disagree about where a string/comment ends) so neither a JSDoc line NOR a quoted
+	// description value can be mistaken for `NAME: number`. A regex-only comment strip over raw text would get this
+	// wrong both ways: a colon+digit inside a quoted string (`DESC: "see LEGACY: 2 instead"`) would fabricate a
+	// phantom member, and a `//` inside a URL-shaped string value (`A: "http://x", B: 2`) would delete a real one.
+	// Non-numeric values are simply not matched by MemberRegex and are silently ignored, per the engine contract. A
+	// duplicate name keeps its LAST occurrence, mirroring plain JS object-literal semantics.
 	private static IReadOnlyDictionary<string, long> ParseMembers(string objectLiteralText) {
-		string withoutComments = LineCommentRegex.Replace(BlockCommentRegex.Replace(objectLiteralText, string.Empty), string.Empty);
+		string sanitized = SanitizeForMemberScan(objectLiteralText);
 		var members = new Dictionary<string, long>(StringComparer.Ordinal);
-		foreach (Match match in MemberRegex.Matches(withoutComments)) {
+		foreach (Match match in MemberRegex.Matches(sanitized)) {
 			string name = match.Groups[1].Value;
 			if (BlockedMemberNames.Contains(name)) {
 				continue;
@@ -196,6 +200,47 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 			}
 		}
 		return members;
+	}
+
+	// Replaces every block comment, line comment, and string-literal (quotes included) with spaces of the SAME
+	// length, so byte offsets stay meaningful for diagnostics and MemberRegex's `\s*` around the value still matches.
+	// Mirrors FindMatchingBrace's own comment/string skipping exactly (reusing SkipStringLiteral) rather than
+	// duplicating that logic as a second, potentially-drifting regex-based implementation.
+	private static string SanitizeForMemberScan(string text) {
+		var sanitized = new System.Text.StringBuilder(text.Length);
+		int i = 0;
+		while (i < text.Length) {
+			char c = text[i];
+			if (c == '/' && i + 1 < text.Length && text[i + 1] == '*') {
+				int end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+				int stop = end < 0 ? text.Length : end + 2;
+				AppendBlanks(sanitized, stop - i);
+				i = stop;
+				continue;
+			}
+			if (c == '/' && i + 1 < text.Length && text[i + 1] == '/') {
+				int end = text.IndexOf('\n', i + 2);
+				int stop = end < 0 ? text.Length : end;
+				AppendBlanks(sanitized, stop - i);
+				i = stop;
+				continue;
+			}
+			if (c is '\'' or '"') {
+				int stop = SkipStringLiteral(text, i);
+				AppendBlanks(sanitized, stop - i);
+				i = stop;
+				continue;
+			}
+			sanitized.Append(c);
+			i++;
+		}
+		return sanitized.ToString();
+	}
+
+	private static void AppendBlanks(System.Text.StringBuilder sb, int count) {
+		for (int i = 0; i < count; i++) {
+			sb.Append(' ');
+		}
 	}
 }
 
@@ -223,12 +268,16 @@ internal sealed class ClassicEnumVocabularyResolver(
 	IHttpClientFactory httpClientFactory,
 	IClassicEnumVocabularySourceParser parser) : IClassicEnumVocabularyResolver {
 
-	// A cold stand's first hit measured 29-92s (ENG-95412 field notes); a probe-sized timeout would misreport a
-	// merely-slow stand as unreachable.
-	private const int RequestTimeoutMs = 120_000;
+	// Named HttpClient registered in BindingsModule.cs with its timeout, response-size cap, and redirect policy —
+	// never mutated per-call (avoids InvalidOperationException / races on a shared HttpClient property, same
+	// reasoning as the component-registry client).
+	public const string HttpClientName = nameof(ClassicEnumVocabularyResolver);
 
+	// Case-insensitive: nothing about the hash's own casing is a documented platform contract, only that it is
+	// 32 hex characters, so matching only lowercase would silently omit enumVocabulary on a stand that happens to
+	// serve an uppercase-hex marker.
 	private static readonly Regex ContentHashPathRegex = new(
-		"/core/([0-9a-f]{32})/", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+		"/core/([0-9a-fA-F]{32})/", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	/// <inheritdoc />
 	public ClassicEnumVocabularyParseResult Resolve() {
@@ -261,10 +310,10 @@ internal sealed class ClassicEnumVocabularyResolver(
 
 	// Plain unauthenticated GET; a non-success status or transport failure degrades to null + a warning rather than
 	// throwing, so a stand that cannot serve this best-effort input never fails the whole page-sources collection.
+	// Timeout/redirect policy/response-size cap live on the named client's registration (BindingsModule.cs), not here.
 	private string TryGetString(string url, string what, List<string> warnings) {
 		try {
-			using HttpClient client = httpClientFactory.CreateClient(nameof(ClassicEnumVocabularyResolver));
-			client.Timeout = TimeSpan.FromMilliseconds(RequestTimeoutMs);
+			using HttpClient client = httpClientFactory.CreateClient(HttpClientName);
 			using HttpResponseMessage response = client.GetAsync(url).GetAwaiter().GetResult();
 			if (!response.IsSuccessStatusCode) {
 				warnings.Add(

@@ -112,8 +112,10 @@ public sealed class ClassicEnumVocabularySourceParserTests {
 		// Assert
 		result.Enums.Should().NotContainKey("DataValueType",
 			because: "the consumer treats an absent table as 'skip this enum', never as an empty object with junk in it");
-		result.Enums.Keys.Should().BeEquivalentTo(["ViewItemType", "ContentType"]);
-		result.Warnings.Should().ContainSingle(w => w.Contains("DataValueType"));
+		result.Enums.Keys.Should().BeEquivalentTo(["ViewItemType", "ContentType"],
+			because: "the two present tables are unaffected by a sibling table's absence");
+		result.Warnings.Should().ContainSingle(w => w.Contains("DataValueType"),
+			because: "the warning must name which enum was omitted, not just that something was");
 	}
 
 	[Test]
@@ -171,5 +173,90 @@ public sealed class ClassicEnumVocabularySourceParserTests {
 		// Assert
 		result.Enums["DataValueType"]["GUID"].Should().Be(42,
 			because: "a plain JS object literal resolves a duplicate key to its last-written value");
+	}
+
+	[Test]
+	[Description("Parse does not fabricate a phantom member from a colon+digit inside a quoted string value, and does not lose a real member that follows one on the same line.")]
+	public void Parse_ShouldIgnoreColonAndDigitInsideStringLiteralValue() {
+		// Arrange — a hostile/malformed member whose STRING value itself looks like a second member ("LEGACY: 2").
+		string source =
+			"Terrasoft.ContentType = {\n" +
+			"\tLONG_TEXT: 0,\n" +
+			"\tDESC: \"see LEGACY: 2 instead\",\n" +
+			"\tSEARCHABLE_TEXT: 6\n" +
+			"};\n";
+
+		// Act
+		ClassicEnumVocabularyParseResult result = _parser.Parse(source);
+
+		// Assert
+		result.Enums["ContentType"].Should().BeEquivalentTo(
+			new Dictionary<string, long> { ["LONG_TEXT"] = 0, ["SEARCHABLE_TEXT"] = 6 },
+			because: "a colon+digit sequence inside a quoted string value is not a member — the parser must not fabricate " +
+				"a phantom 'LEGACY: 2' entry from it, nor let the string's own content masquerade as anything else");
+	}
+
+	[Test]
+	[Description("Parse does not lose a real member when a preceding string value happens to contain '//' (e.g. a URL), which a naive line-comment strip would misread as starting a comment.")]
+	public void Parse_ShouldNotTreatSlashSlashInsideStringLiteralAsLineComment() {
+		// Arrange — "http://x" inside a string is NOT a line comment; a regex-only comment strip that ignores string
+		// boundaries would delete everything from that "//" to end of line, including the real member after it.
+		string source =
+			"Terrasoft.DataValueType = {\n" +
+			"\tURL_LIKE: 1,\n" +
+			"\tLINK: \"see http://example\", REAL_MEMBER: 7\n" +
+			"};\n";
+
+		// Act
+		ClassicEnumVocabularyParseResult result = _parser.Parse(source);
+
+		// Assert
+		result.Enums["DataValueType"].Should().ContainKey("REAL_MEMBER")
+			.WhoseValue.Should().Be(7,
+				because: "a '//' occurring inside a string literal value must not be mistaken for the start of a line comment " +
+					"that would otherwise delete the real member written after it on the same line");
+	}
+
+	[Test]
+	[Description("Parse correctly bounds an object literal whose member value contains an UNBALANCED closing brace inside a string, without truncating the block early.")]
+	public void Parse_ShouldNotDesyncBraceCount_WhenStringValueContainsUnbalancedBrace() {
+		// Arrange — a brace-matcher that is NOT string-aware would hit the lone `}` inside this string value, read it
+		// as closing the outer object literal, and truncate the block right there — silently losing SEARCHABLE_TEXT
+		// and any well-formed trailing content.
+		string source =
+			"Terrasoft.ContentType = {\n" +
+			"\tLONG_TEXT: 0,\n" +
+			"\tLABEL: \"unexpected } inside string\",\n" +
+			"\tSEARCHABLE_TEXT: 6\n" +
+			"};\n";
+
+		// Act
+		ClassicEnumVocabularyParseResult result = _parser.Parse(source);
+
+		// Assert
+		result.Enums["ContentType"].Should().BeEquivalentTo(
+			new Dictionary<string, long> { ["LONG_TEXT"] = 0, ["SEARCHABLE_TEXT"] = 6 },
+			because: "an unbalanced brace character inside a string value must not be read as closing the outer object literal");
+	}
+
+	[Test]
+	[Description("Parse correctly bounds an object literal past a JSDoc comment containing its own UNBALANCED closing brace, without the comment's internal brace desynchronizing the depth count.")]
+	public void Parse_ShouldNotDesyncBraceCount_WhenCommentContainsUnbalancedBrace() {
+		// Arrange — a comment-skipper that stopped recognizing `/* */` (or never did) would hit the lone `}` inside
+		// this comment, read it as closing the outer object literal, and truncate the block right there.
+		string source =
+			"Terrasoft.ViewItemType = {\n" +
+			"\t/** unexpected } inside a comment, e.g. a stray JSDoc {@link tag} fragment */\n" +
+			"\tGRID_LAYOUT: 0,\n" +
+			"\tTAB_PANEL: 1\n" +
+			"};\n";
+
+		// Act
+		ClassicEnumVocabularyParseResult result = _parser.Parse(source);
+
+		// Assert
+		result.Enums["ViewItemType"].Should().BeEquivalentTo(
+			new Dictionary<string, long> { ["GRID_LAYOUT"] = 0, ["TAB_PANEL"] = 1 },
+			because: "an unbalanced brace inside a skipped comment must not be read as closing the outer object literal");
 	}
 }

@@ -82,7 +82,7 @@ public sealed class ClassicEnumVocabularyResolverTests {
 
 		// Assert
 		result.Enums.Should().BeEmpty(because: "there is no target to fetch from");
-		result.Warnings.Should().ContainSingle();
+		result.Warnings.Should().ContainSingle(because: "the missing URI is a single, explainable degradation, not a crash");
 		_parser.DidNotReceiveWithAnyArgs().Parse(default);
 	}
 
@@ -99,7 +99,7 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		result.Enums.Should().BeEmpty();
+		result.Enums.Should().BeEmpty(because: "there is nothing to parse without the login page's content-hash marker");
 		result.Warnings.Should().ContainSingle(w => w.Contains("login page"),
 			because: "a stand that cannot serve the login page is a named, explainable degradation");
 		_parser.DidNotReceiveWithAnyArgs().Parse(default);
@@ -118,8 +118,9 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		result.Enums.Should().BeEmpty();
-		result.Warnings.Should().ContainSingle(w => w.Contains("content-hash"));
+		result.Enums.Should().BeEmpty(because: "without the hash there is no sysenums.js URL to build");
+		result.Warnings.Should().ContainSingle(w => w.Contains("content-hash"),
+			because: "the caller must know WHY nothing was resolved, not just that nothing was");
 		_parser.DidNotReceiveWithAnyArgs().Parse(default);
 	}
 
@@ -138,8 +139,9 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		result.Enums.Should().BeEmpty();
-		result.Warnings.Should().ContainSingle(w => w.Contains("sysenums.js"));
+		result.Enums.Should().BeEmpty(because: "the hash resolved but the file behind it did not, so there is still nothing to parse");
+		result.Warnings.Should().ContainSingle(w => w.Contains("sysenums.js"),
+			because: "the warning must name the file that failed, not just 'something went wrong'");
 		_parser.DidNotReceiveWithAnyArgs().Parse(default);
 	}
 
@@ -153,8 +155,8 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		result.Enums.Should().BeEmpty();
-		result.Warnings.Should().ContainSingle();
+		result.Enums.Should().BeEmpty(because: "an unreachable host leaves nothing resolved");
+		result.Warnings.Should().ContainSingle(because: "a transport exception must degrade to a warning, never propagate as a thrown exception");
 	}
 
 	private sealed class StubHandler(IReadOnlyDictionary<string, (HttpStatusCode Status, string Body)> byUrl) : HttpMessageHandler {
