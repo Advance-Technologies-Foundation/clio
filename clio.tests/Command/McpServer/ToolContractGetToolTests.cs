@@ -134,6 +134,31 @@ public sealed class ToolContractGetToolTests {
 			because: "an arg-bearing tool must expose a usable property schema, not an empty fallback");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated odata-read input contract aligned with every bound ODataReadArgs JSON member.")]
+	public void ToolContractGet_Should_Keep_ODataRead_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(ODataReadArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArgumentNames,
+			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("total-count",
+			because: "a requested total must be discoverable separately from page count");
+		contract.Aliases.Should().Contain(alias => alias.Alias == "filter" && alias.Status == "rejected",
+			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
+	}
+
 	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
 	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
 	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.
