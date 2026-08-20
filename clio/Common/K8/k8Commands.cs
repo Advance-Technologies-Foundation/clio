@@ -182,8 +182,8 @@ public class k8Commands : Ik8Commands
 			.ListNamespacedPod(K8NNameSpace, null, null, null, $"app={appName}")
 			.Items.FirstOrDefault();
 		if (pod == null) {
-			// GetBackupFullDestPath and every backup/restore caller dereference pod.Spec unguarded;
-			// guarding at this single shared source closes that class of NPE for all of them.
+			// GetBackupFullDestPath and every backup/restore caller dereference pod.Spec unguarded.
+			// Guarding at this single shared source closes that class of NPE for all of them.
 			throw new InvalidOperationException($"Pod with label 'app={appName}' was not found in namespace '{K8NNameSpace}'.");
 		}
 		return pod;
