@@ -63,7 +63,10 @@ def _front_matter_body(lines: list[str]) -> tuple[list[str] | None, list[str]]:
 def _append_list_item(data: dict[str, object], key: str, raw: str) -> None:
     """Append a ``- item`` line to ``key``, coercing a previously scalar value to a list."""
     if not isinstance(data.get(key), list):
-        data[key] = []
+        # A key written as a scalar and then continued as a list keeps the scalar as the first
+        # entry - dropping it would lose a path silently, with no schema problem to show for it.
+        existing = data.get(key)
+        data[key] = [existing] if existing else []
     data[key].append(raw.split("- ", 1)[1].strip().strip("'\""))
 
 
@@ -191,10 +194,20 @@ def matches(entry: str, changed: list[str]) -> list[str]:
     return [c for c in changed if c == entry]
 
 
+def _within_root(root: str, entry: str) -> bool:
+    """Whether ``entry`` stays inside ``root`` once joined.
+
+    ``os.path.join(root, "/etc/passwd")`` returns ``/etc/passwd`` - an absolute component wins - and
+    ``..`` climbs out, so an entry that escapes the tree must never reach ``os.path.exists``.
+    """
+    resolved = os.path.realpath(os.path.join(root, entry))
+    return os.path.commonpath([os.path.realpath(root), resolved]) == os.path.realpath(root)
+
+
 def dead_paths(root: str, record: Record) -> list[str]:
     return [
         entry for entry in record.applies_to
-        if not os.path.exists(os.path.join(root, entry))
+        if not _within_root(root, entry) or not os.path.exists(os.path.join(root, entry))
     ]
 
 

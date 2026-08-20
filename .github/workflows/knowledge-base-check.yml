@@ -23,15 +23,22 @@ jobs:
     name: applies-to
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      # SHA-pinned, not tag-pinned: this job carries a `pull-requests: write` token, and a major-version
+      # tag can be silently re-pointed at new code. Same reason for github-script below.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0   # the diff base has to be reachable; a shallow clone breaks merge-base
 
       - name: Run the check
         id: check
+        # BASE_REF goes through the environment, never through `${{ }}` inside `run:`: an expression is
+        # substituted textually before the shell parses the block, so a branch name carrying shell
+        # metacharacters would execute as code.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           python3 scripts/check-knowledge-applies-to.py \
-            --base "origin/${{ github.event.pull_request.base.ref }}" \
+            --base "origin/$BASE_REF" \
             --markdown "$RUNNER_TEMP/knowledge-report.md"
           cat "$RUNNER_TEMP/knowledge-report.md" >> "$GITHUB_STEP_SUMMARY"
 
@@ -39,7 +46,7 @@ jobs:
         # Fork pull requests get a read-only token, so this 403s there by design. The report is
         # already in the job summary; do not let it colour the check.
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const fs = require('fs');
