@@ -966,64 +966,55 @@ public static class SchemaValidationService
 			if (!TryGetAuthoredElementName(slot.Value, out string childName)) {
 				continue;
 			}
-			bool blocks = targetsScaffold && ScaffoldTemplatePopulatedSlots.Contains(slot.Name);
-			// Both channels are bounded, but separately and for different reasons. IsValid latches on the first
-			// blocking slot, so bounding the blocking channel cannot suppress the refusal however the author
-			// orders the slots — and JsonDocument preserves DUPLICATE property names, which would otherwise let
-			// one entry emit an unbounded run of ~650-character errors into the "; "-joined Error string.
-			bool reserved = blocks
-				? TryReserveDiagnostic(ref blockingReported, ref blockingCapNoted, subject, isAdvisory: false, result)
-				: TryReserveDiagnostic(ref advisoryReported, ref advisoryCapNoted, subject, isAdvisory: true, result);
-			if (!reserved) {
-				if (blocks) {
-					result.IsValid = false;
-				}
-				continue;
-			}
-			string diagnostic = DescribeMergeSlotAuthoring(
-				subject, slot.Name, childName, blocks, slot.Value.ValueKind == JsonValueKind.Object);
-			if (blocks) {
+			if (targetsScaffold && ScaffoldTemplatePopulatedSlots.Contains(slot.Name)) {
+				// Latched BEFORE the bound, so no slot ordering and no run of duplicate keys can talk the rule
+				// out of refusing (raised in review of PR #1124).
 				result.IsValid = false;
-				result.Errors.Add(diagnostic);
+				AddBoundedMergeSlotDiagnostic(
+					result.Errors, ref blockingReported, ref blockingCapNoted, "blocking",
+					subject, slot, childName, blocks: true, result);
 			} else {
-				result.Warnings.Add(diagnostic);
+				AddBoundedMergeSlotDiagnostic(
+					result.Warnings, ref advisoryReported, ref advisoryCapNoted, "advisory",
+					subject, slot, childName, blocks: false, result);
 			}
 		}
 	}
 
 	/// <summary>
-	/// Claims room for one merge-slot diagnostic on the current entry, adding the "there were more" note once when
-	/// the bound is reached. Returns <c>false</c> when the caller must skip emitting for that slot.
+	/// Adds one merge-slot diagnostic to <paramref name="sink"/>, or the "there were more" note once the per-entry
+	/// bound for that channel is reached.
 	/// </summary>
 	/// <remarks>
-	/// The two channels are counted SEPARATELY, which is what makes bounding the blocking one safe: slots are
+	/// The channels are counted SEPARATELY. That is what makes bounding the blocking one safe: slots are
 	/// enumerated in document order, so a shared counter would let a body that lists enough advisory slots first
-	/// suppress the very defect the rule exists to refuse (raised in review of PR #1124). With separate counters
-	/// the caller still latches <c>IsValid</c> on every blocking slot, bound or no bound. The bounds themselves
-	/// keep one entry from burying the agent's transcript; on the error channel that also caps a real amplifier,
-	/// since <c>JsonDocument</c> preserves duplicate property names and the tools flatten errors into a single
-	/// <c>"; "</c>-joined string. A legitimate body never reaches either bound.
+	/// suppress the very defect the rule exists to refuse — and the caller latches <c>IsValid</c> before calling
+	/// in, so the refusal never depends on the bound. The bounds keep one entry from burying the agent's
+	/// transcript; on the error channel that also caps a real amplifier, since <c>JsonDocument</c> preserves
+	/// duplicate property names and the write tools flatten errors into a single <c>"; "</c>-joined string. The
+	/// diagnostic is built only when it will be used, so a flooding body does no work per suppressed slot.
+	/// A legitimate body never reaches either bound.
 	/// </remarks>
-	private static bool TryReserveDiagnostic(
-		ref int reported, ref bool capNoted, string subject, bool isAdvisory, SchemaValidationResult result) {
-		if (reported < MaxMergeSlotDiagnosticsPerEntry) {
-			reported++;
-			return true;
+	private static void AddBoundedMergeSlotDiagnostic(
+		List<string> sink, ref int reported, ref bool capNoted, string channel,
+		string subject, JsonProperty slot, string childName, bool blocks, SchemaValidationResult result) {
+		if (reported >= MaxMergeSlotDiagnosticsPerEntry) {
+			if (!capNoted) {
+				capNoted = true;
+				result.Warnings.Add(
+					$"{subject} authors child elements in further slots not listed here; only the first "
+					+ $"{MaxMergeSlotDiagnosticsPerEntry} {channel} slots are reported.");
+			}
+			return;
 		}
-		if (!capNoted) {
-			capNoted = true;
-			string channel = isAdvisory ? "advisory" : "blocking";
-			result.Warnings.Add(
-				$"{subject} authors child elements in further slots not listed here; only the first "
-				+ $"{MaxMergeSlotDiagnosticsPerEntry} {channel} slots are reported.");
-		}
-		return false;
+		reported++;
+		sink.Add(DescribeMergeSlotAuthoring(
+			subject, slot.Name, childName, blocks, slot.Value.ValueKind == JsonValueKind.Object));
 	}
 
 	/// <summary>
 	/// Builds the merge-slot diagnostic. Both outcomes of the mechanism are stated because clio cannot tell which
-	/// one a given body is in, and the remedy differs by severity: a Scaffold navigation slot is never the right
-	/// destination, while any other slot may simply not exist on the target yet.
+	/// one a given body is in; the remedy comes from <see cref="DescribeMergeSlotRemedy"/>.
 	/// </summary>
 	private static string DescribeMergeSlotAuthoring(
 		string subject, string rawSlotName, string childName, bool blocks, bool slotHoldsLoneObject) =>
@@ -1032,20 +1023,31 @@ public static class SchemaValidationService
 		+ "elements in that slot the differ strips the whole property out of the merge, so the write succeeds and "
 		+ "the children never reach the page (ENG-95429). Where the slot is absent or empty the merge does apply "
 		+ "— clio validates viewConfigDiff against an empty base and cannot tell the two apart. "
-		+ (blocks
-			? "Place the child in a page container instead: its own "
+		+ DescribeMergeSlotRemedy(blocks, slotHoldsLoneObject);
+
+	/// <summary>
+	/// The actionable half of the merge-slot diagnostic. It differs by severity and by the slot's shape: a Scaffold
+	/// slot the template fills is never the right destination, a single-element slot can only be reached by a
+	/// merge, and a collection slot the target lacks needs the platform's two-step idiom.
+	/// </summary>
+	private static string DescribeMergeSlotRemedy(bool blocks, bool slotHoldsLoneObject) {
+		if (blocks) {
+			return "Place the child in a page container instead: its own "
 				+ $"\"{InsertOperationName}\" with \"{PropertyNamePropertyName}\": \"items\" on a container "
 				+ "this page or its template declares, plus a \"layoutConfig\". A button in the Scaffold "
-				+ "navigation slots is not shown on the mobile designer canvas even when it does apply."
-			: slotHoldsLoneObject
-				? "This slot holds a single element rather than a collection, so a merge is the ONLY route to it: "
-					+ $"an \"{InsertOperationName}\" needs a container and throws on a property that is null or "
-					+ "absent. It applies when the target's slot is null or absent, and is discarded when the "
-					+ "target already holds an element there. Do NOT convert it to an array."
-				: "To author into a collection slot the target genuinely lacks, use the platform's two-step idiom: "
-					+ $"a \"{MergeOperationName}\" that creates the slot as an empty array, then one "
-					+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
-					+ $"\"{InsertOperationName}\" into a property the target does not carry throws.");
+				+ "navigation slots is not shown on the mobile designer canvas even when it does apply.";
+		}
+		if (slotHoldsLoneObject) {
+			return "This slot holds a single element rather than a collection, so a merge is the ONLY route to "
+				+ $"it: an \"{InsertOperationName}\" needs a container and throws on a property that is null or "
+				+ "absent. It applies when the target's slot is null or absent, and is discarded when the target "
+				+ "already holds an element there. Do NOT convert it to an array.";
+		}
+		return "To author into a collection slot the target genuinely lacks, use the platform's two-step idiom: "
+			+ $"a \"{MergeOperationName}\" that creates the slot as an empty array, then one "
+			+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
+			+ $"\"{InsertOperationName}\" into a property the target does not carry throws.";
+	}
 
 
 	/// <summary>
