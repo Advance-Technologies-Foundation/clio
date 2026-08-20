@@ -920,6 +920,97 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-95347: returns valid=true for a mobile list body whose item-scope attributes are declared ONLY inside the collection attribute's nested viewModelConfig.attributes map and bound from the list's itemLayout. Before this fix the binding validator collected only top-level attribute names, rejected this body as undeclared, and pushed authors to re-declare the attributes at page root — creating the duplicate declarations that break mobile-runtime saves.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts itemLayout bindings to nested item-scope attributes")]
+	[AllureDescription("Sends a mobile list body where the itemLayout binds to an attribute declared only in the collection attribute's viewModelConfig.attributes, and verifies validate-page returns valid=true end-to-end with no undeclared-binding error.")]
+	public async Task PageValidateTool_Should_Accept_ItemLayout_Binding_To_Nested_Collection_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithNestedItemScopeAttributes = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_LeadName" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithNestedItemScopeAttributes);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "SimilarLeadListDS_LeadName is declared in the collection attribute's nested viewModelConfig.attributes — the item scope the itemLayout binding resolves against at mobile runtime — so no root-level duplicate declaration is required");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "a correctly-nested item-scope declaration must not be reported as an undeclared binding");
+	}
+
+	[Test]
+	[Description("ENG-95347 counterpart guard: returns valid=false when the itemLayout binds to a name absent from BOTH the root attributes map and the collection attribute's nested viewModelConfig.attributes — accepting nested declarations must not turn the undeclared-binding check off.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page still rejects an itemLayout binding to an undeclared attribute")]
+	[AllureDescription("Sends the same nested-declaration mobile list body but binds the itemLayout title to a name declared nowhere, and verifies validate-page returns valid=false with the undeclared-binding error naming it.")]
+	public async Task PageValidateTool_Should_Reject_ItemLayout_Binding_To_Undeclared_Nested_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithUndeclaredNestedBinding = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_NotDeclared" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithUndeclaredNestedBinding);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "SimilarLeadListDS_NotDeclared is declared neither at the root attributes map nor in the nested item-scope attributes, so the binding cannot resolve at mobile runtime");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("SimilarLeadListDS_NotDeclared"),
+			because: "the undeclared-binding error must name the attribute so the agent can fix the declaration before writing");
+	}
+
+	[Test]
 	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]

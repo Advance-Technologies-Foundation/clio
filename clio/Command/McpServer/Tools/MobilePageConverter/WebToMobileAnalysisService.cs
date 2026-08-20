@@ -136,7 +136,12 @@ public static class WebToMobileAnalysisService {
 		int sourceNamedCount = bundle.ViewConfig is null ? 0 : CollectComponentNames(bundle.ViewConfig).Count;
 		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
-			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames, mobileTypesByName, mobileByType, webBaselineNodes);
+			// A container declared in `nonConvertingScopeContainers` (e.g. MainHeader) must NOT be pruned as chrome:
+			// its descendants need it in the tree as an ancestor for `path` matching, and the walk then treats it as
+			// a non-converting scope that emits no mobile element of its own. This is decoupled from any rule's
+			// `path` on purpose (see CollectScopeContainerNames).
+			IReadOnlySet<string> scopeContainerNames = CollectScopeContainerNames(rules);
+			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames);
 			templatePruned = true;
 		}
 
@@ -582,6 +587,11 @@ public static class WebToMobileAnalysisService {
 				WalkStructure(items, string.IsNullOrEmpty(name) ? parentName : name,
 					containerNameMap, webByType, mobileByType, structure, namesByType);
 			}
+			// Descend NON-items child-element slots (a button's menuItems, an ExpansionPanel's tools) so their
+			// components appear in sourceStructure / componentSuggestions / mobileContracts — otherwise the guide
+			// would insert a converted nested type (e.g. crt.MenuItem) it publishes no contract for.
+			WalkStructure(ChildComponentSlots(node), string.IsNullOrEmpty(name) ? parentName : name,
+				containerNameMap, webByType, mobileByType, structure, namesByType);
 		}
 	}
 
@@ -635,8 +645,83 @@ public static class WebToMobileAnalysisService {
 			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
 				CollectComponentNames(items, names);
 			}
+			// Also descend NON-items child-element slots (e.g. a header's tools, a Scaffold's floatAction) so a
+			// component the template declares outside items still enters the name baseline.
+			CollectComponentNames(ChildComponentSlots(obj), names);
 		}
 	}
+
+	/// <summary>
+	/// The NON-<c>items</c> child-element slots of a System.Text.Json node, as one array: every property value that
+	/// is a component object (has a <c>crt.*</c> <c>type</c>) or a collection of them (e.g. <c>tools</c>,
+	/// <c>menuItems</c>, or the single-object <c>floatAction</c> → <c>crt.FloatingActionButton</c>). A DATA/config
+	/// array or object (no <c>crt.*</c> type) is not included, so ordinary values are never mistaken for components.
+	/// This lets the template collectors see components the same way the element-map walk does, so a component in a
+	/// non-items slot is not treated as page-authored (and the retarget target FAB is discoverable for validation).
+	/// </summary>
+	private static JsonArray ChildComponentSlots(JsonObject obj) {
+		var collected = new JsonArray();
+		foreach (KeyValuePair<string, JsonNode> pair in obj) {
+			if (string.Equals(pair.Key, "items", StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			if (pair.Value is JsonObject single && IsComponentObject(single)) {
+				collected.Add(single.DeepClone());
+			} else if (pair.Value is JsonArray array) {
+				foreach (JsonNode element in array) {
+					if (element is JsonObject component && IsComponentObject(component)) {
+						collected.Add(component.DeepClone());
+					}
+				}
+			}
+		}
+		return collected;
+	}
+
+	/// <summary>
+	/// The NON-<c>items</c> child-element nodes of a Newtonsoft node, as a fresh JArray of CLONES: every property
+	/// value that is a component object (<c>crt.*</c> <c>type</c>) or a member of a collection of them
+	/// (<c>tools</c>, <c>menuItems</c>, …). Clones so the result can be walked read-only without reparenting the
+	/// source tree. A DATA/config array or object (no <c>crt.*</c> type) is excluded. Used by the read-only
+	/// structure/baseline passes so they see components in non-items slots the same way the element-map walk does.
+	/// </summary>
+	private static JArray ChildComponentSlots(JObject node) {
+		var collected = new JArray();
+		foreach (JProperty prop in node.Properties()) {
+			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			if (prop.Value is JObject single && IsComponentObject(single)) {
+				collected.Add(single.DeepClone());
+			} else if (prop.Value is JArray array) {
+				foreach (JToken element in array) {
+					if (element is JObject component && IsComponentObject(component)) {
+						collected.Add(component.DeepClone());
+					}
+				}
+			}
+		}
+		return collected;
+	}
+
+	/// <summary>True when a System.Text.Json object is a view component — carries a string <c>type</c> starting
+	/// with <c>crt.</c>.</summary>
+	private static bool IsComponentObject(JsonObject obj) =>
+		StringProp(obj, "type") is { Length: > 0 } type && type.StartsWith("crt.", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>True when a Newtonsoft object is a view component — a string <c>type</c> starting <c>crt.</c>.</summary>
+	private static bool IsComponentObject(JObject obj) =>
+		obj["type"]?.Type == JTokenType.String
+		&& obj["type"].ToString().StartsWith("crt.", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// A STRUCTURAL child-element array (Newtonsoft): a non-empty array in which every element is a component
+	/// object. Unlike <see cref="IsChildElementArray"/> this does NOT require the members to resolve to a mobile
+	/// type — it is the "is this a nested component collection to VISIT?" test used by the chrome-prune pass (which
+	/// runs before any registry/rules context and must visit every nested component regardless of convertibility).
+	/// </summary>
+	private static bool IsComponentArray(JArray array) =>
+		array.Count > 0 && array.All(element => element is JObject obj && IsComponentObject(obj));
 
 	/// <summary>
 	/// Collects a name → component-TYPE map for every named component in a merged viewConfig tree
@@ -668,6 +753,9 @@ public static class WebToMobileAnalysisService {
 			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
 				CollectComponentTypesByName(items, map);
 			}
+			// Non-items child-element slots too, so a name→type outside items (e.g. floatAction →
+			// FloatingActionButton) is known — a retarget into it can then be validated against the template.
+			CollectComponentTypesByName(ChildComponentSlots(obj), map);
 		}
 	}
 
@@ -704,6 +792,9 @@ public static class WebToMobileAnalysisService {
 			if (node["items"] is JArray items) {
 				CollectComponentNodesByName(items, map);
 			}
+			// Non-items child-element slots too, so a component the web template declares outside items enters the
+			// delta baseline and is not treated as page-authored.
+			CollectComponentNodesByName(ChildComponentSlots(node), map);
 		}
 	}
 
@@ -736,6 +827,9 @@ public static class WebToMobileAnalysisService {
 			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
 				CollectParentByName(items, string.IsNullOrWhiteSpace(name) ? parentName : name, map);
 			}
+			// Non-items child-element slots too (tools, floatAction, …), so a component nested outside items still
+			// resolves to its parent for positional placement.
+			CollectParentByName(ChildComponentSlots(obj), string.IsNullOrWhiteSpace(name) ? parentName : name, map);
 		}
 	}
 
@@ -753,7 +847,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlySet<string> baseline,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
-		IReadOnlyDictionary<string, JObject> webBaselineNodes) {
+		IReadOnlyDictionary<string, JObject> webBaselineNodes,
+		IReadOnlySet<string> scopeContainerNames) {
 		var result = new JArray();
 		foreach (JToken token in nodes) {
 			if (token is not JObject node) {
@@ -784,20 +879,43 @@ public static class WebToMobileAnalysisService {
 				&& !string.IsNullOrEmpty(type)
 				&& string.Equals(mobileTwinType, type, StringComparison.OrdinalIgnoreCase)
 				&& !isContainerLike;
+			// A container declared in `nonConvertingScopeContainers` (e.g. MainHeader) is KEPT even when it is
+			// inherited chrome: the conversion needs it in the tree so its descendants retain it as an ancestor for
+			// `path` matching. The walk then treats it as a non-converting scope (it emits no mobile element of its
+			// own). Membership is the explicit scope list, NOT any rule's `path`.
+			bool isScopeContainer = !string.IsNullOrEmpty(name) && scopeContainerNames.Contains(name);
 			bool isTemplateOwned = !string.IsNullOrEmpty(name)
 				&& baseline.Contains(name)
-				&& !isMappedTwin && !isAutoTwin;
+				&& !isMappedTwin && !isAutoTwin && !isScopeContainer;
 			if (isTemplateOwned) {
-				// Drop the template node itself; hoist any surviving (application) descendants up.
+				// Drop the template node itself; hoist any surviving (application) descendants up — from items AND
+				// from non-items child-element slots (tools, menuItems), so a page-authored component nested outside
+				// items is not silently discarded with the template container.
 				if (items is not null) {
-					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes)) {
+					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames)) {
 						result.Add(survivor);
+					}
+				}
+				foreach (JProperty prop in node.Properties()) {
+					if (!string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)
+						&& prop.Value is JArray childArray && IsComponentArray(childArray)) {
+						foreach (JToken survivor in PruneTemplateComponents(childArray, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames)) {
+							result.Add(survivor);
+						}
 					}
 				}
 				continue;
 			}
 			if (items is not null) {
-				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes);
+				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames);
+			}
+			// Prune non-items child-element slots in place too, so a component nested in a KEPT container's
+			// tools/menuItems is chrome-subtracted (or kept) consistently with items.
+			foreach (JProperty prop in node.Properties().ToList()) {
+				if (!string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)
+					&& prop.Value is JArray childArray && IsComponentArray(childArray)) {
+					prop.Value = PruneTemplateComponents(childArray, containerNameMap, componentMap, baseline, mobileTypesByName, mobileByType, webBaselineNodes, scopeContainerNames);
+				}
 			}
 			result.Add(node);
 		}
@@ -885,15 +1003,16 @@ public static class WebToMobileAnalysisService {
 	/// <c>value.type</c> that then gates the template in <see cref="ApplyConversionTemplates"/>. Null when no
 	/// template-group entry matches.
 	/// </summary>
-	private static string ResolveTemplateTargetType(WebToMobilePageConversionRules rules, JObject node) {
+	private static string ResolveTemplateTargetType(WebToMobilePageConversionRules rules, JObject node,
+		IReadOnlyList<string> sourceAncestors) {
 		if (rules?.Components is null) {
 			return null;
 		}
 		foreach (ComponentEquivalenceRule entry in rules.Components) {
-			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates || !MatchesAnyFilter(entry.Filters, node)) {
+			if (!RuleAppliesTo(entry, node, sourceAncestors)) {
 				continue;
 			}
-			foreach (ViewConfigTemplateRule template in templates) {
+			foreach (ViewConfigTemplateRule template in entry.ViewConfigTemplates) {
 				if (template.Value is { } value && value.ValueKind == JsonValueKind.Object
 					&& value.TryGetProperty("type", out JsonElement type) && type.ValueKind == JsonValueKind.String) {
 					return type.GetString();
@@ -902,6 +1021,18 @@ public static class WebToMobileAnalysisService {
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// The single admission gate for a template-group entry, so the type, placement and value resolvers can never
+	/// drift out of sync about WHICH rules govern an element (each used to copy-paste this triplet). An entry
+	/// applies when it carries templates AND its <c>filters</c> match the node's type AND its <c>path</c> scope is
+	/// an ordered ancestor-name subsequence. Adding a fourth condition (a new filter dimension) is a one-line change
+	/// here that every resolver picks up at once.
+	/// </summary>
+	private static bool RuleAppliesTo(ComponentEquivalenceRule entry, JObject node, IReadOnlyList<string> sourceAncestors) =>
+		entry?.ViewConfigTemplates is { Count: > 0 }
+		&& MatchesAnyFilter(entry.Filters, node)
+		&& MatchesPath(entry.Path, sourceAncestors);
 
 	private static ComponentMappingCategory ParseCategory(string category) =>
 		Enum.TryParse(category, ignoreCase: true, out ComponentMappingCategory parsed)
@@ -1356,10 +1487,19 @@ public static class WebToMobileAnalysisService {
 				dropped.ExceptWith(emptyRemovedNames);
 			}
 			Dictionary<string, HashSet<string>> consumers = BuildAttrConsumers(tree);
+			// Attributes referenced by any SURVIVING element-map entry's prebuilt MobileValues are ALWAYS kept, even
+			// when the source-tree consumer walk (which descends only `items`) attributed the reference to a DROPPED
+			// parent. This is the load-bearing case for the header→FAB path: a dropdown button drops while its menu
+			// item flattens into FloatingActionButton.menuItems as a surviving insert whose MobileValues still carries
+			// e.g. `visible: "$CanPrint"` — without this, $CanPrint would be pruned as "only referenced by a dropped
+			// element" and the converted action would lose its access gate. Keying off what actually SHIPS makes the
+			// decision independent of how the tree is traversed.
+			HashSet<string> referencedBySurvivors = CollectAttributesReferencedBySurvivors(elementMap);
 			foreach (JProperty attr in attributes.Properties().ToList()) {
 				if (consumers.TryGetValue(attr.Name, out HashSet<string> users)
 					&& users.Count > 0
-					&& users.All(dropped.Contains)) {
+					&& users.All(dropped.Contains)
+					&& !referencedBySurvivors.Contains(attr.Name)) {
 					attr.Remove();
 				}
 			}
@@ -1425,6 +1565,32 @@ public static class WebToMobileAnalysisService {
 		foreach (Match match in Regex.Matches(json, @"\$([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.None, RegexTimeout)) {
 			yield return match.Groups[1].Value;
 		}
+	}
+
+	/// <summary>
+	/// Every viewModelConfig attribute referenced by a SURVIVING element-map entry's prebuilt <c>MobileValues</c> —
+	/// both plain <c>$Attr</c> bindings and <c>$Resources.Strings.&lt;attr&gt;</c> references. A surviving entry is
+	/// an <c>insert</c> or <c>merge</c> (a <c>drop</c> ships nothing; <c>relocate-children</c> is a routing hint with
+	/// no values). Used to KEEP an attribute a converted element still binds to even when the source-tree consumer
+	/// walk credited the reference to a dropped ancestor (a flattened FAB menu item vs its dropped dropdown parent).
+	/// </summary>
+	private static HashSet<string> CollectAttributesReferencedBySurvivors(List<ElementMapEntry> elementMap) {
+		var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap) {
+			if (entry.MobileValues is null
+				|| (!string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+					&& !string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase))) {
+				continue;
+			}
+			string json = entry.MobileValues.ToJsonString();
+			foreach (Match match in ResourceStringsRefPattern.Matches(json)) {
+				referenced.Add(match.Groups[1].Value);
+			}
+			foreach (Match match in Regex.Matches(json, @"\$([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.None, RegexTimeout)) {
+				referenced.Add(match.Groups[1].Value);
+			}
+		}
+		return referenced;
 	}
 
 	private static List<string> BuildConstraints(
@@ -1597,7 +1763,23 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
 		IReadOnlyDictionary<string, string> MobileTypesByName,
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
-		JObject WebBaselineResources);
+		JObject WebBaselineResources,
+		IReadOnlySet<string> ScopeContainerNames);
+
+	/// <summary>
+	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
+	/// <see cref="WebToMobilePageConversionRules.NonConvertingScopeContainers"/>, NOT inferred from any rule's
+	/// <c>path</c>. Such a container produces no element of its own, its subtree is walked in scope mode (a matching
+	/// action retargets, everything else drops), and it is KEPT through template-chrome pruning so its descendants
+	/// retain it as an ancestor for <c>path</c> matching (e.g. <c>MainHeader</c>). Decoupling this from <c>path</c>
+	/// is deliberate: a container whose name merely appears in some rule's path must NOT become a drop-everything
+	/// scope — otherwise a multi-element path like <c>["Outer","Inner"]</c> would make a standalone <c>Inner</c>
+	/// elsewhere silently drop its whole subtree.
+	/// </summary>
+	private static IReadOnlySet<string> CollectScopeContainerNames(WebToMobilePageConversionRules rules) =>
+		new HashSet<string>(
+			(rules?.NonConvertingScopeContainers ?? []).Where(name => !string.IsNullOrWhiteSpace(name)),
+			StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -1632,12 +1814,15 @@ public static class WebToMobileAnalysisService {
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
-			webBaselineResources);
+			webBaselineResources,
+			CollectScopeContainerNames(rules));
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
 
-	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName) {
+	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
+		string parentPropertyName = ItemsPropertyName, IReadOnlyList<string> sourceAncestors = null,
+		bool inNonConvertingScope = false) {
 		// Positional siblings: when this array holds a positional anchor container (e.g. CardContentWrapper),
 		// each sibling ABOVE it is placed above the mobile anchor (Tabs) — inserted into the anchor's parent
 		// (MainContainer) with an ascending index from 0 — and each sibling BELOW it is appended after.
@@ -1650,11 +1835,74 @@ public static class WebToMobileAnalysisService {
 			string type = node["type"]?.ToString();
 			JArray items = node["items"] as JArray;
 
-			// Anonymous wrapper: no entry, but recurse preserving the parent context.
+			// Anonymous wrapper: no entry, but recurse preserving the parent context (and the ancestor chain — a
+			// nameless wrapper contributes no ancestor name).
 			if (string.IsNullOrEmpty(name)) {
 				if (items is not null) {
-					WalkElements(ctx, items, mobileParentName);
+					WalkElements(ctx, items, mobileParentName, sourceAncestors: sourceAncestors,
+						inNonConvertingScope: inNonConvertingScope);
 				}
+				continue;
+			}
+
+			// A non-converting scope container (declared in `nonConvertingScopeContainers`, e.g. MainHeader): it
+			// produces NO mobile element of its own, but its subtree is walked in "scope" mode — a matching header
+			// action retargets (e.g. into FloatingActionButton.menuItems) and everything else is dropped, so the
+			// container and its unconverted content are not present on mobile.
+			if (!inNonConvertingScope && ctx.ScopeContainerNames.Contains(name)) {
+				IReadOnlyList<string> scopeAncestors = Append(sourceAncestors, name);
+				if (items is not null) {
+					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, scopeAncestors, inNonConvertingScope: true);
+				}
+				RecurseChildArrays(ctx, node, name, type, scopeAncestors, inNonConvertingScope: true);
+				continue;
+			}
+
+			// Inside a non-converting scope: only a node a conversion template RETARGETS (e.g. a header crt.Button /
+			// crt.MenuItem → FloatingActionButton.menuItems) that also has a CONVERTIBLE `clicked` is converted; it
+			// is emitted at the retargeted placement. Any other node (a container-only dropdown with no clicked of
+			// its own, an explicitly-unsupported clicked, a component no rule matches, or a retarget whose target the
+			// mobile template lacks) is dropped with a reason built FROM DATA — naming the scope container and the
+			// specific cause — and its lost action request is recorded so requestConversions reflects it. Either way
+			// the subtree is recursed IN SCOPE, so a dropdown's nested menuItems still flatten into the same target.
+			if (inNonConvertingScope) {
+				string scopeContainer = sourceAncestors?.LastOrDefault(a => ctx.ScopeContainerNames.Contains(a)) ?? name;
+				string scopedType = ResolveTemplateTargetType(ctx.Rules, node, sourceAncestors);
+				(string Parent, string Property)? scopedTarget = scopedType is null
+					? null
+					: ResolveTemplatePlacement(ctx, node, scopedType, name, ResolveParent(ctx, mobileParentName),
+						ItemsPropertyName, sourceAncestors);
+				ClickedConvertibility clicked = ClassifyClicked(ctx, node, out string scopedRequest);
+				bool targetMissing = scopedTarget is { } t && RetargetTargetMissing(ctx, t.Parent);
+				if (scopedTarget is { } target && clicked == ClickedConvertibility.Convertible && !targetMissing) {
+					CaptionResource scopedCaption = ResolveCaptionResource(ctx, node, name);
+					// BuildMobileValues → ProcessEventBindings converts (or keeps+flags) the clicked request in place,
+					// so the FAB menu item ships the MOBILE request, not the web one, and requestConversions records it.
+					JsonNode scopedValues = BuildMobileValues(ctx, node, name, scopedType, scopedCaption,
+						target.Parent, target.Property, sourceAncestors);
+					ctx.Out.Add(new ElementMapEntry {
+						WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = scopedType,
+						ParentName = target.Parent, PropertyName = target.Property, Index = null,
+						CaptionResource = scopedCaption, MobileValues = scopedValues,
+						Reason = $"action under non-converting scope '{scopeContainer}'; converted into {target.Parent}.{target.Property}"
+					});
+				} else {
+					(string dropReason, string requestLossReason) = ScopeDropReason(
+						scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
+					ctx.Out.Add(Drop(name, type, dropReason));
+					// Record the lost action so requestConversions surfaces it (BuildMobileValues did not run, so
+					// nothing recorded it yet). None-clicked nodes carry no request and nothing is recorded.
+					if (scopedRequest is not null) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = name, Binding = "clicked", WebRequest = scopedRequest, Reason = requestLossReason
+						});
+					}
+				}
+				IReadOnlyList<string> childScopeAncestors = Append(sourceAncestors, name);
+				if (items is not null) {
+					WalkElements(ctx, items, mobileParentName, ItemsPropertyName, childScopeAncestors, inNonConvertingScope: true);
+				}
+				RecurseChildArrays(ctx, node, name, scopedType ?? type, childScopeAncestors, inNonConvertingScope: true);
 				continue;
 			}
 
@@ -1687,7 +1935,7 @@ public static class WebToMobileAnalysisService {
 					Reason = TwinReason(name)
 				});
 				if (items is not null) {
-					WalkElements(ctx, items, twinMobileName);
+					WalkElements(ctx, items, twinMobileName, sourceAncestors: Append(sourceAncestors, name));
 				}
 				continue;
 			}
@@ -1723,7 +1971,7 @@ public static class WebToMobileAnalysisService {
 					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null)
 				});
 				if (items is not null) {
-					WalkElements(ctx, items, compRule.Mobile);
+					WalkElements(ctx, items, compRule.Mobile, sourceAncestors: Append(sourceAncestors, name));
 				}
 				continue;
 			}
@@ -1769,7 +2017,7 @@ public static class WebToMobileAnalysisService {
 						Reason = $"container type '{type}' has no mobile equivalent — its children are placed in {target}"
 					});
 					if (items is not null) {
-						WalkElements(ctx, items, target);
+						WalkElements(ctx, items, target, sourceAncestors: Append(sourceAncestors, name));
 					}
 					continue;
 				}
@@ -1784,21 +2032,47 @@ public static class WebToMobileAnalysisService {
 				// Resolved BEFORE the values are built: a view-config template may ECHO the placement so the
 				// shape it declares can be read in place, and echoing needs the value the entry will carry.
 				string containerParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+				string containerProperty = parentPropertyName;
+				int? containerIndex = isPositional ? place.Index : null;
+				bool containerRetargeted = false;
+				if (ResolveTemplatePlacement(ctx, node, type, name, containerParent, containerProperty, sourceAncestors)
+					is { } containerTarget) {
+					// A retarget into a parent the mobile template lacks is dropped, not emitted as an unresolvable
+					// insert (see the leaf branch). Container children are hoisted to the walk parent so they are not
+					// lost with the container that could not be placed.
+					if (RetargetTargetMissing(ctx, containerTarget.Parent)) {
+						ctx.Out.Add(Drop(name, type,
+							$"a conversion template retargets container '{name}' into '{containerTarget.Parent}', which is not "
+							+ "present on the mobile template — add it to the target template or adjust the rule"));
+						if (items is not null) {
+							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name));
+						}
+						continue;
+					}
+					containerParent = containerTarget.Parent;
+					containerProperty = containerTarget.Property;
+					containerIndex = null;
+					containerRetargeted = true;
+				}
 				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
-					containerParent, ItemsPropertyName);
+					containerParent, containerProperty, sourceAncestors);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
-					ParentName = containerParent, PropertyName = ItemsPropertyName,
-					Index = isPositional ? place.Index : null,
+					ParentName = containerParent, PropertyName = containerProperty,
+					Index = containerIndex,
 					CaptionResource = containerCaption,
 					MobileValues = containerValues,
-					Reason = isPositional
-						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-						: "container; mobile-supported"
+					Reason = containerRetargeted
+						? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
+						: isPositional
+							? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+							: "container; mobile-supported"
 				});
+				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
-					WalkElements(ctx, items, name);
+					WalkElements(ctx, items, name, sourceAncestors: containerChildAncestors);
 				}
+				RecurseChildArrays(ctx, node, name, type, containerChildAncestors);
 				continue;
 			}
 
@@ -1808,35 +2082,243 @@ public static class WebToMobileAnalysisService {
 			// the primary one), so a detail list bound to a non-primary page data source converts like any
 			// other leaf. Dropping it here used to remove whole detail sections — and, because emptiness
 			// cascades, their wrapper containers with them.
-			bool leafSupported = !string.IsNullOrEmpty(type) && ctx.MobileTypes.Contains(type);
 			// Conversion templates have PRIORITY: a component matched by a components[].filters group is converted
 			// via its template (whose value.type is the mobile type) BEFORE the registry-support check — the
 			// template path then builds the values inside BuildMobileValues. Only a component with no matching
 			// template falls back: kept as-is when the mobile registry supports it, else mapped by a
 			// type-equivalence rule (rule.Mobile[0], e.g. crt.Checkbox→crt.Toggle), else dropped.
-			string leafMobileType = ResolveTemplateTargetType(ctx.Rules, node)
-				?? (leafSupported ? type : FindRule(ctx.Rules, type)?.Mobile?.FirstOrDefault());
+			string leafMobileType = ResolveConvertedMobileType(ctx, node, sourceAncestors);
 			if (string.IsNullOrEmpty(leafMobileType)) {
 				ctx.Out.Add(Drop(name, type, $"type '{type}' not in mobile registry"));
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			string leafParent = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
+			string leafProperty = parentPropertyName;
+			int? leafIndex = isPositional ? place.Index : null;
+			// A conversion template may DRIVE placement: retarget the element into a declared container/property
+			// (appended, no index) instead of where the walk found it — e.g. a header button → FloatingActionButton.
+			bool leafRetargeted = false;
+			if (ResolveTemplatePlacement(ctx, node, leafMobileType, name, leafParent, leafProperty, sourceAncestors)
+				is { } leafTarget) {
+				// Never emit an unresolvable insert: when a template retargets into a parent the mobile template
+				// is known to lack, drop the element with a diagnostic instead. Nested actions are still recursed
+				// in scope so they too get an explicit outcome rather than vanishing under a missing target.
+				if (RetargetTargetMissing(ctx, leafTarget.Parent)) {
+					ctx.Out.Add(Drop(name, type,
+						$"a conversion template retargets '{name}' into '{leafTarget.Parent}', which is not present on the "
+						+ "mobile template — add it to the target template or adjust the rule"));
+					ClassifyClicked(ctx, node, out string missingTargetRequest);
+					if (missingTargetRequest is not null) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = name, Binding = "clicked", WebRequest = missingTargetRequest,
+							Reason = $"its element could not be placed (conversion target '{leafTarget.Parent}' is absent on the mobile template)"
+						});
+					}
+					RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name), inNonConvertingScope: true);
+					continue;
+				}
+				leafParent = leafTarget.Parent;
+				leafProperty = leafTarget.Property;
+				leafIndex = null;
+				leafRetargeted = true;
+			}
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
-				leafParent, ItemsPropertyName);
-			string leafReason = isPositional
-				? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
-				: "field/leaf; mobile-supported";
+				leafParent, leafProperty, sourceAncestors);
+			string leafReason = leafRetargeted
+				? $"field/leaf; retargeted by a conversion template into {leafParent}.{leafProperty}"
+				: isPositional
+					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+					: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
-				ParentName = leafParent, PropertyName = ItemsPropertyName,
-				Index = isPositional ? place.Index : null,
+				ParentName = leafParent, PropertyName = leafProperty,
+				Index = leafIndex,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
 				Reason = leafReason
 			});
+			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
+			// components are converted rather than carried verbatim inside the leaf's values. When the leaf itself
+			// was RETARGETED by a template, its subtree is descended IN SCOPE MODE so nested actions flatten to the
+			// same target (convert-or-drop) — the single placement rule shared with the non-converting-scope path,
+			// rather than nesting them under the moved element.
+			RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name),
+				inNonConvertingScope: leafRetargeted);
 		}
 	}
+
+	/// <summary>
+	/// Descend the node's child-element arrays OTHER than <c>items</c> (which the branch that owns the node recurses
+	/// itself, with its own parent context). A child-element array is recognised by SHAPE — see
+	/// <see cref="IsChildElementArray"/> — not by a hardcoded property-name list, so this generically covers
+	/// <c>menuItems</c> (crt.Button/crt.MenuItem), <c>tools</c> (crt.ExpansionPanel) and any future nested-component
+	/// property, while leaving data arrays (grid columns, a data source's sort/filter) alone. Each such array is
+	/// walked with the node's own mobile name as parent and the property name as the slot, so its components become
+	/// their own element-map entries under the right <c>propertyName</c>.
+	/// </summary>
+	private static void RecurseChildArrays(ElementMapContext ctx, JObject node, string mobileParentName,
+		string mobileType, IReadOnlyList<string> childAncestors, bool inNonConvertingScope = false) {
+		foreach (JProperty prop in node.Properties()) {
+			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			if (IsChildElementArray(ctx, mobileType, prop.Name, prop.Value, childAncestors)) {
+				WalkElements(ctx, (JArray)prop.Value, mobileParentName, prop.Name, childAncestors, inNonConvertingScope);
+			}
+		}
+	}
+
+	/// <summary>How a node's own <c>clicked</c> binding classifies for scope conversion.</summary>
+	private enum ClickedConvertibility {
+		/// <summary>No <c>clicked</c> event binding — a container-only node (e.g. a dropdown), not itself an action.</summary>
+		None,
+		/// <summary>The versioned map explicitly CLEARS this request's mobile target — a dead action on mobile.</summary>
+		ExplicitlyUnsupported,
+		/// <summary>Supported OR unknown/custom — the action converts (an unknown request is kept and flagged, aligning
+		/// with <see cref="ProcessOneEventBinding"/>, rather than silently dropped).</summary>
+		Convertible
+	}
+
+	/// <summary>
+	/// Classifies a node's OWN <c>clicked</c> binding — the gate for converting an action inside a non-converting
+	/// scope (e.g. a header button → FAB menu item). Only <c>clicked</c> is considered (a DIFFERENT secondary
+	/// binding being unsupported does not disqualify the action). The deciding difference from a hard "supported?"
+	/// gate: a request absent from BOTH the versioned map and the bundled set is UNKNOWN/custom, and is treated as
+	/// convertible-and-flagged (matching <see cref="ProcessOneEventBinding"/>) instead of dropped — a header button
+	/// wired to a <c>usr.*</c> request is exactly the button the feature is meant to convert.
+	/// </summary>
+	private static ClickedConvertibility ClassifyClicked(ElementMapContext ctx, JObject node, out string request) {
+		request = null;
+		if (node["clicked"] is not JObject clicked || !IsEventBinding(clicked)) {
+			return ClickedConvertibility.None;
+		}
+		request = clicked["request"].ToString();
+		return ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule) && string.IsNullOrWhiteSpace(rule.Mobile)
+			? ClickedConvertibility.ExplicitlyUnsupported
+			: ClickedConvertibility.Convertible;
+	}
+
+	/// <summary>
+	/// True when a template RETARGETS an element into a parent the mobile template is known NOT to provide, so
+	/// emitting an insert there would be unresolvable on apply. It decides "absent" ONLY when the mobile template's
+	/// component names were actually probed (<see cref="ElementMapContext.MobileTypesByName"/> non-empty); with none
+	/// probed (template unavailable/unknown) it returns false — absence cannot be proven, so the retarget stands and
+	/// the caller emits the insert as before rather than dropping a valid conversion on missing information.
+	/// </summary>
+	private static bool RetargetTargetMissing(ElementMapContext ctx, string parentName) =>
+		ctx.MobileTypesByName is { Count: > 0 } && !string.IsNullOrEmpty(parentName)
+		&& !ctx.MobileTypesByName.ContainsKey(parentName);
+
+	/// <summary>
+	/// Builds the element drop reason AND the request-loss reason for a node that did NOT convert inside a
+	/// non-converting scope, from the specific cause — so the report names the scope container and distinguishes an
+	/// absent target, an unsupported action, an unmatched component, and a container-only node instead of collapsing
+	/// them into one string. The mechanism is name-agnostic (any <c>nonConvertingScopeContainers</c> entry), so the
+	/// wording says "scope", not "header".
+	/// </summary>
+	private static (string DropReason, string RequestLossReason) ScopeDropReason(
+		string scopeContainer, string name, string scopedType, (string Parent, string Property)? scopedTarget,
+		ClickedConvertibility clicked, string request, bool targetMissing) {
+		if (targetMissing && scopedTarget is { } target) {
+			return ($"under non-converting scope '{scopeContainer}'; conversion target '{target.Parent}' is not present on "
+					+ $"the mobile template, so '{name}' cannot be placed — add a '{target.Parent}' to the target template or adjust the rule",
+				$"its element could not be placed (conversion target '{target.Parent}' is absent on the mobile template)");
+		}
+		if (clicked == ClickedConvertibility.ExplicitlyUnsupported) {
+			return ($"under non-converting scope '{scopeContainer}'; action '{request}' is not supported on the Creatio Mobile app",
+				$"'{request}' is not supported on the Creatio Mobile app; the action was dropped");
+		}
+		if (scopedType is null) {
+			return ($"under non-converting scope '{scopeContainer}'; no conversion rule matches this component in scope",
+				"no conversion rule matched the component in scope; its action was dropped");
+		}
+		// A convertible/absent clicked but no template placement, or a container-only node (no clicked): not itself
+		// an action to place. Its nested actions, if any, are still flattened by the in-scope recursion below.
+		return ($"under non-converting scope '{scopeContainer}'; not an action to place here (no own convertible clicked binding)",
+			"the component is not itself a placeable action; its action was dropped");
+	}
+
+	/// <summary>
+	/// The source-ancestor chain (outer→inner web element names) for the children of <paramref name="name"/>, i.e.
+	/// the node's own ancestors plus its name. A nameless node contributes nothing. Used to scope <c>path</c> rules.
+	/// </summary>
+	private static IReadOnlyList<string> Append(IReadOnlyList<string> ancestors, string name) {
+		if (string.IsNullOrEmpty(name)) {
+			return ancestors ?? [];
+		}
+		var result = new List<string>(ancestors ?? []) { name };
+		return result;
+	}
+
+	/// <summary>
+	/// True when a property value is a nested array of child VIEW ELEMENTS the walk can EMIT as its own
+	/// element-map entries — a NON-EMPTY <see cref="JArray"/> in which EVERY element is an object whose <c>type</c>
+	/// is a component type (a string starting with <c>crt.</c>) AND resolves to a mobile type in this scope (see
+	/// <see cref="ResolvesToMobileType"/>). This is how the walk recognises a child-element collection
+	/// (<c>items</c>, <c>menuItems</c>, <c>tools</c>, …) generically, without a hardcoded property-name list.
+	/// <para>
+	/// Two guards keep it conservative so it NEVER destroys a slot it cannot reconstruct:
+	/// </para>
+	/// <list type="bullet">
+	/// <item>Requiring EVERY element to be <c>crt.*</c>-typed (not just one) leaves a DATA/config array (grid column
+	/// objects keyed by <c>code</c>, a track-sizing <c>columns</c> array of strings, a data source's sort/filter, or
+	/// any array mixing components with non-component objects) carried verbatim as a value.</item>
+	/// <item>Requiring EVERY member to RESOLVE to a mobile type leaves a valid nested collection whose member type
+	/// has NO mobile counterpart — e.g. a body-level <c>crt.Button</c>'s <c>menuItems</c> of <c>crt.MenuItem</c>
+	/// when no conversion template applies here and the registry does not declare <c>crt.MenuItem</c> — carried
+	/// verbatim on its owner (a valid mobile input) instead of walked out into <c>Drop</c> entries that would strip
+	/// the slot and leave, say, a dropdown button with an empty menu. In a scope where a template DOES convert the
+	/// member (a header <c>crt.MenuItem</c> under <c>MainHeader</c>), the member resolves and the slot is walked.</item>
+	/// </list>
+	/// A string binding (<c>items: "$Attr"</c>) is not an array at all. A property the mobile registry declares as a
+	/// single <c>object</c> (e.g. <c>crt.List.itemLayout</c>, whose web array wrapper is coerced to an object) is a
+	/// nested CONFIG, not a collection to walk, so it is excluded even when its elements are <c>crt.*</c>-typed —
+	/// and, because the registry-shape check comes first, that exclusion holds even in the registry-degraded case
+	/// where the resolve check alone would already keep it carried. NOTE: only <c>crt.*</c> is recognised — an array
+	/// containing a custom <c>usr.*</c> component is not descended into (it is carried verbatim, as before).
+	/// </summary>
+	private static bool IsChildElementArray(ElementMapContext ctx, string mobileType, string propName, JToken value,
+		IReadOnlyList<string> childAncestors) {
+		if (value is not JArray array || array.Count == 0) {
+			return false;
+		}
+		// A registry-declared single-object slot (itemLayout, …) is carried and shape-coerced, never walked.
+		if (!string.IsNullOrEmpty(mobileType)
+			&& ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry) && entry is not null
+			&& ResolveExpectedShape(entry, propName) == JsonValueKind.Object) {
+			return false;
+		}
+		foreach (JToken element in array) {
+			if (element is not JObject obj
+				|| obj["type"]?.Type != JTokenType.String
+				|| !obj["type"].ToString().StartsWith("crt.", StringComparison.OrdinalIgnoreCase)
+				|| !ResolvesToMobileType(ctx, obj, childAncestors)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// <summary>
+	/// The mobile type a node converts to — a conversion template that matches it in scope (highest priority), else
+	/// the same type when the mobile registry supports it, else the first type-equivalence rule target. Null when
+	/// the node has no mobile counterpart. This is the single source of the leaf's resolved type and of the
+	/// "can this nested member be re-emitted?" test in <see cref="IsChildElementArray"/>, so the walk and the
+	/// child-array detection can never disagree about what converts.
+	/// </summary>
+	private static string ResolveConvertedMobileType(ElementMapContext ctx, JObject node,
+		IReadOnlyList<string> sourceAncestors) {
+		string type = node["type"]?.ToString();
+		return ResolveTemplateTargetType(ctx.Rules, node, sourceAncestors)
+			?? (!string.IsNullOrEmpty(type) && ctx.MobileTypes.Contains(type)
+				? type
+				: FindRule(ctx.Rules, type)?.Mobile?.FirstOrDefault());
+	}
+
+	/// <summary>True when the node resolves to a mobile type (see <see cref="ResolveConvertedMobileType"/>).</summary>
+	private static bool ResolvesToMobileType(ElementMapContext ctx, JObject node, IReadOnlyList<string> sourceAncestors) =>
+		!string.IsNullOrEmpty(ResolveConvertedMobileType(ctx, node, sourceAncestors));
 
 	/// <summary>
 	/// The reason line for a template-mapped component twin: the rule's business <c>note</c> (what the
@@ -2193,7 +2675,8 @@ public static class WebToMobileAnalysisService {
 	/// <c>label</c> is synthesized. Returns null for an unknown mobile type.
 	/// </summary>
 	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName,
-		string mobileType, CaptionResource caption, string parentName, string propertyName) {
+		string mobileType, CaptionResource caption, string parentName, string propertyName,
+		IReadOnlyList<string> sourceAncestors) {
 		if (string.IsNullOrEmpty(mobileType)) {
 			return null;
 		}
@@ -2201,9 +2684,10 @@ public static class WebToMobileAnalysisService {
 		var roots = new TemplateRoots(
 			new JObject { ["name"] = mobileName, ["parentName"] = parentName, ["propertyName"] = propertyName },
 			node);
-		// The conversion templates that govern this element (matched by filters + declared target type + placement
-		// echo). Resolved up front because whether — and how much of — the source is carried depends on them.
-		IReadOnlyList<ViewConfigTemplateRule> templates = MatchingConversionTemplates(ctx, node, mobileType, roots);
+		// The conversion templates that govern this element (matched by filters + path scope + declared target type +
+		// placement echo). Resolved up front because whether — and how much of — the source is carried depends on them.
+		IReadOnlyList<ViewConfigTemplateRule> templates =
+			MatchingConversionTemplates(ctx, node, mobileType, sourceAncestors);
 		bool hasTemplate = templates.Count > 0;
 		bool preserve = templates.Any(t => t.PreserveSourceProperties);
 		// Carry the source properties when there is NO template (a registry-supported leaf or a type-equivalence
@@ -2212,13 +2696,26 @@ public static class WebToMobileAnalysisService {
 		// ones the template names — the value binding included). An AUTHORITATIVE template (present, no flag)
 		// carries nothing here: its values are formed exclusively from what it declares. Either way layoutConfig is
 		// copied just below, since it is layout placement rather than a component property.
+		// The ancestor chain the node's OWN child arrays are walked under — the node's ancestors plus its name. This
+		// is EXACTLY the chain RecurseChildArrays passes, so the carry-skip below and the walk agree byte-for-byte
+		// on which slots are structural (walked out) versus carried.
+		IReadOnlyList<string> childAncestors = Append(sourceAncestors, mobileName);
 		if (!hasTemplate || preserve) {
 			HashSet<string> excluded = preserve ? PreserveExcludedProps : ExcludedSourceProps;
 			foreach (JProperty prop in node.Properties()) {
-				// `items` as an ARRAY is the child view-element collection — structural, emitted by the tree
-				// walk, not a value. `items` as a STRING is a real collection binding (e.g. "$Attr") and is
-				// carried like any other property below.
-				if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+				// `items` as an ARRAY is ALWAYS the structural child-element slot (emitted by the tree walk), empty
+				// or not; as a STRING it is a real collection binding (items: "$Attr") and is carried below.
+				if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)
+					&& prop.Value is JArray) {
+					continue;
+				}
+				// Any OTHER slot the walk descended as a child-element collection (menuItems, tools, … — recognised
+				// by shape AND resolving to mobile types, see IsChildElementArray) is structural too: skip exactly
+				// those so the walk's entries are never duplicated as a value. A genuinely-empty data/config array
+				// (options: [], columns: []) is NOT a child-element array — IsChildElementArray requires a non-empty
+				// array of crt.*-typed, mobile-resolvable members — so it is carried verbatim, preserving both a
+				// legitimate empty collection and its ability to overwrite a non-empty template default via the diff.
+				if (IsChildElementArray(ctx, mobileType, prop.Name, prop.Value, childAncestors)) {
 					continue;
 				}
 				if (excluded.Contains(prop.Name)) {
@@ -2291,32 +2788,36 @@ public static class WebToMobileAnalysisService {
 		new(@"\{\{\s*([^{}]+?)\s*\}\}", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
-	/// The conversion templates that govern this element: from every <c>components</c> entry whose
-	/// <c>filters</c> match the node, the <see cref="ViewConfigTemplateRule"/>s whose declared <c>value.type</c>
-	/// equals the resolved mobile type and whose placement echoes the converter's own.
+	/// The conversion templates that govern this element: from every <c>components</c> entry whose <c>filters</c>
+	/// (and <c>path</c> scope) match the node, the <see cref="ViewConfigTemplateRule"/>s whose declared
+	/// <c>value.type</c> equals the resolved mobile type.
 	/// </summary>
 	/// <remarks>
 	/// Because templates have priority in leaf resolution (<see cref="ResolveTemplateTargetType"/> runs before
 	/// the registry check), the resolved type for a matched component IS the template's <c>value.type</c>, so the
 	/// type gate passes; the filters narrow which source elements an entry applies to, they do not authorize. A
 	/// template declares the mobile structure the web node has no counterpart for — e.g. a grid → list
-	/// <c>crt.ListItem</c> under <c>itemLayout</c> — and, for a field conversion, the full target shape. Its
-	/// placement is READ-ONLY: a template whose <c>parentName</c>/<c>propertyName</c> is anything but the
-	/// converter's own value is skipped WHOLE (<see cref="EchoesItsOwnPlacement"/>), since honouring the value
-	/// while ignoring where it asked to go would ship a shape the rules file believes it placed elsewhere.
+	/// <c>crt.ListItem</c> under <c>itemLayout</c> — and, for a field conversion, the full target shape. Placement
+	/// no longer gates admission: a template may DRIVE placement by declaring a <c>parentName</c>/<c>propertyName</c>
+	/// that names a different target (<see cref="ResolveTemplatePlacement"/>), which retargets the element rather
+	/// than being refused; the value is applied regardless.
 	/// </remarks>
 	private static IReadOnlyList<ViewConfigTemplateRule> MatchingConversionTemplates(
-		ElementMapContext ctx, JObject node, string mobileType, TemplateRoots roots) {
+		ElementMapContext ctx, JObject node, string mobileType, IReadOnlyList<string> sourceAncestors) {
 		if (ctx.Rules?.Components is not { Count: > 0 } components) {
 			return [];
 		}
 		var matches = new List<ViewConfigTemplateRule>();
 		foreach (ComponentEquivalenceRule entry in components) {
-			if (entry?.ViewConfigTemplates is not { Count: > 0 } templates || !MatchesAnyFilter(entry.Filters, node)) {
+			if (!RuleAppliesTo(entry, node, sourceAncestors)) {
 				continue;
 			}
-			foreach (ViewConfigTemplateRule template in templates) {
-				if (DeclaresTargetType(template.Value, mobileType) && EchoesItsOwnPlacement(template, roots)) {
+			foreach (ViewConfigTemplateRule template in entry.ViewConfigTemplates) {
+				// Placement (parentName/propertyName) no longer gates admission: a template may DRIVE placement
+				// (retarget the element into a declared container/property — see ResolveTemplatePlacement), so its
+				// value is applied whether it echoes the walked position or names a different target. Only the
+				// declared target TYPE gates, so a template for another mobile type never applies here.
+				if (DeclaresTargetType(template.Value, mobileType)) {
 					matches.Add(template);
 				}
 			}
@@ -2330,7 +2831,7 @@ public static class WebToMobileAnalysisService {
 		// source.columns[0], source.columns[1:] — address the node's own arrays directly. There is no
 		// projection step and nothing to validate: a column code IS a real attribute name in the source
 		// config, so an entry never needs dropping, reordering, or repairing before the template sees it.
-		if (RenderTemplateToken(JToken.Parse(template.Value!.Value.GetRawText()), roots) is not JObject rendered) {
+		if (RenderTemplateToken(JToken.Parse(template.Value.Value.GetRawText()), roots) is not JObject rendered) {
 			return;
 		}
 		// Real authored content wins over anything synthesized. Only the STRUCTURE a template introduces counts —
@@ -2382,10 +2883,10 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>The roots a view-config template resolves its paths against, for ONE converted element.</summary>
 	/// <param name="Diff">
-	/// The operation being produced — <c>name</c>, <c>parentName</c>, <c>propertyName</c>. Read-only: a template
-	/// may echo these so the shape it declares can be read in place, but writing them is refused, because a
-	/// rules file that decided an element's identity or parent would desynchronize it from every other
-	/// <c>parentName</c> in the element map.
+	/// The operation being produced — <c>name</c>, <c>parentName</c>, <c>propertyName</c>. <c>name</c> is read-only
+	/// (a template may echo it, never rename the element). <c>parentName</c>/<c>propertyName</c> may be ECHOED to
+	/// keep the walked placement or rendered to a DIFFERENT value to RETARGET the element (see
+	/// <see cref="ResolveTemplatePlacement"/>).
 	/// </param>
 	/// <param name="Source">The WEB node being converted; <c>source.*</c> paths read off it directly.</param>
 	private sealed record TemplateRoots(JObject Diff, JObject Source);
@@ -2440,24 +2941,34 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// True when the template leaves identity and placement to the converter. Each field must either be absent
-	/// or resolve to the value the converter already computed — a rules file able to set them would rename or
-	/// reparent an element behind the element map's back. Refusing the WHOLE template is deliberate: honouring
-	/// its value while ignoring where it asked to go would ship a shape the rules file believes it placed
-	/// somewhere else.
+	/// The placement a matching conversion template DRIVES for a node, or null to keep the walked position. A
+	/// template may declare a <c>parentName</c>/<c>propertyName</c>: when it renders to the value the converter
+	/// already computed (an ECHO, e.g. <c>"{{ diff.parentName }}"</c>) it changes nothing; when it renders to a
+	/// DIFFERENT value it RETARGETS the element — the converted element is emitted as an insert into that declared
+	/// container/property (appended, no index) instead of where the walk found it. This is how a source element is
+	/// regrouped elsewhere on mobile (e.g. a header button → <c>FloatingActionButton.menuItems</c>). A template that
+	/// declares neither field, or only echoes, returns null. When several matching templates disagree, the first
+	/// declaring a retarget wins.
 	/// </summary>
-	private static bool EchoesItsOwnPlacement(ViewConfigTemplateRule template, TemplateRoots roots) =>
-		EchoesRoot(template.ParentName, roots, "parentName")
-		&& EchoesRoot(template.PropertyName, roots, "propertyName");
-
-	private static bool EchoesRoot(string declared, TemplateRoots roots, string field) {
-		if (string.IsNullOrWhiteSpace(declared)) {
-			return true;
+	private static (string Parent, string Property)? ResolveTemplatePlacement(
+		ElementMapContext ctx, JObject node, string mobileType, string mobileName,
+		string computedParent, string computedProperty, IReadOnlyList<string> sourceAncestors) {
+		var roots = new TemplateRoots(
+			new JObject { ["name"] = mobileName, ["parentName"] = computedParent, ["propertyName"] = computedProperty },
+			node);
+		foreach (ViewConfigTemplateRule template in MatchingConversionTemplates(ctx, node, mobileType, sourceAncestors)) {
+			string parent = RenderPlacementField(template.ParentName, roots) ?? computedParent;
+			string property = RenderPlacementField(template.PropertyName, roots) ?? computedProperty;
+			if (!string.Equals(parent, computedParent, StringComparison.Ordinal)
+				|| !string.Equals(property, computedProperty, StringComparison.Ordinal)) {
+				return (parent, property);
+			}
 		}
-		JToken rendered = RenderTemplateString(declared, roots, item: null);
-		string expected = roots.Diff[field]?.ToString();
-		return string.Equals(rendered?.ToString(), expected, StringComparison.Ordinal);
+		return null;
 	}
+
+	private static string RenderPlacementField(string declared, TemplateRoots roots) =>
+		string.IsNullOrWhiteSpace(declared) ? null : RenderTemplateString(declared, roots, item: null)?.ToString();
 
 	/// <summary>
 	/// Lays the rendered structure over the values: a key the template names WINS, a key it does not name
@@ -2491,6 +3002,27 @@ public static class WebToMobileAnalysisService {
 		string type = node["type"]?.ToString();
 		return filters.Any(f => !string.IsNullOrWhiteSpace(f?.Type)
 			&& string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>
+	/// True when a rule's <c>path</c> scope is satisfied for a node. Empty (or null) path = no scoping (matches
+	/// anywhere), mirroring <see cref="MatchesAnyFilter"/>. Otherwise the path names must appear, by name and IN
+	/// ORDER, as a SUBSEQUENCE of the node's source ancestors (outer→inner) — at any depth, so intermediate
+	/// containers or child-arrays between two path elements are allowed. Single element <c>["MainHeader"]</c> means
+	/// "the node has an ancestor named MainHeader anywhere above it".
+	/// </summary>
+	private static bool MatchesPath(IReadOnlyList<string> rulePath, IReadOnlyList<string> ancestors) {
+		if (rulePath is not { Count: > 0 }) {
+			return true;
+		}
+		int matched = 0;
+		foreach (string ancestor in ancestors ?? []) {
+			if (matched < rulePath.Count
+				&& string.Equals(ancestor, rulePath[matched], StringComparison.OrdinalIgnoreCase)) {
+				matched++;
+			}
+		}
+		return matched == rulePath.Count;
 	}
 
 	/// <summary>
@@ -3165,10 +3697,11 @@ public static class WebToMobileAnalysisService {
 	/// <para>
 	/// Template protection is structural, not name-based: a template merge twin is <c>merge</c> (never
 	/// <c>insert</c>) and carries no parentName, and the tab-area layers are synthesized AFTER this pass
-	/// (only for tabs that survived it), so neither is ever a candidate. crt.ExpansionPanel is judged on
-	/// items only by AGREED DECISION (2026-08-03): a panel whose items emptied is removed even when its
-	/// <c>tools</c> zone carries buttons — the discarded tools are called out in the drop reason so the
-	/// loss stays visible in the conversion report.
+	/// (only for tabs that survived it), so neither is ever a candidate. A container is judged on ALL its
+	/// surviving children, in any slot: an ExpansionPanel whose <c>tools</c> buttons converted (structural
+	/// child-array traversal) is occupied by them and kept, so it is removed only when nothing — items OR
+	/// tools — survived. (This supersedes the earlier items-only decision of 2026-08-03, made when tools were
+	/// discarded rather than converted.)
 	/// </para>
 	/// <para>
 	/// Removal is IN PLACE (each removed entry is replaced by a drop at the same position, so the report
@@ -3210,7 +3743,7 @@ public static class WebToMobileAnalysisService {
 				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
 					continue;
 				}
-				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason(entry));
+				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason);
 				removed.Add(entry.WebName);
 				removedMobileNames.Add(entry.MobileName);
 				anyRemovedThisRound = true;
@@ -3233,16 +3766,12 @@ public static class WebToMobileAnalysisService {
 		&& (entry.MobileValues is not JsonObject values || values["items"] is null);
 
 	/// <summary>
-	/// The drop reason for a removed empty container. When the container carried a non-empty <c>tools</c>
-	/// zone (an ExpansionPanel with header buttons but no items — removed by the items-only decision), the
-	/// discarded tools are named so the silent removal stays visible in the conversion report.
+	/// The drop reason for a removed empty container. A container's <c>tools</c>/<c>menuItems</c> buttons are now
+	/// converted as their OWN child entries (structural child-array traversal), so a panel is empty here only when
+	/// none of its children — items OR tools — survived; each discarded child already carries its own drop entry, so
+	/// the loss is visible without naming it again on the parent.
 	/// </summary>
-	private static string EmptyContainerDropReason(ElementMapEntry entry) {
-		const string basis = "empty container — no mobile content survived conversion";
-		return entry.MobileValues is JsonObject values && values["tools"] is JsonArray { Count: > 0 }
-			? basis + "; its tools content is discarded with it"
-			: basis;
-	}
+	private const string EmptyContainerDropReason = "empty container — no mobile content survived conversion";
 
 	/// <summary>
 	/// Re-compacts positional insert indexes after the drop passes: <c>:top</c> siblings of an anchor are
