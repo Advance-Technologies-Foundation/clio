@@ -96,6 +96,35 @@ public sealed class WorkspaceSyncToolE2ETests {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Creates a fresh empty workspace, restores it through the real MCP server, and verifies the warning plus preservation of the packages placeholder.")]
+	[AllureTag(RestoreToolName)]
+	[AllureName("Restore workspace warns and preserves packages placeholder when package list is empty")]
+	[AllureDescription("Uses the real create-workspace command to produce Packages: [] and packages/placeholder.txt, invokes restore-workspace through MCP against the sandbox, and verifies success-with-warning without deleting the placeholder.")]
+	public async Task RestoreWorkspace_Should_Warn_And_Preserve_Placeholder_When_Package_List_Is_Empty() {
+		// Arrange
+		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync(includePackage: false);
+		string placeholderPath = Path.Combine(arrangeContext.WorkspacePath, "packages", "placeholder.txt");
+		AssertFileExists(placeholderPath,
+			"create-workspace should provide the placeholder that makes the no-op restore side effect observable");
+
+		// Act
+		WorkspaceCommandActResult restoreResult =
+			await ActWorkspaceCommandAsync(arrangeContext, RestoreToolName, arrangeContext.WorkspacePath);
+
+		// Assert
+		AssertToolCallSucceeded(restoreResult);
+		AssertCommandExitCode(restoreResult, 0,
+			"an empty eligible package list is a successful no-op with an actionable warning");
+		AssertIncludesInfoMessage(restoreResult,
+			"successful restore-workspace execution should still include its completion message");
+		AssertIncludesWarningMessage(restoreResult, "workspaceSettings.json",
+			"the MCP result should plainly identify why no packages were downloaded");
+		AssertFileExists(placeholderPath,
+			"an empty restore must not clear the packages root or delete its placeholder");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Drives restore-workspace (a [RequiresPackage(\"cliogate\")] command) through the real clio MCP server against a sandbox where cliogate IS installed, and verifies the environment-scoped package-requirement gate does NOT false-positive: the tool runs to completion instead of refusing. "
 		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, and the invalid-environment tests fail during command resolution BEFORE the gate runs. Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
 	[AllureTag(RestoreToolName)]
@@ -147,7 +176,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		});
 	}
 
-	private static async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync() {
+	private static async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync(bool includePackage = true) {
 		return await AllureApi.Step("Arrange workspace-sync sandbox lifecycle", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -163,7 +192,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 			string workspacePath = Path.Combine(rootDirectory, workspaceName);
 			string restoreWorkspaceName = $"restore-{Guid.NewGuid():N}";
 			string restoreWorkspacePath = Path.Combine(rootDirectory, restoreWorkspaceName);
-			string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+			string packageName = includePackage ? $"Pkg{Guid.NewGuid():N}".Substring(0, 18) : string.Empty;
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 
 			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
@@ -171,8 +200,11 @@ public sealed class WorkspaceSyncToolE2ETests {
 				settings.Sandbox.EnvironmentName!,
 				cancellationTokenSource.Token);
 			await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
-			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			PackageMetadata packageMetadata = ReadPackageMetadata(workspacePath, packageName);
+			PackageMetadata? packageMetadata = null;
+			if (includePackage) {
+				await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
+				packageMetadata = ReadPackageMetadata(workspacePath, packageName);
+			}
 
 			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 			return new WorkspaceSyncArrangeContext(
@@ -343,6 +375,25 @@ public sealed class WorkspaceSyncToolE2ETests {
 			because: "successful command execution should emit human-readable diagnostics");
 		actResult.Execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
 			because: because);
+	}
+
+	[AllureStep("Assert execution includes Warning message")]
+	private static void AssertIncludesWarningMessage(
+		WorkspaceCommandActResult actResult,
+		string expectedText,
+		string because) {
+		actResult.Execution.Output.Should().NotBeNullOrEmpty(
+			because: "a successful no-op restore should emit human-readable diagnostics");
+		actResult.Execution.Output!.Should().Contain(message =>
+			message.MessageType == LogDecoratorType.Warning &&
+			message.Value != null &&
+			message.Value.ToString()!.Contains(expectedText, StringComparison.Ordinal),
+			because: because);
+	}
+
+	[AllureStep("Assert file exists")]
+	private static void AssertFileExists(string path, string because) {
+		File.Exists(path).Should().BeTrue(because: because);
 	}
 
 	[AllureStep("Assert invalid environment diagnostics mention the missing environment name")]
