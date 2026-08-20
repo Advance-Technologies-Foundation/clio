@@ -87,12 +87,36 @@ namespace Clio.Workspaces
 		#region Methods: Private
 
 		private WorkspaceSettings CreateDefaultWorkspaceSettings(string[] packages) {
-			Version lv = _creatioSdk.LastVersion;
 			WorkspaceSettings workspaceSettings = new WorkspaceSettings {
-				ApplicationVersion = new Version(lv.Major, lv.Minor, lv.Build),
+				ApplicationVersion = ResolveApplicationVersion(),
 				Packages = packages
 			};
 			return workspaceSettings;
+		}
+
+		/// <summary>
+		/// Resolves the application version the new workspace records, or null when the SDK version list
+		/// cannot be read.
+		/// </summary>
+		/// <remarks>
+		/// Creating a workspace needs no SDK version - only restore does. Reading it from NuGet used to be
+		/// unconditional, so an unreachable api.nuget.org made create-workspace exit 1 with "Index was out of
+		/// range": nobody offline or behind a corporate perimeter could create a workspace at all, not even an
+		/// empty one (issue #1119). The version is now left unset, with a warning naming what that costs.
+		/// </remarks>
+		private Version ResolveApplicationVersion() {
+			try {
+				Version lastVersion = _creatioSdk.LastVersion;
+				return new Version(lastVersion.Major, lastVersion.Minor, lastVersion.Build);
+			} catch (Exception exception) {
+				// Every failure mode here is the same failure - the version is unknown - and none of them is a
+				// reason to refuse to create the workspace, so they are caught as one.
+				_logger.WriteWarning(
+					$"The workspace application version could not be resolved: {exception.Message} " +
+					$"The workspace is created without one; set ApplicationVersion in {WorkspaceSettingsPath} " +
+					"before running restore.");
+				return null;
+			}
 		}
 
 		private void CreateWorkspaceSettingsFile(bool isAddingPackageNames = false) {
