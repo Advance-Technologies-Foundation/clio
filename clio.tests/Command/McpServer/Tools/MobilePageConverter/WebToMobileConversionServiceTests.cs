@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
@@ -28,6 +29,26 @@ public sealed class WebToMobileConversionServiceTests {
 			"crt.ColorButton", "crt.FolderTree", "crt.FolderTreeActions", "crt.QuickFilter"
 		};
 
+	/// <summary>The shipped grid → list view-config template, so the fixture exercises the real skeleton.</summary>
+	private static readonly ViewConfigTemplateRule ListTemplate = new() {
+		PreserveSourceProperties = true,
+		ParentName = "{{ diff.parentName }}",
+		PropertyName = "{{ diff.propertyName }}",
+		Value = JsonDocument.Parse("""
+			{
+			  "type": "crt.List",
+			  "name": "{{ diff.name }}",
+			  "items": "{{ source.items }}",
+			  "itemLayout": {
+			    "name": "{{ diff.name }}_ListItem",
+			    "type": "crt.ListItem",
+			    "title": "${{ source.columns[0].code }}",
+			    "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+			  }
+			}
+			""").RootElement.Clone()
+	};
+
 	private static readonly WebToMobilePageConversionRules Rules = new() {
 		Templates = [
 			new TemplateMappingRule {
@@ -41,7 +62,12 @@ public sealed class WebToMobileConversionServiceTests {
 		Components = [
 			new ComponentEquivalenceRule { Web = ["crt.Checkbox"], Mobile = ["crt.Toggle"], Category = "AlternativeAvailable" },
 			new ComponentEquivalenceRule { Web = ["crt.HtmlEditor"], Mobile = ["crt.RichTextEditor"], Category = "AlternativeAvailable" },
-			new ComponentEquivalenceRule { Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"], Category = "AlternativeAvailable" },
+			new ComponentEquivalenceRule {
+				Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"],
+				Category = "AlternativeAvailable",
+				Filters = [new ElementFilterRule { Type = "crt.DataGrid" }, new ElementFilterRule { Type = "crt.DataTable" }],
+				ViewConfigTemplates = [ListTemplate]
+			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
 				Category = "AlternativeAvailable", PrimaryWeb = "crt.FolderTree"
@@ -4015,6 +4041,759 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the rules file must not be able to rename an element either");
 		vals["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium",
 			because: "the non-identity keys of the same rule still apply");
+	}
+
+	#endregion
+
+	#region Grid to list row synthesis (ENG-95046)
+
+	/// <summary>A web detail grid exactly as the detail wizard authors it: a string items binding plus the
+	/// column array whose first entry is the display column.</summary>
+	private static PageBundleInfo GridWithColumns() => Bundle(
+		viewConfigJson: """
+		[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+			{ "name": "ProductsList", "type": "crt.DataGrid", "items": "$ProductsList",
+			  "visible": true, "fitContent": true,
+			  "primaryColumnName": "ProductsListDS_Id",
+			  "selectionState": "$ProductsList_SelectionState",
+			  "_selectionOptions": { "attribute": "ProductsList_SelectionState" },
+			  "features": { "rows": { "selection": { "enable": true } } },
+			  "columns": [
+				{ "id": "c1", "code": "ProductsListDS_Product", "path": "Product", "caption": "#ResourceString(ProductsListDS_Product)#" },
+				{ "id": "c2", "code": "ProductsListDS_Price", "path": "Price", "caption": "#ResourceString(ProductsListDS_Price)#" },
+				{ "id": "c3", "code": "ProductsListDS_Quantity", "path": "Quantity", "caption": "#ResourceString(ProductsListDS_Quantity)#" } ] } ] } ]
+		""",
+		modelConfigJson: """{ "dataSources": { "PDS": {}, "ProductsListDS": {} } }""",
+		viewModelConfigJson: """
+		{ "attributes": { "ProductsList": { "isCollection": true, "modelConfig": { "path": "ProductsListDS" } } } }
+		""");
+
+	[Test]
+	[Description("A web grid converted to crt.List carries a DETERMINISTIC itemLayout: a crt.ListItem whose title is the FIRST column's binding as a STRING and whose body is one { value } entry per remaining column, in web column order.")]
+	public void Analyze_MobileValues_GridConvertedToList_CarriesDeterministicItemLayout() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.MobileType.Should().Be("crt.List", because: "the components rule maps a web grid onto the mobile list");
+		grid.MobileValues.Should().NotBeNull(because: "an insert must ship ready-to-paste values");
+		JsonNode values = grid.MobileValues;
+
+		JsonNode itemLayout = values["itemLayout"];
+		itemLayout.Should().NotBeNull(
+			because: "the row is what makes a mobile list render at all — leaving it for the caller to build from "
+				+ "prose produced pages with no title and no body (ENG-95046)");
+		itemLayout["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "authoring itemLayout bypasses the registry's GUID-macro default, so the row needs a stable name "
+				+ "of its own — and merge-by-name against a template depends on it");
+		itemLayout["type"]?.GetValue<string>().Should().Be("crt.ListItem",
+			because: "the mobile row element is inserted into the list's itemLayout");
+		itemLayout["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the registry declares crt.ListItem.title as a STRING binding — an object wrapper renders an "
+				+ "empty Title column in the designer, which is the second half of ENG-95046");
+		itemLayout["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the first web column is the display column and its code is the bound attribute name");
+		JsonArray body = itemLayout["body"]?.AsArray();
+		body.Should().HaveCount(2, because: "every column after the first becomes a body row");
+		body.Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$ProductsListDS_Price", "$ProductsListDS_Quantity" },
+			because: "body rows keep the web column order");
+	}
+
+	[Test]
+	[Description("Building the row READS the grid's columns and leaves them in place: the synthesized itemLayout coexists with the grid-only properties, because pruning what mobile crt.List does not declare belongs to the registry (ENG-91859), not to this mapping.")]
+	public void Analyze_MobileValues_GridConvertedToList_SynthesizesRowWithoutRemovingItsSource() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
+
+		// Assert
+		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		values["itemLayout"]?["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the row is built from the column array, which is the only reason this mapping reads it");
+		values["columns"].Should().NotBeNull(
+			because: "feeding the row must not consume the source — a per-rule drop list would be a second pruning "
+				+ "mechanism beside the registry one, and carrying these is not what broke the reported page: a list "
+				+ "whose title was an object rendered its columns fine with them present (ENG-95046)");
+		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
+			because: "the collection binding is the grid property the mobile list genuinely needs");
+		values["type"]?.GetValue<string>().Should().Be("crt.List",
+			because: "synthesizing the row must not disturb the element's own type");
+	}
+
+	/// <summary>Rules whose grid to list template is the given raw JSON skeleton.</summary>
+	private static WebToMobilePageConversionRules RulesWithTemplate(
+		string valueJson, string parentName = "{{ diff.parentName }}", string propertyName = "{{ diff.propertyName }}",
+		IReadOnlyList<ElementFilterRule> filters = null) => new() {
+		Components = [
+			new ComponentEquivalenceRule {
+				Web = ["crt.DataGrid"], Mobile = ["crt.List"], Category = "AlternativeAvailable",
+				Filters = filters ?? [new ElementFilterRule { Type = "crt.DataGrid" }],
+				ViewConfigTemplates = [new ViewConfigTemplateRule {
+					PreserveSourceProperties = true,
+					ParentName = parentName, PropertyName = propertyName,
+					Value = JsonDocument.Parse(valueJson).RootElement.Clone()
+				}]
+			}
+		]
+	};
+
+	private static MobilePageConversionGuide AnalyzeWithRules(
+		PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null, rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+	private const string RowOnlyTemplate = """
+		{ "type": "crt.List", "itemLayout": { "name": "{{ diff.name }}_ListItem", "type": "crt.ListItem",
+		                  "title": "${{ source.columns[0].code }}",
+		                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
+		""";
+
+	[Test]
+	[Description("The BUNDLED rules render a correct row end to end. Every other template test builds its own skeleton, so a typo in the shipped JSON — a mistyped token, a wrong slot name — would pass all of them; this is the only test that reads what actually ships.")]
+	public void Analyze_ViewConfigTemplate_BundledRules_RenderTheRowTheyDeclare() {
+		// Arrange — the real rules file, not a fixture.
+		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), shipped);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "the shipped template must actually produce the row it declares");
+		row["type"]?.GetValue<string>().Should().Be("crt.ListItem");
+		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "the shipped skeleton interpolates the element name into the row's own name");
+		row["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the registry declares crt.ListItem.title a plain string binding, and the { value } BODY shape "
+				+ "there renders an empty Title column while the body rows still look correct (ENG-95046)");
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "Product is the first column of a type a row title accepts");
+		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$ProductsListDS_Price", "$ProductsListDS_Quantity" },
+			because: "the remaining columns become body entries in source order");
+	}
+
+	[Test]
+	[Description("The bundled crt.Checkbox → crt.Toggle template uses preserveSourceProperties: every source property is copied EXCEPT the ones the template names (type), and the type is retyped to crt.Toggle. So the binding (control/value) and the field props carry across, layoutConfig is copied, and a source property the template does not name (inversed) is kept — the caller is not asked to rebuild anything.")]
+	public void Analyze_ViewConfigTemplate_BundledCheckboxTemplate_PreservesSourceAndRetypes() {
+		// Arrange — a real web crt.Checkbox with its full set of field properties.
+		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "IsActive", "type": "crt.Checkbox",
+				  "layoutConfig": { "column": 1, "colSpan": 1, "row": 3, "rowSpan": 1 },
+				  "value": true, "inversed": false,
+				  "label": "$Resources.Strings.IsActive", "ariaLabel": "", "labelPosition": "auto",
+				  "tooltip": "", "control": "$IsActive" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, shipped);
+
+		// Assert
+		ElementMapEntry toggle = Element(guide, "IsActive");
+		toggle.MobileType.Should().Be("crt.Toggle", because: "the template's value.type wins the leaf resolution");
+		JsonObject vals = toggle.MobileValues!.AsObject();
+		vals["type"]!.GetValue<string>().Should().Be("crt.Toggle",
+			because: "type is the one property the template names, so it is retyped rather than copied");
+		vals["control"]!.GetValue<string>().Should().Be("$IsActive",
+			because: "preserveSourceProperties carries the value binding across for a like-for-like field conversion");
+		vals["value"]!.GetValue<bool>().Should().BeTrue(because: "value is copied from source");
+		vals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.IsActive");
+		vals.ContainsKey("layoutConfig").Should().BeTrue(because: "layoutConfig is always copied — it is layout placement, not a component property");
+		vals.ContainsKey("inversed").Should().BeTrue(
+			because: "preserveSourceProperties keeps every source property the template does not name, inversed included");
+	}
+
+	[Test]
+	[Description("A path that resolves to nothing OMITS its key instead of shipping JSON null. \"title\": null is a PRESENT key of the wrong shape, and the two JSON stacks disagree about it — Newtonsoft reports it present while System.Text.Json reports it absent — so the row and anything derived from it would silently disagree.")]
+	public void Analyze_ViewConfigTemplate_PathWithoutValue_OmitsTheKeyRatherThanEmittingJsonNull() {
+		// Arrange — a path the node does not carry, alongside one it does.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "itemLayout": { "type": "crt.ListItem",
+			                  "title": "${{ source.columns[0].code }}",
+			                  "icon": "{{ source.thereIsNoSuchProperty }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		string row = Element(guide, "ProductsList").MobileValues["itemLayout"]!.ToJsonString();
+		row.Should().NotContain("icon",
+			because: "an unresolved path must drop its key — a JSON null would travel to the page as a present "
+				+ "property of the wrong shape, and this is asserted on the RAW text because an indexer check "
+				+ "passes either way: the two JSON stacks disagree about whether such a key exists");
+		row.Should().Contain("$ProductsListDS_Product",
+			because: "dropping one key must not disturb the ones that resolved");
+	}
+	[Test]
+	[Description("$each expands one body entry per remaining slot member and PARTIAL interpolation works inside a longer string, so the row's name is the element name plus the template's literal suffix.")]
+	public void Analyze_ViewConfigTemplate_EachExpandsAndPartialInterpolationWorks() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), RulesWithTemplate(RowOnlyTemplate));
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "a token inside a longer string interpolates in place rather than replacing the whole value");
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "a string that is EXACTLY one token yields that slot's own value");
+		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$ProductsListDS_Price", "$ProductsListDS_Quantity" },
+			because: "$each repeats its as-body once per remaining member, in order, with item bound to the member");
+	}
+
+	[Test]
+	[Description("A single-column grid still ships the body COLLECTION as an empty array: $each over an empty slot must yield [] rather than dropping the key, so the row keeps the shape the mobile row declares.")]
+	public void Analyze_ViewConfigTemplate_EachOverEmptySlot_ShipsAnEmptyCollection() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OneCol", "type": "crt.DataGrid", "items": "$OneCol",
+				  "columns": [ { "id": "c1", "code": "OneColDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, RulesWithTemplate(RowOnlyTemplate));
+
+		// Assert
+		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name");
+		row["body"].Should().NotBeNull(because: "the collection key must survive an empty expansion");
+		row["body"]?.AsArray().Should().BeEmpty(because: "the only column became the title, leaving nothing below it");
+	}
+
+	[Test]
+	[Description("A template that tries to SET parentName is refused wholesale — nothing is rendered — because placement is the converter's to compute and a rules file able to reparent an element would desynchronize it from every other parentName in the element map.")]
+	public void Analyze_ViewConfigTemplate_TemplateSettingItsOwnParent_IsRefused() {
+		// Arrange
+		WebToMobilePageConversionRules rules = RulesWithTemplate(RowOnlyTemplate, parentName: "SomeOtherContainer");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.MobileValues["itemLayout"].Should().BeNull(
+			because: "the whole template is skipped, not just its placement field — honouring the value while "
+				+ "ignoring where it asked to go would ship a row the rules file believes it placed elsewhere");
+		grid.ParentName.Should().NotBe("SomeOtherContainer",
+			because: "the converter's own placement stands — a rules file must not be able to reparent an element, "
+				+ "which is the whole reason the placement fields are read-only");
+	}
+
+	[Test]
+	[Description("An unknown token drops its key instead of shipping the literal {{ … }} text, so a typo in the rules file degrades to a missing property rather than a page carrying template syntax as data.")]
+	public void Analyze_ViewConfigTemplate_UnknownToken_DropsTheKey() {
+		// Arrange
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "{{ row.tittle }}",
+			                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		string row = Element(guide, "ProductsList").MobileValues["itemLayout"]!.ToJsonString();
+		row.Should().NotContain("tittle").And.NotContain("{{",
+			because: "template syntax reaching the page as a value is worse than an absent property — it would "
+				+ "bind to nothing and read as configured");
+	}
+
+	[Test]
+	[Description("A $each NESTED inside another $each body still expands: it must never fall through to the plain object branch, which would write the template's own $each/as keys into the page as data.")]
+	public void Analyze_ViewConfigTemplate_NestedEach_ExpandsInsteadOfLeakingTemplateKeys() {
+		// Arrange — the inner repeat walks the same slot again, which is enough to prove the branch is reached.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			                  "body": { "$each": "source.columns[1:]", "as": {
+			                      "value": "${{ code }}",
+			                      "nested": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		string rendered = row!.ToJsonString();
+		rendered.Should().NotContain("$each").And.NotContain("\"as\"",
+			because: "template syntax reaching the page as data binds to nothing and reads as configured — the "
+				+ "same failure the unknown-token case guards against");
+		row["body"]?.AsArray()[0]?["nested"]?.AsArray().Should().HaveCount(2,
+			because: "the inner repeat must expand over its slot, not be copied verbatim");
+	}
+
+	[Test]
+	[Description("The MANDATED template, verbatim, against the diff operation it was specified for: every token resolves, the row lands under itemLayout with a string title and one body entry per remaining column, and every carried property the template does not name survives.")]
+	public void Analyze_ViewConfigTemplate_MandatedFormat_RendersTheSpecifiedOperation() {
+		// Arrange — the values of the insert operation exactly as specified.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{
+				  "name": "DataGrid_rcdtw3f",
+				  "layoutConfig": { "column": 1, "colSpan": 1, "row": 1, "rowSpan": 1 },
+				  "type": "crt.DataGrid",
+				  "features": { "rows": { "selection": { "enable": true, "multiple": true } } },
+				  "items": "$DataGrid_rcdtw3f",
+				  "primaryColumnName": "DataGrid_rcdtw3fDS_Id",
+				  "columns": [
+					{ "id": "74498dd4-4574-275e-6178-c2514d6d3439", "code": "DataGrid_rcdtw3fDS_Name",
+					  "caption": "#ResourceString(DataGrid_rcdtw3fDS_Name)#", "dataValueType": 28 },
+					{ "id": "cebffd2c-ec87-7237-2c06-db6ca27ef019", "code": "DataGrid_rcdtw3fDS_Address",
+					  "caption": "#ResourceString(DataGrid_rcdtw3fDS_Address)#", "dataValueType": 29 } ],
+				  "placeholder": false
+				} ] } ]
+			""");
+		// The template exactly as specified, including the brace spacing.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{
+			    "type": "crt.List",
+			    "name":  "{{ diff.name }}",
+			    "items": "{{ source.items }}",
+			    "itemLayout": {
+			        "name":  "{{ diff.name }}_ListItem",
+			        "type":  "crt.ListItem",
+			        "title": "${{source.columns[0].code}}",
+			        "body":  { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+			    }
+			}
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "DataGrid_rcdtw3f");
+		JsonNode values = grid.MobileValues;
+		grid.MobileType.Should().Be("crt.List");
+		values["type"]?.GetValue<string>().Should().Be("crt.List");
+		values["items"]?.GetValue<string>().Should().Be("$DataGrid_rcdtw3f",
+			because: "{{ source.items }} reads the operation's own collection binding");
+
+		JsonNode row = values["itemLayout"];
+		row.Should().NotBeNull(because: "the template's nested structure is what the web node had no counterpart for");
+		row["name"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3f_ListItem",
+			because: "a token inside a longer string interpolates in place");
+		row["type"]?.GetValue<string>().Should().Be("crt.ListItem");
+		row["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the $ sits OUTSIDE the braces, so the rendered title is a plain binding string");
+		row["title"]?.GetValue<string>().Should().Be("$DataGrid_rcdtw3fDS_Name",
+			because: "MediumText is a type the row's lead accepts, so the first column leads");
+		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$DataGrid_rcdtw3fDS_Address" },
+			because: "the slice yields every column after the lead, and ${{ code }} binds the member's own code");
+
+		values["layoutConfig"]?["rowSpan"]?.GetValue<int>().Should().Be(1,
+			because: "the template does not name layoutConfig, so it survives — this is what keeps the element placed");
+		values["features"]?["rows"]?["selection"]?["enable"]?.GetValue<bool>().Should().BeTrue(
+			because: "a carried property the template does not name is untouched; pruning what mobile crt.List does "
+				+ "not declare belongs to the registry (ENG-91859), not to this mapping");
+		values["primaryColumnName"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3fDS_Id");
+		values["columns"].Should().NotBeNull(because: "feeding the row must not consume its source");
+		values.ToJsonString().Should().NotContain("{{").And.NotContain("$each",
+			because: "no template syntax may reach the page as data");
+	}
+
+	[Test]
+	[Description("A MERGE twin gets no templated row: the template renders for an INSERT only. A merge is found by name against the element the mobile template already provides, has no parent or slot to echo, and carries a delta — a whole skeleton would overwrite the row that template supplies.")]
+	public void Analyze_ViewConfigTemplate_MergeTwin_IsNotRenderedFromTheTemplate() {
+		// Arrange — a list page: the mobile template provides List/ListItem, so the web grid is a merge twin.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "items": "$DataTable",
+				  "columns": [
+					{ "id": "c1", "code": "PDS_LeadName", "dataValueType": 28 },
+					{ "id": "c2", "code": "PDS_Status", "dataValueType": 28 } ] } ] } ]
+			""");
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["ListContainer"] = "ListContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+
+		// Act — the SHIPPED rules, so the grid → list template is present and would fire if merge were included.
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null,
+			WebToMobilePageConversionRulesCatalog.LoadBundled(), templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: containerNameMap,
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
+		twin.Operation.Should().Be("merge", because: "the mobile template already provides the element");
+		twin.MobileValues?["itemLayout"].Should().BeNull(
+			because: "rendering the skeleton here would replace the ListItem the mobile template supplies, and the "
+				+ "guidance tells the caller to configure that one by merge-by-name instead");
+		twin.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
+			because: "nothing was synthesized for a merge, so neither row note may fire and send the caller "
+				+ "looking for a row the converter never claimed to build");
+	}
+
+	[Test]
+	[Description("A template writing `items` as an ARRAY is refused the same way the copy rule refuses it: that shape is the child view-element collection, emitted by the tree walk, so writing it into a parent's values would nest a whole child tree inside them.")]
+	public void Analyze_ViewConfigTemplate_ItemsAsAnArray_IsNotWrittenIntoTheValues() {
+		// Arrange — the shape a container template would produce, and the one the copy rule already skips.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "items": [ { "name": "Nested", "type": "crt.Label" } ],
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
+			because: "the STRING collection binding the page declared survives; the template's array form is the "
+				+ "structural child collection and must not overwrite it");
+		values["itemLayout"].Should().NotBeNull(
+			because: "refusing one key must not discard the rest of the render");
+	}
+
+	[Test]
+	[Description("A template nested past the render budget has that branch abandoned rather than being followed down. The rules file is fetched at runtime, so a template is input from OUTSIDE the binary; the JSON reader stops anything deeper than its own limit, and this budget bounds the recursion within it.")]
+	public void Analyze_ViewConfigTemplate_PathologicallyNestedTemplate_DegradesInsteadOfExhaustingTheStack() {
+		// Arrange — deep enough to pass the render budget, shallow enough that the JSON reader still accepts it,
+		// so this exercises THIS guard rather than the parser's.
+		var deep = new StringBuilder("\"leaf\"");
+		for (int i = 0; i < 50; i++) {
+			deep.Insert(0, "{ \"n\": ").Append(" }");
+		}
+		WebToMobilePageConversionRules rules = RulesWithTemplate($$$"""
+			{ "type": "crt.List",
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			                  "deep": {{{deep}}} } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row.Should().NotBeNull(
+			because: "everything within the budget still renders — the guard abandons the offending branch, it "
+				+ "does not discard the whole template");
+		row!["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "a sibling of the pathological branch is unaffected");
+	}
+
+	[Test]
+	[Description("A source.* token reads the WEB node by PATH, so a nested reference resolves instead of silently returning nothing — a rule author writing source.features.rows must get the value, not a missing property.")]
+	public void Analyze_ViewConfigTemplate_SourceToken_ResolvesANestedPath() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Nested", "type": "crt.DataGrid", "items": "$Nested",
+				  "features": { "rows": { "selection": { "enable": true } } },
+				  "columns": [ { "id": "c1", "code": "NestedDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			                  "flat": "{{ source.items }}",
+			                  "nested": "{{ source.features.rows.selection.enable }}",
+			                  "missing": "{{ source.features.nope.deeper }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		JsonNode row = Element(guide, "Nested").MobileValues["itemLayout"];
+		row["flat"]?.GetValue<string>().Should().Be("$Nested",
+			because: "a single-segment source token keeps working");
+		row["nested"]?.GetValue<bool>().Should().BeTrue(
+			because: "a dotted source token must resolve through the web node rather than being read as one key, "
+				+ "and a token that is exactly one reference yields the value's own type rather than its text");
+		row["missing"].Should().BeNull(
+			because: "a path that resolves to nothing drops its key, exactly like an unknown token");
+	}
+
+	[Test]
+	[Description("The render is laid OVER the carried values: a key the template names wins, a key it does not name survives untouched, and the element's identity and value binding are never writable from a template.")]
+	public void Analyze_ViewConfigTemplate_OverlaysCarriedValuesAndLeavesTheRestAlone() {
+		// Arrange — the template restates one carried key with a different value, claims the identity keys, and
+		// says nothing about layoutConfig, which the page needs and no rule names.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "ProductsList", "type": "crt.DataGrid", "items": "$ProductsList",
+				  "layoutConfig": { "column": 1, "colSpan": 2, "row": 3, "rowSpan": 4 },
+				  "columns": [ { "id": "c1", "code": "ProductsListDS_Name", "dataValueType": 28 } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "name": "WrongName",
+			  "items": "$OverlaidBinding",
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		JsonNode values = grid.MobileValues;
+		values["items"]?.GetValue<string>().Should().Be("$OverlaidBinding",
+			because: "a key the template NAMES wins — the shipped skeleton relies on that to declare the mobile "
+				+ "structure over what was carried");
+		values["layoutConfig"]?["colSpan"]?.GetValue<int>().Should().Be(2,
+			because: "a key the template does not name survives untouched, which is how the element keeps its "
+				+ "placement and the grid's own properties without any rule naming them");
+		values["type"]?.GetValue<string>().Should().Be("crt.List",
+			because: "a template cannot change what component an element IS — its declared type is the gate, so a "
+				+ "template naming a different one is not applied at all rather than partially honoured");
+		values["name"]?.GetValue<string>().Should().NotBe("WrongName",
+			because: "the copy rule refuses to carry the element identity on purpose, so a template filling that "
+				+ "gap would let the rules file rename an element and desynchronize every parentName referring to it");
+		grid.MobileName.Should().Be("ProductsList",
+			because: "the converter's own identity for the element stands regardless of what a template asked for");
+		values["itemLayout"].Should().NotBeNull(
+			because: "the structure the web node had no counterpart for is what a template is actually for");
+	}
+
+	[Test]
+	[Description("A filter that does not match the node suppresses the template entirely: filters NARROW which source elements a mapping's templates apply to, so a non-matching element keeps its own values and gets no row.")]
+	public void Analyze_ViewConfigTemplate_NonMatchingFilter_RendersNothing() {
+		// Arrange
+		WebToMobilePageConversionRules rules = RulesWithTemplate(
+			RowOnlyTemplate, filters: [new ElementFilterRule { Type = "crt.DataTable" }]);
+
+		// Act — the node is a crt.DataGrid, which the filter does not name
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.MobileValues["itemLayout"].Should().BeNull(
+			because: "the filter did not match, so this mapping's template must not apply to the element");
+		grid.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
+			because: "nothing was synthesized here, so neither row note may fire");
+	}
+
+	/// <summary>A mobile registry whose crt.ListItem declares each named input with the given raw descriptor.</summary>
+	private static IReadOnlyDictionary<string, ComponentRegistryEntry> RowRegistry(
+		params (string prop, string descriptorJson)[] inputs) {
+		var declared = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string prop, string descriptorJson) in inputs) {
+			declared[prop] = JsonDocument.Parse(descriptorJson).RootElement.Clone();
+		}
+		return new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.ListItem"] = new ComponentRegistryEntry { ComponentType = "crt.ListItem", Inputs = declared }
+		};
+	}
+
+	[Test]
+	[Description("A synthesized row value that CONTRADICTS a scalar the mobile registry declares is dropped rather than shipped: with body declared a string, the array body the synthesis builds is removed, while the string title the registry agrees with survives.")]
+	public void Analyze_MobileValues_SynthesizedRow_DropsValueContradictingADeclaredScalar() {
+		// Arrange — the producer declaring body as a scalar is the shape mismatch this guard exists for; the
+		// same check covers title, whose object-wrapped form RENDERS (empty Title column, body rows fine) and
+		// is therefore invisible to validate-page's client-engine simulation (ENG-95046).
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var mobile = RowRegistry(
+			("title", """{ "type": "string" }"""),
+			("body", """{ "type": "string" }"""));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["body"].Should().BeNull(
+			because: "the synthesis builds body as an array, and shipping an array where the registry declares a "
+				+ "scalar is exactly the class of defect this guard exists to stop");
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the title agrees with its declared string shape, so the guard must leave it alone");
+	}
+
+	[Test]
+	[Description("With the registry declaring the REAL crt.ListItem shapes — title a string, body an array — the scalar guard removes nothing: it must not become a second, stricter pruning pass over a row the converter built correctly.")]
+	public void Analyze_MobileValues_SynthesizedRow_KeepsEverythingTheRegistryAgreesWith() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var mobile = RowRegistry(
+			("title", """{ "type": "string" }"""),
+			("body", """{ "type": "array" }"""));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		JsonNode row = grid.MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "a correctly shaped title must survive the guard untouched");
+		row["body"]?.AsArray().Should().HaveCount(2,
+			because: "an array body matches the declared array input, so nothing is dropped");
+		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "a property the registry does not declare at all is not the guard's business");
+	}
+
+	[Test]
+	[Description("With no crt.ListItem entry in the mobile registry the row is shipped as built: an absent registry means unknown, not invalid, so the guard degrades to a no-op instead of stripping the row.")]
+	public void Analyze_MobileValues_SynthesizedRow_IsUntouchedWhenTheRegistryHasNoEntry() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act — mobileByType carries no crt.ListItem at all
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web,
+			mobileByType: Reg(("crt.List", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the converter must not withhold a row just because the registry cannot confirm its shape — "
+				+ "the mobile registry is still incomplete (ENG-91859)");
+		row["body"]?.AsArray().Should().HaveCount(2,
+			because: "the body is shipped for the same reason");
+	}
+
+	[Test]
+	[Description("A single-column grid yields a row with a title and an EMPTY body — the display column is the title, and there is nothing left to show underneath.")]
+	public void Analyze_MobileValues_SingleColumnGrid_YieldsTitleAndEmptyBody() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OneCol", "type": "crt.DataGrid", "items": "$OneCol",
+				  "columns": [ { "id": "c1", "code": "OneColDS_Name" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "one column is still enough to render a row");
+		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name",
+			because: "the single column is the display column, so it leads the row rather than sitting in the body");
+		row["body"].Should().NotBeNull(because: "the body collection is always present, so the shape is predictable");
+		row["body"].AsArray().Should().BeEmpty(because: "the only column became the title");
+	}
+
+	[Test]
+	[Description("A grid carrying no columns renders the template against an empty source: the itemLayout skeleton the template declares still ships (name + type + the always-present body collection), but the title path resolves to nothing and its key is dropped. The template addresses the source directly — there is no column-selection policy in code — so an absent source is just an empty render, and validate-page is the backstop for the empty row.")]
+	public void Analyze_MobileValues_GridWithoutColumns_YieldsAnEmptyRow() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "NoCols", "type": "crt.DataGrid", "items": "$NoCols" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "NoCols");
+		grid.Operation.Should().Be("insert", because: "a column-less grid still converts");
+		JsonNode row = grid.MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "the template's itemLayout skeleton renders even when the source has no columns");
+		row["type"]?.GetValue<string>().Should().Be("crt.ListItem", because: "the row element type is a template constant");
+		row["title"].Should().BeNull(because: "source.columns[0].code resolves to nothing, so the title key is dropped");
+		row["body"].AsArray().Should().BeEmpty(because: "the $each over an absent column slice ships an empty collection");
+	}
+
+	[Test]
+	[Description("Templates have PRIORITY over registry-support: a web type that IS in the mobile registry is still converted via a matching components[].filters template, resolving to the template's value.type and getting its row — the template wins the leaf resolution before the registry-support check.")]
+	public void Analyze_MobileValues_TemplateWins_EvenWhenTypeIsRegistrySupported() {
+		// Arrange — the grid's own type is ALSO in the mobile registry here; the template must still win, so a
+		// registry-supported type does not silently bypass its declared conversion.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SelfMapped", "type": "crt.DataGrid", "items": "$SelfMapped",
+				  "columns": [ { "id": "c1", "code": "SelfMappedDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+		var mobileWithGrid = new HashSet<string>(MobileTypes, StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileWithGrid, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), null, Rules, null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "SelfMapped");
+		grid.MobileType.Should().Be("crt.List",
+			because: "the matching template's value.type wins over keeping the registry-supported type as-is");
+		JsonNode row = grid.MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "the template builds the row even though crt.DataGrid is registry-supported");
+		row["title"]?.GetValue<string>().Should().Be("$SelfMappedDS_Name",
+			because: "the single column leads the row via the template");
+	}
+
+	[Test]
+	[Description("A node that authored its OWN row without a title gets NO missing-title note: the absence is the author's choice, not a source that had nothing acceptable to offer.")]
+	public void Analyze_Reason_AuthoredRowWithoutTitle_GetsNoNote() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Authored", "type": "crt.DataGrid", "items": "$Authored",
+				  "itemLayout": { "type": "crt.ListItem", "body": [ { "value": "$AuthoredDS_Any" } ] },
+				  "columns": [ { "id": "c1", "code": "AuthoredDS_Any", "dataValueType": 10 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "Authored");
+		grid.MobileValues["itemLayout"]["title"].Should().BeNull(because: "the fixture authored a row with no title, which is what makes this case distinguishable from a synthesized one");
+		grid.Reason.Should().NotContain("no title",
+			because: "the note explains that the SOURCE had no acceptable column; here the row was not "
+				+ "synthesized at all, so claiming that would be wrong");
+	}
+
+	[Test]
+	[Description("The row is emitted INSIDE the list's own values and never as a separate element-map entry: crt.List is not a container and itemLayout is an input, so an insert addressing it as a child slot fails the client-side container check and breaks the build of the WHOLE schema, not just the list.")]
+	public void Analyze_ElementMap_RowIsNeverASeparateInsert() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.MobileType == "crt.ListItem",
+			because: "the row is a value on the list, not an element of its own — emitting it as an entry would "
+				+ "invite the caller to insert it with parentName/propertyName, which the client rejects");
+		guide.ElementMap.Should().NotContain(e => e.PropertyName == "itemLayout",
+			because: "itemLayout is an input property, not a child slot; addressing it as one is what raises "
+				+ "\"is not a container for other items\" at schema build time");
+		Element(guide, "ProductsList").MobileValues["itemLayout"].Should().NotBeNull(
+			because: "the row travels nested inside the list's values, which is the shape the client engine accepts");
+	}
+
+	[Test]
+	[Description("A web node that already carries the target property keeps its own — authored content is never replaced by the synthesized row.")]
+	public void Analyze_MobileValues_GridWithOwnItemLayout_IsNotOverwritten() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Authored", "type": "crt.DataGrid", "items": "$Authored",
+				  "itemLayout": { "type": "crt.ListItem", "title": "$Hand_Written" },
+				  "columns": [ { "id": "c1", "code": "AuthoredDS_Ignored" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "Authored").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$Hand_Written",
+			because: "synthesis fills a gap; it must not clobber a row the source page actually authored");
 	}
 
 	#endregion

@@ -14,6 +14,7 @@ public class CreatioClientAdapter : IApplicationClient{
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly JsonConverter _jsonConverter;
 	private readonly IReauthExecutor _reauthExecutor;
+	private readonly ILoginDiagnostics _loginDiagnostics;
 
 	private CreatioClient Client => _lazyClient.Value;
 
@@ -26,7 +27,8 @@ public class CreatioClientAdapter : IApplicationClient{
 	// rather than resolved from DI. Tests pass a non-null executor through the internal
 	// constructor below to exercise the adapter in isolation from CreatioClient.
 	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
-		JsonConverter jsonConverter, IReauthExecutor reauthExecutor) {
+		JsonConverter jsonConverter, IReauthExecutor reauthExecutor,
+		ILoginDiagnostics loginDiagnostics = null) {
 		_lazyClient = lazyClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_jsonConverter = jsonConverter ?? new JsonConverter();
@@ -34,7 +36,13 @@ public class CreatioClientAdapter : IApplicationClient{
 		// shared across a long-lived MCP process can otherwise keep sending a stale cookie
 		// after long-running operations and start receiving the HTML login page instead of
 		// JSON for every subsequent request.
-		_reauthExecutor = reauthExecutor ?? new ReauthExecutor(() => _lazyClient.Value.Login());
+		// Like the reauth executor below, the diagnostics recorder is per-adapter state (its own client
+		// correlation token and attempt counter) rather than a DI service, so it defaults to a new
+		// instance here; the parameter exists so tests can substitute it and assert that every request
+		// method and both login paths really route through it.
+		_loginDiagnostics = loginDiagnostics ?? new LoginDiagnostics();
+		_reauthExecutor = reauthExecutor ?? new ReauthExecutor(
+			() => _loginDiagnostics.Track(() => _lazyClient.Value.Login(), LoginAttemptKind.Reauthentication));
 	}
 
 	#endregion
@@ -70,6 +78,16 @@ public class CreatioClientAdapter : IApplicationClient{
 		: this(lazyClient, null, null,
 			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor))) { }
 
+	// Test-only constructor for the diagnostics seam. Unlike the two constructors around it, the
+	// reauth executor MAY be null here: leaving it to the default is the only way to reach the
+	// Reauthentication login closure the default executor owns, which is precisely one of the
+	// wirings that has to be pinned. The diagnostics recorder is required so a test cannot silently
+	// assert against a private instance.
+	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IReauthExecutor reauthExecutor,
+		ILoginDiagnostics loginDiagnostics)
+		: this(lazyClient, null, null, reauthExecutor,
+			loginDiagnostics ?? throw new ArgumentNullException(nameof(loginDiagnostics))) { }
+
 	// Credential-passthrough constructor: lets ApplicationClientFactory.CreateEnvironmentClient
 	// wire BOTH a service-url builder (for environment-relative routes) and an explicit
 	// reauth executor (the NoReauthExecutor, because bearer material cannot re-login).
@@ -83,6 +101,19 @@ public class CreatioClientAdapter : IApplicationClient{
 	public event EventHandler<WebSocketState> ConnectionStateChanged;
 
 	public event EventHandler<WsMessage> MessageReceived;
+
+	#region Methods: Private
+
+	// One composition point for every request method: reauth on a session-expired response, with the
+	// login diagnostics recorded inside it. Keeping it in one place means a request method added later
+	// cannot silently lose either wrapper.
+	// Not generic: the session-expired predicate inspects the raw response body, so it only applies to
+	// the string-returning request methods — which is all of them that go through the reauth executor.
+	private string ExecuteRequest(Func<string> call) =>
+		_reauthExecutor.Execute(() => _loginDiagnostics.TrackRequest(call),
+			ReauthExecutor.IsSessionExpiredResponse);
+
+	#endregion
 
 	#region Methods: Public
 
@@ -99,9 +130,8 @@ public class CreatioClientAdapter : IApplicationClient{
 		// exactly the scenario that expires the session, so the call MUST route through the
 		// reauth executor — otherwise a stale-cookie response surfaces directly as raw HTML
 		// to the caller.
-		return _reauthExecutor.Execute(
-			() => Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(
+			() => Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout));
 	}
 
 	public void DownloadFile(string url, string filePath, string requestData) {
@@ -119,28 +149,24 @@ public class CreatioClientAdapter : IApplicationClient{
 		// short-lived flows (cliogate file fetch) where session expiry mid-download is
 		// uncommon; wrapping it would require either a pre-flight probe or a post-download
 		// file-content sniff, both of which add I/O for very little practical gain.
-		Client.DownloadFile(absoluteUrl, filePath, requestData);
+		_loginDiagnostics.TrackRequest(() => Client.DownloadFile(absoluteUrl, filePath, requestData));
 	}
 
 	public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
-		return _reauthExecutor.Execute(
-			() => Client.ExecuteDeleteRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(
+			() => Client.ExecuteDeleteRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
 	}
 
 	public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int maxAttempts = 1,
 		int delaySec = 1) {
-		return _reauthExecutor.Execute(
-			() => Client.ExecuteGetRequest(url, requestTimeout, maxAttempts, delaySec),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(() => Client.ExecuteGetRequest(url, requestTimeout, maxAttempts, delaySec));
 	}
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
-		return _reauthExecutor.Execute(
-			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
 	}
 
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
@@ -148,9 +174,8 @@ public class CreatioClientAdapter : IApplicationClient{
 		where T : BaseResponse, new() {
 		// Re-auth detection runs against the raw body so an expired session cannot reach
 		// the JSON deserializer (which would throw on the HTML login page).
-		string response = _reauthExecutor.Execute(
-			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
-			ReauthExecutor.IsSessionExpiredResponse);
+		string response = ExecuteRequest(
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
 		// If the retry also returned the session-expired HTML page, the JSON deserializer
 		// below would surface the same opaque "Invalid response format" symptom that
 		// triggered ENG-90393. Throw a clearer message so the caller (and the user) can
@@ -165,9 +190,8 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
-		return _reauthExecutor.Execute(
-			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(
+			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
 	}
 
 	public void Listen(CancellationToken cancellationToken) {
@@ -179,25 +203,21 @@ public class CreatioClientAdapter : IApplicationClient{
 	}
 
 	public void Login() {
-		Client.Login();
+		// Recorded the same way as the automatic re-login above so a rejected login is diagnosable
+		// from CI output alone, and so the two attempt kinds are distinguishable (GitHub #1106).
+		_loginDiagnostics.Track(() => Client.Login(), LoginAttemptKind.Initial);
 	}
 
 	public string UploadAlmFile(string url, string filePath) {
-		return _reauthExecutor.Execute(
-			() => Client.UploadAlmFile(url, filePath),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(() => Client.UploadAlmFile(url, filePath));
 	}
 
 	public string UploadAlmFileByChunk(string url, string filePath) {
-		return _reauthExecutor.Execute(
-			() => Client.UploadAlmFileByChunk(url, filePath),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(() => Client.UploadAlmFileByChunk(url, filePath));
 	}
 
 	public string UploadFile(string url, string filePath) {
-		return _reauthExecutor.Execute(
-			() => Client.UploadFile(url, filePath),
-			ReauthExecutor.IsSessionExpiredResponse);
+		return ExecuteRequest(() => Client.UploadFile(url, filePath));
 	}
 
 	#endregion
