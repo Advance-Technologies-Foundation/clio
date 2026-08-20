@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clio Issue Workflow"
+  short_description: "Coordinate a Clio issue from claim to repair"
+  default_prompt: "Use $clio-issue-workflow to take and resolve this Clio issue."
