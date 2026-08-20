@@ -8908,3 +8908,93 @@ Decision: new `handler-attribute-change-unscoped-write` Warning in PageBodyAstLi
 Discovery (from d-krestov's CHANGES_REQUESTED review, all four fixed): (1) an earlier `condition: { attributeName }` suppressor was UNSUBSTANTIATED — that key is nowhere in the page-schema-handlers guide nor anywhere in the repo, and if Freedom UI silently ignores it the linter would both stay quiet on the real defect AND advise a silently-ignored key. Dropped the `condition` suppressor, its message clause, and both condition tests; only the guide-documented in-body guard scopes. (2) `TryGetInitProperty` rejects `Method: true`, so a shorthand-method `handler(request, next) {}` was a FALSE NEGATIVE; added `TryGetEntryProperty` (accepts method-form) for the `request`/`handler` keys. Bracket-access `request["attributeName"]` was a FALSE POSITIVE; `ScanHandlerBody` now also matches a COMPUTED member access on the `"attributeName"` property literal — `MemberExpression { Computed: true, Property: Literal { Value: "attributeName" } }`. (A first pass matched a bare `Literal { Value: "attributeName" }` anywhere in the body; a second code-review round caught that this silences the warning on an incidental literal such as `$context.set("attributeName", x)` — a new false negative on the exact ENG-95557 footgun — so it was narrowed to the computed-member form. A THIRD round caught that neither existing test distinguished the narrowed form from the bare-literal one (a revert stayed green), so a dedicated regression lock was added — `Lint_ShouldWarn_WhenIncidentalAttributeNameLiteralButWriteUnscoped`, an unscoped `$context.set("attributeName", ...)` that MUST warn — and verified to go red under the reverted bare-literal match. A separate specificity test pins that a bracket read of a DIFFERENT key still warns.) (3) the doc comment no longer claims "zero false positives" — a guard hidden behind a helper call (an early return driven by a helper predicate) is an acknowledged residual FP (needs inter-procedural analysis); (4) the message now offers an exit for the intentional cross-field-recompute case (still guard against self-re-entry). A final commit reworded the rule doc comment to clear SonarCloud S125 (it read statement-like snippets as commented-out code).
 Files: clio/Command/McpServer/Tools/PageBodyAstLinter.cs, clio.tests/Command/McpServer/PageBodyAstLinterTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs
 Impact: `~PageBodyAstLinter` 38 green (added shorthand-method-warns, bracket-access-no-warn, bracket-key-specificity-warns, incidental-literal regression lock, condition-only-warns; removed two condition tests, retargeted the mixed-array test's scoped entry to an in-body guard); `Category=Unit&Module=McpServer` 3463 passed / 1 skipped; new e2e `PageValidateTool_Should_Warn_On_Unscoped_AttributeChange_Handler_Write` 1/1 (net10). SonarCloud PR #1107: Quality Gate OK, 0 bugs / 0 vulns / 0 smells. Generalisation: a linter suppressor must scope on a signal the platform actually honors — before teaching a rule to stay quiet on a config key, prove the key exists in the shipped guidance and that the runtime respects it, or the rule advises a footgun while going blind to the exact defect it targets; and anchor a token-based suppressor to its real syntactic position (a computed member access), never a bare literal match, or an incidental occurrence silences it.
+
+## 2026-08-19 16:20 – Login-failure diagnostics for GH #1106 flaky e2e
+Context: GitHub issue #1106 items 3/4 — clio MCP e2e `create-app-section` / `update-app-section`
+intermittently fail with `Unauthorized ***** for [uri]`. Prior pass proposed no fix because the
+concurrent-login theory could not be confirmed from static analysis.
+Decision: ship instrumentation only (operator's call). Decorate a rejected login with timing +
+concurrency context so the next TeamCity reproduction proves or kills the theory. No behavioral
+change; `SectionCreateSerializationGuard` scope deliberately left alone (ADR-level).
+Discovery (three facts, all verified, two of them by decompiling creatio.client 1.0.38):
+1. `CreatioClient.Login()` throws `UnauthorizedAccessException("Unauthorized {user} for {url}")` when
+   the login response body contains `"Code":1` — so the e2e failures are a SERVER-side login
+   rejection, not a gap in `ReauthExecutor`. It also assigns `_authCookie = new CookieContainer()`
+   BEFORE the request, so a failed login destroys an existing valid session.
+2. `CreatioClient.InitAuthCookie()` logs in IMPLICITLY from inside every request method when the
+   client has no auth cookie yet. This is the dominant path in the MCP surface (every tool call
+   builds its own `IApplicationClient`), and it is invisible to adapter-level `Login()` wrapping.
+   Found only by a runtime check against a fake Creatio — static reading had missed it.
+3. `SurfacedExceptionMessage.Resolve` (MCP boundary) and `Exception.GetBaseException()` (application
+   -section commands) BOTH reduce to the inner-most exception. A wrapper that keeps the original as
+   its InnerException therefore has its message silently discarded — so `CreatioLoginFailedException`
+   is deliberately inner-less, with the original in `Exception.Data`.
+Runtime verification: local fake Creatio (returns `"Code":1` on the login URL; login-page HTML on
+data URLs) reproduced both shapes through the real `CreatioClient` and showed the decorated message
+for `kind=implicit` and `kind=reauth`.
+Files: clio/Common/LoginDiagnostics.cs, clio/Common/ILoginDiagnostics.cs,
+clio/Common/LoginAttemptKind.cs, clio/Common/CreatioLoginFailedException.cs,
+clio/Common/CreatioClientAdapter.cs, clio/BindingsModule.cs,
+clio.tests/Common/LoginDiagnosticsTests.cs
+Impact: any future "Unauthorized … for …" in CI now carries kind / client id / ordinal /
+in-flight-logins / in-flight-requests / timestamps, so the concurrent-login question is answerable
+from the log alone. Reusable pattern: when a diagnostic must survive to an MCP caller, the carrying
+exception must be the inner-most one.
+
+## 2026-08-19 – GH #1106 login diagnostics: review round (blast radius of the decoration)
+Context: PR #1117 review (m-dymytrova) requested changes with two Blockers sharing one root cause —
+the recorder replaced the surfaced exception type on paths that were never in scope. Every claim was
+re-verified against the merged tree before fixing; all seven findings were warranted except the
+process-wide-counter one, which is answered instead of changed.
+Decision (two steps, both required, in this order):
+(a) `LoginDiagnostics.Track` no longer catches `Exception` unconditionally — it now uses the same
+    login-rejection predicate as `TrackRequest`, so a `WebException` / `TimeoutException` /
+    `OperationCanceledException` / fatal type propagates as the SAME instance. That restores
+    `RemoteCommand.Login`'s `catch (WebException) => return 1` (a control-flow change, not a message
+    change — the premise "no CLI command calls adapter.Login() explicitly" was wrong: there are seven
+    production callers), `BaseDataContextCommand`'s 404 arm, `ExceptionReadableMessageExtension`'s
+    InnerException walk, `GetCreatioInfoCommand.IsRecoverable`'s fatal-type blocklist, and
+    `McpToolErrorFilter`'s deliberate `OperationCanceledException` rethrow (ENG-93373). It also removes
+    the `elapsed-ms=401` substring-classifier interaction the PR body had flagged as Low.
+(b) Only THEN `CreatioLoginFailedException : UnauthorizedAccessException`. Deriving before narrowing
+    would have reclassified a login timeout as "credentials refused" at `ServerReadinessWaiter`,
+    killing the warm-up tolerance its comment protects. With (a) in place everything decorated really
+    is a credential rejection, so the four classifiers that key on the type keep matching:
+    `ServerReadinessWaiter` (AuthenticationRejected → fail fast instead of burning the readiness budget
+    on further rejected logins, each of which destroys a live session), `GetCreatioInfoCommand`,
+    `SchemaNamePrefixTool` (an MCP-VISIBLE result-content change — the "MCP reviewed, no update
+    required" claim only becomes true again with this step) and `SysSettingsCommand.CategorizeError`.
+    Deriving preserves the inner-less invariant, so `GetBaseException().Message` and
+    `SurfacedExceptionMessage.Resolve` still surface the context.
+Discovery: the filter was exact-type + prefix with no chain unwrapping, while this repo documents the
+opposite arrival shape for this very client — `Creatio.Client` runs transport via `Task.Result`, so
+faults arrive wrapped in `AggregateException` (`EntitySchemaPublishHelper`,
+`TransientNetworkFailureClassifier`, `GetCreatioInfoCommand`, `ApplicationSectionCreateCommand`,
+`UserThemeApplier` all unwrap it). All 20 original tests threw BARE, so the suite could not tell
+"the filter matches in production" from "the feature never fires". New
+`TryFindLoginRejection(Exception, out UnauthorizedAccessException)` flattens and walks; the message is
+built from the FOUND rejection (an `AggregateException`'s own "One or more errors occurred." would
+have replaced the primary server signal) and the wrapper is recorded as `wrapped-in=`.
+Also: `ILoginDiagnostics` got an injection seam (an extra internal ctor where the reauth executor MAY
+be null — the only way to reach the `Reauthentication` closure the DEFAULT executor owns), the
+eight-fold `_reauthExecutor.Execute(() => _loginDiagnostics.TrackRequest(...))` composition collapsed
+into one `ExecuteRequest` helper (non-generic: the session-expired predicate inspects a response body,
+so it is string-only), a `void TrackRequest(Action)` overload removed `DownloadFile`'s `return null`
+contortion, and the `Reauthentication` XML doc now records that its `in-flight-requests` excludes the
+request that triggered the re-login (`ReauthExecutor` runs the request to completion first, so
+`0/0` means "no OTHER traffic").
+Not changed: the process-wide counters stay in the caller-facing message. Scoping them per tenant is
+not reachable without new plumbing — the adapter's private ctor holds only a `Lazy<CreatioClient>`,
+and the bearer/passthrough construction paths carry no credential identity at all — and moving them to
+`Exception.Data` only would defeat the PR's whole goal ("diagnosable from CI output alone"). Left as
+an open call.
+Files: clio/Common/LoginDiagnostics.cs, clio/Common/ILoginDiagnostics.cs,
+clio/Common/LoginAttemptKind.cs, clio/Common/CreatioLoginFailedException.cs,
+clio/Common/CreatioClientAdapter.cs, clio.tests/Common/LoginDiagnosticsTests.cs,
+clio.tests/Common/CreatioClientAdapterLoginDiagnosticsTests.cs
+Impact: `~LoginDiagnostics|~CreatioClientAdapter` 46/46; the classifier-adjacent suites
+(`~ServerReadiness|~GetInfoCommand|~SchemaNamePrefix|~SysSettings|~Reauth|~McpToolError|~ApplicationClientFactory`)
+305/305; full `Category=Unit` 9103 passed with the same 20 pre-existing macOS-only failures
+(9085 → 9103). Generalisation: an exception decorator's blast radius is the set of `catch` clauses that
+key on the type it replaces — narrow the decoration to the exact shape it claims to describe, then
+derive from the type the callers already classify, so the wrapper adds information without removing any.

@@ -1255,6 +1255,9 @@ public class BindingsModule {
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
 					|| implementedInterface == typeof(IReauthExecutor)
+					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
+					// counter); it is created by CreatioClientAdapter, not resolved from DI.
+					|| implementedInterface == typeof(ILoginDiagnostics)
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
