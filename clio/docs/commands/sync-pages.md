@@ -26,6 +26,22 @@ When `validate` is `true` (the default), the body is checked client-side before 
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
+  WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
+  - **Rejected** — an `operation:"insert"`/`"set"` whose `values` object carries no usable `"type"` while a
+    `"type"` sits on the operation object (a type in both places is fine when they agree); and a flat `insert` (a `"type"` on the operation object with no `values` object at
+    all). The Creatio differ builds the element from `values` alone, so the type is discarded and the
+    element never renders even though the save succeeds. A flat `set` is left to the differ, which refuses
+    it for the missing required `values`.
+  - **Warned** — no type anywhere while `values` carries element properties; two DIFFERENT types (the
+    element still renders, as the `values` copy); and an operation whose letter case does not match the
+    differ's exact-case dispatch; and a `crt.Button` inserted into `parentName: "Scaffold"`,
+    `propertyName: "actions"`, which saves but does not appear on the mobile designer canvas (ENG-95429) —
+    place it in a page container's `items` with a `layoutConfig` instead.
+  - **Not enforced** — the same type-placement defect breaks **web** pages identically and is not checked
+    there, and `validate: false` skips these checks along with every other one, re-opening the
+    silent-persist path; do not use it to get past a rejection.
+  Call `clio get-guidance --name mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
