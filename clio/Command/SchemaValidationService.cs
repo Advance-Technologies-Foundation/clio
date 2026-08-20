@@ -1583,14 +1583,17 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// True when a diff operation's multi-segment path targets an attributes map nested inside a
-	/// declared attribute — first segment is <c>attributes</c> and the path ends in
-	/// <c>viewModelConfig</c>, <c>attributes</c>, e.g.
-	/// <c>["attributes","SimilarLeadList","viewModelConfig","attributes"]</c> — so its <c>values</c>
-	/// declare item-scope attribute names. Other sub-property paths that merely end in
-	/// <c>attributes</c> (<c>["attributes","X","modelConfig","attributes"]</c>) or drill into an
-	/// attribute's sub-property (<c>["attributes","X","modelConfig"]</c>) carry an attribute's BODY,
-	/// not attribute names.
+	/// True when a diff operation's path is an all-string array whose first segment is
+	/// <c>attributes</c> and whose last two segments are <c>viewModelConfig</c>, <c>attributes</c> —
+	/// then its <c>values</c> declare item-scope attribute names. The canonical shape is the
+	/// four-segment collection path <c>["attributes","SimilarLeadList","viewModelConfig","attributes"]</c>,
+	/// but the check is deliberately shape-only (first / penultimate / last segment, any length above
+	/// one): a shorter or deeper path that satisfies it also matches, which can only over-accept —
+	/// consistent with the validator's lenient posture. What must never match are paths carrying an
+	/// attribute's BODY, and they never do: ending in <c>attributes</c> through another sub-property
+	/// (<c>["attributes","X","modelConfig","attributes"]</c>) fails the penultimate check, drilling
+	/// into a sub-property (<c>["attributes","X","modelConfig"]</c>) or one level past the nested map
+	/// (<c>[...,"viewModelConfig","attributes","LeadName"]</c>) fails the last-segment check.
 	/// </summary>
 	private static bool TargetsNestedAttributesMap(JsonElement operation) {
 		if (!operation.TryGetProperty("path", out JsonElement pathElement) ||

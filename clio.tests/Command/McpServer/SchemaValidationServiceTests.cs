@@ -8834,6 +8834,144 @@ public sealed class SchemaValidationServiceTests
 			because: "the bound name is never declared as an attribute anywhere in the diff");
 	}
 
+	[Test]
+	[Description("An item-scope attribute nested inside a collection attribute declared in the static viewModelConfig OBJECT (not the diff array) is accepted as declared.")]
+	public void ValidateMobileFieldBindings_WhenStaticViewModelConfigDeclaresNestedCollectionAttribute_ReturnsValid() {
+		// Arrange — the declarations live in the non-diff "viewModelConfig" object form;
+		// the nested item-scope attribute must be collected through the same recursion
+		// as the viewModelConfigDiff array form.
+		string body = """
+		              {
+		                "viewModelConfig": {
+		                  "attributes": {
+		                    "SimilarLeadList": {
+		                      "type": "crt.CollectionDataSource",
+		                      "viewModelConfig": {
+		                        "attributes": {
+		                          "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+		                        }
+		                      }
+		                    }
+		                  }
+		                },
+		                "viewConfigDiff": [
+		                  {
+		                    "operation": "insert",
+		                    "name": "SimilarLeadList_ListItem",
+		                    "parentName": "SimilarLeadList",
+		                    "propertyName": "itemLayout",
+		                    "values": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_LeadName" }
+		                  }
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the static viewModelConfig object form must recurse into a collection attribute's " +
+			          "nested viewModelConfig.attributes exactly like the diff array form");
+		result.Errors.Should().BeEmpty(
+			because: "SimilarLeadListDS_LeadName is declared in the nested item scope of the static object form");
+	}
+
+	[Test]
+	[Description("A binding to a name absent from the static viewModelConfig object's nested attributes map is still rejected as undeclared.")]
+	public void ValidateMobileFieldBindings_WhenStaticViewModelConfigNestedAttributeUnknown_ReturnsError() {
+		// Arrange — same static object form as above, but the itemLayout binds to a name that
+		// was never declared under SimilarLeadList.viewModelConfig.attributes.
+		string body = """
+		              {
+		                "viewModelConfig": {
+		                  "attributes": {
+		                    "SimilarLeadList": {
+		                      "type": "crt.CollectionDataSource",
+		                      "viewModelConfig": {
+		                        "attributes": {
+		                          "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+		                        }
+		                      }
+		                    }
+		                  }
+		                },
+		                "viewConfigDiff": [
+		                  {
+		                    "operation": "insert",
+		                    "name": "SimilarLeadList_ListItem",
+		                    "parentName": "SimilarLeadList",
+		                    "propertyName": "itemLayout",
+		                    "values": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_NotDeclared" }
+		                  }
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "SimilarLeadListDS_NotDeclared is not declared anywhere in the static object form, " +
+			          "including its nested item-scope attributes map");
+		result.Errors.Should().ContainSingle(e => e.Contains("SimilarLeadListDS_NotDeclared"),
+			because: "the object-form recursion must not weaken the undeclared-binding check");
+	}
+
+	[Test]
+	[Description("An attribute declared two levels deep — inside a collection attribute nested within another collection attribute's viewModelConfig.attributes — is accepted as declared.")]
+	public void ValidateMobileFieldBindings_WhenCollectionNestedInsideCollectionDeclaresAttribute_ReturnsValid() {
+		// Arrange — OuterList's item scope declares InnerList, itself a collection whose own
+		// viewModelConfig.attributes declares the leaf attribute; the recursion must collect
+		// names at every depth, not just one level down.
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes"],
+		                    "values": {
+		                      "OuterList": {
+		                        "type": "crt.CollectionDataSource",
+		                        "viewModelConfig": {
+		                          "attributes": {
+		                            "InnerList": {
+		                              "type": "crt.CollectionDataSource",
+		                              "viewModelConfig": {
+		                                "attributes": {
+		                                  "InnerListDS_Name": { "modelConfig": { "path": "Name" } }
+		                                }
+		                              }
+		                            }
+		                          }
+		                        }
+		                      }
+		                    }
+		                  }
+		                ],
+		                "viewConfigDiff": [
+		                  {
+		                    "operation": "insert",
+		                    "name": "InnerList_ListItem",
+		                    "parentName": "InnerList",
+		                    "propertyName": "itemLayout",
+		                    "values": { "type": "crt.ListItem", "title": "$InnerListDS_Name" }
+		                  }
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "InnerListDS_Name is declared two collection levels deep and the recursion has no depth cap");
+		result.Errors.Should().BeEmpty(
+			because: "every nesting level of viewModelConfig.attributes contributes declared names");
+	}
+
 	#endregion
 
 	#region ValidateMobileStandardFieldBindings
