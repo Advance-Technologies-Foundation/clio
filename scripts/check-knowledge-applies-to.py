@@ -201,7 +201,11 @@ def _within_root(root: str, entry: str) -> bool:
     ``..`` climbs out, so an entry that escapes the tree must never reach ``os.path.exists``.
     """
     resolved = os.path.realpath(os.path.join(root, entry))
-    return os.path.commonpath([os.path.realpath(root), resolved]) == os.path.realpath(root)
+    anchor = os.path.realpath(root)
+    # Not os.path.commonpath: it raises ValueError when the two paths sit on different Windows
+    # drives, and an entry like `C:/Windows/win.ini` reaches here (the schema flags it, it is not
+    # dropped). A prefix comparison cannot throw.
+    return resolved == anchor or resolved.startswith(anchor + os.sep)
 
 
 def dead_paths(root: str, record: Record) -> list[str]:
