@@ -1077,6 +1077,42 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			because: "the real MCP server must advertise the ENG-93157 proceed/postpone confirmation invariant, including that a repeated request is not standing consent");
 	}
 
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises that a business process's NeedInstall is not a compile trigger")]
+	[Description("ENG-95706: the real MCP server must serve the compile-creatio contract with a create-business-process anti-pattern (a process is interpreted; NeedInstall=true is not a compile trigger; compile only for a Script Task) and a matching Script-Task carve-out precondition, so the steering that stops an agent forcing a full compile off a process's NeedInstall flag is verified end to end, not only in unit tests.")]
+	public async Task ToolContractGet_Should_Advertise_ProcessNeedInstall_Is_Not_A_Compile_Trigger() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.Name.Should().Be(CompileCreatioTool.CompileCreatioToolName);
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "the live contract enumerates unnecessary-compile anti-patterns");
+		contract.AntiPatterns!.Should().Contain(
+			antiPattern => antiPattern.Pattern.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
+				&& antiPattern.Why.Contains("NeedInstall", StringComparison.Ordinal)
+				&& antiPattern.Why.Contains("Script Task", StringComparison.Ordinal),
+			because: "the real MCP server must advertise the ENG-95706 anti-pattern naming NeedInstall as a false compile trigger and Script Task as the only case that needs a compile");
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the live contract must spell out when compilation is allowed");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
+				&& precondition.Contains("Script Task", StringComparison.Ordinal),
+			because: "the live contract must keep the Script-Task carve-out explicit so the process precondition never reads as a blanket 'never compile after a process' prohibition");
+	}
+
 	private static async Task<ToolContractGetResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

@@ -5189,14 +5189,18 @@ internal static class ToolContractCatalog {
 					"`create-page` writes a page schema into the runtime catalog directly. The new page becomes available without compilation."),
 				new ToolAntiPattern(
 					$"{CreateEntityBusinessRuleTool.BusinessRuleCreateToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
+					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step."),
+				new ToolAntiPattern(
+					$"{ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"A business process is interpreted; a process showing `NeedInstall = true` is its normal pre-publish state, not a compile trigger. Compile only when the process carries a Script Task (custom C#). Never read the raw process record (odata/esq on the process table) to decide whether to compile — use `describe-business-process`.")
 			],
 			Preconditions: [
 				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
-				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`."
+				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
+				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries a Script Task (custom C#) — that is the `C# schemas were added or modified` case above. A process without a Script Task is interpreted and needs no compilation, and a bare `NeedInstall = true` on the process record is its normal pre-publish state, NOT a compile trigger."
 			]);
 	}
 
