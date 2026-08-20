@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -1643,7 +1644,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(Substitute.For<ILookupRegistrationService>());
 		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
 		enrichmentService
-			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>())
 			.Throws(new InvalidOperationException("baseUri: Value cannot be null"));
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
@@ -1675,7 +1676,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(Substitute.For<ILookupRegistrationService>());
 		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
 		enrichmentService
-			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>())
 			.Throws(new InvalidOperationException("dataforge call to https://target.creatio.com/0/rest failed: /Users/dev/secret/appsettings.json missing"));
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(
@@ -1710,7 +1711,7 @@ public sealed class SchemaSyncToolTests {
 			.Returns(fakeCreateCommand);
 		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
 		enrichmentService
-			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>(), Arg.Any<CancellationToken>())
 			.Throws(new NullReferenceException("object reference not set"));
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence(), enrichmentService);
 		SchemaSyncArgs args = new(

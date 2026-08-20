@@ -141,7 +141,8 @@ public sealed class SchemaSyncTool(
 				dataForge = enrichmentService.Enrich(
 					args.EnvironmentName,
 					CollectCandidateTerms(operations),
-					CollectLookupHints(operations));
+					CollectLookupHints(operations),
+					cancellationToken);
 			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
 				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here

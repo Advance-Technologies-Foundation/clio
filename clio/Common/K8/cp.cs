@@ -63,14 +63,14 @@ internal class Cp
                             entry.Size = fileSize;
 
                             tarOutputStream.PutNextEntry(entry);
-                            await inputFileStream.CopyToAsync(tarOutputStream);
+                            await inputFileStream.CopyToAsync(tarOutputStream, cancellationToken);
                             tarOutputStream.CloseEntry();
                         }
 
                         memoryStream.Position = 0;
 
-                        await memoryStream.CopyToAsync(stdIn);
-                        await stdIn.FlushAsync();
+                        await memoryStream.CopyToAsync(stdIn, cancellationToken);
+                        await stdIn.FlushAsync(cancellationToken);
                     }
 
                 }
@@ -80,7 +80,7 @@ internal class Cp
                 }
 
                 using StreamReader streamReader = new StreamReader(stdError);
-                string error = await streamReader.ReadToEndAsync();
+                string error = await streamReader.ReadToEndAsync(cancellationToken);
                 if (!string.IsNullOrEmpty(error))
                 {
                     throw new IOException($"Copy command failed: {error}");
