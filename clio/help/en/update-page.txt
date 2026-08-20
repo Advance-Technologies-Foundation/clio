@@ -52,6 +52,26 @@ DESCRIPTION
       dropped and the element never renders even though the write
       succeeds. A flat "set" is left to the differ, which refuses it for
       the missing required "values".
+    - Rejected: a "merge" whose values authors child elements on
+      Scaffold's "actions", "leading" or "items" - an array, or a lone
+      object, of item configs carrying a non-empty "name". "items" is
+      the page body, filled with a MainContainer by every non-blank
+      template; the same slot on another container stays advisory. Every shipped FORM
+      template populates those slots, so the differ strips the property
+      out of the merge and nothing is created even though the write
+      succeeds. Put the child in a page container with its own "insert"
+      plus a "layoutConfig". clio validates viewConfigDiff against an
+      empty base and cannot see the target, so a page built from
+      BlankMobilePageTemplate - a bare Scaffold whose slots may be
+      empty - is refused too, even though the merge would apply there.
+    - Warned: the same authoring in any other slot. There the target may
+      legitimately lack the slot, in which case the merge creates it and
+      the authoring works; clio validates against an empty base and
+      cannot tell the two apart. To author into a slot the target lacks,
+      use the two-step idiom: a "merge" creating it as an empty array,
+      then one "insert" per child. Both are merge-only: for insert/set
+      the values object becomes the element, so children declared there
+      are created.
     - Warned: no type anywhere while values carries element properties;
       two DIFFERENT types (the element still renders, as the values
       copy); an operation whose letter case does not match the differ's
@@ -59,7 +79,8 @@ DESCRIPTION
       "Scaffold" / propertyName "actions", which saves but does not show
       up on the mobile designer canvas (ENG-95429) -- place it in a page
       container's "items" with a "layoutConfig" instead.
-    - Not enforced: the same type-placement defect breaks web pages too
+    - Not enforced: the same type-placement and merge-slot mechanisms
+      break web pages too
       and is not checked there; sync-pages validate=false skips these
       checks entirely.
     - User-visible text (label, caption, title, tooltip, placeholder) in

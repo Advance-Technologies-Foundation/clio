@@ -32,11 +32,26 @@ public static class SchemaValidationService
 	private const string PathPropertyName = "path";
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
+	private const string MergeOperationName = "merge";
 	private const string ParentNamePropertyName = "parentName";
 	private const string PropertyNamePropertyName = "propertyName";
 	private const string ScaffoldElementName = "Scaffold";
 	private const string ScaffoldActionsSlot = "actions";
+	private const string ScaffoldLeadingSlot = "leading";
+	private const string ScaffoldItemsSlot = "items";
+	private const int MaxMergeSlotDiagnosticsPerEntry = 10;
 	private const string ButtonComponentType = "crt.Button";
+
+	/// <summary>
+	/// The Scaffold slots a shipped template already populates, which is what makes a merge authoring into them the
+	/// discard case rather than the create case: <c>actions</c> carries the form templates' Save button,
+	/// <c>leading</c> their Close/Cancel, and <c>items</c> is the page body, which every non-blank template fills
+	/// with a MainContainer. Membership only matters when the merge targets the Scaffold itself, so an
+	/// <c>items</c> slot on any other container is unaffected.
+	/// </summary>
+	private static readonly HashSet<string> ScaffoldTemplatePopulatedSlots = new(StringComparer.Ordinal) {
+		ScaffoldActionsSlot, ScaffoldLeadingSlot, ScaffoldItemsSlot
+	};
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -309,6 +324,10 @@ public static class SchemaValidationService
 
 		SchemaValidationResult buttonSlotResult = ValidateMobileButtonSlotPlacement(body);
 		warnings.AddRange(buttonSlotResult.Warnings);
+
+		SchemaValidationResult mergeSlotResult = ValidateMobileMergeSlotAuthoring(body);
+		if (!mergeSlotResult.IsValid) errors.AddRange(mergeSlotResult.Errors);
+		warnings.AddRange(mergeSlotResult.Warnings);
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
@@ -722,8 +741,14 @@ public static class SchemaValidationService
 	/// </summary>
 	private static void ReportOperationCaseMismatch(
 		JsonElement entry, int index, string operation, SchemaValidationResult result) {
+		// A correctly-cased "merge" reaches this reporter too (only exact insert/set are filtered by the caller),
+		// so it must be let through before the case-insensitive match below treats it as mis-cased.
+		if (string.Equals(operation, MergeOperationName, StringComparison.Ordinal)) {
+			return;
+		}
 		if (!string.Equals(operation, InsertOperationName, StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(operation, SetOperationName, StringComparison.OrdinalIgnoreCase)) {
+			&& !string.Equals(operation, SetOperationName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(operation, MergeOperationName, StringComparison.OrdinalIgnoreCase)) {
 			return;
 		}
 		result.Warnings.Add(
@@ -831,10 +856,7 @@ public static class SchemaValidationService
 		// Exact-case operation, matching the differ's switch and the type-placement rule. Going through the
 		// case-INsensitive IsOperation here would contradict the sibling rule: a mis-cased operation is discarded
 		// wholesale, so telling its author where to move the button is advice that cannot change the outcome.
-		if (entry.ValueKind != JsonValueKind.Object
-			|| !string.Equals(
-				TryGetStringProperty(entry, OperationPropertyName, out string operation) ? operation : null,
-				InsertOperationName, StringComparison.Ordinal)) {
+		if (!IsExactOperation(entry, InsertOperationName)) {
 			return;
 		}
 		// The type is read from `values` ONLY — the copy the differ actually applies. Resolving it through the
@@ -864,6 +886,236 @@ public static class SchemaValidationService
 			+ "silently dropped by the differ and fails the same way) — and give it a \"layoutConfig\", which is "
 			+ "what the designer itself emits.");
 	}
+
+	/// <summary>
+	/// Diagnoses a <c>merge</c> that authors CHILD ELEMENTS inside its <c>values</c> — an array (or a lone object)
+	/// of item configs placed on a container slot such as <c>actions</c>, <c>leading</c>, <c>items</c> or
+	/// <c>menuItems</c>. Blocking on the Scaffold navigation slots, advisory everywhere else.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Mechanism (<c>JsonDiffApplier.Merge</c>): before copying anything, the applier walks the properties of the
+	/// TARGET element and, for each one whose first child is an item config, strips the same-named property out of
+	/// the incoming <c>values</c> — the platform's <c>ItemWithItemsPropertyMergeException</c> warn-and-drop. So when
+	/// the target ALREADY holds elements in that slot the authored children are discarded outright: the write
+	/// reports success, the operation persists in the page's own body, and nothing reaches the merged config.
+	/// </para>
+	/// <para>
+	/// Verified on a stand for ENG-95429: a <c>merge</c> on <c>Scaffold</c> carrying a <c>crt.Button</c> in
+	/// <c>values.actions</c> saved successfully and left the merged <c>viewConfig</c> untouched — the button appeared
+	/// zero times in it while remaining in the saved body. That is the reported symptom exactly: saved, never rendered.
+	/// </para>
+	/// <para>
+	/// The OTHER outcome is not a defect. When the target slot is absent or an empty array the strip does not fire,
+	/// the property is copied wholesale, and the author gets exactly what they asked for. A <c>merge</c> is in fact
+	/// often the only single-operation route there, because an <c>insert</c> into a property the target does not
+	/// carry resolves its parent to <c>null</c> and throws <c>NotContainerItemInsertException</c>; the platform's own
+	/// idiom is two operations — a <c>merge</c> creating the slot as an empty array (which this rule deliberately
+	/// does not flag), then an <c>insert</c>/<c>move</c> per child, since the merge group runs first.
+	/// </para>
+	/// <para>
+	/// clio applies <c>viewConfigDiff</c> against an EMPTY base (<c>MobileDiffApplyValidator</c>; the pre-resolved
+	/// mobile base carries only <c>viewModelConfig</c>/<c>modelConfig</c>), so it cannot tell the two outcomes apart.
+	/// Severity is therefore split by target rather than by outcome: the Scaffold navigation slots are populated by
+	/// every form template that ships one (verified: <c>actions</c> holds the template's Save button, <c>leading</c>
+	/// its Close/Cancel), so authoring into them through a merge is the discard case and BLOCKS. Every other slot may
+	/// legitimately be absent — <c>menuItems</c> on a <c>crt.Button</c> or <c>crt.FloatingActionButton</c>,
+	/// <c>items</c> on <c>crt.QuickFilterGroup</c>, <c>crt.Sort</c> or <c>crt.Timeline</c> — so those only WARN.
+	/// </para>
+	/// <para>
+	/// RESIDUAL: <c>BlankMobilePageTemplate</c> ships a bare Scaffold with no content, so its navigation slots may be
+	/// empty and a merge into them would apply correctly yet still be refused. Narrow, and the cost of the opposite
+	/// error — letting the reported silent failure through again — is higher.
+	/// </para>
+	/// <para>
+	/// Scope is <c>merge</c> ONLY. For <c>insert</c> and <c>set</c> the whole <c>values</c> object BECOMES the
+	/// element, so children declared inside it are the documented way to author a container. The check is
+	/// slot-agnostic: EVERY property of <c>values</c> is examined, not a fixed slot list.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending slot, up to the per-entry
+	/// advisory bound described on <see cref="TryReserveAdvisoryDiagnostic"/>.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileMergeSlotAuthoring(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileMergeSlotAuthoringEntry);
+
+	/// <summary>
+	/// Per-entry half of <see cref="ValidateMobileMergeSlotAuthoring"/>; reports each offending slot on the entry
+	/// rather than stopping at the first, so one pass fixes the whole operation. Advisory diagnostics are bounded
+	/// per entry — see <see cref="TryReserveAdvisoryDiagnostic"/>; blocking ones never are.
+	/// </summary>
+	private static void ValidateMobileMergeSlotAuthoringEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		// Exact-case, matching the differ's switch and both sibling rules. A mis-cased operation is reported by
+		// ReportOperationCaseMismatch, whose allowlist includes merge for exactly this reason.
+		if (!IsExactOperation(entry, MergeOperationName)
+			|| !entry.TryGetProperty(ValuesPropertyName, out JsonElement values)
+			|| values.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		bool targetsScaffold = TryGetStringProperty(entry, "name", out string mergeTarget)
+			&& string.Equals(mergeTarget, ScaffoldElementName, StringComparison.Ordinal);
+		string subject = DescribeViewConfigDiffEntry(entry, index);
+		int advisoryReported = 0;
+		int blockingReported = 0;
+		bool advisoryCapNoted = false;
+		bool blockingCapNoted = false;
+		foreach (JsonProperty slot in values.EnumerateObject()) {
+			if (!TryGetAuthoredElementName(slot.Value, out string childName)) {
+				continue;
+			}
+			if (targetsScaffold && ScaffoldTemplatePopulatedSlots.Contains(slot.Name)) {
+				// Latched BEFORE the bound, so no slot ordering and no run of duplicate keys can talk the rule
+				// out of refusing (raised in review of PR #1124).
+				result.IsValid = false;
+				AddBoundedMergeSlotDiagnostic(
+					result, ref blockingReported, ref blockingCapNoted, subject, slot, childName, blocks: true);
+			} else {
+				AddBoundedMergeSlotDiagnostic(
+					result, ref advisoryReported, ref advisoryCapNoted, subject, slot, childName, blocks: false);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Adds one merge-slot diagnostic to <paramref name="sink"/>, or the "there were more" note once the per-entry
+	/// bound for that channel is reached.
+	/// </summary>
+	/// <remarks>
+	/// The channels are counted SEPARATELY. That is what makes bounding the blocking one safe: slots are
+	/// enumerated in document order, so a shared counter would let a body that lists enough advisory slots first
+	/// suppress the very defect the rule exists to refuse — and the caller latches <c>IsValid</c> before calling
+	/// in, so the refusal never depends on the bound. The bounds keep one entry from burying the agent's
+	/// transcript; on the error channel that also caps a real amplifier, since <c>JsonDocument</c> preserves
+	/// duplicate property names and the write tools flatten errors into a single <c>"; "</c>-joined string. The
+	/// diagnostic is built only when it will be used, so a flooding body does no work per suppressed slot.
+	/// A legitimate body never reaches either bound.
+	/// </remarks>
+	private static void AddBoundedMergeSlotDiagnostic(
+		SchemaValidationResult result, ref int reported, ref bool capNoted,
+		string subject, JsonProperty slot, string childName, bool blocks) {
+		// The sink and the label both follow from `blocks`; passing them in as well only widened the signature.
+		// The cap note always goes to the warnings, on either channel — it reports a truncation, not a defect.
+		if (reported >= MaxMergeSlotDiagnosticsPerEntry) {
+			if (!capNoted) {
+				capNoted = true;
+				string channel = blocks ? "blocking" : "advisory";
+				result.Warnings.Add(
+					$"{subject} authors child elements in further slots not listed here; only the first "
+					+ $"{MaxMergeSlotDiagnosticsPerEntry} {channel} slots are reported.");
+			}
+			return;
+		}
+		reported++;
+		List<string> sink = blocks ? result.Errors : result.Warnings;
+		sink.Add(DescribeMergeSlotAuthoring(
+			subject, slot.Name, childName, blocks, slot.Value.ValueKind == JsonValueKind.Object));
+	}
+
+	/// <summary>
+	/// Builds the merge-slot diagnostic. Both outcomes of the mechanism are stated because clio cannot tell which
+	/// one a given body is in; the remedy comes from <see cref="DescribeMergeSlotRemedy"/>.
+	/// </summary>
+	private static string DescribeMergeSlotAuthoring(
+		string subject, string rawSlotName, string childName, bool blocks, bool slotHoldsLoneObject) =>
+		$"{subject} is a \"{MergeOperationName}\" whose \"{ValuesPropertyName}\" authors child elements in "
+		+ $"\"{Sanitize(rawSlotName)}\" (starting with '{Sanitize(childName)}'). Where the target already holds "
+		+ "elements in that slot the differ strips the whole property out of the merge, so the write succeeds and "
+		+ "the children never reach the page (ENG-95429). Where the slot is absent or empty the merge does apply "
+		+ "— clio validates viewConfigDiff against an empty base and cannot tell the two apart. "
+		+ DescribeMergeSlotRemedy(blocks, slotHoldsLoneObject);
+
+	/// <summary>
+	/// The actionable half of the merge-slot diagnostic. It differs by severity and by the slot's shape: a Scaffold
+	/// slot the template fills is never the right destination, a single-element slot can only be reached by a
+	/// merge, and a collection slot the target lacks needs the platform's two-step idiom.
+	/// </summary>
+	private static string DescribeMergeSlotRemedy(bool blocks, bool slotHoldsLoneObject) {
+		if (blocks) {
+			return "Place the child in a page container instead: its own "
+				+ $"\"{InsertOperationName}\" with \"{PropertyNamePropertyName}\": \"items\" on a container "
+				+ "this page or its template declares, plus a \"layoutConfig\". A button in the Scaffold "
+				+ "navigation slots is not shown on the mobile designer canvas even when it does apply.";
+		}
+		if (slotHoldsLoneObject) {
+			return "This slot holds a single element rather than a collection, so a merge is the ONLY route to "
+				+ $"it: an \"{InsertOperationName}\" needs a container and throws on a property that is null or "
+				+ "absent. It applies when the target's slot is null or absent, and is discarded when the target "
+				+ "already holds an element there. Do NOT convert it to an array.";
+		}
+		return "To author into a collection slot the target genuinely lacks, use the platform's two-step idiom: "
+			+ $"a \"{MergeOperationName}\" that creates the slot as an empty array, then one "
+			+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
+			+ $"\"{InsertOperationName}\" into a property the target does not carry throws.";
+	}
+
+
+	/// <summary>
+	/// Whether a merged-in property value authors view elements, and if so the alias of the first one — the entry is
+	/// named after the element being merged, not the child that goes missing, so the diagnostic needs both.
+	/// </summary>
+	/// <remarks>
+	/// Mirrors the applier's <c>isItemConfig</c> predicate (an object whose <c>name</c> is not empty, per its own
+	/// <c>IsEmpty</c> — which rejects a zero-length string, an empty array, and null, so whitespace and scalar
+	/// non-string names both count) and
+	/// its acceptance of a lone object where a collection is expected. It does NOT mirror WHERE the applier looks:
+	/// the applier tests the first child of the TARGET's property, while only the incoming payload is available
+	/// here. That makes this a proxy, so it scans EVERY item rather than just the first — a named child behind an
+	/// unnamed one is stripped exactly the same way.
+	/// </remarks>
+	private static bool TryGetAuthoredElementName(JsonElement value, out string firstChildName) {
+		firstChildName = null;
+		if (value.ValueKind == JsonValueKind.Object) {
+			return TryGetItemConfigName(value, out firstChildName);
+		}
+		if (value.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		foreach (JsonElement item in value.EnumerateArray()) {
+			if (item.ValueKind == JsonValueKind.Object && TryGetItemConfigName(item, out firstChildName)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// The applier's own item-config test: a <c>name</c> that is present and not empty. Deliberately looser than
+	/// <see cref="TryGetStringProperty"/>, which additionally rejects whitespace and non-string values — the applier
+	/// accepts both, and matching it is what keeps this rule from missing a shape the differ strips.
+	/// </summary>
+	private static bool TryGetItemConfigName(JsonElement item, out string name) {
+		name = null;
+		if (!item.TryGetProperty("name", out JsonElement nameElement)) {
+			return false;
+		}
+		switch (nameElement.ValueKind) {
+			case JsonValueKind.Null or JsonValueKind.Undefined:
+				return false;
+			// The applier's IsEmpty rejects an empty array too, so an empty-array name is not an item config.
+			case JsonValueKind.Array when nameElement.GetArrayLength() == 0:
+				return false;
+			case JsonValueKind.String:
+				name = nameElement.GetString();
+				return !string.IsNullOrEmpty(name);
+			default:
+				name = nameElement.ToString();
+				return !string.IsNullOrEmpty(name);
+		}
+	}
+
+	/// <summary>
+	/// Whether the entry declares exactly <paramref name="operationName"/>, compared ordinally to match the differ's
+	/// case-sensitive dispatch. Used by the rules that only need the yes/no answer; the type-placement rule keeps
+	/// its own comparison because it also needs the operation string itself for the case-mismatch diagnostic.
+	/// </summary>
+	private static bool IsExactOperation(JsonElement entry, string operationName) =>
+		entry.ValueKind == JsonValueKind.Object
+		&& TryGetStringProperty(entry, OperationPropertyName, out string operation)
+		&& string.Equals(operation, operationName, StringComparison.Ordinal);
+
 
 	/// <summary>
 	/// Names a <c>viewConfigDiff</c> entry for a diagnostic: quoted alias when it has one, otherwise the file's
