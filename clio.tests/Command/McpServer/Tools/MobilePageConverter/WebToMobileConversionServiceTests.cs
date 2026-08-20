@@ -5966,6 +5966,158 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
+	#region Excluded components
+
+	private static readonly IReadOnlySet<string> ExcludedComponentsMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ExpansionPanel", "crt.SearchFilter", "usr.Bar"
+		};
+
+	private static readonly ExcludedComponentFilterRule SearchFilterInExpansionPanelToolsFilter = new() {
+		Type = "crt.SearchFilter", ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+	};
+
+	private static readonly ExcludedComponentFilterRule FooInsideBarAnywhereFilter = new() {
+		Type = "usr.Foo", ParentType = "usr.Bar"
+	};
+
+	private static WebToMobilePageConversionRules RulesWithExcludedComponents(
+		params ExcludedComponentFilterRule[] filters) => new() {
+			ExcludedComponents = [new ExcludedComponentGroup { Filters = filters }]
+		};
+
+	private static MobilePageConversionGuide AnalyzeWithExcludedComponents(
+		PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, ExcludedComponentsMobileTypes,
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage",
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+	[Test]
+	[Description("crt.SearchFilter does not fit crt.ExpansionPanel's compact icon-only tools header strip on mobile: it is stripped from tools while its sibling header buttons stay, in the same order, and the removal is recorded as a drop entry so it stays visible in the report.")]
+	public void Analyze_ShouldStripSearchFilter_FromExpansionPanelTools() {
+		// Arrange — 1:1 with the real Leads_MobileFormPage shape: ExpansionPanel.tools[0] (GridContainer)
+		// .items[0] (FlexContainer) .items[] holds the header buttons plus the search filter.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" },
+			            { "name": "ProductsSettingsButton", "type": "crt.Button" } ] } ] } ],
+			    "items": [] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		ElementMapEntry panel = Element(guide, "ProductsExpansionPanel");
+		panel.Operation.Should().Be("insert");
+		JsonArray toolsFlexItems = panel.MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
+		toolsFlexItems.Should().HaveCount(2, because: "the search filter was stripped, its two button siblings stay");
+		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(
+			["ProductsRefreshButton", "ProductsSettingsButton"],
+			because: "removal must not reorder or duplicate the surviving siblings");
+		ElementMapEntry dropped = Element(guide, "ProductsSearchFilter");
+		dropped.Operation.Should().Be("drop");
+		dropped.WebType.Should().Be("crt.SearchFilter", because: "the report must still say what was removed");
+		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools");
+	}
+
+	[Test]
+	[Description("The exclusion is scoped to crt.ExpansionPanel.tools, not a blanket ban on the type: a standalone crt.SearchFilter elsewhere on the page is untouched.")]
+	public void Analyze_ShouldKeepSearchFilter_WhenNotInsideExpansionPanelTools() {
+		// Arrange — the real Leads_MobileFormPage also carries SearchFilter_4991fqg directly inside a
+		// FlexContainer's items, outside any ExpansionPanel — that instance must never be touched.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProfileSearchFilter", "type": "crt.SearchFilter" } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		ElementMapEntry field = Element(guide, "ProfileSearchFilter");
+		field.Operation.Should().Be("insert",
+			because: "the exclusion is scoped by parentType — nothing here has that parent, so it is not a candidate");
+		field.MobileType.Should().Be("crt.SearchFilter");
+	}
+
+	[Test]
+	[Description("propertiesContainerName is optional: when a filter names no property, the search covers the WHOLE host mobileValues subtree, at any depth under any property name — proving the mechanism is not hardcoded to 'tools'.")]
+	public void Analyze_ShouldStripAnywhereInHost_WhenPropertiesContainerNameIsAbsent() {
+		// Arrange — an arbitrary property name ("widgets"), not "tools", to prove the search is generic.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar", "widgets": [
+			    { "name": "Buried", "type": "usr.Foo" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		Element(guide, "CustomHost").MobileValues!["widgets"]!.AsArray().Should().BeEmpty(
+			because: "with no propertiesContainerName the search is not limited to a hardcoded property name");
+		Element(guide, "Buried").Operation.Should().Be("drop",
+			because: "the nested component is still found and removed even though it sits under an arbitrary property");
+	}
+
+	[Test]
+	[Description("The pass is switched by DATA — without an excludedComponents rules section, crt.SearchFilter inside crt.ExpansionPanel.tools is carried through unchanged, exactly as before the feature.")]
+	public void Analyze_ShouldSkipExcludedComponentsPass_WhenRulesCarryNoSection() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
+			    "items": [] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, GridRule);
+
+		guide.ElementMap.Should().NotContain(e => e.WebName == "ProductsSearchFilter",
+			because: "with no excludedComponents section the pass never runs — nothing to report about a component it never touched");
+		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
+			.Should().ContainSingle(i => i!["type"]!.GetValue<string>() == "crt.SearchFilter",
+				because: "the search filter is carried through verbatim, exactly as before the feature existed");
+	}
+
+	[Test]
+	[Description("Two independent excludedComponents filters (different type/host/property) apply in the same pass without interfering with each other's host — proving the mechanism generalizes beyond the single SearchFilter/ExpansionPanel case it was built for.")]
+	public void Analyze_ShouldApplyTwoIndependentRules_WithoutInterference() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
+			    "items": [] },
+			  { "name": "CustomHost", "type": "usr.Bar", "widgets": [
+			      { "name": "Buried", "type": "usr.Foo" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter, FooInsideBarAnywhereFilter));
+
+		Element(guide, "ProductsSearchFilter").Operation.Should().Be("drop");
+		Element(guide, "Buried").Operation.Should().Be("drop");
+		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
+			.Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "ProductsRefreshButton",
+				because: "the second, unrelated rule (usr.Foo inside usr.Bar) must not affect the ExpansionPanel host");
+		Element(guide, "CustomHost").MobileValues!["widgets"]!.AsArray().Should().BeEmpty(
+			because: "the first, unrelated rule (crt.SearchFilter inside crt.ExpansionPanel.tools) must not affect this host");
+	}
+
+	#endregion
+
 	#region Converted tab placement (explicit indexes so template Feed/Attachments stay last)
 
 	[Test]

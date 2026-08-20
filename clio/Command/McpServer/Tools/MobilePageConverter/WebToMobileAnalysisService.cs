@@ -194,6 +194,14 @@ public static class WebToMobileAnalysisService {
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor,
 			mobileTypesByName, webBaselineNodes, webTemplateResources);
 
+		// Removes a nested component the generic per-element copy already carried verbatim inside one of
+		// the host's OWN properties (type-agnostic — which type/host/property is banned comes entirely from
+		// the excludedComponents rules). Deliberately BEFORE RemoveEmptyContainers: a host property this
+		// pass empties out is then visible to any future cascading rule with already-clean mobileValues, and
+		// every removal here is recorded as a synthetic "drop" ElementMapEntry the same way
+		// EmptyContainerRemoval records its own.
+		ExcludedComponentsPass.RemoveExcludedComponents(elementMap, rules);
+
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
 		// BEFORE the adaptive and tab-area passes: adaptive then stacks only surviving children, and a tab this

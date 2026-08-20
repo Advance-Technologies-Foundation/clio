@@ -185,6 +185,17 @@
       "crt.ExpansionPanel"
     ]
   },
+  "excludedComponents": [
+    {
+      "filters": [
+        {
+          "type": "crt.SearchFilter",
+          "parentType": "crt.ExpansionPanel",
+          "propertiesContainerName": "tools"
+        }
+      ]
+    }
+  ],
   "nonConvertingScopeContainers": ["MainHeader"],
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
