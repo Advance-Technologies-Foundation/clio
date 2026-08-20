@@ -168,6 +168,27 @@ public sealed class ODataReadToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects a null condition inside a structured filter with its exact path before remote access.")]
+	public void Read_Should_Reject_Null_Filter_Condition_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","filters":{"all":[null]}}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a null array element is not a filter condition and must fail predictably");
+		response.Error.Should().Contain("filters.all[0] must be a filter condition object",
+			because: "the failure should identify the malformed element instead of exposing an internal null-reference error");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Accepts an explicit JSON null comparison value and emits the intended OData null literal.")]
 	public void Read_Should_Preserve_Explicit_Null_Filter_Value_From_Json() {
 		// Arrange

@@ -136,13 +136,13 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			return $"filters: {groupError}";
 		}
 
-		List<(string Path, ODataFilterCondition Condition)> conditions = [];
+		List<(string Path, ODataFilterCondition? Condition)> conditions = [];
 		AddConditions(conditions, "filters.all", args.Filters.All);
 		AddConditions(conditions, "filters.any", args.Filters.Any);
 		if (conditions.Count == 0) {
 			return "filters must contain at least one condition in all or any.";
 		}
-		foreach ((string path, ODataFilterCondition condition) in conditions) {
+		foreach ((string path, ODataFilterCondition? condition) in conditions) {
 			string? conditionError = ValidateCondition(path, condition);
 			if (conditionError is not null) {
 				return conditionError;
@@ -152,9 +152,9 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	}
 
 	private static void AddConditions(
-		ICollection<(string Path, ODataFilterCondition Condition)> destination,
+		ICollection<(string Path, ODataFilterCondition? Condition)> destination,
 		string path,
-		IReadOnlyList<ODataFilterCondition>? conditions) {
+		IReadOnlyList<ODataFilterCondition?>? conditions) {
 		if (conditions is null) {
 			return;
 		}
@@ -163,7 +163,10 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 	}
 
-	private static string? ValidateCondition(string path, ODataFilterCondition condition) {
+	private static string? ValidateCondition(string path, ODataFilterCondition? condition) {
+		if (condition is null) {
+			return $"{path} must be a filter condition object; null is not supported.";
+		}
 		string? memberError = McpToolArgumentSupport.BuildLegacyAliasError(
 			condition.ExtensionData,
 			FilterConditionAliases,
@@ -492,12 +495,12 @@ public sealed record ODataFilters {
 	/// <summary>Conditions joined with AND.</summary>
 	[JsonPropertyName("all")]
 	[Description("Conditions that must ALL match (AND-joined).")]
-	public ODataFilterCondition[]? All { get; init; }
+	public ODataFilterCondition?[]? All { get; init; }
 
 	/// <summary>Conditions joined with OR.</summary>
 	[JsonPropertyName("any")]
 	[Description("Conditions where ANY must match (OR-joined).")]
-	public ODataFilterCondition[]? Any { get; init; }
+	public ODataFilterCondition?[]? Any { get; init; }
 
 	/// <summary>Unbound filter-group members, rejected before any Creatio request.</summary>
 	[JsonExtensionData]

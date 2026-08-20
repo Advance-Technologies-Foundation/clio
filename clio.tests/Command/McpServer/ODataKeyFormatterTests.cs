@@ -7,6 +7,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ODataKeyFormatterTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 

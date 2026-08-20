@@ -171,6 +171,41 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Rejects a null condition element through the real stdio binding path.")]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read rejects null filter conditions over stdio")]
+	public async Task ODataRead_Should_Reject_Null_Filter_Condition_Through_ClioRun() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ODataReadTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["entity"] = "Contact",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object?[] { null }
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a null condition must fail over the real binder instead of reaching remote access");
+		response.Error.Should().Contain("filters.all[0] must be a filter condition object",
+			because: "the error should identify the malformed array element");
+		response.Error.Should().NotContain("Object reference",
+			because: "validation errors must not expose internal exception text");
+		response.Error.Should().NotContain(invalidEnvironmentName,
+			because: "condition validation must run before environment resolution or remote access");
+	}
+
+	[Test]
 	[Description("Rejects OData grammar embedded in a structured field through the real stdio binding path.")]
 	[AllureTag(ODataReadTool.ToolName)]
 	[AllureName("odata-read rejects filter field grammar over stdio")]
