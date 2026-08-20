@@ -351,7 +351,11 @@ public sealed class ExcludedComponentGroup {
 }
 
 /// <summary>
-/// Matches a component to strip out of an already-copied-verbatim host property, at any depth under it.
+/// Matches a component to remove from a host, in whichever of the two element-map shapes the component
+/// took: an entry of its own whose parent chain reaches the host (the primary shape — the child-array
+/// traversal walks <c>tools</c>/<c>menuItems</c> children into their own entries), or a node nested
+/// verbatim inside a host property the per-element copy carried whole (the fallback shape). See
+/// <c>ExcludedComponentsPass</c> for the full two-phase semantics.
 /// </summary>
 public sealed class ExcludedComponentFilterRule {
 	/// <summary>
@@ -362,20 +366,28 @@ public sealed class ExcludedComponentFilterRule {
 	public string Type { get; init; }
 
 	/// <summary>
-	/// Mobile type of the HOST element — an <c>elementMap</c> entry's resolved <c>MobileType</c> (e.g.
-	/// <c>"crt.ExpansionPanel"</c>) — whose <c>mobileValues</c> is searched. This is NOT a direct-JSON-parent
-	/// check: the host is whatever element the element-map builder produced its own entry for, and
-	/// <see cref="Type"/> may sit several levels deeper inside one of that host's properties.
+	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The
+	/// host is found STRUCTURALLY, at any depth: an <c>elementMap</c> entry whose resolved <c>MobileType</c>
+	/// matches ANY ancestor on the banned entry's <c>parentName</c> chain (primary shape), or any
+	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>mobileValues</c>
+	/// (fallback shape — a host buried in a verbatim-carried property, with no entry of its own). This is NOT
+	/// a direct-JSON-parent check either way: <see cref="Type"/> may sit several levels deeper inside one of
+	/// the host's properties.
 	/// </summary>
 	[JsonPropertyName("parentType")]
 	public string ParentType { get; init; }
 
 	/// <summary>
-	/// Optional: restrict the search to this one property of the host's <c>mobileValues</c> (e.g.
-	/// <c>"tools"</c>). Absent searches the whole <c>mobileValues</c> subtree (minus the host's own
-	/// <c>name</c>/<c>type</c>) at any depth, under any property — prefer naming the property explicitly
-	/// whenever the scope is known, to avoid matching the same type in an unrelated property (e.g. a
-	/// button's <c>menuItems</c>) of the same host.
+	/// Optional: restrict the match to the subtree hanging off this one property (slot) of the host (e.g.
+	/// <c>"tools"</c>); the comparison is case-insensitive and a host whose subtree does not enter through
+	/// the named slot is a no-op for the filter (an explicit scope is an explicit boundary — there is no
+	/// fallback to the whole subtree). On the entry graph the check applies to the EDGE ENTERING THE HOST —
+	/// the ancestor-path entry attached directly to the host must occupy this slot (its <c>propertyName</c>,
+	/// absent = <c>items</c>) — while the banned component itself may sit levels deeper through ordinary
+	/// <c>items</c> edges; on a verbatim-carried host it is the host's own property of this name. Absent
+	/// searches the host's whole subtree, under any slot — <c>tools</c> and <c>items</c> alike — so prefer
+	/// naming the slot explicitly whenever the scope is known, to avoid matching the same type in an
+	/// unrelated property (e.g. a button's <c>menuItems</c>) of the same host.
 	/// </summary>
 	[JsonPropertyName("propertiesContainerName")]
 	public string PropertiesContainerName { get; init; }
