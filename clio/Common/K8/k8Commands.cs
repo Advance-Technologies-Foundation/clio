@@ -177,16 +177,6 @@ public class k8Commands : Ik8Commands
 		return "";
 	}
 
-	// private V1Namespace GetNamespaces(){
-	// 	
-	// 	//TODO - Can we do better ?
-	// 	var namespaces = _client.CoreV1.ListNamespace().Items.FirstOrDefault(ns => ns.Metadata.Name == K8NNameSpace);
-	 //        if (namespaces == null) {
-	 //        	throw new Exception($"{K8NNameSpace} namespace not found");
-	 //        }
-	// 	return namespaces;
-	// }
-
 	private V1Pod GetPodByLabel(string appName) {
 		V1Pod pod = _client.CoreV1
 			.ListNamespacedPod(K8NNameSpace, null, null, null, $"app={appName}")

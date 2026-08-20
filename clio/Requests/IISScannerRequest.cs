@@ -569,7 +569,7 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 
 			int i = 1;
 
-			GetSites(_powerShellFactory)?.ToList()?.ForEach(async site => {
+			GetSites(_powerShellFactory)?.ToList().ForEach(async site => {
 				_logger.WriteInfo($"({i++}) {site.Key} - {site.Value.Url} at {site.Value.PhysicalPath}");
 			});
 

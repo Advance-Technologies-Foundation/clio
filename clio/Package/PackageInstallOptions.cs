@@ -33,10 +33,6 @@ public class PackageInstallOptions
 
 	public override bool Equals(Object obj) => Equals(obj as PackageInstallOptions);
 
-	public override int GetHashCode() =>
-		HashCode.Combine(InstallSqlScript, InstallPackageData, ContinueIfError, SkipConstraints,
-			SkipValidateActions, ExecuteValidateActions);
-
 	public bool Equals(PackageInstallOptions obj) {
 		return ReferenceEquals(obj, this) ||
 			(!ReferenceEquals(obj, null) &&
@@ -47,6 +43,10 @@ public class PackageInstallOptions
 				SkipValidateActions == obj.SkipValidateActions &&
 				ExecuteValidateActions == obj.ExecuteValidateActions);
 	}
+
+	public override int GetHashCode() =>
+		HashCode.Combine(InstallSqlScript, InstallPackageData, ContinueIfError, SkipConstraints,
+			SkipValidateActions, ExecuteValidateActions);
 
 	public static bool operator ==(PackageInstallOptions v1, PackageInstallOptions v2) =>
 		v1?.Equals(v2) ?? object.ReferenceEquals(v2, null);
