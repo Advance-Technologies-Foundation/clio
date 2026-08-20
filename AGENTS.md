@@ -4,6 +4,17 @@
 Read this file and `project-context.md` before doing any work. More specific nested `AGENTS.md` files, when present,
 may add rules for their subtree but must not duplicate or contradict this file.
 
+# GitHub issue mitigation workflow
+
+When the user authorizes taking, triaging, fixing, implementing, or resolving a GitHub issue
+submitted to `Advance-Technologies-Foundation/clio`, use the repository's `clio-issue-workflow` skill.
+Do not claim an issue during brainstorming, planning, explanation, or review-only work.
+
+The workflow uses GitHub's assignee, the organization-level `Mitigation stage` issue field,
+Development links, issue relationships, and draft pull requests. Do not add a custom locking or
+claim protocol. The required field must be provisioned as described in
+`.ai/skills/clio-issue-workflow/SKILL.md`; the skill fails before any GitHub write until it is ready.
+
 # ClioGate integration
 
 ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.
