@@ -971,12 +971,10 @@ public static class SchemaValidationService
 				// out of refusing (raised in review of PR #1124).
 				result.IsValid = false;
 				AddBoundedMergeSlotDiagnostic(
-					result.Errors, ref blockingReported, ref blockingCapNoted, "blocking",
-					subject, slot, childName, blocks: true, result);
+					result, ref blockingReported, ref blockingCapNoted, subject, slot, childName, blocks: true);
 			} else {
 				AddBoundedMergeSlotDiagnostic(
-					result.Warnings, ref advisoryReported, ref advisoryCapNoted, "advisory",
-					subject, slot, childName, blocks: false, result);
+					result, ref advisoryReported, ref advisoryCapNoted, subject, slot, childName, blocks: false);
 			}
 		}
 	}
@@ -996,11 +994,14 @@ public static class SchemaValidationService
 	/// A legitimate body never reaches either bound.
 	/// </remarks>
 	private static void AddBoundedMergeSlotDiagnostic(
-		List<string> sink, ref int reported, ref bool capNoted, string channel,
-		string subject, JsonProperty slot, string childName, bool blocks, SchemaValidationResult result) {
+		SchemaValidationResult result, ref int reported, ref bool capNoted,
+		string subject, JsonProperty slot, string childName, bool blocks) {
+		// The sink and the label both follow from `blocks`; passing them in as well only widened the signature.
+		// The cap note always goes to the warnings, on either channel — it reports a truncation, not a defect.
 		if (reported >= MaxMergeSlotDiagnosticsPerEntry) {
 			if (!capNoted) {
 				capNoted = true;
+				string channel = blocks ? "blocking" : "advisory";
 				result.Warnings.Add(
 					$"{subject} authors child elements in further slots not listed here; only the first "
 					+ $"{MaxMergeSlotDiagnosticsPerEntry} {channel} slots are reported.");
@@ -1008,6 +1009,7 @@ public static class SchemaValidationService
 			return;
 		}
 		reported++;
+		List<string> sink = blocks ? result.Errors : result.Warnings;
 		sink.Add(DescribeMergeSlotAuthoring(
 			subject, slot.Name, childName, blocks, slot.Value.ValueKind == JsonValueKind.Object));
 	}
