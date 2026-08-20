@@ -84,10 +84,10 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "a filter naming only crt.DataGrid would leave a crt.DataTable list without a row");
 		ViewConfigTemplateRule template = grid.ViewConfigTemplates.Single();
 		template.ParentName.Should().Be("{{ diff.parentName }}",
-			because: "placement is READ-ONLY: a rules file that could set parentName would reparent an element "
-				+ "behind the element map's back, desynchronizing it from every other parentName");
+			because: "the list row stays where the walk places it, so the template ECHOES the computed parent — "
+				+ "echoing keeps the walked placement (only a DIFFERENT value would retarget, as the FAB rule does)");
 		template.PropertyName.Should().Be("{{ diff.propertyName }}",
-			because: "the slot is read-only for the same reason");
+			because: "the slot is echoed for the same reason — the row is not retargeted");
 		string skeleton = template.Value!.Value.GetRawText();
 		skeleton.Should().Contain("\"type\": \"crt.List\"",
 			because: "the template's own declared type is what gates it against the element's resolved mobile type — "
@@ -99,6 +99,33 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 				+ "there renders an empty Title column while the body rows still look correct");
 		skeleton.Should().Contain("\"$each\": \"source.columns[1:]\"",
 			because: "every column after the leading one becomes its own body entry");
+	}
+
+	[Test]
+	[Description("The bundled MainHeader -> FAB rule is a path-scoped, placement-driving template: path scopes it to MainHeader, filters match crt.Button/crt.MenuItem, and the template retargets into FloatingActionButton.menuItems, retyping to crt.MenuItem and naming only caption/visible/clicked (a visual denylist via an authoritative template).")]
+	public void LoadBundled_HeaderToFabRule_ScopedAndRetargeting() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentEquivalenceRule fab = rules.Components.Single(c => c.Path.Contains("MainHeader"));
+		fab.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.Button", "crt.MenuItem" },
+			because: "the whole header action subtree — buttons and their menu items — is converted");
+		ViewConfigTemplateRule template = fab.ViewConfigTemplates.Should().ContainSingle().Subject;
+		template.ParentName.Should().Be("FloatingActionButton",
+			because: "the template DRIVES placement into the FAB rather than echoing the walked position");
+		template.PropertyName.Should().Be("menuItems",
+			because: "converted actions land in the FAB's menuItems slot");
+		template.PreserveSourceProperties.Should().BeFalse(
+			because: "an authoritative template carries only the properties it names — that IS the visual denylist");
+		JsonElement value = template.Value!.Value;
+		value.GetProperty("type").GetString().Should().Be("crt.MenuItem",
+			because: "the header action becomes a mobile menu item");
+		string skeleton = value.GetRawText();
+		skeleton.Should().Contain("caption").And.Contain("visible").And.Contain("clicked",
+			because: "only caption/visible/clicked are carried onto the menu item");
+		skeleton.Should().NotContain("style").And.NotContain("icon").And.NotContain("color",
+			because: "visual properties are denylisted — an authoritative template never enumerates them");
 	}
 
 	[Test]

@@ -113,6 +113,23 @@
           "value": { "type": "crt.RichTextEditor" }
         }
       ]
+    },
+    {
+      "path": ["MainHeader"],
+      "filters": [{ "type": "crt.Button" }, { "type": "crt.MenuItem" }],
+      "viewConfigTemplates": [
+        {
+          "parentName": "FloatingActionButton",
+          "propertyName": "menuItems",
+          "value": {
+            "type": "crt.MenuItem",
+            "name": "{{ diff.name }}",
+            "caption": "{{ source.caption }}",
+            "visible": "{{ source.visible }}",
+            "clicked": "{{ source.clicked }}"
+          }
+        }
+      ]
     }
   ],
   "tabAreaLayers": {
@@ -168,6 +185,7 @@
       "crt.ExpansionPanel"
     ]
   },
+  "nonConvertingScopeContainers": ["MainHeader"],
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
     { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
