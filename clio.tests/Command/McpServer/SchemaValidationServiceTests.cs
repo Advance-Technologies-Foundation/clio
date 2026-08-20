@@ -7948,6 +7948,138 @@ public sealed class SchemaValidationServiceTests
 			because: "UsrKnown is properly declared under the attributes path");
 	}
 
+	[Test]
+	[Description("ENG-95046: a list itemLayout binding to an item-scope attribute nested inside a collection attribute's viewModelConfig.attributes is accepted as declared.")]
+	public void ValidateMobileFieldBindings_WhenItemLayoutBindsNestedCollectionAttribute_ReturnsValid() {
+		// Arrange — SimilarLeadList is a collection attribute whose OWN viewModelConfig.attributes
+		// declares the item-scope attribute SimilarLeadListDS_LeadName; the list's itemLayout binds
+		// to it directly (no root-level duplicate attribute declaration).
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes"],
+		                    "values": {
+		                      "SimilarLeadList": {
+		                        "type": "crt.CollectionDataSource",
+		                        "viewModelConfig": {
+		                          "attributes": {
+		                            "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+		                          }
+		                        }
+		                      }
+		                    }
+		                  }
+		                ],
+		                "viewConfigDiff": [
+		                  {
+		                    "operation": "insert",
+		                    "name": "SimilarLeadList_ListItem",
+		                    "parentName": "SimilarLeadList",
+		                    "propertyName": "itemLayout",
+		                    "values": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_LeadName" }
+		                  }
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "SimilarLeadListDS_LeadName is declared inside SimilarLeadList.viewModelConfig.attributes, " +
+			          "which is a valid item-scope declaration for the list's itemLayout binding, so no root-level duplicate is required");
+		result.Errors.Should().BeEmpty(
+			because: "the binding resolves to a properly nested item-scope attribute");
+	}
+
+	[Test]
+	[Description("ENG-95046 counterpart: a binding to a name absent from the collection attribute's nested viewModelConfig.attributes is still rejected as undeclared.")]
+	public void ValidateMobileFieldBindings_WhenItemLayoutBindsUnknownNestedAttribute_ReturnsError() {
+		// Arrange — same SimilarLeadList shape as above, but the itemLayout binds to a name that
+		// was never declared under SimilarLeadList.viewModelConfig.attributes.
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes"],
+		                    "values": {
+		                      "SimilarLeadList": {
+		                        "type": "crt.CollectionDataSource",
+		                        "viewModelConfig": {
+		                          "attributes": {
+		                            "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+		                          }
+		                        }
+		                      }
+		                    }
+		                  }
+		                ],
+		                "viewConfigDiff": [
+		                  {
+		                    "operation": "insert",
+		                    "name": "SimilarLeadList_ListItem",
+		                    "parentName": "SimilarLeadList",
+		                    "propertyName": "itemLayout",
+		                    "values": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_NotDeclared" }
+		                  }
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "SimilarLeadListDS_NotDeclared is not declared anywhere, including the nested item-scope attributes map");
+		result.Errors.Should().ContainSingle(e => e.Contains("SimilarLeadListDS_NotDeclared"),
+			because: "the error must identify the undeclared nested attribute");
+	}
+
+	[Test]
+	[Description("ENG-95046 diff-path form: a viewModelConfigDiff operation whose path targets the nested attributes map directly (path ends in \"attributes\" nested under a collection attribute) declares its values as item-scope attribute names.")]
+	public void ValidateMobileFieldBindings_WhenDiffTargetsNestedAttributesMapDirectly_ReturnsValid() {
+		// Arrange — instead of nesting viewModelConfig.attributes inside a root-level "merge"
+		// values object, the diff operation's own path drills straight down to the nested
+		// attributes map: path:["attributes","SimilarLeadList","viewModelConfig","attributes"].
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes", "SimilarLeadList", "viewModelConfig", "attributes"],
+		                    "values": {
+		                      "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+		                    }
+		                  }
+		                ],
+		                "viewConfigDiff": [
+		                  {
+		                    "operation": "insert",
+		                    "name": "SimilarLeadList_ListItem",
+		                    "parentName": "SimilarLeadList",
+		                    "propertyName": "itemLayout",
+		                    "values": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_LeadName" }
+		                  }
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a diff operation whose path drills into a nested attributes map " +
+			          "(first and last path segments both \"attributes\") declares its values as item-scope attribute names");
+		result.Errors.Should().BeEmpty(
+			because: "SimilarLeadListDS_LeadName is declared by the targeted nested-path merge operation");
+	}
+
 	#endregion
 
 	#region ValidateMobileStandardFieldBindings
