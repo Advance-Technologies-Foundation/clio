@@ -9097,3 +9097,10 @@ Decision: Keep the Angular 19 Jest builder and the project-specific setup hook, 
 Discovery: `@angular-builders/jest` 19.0.1 concatenates custom `setupFilesAfterEnv` with its own setup. A token-substituted shipped template with locked dependencies passed a real `TestBed` component test after the duplicate initializer was removed. A zero-spec scaffold still reports Jest's normal `No tests found`; `passWithNoTests` is deliberately not enabled.
 Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
 Impact: both default and empty scaffolds retain their Jest extension point while real specs can execute; structural tests prevent either template from reintroducing a second initializer.
+
+## 2026-08-21 00:37 – GH #1136 Claude review: make runner ownership explicit
+Context: Claude agreed with the Jest-builder ownership fix but found that direct `jest` invocation would bypass the builder-owned Angular test environment and that the regression did not pin `configPath`.
+Decision: Document `npm test` / `ng test` as the supported runner path in both setup files and READMEs, assert the complete setup contract, and pin the Angular builder's `configPath` and `tsConfig`.
+Discovery: The generated `jest.config.ts` is an extension consumed by `@angular-builders/jest`, not a supported standalone test entry point.
+Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
+Impact: maintainers and generated-project users can see the single-owner contract, while regression coverage protects the configuration link that makes it work.

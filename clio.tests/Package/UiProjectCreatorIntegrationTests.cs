@@ -188,20 +188,24 @@ public class UiProjectCreatorIntegrationTests {
 
 		// Assert
 		string setupContent = File.ReadAllText(Path.Combine(projectPath, "setup-jest.ts"));
-		setupContent.Should().Contain("import '@angular/compiler';",
-			because: "the generated Jest setup should retain the Angular JIT compiler import")
-			.And.NotContain("setupZoneTestEnv",
-				because: "@angular-builders/jest already initializes the Angular test environment");
+		setupContent.ReplaceLineEndings("\n").Trim().Should().Be(
+			"// The @angular-builders/jest runner initializes Angular's test environment. Use npm test or ng test.\n" +
+			"import '@angular/compiler';",
+			because: "the generated setup should retain only project-specific compiler setup and document its runner-owned test environment");
 
 		string jestConfig = File.ReadAllText(Path.Combine(projectPath, "jest.config.ts"));
-		jestConfig.Should().Contain("setupFilesAfterEnv: ['<rootDir>/setup-jest.ts']",
+		jestConfig.Should().MatchRegex("setupFilesAfterEnv\\s*:\\s*\\[\\s*['\"]<rootDir>/setup-jest\\.ts['\"]\\s*\\]",
 			because: "the generated project should retain its extension point for project-specific Jest setup");
 
 		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "angular.json"))).AsObject();
-		string testBuilder = angularJson["projects"]?[ProjectName]?["architect"]?["test"]?["builder"]?
-			.GetValue<string>();
+		JsonNode testTarget = angularJson["projects"]?[ProjectName]?["architect"]?["test"];
+		string testBuilder = testTarget?["builder"]?.GetValue<string>();
 		testBuilder.Should().Be("@angular-builders/jest:run",
 			because: "the builder must remain the single owner of Angular test-environment initialization");
+		testTarget?["options"]?["configPath"]?.GetValue<string>().Should().Be("jest.config.ts",
+			because: "the builder must load the project-specific setup extension point");
+		testTarget?["options"]?["tsConfig"]?.GetValue<string>().Should().Be("tsconfig.spec.json",
+			because: "the builder must compile specs with the generated test TypeScript configuration");
 	}
 
 	#endregion
