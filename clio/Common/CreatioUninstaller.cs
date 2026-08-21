@@ -158,6 +158,8 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 	#region Methods: Private
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	private static OneOf<DbInfo, Error> GetDbInfoFromXmlContent(string csContent){
 		XmlDocument doc = new();
 		doc.LoadXml(csContent);
@@ -176,7 +178,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 							{
 								if (connectionString.Contains(psqlMarker)) {
 									const string pattern = @"Database=([^;]+)";
-									Match match = Regex.Match(connectionString, pattern);
+									Match match = Regex.Match(connectionString, pattern, RegexOptions.None, RegexTimeout);
 									if (match.Success) {
 										string dbName = match.Groups[1].Value;
 										return new DbInfo(dbName, "PostgreSql", connectionString);
@@ -185,7 +187,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 								}
 								if (connectionString.Contains(mssqlMarker)) {
 									const string pattern = @"Catalog=([^;]+)";
-									Match match = Regex.Match(connectionString, pattern);
+									Match match = Regex.Match(connectionString, pattern, RegexOptions.None, RegexTimeout);
 									if (match.Success) {
 										string dbName = match.Groups[1].Value;
 										return new DbInfo(dbName, "MsSql", connectionString);

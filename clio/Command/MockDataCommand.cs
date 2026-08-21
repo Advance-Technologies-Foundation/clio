@@ -37,6 +37,7 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 
 	private readonly IFileSystem _fileSystem;
 	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	#endregion
 
@@ -106,7 +107,7 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 	public static List<string> ExtractSchemaNames(string sourceCode){
 		List<string> schemaNames = new();
 		string pattern = @"\[Schema\(""([^""]+)""\)\]";
-		MatchCollection matches = Regex.Matches(sourceCode, pattern);
+		MatchCollection matches = Regex.Matches(sourceCode, pattern, RegexOptions.None, RegexTimeout);
 
 		foreach (Match match in matches) {
 			if (match.Groups.Count > 1) {
