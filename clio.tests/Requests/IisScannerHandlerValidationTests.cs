@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -26,6 +27,18 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	public override void Setup() {
 		base.Setup();
 		_scanner = Container.GetRequiredService<IIisScanner>();
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
+			Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
+	}
+
+	private void MockAppCmd(string arguments, params string[] outputs) {
+		Queue<string> pending = new(outputs);
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == arguments)).Returns(_ => Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0,
+				StandardOutput = pending.Count > 1 ? pending.Dequeue() : pending.Peek()
+			}));
 	}
 
 	[TestCase("work", false, true)]
@@ -177,11 +190,9 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 		string appName = siteName.Contains('/') ? siteName : $"{siteName}/";
 		string siteNameOnly = siteName.Split('/')[0];
 		string targetXml = $"<appcmd><APP APP.NAME=\"{appName}\" APPPOOL.NAME=\"{appPoolName}\" SITE.NAME=\"{siteNameOnly}\" /></appcmd>";
-		_processExecutor.Execute(Arg.Any<string>(), Arg.Is<string>(args => args.Contains("/text:physicalPath")), true)
-			.Returns(physicalPath);
-		_processExecutor.Execute(Arg.Any<string>(), Arg.Is<string>(args => args.Contains("/text:applicationPool")), true)
-			.Returns(appPoolName);
-		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns(targetXml, "<appcmd />");
+		MockAppCmd($"list VDIR \"{siteName.TrimEnd('/')}/\" /text:physicalPath", physicalPath);
+		MockAppCmd($"list APP \"{appName}\" /text:applicationPool", appPoolName);
+		MockAppCmd("list app /xml", targetXml, "<appcmd />");
 
 		// Act
 		bool result = _scanner.TryDeleteIisTarget(siteName, physicalPath, appPoolName);
@@ -189,25 +200,18 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 		// Assert
 		result.Should().BeTrue(
 			because: "the target identity is unchanged and verified absent after the supported delete command");
-		Received.InOrder(() => {
-			_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true);
-			_processExecutor.Execute(Arg.Any<string>(), Arg.Is<string>(args => args.Contains("/text:physicalPath")), true);
-			_processExecutor.Execute(Arg.Any<string>(), Arg.Is<string>(args => args.Contains("/text:applicationPool")), true);
-			_processExecutor.Execute(Arg.Any<string>(), expectedDeleteCommand, true);
-			_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true);
-		});
+		_processExecutor.Received(1).ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == expectedDeleteCommand));
 	}
 
 	[Test]
 	[Description("A same-name replacement is not stopped when its physical path no longer matches the resolved target.")]
 	public void TryStopIisTarget_ShouldNotStopSite_WhenIdentityWasReplaced() {
 		// Arrange
-		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns(
+		MockAppCmd("list app /xml",
 			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>");
-		_processExecutor.Execute(Arg.Any<string>(), Arg.Is<string>(args => args.Contains("/text:physicalPath")), true)
-			.Returns(@"C:\sites\replacement");
-		_processExecutor.Execute(Arg.Any<string>(), Arg.Is<string>(args => args.Contains("/text:applicationPool")), true)
-			.Returns("pool");
+		MockAppCmd("list VDIR \"work/\" /text:physicalPath", @"C:\sites\replacement");
+		MockAppCmd("list APP \"work/\" /text:applicationPool", "pool");
 
 		// Act
 		bool result = _scanner.TryStopIisTarget("work", @"C:\sites\work", "pool");
@@ -215,81 +219,182 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 		// Assert
 		result.Should().BeFalse(
 			because: "authority for the original site must not transfer to a same-name replacement");
-		_processExecutor.DidNotReceive().Execute(Arg.Any<string>(), "stop site \"/site.name:work\"", true);
-		_processExecutor.DidNotReceive().Execute(Arg.Any<string>(), "delete site \"/site.name:work\"", true);
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "stop site \"/site.name:work\""));
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "delete site \"/site.name:work\""));
+	}
+
+	[Test]
+	[Description("A nonzero AppCmd site-stop exit fails the safe target mutation.")]
+	public void TryStopIisTarget_ShouldFail_WhenAppCmdSiteStopFails() {
+		// Arrange
+		MockAppCmd("list app /xml",
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>");
+		MockAppCmd("list VDIR \"work/\" /text:physicalPath", @"C:\sites\work");
+		MockAppCmd("list APP \"work/\" /text:applicationPool", "pool");
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "stop site \"/site.name:work\"")).Returns(Task.FromResult(
+				new ProcessExecutionResult { Started = true, ExitCode = 1 }));
+
+		// Act
+		bool result = _scanner.TryStopIisTarget("work", @"C:\sites\work", "pool");
+
+		// Assert
+		result.Should().BeFalse(because: "database and file deletion must not follow a failed IIS stop");
 	}
 
 	[Test]
 	[Description("An application pool is stopped when every assignment belongs to the IIS targets selected for removal.")]
 	public void TryStopAppPoolIfOwnedByTargets_ShouldStopPool_WhenAllAssignmentsAreTargets() {
 		// Arrange
-		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns(
+		MockAppCmd("list app /xml",
 			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"work\" />"
 			+ "<APP APP.NAME=\"alias/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"alias\" /></appcmd>");
 
 		// Act
-		bool result = _scanner.TryStopAppPoolIfOwnedByTargets("shared", ["work", "alias"]);
+		IisAppPoolMutationResult result = _scanner.StopAppPoolIfOwnedByTargets("shared", ["work", "alias"]);
 
 		// Assert
-		result.Should().BeTrue(
+		result.Should().Be(IisAppPoolMutationResult.Completed,
 			because: "stopping a pool is safe when every application assigned to it is being removed");
-		_processExecutor.Received(1).Execute(Arg.Any<string>(), "stop apppool \"/apppool.name:shared\"", true);
+		_processExecutor.Received(1).ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "stop apppool \"/apppool.name:shared\""));
 	}
 
 	[Test]
 	[Description("An application pool shared with an unrelated IIS application is left running.")]
 	public void TryStopAppPoolIfOwnedByTargets_ShouldPreservePool_WhenUnrelatedAssignmentRemains() {
 		// Arrange
-		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns(
+		MockAppCmd("list app /xml",
 			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"work\" />"
 			+ "<APP APP.NAME=\"other/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"other\" /></appcmd>");
 
 		// Act
-		bool result = _scanner.TryStopAppPoolIfOwnedByTargets("shared", ["work"]);
+		IisAppPoolMutationResult result = _scanner.StopAppPoolIfOwnedByTargets("shared", ["work"]);
 
 		// Assert
-		result.Should().BeFalse(
+		result.Should().Be(IisAppPoolMutationResult.PreservedShared,
 			because: "stopping the shared pool would interrupt an unrelated application");
-		_processExecutor.DidNotReceive().Execute(Arg.Any<string>(),
-			"stop apppool \"/apppool.name:shared\"", true);
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "stop apppool \"/apppool.name:shared\""));
 	}
 
 	[Test]
 	[Description("A shared pool is not stopped or deleted when a fresh application inventory still references it.")]
 	public void TryDeleteAppPoolIfUnused_ShouldPreservePool_WhenAssignmentRemains() {
 		// Arrange
-		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns(
+		MockAppCmd("list app /xml",
 			"<appcmd><APP APP.NAME=\"other/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"other\" /></appcmd>");
 
 		// Act
-		bool result = _scanner.TryDeleteAppPoolIfUnused("pool");
+		IisAppPoolMutationResult result = _scanner.DeleteAppPoolIfUnused("pool");
 
 		// Assert
-		result.Should().BeFalse(
+		result.Should().Be(IisAppPoolMutationResult.PreservedShared,
 			because: "an application assignment retains ownership of the shared pool");
-		_processExecutor.DidNotReceive().Execute(Arg.Any<string>(), Arg.Is<string>(args =>
-			args.StartsWith("stop apppool") || args.StartsWith("delete apppool")), true);
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.StartsWith("stop apppool") || options.Arguments.StartsWith("delete apppool")));
 	}
 
 	[Test]
 	[Description("An unused pool is deleted only between fresh assignment and verified-absence snapshots.")]
 	public void TryDeleteAppPoolIfUnused_ShouldVerifyRemoval_WhenNoAssignmentRemains() {
 		// Arrange
-		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns("<appcmd />");
-		_processExecutor.Execute(Arg.Any<string>(), "list apppool /xml", true).Returns("<appcmd />");
+		MockAppCmd("list app /xml", "<appcmd />");
+		MockAppCmd("list apppool /xml", "<appcmd><APPPOOL APPPOOL.NAME=\"pool\" /></appcmd>", "<appcmd />");
 
 		// Act
-		bool result = _scanner.TryDeleteAppPoolIfUnused("pool");
+		IisAppPoolMutationResult result = _scanner.DeleteAppPoolIfUnused("pool");
 
 		// Assert
-		result.Should().BeTrue(
+		result.Should().Be(IisAppPoolMutationResult.Completed,
 			because: "complete AppCmd snapshots prove the pool unused before deletion and absent afterward");
-		Received.InOrder(() => {
-			_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true);
-			_processExecutor.Execute(Arg.Any<string>(), "delete apppool \"/apppool.name:pool\"", true);
-			_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true);
-			_processExecutor.Execute(Arg.Any<string>(), "list apppool /xml", true);
-		});
+		_processExecutor.Received(1).ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "delete apppool \"/apppool.name:pool\""));
+	}
+
+	[Test]
+	[Description("Complete IIS discovery returns damaged or non-Creatio sites instead of filtering them from destructive path matching.")]
+	public void TryFindAllIisTargets_ShouldReturnUnfilteredSitesAndNestedApplications() {
+		// Arrange
+		MockAppCmd("list sites /xml",
+			"<appcmd><SITE SITE.NAME=\"work\" state=\"Started\" bindings=\"http/*:40100:\" /></appcmd>");
+		MockAppCmd("list app /xml",
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"root-pool\" SITE.NAME=\"work\" />"
+			+ "<APP APP.NAME=\"work/0\" APPPOOL.NAME=\"webapp-pool\" SITE.NAME=\"work\" /></appcmd>");
+		MockAppCmd("list VDIR \"work/\" /text:physicalPath", @"C:\broken-creatio");
+		MockAppCmd("list APP \"work/\" /text:applicationPool", "root-pool");
+		MockAppCmd("list VDIR \"work/0/\" /text:physicalPath", @"C:\broken-creatio\Terrasoft.WebApp");
+		MockAppCmd("list APP \"work/0\" /text:applicationPool", "webapp-pool");
+
+		// Act
+		bool success = _scanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets);
+
+		// Assert
+		success.Should().BeTrue(because: "valid AppCmd metadata is complete even when files are damaged");
+		targets.Should().HaveCount(2, because: "both the root site and nested application must be visible");
+		targets[0].siteType.Should().Be(SiteType.NotCreatioSite,
+			because: "destructive discovery must not filter a damaged target by current file contents");
+		targets.Select(target => target.siteBinding.appPoolName).Should().BeEquivalentTo(
+			["root-pool", "webapp-pool"], because: "every assigned pool must remain available for cleanup");
+	}
+
+	[Test]
+	[Description("Pool discovery includes every pool assigned to the root and slash-zero applications of a selected site.")]
+	public void TryFindAppPoolsForTargets_ShouldReturnAllPoolsOwnedBySelectedRootSite() {
+		// Arrange
+		MockAppCmd("list app /xml",
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"root-pool\" SITE.NAME=\"work\" />"
+			+ "<APP APP.NAME=\"work/0\" APPPOOL.NAME=\"webapp-pool\" SITE.NAME=\"work\" />"
+			+ "<APP APP.NAME=\"other/\" APPPOOL.NAME=\"foreign\" SITE.NAME=\"other\" /></appcmd>");
+
+		// Act
+		bool success = _scanner.TryFindAppPoolsForTargets(["work"], out IReadOnlyCollection<string> pools);
+
+		// Assert
+		success.Should().BeTrue(because: "the application inventory is complete");
+		pools.Should().BeEquivalentTo(["root-pool", "webapp-pool"],
+			because: "the root and slash-zero applications can legitimately use different pools");
+	}
+
+	[Test]
+	[Description("A nonzero AppCmd exit makes complete IIS discovery fail closed.")]
+	public void TryFindAllIisTargets_ShouldFail_WhenAppCmdInventoryCommandFails() {
+		// Arrange
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "list sites /xml")).Returns(Task.FromResult(new ProcessExecutionResult {
+			Started = true,
+			ExitCode = 1,
+			StandardError = "fixture failure"
+		}));
+
+		// Act
+		bool success = _scanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets);
+
+		// Assert
+		success.Should().BeFalse(because: "an incomplete inventory cannot authorize filesystem deletion");
+		targets.Should().BeEmpty(because: "partial discovery must never escape as authoritative metadata");
+	}
+
+	[Test]
+	[Description("A failed AppCmd pool stop is distinguished from preserving a pool shared with unrelated applications.")]
+	public void StopAppPoolIfOwnedByTargets_ShouldFail_WhenAppCmdStopFails() {
+		// Arrange
+		MockAppCmd("list app /xml",
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>");
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.StartsWith("stop apppool"))).Returns(Task.FromResult(new ProcessExecutionResult {
+			Started = true,
+			ExitCode = 1
+		}));
+
+		// Act
+		IisAppPoolMutationResult result = _scanner.StopAppPoolIfOwnedByTargets("pool", ["work"]);
+
+		// Assert
+		result.Should().Be(IisAppPoolMutationResult.Failed,
+			because: "the uninstaller must abort on mutation failure rather than treating it as shared preservation");
 	}
 
 	[Test]

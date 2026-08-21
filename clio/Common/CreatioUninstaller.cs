@@ -274,7 +274,11 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			return;
 		}
 
-		string resolvedPath = settings.EnvironmentPath;
+		if (!TryCanonicalizeDestructivePath(settings.EnvironmentPath, out string resolvedPath)) {
+			AbortUnresolvedTarget(
+				$"Environment '{environmentName}' has an unsafe or invalid EnvironmentPath.");
+			return;
+		}
 		_logger.WriteInfo($"Uninstalling Creatio from registered directory: {resolvedPath}");
 
 		// The environment name flows into the pipeline so unregister runs as the final stage and only
@@ -293,7 +297,11 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 	public void UninstallByPath(string creatioDirectoryPath){
 		// No environment name: there is nothing to unregister, so the unregister stage is reported skipped.
-		RunUninstall(creatioDirectoryPath, environmentName: null);
+		if (!TryCanonicalizeDestructivePath(creatioDirectoryPath, out string resolvedPath)) {
+			AbortUnresolvedTarget("The specified uninstall path is unsafe or invalid.");
+			return;
+		}
+		RunUninstall(resolvedPath, environmentName: null);
 	}
 
 	#endregion
@@ -349,11 +357,13 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 					$"IIS target '{targetSite.siteBinding.name}' contains other applications or could not be validated safely.");
 			}
 		}
-		string[] appPoolNames = targetSites
-			.Select(site => site.siteBinding.appPoolName)
-			.Where(name => !string.IsNullOrWhiteSpace(name))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.ToArray();
+		string[] targetNames = targetSites.Select(site => site.siteBinding.name).ToArray();
+		IReadOnlyCollection<string> discoveredPools = [];
+		if (targetNames.Length > 0
+			&& !_iisScanner.TryFindAppPoolsForTargets(targetNames, out discoveredPools)) {
+			AbortUnresolvedTarget("The IIS application-pool inventory could not be read completely.");
+		}
+		string[] appPoolNames = discoveredPools.ToArray();
 		bool includeProfileStage = appPoolNames.Length > 0;
 		Dictionary<string, AppPoolProfileCleanupTarget> profileTargets = appPoolNames.ToDictionary(
 			name => name,
@@ -390,9 +400,12 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 							$"IIS target '{targetSite.siteBinding.name}' changed and cannot be stopped safely.");
 					}
 				}
-				string[] targetNames = targetSites.Select(site => site.siteBinding.name).ToArray();
 				foreach (string appPoolName in appPoolNames) {
-					_iisScanner.TryStopAppPoolIfOwnedByTargets(appPoolName, targetNames);
+					if (_iisScanner.StopAppPoolIfOwnedByTargets(appPoolName, targetNames)
+						== IisAppPoolMutationResult.Failed) {
+						throw new CreatioUninstallAbortedException(
+							$"Application pool '{appPoolName}' could not be validated or stopped safely.");
+					}
 				}
 			});
 
@@ -405,7 +418,17 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 				}
 			}
 			foreach (string appPoolName in appPoolNames) {
-				appPoolDeleted[appPoolName] = _iisScanner.TryDeleteAppPoolIfUnused(appPoolName);
+				IisAppPoolMutationResult result = _iisScanner.DeleteAppPoolIfUnused(appPoolName);
+				if (result == IisAppPoolMutationResult.Failed) {
+					throw new CreatioUninstallAbortedException(
+						$"Application pool '{appPoolName}' could not be validated or removed safely.");
+				}
+				appPoolDeleted[appPoolName] = result == IisAppPoolMutationResult.Completed;
+			}
+			if (!_iisScanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> remainingTargets)
+				|| remainingTargets.Any(site => PathsEqual(site.siteBinding.path, creatioDirectoryPath))) {
+				throw new CreatioUninstallAbortedException(
+					"IIS cleanup could not prove that every target mapped to the registered path was removed.");
 			}
 		});
 
@@ -516,9 +539,41 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	}
 
 	private IReadOnlyList<UnregisteredSite> ResolveSites(string creatioDirectoryPath){
-		return _iisScanner.FindAllCreatioSites()
+		if (!_iisScanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets)) {
+			AbortUnresolvedTarget("The IIS target inventory could not be read completely.");
+		}
+		UnregisteredSite[] matchingTargets = targets
 			.Where(site => PathsEqual(site.siteBinding.path, creatioDirectoryPath))
 			.ToArray();
+		return matchingTargets
+			.Where(candidate => !candidate.siteBinding.name.Contains('/')
+				|| !matchingTargets.Any(root => !root.siteBinding.name.Contains('/')
+					&& candidate.siteBinding.name.StartsWith(root.siteBinding.name + "/",
+						StringComparison.OrdinalIgnoreCase)))
+			.ToArray();
+	}
+
+	private static bool TryCanonicalizeDestructivePath(string path, out string canonicalPath) {
+		canonicalPath = null;
+		if (string.IsNullOrWhiteSpace(path)) {
+			return false;
+		}
+		try {
+			string expandedPath = Environment.ExpandEnvironmentVariables(path);
+			if (!Path.IsPathFullyQualified(expandedPath)) {
+				return false;
+			}
+			canonicalPath = Path.GetFullPath(expandedPath).TrimEnd(
+				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			string root = Path.GetPathRoot(canonicalPath)?.TrimEnd(
+				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			return !string.IsNullOrWhiteSpace(canonicalPath)
+				&& !string.Equals(canonicalPath, root, StringComparison.OrdinalIgnoreCase);
+		}
+		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+			or PathTooLongException) {
+			return false;
+		}
 	}
 
 	internal static bool PathsEqual(string firstPath, string secondPath) {
@@ -526,9 +581,9 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			return false;
 		}
 		try {
-			string normalizedFirst = Path.GetFullPath(firstPath).TrimEnd(
+			string normalizedFirst = Path.GetFullPath(Environment.ExpandEnvironmentVariables(firstPath)).TrimEnd(
 				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-			string normalizedSecond = Path.GetFullPath(secondPath).TrimEnd(
+			string normalizedSecond = Path.GetFullPath(Environment.ExpandEnvironmentVariables(secondPath)).TrimEnd(
 				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 			return string.Equals(normalizedFirst, normalizedSecond, StringComparison.OrdinalIgnoreCase);
 		}

@@ -20,10 +20,14 @@ containerized), and application files. The application pool is removed only
 when no other IIS application uses it.
 
 When uninstalling by environment name, the registered `EnvironmentPath` in
-`appsettings.json` is authoritative. Clio removes every safely validated IIS
-site or application whose normalized physical path exactly matches that path;
-the registered environment URI is not used to discover the filesystem target.
-If no IIS target uses the path, uninstall continues as a non-IIS local removal.
+`appsettings.json` is authoritative. Clio reads a complete, unfiltered IIS
+inventory and removes every safely validated site or application whose
+normalized physical path exactly matches that path. Every pool assigned to the
+selected applications is handled independently; shared pools remain available
+to unrelated applications. The registered environment URI is not used to
+discover the filesystem target. Incomplete IIS discovery aborts before database
+or file deletion. If a complete inventory has no matching target, uninstall
+continues as a non-IIS local removal.
 
 On Windows, the command also attempts to remove the registered IIS
 application-pool virtual-account profile. This is best-effort: a locked,

@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Net;
+using System.Net.Sockets;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Progress;
@@ -34,14 +36,15 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	private const string ToolName = InstallerCommandTool.DeployCreatioToolName;
 	private const string UninstallToolName = UninstallCreatioTool.UninstallCreatioToolName;
 	private const string MissingEnvironmentName = "mcp-e2e-missing-uninstall-target";
+	private string _iisRoot = null!;
 
 	/// <inheritdoc />
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
-		string iisRoot = CreateFixtureDirectory("deploy-progress-iis-root");
+		_iisRoot = CreateFixtureDirectory("deploy-progress-iis-root");
 		string dbHubConfig = Path.Combine(CreateFixtureDirectory("deploy-progress-dbhub"), "dbhub.toml");
 		JsonObject appSettings = new() {
 			["Autoupdate"] = false,
-			["iis-clio-root-path"] = iisRoot,
+			["iis-clio-root-path"] = _iisRoot,
 			["dbhub"] = new JsonObject {
 				["enabled"] = true,
 				["config-path"] = dbHubConfig,
@@ -113,6 +116,53 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		string wire = string.Join('\n', rawParams.Select(node => node.ToJsonString())).ToLowerInvariant();
 		wire.Should().NotContainAny(["password=", "pwd=", "user id=", "bearer "],
 			because: "no connection string, credential, or token may cross the wire (AC-ERR; redaction is at source)");
+	}
+
+	[Test]
+	[Description("Invokes deploy-creatio while a real TCP listener owns the requested port and verifies the command fails before creating the deployment directory.")]
+	[AllureTag(ToolName)]
+	[AllureName("Deploy creatio rejects an occupied port before mutation")]
+	public async Task DeployCreatio_Should_Fail_Before_Mutation_When_Port_Is_Occupied() {
+		// Arrange
+		if (!OperatingSystem.IsWindows()) {
+			Assert.Ignore("IIS deployment and its machine-wide port reservation are Windows-specific.");
+		}
+		await using ArrangeContext arrangeContext = Arrange();
+		using TcpListener listener = new(IPAddress.Loopback, 0);
+		listener.Start();
+		int occupiedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+		string siteName = $"occupied-port-{Guid.NewGuid():N}";
+		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
+		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive",
+			arrangeContext.CancellationTokenSource.Token);
+
+		try {
+			// Act
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["siteName"] = siteName,
+						["zipFile"] = corruptZipFile,
+						["sitePort"] = occupiedPort,
+						["dbServerName"] = "e2e-unused-before-port-rejection"
+					}
+				},
+				cancellationToken: arrangeContext.CancellationTokenSource.Token);
+
+			// Assert
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+			execution.ExitCode.Should().NotBe(0,
+				because: "an occupied requested IIS port must reject the deployment");
+			execution.Output.Should().Contain(message => message.Value != null
+				&& message.Value.Contains("not available", StringComparison.OrdinalIgnoreCase),
+				because: "the caller needs an actionable collision instead of a later IIS error");
+			Directory.Exists(Path.Combine(_iisRoot, siteName)).Should().BeFalse(
+				because: "port validation must complete before unzip, database, file, or IIS mutation");
+		}
+		finally {
+			File.Delete(corruptZipFile);
+		}
 	}
 
 	[Test]

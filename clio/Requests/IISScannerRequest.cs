@@ -28,6 +28,13 @@ public sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, 
 
 public sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
 
+/// <summary>Describes whether an application-pool mutation completed, was safely preserved, or failed.</summary>
+public enum IisAppPoolMutationResult {
+	Completed,
+	PreservedShared,
+	Failed
+}
+
 /// <summary>Provides discovery of Creatio sites registered in IIS.</summary>
 public interface IIisScanner {
 
@@ -36,6 +43,18 @@ public interface IIisScanner {
 	/// </summary>
 	/// <returns>The Creatio sites discovered in IIS.</returns>
 	IEnumerable<UnregisteredSite> FindAllCreatioSites();
+
+	/// <summary>Attempts to read a complete, unfiltered IIS target inventory.</summary>
+	/// <param name="targets">Every IIS site and nested application when discovery succeeds.</param>
+	/// <returns><see langword="true"/> only when AppCmd returned complete, valid metadata.</returns>
+	bool TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets);
+
+	/// <summary>Finds every application pool assigned to the selected targets.</summary>
+	/// <param name="targetNames">Root-site or nested-application names selected for removal.</param>
+	/// <param name="appPoolNames">The distinct assigned application-pool names.</param>
+	/// <returns><see langword="true"/> only when the application inventory is complete.</returns>
+	bool TryFindAppPoolsForTargets(IReadOnlyCollection<string> targetNames,
+		out IReadOnlyCollection<string> appPoolNames);
 
 	/// <summary>
 	///  Finds all registered Creatio sites in IIS.
@@ -81,13 +100,14 @@ public interface IIisScanner {
 	/// <summary>Stops an application pool only when every current assignment belongs to the selected targets.</summary>
 	/// <param name="appPoolName">Application pool to inspect and stop.</param>
 	/// <param name="targetNames">Root-site or nested-application names selected for removal.</param>
-	/// <returns><see langword="true"/> when the pool was proven target-owned and the stop was requested.</returns>
-	bool TryStopAppPoolIfOwnedByTargets(string appPoolName, IReadOnlyCollection<string> targetNames);
+	/// <returns>The completed, safely preserved, or failed mutation outcome.</returns>
+	IisAppPoolMutationResult StopAppPoolIfOwnedByTargets(string appPoolName,
+		IReadOnlyCollection<string> targetNames);
 
 	/// <summary>Deletes an application pool only when a fresh IIS snapshot has no assignments.</summary>
 	/// <param name="appPoolName">The application pool to revalidate and remove.</param>
-	/// <returns><see langword="true"/> only when removal is verified.</returns>
-	bool TryDeleteAppPoolIfUnused(string appPoolName);
+	/// <returns>The completed, safely preserved, or failed mutation outcome.</returns>
+	IisAppPoolMutationResult DeleteAppPoolIfUnused(string appPoolName);
 
 	/// <summary>Returns whether a fresh, complete IIS snapshot proves the pool is absent.</summary>
 	/// <param name="appPoolName">The application pool name.</param>
@@ -259,6 +279,24 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		return _processExecutor.Execute(Path.Join(dirPath, "appcmd.exe"), args, waitForExit: true);
 	}
 
+	private ProcessExecutionResult ExecuteAppCmdChecked(string args) {
+		const string dirPath = @"C:\Windows\System32\inetsrv\";
+		return _processExecutor.ExecuteAndCaptureAsync(new ProcessExecutionOptions(
+			Path.Join(dirPath, "appcmd.exe"), args)).GetAwaiter().GetResult();
+	}
+
+	private static bool Succeeded(ProcessExecutionResult result) =>
+		result is { Started: true, ExitCode: 0, TimedOut: false, Canceled: false,
+			ResourceLimitExceeded: false };
+
+	private bool TryReadAppCmd(string args, out string output) {
+		ProcessExecutionResult result = ExecuteAppCmdChecked(args);
+		output = result.StandardOutput;
+		return Succeeded(result);
+	}
+
+	private bool TryMutateAppCmd(string args) => Succeeded(ExecuteAppCmdChecked(args));
+
 	private static string QuoteAppCmdArgument(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
 
 	private void StopAppPool(string name) =>
@@ -363,6 +401,76 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 				DetectSiteType(site.path)));
 	}
 
+	/// <inheritdoc />
+	public bool TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets) {
+		targets = [];
+		if (!TryReadAppCmd("list sites /xml", out string sitesXml)
+			|| !TryReadAppCmd("list app /xml", out string appsXml)
+			|| !TryReadCompleteSites(sitesXml, out XElement[] sites)
+			|| !TryReadCompleteApps(appsXml, out XElement[] apps)) {
+			return false;
+		}
+
+		Dictionary<string, XElement> siteByName = sites.ToDictionary(
+			site => site.Attribute("SITE.NAME")!.Value, StringComparer.OrdinalIgnoreCase);
+		List<UnregisteredSite> result = [];
+		foreach (XElement site in sites) {
+			string siteName = site.Attribute("SITE.NAME")!.Value;
+			if (!TryResolveTarget(siteName, siteName + "/", site, out UnregisteredSite target)) {
+				return false;
+			}
+			result.Add(target);
+		}
+		foreach (XElement app in apps.Where(element => {
+			string name = element.Attribute("APP.NAME")!.Value;
+			return name.Contains('/') && !name.EndsWith('/');
+		})) {
+			string appName = app.Attribute("APP.NAME")!.Value;
+			string siteName = app.Attribute("SITE.NAME")!.Value;
+			if (!siteByName.TryGetValue(siteName, out XElement site)
+				|| !TryResolveTarget(appName, appName, site, out UnregisteredSite target)) {
+				return false;
+			}
+			result.Add(target);
+		}
+		targets = result;
+		return true;
+	}
+
+	private bool TryResolveTarget(string targetName, string appName, XElement site,
+		out UnregisteredSite target) {
+		target = null;
+		string vdirName = targetName.TrimEnd('/') + "/";
+		if (!TryReadAppCmd($"list VDIR {QuoteAppCmdArgument(vdirName)} /text:physicalPath",
+				out string physicalPath)
+			|| !TryReadAppCmd($"list APP {QuoteAppCmdArgument(appName)} /text:applicationPool",
+				out string appPoolName)
+			|| string.IsNullOrWhiteSpace(physicalPath) || string.IsNullOrWhiteSpace(appPoolName)) {
+			return false;
+		}
+		SiteBinding binding = new(targetName, site.Attribute("state")!.Value,
+			site.Attribute("bindings")!.Value, physicalPath.Trim(), appPoolName.Trim());
+		target = new UnregisteredSite(binding, ConvertBindingToUri(binding.binding), DetectSiteType(binding.path));
+		return true;
+	}
+
+	/// <inheritdoc />
+	public bool TryFindAppPoolsForTargets(IReadOnlyCollection<string> targetNames,
+		out IReadOnlyCollection<string> appPoolNames) {
+		appPoolNames = [];
+		if (targetNames is null || targetNames.Count == 0
+			|| !TryReadAppCmd("list app /xml", out string appsXml)
+			|| !TryReadCompleteApps(appsXml, out XElement[] apps)) {
+			return false;
+		}
+		appPoolNames = apps
+			.Where(app => targetNames.Any(target => IsAssignmentOwnedByTarget(app, target)))
+			.Select(app => app.Attribute("APPPOOL.NAME")!.Value)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		return true;
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -397,7 +505,7 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 
 	/// <inheritdoc />
 	public bool IsIisTargetExclusive(string siteName) =>
-		IsIisTargetExclusive(ExecuteAppCmd("list app /xml"), siteName);
+		TryReadAppCmd("list app /xml", out string appsXml) && IsIisTargetExclusive(appsXml, siteName);
 
 	/// <inheritdoc />
 	public bool TryStopIisTarget(string siteName, string physicalPath, string appPoolName) {
@@ -405,7 +513,7 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			return false;
 		}
 		if (ShouldStopSite(siteName, manageAppPool: false)) {
-			StopSite(siteName);
+			return TryMutateAppCmd($"stop site {QuoteAppCmdArgument($"/site.name:{siteName}")}");
 		}
 		return true;
 	}
@@ -416,28 +524,35 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			return false;
 		}
 		if (siteName.Contains('/')) {
-			ExecuteAppCmd($"delete app {QuoteAppCmdArgument($"/app.name:{siteName}")}");
+			if (!TryMutateAppCmd($"delete app {QuoteAppCmdArgument($"/app.name:{siteName}")}")) {
+				return false;
+			}
 		}
 		else {
-			RemoveSite(siteName);
+			if (!TryMutateAppCmd($"delete site {QuoteAppCmdArgument($"/site.name:{siteName}")}")) {
+				return false;
+			}
 		}
-		return IsIisTargetAbsent(ExecuteAppCmd("list app /xml"), siteName);
+		return TryReadAppCmd("list app /xml", out string appsXml) && IsIisTargetAbsent(appsXml, siteName);
 	}
 
 	/// <inheritdoc />
-	public bool TryStopAppPoolIfOwnedByTargets(string appPoolName, IReadOnlyCollection<string> targetNames) {
+	public IisAppPoolMutationResult StopAppPoolIfOwnedByTargets(string appPoolName,
+		IReadOnlyCollection<string> targetNames) {
 		if (string.IsNullOrWhiteSpace(appPoolName) || targetNames is null || targetNames.Count == 0
-			|| !TryReadCompleteApps(ExecuteAppCmd("list app /xml"), out XElement[] apps)) {
-			return false;
+			|| !TryReadAppCmd("list app /xml", out string appsXml)
+			|| !TryReadCompleteApps(appsXml, out XElement[] apps)) {
+			return IisAppPoolMutationResult.Failed;
 		}
 		XElement[] assignments = [.. apps.Where(app => string.Equals(
 			app.Attribute("APPPOOL.NAME")!.Value, appPoolName, StringComparison.OrdinalIgnoreCase))];
 		if (assignments.Length == 0 || assignments.Any(app => !targetNames.Any(targetName =>
 			IsAssignmentOwnedByTarget(app, targetName)))) {
-			return false;
+			return IisAppPoolMutationResult.PreservedShared;
 		}
-		StopAppPool(appPoolName);
-		return true;
+		return TryMutateAppCmd($"stop apppool {QuoteAppCmdArgument($"/apppool.name:{appPoolName}")}")
+			? IisAppPoolMutationResult.Completed
+			: IisAppPoolMutationResult.Failed;
 	}
 
 	private static bool IsAssignmentOwnedByTarget(XElement app, string targetName) {
@@ -450,10 +565,12 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 
 	private bool HasExpectedIisTargetIdentity(string siteName, string physicalPath, string appPoolName) {
 		string appName = siteName.Contains('/') ? siteName : $"{siteName}/";
-		string actualPath = ExecuteAppCmd(
-			$"list VDIR {QuoteAppCmdArgument($"{siteName.TrimEnd('/')}/")} /text:physicalPath").Trim();
-		string actualAppPoolName = ExecuteAppCmd(
-			$"list APP {QuoteAppCmdArgument(appName)} /text:applicationPool").Trim();
+		if (!TryReadAppCmd($"list VDIR {QuoteAppCmdArgument($"{siteName.TrimEnd('/')}/")} /text:physicalPath",
+				out string actualPath)
+			|| !TryReadAppCmd($"list APP {QuoteAppCmdArgument(appName)} /text:applicationPool",
+				out string actualAppPoolName)) {
+			return false;
+		}
 		return IsExpectedIisTargetIdentity(actualPath, actualAppPoolName, physicalPath, appPoolName);
 	}
 
@@ -464,9 +581,11 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			return false;
 		}
 		try {
-			string normalizedActualPath = Path.GetFullPath(actualPath).TrimEnd(Path.DirectorySeparatorChar,
+			string normalizedActualPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(actualPath))
+				.TrimEnd(Path.DirectorySeparatorChar,
 				Path.AltDirectorySeparatorChar);
-			string normalizedExpectedPath = Path.GetFullPath(expectedPath).TrimEnd(Path.DirectorySeparatorChar,
+			string normalizedExpectedPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(expectedPath))
+				.TrimEnd(Path.DirectorySeparatorChar,
 				Path.AltDirectorySeparatorChar);
 			return string.Equals(normalizedActualPath, normalizedExpectedPath, StringComparison.OrdinalIgnoreCase)
 				&& string.Equals(actualAppPoolName, expectedAppPoolName, StringComparison.OrdinalIgnoreCase);
@@ -523,18 +642,38 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 				StringComparison.OrdinalIgnoreCase));
 	}
 
-	public bool TryDeleteAppPoolIfUnused(string appPoolName) {
-		if (!CanDeleteAppPool(ExecuteAppCmd("list app /xml"), appPoolName)) {
-			return false;
+	public IisAppPoolMutationResult DeleteAppPoolIfUnused(string appPoolName) {
+		if (!TryReadAppCmd("list app /xml", out string appsXml)
+			|| !TryReadCompleteApps(appsXml, out XElement[] apps) || string.IsNullOrWhiteSpace(appPoolName)) {
+			return IisAppPoolMutationResult.Failed;
 		}
-		RemoveAppPool(appPoolName);
-		return CanDeleteAppPool(ExecuteAppCmd("list app /xml"), appPoolName)
-			&& IsAppPoolAbsent(appPoolName);
+		if (apps.Any(app => string.Equals(app.Attribute("APPPOOL.NAME")!.Value, appPoolName,
+			StringComparison.OrdinalIgnoreCase))) {
+			return IisAppPoolMutationResult.PreservedShared;
+		}
+		if (!TryReadAppCmd("list apppool /xml", out string poolsXml)
+			|| !TryReadCompleteAppPools(poolsXml, out XElement[] pools)) {
+			return IisAppPoolMutationResult.Failed;
+		}
+		if (!pools.Any(pool => string.Equals(pool.Attribute("APPPOOL.NAME")!.Value, appPoolName,
+			StringComparison.OrdinalIgnoreCase))) {
+			return IisAppPoolMutationResult.Completed;
+		}
+		if (!TryMutateAppCmd($"delete apppool {QuoteAppCmdArgument($"/apppool.name:{appPoolName}")}")
+			|| !TryReadAppCmd("list apppool /xml", out poolsXml)
+			|| !TryReadCompleteAppPools(poolsXml, out pools)) {
+			return IisAppPoolMutationResult.Failed;
+		}
+		return pools.All(pool => !string.Equals(pool.Attribute("APPPOOL.NAME")!.Value, appPoolName,
+			StringComparison.OrdinalIgnoreCase))
+			? IisAppPoolMutationResult.Completed
+			: IisAppPoolMutationResult.Failed;
 	}
 
 	/// <inheritdoc />
 	public bool IsAppPoolAbsent(string appPoolName) =>
-		IsAppPoolAbsent(ExecuteAppCmd("list apppool /xml"), appPoolName);
+		TryReadAppCmd("list apppool /xml", out string appPoolsXml)
+		&& IsAppPoolAbsent(appPoolsXml, appPoolName);
 
 	internal static bool CanDeleteAppPool(string appsXml, string appPoolName) {
 		return !string.IsNullOrWhiteSpace(appPoolName)
@@ -573,6 +712,37 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			return apps.All(app => !string.IsNullOrWhiteSpace(app.Attribute("APP.NAME")?.Value)
 				&& !string.IsNullOrWhiteSpace(app.Attribute("APPPOOL.NAME")?.Value)
 				&& !string.IsNullOrWhiteSpace(app.Attribute("SITE.NAME")?.Value));
+		}
+		catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException) {
+			return false;
+		}
+	}
+
+	private static bool TryReadCompleteSites(string sitesXml, out XElement[] sites) {
+		sites = [];
+		try {
+			XElement root = XElement.Parse(sitesXml);
+			if (!HasExpectedAppCmdShape(root, "SITE")) {
+				return false;
+			}
+			sites = [.. root.Elements("SITE")];
+			return sites.All(site => !string.IsNullOrWhiteSpace(site.Attribute("SITE.NAME")?.Value)
+				&& site.Attribute("state") is not null && site.Attribute("bindings") is not null);
+		}
+		catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException) {
+			return false;
+		}
+	}
+
+	private static bool TryReadCompleteAppPools(string appPoolsXml, out XElement[] pools) {
+		pools = [];
+		try {
+			XElement root = XElement.Parse(appPoolsXml);
+			if (!HasExpectedAppCmdShape(root, "APPPOOL")) {
+				return false;
+			}
+			pools = [.. root.Elements("APPPOOL")];
+			return pools.All(pool => !string.IsNullOrWhiteSpace(pool.Attribute("APPPOOL.NAME")?.Value));
 		}
 		catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException) {
 			return false;

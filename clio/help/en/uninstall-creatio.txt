@@ -14,9 +14,12 @@ DESCRIPTION
     when no other IIS application uses it.
 
     With -e, the registered EnvironmentPath in appsettings.json is authoritative.
-    Clio removes every safely validated IIS site or application at that exact
-    normalized path. The environment URI is not used to discover the filesystem
-    target. If IIS has no matching target, local non-IIS removal still proceeds.
+    Clio reads a complete, unfiltered IIS inventory and removes every safely
+    validated site or application at that exact normalized path. Every assigned
+    pool is handled independently and shared pools remain available. The
+    environment URI is not used to discover the filesystem target. Incomplete
+    IIS discovery aborts before database or file deletion. If a complete
+    inventory has no matching target, local non-IIS removal still proceeds.
 
     On Windows, the command also attempts to remove the registered IIS
     application-pool virtual-account profile. This is best-effort: a locked,

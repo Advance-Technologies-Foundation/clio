@@ -50,12 +50,16 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	#region Methods: Private
 
 	private void MockNoSitesFound(){
-		IEnumerable<UnregisteredSite> allSitesMock = [];
-		_iisScannerMock.FindAllCreatioSites().Returns(allSitesMock);
+		IReadOnlyList<UnregisteredSite> allSitesMock = [];
+		_iisScannerMock.TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>())
+			.Returns(call => {
+				call[0] = allSitesMock;
+				return true;
+			});
 	}
 
 	private void MockStartedSite(string url = "", string siteName = EnvironmentName, string appPoolName = null){
-		IEnumerable<UnregisteredSite> allSitesMock = [
+		IReadOnlyList<UnregisteredSite> allSitesMock = [
 			new UnregisteredSite(
 				new SiteBinding(siteName, "Started", "", InstalledCreatioPath, appPoolName),
 				[
@@ -64,7 +68,17 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 				],
 				SiteType.NetFramework)
 		];
-		_iisScannerMock.FindAllCreatioSites().Returns(allSitesMock);
+		int scan = 0;
+		_iisScannerMock.TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>())
+			.Returns(call => {
+				call[0] = scan++ == 0 ? allSitesMock : Array.Empty<UnregisteredSite>();
+				return true;
+			});
+		_iisScannerMock.TryFindAppPoolsForTargets(Arg.Any<IReadOnlyCollection<string>>(),
+			out Arg.Any<IReadOnlyCollection<string>>()).Returns(call => {
+				call[1] = string.IsNullOrWhiteSpace(appPoolName) ? Array.Empty<string>() : [appPoolName];
+				return true;
+			});
 	}
 
 	// Subscribes to the uninstaller stage-event seam and returns the list the events are collected into.
@@ -150,7 +164,19 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_iisScannerMock.IsIisTargetExclusive(Arg.Any<string>()).Returns(true);
 		_iisScannerMock.TryStopIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 		_iisScannerMock.TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-		_iisScannerMock.TryDeleteAppPoolIfUnused(Arg.Any<string>()).Returns(true);
+		_iisScannerMock.StopAppPoolIfOwnedByTargets(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(IisAppPoolMutationResult.Completed);
+		_iisScannerMock.DeleteAppPoolIfUnused(Arg.Any<string>()).Returns(IisAppPoolMutationResult.Completed);
+		_iisScannerMock.TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>())
+			.Returns(call => {
+				call[0] = Array.Empty<UnregisteredSite>();
+				return true;
+			});
+		_iisScannerMock.TryFindAppPoolsForTargets(Arg.Any<IReadOnlyCollection<string>>(),
+			out Arg.Any<IReadOnlyCollection<string>>()).Returns(call => {
+				call[1] = Array.Empty<string>();
+				return true;
+			});
 		_iisScannerMock.IsAppPoolAbsent(Arg.Any<string>()).Returns(true);
 		_dbHubSynchronizationServiceMock.ClearReceivedCalls();
 		_dbHubSynchronizationServiceMock.IsAutomaticSynchronizationEnabled().Returns(false);
@@ -220,14 +246,25 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		// Arrange
 		const string secondSiteName = "work-alias";
 		const string secondPoolName = "work-alias-pool";
-		_iisScannerMock.FindAllCreatioSites().Returns([
+		IReadOnlyList<UnregisteredSite> sites = [
 			new UnregisteredSite(
 				new SiteBinding(EnvironmentName, "Started", "", InstalledCreatioPath, AppPoolName),
 				[new Uri(EnvironmentSettings.Uri)], SiteType.Core),
 			new UnregisteredSite(
 				new SiteBinding(secondSiteName, "Started", "", InstalledCreatioPath, secondPoolName),
 				[new Uri("https://alias.example.test:40100")], SiteType.Core)
-		]);
+		];
+		int scan = 0;
+		_iisScannerMock.TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>())
+			.Returns(call => {
+				call[0] = scan++ == 0 ? sites : Array.Empty<UnregisteredSite>();
+				return true;
+			});
+		_iisScannerMock.TryFindAppPoolsForTargets(Arg.Any<IReadOnlyCollection<string>>(),
+			out Arg.Any<IReadOnlyCollection<string>>()).Returns(call => {
+				call[1] = new[] { AppPoolName, secondPoolName };
+				return true;
+			});
 		AddPostgresConnectionStringFile();
 
 		// Act
@@ -238,10 +275,14 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_iisScannerMock.Received(1).TryStopIisTarget(secondSiteName, InstalledCreatioPath, secondPoolName);
 		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
 		_iisScannerMock.Received(1).TryDeleteIisTarget(secondSiteName, InstalledCreatioPath, secondPoolName);
-		_iisScannerMock.Received(1).TryStopAppPoolIfOwnedByTargets(AppPoolName,
+		_iisScannerMock.Received(1).StopAppPoolIfOwnedByTargets(AppPoolName,
 			Arg.Is<IReadOnlyCollection<string>>(names => names.Contains(EnvironmentName) && names.Contains(secondSiteName)));
-		_iisScannerMock.Received(1).TryStopAppPoolIfOwnedByTargets(secondPoolName,
+		_iisScannerMock.Received(1).StopAppPoolIfOwnedByTargets(secondPoolName,
 			Arg.Is<IReadOnlyCollection<string>>(names => names.Contains(EnvironmentName) && names.Contains(secondSiteName)));
+		_iisScannerMock.Received(1).DeleteAppPoolIfUnused(AppPoolName);
+		_iisScannerMock.Received(1).DeleteAppPoolIfUnused(secondPoolName);
+		_profileCleanerMock.Received(1).Prepare(AppPoolName);
+		_profileCleanerMock.Received(1).Prepare(secondPoolName);
 		_settingsRepositoryMock.Received(1).RemoveEnvironment(EnvironmentName);
 	}
 
@@ -381,7 +422,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			because: "even lookup failures must emit the typed manifest first");
 		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
 			because: "the typed stream must terminate honestly");
-		_iisScannerMock.DidNotReceive().FindAllCreatioSites();
+		_iisScannerMock.DidNotReceive().TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>());
 	}
 
 	[Test]
@@ -399,7 +440,47 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			because: "a registered URI is not filesystem authority for destructive cleanup");
 		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
 			because: "the missing local identity must surface as a typed terminal failure");
-		_iisScannerMock.DidNotReceive().FindAllCreatioSites();
+		_iisScannerMock.DidNotReceive().TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>());
+	}
+
+	[TestCase("relative-creatio")]
+	[TestCase(@"C:\")]
+	[Description("UninstallByEnvironmentName rejects relative and filesystem-root EnvironmentPath values before discovery or deletion.")]
+	public void UninstallByEnvironmentName_Aborts_WhenEnvironmentPathIsUnsafe(string unsafePath) {
+		// Arrange
+		EnvironmentSettings.EnvironmentPath = unsafePath;
+
+		// Act
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "registered settings must never authorize relative or filesystem-root recursive deletion");
+		_iisScannerMock.DidNotReceive().TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>());
+		_postgresMock.DidNotReceive().DropDb(Arg.Any<string>());
+		_settingsRepositoryMock.DidNotReceive().RemoveEnvironment(EnvironmentName);
+	}
+
+	[Test]
+	[Description("UninstallByEnvironmentName aborts before database and file changes when complete IIS inventory cannot be proven.")]
+	public void UninstallByEnvironmentName_Aborts_WhenIisInventoryFails() {
+		// Arrange
+		_iisScannerMock.TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>())
+			.Returns(call => {
+				call[0] = Array.Empty<UnregisteredSite>();
+				return false;
+			});
+
+		// Act
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "an incomplete raw IIS inventory cannot prove that no path-owned site remains");
+		_postgresMock.DidNotReceive().DropDb(Arg.Any<string>());
+		FileSystem.Directory.Exists(InstalledCreatioPath).Should().BeTrue(
+			because: "filesystem deletion must not begin after discovery failure");
+		_settingsRepositoryMock.DidNotReceive().RemoveEnvironment(EnvironmentName);
 	}
 
 	[Test]
@@ -712,11 +793,11 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		// Assert
 		_iisScannerMock.Received(1).TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
 		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
-		_iisScannerMock.Received(1).TryDeleteAppPoolIfUnused(AppPoolName);
+		_iisScannerMock.Received(1).DeleteAppPoolIfUnused(AppPoolName);
 		Received.InOrder(() => {
 			_profileCleanerMock.Prepare(AppPoolName);
 			_iisScannerMock.TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
-			_iisScannerMock.TryDeleteAppPoolIfUnused(AppPoolName);
+			_iisScannerMock.DeleteAppPoolIfUnused(AppPoolName);
 			_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
 		});
 		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().Contain(stage =>
@@ -731,7 +812,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		// Arrange
 		MockStartedSite(appPoolName: AppPoolName);
 		AddPostgresConnectionStringFile();
-		_iisScannerMock.TryDeleteAppPoolIfUnused(AppPoolName).Returns(false);
+		_iisScannerMock.DeleteAppPoolIfUnused(AppPoolName).Returns(IisAppPoolMutationResult.PreservedShared);
 		List<ClioStageEvent> events = CaptureStageEvents();
 
 		// Act
@@ -740,7 +821,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		// Assert
 		_iisScannerMock.Received(1).TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
 		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
-		_iisScannerMock.Received(1).TryDeleteAppPoolIfUnused(AppPoolName);
+		_iisScannerMock.Received(1).DeleteAppPoolIfUnused(AppPoolName);
 		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
 		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().ContainSingle(stage =>
 			stage.Status == ClioStageEventContract.StageStatuses.Skipped
@@ -764,7 +845,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			because: "removing a root site with sibling IIS applications would delete unrelated applications");
 		_iisScannerMock.DidNotReceive().TryStopIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
 		_iisScannerMock.DidNotReceive().TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
-		_iisScannerMock.DidNotReceive().TryDeleteAppPoolIfUnused(Arg.Any<string>());
+		_iisScannerMock.DidNotReceive().DeleteAppPoolIfUnused(Arg.Any<string>());
 		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
 	}
 
@@ -784,7 +865,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		act.Should().Throw<CreatioUninstallAbortedException>(
 			because: "a fresh topology check or verified deletion failure must stop database and file removal");
 		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
-		_iisScannerMock.DidNotReceive().TryDeleteAppPoolIfUnused(Arg.Any<string>());
+		_iisScannerMock.DidNotReceive().DeleteAppPoolIfUnused(Arg.Any<string>());
 		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
 	}
 
