@@ -603,6 +603,73 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 			because: "the registry must be written byte-faithfully to the guarded default path");
 	}
 
+	[Test]
+	[Description("A CDN that answers non-2xx on every tier surfaces as a clean failure carrying the unavailable-registry guidance, with no file written — an HTTP-level miss must not read as an empty registry.")]
+	public async Task TryExportAsync_ShouldFailWithoutWriting_WhenTheCdnIsUnavailable() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-cdn-404-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		// A 4xx is a permanent per-attempt failure in ComponentRegistryClient, and once cache and the latest
+		// fallback also miss the chain ends in this exception — the shape a 403/404 actually reaches us as.
+		_webRegistryClient.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns<Task<ComponentRegistryFetchResult>>(_ => throw new ComponentRegistryUnavailableException("8.3.4", "https://academy.creatio.com"));
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an HTTP-level miss is a failure, not a registry with zero components");
+		response.Error.Should().Contain("8.3.4",
+			because: "the caller has to know WHICH version could not be fetched to act on the failure");
+		response.ComponentCount.Should().Be(0, because: "a failed export reports no counters");
+		_ioFileSystem.AllFiles.Should().NotContain(path => path.Contains(RegistrySubdirectoryNameForTest),
+			because: "nothing may be written when the fetch never produced a payload");
+	}
+
+	[Test]
+	[Description("A caller-requested cancellation PROPAGATES instead of becoming a failure envelope — the MCP dispatcher and a Ctrl-C'd CLI both need the cooperative cancel, not a report that the export failed.")]
+	public void TryExportAsync_ShouldPropagateCancellation_RatherThanReportingFailure() {
+		// Arrange
+		using CancellationTokenSource cts = new();
+		cts.Cancel();
+		_webRegistryClient.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns<Task<ComponentRegistryFetchResult>>(callInfo => throw new OperationCanceledException(callInfo.ArgAt<CancellationToken>(1)));
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4" };
+
+		// Act
+		Func<Task> export = () => _command.TryExportAsync(options, cts.Token);
+
+		// Assert
+		export.Should().ThrowAsync<OperationCanceledException>(
+			because: "converting a withdrawn request into \"success=false, error=The operation was canceled.\" reports it as if the CDN or the filesystem had refused");
+	}
+
+	[Test]
+	[Description("The written file is byte-identical to the fetched payload even when the CDN prefixes a UTF-8 BOM — 'byte-faithful' has to mean the wire bytes, and a decoder round-trip would silently drop it.")]
+	public async Task TryExportAsync_ShouldWriteTheWireBytesVerbatim_IncludingAByteOrderMark() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string scratch = _ioFileSystem.Path.Combine(tempRoot, "ecr-bom", "registry.json");
+		byte[] wireBytes = [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(SampleRegistryWithDeprecation)];
+		_webRegistryClient.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(callInfo => Task.FromResult(new ComponentRegistryFetchResult(
+				new MemoryStream(wireBytes), callInfo.ArgAt<string>(0), ComponentRegistrySource.Cdn)));
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4", OutputFile = scratch };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a BOM-prefixed payload is still valid JSON and still a registry");
+		_ioFileSystem.File.ReadAllBytes(response.OutputFile).Should().Equal(wireBytes,
+			because: "the file must be a byte-for-byte copy of what the CDN served, BOM included");
+		response.ComponentCount.Should().Be(2,
+			because: "the counters are read off the same bytes, so a BOM must not break the parse either");
+	}
+
 	private const string RegistrySubdirectoryNameForTest = "component-registry";
 
 	private sealed class ThrowingResolverFactory(Exception failure) : IPlatformVersionResolverFactory {

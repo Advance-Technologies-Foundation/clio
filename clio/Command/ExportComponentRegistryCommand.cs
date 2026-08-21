@@ -192,6 +192,15 @@ public sealed class ExportComponentRegistryCommand {
 
 			return await ExportAsync(schemaType, versionResolution, options.OutputFile, cancellationToken).ConfigureAwait(false);
 		}
+		// A caller-requested cancellation is NOT a failure of the export — it is the caller withdrawing the
+		// request. Converting it to a Fail() envelope would hand the MCP dispatcher (or a Ctrl-C'd CLI) a tool
+		// failure where the protocol expects a cooperative cancel, and would report "The operation was
+		// canceled." as if the CDN or the filesystem had refused. Guarded on the token so an OperationCanceled
+		// raised for any OTHER reason (an internal budget, a library that reuses the type) still degrades into
+		// the normal failure envelope rather than escaping as an unhandled exception.
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw;
+		}
 		catch (Exception ex) {
 			return Fail(ex.Message, schemaType.Warning);
 		}
@@ -241,12 +250,15 @@ public sealed class ExportComponentRegistryCommand {
 					: versionResolution.ResolvedVersion;
 			ComponentRegistryFetchResult fetch =
 				await registryClient.GetAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
-			// No outer `using (fetch.Content)`: the StreamReader takes ownership of the stream (it is not
-			// constructed with leaveOpen) and disposes it when this scope ends, so an outer using would
-			// double-dispose it and contradict the ownership contract.
-			string content;
-			using (var reader = new StreamReader(fetch.Content)) {
-				content = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+			// Bytes, not a decoded string: "byte-faithful" has to mean the wire bytes, and a
+			// StreamReader/StreamWriter round-trip normalises the encoding on the way through — a UTF-8 BOM on
+			// the source is silently dropped and an invalid sequence becomes U+FFFD. JsonDocument parses UTF-8
+			// bytes directly, so the counters read the same bytes that reach disk with no intermediate copy.
+			byte[] content;
+			using (Stream payload = fetch.Content)
+			using (var buffer = new MemoryStream()) {
+				await payload.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+				content = buffer.ToArray();
 			}
 
 			string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
@@ -282,6 +294,11 @@ public sealed class ExportComponentRegistryCommand {
 				InputCount = inputCount
 			};
 		}
+		// Cancellation propagates rather than becoming a Fail() envelope — see TryExportAsync. This catch is the
+		// one that would otherwise swallow the `throw;` WriteRegistryAsync re-raises after its temp-file cleanup.
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw;
+		}
 		catch (Exception ex) {
 			return Fail(ex.Message, schemaType.Warning);
 		}
@@ -296,7 +313,7 @@ public sealed class ExportComponentRegistryCommand {
 	// serve that branch — its FileMode.CreateNew gate is exactly the refuse-if-exists contract the default
 	// path must NOT have — so the move carries overwrite:true instead.
 	private async Task<(string path, string error)> WriteRegistryAsync(
-		string explicitOutputFile, string resolvedVersion, string content, CancellationToken cancellationToken) {
+		string explicitOutputFile, string resolvedVersion, byte[] content, CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(explicitOutputFile)) {
 			(string resolvedPath, string resolveError) = OutputPathConfinement.Resolve(_ioFileSystem, explicitOutputFile);
 			if (resolveError != null) {
@@ -323,15 +340,30 @@ public sealed class ExportComponentRegistryCommand {
 		}
 
 		string defaultPath;
+		string defaultAnchor;
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
-			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
+			defaultAnchor = PageOutputDirectoryResolver.ResolveAnchor(
 				_ioFileSystem,
 				_ioFileSystem.Directory.GetCurrentDirectory(),
 				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 				ClioRuntimePaths.Home,
 				null);
-			defaultPath = Path.Combine(anchor, ClioMigrationDirectoryName, RegistrySubdirectoryName, $"{resolvedVersion}.json");
+			defaultPath = Path.Combine(defaultAnchor, ClioMigrationDirectoryName, RegistrySubdirectoryName, $"{resolvedVersion}.json");
 		}
+		// Post-assembly containment, the second layer of the same defence ComponentRegistryDocsCacheStore
+		// .TryGetPaths uses: the segment guard above validates the input, this validates the RESULT. A guard on
+		// the input alone trusts that Path.Combine did what was expected; comparing the resolved absolute path
+		// against the resolved anchor is what actually proves the write cannot land outside it, whatever the
+		// segment turns out to mean to the platform.
+		string registryRoot = _ioFileSystem.Path.GetFullPath(
+			_ioFileSystem.Path.Combine(defaultAnchor, ClioMigrationDirectoryName, RegistrySubdirectoryName))
+			+ Path.DirectorySeparatorChar;
+		if (!_ioFileSystem.Path.GetFullPath(defaultPath).StartsWith(registryRoot, StringComparison.Ordinal)) {
+			return (null,
+				$"The registry reported version '{resolvedVersion}', which resolves outside the tool-owned "
+				+ "output directory. Pass an explicit --output-file to choose the destination yourself.");
+		}
+
 		string directory = _ioFileSystem.Path.GetDirectoryName(defaultPath);
 		if (!string.IsNullOrWhiteSpace(directory)) {
 			_ioFileSystem.Directory.CreateDirectory(directory);
@@ -340,7 +372,7 @@ public sealed class ExportComponentRegistryCommand {
 		// collision between two concurrent exports of the same version inside the long-running MCP server.
 		string temporaryPath = $"{defaultPath}.{Guid.NewGuid():N}.tmp";
 		try {
-			await _ioFileSystem.File.WriteAllTextAsync(temporaryPath, content, cancellationToken).ConfigureAwait(false);
+			await _ioFileSystem.File.WriteAllBytesAsync(temporaryPath, content, cancellationToken).ConfigureAwait(false);
 			_ioFileSystem.File.Move(temporaryPath, defaultPath, true);
 		}
 		catch (Exception) {
@@ -350,14 +382,25 @@ public sealed class ExportComponentRegistryCommand {
 		return (defaultPath, null);
 	}
 
-	// A resolved version is usable as a path segment only when it is a plain file name: no directory
-	// separator, no '..' segment, no volume root, no invalid file-name character.
-	private static bool IsSafePathSegment(string value) =>
-		!string.IsNullOrWhiteSpace(value)
-			&& value != "." && value != ".."
-			&& value.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
-			&& value.IndexOf(Path.DirectorySeparatorChar) < 0
-			&& value.IndexOf(Path.AltDirectorySeparatorChar) < 0;
+	// A resolved version is usable as a path segment only when every character is one a version may contain.
+	// An ALLOW-list, not a deny-list: Path.GetInvalidFileNameChars() is only { '\0', '/' } on Linux, so a
+	// deny-list would let a CDN-supplied control character (LF, CR, ESC) through and make the guard behave
+	// differently per platform for the same input. Same character class as
+	// ComponentRegistryDocsCacheStore.SanitizeVersion, which guards this exact input class — except that this
+	// REFUSES rather than strips: the resolved path is reported back to the caller and consumed by the migration
+	// engine, so silently renaming the output file would be worse than declining to write it. '.' and '..' are
+	// all-allowed characters yet never file names, so they are rejected explicitly.
+	private static bool IsSafePathSegment(string value) {
+		if (string.IsNullOrWhiteSpace(value) || value == "." || value == "..") {
+			return false;
+		}
+		foreach (char c in value) {
+			if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_') {
+				return false;
+			}
+		}
+		return true;
+	}
 
 	// Best-effort: the caller is already failing, so a leftover temp file must not mask the real error.
 	// Catches EVERY exception, not just IOException: this runs from the write path's catch-and-rethrow, and a
@@ -370,7 +413,9 @@ public sealed class ExportComponentRegistryCommand {
 				_ioFileSystem.File.Delete(temporaryPath);
 			}
 		}
-		catch (Exception) {
+		// Narrowed away from OutOfMemoryException: swallowing a process-fatal condition to preserve a message is
+		// the wrong trade, and it is not a failure this cleanup can be shadowing anyway.
+		catch (Exception ex) when (ex is not OutOfMemoryException) {
 			// Nothing further to do — the export failure is reported by the caller.
 		}
 	}
@@ -383,8 +428,17 @@ public sealed class ExportComponentRegistryCommand {
 	// neither shape is a hard failure, NOT an empty registry: a proxy/CDN JSON error body served with status
 	// 200 (or a future envelope rename) would otherwise be written to disk and reported as success with every
 	// counter at zero, and those counters are the downstream migration engine's only verification signal.
-	private static (int componentCount, int compositeCount, int inputCount) CountEntries(string content) {
-		using JsonDocument document = JsonDocument.Parse(content);
+	private static (int componentCount, int compositeCount, int inputCount) CountEntries(byte[] content) {
+		// Skip a UTF-8 BOM before parsing. JsonDocument does NOT tolerate one (RFC 8259 forbids a BOM in
+		// exchanged JSON, so 0xEF is an invalid start of a value to it) — and the payload is now handed over as
+		// raw wire bytes rather than a decoded string, which is what makes this explicit: the decoder used to
+		// swallow the BOM on the way in. Only the counters skip it; the bytes WRITTEN keep it, because the file
+		// is advertised as a byte-faithful copy of what the CDN served.
+		ReadOnlyMemory<byte> json = content.AsMemory();
+		if (json.Length >= 3 && json.Span[0] == 0xEF && json.Span[1] == 0xBB && json.Span[2] == 0xBF) {
+			json = json[3..];
+		}
+		using JsonDocument document = JsonDocument.Parse(json);
 		JsonElement root = document.RootElement;
 		// Kept as statements, not a nested ternary (Sonar S3358): the two registry shapes are two distinct
 		// lookups, and the 'neither' case falls through to the hard failure below.

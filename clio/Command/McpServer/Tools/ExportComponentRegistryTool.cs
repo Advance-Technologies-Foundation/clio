@@ -120,6 +120,14 @@ public sealed class ExportComponentRegistryTool(
 				? response
 				: response with { Error = SensitiveErrorTextRedactor.Redact(response.Error) };
 		}
+		// A cancellation from the MCP host (request timeout, client disconnect) is the caller withdrawing the
+		// request, not a tool failure: the dispatcher expects the cooperative cancel, and a Fail() envelope
+		// carrying "The operation was canceled." would report it as if the CDN or the filesystem had refused.
+		// Guarded on the token so an OperationCanceled raised for any other reason still degrades into the
+		// normal failure response instead of escaping this tool.
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw;
+		}
 		catch (Exception ex) {
 			return new ExportComponentRegistryResponse {
 				Success = false,
