@@ -54,6 +54,20 @@ public class ProgramTestCase : BaseClioModuleTests
 		Program.Resolve<CreateWorkspaceCommand>(options, logAndSettings);
 	}
 
+	[Test, Category("Unit")]
+	[Description("Does not throw when logAndSettings is requested but options is not EnvironmentOptions, so settings stays null and there is nothing to log (sonar csharpsquid:S2259).")]
+	public void Resolve_DoesNotThrow_WhenLogAndSettingsRequested_WithNoEnvironmentOptions() {
+		// Arrange
+		Program.Container = Container;
+
+		// Act
+		Action act = () => Program.Resolve<IAppUpdater>(options: null, logAndSettings: true);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "settings stays null when options is not EnvironmentOptions, and logAndSettings must degrade gracefully instead of dereferencing null");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Builds the bootstrap container for info without requiring a valid active environment in appsettings.json.")]
@@ -196,6 +210,41 @@ public class ProgramTestCase : BaseClioModuleTests
 		Action act = () => Program.Resolve<AddPackageCommand>(new AddPackageOptions(), false);
 		act.Should().NotThrow(
 			because: "ap creates a local package and must not attempt OAuth authentication at startup");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Does not throw when optionFromFile is null and the command-line options carry a Uri but no Login, so the fallback to optionFromFile.Login is null-conditional instead of a raw dereference (sonar csharpsquid:S2259).")]
+	public void CombinedOption_DoesNotThrow_WhenOptionFromFileIsNull_AndCommandLineHasUriButNoLogin() {
+		// Arrange
+		EnvironmentOptions optionsFromCommandLine = new() { Uri = "https://sandbox.example.com" };
+
+		// Act
+		Action act = () => Program.CombinedOption(optionFromFile: null, optionsFromCommandLine);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "optionFromFile can legitimately be null for a direct --uri call with no environment file, and the missing --login must fall back to null instead of throwing");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fills every field from optionFromFile when optionsFromCommandLine only carries a Uri, confirming the null-conditional fallback still merges real values when optionFromFile is present.")]
+	public void CombinedOption_MergesFromFile_WhenCommandLineOnlyHasUri() {
+		// Arrange
+		EnvironmentOptions optionFromFile = new() { Uri = "https://from-file.example.com", Login = "file-login", Password = "file-password" };
+		EnvironmentOptions optionsFromCommandLine = new() { Uri = "https://sandbox.example.com" };
+
+		// Act
+		EnvironmentOptions result = Program.CombinedOption(optionFromFile, optionsFromCommandLine);
+
+		// Assert
+		result.Should().BeOfType<EnvironmentNameOptions>(
+			because: "CombinedOption constructs a new EnvironmentNameOptions when merging by design, not the input EnvironmentOptions type");
+		result.Uri.Should().Be("https://sandbox.example.com",
+			because: "the command-line Uri takes priority over the file's Uri");
+		result.Login.Should().Be("file-login",
+			because: "a field missing from the command line should fall back to optionFromFile when it is present");
+		result.Password.Should().Be("file-password",
+			because: "a field missing from the command line should fall back to optionFromFile when it is present");
 	}
 
 	private void AddWrongActiveEnvironmentFixture() {
