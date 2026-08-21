@@ -407,6 +407,7 @@ namespace Clio.Command
 			try {
 				List<SysSettings> settings = _sysSettingsManager.GetAllSysSettingsWithValues(includeBinary: true);
 				SysSettingItem[] items = settings
+					.Where(setting => MatchesSearchPattern(setting, args.SearchPattern))
 					.Select(setting => new SysSettingItem(
 						setting.Code,
 						setting.Name,
@@ -420,6 +421,25 @@ namespace Clio.Command
 				string message = CategorizeError(ex, "listing sys-settings");
 				return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(), message);
 			}
+		}
+
+		/// <summary>
+		/// Applies the optional <c>search-pattern</c> of <see cref="ListSysSettingsArgs"/> to one setting.
+		/// </summary>
+		/// <remarks>
+		/// Matches the pattern against the setting CODE and its display NAME, because a caller looking for a
+		/// setting knows one or the other but rarely both. Comparison is ordinal-ignore-case: codes are ASCII
+		/// identifiers, and a culture-sensitive compare would make the same pattern behave differently per host
+		/// locale. A null/whitespace pattern matches everything, so omitting the argument keeps the previous
+		/// full-catalog behaviour.
+		/// </remarks>
+		private static bool MatchesSearchPattern(SysSettings setting, string? searchPattern) {
+			if (string.IsNullOrWhiteSpace(searchPattern)) {
+				return true;
+			}
+			string pattern = searchPattern.Trim();
+			return (setting.Code?.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0)
+				|| (setting.Name?.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0);
 		}
 
 		private static string FormatListValue(SysSettings setting) =>

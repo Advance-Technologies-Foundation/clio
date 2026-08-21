@@ -6,6 +6,7 @@ using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using CreatioModel;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -665,6 +666,108 @@ public sealed class SysSettingsToolTests {
 		manager.DidNotReceive().InsertSysSetting(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Guid?>());
+	}
+
+	#endregion
+
+	#region list-sys-settings search-pattern
+
+	private static List<SysSettings> ThreeSettings() => [
+		new SysSettings { Code = "UsrHrNotificationEmail", Name = "HR notification email", ValueTypeName = "Text" },
+		new SysSettings { Code = "MailboxSyncInterval", Name = "Mailbox synchronization interval", ValueTypeName = "Integer" },
+		new SysSettings { Code = "SchemaNamePrefix", Name = "Schema name prefix", ValueTypeName = "Text" }
+	];
+
+	[Test]
+	[Category("Unit")]
+	[Description("list-sys-settings narrows the catalog to settings whose CODE contains the search pattern, matched case-insensitively.")]
+	public void ListSysSettings_Should_Filter_By_Code_Case_Insensitively() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllSysSettingsWithValues(Arg.Any<bool>()).Returns(ThreeSettings());
+		SysSettingsListTool tool = new(BuildResolver(manager));
+
+		// Act
+		SysSettingsListResult result = tool.ListSysSettings(
+			new ListSysSettingsArgs("dev", "usrhr"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "filtering is a read-only narrowing, not a failure mode");
+		result.Settings.Should().HaveCount(1, because: "only one setting code contains the pattern");
+		result.Settings[0].Code.Should().Be("UsrHrNotificationEmail",
+			because: "the pattern must match the code regardless of letter case");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("list-sys-settings also matches the search pattern against the display name, so a caller who knows the caption but not the code still finds the setting.")]
+	public void ListSysSettings_Should_Filter_By_Display_Name() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllSysSettingsWithValues(Arg.Any<bool>()).Returns(ThreeSettings());
+		SysSettingsListTool tool = new(BuildResolver(manager));
+
+		// Act
+		SysSettingsListResult result = tool.ListSysSettings(
+			new ListSysSettingsArgs("dev", "synchronization"));
+
+		// Assert
+		result.Settings.Should().HaveCount(1, because: "the pattern appears in one display name only");
+		result.Settings[0].Code.Should().Be("MailboxSyncInterval",
+			because: "the match came from the display name, not the code");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("list-sys-settings returns the whole catalog when the search pattern is omitted, preserving the behaviour callers relied on before the filter existed.")]
+	public void ListSysSettings_Should_Return_All_Settings_When_Pattern_Omitted() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllSysSettingsWithValues(Arg.Any<bool>()).Returns(ThreeSettings());
+		SysSettingsListTool tool = new(BuildResolver(manager));
+
+		// Act
+		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("dev"));
+
+		// Assert
+		result.Settings.Should().HaveCount(3,
+			because: "omitting the pattern must stay backward compatible and list every setting");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("list-sys-settings treats a whitespace-only search pattern as no filter rather than as a pattern that matches nothing.")]
+	public void ListSysSettings_Should_Ignore_Whitespace_Only_Pattern() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllSysSettingsWithValues(Arg.Any<bool>()).Returns(ThreeSettings());
+		SysSettingsListTool tool = new(BuildResolver(manager));
+
+		// Act
+		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("dev", "   "));
+
+		// Assert
+		result.Settings.Should().HaveCount(3,
+			because: "a blank pattern carries no intent to filter and must not silently hide every setting");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("list-sys-settings returns an empty, successful result when the search pattern matches nothing, so 'no match' is distinguishable from an error.")]
+	public void ListSysSettings_Should_Return_Empty_Success_When_Nothing_Matches() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllSysSettingsWithValues(Arg.Any<bool>()).Returns(ThreeSettings());
+		SysSettingsListTool tool = new(BuildResolver(manager));
+
+		// Act
+		SysSettingsListResult result = tool.ListSysSettings(
+			new ListSysSettingsArgs("dev", "no-such-setting"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an empty match set is a valid answer, not a failure");
+		result.Settings.Should().BeEmpty(because: "no setting contains the pattern");
+		result.Error.Should().BeNull(because: "nothing went wrong - the catalog simply has no match");
 	}
 
 	#endregion

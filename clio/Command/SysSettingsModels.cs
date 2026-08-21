@@ -35,7 +35,13 @@ public sealed record ListSysSettingsArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name.")]
 	[property: Required]
-	string EnvironmentName);
+	string EnvironmentName,
+	[property: JsonPropertyName("search-pattern")]
+	[property: Description("Optional case-insensitive substring filter matched against BOTH the setting code and its "
+		+ "display name; a setting matches when either contains the pattern. Omit to list every setting - the full "
+		+ "catalog is large (hundreds of rows on a stock environment), so prefer a pattern when looking for a "
+		+ "specific setting.")]
+	string? SearchPattern = null);
 
 /// <summary>
 /// Structured response of the list-sys-settings MCP tool: catalog of sys-settings filtered to the supported surface

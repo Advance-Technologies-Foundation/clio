@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -444,4 +445,128 @@ public sealed class ODataCreateToolTests {
 		response.Results.Should().HaveCount(1, because: "stop-on-error aborts before the second row");
 		client.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
 	}
+
+	#region record-created side-effect state
+
+	private static ODataCreateTool BuildTool(IApplicationClient client) {
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		return new ODataCreateTool(resolver);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The advertised odata-create description documents the record-created side-effect state and the no-blind-retry rule, so a consumer learns the contract from the tool surface rather than from clio source.")]
+	public void Create_Should_Advertise_The_RecordCreated_Contract() {
+		// Arrange
+		// Act
+		// Fully qualified: NUnit ships its own DescriptionAttribute, and this assertion is about the
+		// System.ComponentModel one the MCP surface actually advertises.
+		System.ComponentModel.DescriptionAttribute description =
+			(System.ComponentModel.DescriptionAttribute)typeof(ODataCreateTool)
+				.GetMethod(nameof(ODataCreateTool.Create))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+				.Single();
+
+		// Assert
+		description.Description.Should().Contain("record-created",
+			because: "the side-effect state is only actionable if the advertised contract names it");
+		description.Description.Should().Contain("DUPLICATES",
+			because: "the contract must warn that blind-retrying an unverified row duplicates the record");
+		description.Description.Should().Contain("unverified",
+			because: "the batch-level count is how a caller sees that any row is in the unknown state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A row echoed back with its Id reports record-created true, so a caller can act on the side effect without inferring it from the success flag.")]
+	public void Create_Should_Report_RecordCreated_True_On_Success() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = BuildTool(client);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\"}]")
+		});
+
+		// Assert
+		response.Results[0].RecordCreated.Should().BeTrue(because: "the server echoed the created record");
+		response.Results[0].RetryGuidance.Should().BeNull(because: "a verified insert needs no retry advice");
+		response.Unverified.Should().Be(0, because: "nothing is in an unknown state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A server error payload leaves record-created unknown rather than false, because Creatio can fail a POST after the row is already written - reporting not-inserted would invite a duplicating retry.")]
+	public void Create_Should_Report_RecordCreated_Unknown_On_Server_Error() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"code\":\"\",\"message\":\"An error has occurred.\"}}");
+		ODataCreateTool tool = BuildTool(client);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "MailboxSyncSettings", Rows = Arr("[{\"UserName\":\"probe\"}]")
+		});
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(because: "the server reported the call as failed");
+		response.Results[0].RecordCreated.Should().BeNull(
+			because: "a post-insert handler can throw after the record persists, so not-inserted is NOT known");
+		response.Results[0].RetryGuidance.Should().NotBeNullOrWhiteSpace(
+			because: "an unknown side effect must tell the caller to verify instead of retrying");
+		response.Unverified.Should().Be(1, because: "the batch must surface how many rows are unverified");
+	}
+
+	[Test]
+	[Description("A row rejected locally for its shape reports record-created false, because no request ever left clio - the caller can fix and re-send safely.")]
+	[Category("Unit")]
+	public void Create_Should_Report_RecordCreated_False_When_Row_Rejected_Locally() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ODataCreateTool tool = BuildTool(client);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{}]")
+		});
+
+		// Assert
+		response.Results[0].RecordCreated.Should().BeFalse(
+			because: "the row never reached the server, so not-inserted is verified");
+		response.Unverified.Should().Be(0, because: "a locally rejected row is not an unknown outcome");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A transport failure leaves record-created unknown, because the request may have been applied before the error surfaced on the client side.")]
+	public void Create_Should_Report_RecordCreated_Unknown_On_Transport_Failure() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new HttpRequestException("connection reset"));
+		ODataCreateTool tool = BuildTool(client);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\"}]")
+		});
+
+		// Assert
+		response.Results[0].RecordCreated.Should().BeNull(
+			because: "a client-side transport error cannot prove the server did not apply the insert");
+		response.Results[0].RetryGuidance.Should().NotBeNullOrWhiteSpace(
+			because: "the caller must verify before re-sending");
+	}
+
+	#endregion
 }
