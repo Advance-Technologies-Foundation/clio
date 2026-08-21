@@ -1,0 +1,4 @@
+steps:
+- action: restart
+  description: restart the selected environment
+  options: {}
