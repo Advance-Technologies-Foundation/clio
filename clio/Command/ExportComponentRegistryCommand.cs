@@ -2,7 +2,6 @@ namespace Clio.Command;
 
 using System;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -361,13 +360,17 @@ public sealed class ExportComponentRegistryCommand {
 			&& value.IndexOf(Path.AltDirectorySeparatorChar) < 0;
 
 	// Best-effort: the caller is already failing, so a leftover temp file must not mask the real error.
+	// Catches EVERY exception, not just IOException: this runs from the write path's catch-and-rethrow, and a
+	// failed write can leave the OS raising UnauthorizedAccessException (or any other non-IOException) on the
+	// delete — on Windows typically because the failed write still holds a handle. Letting that escape would
+	// replace the causal write exception with a cleanup one, making the real failure undiagnosable.
 	private void TryDeleteTemporary(string temporaryPath) {
 		try {
 			if (_ioFileSystem.File.Exists(temporaryPath)) {
 				_ioFileSystem.File.Delete(temporaryPath);
 			}
 		}
-		catch (IOException) {
+		catch (Exception) {
 			// Nothing further to do — the export failure is reported by the caller.
 		}
 	}
@@ -394,8 +397,9 @@ public sealed class ExportComponentRegistryCommand {
 		}
 		if (components.ValueKind != JsonValueKind.Array) {
 			throw new InvalidOperationException(
-				"The fetched payload is not a component registry: expected a top-level array or an object with a "
-				+ "'components' array. Nothing was written.");
+				$"The fetched payload is not a component registry: its root is {root.ValueKind} and no "
+				+ "'components' array was found, but a top-level array or an object with a 'components' array was "
+				+ "expected. Nothing was written.");
 		}
 		int componentCount = components.GetArrayLength();
 		int compositeCount = root.ValueKind == JsonValueKind.Object
@@ -416,12 +420,21 @@ public sealed class ExportComponentRegistryCommand {
 		return (componentCount, compositeCount, inputCount);
 	}
 
-	private static int CountObjectProperties(JsonElement component, string propertyName) =>
-		component.ValueKind == JsonValueKind.Object
-			&& component.TryGetProperty(propertyName, out JsonElement property)
-			&& property.ValueKind == JsonValueKind.Object
-				? property.EnumerateObject().Count()
-				: 0;
+	// foreach over the struct enumerator instead of LINQ Count(): the LINQ call resolves through
+	// IEnumerable<JsonProperty> and boxes JsonElement.ObjectEnumerator, and this runs up to twice per
+	// component over a registry that carries hundreds of them.
+	private static int CountObjectProperties(JsonElement component, string propertyName) {
+		if (component.ValueKind != JsonValueKind.Object
+			|| !component.TryGetProperty(propertyName, out JsonElement property)
+			|| property.ValueKind != JsonValueKind.Object) {
+			return 0;
+		}
+		int count = 0;
+		foreach (JsonProperty unused in property.EnumerateObject()) {
+			count++;
+		}
+		return count;
+	}
 
 	private EnvironmentSettings ResolveEnvironmentSettings(ExportComponentRegistryOptions options) =>
 		_settingsRepository.GetEnvironment(options);

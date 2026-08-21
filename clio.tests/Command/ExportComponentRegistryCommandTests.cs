@@ -552,6 +552,57 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 			because: "a failed probe must leave nothing behind at the default path");
 	}
 
+	[Test]
+	[Description("A CDN-reported version carrying a path-traversal segment is refused before Path.Combine, so nothing is written anywhere — IsSafePathSegment is the only guard on that network-controlled path segment.")]
+	public async Task TryExportAsync_ShouldRefuseDefaultPath_WhenCdnVersionEscapesTheAnchor() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-traversal-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		// The resolved version arrives from the network, not from the validated input: the request asks for a
+		// well-formed 8.3.4 and the CDN answers with a traversal segment.
+		StubFetch(_webRegistryClient, SampleRegistryWithDeprecation, resolvedVersion: "../../etc/passwd");
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a version that is not a plain file name must never become a path segment of the default path");
+		response.Error.Should().Contain("not usable as a file name",
+			because: "the caller must be told to pass an explicit --output-file instead of getting a silent write");
+		response.OutputFile.Should().BeNull(because: "a refused export reports no destination");
+		_ioFileSystem.AllFiles.Should().NotContain(path => path.Contains("passwd"),
+			because: "the guard must run before any directory is created or any byte is written");
+		_ioFileSystem.AllFiles.Should().NotContain(path => path.Contains(RegistrySubdirectoryNameForTest),
+			because: "no registry file may exist anywhere once the segment guard refuses the write");
+	}
+
+	[Test]
+	[Description("A well-formed CDN-reported version passes the segment guard and lands at the expected default path under the workspace anchor.")]
+	public async Task TryExportAsync_ShouldWriteToDefaultPath_WhenCdnVersionIsWellFormed() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-safe-segment-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		StubFetch(_webRegistryClient, SampleRegistryWithDeprecation, resolvedVersion: "8.2.1");
+		ExportComponentRegistryOptions options = new() { Version = "8.2.1" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a plain 3-part version is a valid file-name segment");
+		response.OutputFile.Should().Be(
+			_ioFileSystem.Path.Combine(workspace, ".clio-migration", RegistrySubdirectoryNameForTest, "8.2.1.json"),
+			because: "the default path is <workspace-root>/.clio-migration/component-registry/<version>.json");
+		_ioFileSystem.File.ReadAllText(response.OutputFile).Should().Be(SampleRegistryWithDeprecation,
+			because: "the registry must be written byte-faithfully to the guarded default path");
+	}
+
 	private const string RegistrySubdirectoryNameForTest = "component-registry";
 
 	private sealed class ThrowingResolverFactory(Exception failure) : IPlatformVersionResolverFactory {
