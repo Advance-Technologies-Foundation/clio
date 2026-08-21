@@ -598,7 +598,7 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 		response.Success.Should().BeTrue(because: "a plain 3-part version is a valid file-name segment");
 		response.OutputFile.Should().Be(
 			_ioFileSystem.Path.Combine(workspace, ".clio-migration", RegistrySubdirectoryNameForTest, "8.2.1.json"),
-			because: "the default path is <workspace-root>/.clio-migration/component-registry/<version>.json");
+			because: "the web flavor's default path carries no flavor subdirectory — <workspace-root>/.clio-migration/component-registry/<version>.json");
 		_ioFileSystem.File.ReadAllText(response.OutputFile).Should().Be(SampleRegistryWithDeprecation,
 			because: "the registry must be written byte-faithfully to the guarded default path");
 	}
@@ -668,6 +668,35 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 			because: "the file must be a byte-for-byte copy of what the CDN served, BOM included");
 		response.ComponentCount.Should().Be(2,
 			because: "the counters are read off the same bytes, so a BOM must not break the parse either");
+	}
+
+	[Test]
+	[Description("A web export and a mobile export of the SAME version land on DIFFERENT default paths, so exporting both leaves two files instead of one silently overwriting the other.")]
+	public async Task TryExportAsync_ShouldSeparateDefaultPathsByFlavor_ForTheSameVersion() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-flavor-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+
+		// Act
+		ExportComponentRegistryResponse web =
+			await _command.TryExportAsync(new ExportComponentRegistryOptions { Version = "8.3.4" }, CancellationToken.None);
+		ExportComponentRegistryResponse mobile = await _command.TryExportAsync(
+			new ExportComponentRegistryOptions { Version = "8.3.4", SchemaType = "mobile" }, CancellationToken.None);
+
+		// Assert
+		web.Success.Should().BeTrue();
+		mobile.Success.Should().BeTrue();
+		mobile.OutputFile.Should().NotBe(web.OutputFile,
+			because: "the default path overwrites its own prior output, so a shared path would leave the second export silently replacing the first");
+		mobile.OutputFile.Should().Be(
+			_ioFileSystem.Path.Combine(workspace, ".clio-migration", RegistrySubdirectoryNameForTest, "mobile", "8.3.4.json"),
+			because: "the flavor subdirectory mirrors RegistryFlavor.Mobile.CacheSubdirectoryName so the output layout stays in lockstep with the cache layout");
+		_ioFileSystem.File.ReadAllText(web.OutputFile).Should().Be(SampleRegistryWithDeprecation,
+			because: "the web export must survive the later mobile export unchanged");
+		_ioFileSystem.File.ReadAllText(mobile.OutputFile).Should().Be(MobileRegistry,
+			because: "each flavor's file must carry its own registry, not whichever ran last");
 	}
 
 	private const string RegistrySubdirectoryNameForTest = "component-registry";

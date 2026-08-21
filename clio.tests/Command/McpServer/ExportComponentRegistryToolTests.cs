@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -229,6 +231,74 @@ public sealed class ExportComponentRegistryToolTests {
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(new EnvironmentSettings { Uri = "https://unreachable-stand.example.com" });
 		return new ExportComponentRegistryTool(command, resolverFactory, commandResolver);
+	}
+
+	[Test]
+	[Description("A camelCase 'schemaType' argument is REJECTED with a rename hint instead of being dropped — an unbound schema-type leaves the field null, which is the legitimate 'use web' value, so a mis-cased mobile request would otherwise return a successful web export with no warning.")]
+	public async Task ExportComponentRegistry_ShouldRejectLegacyAlias_WhenCamelCaseSchemaTypeIsUsed() {
+		// Arrange
+		ExportComponentRegistryCommand command = CreateCommand(out IComponentRegistryClient webClient, out _);
+		ExportComponentRegistryTool tool = new(
+			command, Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<IToolCommandResolver>());
+		ExportComponentRegistryArgs args = new(Version: "8.3.4") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["schemaType"] = JsonDocument.Parse("\"mobile\"").RootElement.Clone()
+			}
+		};
+
+		// Act
+		ExportComponentRegistryResponse response = await tool.ExportComponentRegistry(args, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unbound camelCase argument must be rejected, not ignored");
+		response.Error.Should().Contain("schema-type",
+			because: "the rename hint must point at the canonical kebab-case parameter");
+		await webClient.DidNotReceiveWithAnyArgs().GetAsync(default, default);
+	}
+
+	[Test]
+	[Description("The alias check runs before any work: a snake_case 'output_file' is refused with a rename hint and nothing is fetched or written.")]
+	public async Task ExportComponentRegistry_ShouldRejectLegacyAlias_WhenSnakeCaseOutputFileIsUsed() {
+		// Arrange
+		ExportComponentRegistryCommand command = CreateCommand(out IComponentRegistryClient webClient, out _);
+		ExportComponentRegistryTool tool = new(
+			command, Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<IToolCommandResolver>());
+		ExportComponentRegistryArgs args = new(Version: "8.3.4") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["output_file"] = JsonDocument.Parse("\"/tmp/registry.json\"").RootElement.Clone()
+			}
+		};
+
+		// Act
+		ExportComponentRegistryResponse response = await tool.ExportComponentRegistry(args, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a dropped output-file would silently write to the default path instead of where the caller asked");
+		response.Error.Should().Contain("output-file", because: "the rename hint must name the canonical parameter");
+		await webClient.DidNotReceiveWithAnyArgs().GetAsync(default, default);
+	}
+
+	[Test]
+	[Description("An argument that is not a known alias either is refused, naming the valid parameter set — a typo must not degrade into a default-shaped export.")]
+	public async Task ExportComponentRegistry_ShouldRejectUnknownArgument_NamingTheValidSet() {
+		// Arrange
+		ExportComponentRegistryCommand command = CreateCommand(out _, out _);
+		ExportComponentRegistryTool tool = new(
+			command, Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<IToolCommandResolver>());
+		ExportComponentRegistryArgs args = new(Version: "8.3.4") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["schemaTyp"] = JsonDocument.Parse("\"mobile\"").RootElement.Clone()
+			}
+		};
+
+		// Act
+		ExportComponentRegistryResponse response = await tool.ExportComponentRegistry(args, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("schema-type",
+			because: "the error lists the valid parameter set so the caller can correct the spelling");
 	}
 
 	private static ExportComponentRegistryCommand CreateCommand(

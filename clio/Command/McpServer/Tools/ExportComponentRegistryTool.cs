@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,6 +44,23 @@ public sealed class ExportComponentRegistryTool(
 	/// </summary>
 	internal static readonly TimeSpan VersionResolutionBudget = TimeSpan.FromSeconds(30);
 
+	/// <summary>
+	/// The camelCase / snake_case spellings an LLM tends to emit for this tool's kebab-case arguments, mapped to
+	/// the canonical name. Rejected with a rename hint rather than skipped, because a silently unbound argument
+	/// here is INVISIBLE: `schemaType: "mobile"` leaves <c>SchemaType</c> null, which is the legitimate
+	/// "omitted, use web" value, so the caller gets a successful WEB export with no `schemaTypeWarning` — the
+	/// one guard that exists (<c>ResolveSchemaType</c>'s typo detection) only fires for values that bind. Same
+	/// reason <c>get-request-info</c> carries the table (its own alias test cites the observed failure mode).
+	/// </summary>
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["schemaType"] = "schema-type",
+		["schema_type"] = "schema-type",
+		["outputFile"] = "output-file",
+		["output_file"] = "output-file",
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name"
+	};
+
 	// ReadOnly=false: the tool's whole purpose is a local file write (the registry payload). Destructive
 	// stays false because every write is additive and confined exactly like get-classic-page-sources: the
 	// DEFAULT path is anchored under the workspace (re-runs overwrite only their own prior output), and an
@@ -76,6 +95,16 @@ public sealed class ExportComponentRegistryTool(
 		CancellationToken cancellationToken = default) {
 		if (args is null) {
 			return new ExportComponentRegistryResponse { Success = false, Error = "args is required" };
+		}
+
+		// BEFORE ResolveSchemaType, because that call cannot tell a mis-cased key from an omitted one: a caller
+		// that spelled `schemaType` reaches it with args.SchemaType == null, which resolves to web with no
+		// warning, and the wrong registry is exported silently.
+		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: version, schema-type, output-file, environment-name, uri, login, password.");
+		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
+			return new ExportComponentRegistryResponse { Success = false, Error = legacyAliasError };
 		}
 
 		SchemaTypeResolution schemaType = ComponentInfoResolution.ResolveSchemaType(args.SchemaType);
@@ -191,7 +220,17 @@ public sealed record ExportComponentRegistryArgs(
 	[JsonPropertyName("output-file")]
 	[Description("Destination file path (absolute path recommended). Must resolve inside the workspace or the " +
 		"OS temp directory and must not already exist — refused before any write otherwise. Default: " +
-		"<workspace-root>/.clio-migration/component-registry/<version>.json (that default path IS overwritten " +
+		"<workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json (that default path IS overwritten " +
 		"on a repeat run).")]
 	public string? OutputFile { get; init; }
+
+	/// <summary>
+	/// Overflow bag for any argument that does not bind to a declared kebab-case parameter — most importantly the
+	/// camelCase / snake_case spellings an LLM tends to emit. Without it System.Text.Json's default
+	/// <c>Skip</c> handling drops the key before the tool ever sees it, and a mis-cased <c>schema-type</c>
+	/// silently exports the WEB registry as though web had been requested. See <see cref="ExportComponentRegistryTool"/>'s
+	/// alias table.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

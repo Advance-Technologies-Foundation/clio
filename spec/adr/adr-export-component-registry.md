@@ -74,7 +74,7 @@ them directly regardless of which base class it derives from.
 - Explicit `--output-file`: goes through `OutputPathConfinement.Resolve` +
   `OutputPathConfinement.WriteAtomic` — symlink resolution, workspace/temp-only anchor,
   refuses `..`-escape and refuses an already-existing target, all before any write.
-- No `--output-file` (default): `<workspace-root>/.clio-migration/component-registry/<version>.json`,
+- No `--output-file` (default): `<workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json`,
   computed the same way `GetClassicPageSourcesCommand.ResolveOutputPath` computes its
   default — tool-owned, bypasses the existing-target refusal, and is overwritten on every
   rerun.

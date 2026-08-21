@@ -33,7 +33,7 @@ public sealed class ExportComponentRegistryOptions : EnvironmentOptions {
 	/// <summary>Optional destination path; when omitted the file is anchored under the workspace root.</summary>
 	[Option("output-file", Required = false,
 		HelpText = "Destination file path. Must resolve inside the workspace or the OS temp directory and must " +
-			"not already exist. Default: <workspace-root>/.clio-migration/component-registry/<version>.json " +
+			"not already exist. Default: <workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json " +
 			"(that default path IS overwritten on a repeat run).")]
 	public string OutputFile { get; set; }
 }
@@ -275,7 +275,7 @@ public sealed class ExportComponentRegistryCommand {
 			(int componentCount, int compositeCount, int inputCount) = CountEntries(content);
 
 			(string outputPath, string writeError) = await WriteRegistryAsync(
-				outputFile, fetch.ResolvedVersion, content, cancellationToken).ConfigureAwait(false);
+				outputFile, fetch.ResolvedVersion, schemaType, content, cancellationToken).ConfigureAwait(false);
 			if (writeError != null) {
 				return Fail(writeError, schemaType.Warning);
 			}
@@ -313,7 +313,8 @@ public sealed class ExportComponentRegistryCommand {
 	// serve that branch — its FileMode.CreateNew gate is exactly the refuse-if-exists contract the default
 	// path must NOT have — so the move carries overwrite:true instead.
 	private async Task<(string path, string error)> WriteRegistryAsync(
-		string explicitOutputFile, string resolvedVersion, byte[] content, CancellationToken cancellationToken) {
+		string explicitOutputFile, string resolvedVersion, SchemaTypeResolution schemaType, byte[] content,
+		CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(explicitOutputFile)) {
 			(string resolvedPath, string resolveError) = OutputPathConfinement.Resolve(_ioFileSystem, explicitOutputFile);
 			if (resolveError != null) {
@@ -339,6 +340,15 @@ public sealed class ExportComponentRegistryCommand {
 				+ "Pass an explicit --output-file to choose the destination yourself.");
 		}
 
+		// The FLAVOR is part of the default path, mirroring RegistryFlavor.CacheSubdirectoryName (empty for web,
+		// "mobile" for mobile). Without it a web export and a mobile export of the SAME version resolve to the
+		// same file, and since the default path deliberately overwrites its own prior output, exporting web then
+		// mobile leaves one file, reports the identical `outputFile` for both, and hands the consumer plausible
+		// counters for the wrong registry — with no signal at all. The cache layout already treats this exact
+		// pairing as a hazard for the same reason; the output layout stays in lockstep with it.
+		string flavorSubdirectory = schemaType.IsMobile
+			? RegistryFlavor.Mobile.CacheSubdirectoryName
+			: RegistryFlavor.Web.CacheSubdirectoryName;
 		string defaultPath;
 		string defaultAnchor;
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
@@ -348,7 +358,8 @@ public sealed class ExportComponentRegistryCommand {
 				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 				ClioRuntimePaths.Home,
 				null);
-			defaultPath = Path.Combine(defaultAnchor, ClioMigrationDirectoryName, RegistrySubdirectoryName, $"{resolvedVersion}.json");
+			defaultPath = Path.Combine(
+				defaultAnchor, ClioMigrationDirectoryName, RegistrySubdirectoryName, flavorSubdirectory, $"{resolvedVersion}.json");
 		}
 		// Post-assembly containment, the second layer of the same defence ComponentRegistryDocsCacheStore
 		// .TryGetPaths uses: the segment guard above validates the input, this validates the RESULT. A guard on
@@ -356,7 +367,7 @@ public sealed class ExportComponentRegistryCommand {
 		// against the resolved anchor is what actually proves the write cannot land outside it, whatever the
 		// segment turns out to mean to the platform.
 		string registryRoot = _ioFileSystem.Path.GetFullPath(
-			_ioFileSystem.Path.Combine(defaultAnchor, ClioMigrationDirectoryName, RegistrySubdirectoryName))
+			_ioFileSystem.Path.Combine(defaultAnchor, ClioMigrationDirectoryName, RegistrySubdirectoryName, flavorSubdirectory))
 			+ Path.DirectorySeparatorChar;
 		if (!_ioFileSystem.Path.GetFullPath(defaultPath).StartsWith(registryRoot, StringComparison.Ordinal)) {
 			return (null,

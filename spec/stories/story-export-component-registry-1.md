@@ -50,7 +50,7 @@ per-component `get-component-info` calls.
    absolute system path outside workspace/temp, symlink escape, and an already-existing
    target (`Destructive = false`).
 9. Omitted `--output-file`: default path
-   `<workspace-root>/.clio-migration/component-registry/<version>.json`
+   `<workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json`
    (mirrors `GetClassicPageSourcesCommand.ResolveOutputPath`); a second run at the default
    path succeeds and overwrites — this is a DIFFERENT contract from AC-08 and must be
    tested separately.

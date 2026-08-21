@@ -64,7 +64,7 @@ OPTIONS
                                        inside the workspace or the OS temp directory (symlinks
                                        resolved); a path outside both, or one that already
                                        exists, is rejected. Omit for the default (re-runnable):
-                                       <workspace-root>/.clio-migration/component-registry/<version>.json
+                                       <workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json
 
     --uri                    -u       Application uri
 

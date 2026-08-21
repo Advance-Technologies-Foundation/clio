@@ -27,7 +27,7 @@ missing.
 | CAP-02 | Write the resolved version's full component registry to a file, byte-identical to what `IComponentRegistryClient` fetched (no field loss from re-serializing through a typed model) | A `deprecated`/`deprecationReason` pair present in the source registry JSON is present, unchanged, in the written file |
 | CAP-03 | Never fetch documentation bodies (`references.docs` paths are written as-is; the doc content itself is not fetched) | `IComponentRegistryDocsClient.GetDocAsync` is invoked zero times during the tool's execution |
 | CAP-04 | Confine an explicit `output-file` to the workspace or OS temp root, resolving symlinks, and refuse to overwrite an existing file, before any write happens | A path containing `..`, an absolute system path, or a symlink that escapes the allowed zones is rejected with no file written; a path that already exists is rejected with no file written |
-| CAP-05 | Fall back to a deterministic default path when `output-file` is omitted, and allow that specific tool-owned path to be overwritten on a repeat run | Two consecutive runs with no `output-file` both succeed and the second overwrites the first at `<workspace-root>/.clio-migration/component-registry/<version>.json` |
+| CAP-05 | Fall back to a deterministic default path when `output-file` is omitted, and allow that specific tool-owned path to be overwritten on a repeat run | Two consecutive runs with no `output-file` both succeed and the second overwrites the first at `<workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json` |
 | CAP-06 | Return a response that carries the file path, version-resolution fields, and structural counters (components / composites / inputs) but never the registry content itself | The response body, serialized to JSON, contains no `componentType` occurrence |
 | CAP-07 | Support both the `web` (default) and `mobile` `schema-type` registries via the existing flavor split, reusing the existing selection path rather than a new switch | `schema-type=mobile` produces a file sourced from `IMobileComponentRegistryClient`, `web` from `IComponentRegistryClient` |
 
@@ -81,7 +81,7 @@ missing.
 
 Running `clio export-component-registry --environment-name <env>` (or `--version X.Y.Z`)
 writes the resolved version's full registry JSON, byte-faithful to the source, to
-`<workspace-root>/.clio-migration/component-registry/<version>.json` (or the confined
+`<workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json` (or the confined
 `--output-file`), and prints a result containing the file path, resolved-version fields,
 and component/composite/input counters — with zero calls to the docs client and no
 registry content in the response body.

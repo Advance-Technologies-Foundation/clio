@@ -64,7 +64,7 @@ clio export-component-registry [options]
                                    inside the workspace or the OS temp directory (symlinks
                                    resolved); a path outside both, or one that already
                                    exists, is rejected. Omit for the default (re-runnable):
-                                   <workspace-root>/.clio-migration/component-registry/<version>.json
+                                   <workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json
 
 --uri                    -u       Application uri
 
@@ -81,6 +81,7 @@ clio export-component-registry [options]
 clio export-component-registry -e dev
 # Probe dev's platform version, write its web registry to
 # <workspace-root>/.clio-migration/component-registry/<version>.json
+# (the mobile flavor lands under .../component-registry/mobile/<version>.json)
 
 clio export-component-registry --version 8.3.4 --schema-type mobile --output-file ./mobile-registry.json
 # Export the mobile registry for an explicit version to a chosen path
@@ -113,9 +114,13 @@ registry content — the file at `outputFile` is the only place the registry dat
   be supplied by an agent rather than typed at a shell. Symlinks are resolved before the check, an anchor that is
   a filesystem root or an ancestor of `$HOME` is not trusted, and an explicit `--output-file` that already exists
   is refused rather than overwritten. A path escaping both allowed locations fails before any write.
-- The default path (`<workspace-root>/.clio-migration/component-registry/<version>.json`) is a **different**
+- The default path (`<workspace-root>/.clio-migration/component-registry/[mobile/]<version>.json`) is a **different**
   contract from an explicit `--output-file`: it is tool-owned and re-runnable, so a second run at the default
   path overwrites the first. An explicit `--output-file` never overwrites an existing target.
+- The default path carries the FLAVOR as a subdirectory — web at `component-registry/<version>.json`, mobile at
+  `component-registry/mobile/<version>.json` — mirroring `RegistryFlavor.CacheSubdirectoryName`. Without it a web
+  and a mobile export of the same version would resolve to the same overwrite-on-rerun file and report the same
+  `outputFile`, so a consumer exporting both would silently validate against whichever ran last.
 - `--schema-type mobile` sources from the separate mobile component registry (same transport/cache chain, a
   distinct CDN file and cache subdirectory) — see the "Mobile flavor" section in `get-component-info`'s
   implementation notes.
