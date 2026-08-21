@@ -238,7 +238,8 @@ public class Postgres : IPostgres
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
-			string escapedComment = comment.Replace("'", "''");
+			// COMMENT ON does not support bind parameters for the literal text; standard SQL '' escaping is required and correct here.
+			string escapedComment = (comment ?? string.Empty).Replace("'", "''");
 			using NpgsqlCommand cmd = dataSource.CreateCommand($"COMMENT ON DATABASE \"{dbName}\" IS '{escapedComment}'");
 			cmd.ExecuteNonQuery();
 			cnn.Close();
@@ -292,14 +293,14 @@ public class Postgres : IPostgres
 				SELECT datname
 				FROM pg_database
 				WHERE datistemplate = true
-				  AND shobj_description(oid, 'pg_database') LIKE @pattern
+				  AND shobj_description(oid, 'pg_database') LIKE @pattern ESCAPE '\'
 				LIMIT 1
 			""";
 
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
-			cmd.Parameters.AddWithValue("@pattern", $"%sourceFile:{sourceFileName}%");
+			cmd.Parameters.AddWithValue("@pattern", $"%sourceFile:{EscapeLike(sourceFileName)}%");
 			object result = cmd.ExecuteScalar();
 			cnn.Close();
 			
@@ -327,4 +328,9 @@ public class Postgres : IPostgres
 			return null;
 		}
 	}
+
+	// Escapes PostgreSQL LIKE wildcard metacharacters ('%', '_') and the escape character itself ('\')
+	// so a literal value (e.g. a file name) cannot widen the LIKE pattern beyond an exact substring match.
+	// Callers must pair this with an explicit "LIKE @pattern ESCAPE '\'" clause.
+	private static string EscapeLike(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }

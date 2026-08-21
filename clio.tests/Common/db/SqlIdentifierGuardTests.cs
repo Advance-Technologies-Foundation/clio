@@ -30,6 +30,12 @@ public class SqlIdentifierGuardTests {
 	[TestCase("my'database", Description = "Contains a single quote, a SQL string-literal delimiter.")]
 	[TestCase("my;database", Description = "Contains a statement separator that could terminate the current statement.")]
 	[TestCase("my database", Description = "Contains whitespace, which is not part of the identifier allow-list.")]
+	[TestCase("']]; DROP TABLE--", Description = "Adversarial payload combining a quote and bracket close to break out of both T-SQL and Postgres identifier delimiters.")]
+	[TestCase("\"; DROP DATABASE--", Description = "Adversarial payload using a double quote to break out of a Postgres identifier followed by a statement separator.")]
+	[TestCase("db\nname", Description = "Contains an embedded newline, which is not part of the identifier allow-list.")]
+	[TestCase("db\0name", Description = "Contains an embedded NUL character, which is not part of the identifier allow-list.")]
+	[TestCase("my］database", Description = "Contains a fullwidth Unicode homoglyph of ']', which must not be mistaken for the ASCII bracket allow-list exclusion.")]
+	[TestCase("my＂database", Description = "Contains a fullwidth Unicode homoglyph of '\"', which must not be mistaken for the ASCII quote allow-list exclusion.")]
 	[Description("Rejects identifiers containing SQL metacharacters that could break out of a bracketed/quoted identifier position.")]
 	public void EnsureValidIdentifier_ShouldThrowArgumentException_WhenNameContainsDisallowedCharacters(string name) {
 		// Arrange
@@ -73,6 +79,19 @@ public class SqlIdentifierGuardTests {
 
 		// Assert
 		act.Should().Throw<System.ArgumentException>(because: "identifiers longer than 128 characters are rejected by the allow-list bound");
+	}
+
+	[Test]
+	[Description("Rejects a long malicious payload exceeding 128 characters that also contains a disallowed bracket and statement separator, proving the length bound and the character allow-list both reject it.")]
+	public void EnsureValidIdentifier_ShouldThrowArgumentException_WhenNameIsLongMaliciousPayload() {
+		// Arrange
+		string maliciousName = new string('a', 120) + "]; DROP TABLE--";
+
+		// Act
+		System.Action act = () => SqlIdentifierGuard.EnsureValidIdentifier(maliciousName, "dbName");
+
+		// Assert
+		act.Should().Throw<System.ArgumentException>(because: "a payload exceeding 128 characters and containing a bracket/statement separator must be rejected by the allow-list bound");
 	}
 
 	[Test]
