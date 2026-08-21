@@ -25,13 +25,16 @@ public sealed class ClassicEnumVocabularyResolverTests {
 	private const string BaseUri = "http://stand.example.local";
 	private const string Hash = "ac178e58d3511cf431f45b6b63ecb001";
 
-	// .NET Core serves the login page off the site root; .NET Framework serves it behind the /0 application root.
-	// Asserted as exact URLs (not merely as "something 404'd") because an unmapped URL in StubHandler also 404s —
-	// a wrong URL would otherwise be indistinguishable from a legitimately unreachable stand.
-	private const string NetCoreLoginUrl = BaseUri + "/Login/Login.html";
-	private const string NetFrameworkLoginUrl = BaseUri + "/0/Login/NuiLogin.aspx";
-	private const string NetCoreSysEnumsUrl = BaseUri + "/core/" + Hash + "/Terrasoft/core/enums/sysenums.js";
-	private const string NetFrameworkSysEnumsUrl = BaseUri + "/0/core/" + Hash + "/Terrasoft/core/enums/sysenums.js";
+	// The three login-page locations the resolver knows: .NET Core's site-root Login.html, .NET Framework's
+	// /0-rooted NuiLogin.aspx, and the site-root NuiLogin.aspx real stands also answer. IsNetCore picks the ORDER,
+	// not the only attempt — so these are asserted as exact URLs in exact sequence. That precision matters because
+	// StubHandler answers any UNMAPPED url with 404, exactly like an unreachable stand: assertions on the outcome
+	// alone would pass just as happily against completely wrong URLs.
+	private const string CoreRootLoginUrl = BaseUri + "/Login/Login.html";
+	private const string SiteRootNuiLoginUrl = BaseUri + "/Login/NuiLogin.aspx";
+	private const string ZeroRootNuiLoginUrl = BaseUri + "/0/Login/NuiLogin.aspx";
+	private const string SiteRootSysEnumsUrl = BaseUri + "/core/" + Hash + "/Terrasoft/core/enums/sysenums.js";
+	private const string ZeroRootSysEnumsUrl = BaseUri + "/0/core/" + Hash + "/Terrasoft/core/enums/sysenums.js";
 
 	private IClassicEnumVocabularySourceParser _parser;
 
@@ -55,23 +58,26 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		return factory;
 	}
 
-	private static string LoginHtmlNaming(string corePath) =>
-		$"<html>...<script src=\"{corePath}/core/{Hash}/Terrasoft/init.js\">...";
+	// A login page whose script src names the content hash under <paramref name="rootPrefix"/> ("" or "/0").
+	private static string LoginHtmlNaming(string rootPrefix) =>
+		$"<html>...<script src=\"{rootPrefix}/core/{Hash}/Terrasoft/init.js\">...";
+
+	private static ClassicEnumVocabularyParseResult SingleEnum(string enumName, string memberName, long value) =>
+		new(new Dictionary<string, IReadOnlyDictionary<string, long>> {
+				[enumName] = new Dictionary<string, long> { [memberName] = value }
+			},
+			Array.Empty<string>());
 
 	[Test]
-	[Description("On a .NET Core stand Resolve fetches /Login/Login.html and sysenums.js off the bare site root, and hands the body to the parser verbatim.")]
-	public void Resolve_ShouldUseNetCoreUrls_WhenEnvironmentIsNetCore() {
+	[Description("On a .NET Core stand Resolve tries /Login/Login.html FIRST and, when it answers, reads sysenums.js off the bare site root, handing the body to the parser verbatim.")]
+	public void Resolve_ShouldUseNetCoreUrlsFirst_WhenEnvironmentIsNetCore() {
 		// Arrange
 		const string sysEnumsBody = "Terrasoft.ViewItemType = { GRID_LAYOUT: 0 };";
 		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
-			[NetCoreLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming(string.Empty)),
-			[NetCoreSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
+			[CoreRootLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming(string.Empty)),
+			[SiteRootSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
 		};
-		var expected = new ClassicEnumVocabularyParseResult(
-			new Dictionary<string, IReadOnlyDictionary<string, long>> {
-				["ViewItemType"] = new Dictionary<string, long> { ["GRID_LAYOUT"] = 0 }
-			},
-			Array.Empty<string>());
+		ClassicEnumVocabularyParseResult expected = SingleEnum("ViewItemType", "GRID_LAYOUT", 0);
 		_parser.Parse(sysEnumsBody).Returns(expected);
 		var requested = new List<string>();
 		var resolver = new ClassicEnumVocabularyResolver(
@@ -81,26 +87,22 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		requested.Should().Equal([NetCoreLoginUrl, NetCoreSysEnumsUrl],
-			because: ".NET Core serves both the login page and the hashed static tree off the site root, with no /0 prefix");
+		requested.Should().Equal([CoreRootLoginUrl, SiteRootSysEnumsUrl],
+			because: "the runtime's own shape is tried first, so a healthy Core stand costs exactly one login-page request");
 		result.Enums.Should().BeSameAs(expected.Enums, because: "the resolver hands the parser's own result straight through when the fetch succeeds");
 		_parser.Received(1).Parse(sysEnumsBody);
 	}
 
 	[Test]
-	[Description("On a .NET Framework stand Resolve fetches /0/Login/NuiLogin.aspx and the /0-rooted sysenums.js the login page itself names.")]
-	public void Resolve_ShouldUseNetFrameworkUrls_WhenEnvironmentIsNetFramework() {
+	[Description("On a .NET Framework stand Resolve tries /0/Login/NuiLogin.aspx FIRST and reads the /0-rooted sysenums.js the login page itself names.")]
+	public void Resolve_ShouldUseNetFrameworkUrlsFirst_WhenEnvironmentIsNetFramework() {
 		// Arrange
 		const string sysEnumsBody = "Terrasoft.ContentType = { TEXT: 1 };";
 		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
-			[NetFrameworkLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming("/0")),
-			[NetFrameworkSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
+			[ZeroRootNuiLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming("/0")),
+			[ZeroRootSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
 		};
-		var expected = new ClassicEnumVocabularyParseResult(
-			new Dictionary<string, IReadOnlyDictionary<string, long>> {
-				["ContentType"] = new Dictionary<string, long> { ["TEXT"] = 1 }
-			},
-			Array.Empty<string>());
+		ClassicEnumVocabularyParseResult expected = SingleEnum("ContentType", "TEXT", 1);
 		_parser.Parse(sysEnumsBody).Returns(expected);
 		var requested = new List<string>();
 		var resolver = new ClassicEnumVocabularyResolver(
@@ -110,26 +112,46 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		requested.Should().Equal([NetFrameworkLoginUrl, NetFrameworkSysEnumsUrl],
+		requested.Should().Equal([ZeroRootNuiLoginUrl, ZeroRootSysEnumsUrl],
 			because: ".NET Framework serves the login page and the hashed static tree behind the /0 application root");
 		result.Enums.Should().BeSameAs(expected.Enums, because: "a Framework stand must resolve its vocabulary exactly like a Core one");
 		_parser.Received(1).Parse(sysEnumsBody);
 	}
 
 	[Test]
-	[Description("A .NET Framework login page that names '/core/<hash>/' without the /0 prefix still resolves, falling back to the IsNetCore-derived static root.")]
-	public void Resolve_ShouldFallBackToRuntimeStaticRoot_WhenLoginPageOmitsTheRootPrefix() {
+	[Description("A stand that answers only the site-root NuiLogin.aspx still resolves: the runtime's preferred URL is tried first, then the alternates, and the static root follows the login page that actually answered.")]
+	public void Resolve_ShouldFallBackToTheNextCandidate_WhenTheRuntimePreferredLoginPageIsAbsent() {
+		// Arrange — a real shape: /Login/Login.html is not served, /Login/NuiLogin.aspx is, off the site root.
+		const string sysEnumsBody = "Terrasoft.DataValueType = { GUID: 0 };";
+		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
+			[SiteRootNuiLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming(string.Empty)),
+			[SiteRootSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
+		};
+		_parser.Parse(sysEnumsBody).Returns(SingleEnum("DataValueType", "GUID", 0));
+		var requested = new List<string>();
+		var resolver = new ClassicEnumVocabularyResolver(
+			Settings(isNetCore: true), FactoryReturning(byUrl, requested), _parser);
+
+		// Act
+		ClassicEnumVocabularyParseResult result = resolver.Resolve();
+
+		// Assert
+		requested.Should().Equal([CoreRootLoginUrl, SiteRootNuiLoginUrl, SiteRootSysEnumsUrl],
+			because: "committing to a single URL per runtime would omit enumVocabulary here instead of falling through to the shape the stand does serve");
+		result.Enums.Should().ContainKey("DataValueType",
+			because: "the vocabulary must resolve on every stand that serves a login page at any known location");
+	}
+
+	[Test]
+	[Description("A .NET Framework login page that names '/core/<hash>/' without the /0 prefix resolves against the root implied by the login page that answered, never a double-prefixed one.")]
+	public void Resolve_ShouldUseTheRootOfTheAnsweringLoginPage_WhenTheMarkerOmitsItsPrefix() {
 		// Arrange
 		const string sysEnumsBody = "Terrasoft.DataValueType = { GUID: 0 };";
 		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
-			[NetFrameworkLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming(string.Empty)),
-			[NetFrameworkSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
+			[ZeroRootNuiLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming(string.Empty)),
+			[ZeroRootSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
 		};
-		_parser.Parse(sysEnumsBody).Returns(new ClassicEnumVocabularyParseResult(
-			new Dictionary<string, IReadOnlyDictionary<string, long>> {
-				["DataValueType"] = new Dictionary<string, long> { ["GUID"] = 0 }
-			},
-			Array.Empty<string>()));
+		_parser.Parse(sysEnumsBody).Returns(SingleEnum("DataValueType", "GUID", 0));
 		var requested = new List<string>();
 		var resolver = new ClassicEnumVocabularyResolver(
 			Settings(isNetCore: false), FactoryReturning(byUrl, requested), _parser);
@@ -138,8 +160,8 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		requested.Should().Equal([NetFrameworkLoginUrl, NetFrameworkSysEnumsUrl],
-			because: "a marker without its own root prefix is completed from the runtime split, never double-prefixed");
+		requested.Should().Equal([ZeroRootNuiLoginUrl, ZeroRootSysEnumsUrl],
+			because: "a marker without its own root prefix is completed from the login page that served it, never double-prefixed");
 		result.Enums.Should().ContainKey("DataValueType");
 	}
 
@@ -159,11 +181,31 @@ public sealed class ClassicEnumVocabularyResolverTests {
 	}
 
 	[Test]
-	[Description("Resolve degrades to an empty result with a warning, never a thrown exception, when the login page cannot be fetched.")]
-	public void Resolve_ShouldReturnEmptyWithWarning_WhenLoginPageFetchFails() {
+	[Description("Resolve tries every known login-page location and degrades to ONE aggregated warning, never a thrown exception, when none of them answers.")]
+	public void Resolve_ShouldReturnEmptyWithOneAggregatedWarning_WhenNoLoginPageAnswers() {
+		// Arrange — nothing is mapped, so every candidate 404s.
+		var byUrl = new Dictionary<string, (HttpStatusCode, string)>();
+		var requested = new List<string>();
+		var resolver = new ClassicEnumVocabularyResolver(Settings(), FactoryReturning(byUrl, requested), _parser);
+
+		// Act
+		ClassicEnumVocabularyParseResult result = resolver.Resolve();
+
+		// Assert
+		requested.Should().Equal([CoreRootLoginUrl, SiteRootNuiLoginUrl, ZeroRootNuiLoginUrl],
+			because: "every known location must be tried before giving up, in the order the declared runtime implies");
+		result.Enums.Should().BeEmpty(because: "there is nothing to parse without the login page's content-hash marker");
+		result.Warnings.Should().ContainSingle(w => w.Contains("login page") && w.Contains("404"),
+			because: "one warning naming every location tried is readable; one warning per attempt is noise");
+		_parser.DidNotReceiveWithAnyArgs().Parse(default);
+	}
+
+	[Test]
+	[Description("A login page that answers but carries no /core/<hash>/ marker is not the end of the road — the remaining candidates are tried before degrading.")]
+	public void Resolve_ShouldKeepTryingCandidates_WhenALoginPageCarriesNoContentHashMarker() {
 		// Arrange
 		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
-			[NetCoreLoginUrl] = (HttpStatusCode.NotFound, string.Empty)
+			[CoreRootLoginUrl] = (HttpStatusCode.OK, "<html>no core path here</html>")
 		};
 		var requested = new List<string>();
 		var resolver = new ClassicEnumVocabularyResolver(Settings(), FactoryReturning(byUrl, requested), _parser);
@@ -172,27 +214,8 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		requested.Should().Equal([NetCoreLoginUrl],
-			because: "the resolver stops at the login page it actually asked for, and asks for the runtime-correct one");
-		result.Enums.Should().BeEmpty(because: "there is nothing to parse without the login page's content-hash marker");
-		result.Warnings.Should().ContainSingle(w => w.Contains("login page"),
-			because: "a stand that cannot serve the login page is a named, explainable degradation");
-		_parser.DidNotReceiveWithAnyArgs().Parse(default);
-	}
-
-	[Test]
-	[Description("Resolve degrades to an empty result with a warning when the login page carries no /core/<hash>/ marker.")]
-	public void Resolve_ShouldReturnEmptyWithWarning_WhenContentHashMarkerIsAbsent() {
-		// Arrange
-		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
-			[NetCoreLoginUrl] = (HttpStatusCode.OK, "<html>no core path here</html>")
-		};
-		var resolver = new ClassicEnumVocabularyResolver(Settings(), FactoryReturning(byUrl), _parser);
-
-		// Act
-		ClassicEnumVocabularyParseResult result = resolver.Resolve();
-
-		// Assert
+		requested.Should().Equal([CoreRootLoginUrl, SiteRootNuiLoginUrl, ZeroRootNuiLoginUrl],
+			because: "a 200 without the marker is as useless as a 404, so the walk continues instead of stopping there");
 		result.Enums.Should().BeEmpty(because: "without the hash there is no sysenums.js URL to build");
 		result.Warnings.Should().ContainSingle(w => w.Contains("content-hash"),
 			because: "the caller must know WHY nothing was resolved, not just that nothing was");
@@ -204,8 +227,8 @@ public sealed class ClassicEnumVocabularyResolverTests {
 	public void Resolve_ShouldReturnEmptyWithWarning_WhenSysEnumsFetchFails() {
 		// Arrange
 		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
-			[NetCoreLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming(string.Empty)),
-			[NetCoreSysEnumsUrl] = (HttpStatusCode.NotFound, string.Empty)
+			[CoreRootLoginUrl] = (HttpStatusCode.OK, LoginHtmlNaming(string.Empty)),
+			[SiteRootSysEnumsUrl] = (HttpStatusCode.NotFound, string.Empty)
 		};
 		var requested = new List<string>();
 		var resolver = new ClassicEnumVocabularyResolver(Settings(), FactoryReturning(byUrl, requested), _parser);
@@ -214,7 +237,7 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		ClassicEnumVocabularyParseResult result = resolver.Resolve();
 
 		// Assert
-		requested.Should().Equal([NetCoreLoginUrl, NetCoreSysEnumsUrl],
+		requested.Should().Equal([CoreRootLoginUrl, SiteRootSysEnumsUrl],
 			because: "the hash resolved, so the second fetch must be the exact hashed URL, not a guess");
 		result.Enums.Should().BeEmpty(because: "the hash resolved but the file behind it did not, so there is still nothing to parse");
 		result.Warnings.Should().ContainSingle(w => w.Contains("sysenums.js"),
@@ -236,9 +259,9 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		result.Warnings.Should().ContainSingle(because: "a transport exception must degrade to a warning, never propagate as a thrown exception");
 	}
 
-	// Records every requested absolute URL so a test can assert the resolver asked for the runtime-correct path:
-	// an unmapped URL degrades to 404 exactly like an unreachable one, so outcome assertions alone cannot tell a
-	// wrong URL from a legitimately failing stand.
+	// Records every requested absolute URL so a test can assert the resolver asked for the runtime-correct paths, in
+	// order: an unmapped URL degrades to 404 exactly like an unreachable one, so outcome assertions alone cannot tell
+	// a wrong URL from a legitimately failing stand.
 	private sealed class StubHandler(
 		IReadOnlyDictionary<string, (HttpStatusCode Status, string Body)> byUrl,
 		List<string> requested) : HttpMessageHandler {

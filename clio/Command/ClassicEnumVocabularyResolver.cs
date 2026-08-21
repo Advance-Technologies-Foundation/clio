@@ -271,22 +271,40 @@ internal sealed class ClassicEnumVocabularyResolver(
 
 	// Case-insensitive: nothing about the hash's own casing is a documented platform contract, only that it is
 	// 32 hex characters, so matching only lowercase would silently omit enumVocabulary on a stand that happens to
-	// serve an uppercase-hex marker. The optional leading '/0' is CAPTURED rather than merely tolerated, so a .NET
-	// Framework login page that already spells its static root is echoed back verbatim instead of re-derived; the
-	// IsNetCore split below is the fallback for a page that names '/core/...' with no root prefix.
+	// serve an uppercase-hex marker. The optional leading '/0' is CAPTURED rather than merely tolerated, so a login
+	// page that already spells its static root is echoed back verbatim and can never be double-prefixed.
 	private static readonly Regex ContentHashPathRegex = new(
 		"((?:/0)?)/core/([0-9a-fA-F]{32})/", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
-	// Same runtime split the rest of the repository applies to unauthenticated UI paths
-	// (EnvironmentRuntimeDetectionService.BuildUiMarkerUrl): .NET Core serves the login page at /Login/Login.html off
-	// the site root, while .NET Framework serves it at /0/Login/NuiLogin.aspx behind the /0 application root. Getting
-	// this wrong never fails loudly - it 404s and silently omits enumVocabulary on every stand of one runtime.
-	private static string BuildLoginPageUrl(string baseUri, bool isNetCore) =>
-		$"{baseUri}{(isNetCore ? "/Login/Login.html" : "/0/Login/NuiLogin.aspx")}";
+	// Login-page locations, ordered by the environment's declared runtime: .NET Core serves /Login/Login.html off the
+	// site root, .NET Framework serves /0/Login/NuiLogin.aspx behind its application root
+	// (EnvironmentRuntimeDetectionService.BuildUiMarkerUrl draws the same split).
+	//
+	// IsNetCore decides the ORDER here, deliberately not the only attempt. This read is unauthenticated, best-effort,
+	// and purely a marker lookup, and real stands do serve more than one of these shapes — a .NET Framework site
+	// reachable directly at its site root, or a Core stand still answering the legacy NuiLogin.aspx. Committing to a
+	// single URL per runtime is exactly the kind of silent degradation this resolver must avoid: a wrong guess does
+	// not fail loudly, it just omits enumVocabulary and hands the migration engine's drift guard nothing. Trying the
+	// runtime's own shape first keeps the common case a single request; the alternates only cost a request on a stand
+	// that would otherwise have returned nothing at all. Verified by the get-classic-page-sources MCP e2e test, which
+	// asserts a non-zero enumVocabularyCount against a live stand.
+	private static string[] BuildLoginPageUrlCandidates(string baseUri, bool isNetCore) =>
+		isNetCore
+			? [
+				$"{baseUri}/Login/Login.html",
+				$"{baseUri}/Login/NuiLogin.aspx",
+				$"{baseUri}/0/Login/NuiLogin.aspx"
+			]
+			: [
+				$"{baseUri}/0/Login/NuiLogin.aspx",
+				$"{baseUri}/Login/NuiLogin.aspx",
+				$"{baseUri}/Login/Login.html"
+			];
 
-	// Static-content root for the hashed /core/... tree: the bare site root on .NET Core, /0 on .NET Framework - the
-	// same split SysImageUploader applies to static workspace roots.
-	private static string BuildStaticRoot(string baseUri, bool isNetCore) => isNetCore ? baseUri : baseUri + "/0";
+	// Static-content root implied by the login page that actually answered: a page served from under /0 serves its
+	// hashed /core/... tree from there too. Used only when the marker on the page carries no root prefix of its own.
+	private static string StaticRootOf(string loginPageUrl) =>
+		loginPageUrl.Contains("/0/Login/", StringComparison.Ordinal) ? "/0" : string.Empty;
 
 	/// <inheritdoc />
 	public ClassicEnumVocabularyParseResult Resolve() {
@@ -297,22 +315,14 @@ internal sealed class ClassicEnumVocabularyResolver(
 			warnings.Add("The environment URI is not configured; enumVocabulary omitted.");
 			return new ClassicEnumVocabularyParseResult(empty, warnings);
 		}
-		bool isNetCore = environmentSettings.IsNetCore;
-		string loginPage = TryGetString(BuildLoginPageUrl(baseUri, isNetCore), "the login page", warnings);
-		if (loginPage == null) {
+		(string sysEnumsUrl, string markerFailure) = ResolveSysEnumsUrl(baseUri, environmentSettings.IsNetCore);
+		if (sysEnumsUrl == null) {
+			warnings.Add(markerFailure);
 			return new ClassicEnumVocabularyParseResult(empty, warnings);
 		}
-		Match hashMatch = ContentHashPathRegex.Match(loginPage);
-		if (!hashMatch.Success) {
-			warnings.Add(
-				"Could not find the '/core/<hash>/' content-hash marker on the login page; enumVocabulary omitted.");
-			return new ClassicEnumVocabularyParseResult(empty, warnings);
-		}
-		string markedRoot = hashMatch.Groups[1].Value;
-		string staticRoot = markedRoot.Length > 0 ? baseUri + markedRoot : BuildStaticRoot(baseUri, isNetCore);
-		string sysEnumsUrl = $"{staticRoot}/core/{hashMatch.Groups[2].Value}/Terrasoft/core/enums/sysenums.js";
-		string sysEnumsJs = TryGetString(sysEnumsUrl, "sysenums.js", warnings);
+		string sysEnumsJs = TryGetString(sysEnumsUrl, out string sysEnumsError);
 		if (sysEnumsJs == null) {
+			warnings.Add($"Could not fetch sysenums.js from '{sysEnumsUrl}': {sysEnumsError}; enumVocabulary omitted.");
 			return new ClassicEnumVocabularyParseResult(empty, warnings);
 		}
 		ClassicEnumVocabularyParseResult parsed = parser.Parse(sysEnumsJs);
@@ -320,23 +330,48 @@ internal sealed class ClassicEnumVocabularyResolver(
 		return new ClassicEnumVocabularyParseResult(parsed.Enums, warnings);
 	}
 
-	// Plain unauthenticated GET; a non-success status or transport failure degrades to null + a warning rather than
-	// throwing, so a stand that cannot serve this best-effort input never fails the whole page-sources collection.
-	// Timeout/redirect policy/response-size cap live on the named client's registration (BindingsModule.cs), not here.
-	private string TryGetString(string url, string what, List<string> warnings) {
+	// Walks the runtime-ordered login-page candidates and builds the sysenums.js URL from the FIRST page that actually
+	// named a '/core/<hash>/' marker. Returns (null, explanation) when none did — one aggregated warning naming every
+	// location tried and why it did not answer, rather than a warning per attempt, so the response stays readable.
+	private (string Url, string Failure) ResolveSysEnumsUrl(string baseUri, bool isNetCore) {
+		var attempts = new List<string>();
+		foreach (string loginPageUrl in BuildLoginPageUrlCandidates(baseUri, isNetCore)) {
+			string loginPage = TryGetString(loginPageUrl, out string error);
+			if (loginPage == null) {
+				attempts.Add($"'{loginPageUrl}' -> {error}");
+				continue;
+			}
+			Match hashMatch = ContentHashPathRegex.Match(loginPage);
+			if (!hashMatch.Success) {
+				attempts.Add($"'{loginPageUrl}' -> served no '/core/<hash>/' content-hash marker");
+				continue;
+			}
+			string markedRoot = hashMatch.Groups[1].Value;
+			string staticRoot = baseUri + (markedRoot.Length > 0 ? markedRoot : StaticRootOf(loginPageUrl));
+			return ($"{staticRoot}/core/{hashMatch.Groups[2].Value}/Terrasoft/core/enums/sysenums.js", null);
+		}
+		return (null,
+			"Could not read the login page's '/core/<hash>/' content-hash marker from any known location (" +
+			string.Join("; ", attempts) + "); enumVocabulary omitted.");
+	}
+
+	// Plain unauthenticated GET; a non-success status or transport failure degrades to null plus a short reason rather
+	// than throwing, so a stand that cannot serve this best-effort input never fails the whole page-sources
+	// collection. Timeout/redirect policy/response-size cap live on the named client's registration
+	// (BindingsModule.cs), not here.
+	private string TryGetString(string url, out string error) {
 		try {
 			using HttpClient client = httpClientFactory.CreateClient(HttpClientName);
 			using HttpResponseMessage response = client.GetAsync(url).GetAwaiter().GetResult();
 			if (!response.IsSuccessStatusCode) {
-				warnings.Add(
-					$"Could not fetch {what} ({(int)response.StatusCode} {response.ReasonPhrase}) from '{url}'; " +
-					"enumVocabulary omitted.");
+				error = $"{(int)response.StatusCode} {response.ReasonPhrase}";
 				return null;
 			}
+			error = null;
 			return response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
 		}
 		catch (Exception ex) {
-			warnings.Add($"Could not fetch {what} from '{url}': {ex.Message}; enumVocabulary omitted.");
+			error = ex.Message;
 			return null;
 		}
 	}
