@@ -282,6 +282,29 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("A nested loader is deleted when its slash-zero application belongs to the same Creatio deployment")]
+	public void TryDeleteIisTarget_ShouldDeleteNestedLoader_WhenSlashZeroPathIsExpected() {
+		// Arrange
+		const string appsXml =
+			"<appcmd><APP APP.NAME=\"default/work\" APPPOOL.NAME=\"loader-pool\" SITE.NAME=\"default\" />"
+			+ "<APP APP.NAME=\"default/work/0\" APPPOOL.NAME=\"webapp-pool\" SITE.NAME=\"default\" /></appcmd>";
+		MockAppCmd("list app /xml", appsXml, appsXml, "<appcmd />");
+		MockAppCmd("list VDIR \"default/work/\" /text:physicalPath", @"C:\sites\work");
+		MockAppCmd("list APP \"default/work\" /text:applicationPool", "loader-pool");
+		MockAppCmd("list VDIR \"default/work/0/\" /text:physicalPath",
+			@"C:\sites\work\Terrasoft.WebApp");
+
+		// Act
+		bool result = _scanner.TryDeleteIisTarget("default/work", @"C:\sites\work", "loader-pool");
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the standard nested loader and slash-zero pair belongs to one Creatio deployment");
+		_processExecutor.Received(1).ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments == "delete app \"/app.name:default/work\""));
+	}
+
+	[Test]
 	[Description("A nonzero AppCmd site-stop exit fails the safe target mutation.")]
 	public void TryStopIisTarget_ShouldFail_WhenAppCmdSiteStopFails() {
 		// Arrange
