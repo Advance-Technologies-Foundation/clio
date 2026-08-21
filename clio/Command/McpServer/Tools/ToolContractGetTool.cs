@@ -5204,14 +5204,18 @@ internal static class ToolContractCatalog {
 					"`create-page` writes a page schema into the runtime catalog directly. The new page becomes available without compilation."),
 				new ToolAntiPattern(
 					$"{CreateEntityBusinessRuleTool.BusinessRuleCreateToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
+					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step."),
+				new ToolAntiPattern(
+					$"{ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"Do not decide to compile from a raw status column read off the process (odata/esq — e.g. `VwSysProcess`) — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true; none is a compile trigger (`NeedInstall` is a DB-install marker), and inferring `compile` from a column name is the trap. Within a process, compile only for C# you authored — a Script Task, or a user task with an after-activity-save script; everything else runs with no compile.")
 			],
 			Preconditions: [
 				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
-				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`."
+				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
+				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 
