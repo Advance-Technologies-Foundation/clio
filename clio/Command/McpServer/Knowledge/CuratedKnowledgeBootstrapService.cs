@@ -141,7 +141,8 @@ internal sealed class CuratedKnowledgeBootstrapService(
 	ISettingsRepository settingsRepository,
 	IKnowledgeSourceInstallationStore installationStore,
 	IKnowledgeSourceManagementService sourceManagementService,
-	TimeProvider timeProvider) : ICuratedKnowledgeBootstrapService {
+	TimeProvider timeProvider,
+	KnowledgeBundleClientCapabilities capabilities) : ICuratedKnowledgeBootstrapService {
 	private string[] _migrationAliases = [CuratedKnowledgeSourceDefaults.LegacyAlias];
 	private long? _budgetStartedAt;
 	private readonly TimeSpan _budget = TimeSpan.FromMilliseconds(
@@ -264,7 +265,14 @@ internal sealed class CuratedKnowledgeBootstrapService(
 			// This branch is what keeps a warm artifact-backed start offline. Git deliberately falls
 			// through to synchronization so an operator's branch, tag, or commit change cannot leave a
 			// stale checkout active under the newly configured reference.
-			if (source.Type != KnowledgeSourceType.Git
+			// Git normally falls through to a startup re-sync so a branch/tag/commit change is honored.
+			// LOCAL DEV TOGGLE (knowledge-allow-unsequenced): when on, treat an already-installed Git source
+			// like an artifact-backed one -- take the offline fast-path and skip the startup network re-sync.
+			// This keeps a server start reliable for local branch testing (activation reads the local cache
+			// offline); ref changes are applied explicitly by install-knowledge, not the startup sync.
+			bool offlineEligible = source.Type != KnowledgeSourceType.Git
+					|| capabilities.AllowUnsequencedGitBundles;
+			if (offlineEligible
 					&& IsLocallyInstalled(source.Type, CuratedKnowledgeSourceDefaults.Alias)) {
 				return new CuratedKnowledgeBootstrapResult(
 					true,

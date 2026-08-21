@@ -80,7 +80,9 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		services.AddSingleton(_gitTransport);
 		services.AddSingleton(_gitReader);
 		services.AddSingleton<System.IO.Abstractions.IFileSystem>(_fileSystem);
-		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
+		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+				new Version(8, 1, 0), new Version(1, 0, 0), new HashSet<string>(StringComparer.Ordinal)));
+			services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
 		_container = services.BuildServiceProvider();
 		_service = _container.GetRequiredService<IKnowledgeSourceManagementService>();
 	}

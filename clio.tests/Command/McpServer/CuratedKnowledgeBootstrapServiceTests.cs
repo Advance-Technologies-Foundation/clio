@@ -39,8 +39,14 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 				"appsettings.json",
 				"knowledge",
 				Array.Empty<KnowledgeSourceInfo>()));
-		_service = new CuratedKnowledgeBootstrapService(_settings, _store, _management, TimeProvider.System);
+		_service = new CuratedKnowledgeBootstrapService(_settings, _store, _management, TimeProvider.System, TestCapabilities());
 	}
+
+	/// <summary>Neutral client capabilities for the bootstrap tests: a representative clio/contract version and no
+	/// advertised tools, with the opt-in unsequenced-git-bundle flag OFF (its behavior is covered by the runtime /
+	/// reader tests that exercise KnowledgeBundleClientCapabilities directly).</summary>
+	private static KnowledgeBundleClientCapabilities TestCapabilities() =>
+		new(new Version(8, 1, 0), new Version(1, 0, 0), new HashSet<string>(StringComparer.Ordinal));
 
 	[Test]
 	[Description("Bootstrap persists the canonical Git source and installs it when no valid local checkout exists.")]
@@ -339,7 +345,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		// A contended source mutation lock is the realistic way an early phase eats the budget: the
 		// migration attempt returns, but only after the whole pre-serve allowance is gone.
 		_store.When(store => store.TryMigrateGitRepository(
@@ -367,7 +373,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		const int spentMilliseconds = 3_000;
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.When(store => store.TryMigrateGitRepository(
 				Arg.Any<string>(),
 				CuratedKnowledgeSourceDefaults.Alias))
@@ -444,7 +450,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.12.0",
@@ -474,7 +480,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
@@ -494,7 +500,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
@@ -515,7 +521,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
@@ -537,7 +543,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
@@ -557,7 +563,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(true);
 		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns((KnowledgeSourceStartupState?)null);
 
@@ -581,7 +587,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		_settings.GetKnowledgeConfiguration().Returns(
 			Configuration((CuratedKnowledgeSourceDefaults.Alias, disabled)));
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 
 		// Act
 		CuratedKnowledgeBootstrapResult result = service.Bootstrap();
@@ -602,7 +608,7 @@ public sealed class CuratedKnowledgeBootstrapServiceTests {
 		// Arrange
 		BootstrapClock clock = new();
 		ICuratedKnowledgeBootstrapService service = new CuratedKnowledgeBootstrapService(
-			_settings, _store, _management, clock);
+			_settings, _store, _management, clock, TestCapabilities());
 		_store.IsBundleGenerationInstalled(CuratedKnowledgeSourceDefaults.Alias).Returns(false);
 		_store.TryReadStartupState(CuratedKnowledgeSourceDefaults.Alias).Returns(StartupState(
 			"1.13.21",
