@@ -234,6 +234,16 @@ public static class WebToMobileAnalysisService {
 		// so the order is safe either way — it is fixed here so it stays that way.
 		List<TabAreaLayerGroup> tabAreaLayers = BuildTabAreaLayers(elementMap, rules, sourcePage);
 
+		// Initializes the child-collection slot(s) (usually "items") that BuildMobileValues deliberately never
+		// carries (see its own remarks) and that a web-sourced container's own insert branch never re-adds — the
+		// Creatio differ refuses a child insert whose parent does not physically declare the slot ("Item X is not
+		// a container for other items"). Deliberately LAST among the elementMap-mutating passes: it must run AFTER
+		// RemoveEmptyContainers (above), which reads the slot's ABSENCE as its own emptiness signal — seeding
+		// it earlier would make every container look occupied and disable that pass entirely — and AFTER
+		// BuildTabAreaLayers, the only OTHER pass that adds new insert entries other inserts can target as parent
+		// (the synthesized tab-body/Area layers): running before it would leave those layers unseeded.
+		InitializeContainerItemSlots(elementMap);
+
 		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
 		// converter INSERTS, and the web page's own value for those properties is deliberately IGNORED
 		// (discarded, never translated). Which component, which properties and which values all come from
@@ -3971,6 +3981,68 @@ public static class WebToMobileAnalysisService {
 		return groups;
 	}
 
+	/// <summary>
+	/// Initializes the <c>items</c> child-collection slot on every SURVIVING insert that another surviving insert
+	/// targets as <c>parentName</c> via the generic <c>items</c> slot. <see cref="BuildMobileValues"/> deliberately
+	/// never carries an <c>items</c> array as a value (it is structural, emitted by the tree walk as the children's
+	/// OWN entries — see its remarks), so without this pass a container's <c>mobileValues</c> never physically
+	/// declares the slot its own children insert into, and the Creatio differ refuses the child insert ("Item X is
+	/// not a container for other items" — <see cref="JsonDiffApplierResources.NotContainerItemInsertException"/>).
+	/// <para>
+	/// Keyed on "used as parent via <c>items</c>", never on a container-type list — this covers every
+	/// mobile-supported container type uniformly, including one the rules' <c>emptyContainerRemoval.removableTypes</c>
+	/// never lists (e.g. <c>crt.Timeline</c>), with no second type list to keep in sync. Deliberately scoped to the
+	/// <c>items</c> slot only: a NON-items structural child slot (<c>tools</c>, <c>menuItems</c>) is walked and
+	/// carried the exact same way (never as a value on the parent — see <see cref="RecurseChildArrays"/>), but is
+	/// left alone here — seeding a placeholder there is a different, unverified change this pass does not make.
+	/// </para>
+	/// <para>
+	/// Pass order is load-bearing (enforced at the call site): strictly AFTER <see cref="RemoveEmptyContainers"/>,
+	/// which reads the slot's ABSENCE as its own emptiness signal (<see cref="IsEmptyRemovalCandidate"/>) — seeding
+	/// it earlier would make every container look occupied and disable that pass entirely — and AFTER
+	/// <see cref="BuildTabAreaLayers"/>, the only OTHER pass that adds new insert entries other inserts can target
+	/// as parent (the synthesized tab-body/Area layers): running before it would leave those layers unseeded now
+	/// that <see cref="SynthesizedLayerEntry"/> no longer seeds its own slot.
+	/// </para>
+	/// <para>
+	/// Only <c>insert</c> entries are ever written to. A merge twin the mobile template provides — e.g. the
+	/// template's own <c>Tabs</c>, which every converted tab DOES use as <c>parentName</c> — carries no
+	/// converter-owned <c>mobileValues</c> object here and is left untouched; its child-collection slot is the
+	/// template's concern.
+	/// </para>
+	/// </summary>
+	private static void InitializeContainerItemSlots(List<ElementMapEntry> elementMap) {
+		// occupiedViaItems keys purely on MobileName, not on entry identity: a collision would silently seed both
+		// same-named entries. This is safe only because MobileName is guaranteed unique here by construction, not
+		// checked defensively — Freedom UI itself requires unique component names on a page (the web source this
+		// walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers, actively avoids
+		// every name already in the map (its own `taken` set, seeded from every WebName AND MobileName) before
+		// picking a suffix. No test constructs a collision because producing one would require bypassing that
+		// same guarantee, which no caller of this method does.
+		var occupiedViaItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap) {
+			string slot = entry.PropertyName is { Length: > 0 } ? entry.PropertyName : ItemsPropertyName;
+			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+				&& entry.ParentName is { Length: > 0 }
+				&& string.Equals(slot, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+				occupiedViaItems.Add(entry.ParentName);
+			}
+		}
+		foreach (ElementMapEntry entry in elementMap) {
+			// The JsonObject guard is defensive, not reachable for a genuine container insert: BuildMobileValues
+			// returns a non-null JsonObject whenever its own mobileType argument is non-empty, and the container
+			// branch that calls it here only does so after confirming ctx.MobileTypes.Contains(type) — the one
+			// case BuildMobileValues returns null for. Kept anyway so a future insert-producing path that does NOT
+			// share that same guarantee degrades to a silent no-op here instead of an InvalidCastException.
+			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+				&& entry.MobileName is { Length: > 0 }
+				&& occupiedViaItems.Contains(entry.MobileName)
+				&& entry.MobileValues is JsonObject values) {
+				values[ItemsPropertyName] ??= new JsonArray();
+			}
+		}
+	}
+
 	/// <summary>A single-column grid cell: column 1 of the given row, spanning nothing.</summary>
 	private static JsonObject SingleColumnPlacement(int row) => new() {
 		["column"] = 1, ["colSpan"] = 1, ["row"] = row, ["rowSpan"] = 1
@@ -4006,9 +4078,10 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// One synthesized container: an ordinary <c>insert</c> with NO <c>webName</c> (there is no source
-	/// element behind it), carrying the rule's <c>values</c> verbatim plus an initialized <c>items</c> slot —
-	/// <see cref="BuildMobileValues"/> deliberately drops <c>items</c> arrays, so nothing else would give a
-	/// synthesized container somewhere for its children to land.
+	/// element behind it), carrying the rule's <c>values</c> verbatim. Its own <c>items</c> slot is NOT seeded
+	/// here — <see cref="InitializeContainerItemSlots"/> (run once, after <see cref="BuildTabAreaLayers"/> has
+	/// added every such layer) covers it the same way it covers a web-sourced container, so the seeding logic
+	/// lives in exactly one place regardless of which pass created the container.
 	/// </summary>
 	private static ElementMapEntry SynthesizedLayerEntry(
 		SynthesizedContainerRule container, string name, string parentName, string reason) {
@@ -4016,7 +4089,6 @@ public static class WebToMobileAnalysisService {
 		foreach (KeyValuePair<string, JsonElement> pair in container.Values) {
 			values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
 		}
-		values["items"] ??= new JsonArray();
 		return new ElementMapEntry {
 			Operation = "insert",
 			MobileName = name,
