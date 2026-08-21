@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -8,7 +9,8 @@ using CommandLine;
 namespace Clio.Command;
 
 /// <summary>Options for executing a YAML scenario.</summary>
-[Verb("run", Aliases = ["scenario", "run-scenario"], HelpText = "Run scenario")]
+[Verb("run", Aliases = ["scenario", "run-scenario"],
+	HelpText = "Run a YAML scenario and refresh environments between dependent steps")]
 public class ScenarioRunnerOptions : EnvironmentOptions {
 	internal override bool RequiredEnvironment => false;
 
@@ -45,9 +47,11 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
 		int result = 0;
 		_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario started");
 
-		foreach ((object commandOption, string stepDescription) in _scenario
+		var steps = _scenario
 			.InitScript(options.FileName)
-			.GetSteps(GetType().Assembly.GetTypes())) {
+			.GetSteps(GetType().Assembly.GetTypes())
+			.ToList();
+		foreach ((object commandOption, string stepDescription) in steps) {
 			_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Starting step: {stepDescription}");
 			if (commandOption is EnvironmentOptions stepOptions
 				&& stepOptions is not RegAppOptions and not PfInstallerOptions
@@ -77,7 +81,14 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
 			return false;
 		}
 
-		EnvironmentSettings resolvedSettings = baseSettings.Fill(stepOptions, NonInteractiveConsole.Shared);
+		EnvironmentSettings resolvedSettings;
+		try {
+			resolvedSettings = baseSettings.Fill(stepOptions, NonInteractiveConsole.Shared);
+		}
+		catch (SafeEnvironmentConfirmationRequiredException exception) {
+			_logger.WriteError(exception.Message);
+			return false;
+		}
 		resolvedSettings.EnvironmentPath = string.IsNullOrWhiteSpace(stepOptions.EnvironmentPath)
 			? baseSettings.EnvironmentPath
 			: stepOptions.EnvironmentPath;
@@ -140,7 +151,7 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
 		if (!string.IsNullOrWhiteSpace(reloadResult.Warning)) {
 			_logger.WriteWarning(reloadResult.Warning);
 		}
-		if (reloadResult.Reloaded || reloadResult.Report?.CanExecuteEnvTools == true) {
+		if (reloadResult.Reloaded) {
 			return true;
 		}
 

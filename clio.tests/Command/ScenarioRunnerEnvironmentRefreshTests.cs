@@ -209,6 +209,38 @@ public class ScenarioRunnerEnvironmentRefreshTests : BaseCommandTests<ScenarioRu
 	}
 
 	[Test]
+	[Description("Fails a Safe environment step cleanly and still completes scenario accounting.")]
+	public void Execute_ShouldFailSafeEnvironmentStepWithoutEscapingScenarioLoop() {
+		// Arrange
+		EnvironmentSettings safeEnvironment = new() {
+			Uri = "https://production.example.com",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			Safe = true
+		};
+		_settingsRepository.Reload().Returns(new SettingsReloadResult(true, null, null));
+		_settingsRepository.FindEnvironment(null).Returns(safeEnvironment);
+		List<object> receivedOptions = [];
+		Program.ExecuteCommandWithOption = option => {
+			receivedOptions.Add(option);
+			return 0;
+		};
+
+		// Act
+		int result = _sut.Execute(new ScenarioRunnerOptions { FileName = "YAML/Script/single_restart.yaml" });
+
+		// Assert
+		result.Should().Be(1,
+			because: "non-interactive scenarios must fail closed when a Safe environment needs confirmation");
+		receivedOptions.Should().BeEmpty(
+			because: "the protected command must not run without explicit Safe-environment confirmation");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Safe environment confirmation required", StringComparison.Ordinal)));
+		// The runner must reach its terminal log instead of letting the confirmation exception escape.
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.EndsWith("Scenario finished")));
+	}
+
+	[Test]
 	[Description("Uses explicit direct URI credentials without requiring a registered environment refresh.")]
 	public void Execute_ShouldUseDirectUriWithoutReload() {
 		// Arrange
