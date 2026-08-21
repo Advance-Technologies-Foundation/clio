@@ -179,6 +179,58 @@ public sealed class ExportComponentRegistryToolTests {
 			because: "an underlying transport error must be redacted before it reaches the MCP transcript");
 	}
 
+	// The VersionResolutionBudget is a 30s wall clock, so these two tests drive the FALLBACK ARMS directly
+	// (a resolver that throws what an elapsed budget throws) instead of actually elapsing it — the assertion
+	// is that the tool degrades to the loud latest-fallback instead of hanging or failing the whole export.
+	[Test]
+	[Description("A version probe that abandons the wait with a TimeoutException degrades to the latest-fallback tier and still exports, rather than failing or hanging.")]
+	public async Task ExportComponentRegistry_ShouldDegradeToLatestFallback_WhenProbeTimesOut() {
+		// Arrange
+		ExportComponentRegistryTool tool = CreateToolWithFailingProbe(new TimeoutException("The operation has timed out."));
+		ExportComponentRegistryArgs args = new() { EnvironmentName = "unreachable-stand" };
+
+		// Act
+		ExportComponentRegistryResponse response = await tool.ExportComponentRegistry(args, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an elapsed version budget is a soft degrade, not an export failure — the registry itself is still fetchable");
+		response.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromLatestFallback,
+			because: "the probe never produced a version, so the export must advertise the fallback tier");
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "the caller must not silently assume the exported set matches the unreachable environment");
+	}
+
+	[Test]
+	[Description("A version probe cancelled by the internal budget token (not by the caller) degrades to the latest-fallback tier instead of surfacing the cancellation as an error.")]
+	public async Task ExportComponentRegistry_ShouldDegradeToLatestFallback_WhenBudgetTokenCancelsTheProbe() {
+		// Arrange
+		ExportComponentRegistryTool tool = CreateToolWithFailingProbe(new OperationCanceledException());
+		ExportComponentRegistryArgs args = new() { EnvironmentName = "unreachable-stand" };
+
+		// Act
+		ExportComponentRegistryResponse response = await tool.ExportComponentRegistry(args, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a budget-driven cancellation is the tool's own ceiling, not a caller cancellation, so the export continues");
+		response.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromLatestFallback,
+			because: "the cooperative-exit arm must land on the same fallback as the abandoned-wait arm");
+	}
+
+	private static ExportComponentRegistryTool CreateToolWithFailingProbe(Exception failure) {
+		ExportComponentRegistryCommand command = CreateCommand(out _, out _);
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(_ => Task.FromException<PlatformVersionResolution>(failure));
+		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
+		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "https://unreachable-stand.example.com" });
+		return new ExportComponentRegistryTool(command, resolverFactory, commandResolver);
+	}
+
 	private static ExportComponentRegistryCommand CreateCommand(
 		out IComponentRegistryClient webClient, out IMobileComponentRegistryClient mobileClient) {
 		webClient = Substitute.For<IComponentRegistryClient>();

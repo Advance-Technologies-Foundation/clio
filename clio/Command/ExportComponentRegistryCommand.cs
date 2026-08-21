@@ -44,35 +44,35 @@ public sealed class ExportComponentRegistryOptions : EnvironmentOptions {
 /// version-resolution fields, and structural counters — never the registry content itself (that lives only
 /// in the written file).
 /// </summary>
-public sealed class ExportComponentRegistryResponse {
+public sealed record ExportComponentRegistryResponse {
 
 	/// <summary>Whether the registry was resolved, fetched, and written.</summary>
 	[JsonPropertyName("success")]
-	public bool Success { get; set; }
+	public bool Success { get; init; }
 
 	/// <summary>Absolute path of the file written to disk.</summary>
 	[JsonPropertyName("outputFile")]
-	public string OutputFile { get; set; }
+	public string OutputFile { get; init; }
 
 	/// <summary>The platform version whose registry was actually written.</summary>
 	[JsonPropertyName("resolvedTargetVersion")]
-	public string ResolvedTargetVersion { get; set; }
+	public string ResolvedTargetVersion { get; init; }
 
 	/// <summary>One of <c>environment</c>, <c>environment-superset</c>, or <c>latest-fallback</c>.</summary>
 	[JsonPropertyName("resolvedFrom")]
-	public string ResolvedFrom { get; set; }
+	public string ResolvedFrom { get; init; }
 
 	/// <summary>Stable kebab-case reason token, present only on the <c>latest-fallback</c> tier.</summary>
 	[JsonPropertyName("resolvedFromReason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string ResolvedFromReason { get; set; }
+	public string ResolvedFromReason { get; init; }
 
 	/// <summary>
 	/// <c>true</c> only on the <c>latest-fallback</c> tier: the caller must not silently assume the exported
 	/// component set matches the target environment and must request confirmation before relying on it.
 	/// </summary>
 	[JsonPropertyName("requiresVersionConfirmation")]
-	public bool RequiresVersionConfirmation { get; set; }
+	public bool RequiresVersionConfirmation { get; init; }
 
 	/// <summary>
 	/// Prose caveat for the resolved tier: the hard stop on <c>latest-fallback</c> and the soft
@@ -82,29 +82,29 @@ public sealed class ExportComponentRegistryResponse {
 	/// </summary>
 	[JsonPropertyName("versionWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string VersionWarning { get; set; }
+	public string VersionWarning { get; init; }
 
 	/// <summary>Non-null only when <c>schema-type</c> was an unrecognized value (fell back to web).</summary>
 	[JsonPropertyName("schemaTypeWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string SchemaTypeWarning { get; set; }
+	public string SchemaTypeWarning { get; init; }
 
 	/// <summary>Number of component entries written.</summary>
 	[JsonPropertyName("componentCount")]
-	public int ComponentCount { get; set; }
+	public int ComponentCount { get; init; }
 
 	/// <summary>Number of composite entries written (0 when the registry carries none).</summary>
 	[JsonPropertyName("compositeCount")]
-	public int CompositeCount { get; set; }
+	public int CompositeCount { get; init; }
 
 	/// <summary>Total number of per-component input/property definitions written, summed across all components.</summary>
 	[JsonPropertyName("inputCount")]
-	public int InputCount { get; set; }
+	public int InputCount { get; init; }
 
 	/// <summary>Failure reason when <see cref="Success"/> is <c>false</c>; <c>null</c> otherwise.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Error { get; set; }
+	public string Error { get; init; }
 }
 
 /// <summary>
@@ -242,9 +242,11 @@ public sealed class ExportComponentRegistryCommand {
 					: versionResolution.ResolvedVersion;
 			ComponentRegistryFetchResult fetch =
 				await registryClient.GetAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+			// No outer `using (fetch.Content)`: the StreamReader takes ownership of the stream (it is not
+			// constructed with leaveOpen) and disposes it when this scope ends, so an outer using would
+			// double-dispose it and contradict the ownership contract.
 			string content;
-			using (fetch.Content) {
-				using var reader = new StreamReader(fetch.Content);
+			using (var reader = new StreamReader(fetch.Content)) {
 				content = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 			}
 
@@ -261,7 +263,8 @@ public sealed class ExportComponentRegistryCommand {
 			// so every retry to the same path would then fail with "already exists".
 			(int componentCount, int compositeCount, int inputCount) = CountEntries(content);
 
-			(string outputPath, string writeError) = WriteRegistry(outputFile, fetch.ResolvedVersion, content);
+			(string outputPath, string writeError) = await WriteRegistryAsync(
+				outputFile, fetch.ResolvedVersion, content, cancellationToken).ConfigureAwait(false);
 			if (writeError != null) {
 				return Fail(writeError, schemaType.Warning);
 			}
@@ -288,8 +291,13 @@ public sealed class ExportComponentRegistryCommand {
 	// Writes the registry content exactly as fetched (no re-serialization) either to the explicit,
 	// confinement-checked output-file (refuses an existing target, additive-only) or to the tool-owned
 	// default path (re-runnable, overwrites its own prior output) — the same two-contract split
-	// GetClassicPageSourcesCommand.WriteManifest/ResolveOutputPath uses for the manifest file.
-	private (string path, string error) WriteRegistry(string explicitOutputFile, string resolvedVersion, string content) {
+	// GetClassicPageSourcesCommand.WriteManifest/ResolveOutputPath uses for the manifest file. The default
+	// path is written temp-then-move so a process killed mid-write cannot leave a truncated file behind:
+	// the next run's CountEntries would throw JsonException on it. OutputPathConfinement.WriteAtomic cannot
+	// serve that branch — its FileMode.CreateNew gate is exactly the refuse-if-exists contract the default
+	// path must NOT have — so the move carries overwrite:true instead.
+	private async Task<(string path, string error)> WriteRegistryAsync(
+		string explicitOutputFile, string resolvedVersion, string content, CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(explicitOutputFile)) {
 			(string resolvedPath, string resolveError) = OutputPathConfinement.Resolve(_ioFileSystem, explicitOutputFile);
 			if (resolveError != null) {
@@ -302,6 +310,17 @@ public sealed class ExportComponentRegistryCommand {
 				return (null, ex.Message);
 			}
 			return (resolvedPath, null);
+		}
+
+		// resolvedVersion becomes a path segment of the default path, and it arrives from the NETWORK
+		// (ComponentRegistryFetchResult.ResolvedVersion, i.e. whatever the CDN reported) — not from the
+		// locally normalised input. Guard the actual threat rather than whitelisting a version shape the CDN
+		// is free to widen: anything that is not a single plain file-name component (a separator, a '..'
+		// segment, a rooted path) must never reach Path.Combine.
+		if (!IsSafePathSegment(resolvedVersion)) {
+			return (null,
+				$"The registry reported version '{resolvedVersion}', which is not usable as a file name. "
+				+ "Pass an explicit --output-file to choose the destination yourself.");
 		}
 
 		string defaultPath;
@@ -318,8 +337,39 @@ public sealed class ExportComponentRegistryCommand {
 		if (!string.IsNullOrWhiteSpace(directory)) {
 			_ioFileSystem.Directory.CreateDirectory(directory);
 		}
-		_ioFileSystem.File.WriteAllText(defaultPath, content);
+		// Unique temp name in the TARGET directory: same volume (so Move is a rename, not copy+delete) and no
+		// collision between two concurrent exports of the same version inside the long-running MCP server.
+		string temporaryPath = $"{defaultPath}.{Guid.NewGuid():N}.tmp";
+		try {
+			await _ioFileSystem.File.WriteAllTextAsync(temporaryPath, content, cancellationToken).ConfigureAwait(false);
+			_ioFileSystem.File.Move(temporaryPath, defaultPath, true);
+		}
+		catch (Exception) {
+			TryDeleteTemporary(temporaryPath);
+			throw;
+		}
 		return (defaultPath, null);
+	}
+
+	// A resolved version is usable as a path segment only when it is a plain file name: no directory
+	// separator, no '..' segment, no volume root, no invalid file-name character.
+	private static bool IsSafePathSegment(string value) =>
+		!string.IsNullOrWhiteSpace(value)
+			&& value != "." && value != ".."
+			&& value.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+			&& value.IndexOf(Path.DirectorySeparatorChar) < 0
+			&& value.IndexOf(Path.AltDirectorySeparatorChar) < 0;
+
+	// Best-effort: the caller is already failing, so a leftover temp file must not mask the real error.
+	private void TryDeleteTemporary(string temporaryPath) {
+		try {
+			if (_ioFileSystem.File.Exists(temporaryPath)) {
+				_ioFileSystem.File.Delete(temporaryPath);
+			}
+		}
+		catch (IOException) {
+			// Nothing further to do — the export failure is reported by the caller.
+		}
 	}
 
 	// Counts components/composites/inputs directly off the fetched JSON (the same bytes written to disk)
@@ -333,9 +383,15 @@ public sealed class ExportComponentRegistryCommand {
 	private static (int componentCount, int compositeCount, int inputCount) CountEntries(string content) {
 		using JsonDocument document = JsonDocument.Parse(content);
 		JsonElement root = document.RootElement;
-		JsonElement components = root.ValueKind == JsonValueKind.Array
-			? root
-			: root.TryGetProperty("components", out JsonElement componentsProperty) ? componentsProperty : default;
+		// Kept as statements, not a nested ternary (Sonar S3358): the two registry shapes are two distinct
+		// lookups, and the 'neither' case falls through to the hard failure below.
+		JsonElement components = default;
+		if (root.ValueKind == JsonValueKind.Array) {
+			components = root;
+		}
+		else if (root.TryGetProperty("components", out JsonElement componentsProperty)) {
+			components = componentsProperty;
+		}
 		if (components.ValueKind != JsonValueKind.Array) {
 			throw new InvalidOperationException(
 				"The fetched payload is not a component registry: expected a top-level array or an object with a "
@@ -349,12 +405,13 @@ public sealed class ExportComponentRegistryCommand {
 				: 0;
 		int inputCount = 0;
 		foreach (JsonElement component in components.EnumerateArray()) {
-			// "inputs" (current wrapped-schema generation) and "properties" (legacy) describe the same
-			// component surface under different generations — today's registry never populates both
-			// non-empty on one component, so summing both is safe. If the producer ever ships a
-			// transitional entry carrying both, this would double-count that entry's field set.
-			inputCount += CountObjectProperties(component, "inputs");
-			inputCount += CountObjectProperties(component, "properties");
+			// "inputs" (current wrapped-schema generation) and "properties" (legacy) describe the SAME
+			// component surface under two generations, so they are alternatives, never addends: a
+			// transitional entry that carries both would otherwise double-count its field set, and
+			// inputCount is the downstream migration engine's only verification signal. "inputs" wins
+			// when present; "properties" is consulted only for an entry that has no inputs at all.
+			int inputs = CountObjectProperties(component, "inputs");
+			inputCount += inputs > 0 ? inputs : CountObjectProperties(component, "properties");
 		}
 		return (componentCount, compositeCount, inputCount);
 	}

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -518,6 +519,47 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 		foreach (System.Reflection.ParameterInfo parameter in parameters) {
 			parameter.ParameterType.Name.Should().NotContain("ComponentRegistryDocsClient",
 				because: "fetching documentation bodies is explicitly out of scope for this export command");
+		}
+	}
+
+	[Test]
+	[Description("A platform-version probe that fails (network error / 401 / timeout) fails the export with the probe's message, returns exit code 1, and writes no file — the environment-name branch's catch-all is not a silent success.")]
+	public async Task ExecuteAsync_ShouldFailWithoutWriting_WhenEnvironmentProbeThrows() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-probe-fail-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		ExportComponentRegistryCommand command = new(
+			_webRegistryClient,
+			_mobileRegistryClient,
+			new ThrowingResolverFactory(new HttpRequestException("No such host is known (dev.example.com:443)")),
+			_settingsRepository,
+			_ioFileSystem,
+			_logger);
+		ExportComponentRegistryOptions options = new() { Environment = "dev" };
+
+		// Act
+		int exitCode = await command.ExecuteAsync(options, CancellationToken.None);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unreachable environment must be visible to the shell as a failure");
+		// The probe's own message is the only clue the caller has about why the export failed.
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("\"success\":false") && message.Contains("No such host is known")));
+		await _webRegistryClient.DidNotReceiveWithAnyArgs().GetAsync(default, default);
+		_ioFileSystem.AllFiles.Should().NotContain(path => path.Contains(RegistrySubdirectoryNameForTest),
+			because: "a failed probe must leave nothing behind at the default path");
+	}
+
+	private const string RegistrySubdirectoryNameForTest = "component-registry";
+
+	private sealed class ThrowingResolverFactory(Exception failure) : IPlatformVersionResolverFactory {
+		public IPlatformVersionResolver Create(EnvironmentSettings settings) => new ThrowingResolver(failure);
+
+		private sealed class ThrowingResolver(Exception failure) : IPlatformVersionResolver {
+			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
+				Task.FromException<PlatformVersionResolution>(failure);
 		}
 	}
 

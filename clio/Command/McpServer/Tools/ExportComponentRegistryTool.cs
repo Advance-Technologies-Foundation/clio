@@ -114,10 +114,11 @@ public sealed class ExportComponentRegistryTool(
 
 			ExportComponentRegistryResponse response =
 				await command.ExportAsync(schemaType, versionResolution, args.OutputFile, cancellationToken).ConfigureAwait(false);
-			if (!string.IsNullOrEmpty(response.Error)) {
-				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
-			}
-			return response;
+			// The response is an immutable record (init-only, matching every other response POCO here), so the
+			// MCP-boundary redaction produces a NEW envelope instead of mutating the one the pipeline returned.
+			return string.IsNullOrEmpty(response.Error)
+				? response
+				: response with { Error = SensitiveErrorTextRedactor.Redact(response.Error) };
 		}
 		catch (Exception ex) {
 			return new ExportComponentRegistryResponse {
