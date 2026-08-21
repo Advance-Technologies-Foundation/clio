@@ -234,6 +234,75 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("A rules file without the excludedComponents section parses to an empty list — the pass is then a no-op (data-switched feature), matching how emptyContainerRemoval/tabAreaLayers degrade when absent.")]
+	public void ParseStream_WithoutExcludedComponents_ParsesToEmptyList() {
+		const string json = """{ "version": "8.3.3", "templates": [], "components": [] }""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.ExcludedComponents.Should().BeEmpty(
+			because: "an absent section must switch the removal pass off rather than throw or default to null");
+	}
+
+	[Test]
+	[Description("ParseStream parses a excludedComponents group into the typed filter rule: type, parentType and the optional propertiesContainerName all round-trip.")]
+	public void ParseStream_WithExcludedComponents_ParsesTypedFilterRule() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "excludedComponents": [
+			    {
+			      "filters": [
+			        { "type": "crt.SearchFilter", "parentType": "crt.ExpansionPanel", "propertiesContainerName": "tools" }
+			      ]
+			    }
+			  ]
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		ExcludedComponentFilterRule filter = rules.ExcludedComponents.Single().Filters.Single();
+		filter.Type.Should().Be("crt.SearchFilter");
+		filter.ParentType.Should().Be("crt.ExpansionPanel");
+		filter.PropertiesContainerName.Should().Be("tools");
+	}
+
+	[Test]
+	[Description("propertiesContainerName is genuinely optional on a excludedComponents filter — it parses to null when omitted, so the runtime pass can fall back to searching the whole host subtree instead of one named property.")]
+	public void ParseStream_ExcludedComponentsWithoutPropertiesContainerName_ParsesToNull() {
+		const string json = """
+			{
+			  "version": "8.3.3",
+			  "excludedComponents": [
+			    { "filters": [ { "type": "usr.Foo", "parentType": "usr.Bar" } ] }
+			  ]
+			}
+			""";
+
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
+
+		rules.ExcludedComponents.Single().Filters.Single().PropertiesContainerName.Should().BeNull(
+			because: "an absent propertiesContainerName means 'search the whole host subtree', not 'match nothing'");
+	}
+
+	[Test]
+	[Description("The bundled rules carry the excludedComponents entry for crt.SearchFilter inside crt.ExpansionPanel.tools: the search field does not fit the panel's compact icon-only header strip, so it is stripped from tools specifically (not banned everywhere on the page).")]
+	public void LoadBundled_ExcludedComponents_CarriesSearchFilterInsideExpansionPanelToolsRule() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.ExcludedComponents.Should().NotBeEmpty(
+			because: "the bundled rules ship the crt.SearchFilter / crt.ExpansionPanel.tools exclusion");
+		ExcludedComponentFilterRule filter = rules.ExcludedComponents
+			.SelectMany(g => g.Filters)
+			.Single(f => f.Type == "crt.SearchFilter");
+		filter.ParentType.Should().Be("crt.ExpansionPanel",
+			because: "the defect is positional — crt.SearchFilter does not fit THIS host's tools strip, not unsupported everywhere");
+		filter.PropertiesContainerName.Should().Be("tools",
+			because: "the search is scoped to the panel's tools property, not its whole mobileValues subtree");
+	}
+
+	[Test]
 	[Description("The bundled rules carry the designer's 2-layer tab body (tab-body grid nesting the Area card) for converter-created tabs.")]
 	public void LoadBundled_TabAreaLayers_CarryDesignerTabBodyProps() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

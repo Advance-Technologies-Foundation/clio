@@ -73,6 +73,23 @@ public sealed class WebToMobilePageConversionRules {
 	public EmptyContainerRemovalRule EmptyContainerRemoval { get; init; }
 
 	/// <summary>
+	/// Group: components that must be REMOVED (not converted) when found nested inside an already
+	/// copied-verbatim property of a matched host element — e.g. <c>crt.SearchFilter</c> inside
+	/// <c>crt.ExpansionPanel.tools</c> (the search field does not fit the panel's compact icon-only
+	/// header strip). Unlike <see cref="ComponentEquivalenceRule"/> (which governs a node WALKED by
+	/// the element-map builder, and would ban the type EVERYWHERE on the page), this governs a node
+	/// buried inside a property the generic per-element copy already carried whole — a scope
+	/// <c>filters</c>/<c>viewConfigTemplates</c> never reaches, because those only ever inspect the
+	/// node currently being converted, not what its own already-built value carries nested inside
+	/// one of its properties. Scoped to a specific (type, host type, host property) combination —
+	/// the defect this exists for is positional (this type does not fit THIS container), not "this
+	/// type is unsupported everywhere". Empty or absent switches the pass off (the feature is
+	/// data-driven, like <see cref="EmptyContainerRemoval"/>).
+	/// </summary>
+	[JsonPropertyName("excludedComponents")]
+	public IReadOnlyList<ExcludedComponentGroup> ExcludedComponents { get; init; } = [];
+
+	/// <summary>
 	/// Group: container NAMES that are NON-CONVERTING SCOPES on mobile (e.g. <c>MainHeader</c>). Such a container
 	/// yields no mobile element of its own; it is KEPT through template-chrome pruning (so its app-added descendants
 	/// keep it as an ancestor for a rule's <c>path</c>), its subtree is walked in scope mode, and any descendant a
@@ -319,6 +336,64 @@ public sealed class EmptyContainerRemovalRule {
 	/// </summary>
 	[JsonPropertyName("removableTypes")]
 	public IReadOnlyList<string> RemovableTypes { get; init; } = [];
+}
+
+/// <summary>
+/// One group of <see cref="ExcludedComponentFilterRule"/>s for the
+/// <see cref="WebToMobilePageConversionRules.ExcludedComponents"/> pass. A host's subtree matches when ANY
+/// filter in ANY group matches a descendant node — the same "matches when any filter matches" convention
+/// as <see cref="ComponentEquivalenceRule.Filters"/>/<c>MatchesAnyFilter</c>, so a future case is just
+/// another filter entry, never a code change.
+/// </summary>
+public sealed class ExcludedComponentGroup {
+	[JsonPropertyName("filters")]
+	public IReadOnlyList<ExcludedComponentFilterRule> Filters { get; init; } = [];
+}
+
+/// <summary>
+/// Matches a component to remove from a host, in whichever of the two element-map shapes the component
+/// took: an entry of its own whose parent chain reaches the host (the primary shape — the child-array
+/// traversal walks <c>tools</c>/<c>menuItems</c> children into their own entries), or a node nested
+/// verbatim inside a host property the per-element copy carried whole (the fallback shape). See
+/// <c>ExcludedComponentsPass</c> for the full two-phase semantics.
+/// </summary>
+public sealed class ExcludedComponentFilterRule {
+	/// <summary>
+	/// Component type to remove wherever it is found within the matched scope (e.g.
+	/// <c>"crt.SearchFilter"</c>), at any nesting depth.
+	/// </summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The
+	/// host is found STRUCTURALLY, at any depth: an <c>elementMap</c> entry whose resolved <c>MobileType</c>
+	/// matches ANY ancestor on the banned entry's <c>parentName</c> chain (primary shape), or any
+	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>mobileValues</c>
+	/// (fallback shape — a host buried in a verbatim-carried property, with no entry of its own). This is NOT
+	/// a direct-JSON-parent check either way: <see cref="Type"/> may sit several levels deeper inside one of
+	/// the host's properties.
+	/// </summary>
+	[JsonPropertyName("parentType")]
+	public string ParentType { get; init; }
+
+	/// <summary>
+	/// Optional: restrict the match to the subtree hanging off this one property (slot) of the host (e.g.
+	/// <c>"tools"</c>); the comparison is case-insensitive and a host whose subtree does not enter through
+	/// the named slot is a no-op for the filter (an explicit scope is an explicit boundary — there is no
+	/// fallback to the whole subtree). On the entry graph the check applies to the EDGE ENTERING THE HOST —
+	/// the ancestor-path entry attached directly to the host must occupy this slot (its <c>propertyName</c>,
+	/// absent = <c>items</c>) — while the banned component itself may sit levels deeper through ordinary
+	/// <c>items</c> edges; on a verbatim-carried host it is the host's own property of this name. Absent
+	/// searches the host's whole subtree, under any slot — <c>tools</c> and <c>items</c> alike — so prefer
+	/// naming the slot explicitly whenever the scope is known, to avoid matching the same type in an
+	/// unrelated property (e.g. a button's <c>menuItems</c>) of the same host.
+	/// </summary>
+	[JsonPropertyName("propertiesContainerName")]
+	public string PropertiesContainerName { get; init; }
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
 }
 
 /// <summary>
