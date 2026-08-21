@@ -21,6 +21,12 @@ any environment (no credentials required).
 For --empty mode, clio now resolves the base directory from --directory
 first, then from appsettings.json property workspaces-root.
 
+The workspace records the latest CreatioSDK version in
+.clio/workspaceSettings.json. That version is read from api.nuget.org; when
+the feed is unreachable (offline host, corporate proxy), the workspace is
+still created and the command warns that ApplicationVersion was left empty.
+Set it by hand before running restore-workspace with --IsNugetRestore.
+
 On success, the command reports the full directory where the workspace was
 created.
 

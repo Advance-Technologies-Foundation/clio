@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -11,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class DataForgeEnrichmentBuilderTests {
 	[Test]
 	[Category("Unit")]
@@ -111,5 +113,70 @@ public sealed class DataForgeEnrichmentBuilderTests {
 			because: "the degraded fallback should preserve the failure reason as a warning instead of throwing");
 		result.ContextSummary!.SimilarTables.Should().BeEmpty(
 			because: "the degraded fallback should return an empty compact summary when no Data Forge context is available");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Propagates OperationCanceledException instead of degrading it into a warning when the CALLER's own token requested the cancellation (review #1143 follow-up). Removing the builder's dedicated cancellation catch makes this test fail.")]
+	public void Build_Should_Propagate_OperationCanceledException_When_CallerTokenIsCanceled() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		IDataForgeContextService contextService = Substitute.For<IDataForgeContextService>();
+		commandResolver.Resolve<IDataForgeContextService>(Arg.Any<EnvironmentOptions>())
+			.Returns(contextService);
+		using CancellationTokenSource callerCts = new();
+		contextService.GetContext(Arg.Any<DataForgeContextRequest>(), callerCts.Token)
+			.Returns(_ => {
+				callerCts.Cancel();
+				throw new OperationCanceledException(callerCts.Token);
+			});
+		DataForgeEnrichmentBuilder sut = new(commandResolver);
+
+		// Act
+		Action act = () => sut.Build(
+			new DataForgeEnrichmentRequest(
+				EnvironmentName: "sandbox",
+				RequirementSummary: "Track customer tasks",
+				CandidateTerms: ["Task App"],
+				LookupHints: []),
+			callerCts.Token);
+
+		// Assert
+		act.Should().Throw<OperationCanceledException>(
+			because: "the caller's own cancellation must propagate rather than be masked as a dataforge: warning");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still degrades a TaskCanceledException into a warning when the CALLER's own token was never canceled, distinguishing an independent internal timeout from real caller cancellation (review #1143 follow-up).")]
+	public void Build_Should_Degrade_TaskCanceledException_Into_Warning_When_CallerTokenIsNotCanceled() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		IDataForgeContextService contextService = Substitute.For<IDataForgeContextService>();
+		commandResolver.Resolve<IDataForgeContextService>(Arg.Any<EnvironmentOptions>())
+			.Returns(contextService);
+		using CancellationTokenSource callerCts = new();
+		// Never canceled: models the caller's own token staying live while Data Forge's own HTTP request
+		// independently times out — a source distinct from the caller's token.
+		using CancellationTokenSource unrelatedTimeoutCts = new();
+		unrelatedTimeoutCts.Cancel();
+		contextService.GetContext(Arg.Any<DataForgeContextRequest>(), callerCts.Token)
+			.Returns(_ => throw new TaskCanceledException("Data Forge request timed out", null, unrelatedTimeoutCts.Token));
+		DataForgeEnrichmentBuilder sut = new(commandResolver);
+
+		// Act
+		ApplicationDataForgeResult result = sut.Build(
+			new DataForgeEnrichmentRequest(
+				EnvironmentName: "sandbox",
+				RequirementSummary: "Track customer tasks",
+				CandidateTerms: ["Task App"],
+				LookupHints: []),
+			callerCts.Token);
+
+		// Assert
+		result.Used.Should().BeTrue(
+			because: "the builder should still report that it attempted the Data Forge enrichment stage");
+		result.Warnings.Should().ContainSingle(warning => warning.Contains("Data Forge request timed out", StringComparison.Ordinal),
+			because: "an independent timeout unrelated to the caller's token is an operational failure and must degrade to a warning, not propagate");
 	}
 }

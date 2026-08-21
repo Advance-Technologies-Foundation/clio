@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -77,6 +78,338 @@ public sealed class ODataReadToolTests {
 			30_000,
 			1,
 			1);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Applies skip and count to the OData request and separates total-count from the number of records returned in the page.")]
+	public void Read_Should_Apply_Skip_And_Count_When_Paging_Is_Requested() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.count\":104,\"value\":[{\"Id\":\"1\"},{\"Id\":\"2\"},{\"Id\":\"3\"},{\"Id\":\"4\"}]}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Select = ["Id"],
+			OrderBy = "Id asc",
+			Top = 4,
+			Skip = 100,
+			Count = true
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "valid paging and count arguments should be applied to the OData request");
+		response.Count.Should().Be(4,
+			because: "count continues to report the number of records returned in this page");
+		response.TotalCount.Should().Be(104,
+			because: "total-count must expose the server count before top and skip paging");
+		serviceUrlBuilder.Received(1).Build(
+			"odata/Contact?$select=Id&$orderby=Id%20asc&$skip=100&$count=true&$top=4");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a string OData next-link without tying it to the disposed response document.")]
+	public void Read_Should_Return_Next_Link_When_Server_Provides_It() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=1");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.nextLink\":\"https://creatio/odata/Contact?$skip=1\",\"value\":[{\"Id\":\"1\"}]}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = 1
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a valid collection page with a next-link should remain successful");
+		response.NextLink.Should().Be("https://creatio/odata/Contact?$skip=1",
+			because: "callers need the server paging annotation advertised by the response contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Ignores a malformed non-string next-link annotation without discarding an otherwise valid page.")]
+	public void Read_Should_Ignore_Non_String_Next_Link() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=1");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.nextLink\":42,\"value\":[{\"Id\":\"1\"}]}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = 1
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a malformed optional paging annotation must not discard valid records");
+		response.Count.Should().Be(1,
+			because: "the valid page contents should still be returned");
+		response.NextLink.Should().BeNull(
+			because: "only string next-link annotations can be exposed safely");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects the removed raw filter argument with a structured-filter hint before resolving an environment or issuing HTTP.")]
+	public void Read_Should_Reject_Raw_Filter_Argument_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = new() {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["filter"] = JsonSerializer.SerializeToElement("Name eq 'Acme'")
+			}
+		};
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a raw filter must fail loudly instead of being discarded and widening the query");
+		response.Error.Should().Contain("raw filter strings are not accepted",
+			because: "the caller must not be told that renaming an incompatible raw string is sufficient");
+		response.Error.Should().Contain("filters: {\"all\"",
+			because: "the failure should show the supported structured-filter shape");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an explicitly null filters member before resolving an environment or issuing HTTP.")]
+	public void Read_Should_Reject_Explicitly_Null_Filters_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","filters":null}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an explicitly null filter must not become an unfiltered request");
+		response.Error.Should().Contain("null is not supported",
+			because: "the failure should distinguish malformed filters from an omitted optional filter");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a null condition inside a structured filter with its exact path before remote access.")]
+	public void Read_Should_Reject_Null_Filter_Condition_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","filters":{"all":[null]}}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a null array element is not a filter condition and must fail predictably");
+		response.Error.Should().Contain("filters.all[0] must be a filter condition object",
+			because: "the failure should identify the malformed element instead of exposing an internal null-reference error");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts an explicit JSON null comparison value and emits the intended OData null literal.")]
+	public void Read_Should_Preserve_Explicit_Null_Filter_Value_From_Json() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[]}");
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(
+			"""{"environment-name":"dev","entity":"Contact","filters":{"all":[{"field":"Name","op":"eq","value":null}]}}""")!;
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "explicit null is a valid value for eq and ne comparisons");
+		serviceUrlBuilder.Received(1).Build("odata/Contact?$filter=Name%20eq%20null&$top=25");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects OData grammar embedded in a structured filter field before remote access.")]
+	public void Read_Should_Reject_OData_Grammar_In_Filter_Field_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Filters = new ODataFilters {
+				All = [new ODataFilterCondition {
+					Field = "Id ne null or Name",
+					Value = JsonSerializer.SerializeToElement("Acme")
+				}]
+			}
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a structured field must not inject operators that broaden the filter");
+		response.Error.Should().Contain("must be an OData member path",
+			because: "the failure should explain the safe field shape");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an arbitrary unknown argument before resolving an environment or issuing HTTP.")]
+	public void Read_Should_Reject_Unknown_Argument_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = new() {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["bogus"] = JsonSerializer.SerializeToElement(true)
+			}
+		};
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "unknown arguments must fail instead of being silently discarded");
+		response.Error.Should().Contain("bogus",
+			because: "the failure should identify the rejected argument");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects unknown members inside filters before they can turn a constrained query into an unfiltered read.")]
+	public void Read_Should_Reject_Unknown_Filter_Group_Member_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = new() {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Filters = new ODataFilters {
+				ExtensionData = new Dictionary<string, JsonElement> {
+					["and"] = JsonSerializer.SerializeToElement(Array.Empty<object>())
+				}
+			}
+		};
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unknown filter group key must never be silently discarded");
+		response.Error.Should().Contain("'and' -> 'all'",
+			because: "the failure should identify the supported group name");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects unknown filter-condition members before they can change filter semantics.")]
+	public void Read_Should_Reject_Unknown_Filter_Condition_Member_Before_Remote_Access() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+		ODataReadArgs args = new() {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Filters = new ODataFilters {
+				All = [new ODataFilterCondition {
+					Field = "Name",
+					Value = JsonSerializer.SerializeToElement("Acme"),
+					ExtensionData = new Dictionary<string, JsonElement> {
+						["operator"] = JsonSerializer.SerializeToElement("contains")
+					}
+				}]
+			}
+		};
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unbound operator key could otherwise default to eq and silently change semantics");
+		response.Error.Should().Contain("'operator' -> 'op'",
+			because: "the failure should identify the canonical operator member");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a filter condition without value or in instead of silently dropping the entire condition.")]
+	public void Read_Should_Reject_Filter_Condition_When_Value_Is_Missing() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Filters = new ODataFilters {
+				All = [new ODataFilterCondition { Field = "Name", Op = "contains" }]
+			}
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an incomplete condition must not disappear and widen the query");
+		response.Error.Should().Contain("exactly one of value or in",
+			because: "the failure should explain how to complete the condition");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -325,8 +658,8 @@ public sealed class ODataReadToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("When filters object is provided but contains no conditions the $filter parameter must be omitted from the URL.")]
-	public void Read_Should_Omit_Filter_When_Structured_Filters_Produce_No_Conditions() {
+	[Description("When filters is present but contains no conditions the tool fails instead of silently widening the query.")]
+	public void Read_Should_Reject_Filter_When_Structured_Filters_Produce_No_Conditions() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -339,15 +672,71 @@ public sealed class ODataReadToolTests {
 		ODataReadTool tool = new(commandResolver);
 
 		// Act
-		tool.Read(new ODataReadArgs {
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
 			EnvironmentName = "dev",
 			Entity = "Contact",
 			Filters = new ODataFilters { All = null, Any = null },
 			Top = 5
 		});
 
-		// Assert — no $filter when structured filters produce no conditions
-		urlBuilder.Received(1).Build("odata/Contact?$top=5");
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an explicitly empty filter is indistinguishable from a silently dropped constraint unless it fails");
+		response.Error.Should().Contain("at least one condition",
+			because: "the failure should explain the minimum structured-filter shape");
+		urlBuilder.DidNotReceive().Build(Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a negative skip before resolving an environment or issuing HTTP.")]
+	public void Read_Should_Reject_Skip_When_Negative() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Skip = -1
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "negative OData offsets are invalid and must not reach Creatio");
+		response.Error.Should().Contain("skip must be zero or greater",
+			because: "the failure should explain the accepted skip range");
+		commandResolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails count=true when the server omits @odata.count so a requested total is never silently absent.")]
+	public void Read_Should_Return_Failure_When_Count_Was_Requested_But_Server_Omits_It() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$count=true&$top=25");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[]}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Count = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "count=true promises an authoritative total and must not silently degrade to page count");
+		response.Error.Should().Contain("did not return @odata.count",
+			because: "the caller needs to know that the requested total was not available");
 	}
 
 	[Test]
@@ -642,56 +1031,5 @@ public sealed class ODataReadToolTests {
 			because: "an empty error body must degrade to an explicit contentless message rather than an empty string");
 		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
 			because: "an empty body is not identifiable as a routing miss, so the registration hint must not be appended");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("odata-read rejects an unknown argument member (the incident shape: `fields` instead of `select`, `filter` instead of `filters`) with a JsonException that names it, instead of silently dropping it and returning an unfiltered/unprojected read (ENG-95706).")]
-	public void ReadArgs_Should_Reject_Unknown_Member_Instead_Of_Silently_Dropping() {
-		// Arrange — verbatim shape from run_20260820_133837: `fields` (not `select`) and `filter` (not `filters`).
-		const string unknownMemberJson = "{\"environment-name\":\"dev\",\"entity\":\"VwSysProcess\",\"fields\":[\"Id\",\"Name\"],\"filter\":\"Name eq 'X'\"}";
-
-		// Act
-		Action deserialize = () => JsonSerializer.Deserialize<ODataReadArgs>(unknownMemberJson);
-
-		// Assert
-		deserialize.Should().Throw<JsonException>(
-			because: "an unrecognized member must fail with a named error the way a missing required member does, so silence is never read as acceptance (ENG-95706)")
-			.Which.Message.Should().Contain("fields",
-				because: "the error must name the offending member so the caller fixes it to select/filters instead of getting a silent unfiltered read");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("odata-read rejects an unknown member inside the NESTED filter shape too (ENG-95706): a mistyped wrapper (`and`/`or` vs `all`/`any`) or condition key (`operator`/`val` vs `op`/`value`) must fail with a named JsonException, not vanish into an unfiltered read.")]
-	public void ReadArgs_Should_Reject_Unknown_Nested_Filter_Member() {
-		// Arrange / Act / Assert — wrong wrapper key (`and` instead of `all`/`any`).
-		const string badWrapperJson = "{\"environment-name\":\"dev\",\"entity\":\"Contact\",\"filters\":{\"and\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"X\"}]}}";
-		Action deserializeWrapper = () => JsonSerializer.Deserialize<ODataReadArgs>(badWrapperJson);
-		deserializeWrapper.Should().Throw<JsonException>(
-			because: "`and` is not a filters wrapper key (`all`/`any`); an unfiltered read must never result from a silently-dropped wrapper")
-			.Which.Message.Should().Contain("and", because: "the error must name the offending wrapper member");
-
-		// wrong condition key (`operator`/`val` instead of `op`/`value`).
-		const string badConditionJson = "{\"environment-name\":\"dev\",\"entity\":\"Contact\",\"filters\":{\"all\":[{\"field\":\"Name\",\"operator\":\"eq\",\"val\":\"X\"}]}}";
-		Action deserializeCondition = () => JsonSerializer.Deserialize<ODataReadArgs>(badConditionJson);
-		deserializeCondition.Should().Throw<JsonException>(
-			because: "`operator`/`val` are not condition keys (`op`/`value`); a dropped condition would collapse to an unfiltered read")
-			.Which.Message.Should().Contain("operator", because: "the error must name the offending condition member");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("odata-read still binds the correct argument members (select/filters/order-by/top), so the unknown-member guard does not reject valid calls.")]
-	public void ReadArgs_Should_Accept_Known_Members() {
-		// Arrange
-		const string validJson = "{\"environment-name\":\"dev\",\"entity\":\"VwSysProcess\",\"select\":[\"Id\",\"Name\"],\"order-by\":\"CreatedOn desc\",\"top\":5}";
-
-		// Act
-		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(validJson)!;
-
-		// Assert
-		args.Entity.Should().Be("VwSysProcess", because: "a well-formed odata-read payload must still bind");
-		args.Select.Should().BeEquivalentTo(new[] { "Id", "Name" }, because: "the projection must bind to select, not be dropped");
 	}
 }

@@ -1,4 +1,5 @@
 using System;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -1111,6 +1112,58 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			precondition => precondition.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
 				&& precondition.Contains("Script Task", StringComparison.Ordinal),
 			because: "the live contract must keep the Script-Task carve-out explicit so the process precondition never reads as a blanket 'never compile after a process' prohibition");
+	}
+
+	[Test]
+	[Description("The live get-request-info contract describes baseParameters as producer-defined metadata without hard-coding a BaseRequest field list.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract keeps request base parameters producer-driven")]
+	[AllureDescription("Requests the get-request-info contract from the live MCP server and verifies its baseParameters description follows the producer catalog rather than naming a fixed BaseRequest field set.")]
+	public async Task ToolContractGet_Should_Keep_Request_BaseParameters_Producer_Driven_When_Contract_Is_Requested() {
+		// Arrange
+		await using var context = AllureApi.Step(
+			"Arrange a real MCP server session",
+			() => Arrange(TimeSpan.FromMinutes(3)));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Act by requesting the get-request-info contract",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = new[] { RequestInfoTool.ToolName }
+				}));
+
+		// Assert
+		AllureApi.Step("Assert the contract request succeeded", () =>
+			response.Success.Should().BeTrue(
+				because: "the live MCP server should expose the curated get-request-info contract"));
+		ToolContractDefinition contract = AllureApi.Step(
+			"Assert the requested contract is returned",
+			() => {
+				response.Tools.Should().ContainSingle(
+					because: "only get-request-info was requested");
+				return response.Tools!.Single();
+			});
+		ToolContractField baseParameters = AllureApi.Step(
+			"Assert the baseParameters output field is present",
+			() => contract.OutputContract.Fields.Single(field => field.Name == "baseParameters"));
+		AllureApi.Step("Assert the baseParameters description is producer-driven", () =>
+			baseParameters.Description.Should().Contain("Current BaseRequest fields and producer metadata",
+				because: "the live contract must describe a producer-driven field surface instead of a fixed list"));
+		AllureApi.Step("Assert the baseParameters description explains deprecation metadata", () =>
+			baseParameters.Description.Should().Contain("deprecated/deprecationReason",
+				because: "the live contract must tell agents to honor producer deprecation metadata"));
+		AllureApi.Step("Assert the baseParameters description requires honoring deprecations", () =>
+			baseParameters.Description.Should().Contain("honor that guidance",
+				because: "the live contract must turn producer deprecation metadata into an agent action"));
+		AllureApi.Step("Assert the baseParameters description forbids authoring platform fields", () =>
+			baseParameters.Description.Should().Contain("must NEVER be passed via params",
+				because: "producer-owned BaseRequest fields are not authorable request parameters"));
+		AllureApi.Step("Assert the baseParameters description omits known producer field names", () =>
+			baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
+				because: "the served contract must not restore a fixed list of producer fields"));
 	}
 
 	private static async Task<ToolContractGetResponse> CallAsync(

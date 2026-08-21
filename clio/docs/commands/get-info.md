@@ -125,12 +125,14 @@ clio get-info -e MyEnvironment --timeout 60000
 3. Enriches the report from the admin-gated
    `ApplicationInfoService.GetSystemEnvironmentInfo` (POST) — adds `dbEngineType`,
    `frameworkKind` and `frameworkDescription` (requires `CanManageSolution`)
-4. If a compatible cliogate (>= 2.0.0.32) is installed, GETs
-   `/rest/CreatioApiGateway/GetSysInfo` and merges the cliogate-only `productName`
-   and `licenseInfo` into the same object (and backfills db engine / framework if
-   step 3 did not provide them)
-5. Any optional source in steps 3–4 that is denied, absent, or errors is skipped silently
-   — the report still includes everything that was available
+4. Probes `/rest/CreatioApiGateway/GetSysInfo` directly and, when available,
+   merges the cliogate-only `productName` and `licenseInfo` into the same object
+   (and backfills db engine / framework if step 3 did not provide them). The
+   endpoint is normally supplied by cliogate 2.0.0.32+
+5. Any optional source in steps 3–4 that is denied, absent, or errors does not fail the command
+   — the report still includes everything that was available. If `GetSysInfo` is
+   unavailable, installed-version metadata is used only to explain whether
+   cliogate was absent, had a lowest detected alias below 2.0.0.32, or was installed but unreadable
 6. Displays the single combined report as formatted JSON
 
 ## Exit Codes
@@ -161,8 +163,12 @@ clio get-info -e MyEnvironment --timeout 60000
     - "Authentication failed": verify credentials and authentication settings
     - "unexpected response": inspect the Creatio ApplicationInfoService health;
       use --debug for safe diagnostic metadata
-    - Missing ProductName/LicenseInfo on an otherwise successful report: install
-      or update cliogate to 2.0.0.32+ only if those optional fields are required
+    - Missing ProductName/LicenseInfo on an otherwise successful report: if a
+      warning is emitted, follow its reason. Install/update cliogate only when it
+      is absent or below 2.0.0.32. If a compatible detected version is named,
+      check GetSysInfo access and CanManageSolution instead. If no warning is
+      emitted, GetSysInfo returned a usable but partial report; missing optional
+      fields alone do not imply an installation or compatibility failure
 
 ## See Also
 

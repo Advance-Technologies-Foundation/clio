@@ -204,6 +204,11 @@ public sealed class ApplicationCreateTool(
 			return ApplicationToolHelper.CreateContextResponse(
 				ApplicationToolResultMapper.Map(result),
 				dataForge);
+		} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			// The shared DataForgeEnrichmentBuilder rethrows only genuine caller-token cancellation (review
+			// #1143 follow-up); that must propagate as MCP cancellation instead of being converted into a
+			// normal ApplicationContextResponse error by the broad catch below.
+			throw;
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}

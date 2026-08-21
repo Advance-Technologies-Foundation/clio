@@ -305,9 +305,9 @@ public sealed class RequestReferences {
 /// </summary>
 public sealed class RequestGlobalReferences {
 	/// <summary>
-	/// Gets or sets the fields every request inherits from <c>BaseRequest</c>
-	/// (<c>type</c>, <c>$context</c>, <c>scopes</c>, …). These are platform-injected at
-	/// dispatch time — a page schema never sets them through the binding's <c>params</c>
+	/// Gets or sets the producer-defined fields and metadata every request inherits from
+	/// <c>BaseRequest</c>. These are platform-injected at dispatch time — a page schema
+	/// never sets them through the binding's <c>params</c>
 	/// block, so unlike the component registry's <c>baseInputs</c> they are surfaced as a
 	/// SEPARATE <c>baseParameters</c> field on the detail response instead of being
 	/// merged into <c>parameters</c>. Merging would teach an AI consumer to author

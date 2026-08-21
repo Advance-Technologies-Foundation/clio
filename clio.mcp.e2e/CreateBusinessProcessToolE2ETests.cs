@@ -543,11 +543,11 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		callResultJson.Should().Contain("created (UId:",
 			because: "only a genuinely successful build logs the created-schema line (run against an environment with the ProcessDesignService package that supports the sendEmail element)");
 
-		// Readback: the distinctive HTML body proves the body round-tripped — it is stored as a ConstValue on the
-		// element's Body parameter (build) and surfaced by describe (decode), not merely that a sendEmail element exists.
-		// Two complementary signals, because describe reports the body two different ways: the email block only FLAGS a
-		// custom message (hasBody, it deliberately does not echo the HTML), while the verbatim probe token arrives on the
-		// element's value-bearing Body parameter.
+		// Readback proves the FULL macro round-trip on a real server: the author wrote [[param:ClioProbeParam]] in the
+		// body, the server RESOLVED it into a platform <img data-value="[#…#]"> token on build, and describe DECODES it
+		// back into the same [[param:…]] author form on read. describe echoes the decoded HTML on the email block's own
+		// `body` field (not just the hasBody flag, and not only via the value-bearing Body parameter) — so this asserts
+		// the [Description]/IProcessDescriber contract that `body` round-trips, which no unit test can verify end to end.
 		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
 		DescribedElement sendEmail = graph.Elements.Single(element => element.Name == "SendEmail1");
 		sendEmail.BuildType.Should().Be("sendemail",
@@ -555,10 +555,17 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		sendEmail.Email.Should().NotBeNull(
 			because: "describe surfaces a Send email element's configuration in its own email block");
 		sendEmail.Email.HasBody.Should().BeTrue(
-			because: "hasBody is the email block's body read-back signal — it flags the custom message without echoing the HTML");
-		string sendEmailJson = JsonSerializer.Serialize(sendEmail);
-		sendEmailJson.Should().Contain("ClioSendEmailProbe",
-			because: "the custom-message HTML body is stored verbatim on the Body parameter and surfaced by describe");
+			because: "hasBody is the email block's lightweight presence flag for a custom-message body");
+		sendEmail.Email.Body.Should().NotBeNullOrWhiteSpace(
+			because: "describe now echoes the decoded body HTML on the email block, not only the hasBody flag");
+		sendEmail.Email.Body.Should().Contain("ClioSendEmailProbe",
+			because: "the custom-message HTML body round-trips through build and describe");
+		sendEmail.Email.Body.Should().Contain("[[param:ClioProbeParam]]",
+			because: "the body macro was resolved into a platform token on build and DECODED back into its "
+				+ "[[param:…]] author form on describe — the full encode/decode round-trip on a real server");
+		sendEmail.Email.Body.Should().NotContain("data-value",
+			because: "a resolved body is decoded back to author form, so the raw <img data-value=\"[#…#]\"> token "
+				+ "must NOT leak into the read-back body");
 	}
 
 	[Test]
@@ -662,12 +669,15 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  "elements": [
 		    { "name": "StartEvent1", "type": "startEvent" },
 		    { "name": "SendEmail1", "type": "sendEmail",
-		      "email": { "bodyFormat": "html", "body": "<html><body><p>ClioSendEmailProbe</p></body></html>" } },
+		      "email": { "bodyFormat": "html", "body": "<html><body><p>ClioSendEmailProbe for [[param:ClioProbeParam]]</p></body></html>" } },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
 		  "flows": [
 		    { "source": "StartEvent1", "target": "SendEmail1" },
 		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "ClioProbeParam", "type": "ShortText", "direction": "In" }
 		  ]
 		}
 		""";

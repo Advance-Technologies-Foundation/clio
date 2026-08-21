@@ -134,6 +134,31 @@ public sealed class ToolContractGetToolTests {
 			because: "an arg-bearing tool must expose a usable property schema, not an empty fallback");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated odata-read input contract aligned with every bound ODataReadArgs JSON member.")]
+	public void ToolContractGet_Should_Keep_ODataRead_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(ODataReadArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArgumentNames,
+			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("total-count",
+			because: "a requested total must be discoverable separately from page count");
+		contract.Aliases.Should().Contain(alias => alias.Alias == "filter" && alias.Status == "rejected",
+			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
+	}
+
 	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
 	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
 	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.
@@ -2200,6 +2225,12 @@ public sealed class ToolContractGetToolTests {
 			precondition.Contains("cliogate", StringComparison.Ordinal) &&
 			precondition.Contains("install-gate", StringComparison.Ordinal),
 			because: "restore-workspace should tell callers how to satisfy the cliogate prerequisite");
+		restore.Description.Should().Contain("workspaceSettings.json",
+			because: "the contract should not imply that restore-workspace downloads every package in the environment");
+		restore.Preconditions.Should().Contain(precondition =>
+			precondition.Contains("none are eligible", StringComparison.Ordinal) &&
+			precondition.Contains("does not clear or delete", StringComparison.Ordinal),
+			because: "callers should understand the successful warning and directory-preservation behavior before invoking restore-workspace");
 
 		ToolContractDefinition assert = result.Tools!.Single(contract =>
 			contract.Name == AssertInfrastructureTool.AssertInfrastructureToolName);
@@ -2614,6 +2645,17 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "parameters"
 				&& field.Description.Contains("valueSource", StringComparison.Ordinal),
 			because: "the parameters field must explain the valueSource probe annotation so an agent fills environment-dependent values from the named probe, never from memory");
+		ToolContractField baseParameters = contract.OutputContract.Fields.Single(field => field.Name == "baseParameters");
+		baseParameters.Description.Should().Contain("Current BaseRequest fields and producer metadata",
+			because: "the contract must describe a producer-driven field surface instead of a fixed BaseRequest list");
+		baseParameters.Description.Should().Contain("deprecated/deprecationReason",
+			because: "the contract must tell agents to honor producer deprecation metadata");
+		baseParameters.Description.Should().Contain("honor that guidance",
+			because: "publishing deprecation keys is insufficient unless the contract tells agents to act on them");
+		baseParameters.Description.Should().Contain("must NEVER be passed via params",
+			because: "producer-owned BaseRequest fields are not part of the authorable request surface");
+		baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
+			because: "the contract prose must not restore a fixed list of known producer fields");
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
 		contract.AntiPatterns!.Should().Contain(pattern =>
