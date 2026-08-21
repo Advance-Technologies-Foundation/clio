@@ -259,6 +259,29 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("A nested loader is not deleted when its slash-zero application points outside the Creatio deployment")]
+	public void TryDeleteIisTarget_ShouldNotDeleteNestedLoader_WhenSlashZeroPathIsUnrelated() {
+		// Arrange
+		const string appsXml =
+			"<appcmd><APP APP.NAME=\"default/work\" APPPOOL.NAME=\"loader-pool\" SITE.NAME=\"default\" />"
+			+ "<APP APP.NAME=\"default/work/0\" APPPOOL.NAME=\"foreign-pool\" SITE.NAME=\"default\" /></appcmd>";
+		MockAppCmd("list app /xml", appsXml);
+		MockAppCmd("list VDIR \"default/work/\" /text:physicalPath", @"C:\sites\work");
+		MockAppCmd("list APP \"default/work\" /text:applicationPool", "loader-pool");
+		MockAppCmd("list VDIR \"default/work/0/\" /text:physicalPath", @"C:\sites\unrelated");
+
+		// Act
+		bool result = _scanner.TryDeleteIisTarget("default/work", @"C:\sites\work", "loader-pool");
+
+		// Assert
+		result.Should().BeFalse(
+			because: "deleting the nested loader would also delete an unrelated slash-zero application");
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.StartsWith("stop ", StringComparison.OrdinalIgnoreCase)
+			|| options.Arguments.StartsWith("delete ", StringComparison.OrdinalIgnoreCase)));
+	}
+
+	[Test]
 	[Description("A nonzero AppCmd site-stop exit fails the safe target mutation.")]
 	public void TryStopIisTarget_ShouldFail_WhenAppCmdSiteStopFails() {
 		// Arrange

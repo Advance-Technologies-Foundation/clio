@@ -594,7 +594,8 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		}
 		bool targetIdentityMatches =
 			IsExpectedIisTargetIdentity(actualPath, actualAppPoolName, physicalPath, appPoolName);
-		if (!targetIdentityMatches || siteName.Contains('/')) {
+		bool isSlashZeroTarget = siteName.EndsWith("/0", StringComparison.OrdinalIgnoreCase);
+		if (!targetIdentityMatches || isSlashZeroTarget) {
 			return targetIdentityMatches;
 		}
 		if (!TryReadAppCmd("list app /xml", out string appsXml)
