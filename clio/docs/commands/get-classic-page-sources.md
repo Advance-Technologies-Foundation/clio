@@ -31,7 +31,10 @@ It:
 - best-effort, gathers the related schemas the page references: custom `detailSchemas` (body + title), the
   `*Section` chain, and the child pages each detail's entity registers — its edit card **and** its add mini
   page — each as a nested `childPageSchemas` manifest. These use conservative heuristics; anything that cannot
-  be resolved is **omitted, never fabricated**.
+  be resolved is **omitted, never fabricated**;
+- best-effort, reads the TARGET stand's own `ViewItemType`/`ContentType`/`DataValueType` enum tables from that
+  stand's live `sysenums.js` into `enumVocabulary`, so the migration engine's enum-drift guard can catch a stand
+  running a different platform version than the one the engine's tables were pinned against.
 
 The layer bodies are written to the manifest file, **never returned** in the command output. The response
 carries only the manifest path and a small summary (layer/seed/resource/column counts and the resolved
@@ -83,10 +86,10 @@ clio get-classic-page-sources --schema-name UsrCasePage --entity UsrCase --outpu
 ## Output format
 
 The response JSON reports `success`, `schemaName`, `entity`, `manifestPath`, `layerCount`, `seedCount`,
-`resourceCount`, `columnCount`, `detailCount`, `sectionLayerCount`, `childPageCount`, `warnings`, and
-`error`. The manifest file written to disk contains `schemas` (`[{ pkg, body }]`, base->top), and, when
-resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`, `section`, and
-`childPageSchemas`.
+`resourceCount`, `columnCount`, `detailCount`, `sectionLayerCount`, `childPageCount`, `enumVocabularyCount`,
+`warnings`, and `error`. The manifest file written to disk contains `schemas` (`[{ pkg, body }]`, base->top),
+and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resources`, `detailSchemas`,
+`section`, `childPageSchemas`, and `enumVocabulary`.
 
 `warnings` is present only when the collected sources are incomplete in a way the caller must weigh, and is
 omitted from a complete collection. **Read it before planning from the manifest** — every block that was
@@ -107,7 +110,10 @@ logger warning does not reach an MCP caller. It is raised when:
 - an enumerated parent-template layer was dropped from the `seed`, or the template's layers could not be
   enumerated at all and only the linked layer was seeded;
 - the merged localizable strings, the entity columns, a detail schema, or a child edit page could not be
-  gathered.
+  gathered;
+- the stand's own `sysenums.js` could not be fetched or parsed (in whole or for one of the three enum
+  tables), so `enumVocabulary` is missing that enum, or the whole block, and the engine's enum-drift guard runs
+  with less than a full comparison for this run.
 
 Over MCP the warning text is redacted the same way `error` is, so a backend host or URI carried in an
 underlying failure never reaches the caller's context.
@@ -160,6 +166,13 @@ underlying failure never reaches the caller's context.
   trusted (only the OS temp directory then remains allowed), and an explicit `--output-file` that already exists
   is refused rather than overwritten. A path escaping both allowed locations fails before any write. The default
   path is always inside the workspace anchor and is overwritten on re-runs.
+- `enumVocabulary` is read from the TARGET environment's own live `sysenums.js` — never copied from the
+  migration engine's pinned `DRIFT_TABLES` — because the whole purpose of the block is catching a stand whose
+  platform version disagrees with those pinned values. The fetch is unauthenticated (the login page, then
+  `/core/<hash>/Terrasoft/core/enums/sysenums.js`), so it does not depend on the caller's Creatio credentials. An
+  enum table that could not be found, was truncated, or produced no numeric members is omitted from the block
+  entirely rather than written as an empty object; a fully unreachable stand omits `enumVocabulary` altogether
+  and is reported in `warnings`, never as a command failure.
 
 ## Reporting Bugs
 

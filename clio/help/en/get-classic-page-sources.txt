@@ -18,7 +18,13 @@ DESCRIPTION
 
     The manifest contains the replacing-schema layer chain, parent-template
     seed layers, merged resources, entity columns, column titles, and best-effort
-    related schemas such as details, sections, and child pages.
+    related schemas such as details, sections, and child pages. It also carries
+    "enumVocabulary": the TARGET stand's own ViewItemType/ContentType/DataValueType
+    enum tables, read live from that stand's sysenums.js (never copied from the
+    engine's pinned tables), so the engine's enum-drift guard can catch a stand
+    running a different platform version. An enum that could not be measured is
+    omitted, never written as an empty object; "enumVocabularyCount" in the
+    response reports how many of the three were resolved.
 
     Child pages come from SysModuleEdit metadata: each detail's bound entity is
     resolved (the page's own details config wins when it overrides the entity,
