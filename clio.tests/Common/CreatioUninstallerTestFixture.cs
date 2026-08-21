@@ -934,6 +934,28 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("UninstallByPath should retain an explicit port on an MSSQL named instance")]
+	public void UninstallByPath_HandlesMssqlNamedInstanceWithExplicitPort(){
+		// Arrange
+		MockStartedSite();
+		string csPath = Path.Join(InstalledCreatioPath, ConnectionStringsFileName);
+		const string csContent = """
+								 <?xml version="1.0" encoding="utf-8"?>
+								 <connectionStrings>
+								   <add name="db" connectionString="Data Source=tcp:sql.local\SQLEXPRESS,1444;Initial Catalog=dbname;User ID=testuser;Password=testpass;" />
+								 </connectionStrings>
+								 """;
+		FileSystem.AddFile(csPath, new MockFileData(csContent));
+
+		// Act
+		_sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		_mssqlMock.Received(1).Init(@"tcp:sql.local\SQLEXPRESS", 1444, "testuser", "testpass", false);
+		_mssqlMock.Received(1).DropDb("dbname");
+	}
+
+	[Test]
 	[Description("UninstallByPath should correctly parse MSSQL connection string with explicit port specified")]
 	public void UninstallByPath_ParsesMssqlWithExplicitPort(){
 		//Arrange
@@ -1257,6 +1279,10 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			because: "destructive authority must remain bound to the originally resolved IIS identity");
 		_iisScannerMock.Received(1).TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
 		_iisScannerMock.DidNotReceive().TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_mssqlMock.DidNotReceive().DropDb(Arg.Any<string>());
+		_postgresMock.DidNotReceive().DropDb(Arg.Any<string>());
+		FileSystem.Directory.Exists(InstalledCreatioPath).Should().BeTrue(
+			because: "an IIS ownership mismatch must abort before database or filesystem mutation");
 	}
 
 	[Test]

@@ -236,6 +236,29 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("A root site is not stopped when its slash-zero application points outside the Creatio deployment")]
+	public void TryStopIisTarget_ShouldNotStopSite_WhenSlashZeroPathIsUnrelated() {
+		// Arrange
+		const string appsXml =
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"root-pool\" SITE.NAME=\"work\" />"
+			+ "<APP APP.NAME=\"work/0\" APPPOOL.NAME=\"foreign-pool\" SITE.NAME=\"work\" /></appcmd>";
+		MockAppCmd("list app /xml", appsXml);
+		MockAppCmd("list VDIR \"work/\" /text:physicalPath", @"C:\sites\work");
+		MockAppCmd("list APP \"work/\" /text:applicationPool", "root-pool");
+		MockAppCmd("list VDIR \"work/0/\" /text:physicalPath", @"C:\sites\unrelated");
+
+		// Act
+		bool result = _scanner.TryStopIisTarget("work", @"C:\sites\work", "root-pool");
+
+		// Assert
+		result.Should().BeFalse(
+			because: "deleting the root site would also delete an unrelated slash-zero application");
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.StartsWith("stop ", StringComparison.OrdinalIgnoreCase)
+			|| options.Arguments.StartsWith("delete ", StringComparison.OrdinalIgnoreCase)));
+	}
+
+	[Test]
 	[Description("A nonzero AppCmd site-stop exit fails the safe target mutation.")]
 	public void TryStopIisTarget_ShouldFail_WhenAppCmdSiteStopFails() {
 		// Arrange

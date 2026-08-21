@@ -592,7 +592,23 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 				out string actualAppPoolName)) {
 			return false;
 		}
-		return IsExpectedIisTargetIdentity(actualPath, actualAppPoolName, physicalPath, appPoolName);
+		bool targetIdentityMatches =
+			IsExpectedIisTargetIdentity(actualPath, actualAppPoolName, physicalPath, appPoolName);
+		if (!targetIdentityMatches || siteName.Contains('/')) {
+			return targetIdentityMatches;
+		}
+		if (!TryReadAppCmd("list app /xml", out string appsXml)
+			|| !TryReadCompleteApps(appsXml, out XElement[] apps)) {
+			return false;
+		}
+		string slashZeroName = $"{siteName}/0";
+		if (!apps.Any(app => string.Equals(app.Attribute("APP.NAME")!.Value, slashZeroName,
+				StringComparison.OrdinalIgnoreCase))) {
+			return true;
+		}
+		return TryReadAppCmd($"list VDIR {QuoteAppCmdArgument($"{slashZeroName}/")} /text:physicalPath",
+				out string slashZeroPath)
+			&& IsExpectedPhysicalPath(slashZeroPath, Path.Combine(physicalPath, "Terrasoft.WebApp"));
 	}
 
 	internal static bool IsExpectedIisTargetIdentity(string actualPath, string actualAppPoolName,
@@ -601,6 +617,11 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			|| string.IsNullOrWhiteSpace(actualAppPoolName) || string.IsNullOrWhiteSpace(expectedAppPoolName)) {
 			return false;
 		}
+		return IsExpectedPhysicalPath(actualPath, expectedPath)
+			&& string.Equals(actualAppPoolName, expectedAppPoolName, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool IsExpectedPhysicalPath(string actualPath, string expectedPath) {
 		try {
 			string normalizedActualPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(actualPath))
 				.TrimEnd(Path.DirectorySeparatorChar,
@@ -608,8 +629,7 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			string normalizedExpectedPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(expectedPath))
 				.TrimEnd(Path.DirectorySeparatorChar,
 				Path.AltDirectorySeparatorChar);
-			return string.Equals(normalizedActualPath, normalizedExpectedPath, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(actualAppPoolName, expectedAppPoolName, StringComparison.OrdinalIgnoreCase);
+			return string.Equals(normalizedActualPath, normalizedExpectedPath, StringComparison.OrdinalIgnoreCase);
 		}
 		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
 			or PathTooLongException) {
