@@ -35,7 +35,7 @@ Scenario file name. Required.
 ## Environment Options
 
 ```bash
--e, --Environment <VALUE>
+-e, --environment <VALUE>
 Default environment name for steps that omit a target
 ```
 
@@ -53,6 +53,9 @@ clio run --file-name ./Phase1.yaml -e dev
 
 Only --environment is inherited as a scenario-level step default. Put direct
 URIs, credentials, and other environment options on the individual step.
+
+A command that supports running without an environment keeps its offline
+bootstrap mode when its named environment has not been registered yet.
 
 Scenarios run non-interactively. A step targeting an environment marked Safe
 fails closed because the runner cannot request production confirmation.
