@@ -45,6 +45,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 	private CreatioInstallerService _creatioInstallerService;
 	private IProcessExecutor _processExecutor;
 	private IIisDeploymentPortReservation _iisDeploymentPortReservation;
+	private IDeploymentTargetReservation _deploymentTargetReservation;
 
 	#endregion
 
@@ -62,6 +63,8 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 		containerBuilder.AddSingleton(_processExecutor);
 		_iisDeploymentPortReservation = Substitute.For<IIisDeploymentPortReservation>();
 		containerBuilder.AddSingleton(_iisDeploymentPortReservation);
+		_deploymentTargetReservation = Substitute.For<IDeploymentTargetReservation>();
+		containerBuilder.AddSingleton(_deploymentTargetReservation);
 	}
 
 	protected override MockFileSystem CreateFs() {
@@ -432,6 +435,64 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 			.WithMessage("*not available*",
 				because: "the machine-scoped port reservation is the first deployment mutation boundary");
 		_iisDeploymentPortReservation.Received(1).Acquire(port);
+		_deploymentTargetReservation.Received(1).Acquire(Arg.Is<string>(path =>
+			Path.IsPathFullyQualified(path) && path.EndsWith("collision-probe", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deployment target reservation is acquired before the IIS port or any target mutation.")]
+	public void Execute_ShouldFailBeforePortReservation_WhenDeploymentTargetIsAlreadyReserved() {
+		// Arrange
+		const int port = 40188;
+		string zipPath = Path.Combine(_localArtifactServerPath, "8.1.1",
+			"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip");
+		_deploymentTargetReservation.Acquire(Arg.Any<string>()).Returns(_ =>
+			throw new InvalidOperationException("deployment target is already being changed"));
+		PfInstallerOptions options = new() {
+			SiteName = "target-collision-probe",
+			SitePort = port,
+			ZipFile = zipPath,
+			DeploymentMethod = "iis",
+			AutoRun = false
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*already being changed*",
+			because: "same-path deploys and deploy-versus-uninstall must serialize before mutation");
+		_iisDeploymentPortReservation.DidNotReceive().Acquire(Arg.Any<int>());
+	}
+
+	[TestCase("../escape")]
+	[TestCase("bad/name")]
+	[TestCase("bad\\name")]
+	[TestCase("\"bad\"")]
+	[TestCase("work.")]
+	[TestCase("CON")]
+	[Category("Unit")]
+	[Description("IIS deployment rejects site names that can escape or corrupt the configured IIS target.")]
+	public void Execute_ShouldRejectUnsafeIisSiteName_BeforeTargetMutation(string siteName) {
+		// Arrange
+		PfInstallerOptions options = new() {
+			SiteName = siteName,
+			SitePort = 40189,
+			ZipFile = Path.Combine(_localArtifactServerPath, "8.1.1",
+				"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip"),
+			DeploymentMethod = "iis",
+			AutoRun = false
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*single safe name*",
+			because: "siteName must never become a rooted or parent-relative deployment directory");
+		_deploymentTargetReservation.DidNotReceive().Acquire(Arg.Any<string>());
+		_iisDeploymentPortReservation.DidNotReceive().Acquire(Arg.Any<int>());
 	}
 
 	[Test]

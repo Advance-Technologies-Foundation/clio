@@ -10,9 +10,11 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Clio.Command;
 using Clio.Common;
+using Clio.Common.IIS;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using FluentValidation;
+using MsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Requests;
 
@@ -193,6 +195,9 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 	private readonly PowerShellFactory _powerShellFactory;
 	private readonly ILogger _logger;
 	private readonly IValidator<IISScannerRequest> _validator;
+	private readonly IPlatformDetector _platformDetector;
+	private readonly MsFileSystem _fileSystem;
+	private readonly string _appCmdPath;
 
 	#endregion
 
@@ -258,13 +263,17 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 
 	public IisScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
 		PowerShellFactory powerShellFactory, ILogger logger, IProcessExecutor processExecutor,
-		IValidator<IISScannerRequest> validator) {
+		IValidator<IISScannerRequest> validator, IPlatformDetector platformDetector,
+		MsFileSystem fileSystem) {
 		_settingsRepository = settingsRepository;
 		_regCommand = regCommand;
 		_powerShellFactory = powerShellFactory;
 		_logger = logger;
 		_processExecutor = processExecutor;
 		_validator = validator;
+		_platformDetector = platformDetector;
+		_fileSystem = fileSystem;
+		_appCmdPath = AppCmdPath.Resolve();
 	}
 
 	/// <inheritdoc />
@@ -275,14 +284,12 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 	#region Methods: Private
 
 	private string ExecuteAppCmd(string args) {
-		const string dirPath = @"C:\Windows\System32\inetsrv\";
-		return _processExecutor.Execute(Path.Join(dirPath, "appcmd.exe"), args, waitForExit: true);
+		return _processExecutor.Execute(_appCmdPath, args, waitForExit: true);
 	}
 
 	private ProcessExecutionResult ExecuteAppCmdChecked(string args) {
-		const string dirPath = @"C:\Windows\System32\inetsrv\";
 		return _processExecutor.ExecuteAndCaptureAsync(new ProcessExecutionOptions(
-			Path.Join(dirPath, "appcmd.exe"), args)).GetAwaiter().GetResult();
+			_appCmdPath, args)).GetAwaiter().GetResult();
 	}
 
 	private static bool Succeeded(ProcessExecutionResult result) =>
@@ -404,6 +411,12 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 	/// <inheritdoc />
 	public bool TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets) {
 		targets = [];
+		if (!_platformDetector.IsWindows()) {
+			return true;
+		}
+		if (!_fileSystem.File.Exists(_appCmdPath)) {
+			return false;
+		}
 		if (!TryReadAppCmd("list sites /xml", out string sitesXml)
 			|| !TryReadAppCmd("list app /xml", out string appsXml)
 			|| !TryReadCompleteSites(sitesXml, out XElement[] sites)
@@ -513,7 +526,8 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			return false;
 		}
 		if (ShouldStopSite(siteName, manageAppPool: false)) {
-			return TryMutateAppCmd($"stop site {QuoteAppCmdArgument($"/site.name:{siteName}")}");
+			return TryMutateAppCmd($"stop site {QuoteAppCmdArgument($"/site.name:{siteName}")}")
+				|| TryReadStoppedState("site", "site.name", siteName);
 		}
 		return true;
 	}
@@ -551,15 +565,22 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			return IisAppPoolMutationResult.PreservedShared;
 		}
 		return TryMutateAppCmd($"stop apppool {QuoteAppCmdArgument($"/apppool.name:{appPoolName}")}")
+			|| TryReadStoppedState("apppool", "apppool.name", appPoolName)
 			? IisAppPoolMutationResult.Completed
 			: IisAppPoolMutationResult.Failed;
 	}
+
+	private bool TryReadStoppedState(string objectType, string identityOption, string name) =>
+		TryReadAppCmd($"list {objectType} {QuoteAppCmdArgument($"/{identityOption}:{name}")} /text:state",
+			out string state)
+		&& string.Equals(state.Trim(), "Stopped", StringComparison.OrdinalIgnoreCase);
 
 	private static bool IsAssignmentOwnedByTarget(XElement app, string targetName) {
 		string appName = app.Attribute("APP.NAME")!.Value;
 		string siteName = app.Attribute("SITE.NAME")!.Value;
 		return targetName.Contains('/')
 			? string.Equals(appName, targetName, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(appName, $"{targetName}/0", StringComparison.OrdinalIgnoreCase)
 			: string.Equals(siteName, targetName, StringComparison.OrdinalIgnoreCase);
 	}
 
@@ -601,10 +622,16 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			return false;
 		}
 		if (siteName.Contains('/')) {
-			return apps.Count(app => string.Equals(app.Attribute("APP.NAME")!.Value, siteName,
+			string[] ownedNames = [.. apps
+				.Select(app => app.Attribute("APP.NAME")!.Value)
+				.Where(name => string.Equals(name, siteName, StringComparison.OrdinalIgnoreCase)
+					|| name.StartsWith($"{siteName}/", StringComparison.OrdinalIgnoreCase))];
+			return ownedNames.Count(name => string.Equals(name, siteName,
 				StringComparison.OrdinalIgnoreCase)) == 1
-				&& !apps.Any(app => app.Attribute("APP.NAME")!.Value.StartsWith($"{siteName}/",
-					StringComparison.OrdinalIgnoreCase));
+				&& ownedNames.Count(name => string.Equals(name, $"{siteName}/0",
+					StringComparison.OrdinalIgnoreCase)) <= 1
+				&& ownedNames.All(name => string.Equals(name, siteName, StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(name, $"{siteName}/0", StringComparison.OrdinalIgnoreCase));
 		}
 		XElement[] siteApps = [.. apps.Where(app => string.Equals(app.Attribute("SITE.NAME")!.Value, siteName,
 			StringComparison.OrdinalIgnoreCase))];
@@ -637,7 +664,9 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		}
 		return siteName.Contains('/')
 			? !apps.Any(app => string.Equals(app.Attribute("APP.NAME")!.Value, siteName,
-				StringComparison.OrdinalIgnoreCase))
+				StringComparison.OrdinalIgnoreCase)
+				|| app.Attribute("APP.NAME")!.Value.StartsWith($"{siteName}/",
+					StringComparison.OrdinalIgnoreCase))
 			: !apps.Any(app => string.Equals(app.Attribute("SITE.NAME")!.Value, siteName,
 				StringComparison.OrdinalIgnoreCase));
 	}

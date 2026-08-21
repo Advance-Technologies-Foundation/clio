@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.IIS;
 using Clio.Requests;
 using Clio.Tests.Command;
 using FluentAssertions;
@@ -10,6 +11,7 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
+using System.IO.Abstractions.TestingHelpers;
 
 namespace Clio.Tests.Requests;
 
@@ -18,14 +20,19 @@ namespace Clio.Tests.Requests;
 internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	private IProcessExecutor _processExecutor;
 	private IIisScanner _scanner;
+	private IPlatformDetector _platformDetector;
 
 	protected override void AdditionalRegistrations(IServiceCollection services) {
 		_processExecutor = Substitute.For<IProcessExecutor>();
 		services.AddSingleton(_processExecutor);
+		_platformDetector = Substitute.For<IPlatformDetector>();
+		_platformDetector.IsWindows().Returns(true);
+		services.AddSingleton(_platformDetector);
 	}
 
 	public override void Setup() {
 		base.Setup();
+		FileSystem.AddFile(@"C:\Windows\System32\inetsrv\appcmd.exe", new MockFileData([]));
 		_scanner = Container.GetRequiredService<IIisScanner>();
 		_processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
 			Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
@@ -60,6 +67,8 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>", "work", true)]
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other\" APPPOOL.NAME=\"other\" SITE.NAME=\"work\" /></appcmd>", "work", false)]
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other\" APPPOOL.NAME=\"other\" SITE.NAME=\"work\" /></appcmd>", "work/other", true)]
+	[TestCase("<appcmd><APP APP.NAME=\"work/other\" APPPOOL.NAME=\"loader\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other/0\" APPPOOL.NAME=\"webapp\" SITE.NAME=\"work\" /></appcmd>", "work/other", true)]
+	[TestCase("<appcmd><APP APP.NAME=\"work/other\" APPPOOL.NAME=\"loader\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other/0\" APPPOOL.NAME=\"webapp\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other/custom\" APPPOOL.NAME=\"custom\" SITE.NAME=\"work\" /></appcmd>", "work/other", false)]
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other\" APPPOOL.NAME=\"other\" SITE.NAME=\"work\" /><APP APP.NAME=\"work/other/child\" APPPOOL.NAME=\"child\" SITE.NAME=\"work\" /></appcmd>", "work/other", false)]
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /><APP APPPOOL.NAME=\"pool\" SITE.NAME=\"other\" /></appcmd>", "work", false)]
 	// Creatio registers two applications per site - the root loader and the nested "/0". Requiring a
@@ -121,6 +130,7 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	[TestCase("<appcmd />", "work", true)]
 	[TestCase("<appcmd><APP APP.NAME=\"other/\" APPPOOL.NAME=\"other\" SITE.NAME=\"other\" /></appcmd>", "work", true)]
 	[TestCase("<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>", "work", false)]
+	[TestCase("<appcmd><APP APP.NAME=\"work/other/0\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>", "work/other", false)]
 	[TestCase("<html />", "work", false)]
 	[TestCase("<appcmd><ERROR /></appcmd>", "work", false)]
 	[Description("An IIS target is absent only when complete AppCmd output proves it is no longer present.")]
@@ -341,6 +351,53 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Complete IIS discovery returns an empty inventory when IIS cannot exist on the current host.")]
+	public void TryFindAllIisTargets_ShouldReturnEmpty_WhenHostIsNotWindows() {
+		// Arrange
+		_platformDetector.IsWindows().Returns(false);
+
+		// Act
+		bool success = _scanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets);
+
+		// Assert
+		success.Should().BeTrue(because: "a non-Windows host cannot contain IIS targets");
+		targets.Should().BeEmpty(because: "non-IIS uninstall must remain portable");
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>());
+	}
+
+	[Test]
+	[Description("Complete IIS discovery fails closed when Windows cannot provide AppCmd inventory tooling.")]
+	public void TryFindAllIisTargets_ShouldFail_WhenAppCmdAndIisDirectoryAreAbsent() {
+		// Arrange
+		FileSystem.RemoveFile(@"C:\Windows\System32\inetsrv\appcmd.exe");
+		FileSystem.Directory.Delete(@"C:\Windows\System32\inetsrv", recursive: true);
+
+		// Act
+		bool success = _scanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets);
+
+		// Assert
+		success.Should().BeFalse(
+			because: "filesystem layout alone cannot prove that Windows has no active IIS configuration");
+		targets.Should().BeEmpty(because: "unverified IIS state must not authorize destructive cleanup");
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>());
+	}
+
+	[Test]
+	[Description("Complete IIS discovery fails closed when IIS exists but AppCmd is unavailable.")]
+	public void TryFindAllIisTargets_ShouldFail_WhenIisExistsWithoutAppCmd() {
+		// Arrange
+		FileSystem.RemoveFile(@"C:\Windows\System32\inetsrv\appcmd.exe");
+
+		// Act
+		bool success = _scanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets);
+
+		// Assert
+		success.Should().BeFalse(
+			because: "missing management tooling cannot be interpreted as an empty inventory on an IIS host");
+		targets.Should().BeEmpty(because: "unverified IIS metadata must not authorize destructive cleanup");
+	}
+
+	[Test]
 	[Description("Pool discovery includes every pool assigned to the root and slash-zero applications of a selected site.")]
 	public void TryFindAppPoolsForTargets_ShouldReturnAllPoolsOwnedBySelectedRootSite() {
 		// Arrange
@@ -356,6 +413,25 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 		success.Should().BeTrue(because: "the application inventory is complete");
 		pools.Should().BeEquivalentTo(["root-pool", "webapp-pool"],
 			because: "the root and slash-zero applications can legitimately use different pools");
+	}
+
+	[Test]
+	[Description("Pool discovery includes the loader and slash-zero pools of a selected nested deployment.")]
+	public void TryFindAppPoolsForTargets_ShouldReturnClassicNestedDeploymentPools() {
+		// Arrange
+		MockAppCmd("list app /xml",
+			"<appcmd><APP APP.NAME=\"default/work\" APPPOOL.NAME=\"loader\" SITE.NAME=\"default\" />"
+			+ "<APP APP.NAME=\"default/work/0\" APPPOOL.NAME=\"webapp\" SITE.NAME=\"default\" />"
+			+ "<APP APP.NAME=\"default/other\" APPPOOL.NAME=\"foreign\" SITE.NAME=\"default\" /></appcmd>");
+
+		// Act
+		bool success = _scanner.TryFindAppPoolsForTargets(["default/work"],
+			out IReadOnlyCollection<string> pools);
+
+		// Assert
+		success.Should().BeTrue(because: "the application inventory is complete");
+		pools.Should().BeEquivalentTo(["loader", "webapp"],
+			because: "both parts of a classic nested deployment must be stopped and cleaned safely");
 	}
 
 	[Test]
@@ -395,6 +471,50 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 		// Assert
 		result.Should().Be(IisAppPoolMutationResult.Failed,
 			because: "the uninstaller must abort on mutation failure rather than treating it as shared preservation");
+	}
+
+	[Test]
+	[Description("An already-stopped site is accepted after the failed stop command is confirmed by a fresh state read.")]
+	public void TryStopIisTarget_ShouldSucceed_WhenSiteIsAlreadyStopped() {
+		// Arrange
+		MockAppCmd("list app /xml",
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>");
+		MockAppCmd("list VDIR \"work/\" /text:physicalPath", @"C:\sites\work");
+		MockAppCmd("list APP \"work/\" /text:applicationPool", "pool");
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.StartsWith("stop site"))).Returns(Task.FromResult(new ProcessExecutionResult {
+			Started = true,
+			ExitCode = 1
+		}));
+		MockAppCmd("list site \"/site.name:work\" /text:state", "Stopped");
+
+		// Act
+		bool result = _scanner.TryStopIisTarget("work", @"C:\sites\work", "pool");
+
+		// Assert
+		result.Should().BeTrue(
+			because: "an already-stopped target retains the required identity and needs no further stop mutation");
+	}
+
+	[Test]
+	[Description("An already-stopped owned application pool is accepted after a fresh state read.")]
+	public void StopAppPoolIfOwnedByTargets_ShouldSucceed_WhenPoolIsAlreadyStopped() {
+		// Arrange
+		MockAppCmd("list app /xml",
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"pool\" SITE.NAME=\"work\" /></appcmd>");
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.StartsWith("stop apppool"))).Returns(Task.FromResult(new ProcessExecutionResult {
+			Started = true,
+			ExitCode = 1
+		}));
+		MockAppCmd("list apppool \"/apppool.name:pool\" /text:state", "Stopped");
+
+		// Act
+		IisAppPoolMutationResult result = _scanner.StopAppPoolIfOwnedByTargets("pool", ["work"]);
+
+		// Assert
+		result.Should().Be(IisAppPoolMutationResult.Completed,
+			because: "an already-stopped pool is ready for guarded deletion");
 	}
 
 	[Test]

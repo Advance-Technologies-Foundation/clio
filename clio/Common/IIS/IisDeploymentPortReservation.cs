@@ -36,15 +36,20 @@ public sealed class IisDeploymentPortReservation(IAvailableIisPortService availa
 		string lockRoot = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
 			"Creatio", "clio", "deployment-locks");
-		Directory.CreateDirectory(lockRoot);
 		FileStream lockStream;
 		try {
+			Directory.CreateDirectory(lockRoot);
 			lockStream = new FileStream(Path.Combine(lockRoot, $"iis-port-{port}.lock"),
-				FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+				FileMode.OpenOrCreate, FileAccess.Read, FileShare.None);
 		}
 		catch (IOException) {
 			throw new InvalidOperationException(
 				$"IIS port {port} is already reserved by another clio deployment. Choose a different port.");
+		}
+		catch (UnauthorizedAccessException exception) {
+			throw new InvalidOperationException(
+				"Clio cannot access the machine-wide deployment lock directory. Run with an account that can read and create files under the shared Creatio clio data directory.",
+				exception);
 		}
 		try {
 			FindAvailableIisPortResult availability = _availableIisPortService.FindAsync(port, port)
@@ -52,7 +57,7 @@ public sealed class IisDeploymentPortReservation(IAvailableIisPortService availa
 			if (!string.Equals(availability.Status, "available", StringComparison.Ordinal)
 				|| availability.FirstAvailablePort != port) {
 				throw new InvalidOperationException(
-					$"IIS port {port} is not available. Choose a different port before deploying Creatio.");
+					$"IIS port {port} is not available or could not be verified. {availability.Summary}");
 			}
 
 			return lockStream;

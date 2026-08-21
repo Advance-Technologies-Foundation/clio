@@ -8,6 +8,7 @@ using Clio.Command.McpServer.Progress;
 using Clio.Common.DbHub;
 using Clio.Common.db;
 using Clio.Common.K8;
+using Clio.Common.IIS;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using Microsoft.Data.SqlClient;
@@ -112,30 +113,43 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IIisScanner _iisScanner;
 	private readonly ILogger _logger;
-	private readonly Ik8Commands _k8Commands;
 	private readonly IMssql _mssql;
 	private readonly IPostgres _postgres;
 	private readonly IStageEventEmitter _stageEventEmitter;
 	private readonly IAppPoolProfileCleaner _appPoolProfileCleaner;
 	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
+	private readonly IDeploymentTargetReservation _deploymentTargetReservation;
 
 	#endregion
 
 	#region Constructors: Public
 
+	/// <summary>Initializes the coordinated Creatio uninstall pipeline.</summary>
+	/// <param name="fileSystem">Filesystem operations used for configuration and directory cleanup.</param>
+	/// <param name="settingsRepository">Environment registration repository.</param>
+	/// <param name="iisScanner">Complete IIS inventory and guarded mutation service.</param>
+	/// <param name="logger">User-facing operation logger.</param>
+	/// <param name="k8Commands">Legacy constructor dependency retained for compatibility; destructive fallback is disabled.</param>
+	/// <param name="mssql">Microsoft SQL Server database operations.</param>
+	/// <param name="postgres">PostgreSQL database operations.</param>
+	/// <param name="stageEventEmitter">Typed progress-event emitter.</param>
+	/// <param name="appPoolProfileCleaner">Windows application-pool profile cleanup service.</param>
+	/// <param name="deploymentTargetReservation">Cross-process target-directory reservation.</param>
+	/// <param name="dbHubSynchronizationService">Optional dbHub source synchronization.</param>
 	public CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
 		IIisScanner iisScanner, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres,
 		IStageEventEmitter stageEventEmitter, IAppPoolProfileCleaner appPoolProfileCleaner,
+		IDeploymentTargetReservation deploymentTargetReservation,
 		IDbHubSynchronizationService dbHubSynchronizationService = null){
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
 		_iisScanner = iisScanner;
 		_logger = logger;
-		_k8Commands = k8Commands;
 		_mssql = mssql;
 		_postgres = postgres;
 		_stageEventEmitter = stageEventEmitter;
 		_appPoolProfileCleaner = appPoolProfileCleaner;
+		_deploymentTargetReservation = deploymentTargetReservation;
 		_dbHubSynchronizationService = dbHubSynchronizationService;
 	}
 
@@ -267,7 +281,9 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	#region Methods: Public
 
 	public void UninstallByEnvironmentName(string environmentName){
-		EnvironmentSettings settings = _settingsRepository.FindEnvironment(environmentName);
+		using IDisposable environmentReservation = AcquireUninstallReservation(
+			() => _deploymentTargetReservation.AcquireEnvironment(environmentName));
+		EnvironmentSettings settings = _settingsRepository.FindCurrentEnvironment(environmentName);
 		if (settings is null || string.IsNullOrWhiteSpace(settings.EnvironmentPath)) {
 			AbortUnresolvedTarget(
 				$"Environment '{environmentName}' is not registered with a local EnvironmentPath.");
@@ -283,7 +299,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 		// The environment name flows into the pipeline so unregister runs as the final stage and only
 		// after the destructive cleanup has succeeded (Correction C); a partial failure leaves it registered.
-		RunUninstall(resolvedPath, environmentName);
+		RunUninstall(resolvedPath, environmentName, settings.EnvironmentPath);
 	}
 
 	private void AbortUnresolvedTarget(string message) {
@@ -295,13 +311,26 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		throw new CreatioUninstallAbortedException(message);
 	}
 
+	private IDisposable AcquireUninstallReservation(Func<IDisposable> acquire) {
+		try {
+			return acquire();
+		}
+		catch (InvalidOperationException exception) {
+			_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
+				BuildUninstallManifest(includeProfileStage: false), OnStageChanged);
+			_stageEventEmitter.CompleteFailure("Uninstall target is busy", exception.Message,
+				"uninstall-target-busy");
+			throw;
+		}
+	}
+
 	public void UninstallByPath(string creatioDirectoryPath){
 		// No environment name: there is nothing to unregister, so the unregister stage is reported skipped.
 		if (!TryCanonicalizeDestructivePath(creatioDirectoryPath, out string resolvedPath)) {
 			AbortUnresolvedTarget("The specified uninstall path is unsafe or invalid.");
 			return;
 		}
-		RunUninstall(resolvedPath, environmentName: null);
+		RunUninstall(resolvedPath, environmentName: null, registeredEnvironmentPath: null);
 	}
 
 	#endregion
@@ -342,7 +371,17 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	// redaction + failure-cascade boundary: if any wrapped stage throws it emits failed + cascades the
 	// remaining stages as skipped(after-failure) + run-completed(failure) and rethrows, so unregister never
 	// runs after a partial failure (Correction C). Emission is observational: with no subscriber it is a no-op.
-	private void RunUninstall(string creatioDirectoryPath, string environmentName){
+	private void RunUninstall(string creatioDirectoryPath, string environmentName,
+		string registeredEnvironmentPath){
+		using IDisposable targetReservation = AcquireUninstallReservation(
+			() => _deploymentTargetReservation.Acquire(creatioDirectoryPath));
+		bool removeRegisteredDirectoryLink = IsDistinctRegisteredDirectoryLink(
+			registeredEnvironmentPath, creatioDirectoryPath);
+		if (!string.IsNullOrWhiteSpace(environmentName)
+			&& !_settingsRepository.EnvironmentPathMatches(environmentName, registeredEnvironmentPath)) {
+			AbortUnresolvedTarget(
+				$"Environment '{environmentName}' changed before uninstall mutation began.");
+		}
 		if (string.IsNullOrEmpty(creatioDirectoryPath) || !_fileSystem.ExistsDirectory(creatioDirectoryPath)) {
 			AbortUnresolvedTarget($"Directory '{creatioDirectoryPath}' does not exist. The uninstall target could not be resolved.");
 		}
@@ -413,6 +452,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			foreach (UnregisteredSite targetSite in targetSites) {
 				if (!_iisScanner.TryDeleteIisTarget(targetSite.siteBinding.name,
 					targetSite.siteBinding.path, targetSite.siteBinding.appPoolName)) {
+					ConvergeOrphanedPoolsAfterFailure(appPoolNames, appPoolDeleted, profileTargets);
 					throw new CreatioUninstallAbortedException(
 						$"IIS target '{targetSite.siteBinding.name}' changed or could not be removed safely.");
 				}
@@ -420,23 +460,42 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			foreach (string appPoolName in appPoolNames) {
 				IisAppPoolMutationResult result = _iisScanner.DeleteAppPoolIfUnused(appPoolName);
 				if (result == IisAppPoolMutationResult.Failed) {
+					ConvergeOrphanedPoolsAfterFailure(appPoolNames, appPoolDeleted, profileTargets);
 					throw new CreatioUninstallAbortedException(
 						$"Application pool '{appPoolName}' could not be validated or removed safely.");
 				}
 				appPoolDeleted[appPoolName] = result == IisAppPoolMutationResult.Completed;
 			}
 			if (!_iisScanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> remainingTargets)
-				|| remainingTargets.Any(site => PathsEqual(site.siteBinding.path, creatioDirectoryPath))) {
+				|| remainingTargets.Any(site => SiteUsesDeploymentPath(site, creatioDirectoryPath))) {
+				ConvergeOrphanedPoolsAfterFailure(appPoolNames, appPoolDeleted, profileTargets);
 				throw new CreatioUninstallAbortedException(
 					"IIS cleanup could not prove that every target mapped to the registered path was removed.");
 			}
 		});
 
-		_stageEventEmitter.RunStage(StageIds.DropDb, () => DropDatabase(dbInfo));
+		_stageEventEmitter.RunStage(StageIds.DropDb, () => {
+			try {
+				DropDatabase(dbInfo);
+			}
+			catch {
+				ConvergeOrphanedPoolsAfterFailure(appPoolNames, appPoolDeleted, profileTargets);
+				throw;
+			}
+		});
 
 		_stageEventEmitter.RunStage(StageIds.DeleteFiles, () => {
-			_fileSystem.DeleteDirectory(creatioDirectoryPath, true);
-			_logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
+			try {
+				_fileSystem.DeleteDirectory(creatioDirectoryPath, true);
+				if (removeRegisteredDirectoryLink) {
+					Directory.Delete(registeredEnvironmentPath);
+				}
+				_logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
+			}
+			catch {
+				ConvergeOrphanedPoolsAfterFailure(appPoolNames, appPoolDeleted, profileTargets);
+				throw;
+			}
 		});
 
 		List<AppPoolProfileCleanupResult> profileResults = [];
@@ -479,6 +538,10 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 		DbHubWarning dbHubWarning = null;
 		if (synchronizeDbHub) {
+			if (!_settingsRepository.EnvironmentPathMatches(environmentName, registeredEnvironmentPath)) {
+				throw new CreatioUninstallAbortedException(
+					$"Environment '{environmentName}' changed while uninstall was running; its dbHub source and registration were preserved.");
+			}
 			DbHubSyncResult dbHubResult = _dbHubSynchronizationService.RemoveEnvironmentSource(environmentName);
 			dbHubWarning = dbHubResult.Warning;
 			if (dbHubWarning is not null) {
@@ -501,7 +564,11 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		// succeeded. Without an environment name there is nothing registered to remove.
 		if (hasEnvironment) {
 			_stageEventEmitter.RunStage(StageIds.Unregister, () => {
-				_settingsRepository.RemoveEnvironment(environmentName);
+				if (!_settingsRepository.RemoveEnvironmentIfPathMatches(environmentName,
+					registeredEnvironmentPath)) {
+					throw new CreatioUninstallAbortedException(
+						$"Environment '{environmentName}' changed while uninstall was running and was not unregistered.");
+				}
 				_logger.WriteInfo($"Unregisted {environmentName} from clio");
 			});
 		}
@@ -538,19 +605,82 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		}
 	}
 
+	private static bool IsDistinctRegisteredDirectoryLink(string registeredPath, string canonicalPath) {
+		if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(registeredPath)) {
+			return false;
+		}
+		try {
+			string lexicalPath = Path.GetFullPath(registeredPath).TrimEnd(
+				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			return !string.Equals(lexicalPath, canonicalPath, StringComparison.OrdinalIgnoreCase)
+				&& File.GetAttributes(lexicalPath).HasFlag(FileAttributes.ReparsePoint)
+				&& PathsEqual(lexicalPath, canonicalPath);
+		}
+		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+			or PathTooLongException or IOException or UnauthorizedAccessException) {
+			return false;
+		}
+	}
+
+	private void ConvergeOrphanedPoolsAfterFailure(IEnumerable<string> appPoolNames,
+		IDictionary<string, bool> appPoolDeleted,
+		IReadOnlyDictionary<string, AppPoolProfileCleanupTarget> profileTargets) {
+		foreach (string appPoolName in appPoolNames) {
+			try {
+				if (!appPoolDeleted[appPoolName]) {
+					appPoolDeleted[appPoolName] = _iisScanner.DeleteAppPoolIfUnused(appPoolName)
+						== IisAppPoolMutationResult.Completed;
+				}
+				if (appPoolDeleted[appPoolName] && _iisScanner.IsAppPoolAbsent(appPoolName)) {
+					_appPoolProfileCleaner.TryDelete(profileTargets[appPoolName]);
+				}
+			}
+			// Cleanup is best effort on an already-failing path. Never replace the primary failure or
+			// prevent convergence of the remaining pools with a secondary scanner/profile exception.
+			catch (Exception exception) {
+				_logger.WriteWarning(
+					$"Best-effort cleanup of orphaned application pool '{appPoolName}' failed: {exception.Message}");
+			}
+		}
+	}
+
 	private IReadOnlyList<UnregisteredSite> ResolveSites(string creatioDirectoryPath){
 		if (!_iisScanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets)) {
 			AbortUnresolvedTarget("The IIS target inventory could not be read completely.");
 		}
 		UnregisteredSite[] matchingTargets = targets
-			.Where(site => PathsEqual(site.siteBinding.path, creatioDirectoryPath))
+			.Where(site => SiteUsesDeploymentPath(site, creatioDirectoryPath))
 			.ToArray();
 		return matchingTargets
-			.Where(candidate => !candidate.siteBinding.name.Contains('/')
-				|| !matchingTargets.Any(root => !root.siteBinding.name.Contains('/')
-					&& candidate.siteBinding.name.StartsWith(root.siteBinding.name + "/",
-						StringComparison.OrdinalIgnoreCase)))
+			.Where(candidate => !matchingTargets.Any(parent => !parent.siteBinding.name.Contains('/')
+				&& candidate.siteBinding.name.StartsWith(parent.siteBinding.name + "/",
+					StringComparison.OrdinalIgnoreCase)))
+			.OrderByDescending(candidate => candidate.siteBinding.name.Count(character => character == '/'))
 			.ToArray();
+	}
+
+	internal static bool SiteUsesDeploymentPath(UnregisteredSite site, string canonicalDeploymentPath) {
+		if (site?.siteBinding is null) {
+			return false;
+		}
+		if (PathsEqual(site.siteBinding.path, canonicalDeploymentPath)) {
+			return true;
+		}
+		if (!site.siteBinding.name.EndsWith("/0", StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		try {
+			string physicalPath = Path.GetFullPath(
+				Environment.ExpandEnvironmentVariables(site.siteBinding.path))
+				.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			return string.Equals(Path.GetFileName(physicalPath), "Terrasoft.WebApp",
+				StringComparison.OrdinalIgnoreCase)
+				&& PathsEqual(Path.GetDirectoryName(physicalPath), canonicalDeploymentPath);
+		}
+		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+			or PathTooLongException) {
+			return false;
+		}
 	}
 
 	private static bool TryCanonicalizeDestructivePath(string path, out string canonicalPath) {
@@ -559,19 +689,17 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			return false;
 		}
 		try {
-			string expandedPath = Environment.ExpandEnvironmentVariables(path);
-			if (!Path.IsPathFullyQualified(expandedPath)) {
+			if (!Path.IsPathFullyQualified(path)) {
 				return false;
 			}
-			canonicalPath = Path.GetFullPath(expandedPath).TrimEnd(
-				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-			string root = Path.GetPathRoot(canonicalPath)?.TrimEnd(
-				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			canonicalPath = DirectoryPathIdentity.Normalize(path);
+			string rawRoot = Path.GetPathRoot(canonicalPath);
+			string root = string.IsNullOrWhiteSpace(rawRoot) ? null : DirectoryPathIdentity.Normalize(rawRoot);
 			return !string.IsNullOrWhiteSpace(canonicalPath)
 				&& !string.Equals(canonicalPath, root, StringComparison.OrdinalIgnoreCase);
 		}
 		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
-			or PathTooLongException) {
+			or PathTooLongException or InvalidOperationException) {
 			return false;
 		}
 	}
@@ -581,50 +709,38 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			return false;
 		}
 		try {
-			string normalizedFirst = Path.GetFullPath(Environment.ExpandEnvironmentVariables(firstPath)).TrimEnd(
-				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-			string normalizedSecond = Path.GetFullPath(Environment.ExpandEnvironmentVariables(secondPath)).TrimEnd(
-				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			string normalizedFirst = DirectoryPathIdentity.Normalize(firstPath, expandEnvironmentVariables: true);
+			string normalizedSecond = DirectoryPathIdentity.Normalize(secondPath, expandEnvironmentVariables: true);
 			return string.Equals(normalizedFirst, normalizedSecond, StringComparison.OrdinalIgnoreCase);
 		}
 		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
-			or PathTooLongException) {
+			or PathTooLongException or InvalidOperationException) {
 			return false;
 		}
 	}
 
 	private void DropDatabase(DbInfo info){
-		// Try to parse local connection string first, fallback to K8s if parsing fails
-		k8Commands.ConnectionStringParams cn;
+		// ConnectionStrings.config is the destructive authority. Never redirect a malformed
+		// local configuration to Kubernetes or another default database server.
+		k8Commands.ConnectionStringParams cn = ParseConnectionStringToParams(info.ConnectionString, info.DbType);
 		string host;
-		try {
-			cn = ParseConnectionStringToParams(info.ConnectionString, info.DbType);
-			_logger.WriteInfo("Using local database connection from ConnectionStrings.config");
+		_logger.WriteInfo("Using database connection from ConnectionStrings.config");
 
-			// Extract host from connection string for Init call
-			if (info.DbType == "PostgreSql") {
-				NpgsqlConnectionStringBuilder builder = new(info.ConnectionString);
-				host = builder.Host ?? "localhost";
+		// Extract host from connection string for Init call
+		if (info.DbType == "PostgreSql") {
+			NpgsqlConnectionStringBuilder builder = new(info.ConnectionString);
+			host = builder.Host ?? "localhost";
+		} else {
+			SqlConnectionStringBuilder builder = new(info.ConnectionString);
+			string dataSource = builder.DataSource ?? "localhost";
+			// Extract just the host part (before comma or backslash for named instances)
+			if (dataSource.Contains(',')) {
+				host = dataSource.Split(',')[0];
+			} else if (dataSource.Contains('\\')) {
+				host = dataSource; // Keep full instance name
 			} else {
-				SqlConnectionStringBuilder builder = new(info.ConnectionString);
-				string dataSource = builder.DataSource ?? "localhost";
-				// Extract just the host part (before comma or backslash for named instances)
-				if (dataSource.Contains(',')) {
-					host = dataSource.Split(',')[0];
-				} else if (dataSource.Contains('\\')) {
-					host = dataSource; // Keep full instance name
-				} else {
-					host = dataSource;
-				}
+				host = dataSource;
 			}
-		} catch (Exception ex) {
-			_logger.WriteWarning($"Failed to parse connection string, falling back to K8s: {ex.Message}");
-			cn = info.DbType switch {
-				"MsSql" => _k8Commands.GetMssqlConnectionString(),
-				"PostgreSql" => _k8Commands.GetPostgresConnectionString(),
-				var _ => throw new ArgumentException($"Unknown db type: {info.DbType}")
-			};
-			host = BindingsModule.k8sDns;
 		}
 
 		if(info.DbType == "MsSql") {
@@ -633,7 +749,10 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			_logger.WriteInfo($"MsSQL DB: {info.DbName} dropped");
 		} else {
 			_postgres.Init(host, cn.DbPort, cn.DbUsername, cn.DbPassword);
-			_postgres.DropDb(info.DbName);
+			if (!_postgres.DropDb(info.DbName)) {
+				throw new CreatioUninstallAbortedException(
+					$"Postgres database '{info.DbName}' could not be dropped. Files and environment registration were preserved.");
+			}
 			_logger.WriteInfo($"Postgres DB: {info.DbName} dropped");
 		}
 	}

@@ -139,6 +139,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly IStageEventEmitter _stageEventEmitter;
 	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
 	private readonly IIisDeploymentPortReservation _iisDeploymentPortReservation;
+	private readonly IDeploymentTargetReservation _deploymentTargetReservation;
 
 	#endregion
 
@@ -167,6 +168,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
 	/// <param name="stageEventEmitter">Emitter that raises typed stage-progress events for the deploy run.</param>
 	/// <param name="iisDeploymentPortReservation">Machine-wide IIS port reservation held across deployment mutation.</param>
+	/// <param name="deploymentTargetReservation">Cross-process target-directory reservation held across deployment mutation.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
 	/// <param name="dbHubSynchronizationService">Best-effort dbHub source synchronization service.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
@@ -183,6 +185,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		IPasswordResetScriptExecutor passwordResetScriptExecutor,
 		IStageEventEmitter stageEventEmitter,
 		IIisDeploymentPortReservation iisDeploymentPortReservation,
+		IDeploymentTargetReservation deploymentTargetReservation,
 		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null,
 		IDbHubSynchronizationService dbHubSynchronizationService = null) {
 		_packageArchiver = packageArchiver;
@@ -210,6 +213,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_passwordResetScriptExecutor = passwordResetScriptExecutor;
 		_stageEventEmitter = stageEventEmitter;
 		_iisDeploymentPortReservation = iisDeploymentPortReservation;
+		_deploymentTargetReservation = deploymentTargetReservation;
 		_dbHubSynchronizationService = dbHubSynchronizationService;
 		_dbOperationLogContextAccessor = dbOperationLogContextAccessor ?? NullDbOperationLogContextAccessor.Instance;
 	}
@@ -453,15 +457,49 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 				throw new InvalidOperationException("IIS root folder must be configured for IIS deployment");
 			}
 
-			return _msFileSystem.Path.Combine(_iisRootFolder, options.SiteName);
+			if (!IisSiteName.IsSafeLeaf(options.SiteName)) {
+				throw new InvalidOperationException(
+					"IIS site name must be a single safe name without path separators, dot segments, quotes, or control characters.");
+			}
+			return ResolveStrictChildPath(_iisRootFolder, options.SiteName, "IIS");
 		}
 
 		// DotNet deployment uses the current directory or specified AppPath
 		if (!string.IsNullOrEmpty(options.AppPath)) {
-			return options.AppPath;
+			if (!Path.IsPathFullyQualified(options.AppPath)) {
+				throw new InvalidOperationException("Application installation path must be absolute.");
+			}
+			string targetPath = DirectoryPathIdentity.Normalize(options.AppPath);
+			string root = Path.GetPathRoot(targetPath);
+			if (string.Equals(targetPath, root, OperatingSystem.IsWindows()
+				? StringComparison.OrdinalIgnoreCase
+				: StringComparison.Ordinal)) {
+				throw new InvalidOperationException("Application installation path must not be a filesystem root.");
+			}
+			return targetPath;
 		}
 
-		return _msFileSystem.Path.Combine(_msFileSystem.Directory.GetCurrentDirectory(), options.SiteName);
+		if (!IisSiteName.IsSafeLeaf(options.SiteName)) {
+			throw new InvalidOperationException(
+				"Site name must be a single safe name when application path is not specified.");
+		}
+		return ResolveStrictChildPath(_msFileSystem.Directory.GetCurrentDirectory(), options.SiteName, ".NET");
+	}
+
+	private string ResolveStrictChildPath(string rootPath, string siteName, string deploymentKind) {
+		string canonicalRoot = DirectoryPathIdentity.Normalize(rootPath);
+		string targetPath = DirectoryPathIdentity.Normalize(
+			_msFileSystem.Path.Combine(canonicalRoot, siteName));
+		string rootPrefix = canonicalRoot.TrimEnd(Path.DirectorySeparatorChar,
+			Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+		StringComparison comparison = OperatingSystem.IsWindows()
+			? StringComparison.OrdinalIgnoreCase
+			: StringComparison.Ordinal;
+		if (!targetPath.StartsWith(rootPrefix, comparison)) {
+			throw new InvalidOperationException(
+				$"{deploymentKind} deployment target must remain inside its configured root.");
+		}
+		return targetPath;
 	}
 
 	private int DoMsWork(string unzippedDirectoryPath, string siteName) {
@@ -1452,15 +1490,23 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// subscriber attached the raising is a no-op and deploy behavior is unchanged.
 		bool isNetworkSource = IsNetworkDriveSource(options.ZipFile);
 		bool synchronizeDbHub = _dbHubSynchronizationService?.IsAutomaticSynchronizationEnabled() == true;
+		string deploymentFolder = DirectoryPathIdentity.Normalize(DetermineFolderPath(options));
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Deploy,
 			BuildDeployManifest(synchronizeDbHub), OnStageChanged);
 		try {
+		using IDisposable environmentReservation = _deploymentTargetReservation.AcquireEnvironment(options.SiteName);
+		using IDisposable targetReservation = _deploymentTargetReservation.Acquire(deploymentFolder);
+		if (strategy is IISDeploymentStrategy iisDeploymentStrategy) {
+			// A clean host may not expose IIS inventory until clio installs the required Windows
+			// features. Hold the name and target leases while preparing it, then validate the port.
+			iisDeploymentStrategy.PrepareHost();
+		}
 		using IDisposable portReservation = isIisDeployment
 			? _iisDeploymentPortReservation.Acquire(options.SitePort)
 			: null;
 
-		// The IIS port reservation is held before the first target mutation and remains held until this
-		// deployment either owns the IIS binding or has failed. Different ports can still deploy in parallel.
+		// Target and IIS-port reservations are held before the first deployment mutation and remain held
+		// through registration. Deployments to independent target paths and ports can still run in parallel.
 		if (isIisDeployment && !_msFileSystem.Directory.Exists(_iisRootFolder)) {
 			_msFileSystem.Directory.CreateDirectory(_iisRootFolder);
 		}
@@ -1475,8 +1521,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
 			_stageEventEmitter.SkipStage(StageIds.StageBuild, ClioStageEventContract.SkipReasons.NotApplicable);
 		}
-
-		string deploymentFolder = DetermineFolderPath(options);
 
 		string unzippedDirectoryPath = null;
 		_stageEventEmitter.RunStage(StageIds.Unzip,

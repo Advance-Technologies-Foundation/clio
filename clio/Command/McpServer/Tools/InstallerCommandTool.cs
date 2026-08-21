@@ -48,7 +48,8 @@ public class InstallerCommandTool(
 				 `show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.
 				 For an IIS deployment, clio reserves and revalidates `sitePort` across concurrent clio
 				 processes before changing files, databases, or IIS. A collision fails the deployment;
-				 deployments on different ports can proceed in parallel.
+				 deploy and uninstall are also serialized by environment name and physical target directory.
+				 Deployments on different names, ports, and target directories can proceed in parallel.
 				 Deployment preserves the build database's existing forced-password-change state and does not
 				 clear it automatically.
 				 For local IIS, `useHttps` prefers a matching usable LocalMachine/My certificate and falls back

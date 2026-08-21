@@ -6,6 +6,7 @@ using Clio.Command;
 using Clio.Common;
 using Clio.Common.IIS;
 using Clio.Common.ScenarioHandlers;
+using Clio.Requests;
 using Clio.Tests.Command;
 using FluentAssertions;
 using FluentValidation;
@@ -20,6 +21,7 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 	private IProcessExecutor _processExecutor;
 	private INetFrameworkHttpsConfigurator _httpsConfigurator;
 	private IIisCertificateBindingService _certificateBindingService;
+	private IIisScanner _iisScanner;
 	private ICreateIISSiteHandler _handler;
 	private string _deploymentRoot;
 
@@ -28,6 +30,15 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 		_processExecutor = Substitute.For<IProcessExecutor>();
 		_httpsConfigurator = Substitute.For<INetFrameworkHttpsConfigurator>();
 		_certificateBindingService = Substitute.For<IIisCertificateBindingService>();
+		_iisScanner = Substitute.For<IIisScanner>();
+		_iisScanner.TryFindAllIisTargets(out Arg.Any<IReadOnlyList<UnregisteredSite>>())
+			.Returns(call => {
+				call[0] = Array.Empty<UnregisteredSite>();
+				return true;
+			});
+		_iisScanner.IsAppPoolAbsent(Arg.Any<string>()).Returns(true);
+		_iisScanner.DeleteAppPoolIfUnused(Arg.Any<string>()).Returns(IisAppPoolMutationResult.Completed);
+		_iisScanner.TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 		_processExecutor.Execute(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>()).Returns("ok");
 		_processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
 			Task.FromResult(new ProcessExecutionResult {
@@ -38,6 +49,7 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 		containerBuilder.AddSingleton(_processExecutor);
 		containerBuilder.AddSingleton(_httpsConfigurator);
 		containerBuilder.AddSingleton(_certificateBindingService);
+		containerBuilder.AddSingleton(_iisScanner);
 	}
 
 	public override void Setup() {
@@ -144,6 +156,32 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 		await act.Should().ThrowAsync<InvalidOperationException>(
 			because: "a losing IIS mutation must return a non-successful CLI and MCP result");
 		_certificateBindingService.DidNotReceive().Attach(Arg.Any<string>(), Arg.Any<string>());
+		_iisScanner.Received(1).DeleteAppPoolIfUnused("handler-site");
+		_iisScanner.DidNotReceive().TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Fails and rolls back the created site and pool when required AppCmd completion is timed out.")]
+	public async Task Handle_ShouldRollbackSiteAndPool_WhenClassicApplicationCreationTimesOut() {
+		// Arrange
+		CreateIISSiteRequest request = CreateRequest("http", isNetFramework: true,
+			certificateThumbprint: string.Empty);
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(call => {
+			ProcessExecutionOptions options = call.Arg<ProcessExecutionOptions>();
+			return Task.FromResult(options.Arguments.StartsWith("add app ", StringComparison.Ordinal)
+				? new ProcessExecutionResult { Started = true, ExitCode = 0, TimedOut = true }
+				: new ProcessExecutionResult { Started = true, ExitCode = 0, StandardOutput = "ok" });
+		});
+
+		// Act
+		Func<Task> act = async () => await _handler.Handle(request);
+
+		// Assert
+		await act.Should().ThrowAsync<InvalidOperationException>(
+			because: "a timed-out required AppCmd mutation does not prove that IIS creation completed");
+		_iisScanner.Received(1).TryDeleteIisTarget("handler-site",
+			Path.Combine(_deploymentRoot, "handler-site"), "handler-site");
+		_iisScanner.Received(1).DeleteAppPoolIfUnused("handler-site");
 	}
 
 	[Test]

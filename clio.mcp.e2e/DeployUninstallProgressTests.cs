@@ -128,6 +128,8 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			Assert.Ignore("IIS deployment and its machine-wide port reservation are Windows-specific.");
 		}
 		await using ArrangeContext arrangeContext = Arrange();
+		arrangeContext.Session.StartCapturingProgressNotifications();
+		ProgressToken progressToken = new($"clio-mcp-e2e-{Guid.NewGuid():N}");
 		using TcpListener listener = new(IPAddress.Loopback, 0);
 		listener.Start();
 		int occupiedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -138,7 +140,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 
 		try {
 			// Act
-			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			CallToolResult callResult = await arrangeContext.Session.CallToolWithRawProgressAsync(
 				ToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
@@ -148,7 +150,8 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 						["dbServerName"] = "e2e-unused-before-port-rejection"
 					}
 				},
-				cancellationToken: arrangeContext.CancellationTokenSource.Token);
+				progressToken,
+				arrangeContext.CancellationTokenSource.Token);
 
 			// Assert
 			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -159,6 +162,16 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 				because: "the caller needs an actionable collision instead of a later IIS error");
 			Directory.Exists(Path.Combine(_iisRoot, siteName)).Should().BeFalse(
 				because: "port validation must complete before unzip, database, file, or IIS mutation");
+			IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
+				progressToken,
+				HasCompleteTerminalStream,
+				TimeSpan.FromSeconds(30),
+				arrangeContext.CancellationTokenSource.Token);
+			IReadOnlyList<ClioStageEvent> events = ExtractStageEvents(rawParams);
+			events[0].EventType.Should().Be(ClioStageEventContract.EventTypes.Manifest,
+				because: "pre-mutation port collisions must still publish the deploy manifest");
+			events[^1].RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+				because: "the occupied port must terminate the typed progress stream as failure");
 		}
 		finally {
 			File.Delete(corruptZipFile);

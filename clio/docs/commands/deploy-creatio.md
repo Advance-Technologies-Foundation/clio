@@ -22,8 +22,14 @@ For IIS deployments, clio reserves the requested port across concurrent clio
 processes before extracting files, restoring the database, or creating IIS
 objects. The command also checks existing IIS bindings and active listeners.
 If the port is already used or another clio deployment has reserved it, the
-deployment fails before changing the target. Deployments using different ports
-can still run in parallel.
+deployment fails before changing the target. Clio also serializes deploy and
+uninstall operations that use the same environment name or resolve to the same
+physical target directory. Deployments using different names, ports, and target
+directories can still run in parallel.
+On a clean Windows host, clio prepares required IIS features while holding the
+name and target reservations, then performs the IIS/TCP port validation.
+Site names must be safe single directory names. An explicit `--app-path` must be an
+absolute non-root path; Win32-ambiguous path components are rejected.
 
 When `--site-name` and the configured `deploy-site-name` default are both
 omitted, interactive deployment prompts for the site name. The Windows Explorer
