@@ -161,14 +161,14 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Deserializes a Send email element's email configuration (mode, sender, subject, hasBody, importance, ignoreErrors, recipients, manual-mode performer) from the server response into the DescribedEmail DTO, so describe read-back surfaces the email block instead of dropping it.")]
+	[Description("Deserializes a Send email element's email configuration (mode, sender, subject, hasBody, the decoded body, importance, ignoreErrors, recipients, manual-mode performer) from the server response into the DescribedEmail DTO, so describe read-back surfaces the email block instead of dropping it.")]
 	public void Describe_ShouldReadSendEmailConfiguration_WhenServerReportsIt() {
 		// Arrange — the shape a runtime-verified CrtProcessBuilder DescribeProcess returns for a configured element
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
 			+ "\"email\":{\"mode\":\"manual\",\"sender\":\"[#Lookup.5e487721-02e2-48ee-b755-dfa5160f5315.11111111-2222-3333-4444-555555555555#]\",\"senderDisplay\":\"sales@example.com\","
-			+ "\"subject\":\"After modify\",\"hasBody\":true,\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"subject\":\"After modify\",\"hasBody\":true,\"body\":\"<p>Hi [[param:ContactName]]</p>\",\"importance\":\"high\",\"ignoreErrors\":true,"
 			+ "\"to\":[{\"name\":\"Recipient1\",\"uid\":\"p1\",\"type\":\"MaxSizeText\",\"source\":\"ConstValue\",\"value\":\"to@example.com\"}],"
 			+ "\"performer\":{\"type\":\"role\",\"role\":\"[#Lookup.84f44b9a-4bc3-4cbf-a1a8-cec02c1c029c.a29a3ba5-4b0d-de11-9a51-005056c00008#]\",\"roleDisplay\":\"All employees\",\"showPage\":true}}}],"
 			+ "\"flows\":[],\"parameters\":[]}}");
@@ -186,7 +186,10 @@ public sealed class ServerProcessDescriberTests {
 			because: "senderDisplay carries the human-readable mailbox identity alongside the sender formula");
 		email.Subject.Should().Be("After modify", because: "the subject constant survives the read-back");
 		email.HasBody.Should().BeTrue(
-			because: "hasBody flags a custom-message body without echoing the HTML itself");
+			because: "hasBody flags that a custom-message body is present on the element");
+		email.Body.Should().Be("<p>Hi [[param:ContactName]]</p>",
+			because: "the body field carries the decoded HTML (process-macro tokens back in [[param:…]] author form), "
+				+ "so a dropped [JsonPropertyName(\"body\")] or a rename would surface here rather than silently");
 		email.Importance.Should().Be("high", because: "the importance token maps to the DTO");
 		email.IgnoreErrors.Should().BeTrue(because: "the ignore-sending-errors flag maps to the DTO");
 		email.To.Should().ContainSingle(because: "the recipient list must survive read-back")
