@@ -76,7 +76,8 @@ public class ContainerRegistryPreflightServiceTests {
 		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
 		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
 		using HttpClient httpClient = new(new StubHttpMessageHandler([
-			new StubResponse(HttpMethod.Get, "https://registry.krylov.cloud/v2/", new HttpRequestException("Connection refused")),
+			new StubResponse(HttpMethod.Get, "https://registry.krylov.cloud/v2/",
+				new HttpRequestException(HttpRequestError.ConnectionError, "Connection refused")),
 			new StubResponse(HttpMethod.Get, "http://registry.krylov.cloud/v2/", new HttpResponseMessage(HttpStatusCode.OK)),
 			new StubResponse(HttpMethod.Post, "http://registry.krylov.cloud/v2/creatio-prod/blobs/uploads/",
 				new HttpResponseMessage(HttpStatusCode.Accepted)),
@@ -102,7 +103,8 @@ public class ContainerRegistryPreflightServiceTests {
 		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
 		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
 		using HttpClient httpClient = new(new StubHttpMessageHandler([
-			new StubResponse(HttpMethod.Get, "https://registry.krylov.cloud/v2/", new HttpRequestException("Connection refused"))
+			new StubResponse(HttpMethod.Get, "https://registry.krylov.cloud/v2/",
+				new HttpRequestException(HttpRequestError.ConnectionError, "Connection refused"))
 		]));
 		ContainerRegistryPreflightService service = new(httpClient, credentialProvider);
 
@@ -142,11 +144,29 @@ public class ContainerRegistryPreflightServiceTests {
 			"because the preflight should reuse locally configured registry credentials when the CLI already knows how to authenticate");
 	}
 
-	[TestCase(false)]
-	[TestCase(true)]
-	[Description("ValidatePushTarget should probe only the endpoint implied by an already-absolute registry prefix's explicit scheme, regardless of the allowInsecureRegistry flag.")]
-	public void ValidatePushTarget_ShouldUseExplicitSchemeEndpointOnly_RegardlessOfAllowInsecureRegistry(
-		bool allowInsecureRegistry) {
+	[Test]
+	[Description("ValidatePushTarget should reject an explicit http:// registry prefix when allowInsecureRegistry is left at its default of false, with a message mentioning the opt-in flag.")]
+	public void ValidatePushTarget_ShouldRejectExplicitHttpScheme_WhenAllowInsecureRegistryIsDefault() {
+		// Arrange
+		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
+		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
+		using HttpClient httpClient = new(new StubHttpMessageHandler([]));
+		ContainerRegistryPreflightService service = new(httpClient, credentialProvider);
+
+		// Act
+		ContainerRegistryPreflightResult result =
+			service.ValidatePushTarget("http://myregistry:5000", "myregistry:5000/repo:1.0.0");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			"because an explicit http:// scheme must not be probed without the --allow-insecure-registry opt-in, for consistency with the bare-authority fallback case");
+		result.Message.Should().Contain("--allow-insecure-registry",
+			"because the failure message should tell the operator how to opt in if the registry is intentionally HTTP-only");
+	}
+
+	[Test]
+	[Description("ValidatePushTarget should probe an explicit http:// registry prefix when allowInsecureRegistry is set to true.")]
+	public void ValidatePushTarget_ShouldProbeExplicitHttpScheme_WhenAllowInsecureRegistryIsTrue() {
 		// Arrange
 		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
 		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
@@ -159,13 +179,61 @@ public class ContainerRegistryPreflightServiceTests {
 
 		// Act
 		ContainerRegistryPreflightResult result =
-			service.ValidatePushTarget("http://myregistry:5000", "myregistry:5000/repo:1.0.0", allowInsecureRegistry);
+			service.ValidatePushTarget("http://myregistry:5000", "myregistry:5000/repo:1.0.0", allowInsecureRegistry: true);
 
 		// Assert
 		result.Success.Should().BeTrue(
-			"because an explicit http scheme in the registry prefix is honored as-is, independent of the allowInsecureRegistry opt-in");
+			"because an explicit http scheme is probed once the caller opts in with --allow-insecure-registry");
 		result.Endpoint.Should().Be("http://myregistry:5000/",
 			"because the early-return absolute-prefix branch probes exactly the scheme and authority the caller specified, with no https-first attempt and no additional candidate");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("ValidatePushTarget should always honor an explicit https:// registry prefix, independent of the allowInsecureRegistry flag, because that scheme is already secure.")]
+	public void ValidatePushTarget_ShouldProbeExplicitHttpsScheme_RegardlessOfAllowInsecureRegistry(
+		bool allowInsecureRegistry) {
+		// Arrange
+		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
+		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
+		using HttpClient httpClient = new(new StubHttpMessageHandler([
+			new StubResponse(HttpMethod.Get, "https://myregistry:5000/v2/", new HttpResponseMessage(HttpStatusCode.OK)),
+			new StubResponse(HttpMethod.Post, "https://myregistry:5000/v2/repo/blobs/uploads/",
+				new HttpResponseMessage(HttpStatusCode.Accepted))
+		]));
+		ContainerRegistryPreflightService service = new(httpClient, credentialProvider);
+
+		// Act
+		ContainerRegistryPreflightResult result =
+			service.ValidatePushTarget("https://myregistry:5000", "myregistry:5000/repo:1.0.0", allowInsecureRegistry);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			"because an explicit https scheme in the registry prefix is already secure and is honored as-is, independent of the allowInsecureRegistry opt-in");
+		result.Endpoint.Should().Be("https://myregistry:5000/",
+			"because the early-return absolute-prefix branch probes exactly the scheme and authority the caller specified, with no additional candidate");
+	}
+
+	[Test]
+	[Description("ValidatePushTarget should not mention --allow-insecure-registry for a bare-authority registry prefix when the probe failure is an unrelated HTTP error response rather than evidence of a missing HTTPS listener.")]
+	public void ValidatePushTarget_ShouldNotMentionFlag_WhenBareAuthorityProbeFailsWithUnrelatedHttpError() {
+		// Arrange
+		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
+		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
+		using HttpClient httpClient = new(new StubHttpMessageHandler([
+			new StubResponse(HttpMethod.Get, "https://registry.krylov.cloud/v2/", new HttpResponseMessage(HttpStatusCode.NotFound))
+		]));
+		ContainerRegistryPreflightService service = new(httpClient, credentialProvider);
+
+		// Act
+		ContainerRegistryPreflightResult result =
+			service.ValidatePushTarget("registry.krylov.cloud", "registry.krylov.cloud/creatio-prod:1.0.0");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			"because a 404 response from GET /v2/ does not confirm registry API availability");
+		result.Message.Should().NotContain("--allow-insecure-registry",
+			"because a generic HTTP error response is not evidence of a missing HTTPS listener, so suggesting the insecure opt-in would be misleading");
 	}
 
 	private sealed record StubResponse(HttpMethod Method, string Uri, object Result);

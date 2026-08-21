@@ -64,7 +64,7 @@ public class BuildDockerImageOptions {
 	/// Gets or sets a value indicating whether the registry push preflight may fall back to plaintext HTTP.
 	/// </summary>
 	[Option("allow-insecure-registry", Required = false, Default = false,
-		HelpText = "Allow falling back to a plaintext HTTP connection when probing a container registry that has no explicit scheme and does not respond over HTTPS. Off by default.")]
+		HelpText = "Required opt-in for any plaintext HTTP registry probing: allows falling back to HTTP when the registry prefix has no explicit scheme and does not respond over HTTPS, and allows probing an explicitly specified http:// prefix. Off by default.")]
 	public bool AllowInsecureRegistry { get; set; }
 }
 
