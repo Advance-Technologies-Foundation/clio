@@ -102,6 +102,142 @@ public class CallServiceCommandVariableSubstitutionTests : BaseCommandTests<Call
 			.ExecutePostRequest("http://host/svc", "{\"user\":\"John\"}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("Verifies a purely numeric variable name is treated as a literal placeholder rather than a regex quantifier ({{10}} must not be parsed as a {10} repeat count)")]
+	public void Execute_ShouldSubstituteVariable_WhenNameIsPurelyNumeric() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			RequestBody = "{\"user\":\"{{10}}\",\"noise\":\"{{{{{{{{{{\"}",
+			Variables = ["10=John"]
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient
+			.Received(1)
+			.ExecutePostRequest(
+				"http://host/svc",
+				"{\"user\":\"John\",\"noise\":\"{{{{{{{{{{\"}",
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Verifies a variable name of '3' does not collide with an unrelated run of literal braces elsewhere in the body when combined with the un-escaped {{ }} delimiters")]
+	public void Execute_ShouldSubstituteVariable_WhenNameIsSingleDigit() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			RequestBody = "{\"user\":\"{{3}}\"}",
+			Variables = ["3=John"]
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient
+			.Received(1)
+			.ExecutePostRequest("http://host/svc", "{\"user\":\"John\"}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Verifies a variable name of '1,2' (a valid regex quantifier range when unescaped) is treated as a literal placeholder")]
+	public void Execute_ShouldSubstituteVariable_WhenNameIsQuantifierRange() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			RequestBody = "{\"user\":\"{{1,2}}\"}",
+			Variables = ["1,2=John"]
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient
+			.Received(1)
+			.ExecutePostRequest("http://host/svc", "{\"user\":\"John\"}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Verifies a variable name that itself contains literal '{{'/'}}' characters is matched as one escaped literal token, not split into separate delimiter/name matches")]
+	public void Execute_ShouldSubstituteVariable_WhenNameContainsBraceDelimiters() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			RequestBody = "{\"user\":\"{{na}}me}}\"}",
+			Variables = ["na}}me=John"]
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient
+			.Received(1)
+			.ExecutePostRequest("http://host/svc", "{\"user\":\"John\"}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Verifies a substituted value containing regex replacement syntax ($&, $1) is inserted literally instead of re-inserting the matched text")]
+	public void Execute_ShouldSubstituteValueLiterally_WhenValueContainsRegexReplacementSyntax() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			RequestBody = "{\"user\":\"{{name}}\"}",
+			Variables = ["name=a$&b$1c"]
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient
+			.Received(1)
+			.ExecutePostRequest(
+				"http://host/svc",
+				"{\"user\":\"a$&b$1c\"}",
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	#endregion
 
 }
