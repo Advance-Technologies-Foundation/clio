@@ -149,6 +149,32 @@ public class ScenarioRunnerEnvironmentRefreshTests : BaseCommandTests<ScenarioRu
 	}
 
 	[Test]
+	[Description("Uses the CLI bootstrap fallback when an optional consumer names an environment that is not registered yet.")]
+	public void Execute_ShouldDispatchOptionalConsumerWhenNamedEnvironmentIsMissing() {
+		// Arrange
+		_settingsRepository.Reload().Returns(new SettingsReloadResult(true, null, null));
+		_settingsRepository.FindEnvironment("fresh-environment").Returns((EnvironmentSettings)null);
+		List<object> receivedOptions = [];
+		Program.ExecuteCommandWithOption = option => {
+			receivedOptions.Add(option);
+			return 0;
+		};
+
+		// Act
+		int result = _sut.Execute(new ScenarioRunnerOptions {
+			FileName = "YAML/Script/deploy_then_link_repository.yaml"
+		});
+
+		// Assert
+		result.Should().Be(0,
+			because: "optional environment consumers should retain the same offline fallback as direct CLI dispatch");
+		receivedOptions.Should().Contain(option => option is Link4RepoOptions,
+			because: "l4r can run in its local mode before the named environment is registered");
+		Program.Container.GetRequiredService<EnvironmentSettings>().Login.Should().Be("default",
+			because: "the established CLI fallback uses bootstrap settings for optional commands");
+	}
+
+	[Test]
 	[Description("Applies the scenario-level environment to a step that omits its own target.")]
 	public void Execute_ShouldInheritScenarioEnvironment() {
 		// Arrange

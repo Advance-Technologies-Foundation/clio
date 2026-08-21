@@ -137,7 +137,7 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
 		if (baseSettings is not null) {
 			return true;
 		}
-		if (!stepOptions.RequiredEnvironment && !hasNamedEnvironment) {
+		if (!stepOptions.RequiredEnvironment) {
 			baseSettings = new EnvironmentSettings { Login = "default" };
 			return true;
 		}

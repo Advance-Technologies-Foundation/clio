@@ -4,6 +4,9 @@ NAME
 SYNOPSIS
     clio run --file-name <scenario.yaml> [OPTIONS]
 
+ALIASES
+    scenario, run-scenario
+
 DESCRIPTION
     Runs all commands declared in a YAML scenario. Environment-dependent steps
     refresh appsettings.json before resolving their target, so a deployment step
@@ -17,11 +20,53 @@ OPTIONS
     --file-name <VALUE>
         Scenario file name. Required.
 
-    -e, --environment <ENVIRONMENT_NAME>
-        Default environment name for steps that omit a target.
-
-    Environment connection options can be supplied to the command and inherited
-    by steps according to the normal clio environment option rules.
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application URI
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application
+    -e, --Environment <VALUE>
+        Default environment name for steps that omit a target
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client ID
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restart-environment
+        Restart environment after command execution
+    --db-server-uri <VALUE>
+        Database server URI
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to the database server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder
 
 EXAMPLES
     Run a provisioning scenario that creates its first environment:
@@ -29,6 +74,10 @@ EXAMPLES
 
     Supply a default environment for steps that omit a target:
         clio run --file-name ./Phase1.yaml -e dev
+
+NOTES
+    Scenarios run non-interactively. A step targeting an environment marked Safe
+    fails closed because the runner cannot request production confirmation.
 
 SEE ALSO
     create-workspace - Create a clio workspace

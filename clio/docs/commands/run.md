@@ -1,34 +1,28 @@
 # run
 
-Run all commands declared in a YAML scenario in one clio process.
+## Name
 
-Before every environment-dependent step, `run` refreshes `appsettings.json` and resolves the requested
-environment again. This allows a scenario to deploy and register a Creatio environment in one step and use
-that environment in the next step. If the environment is still missing, the step fails instead of falling
-back to `http://localhost`. A step must identify its target with either a named environment or direct
-application/authentication URIs, not both.
+run - Run a YAML scenario and refresh environments between dependent steps
 
-
-## Usage
+## Synopsis
 
 ```bash
-clio run [options]
+clio run --file-name <scenario.yaml> [OPTIONS]
 ```
-
-## Description
-
-Run scenario.
 
 ## Aliases
 
-`run-scenario`, `scenario`
+scenario, run-scenario
 
-## Examples
+## Description
 
-```bash
-clio run --file-name ./Phase1.yaml
-clio run --file-name ./Phase1.yaml -e dev
-```
+Runs all commands declared in a YAML scenario. Environment-dependent steps
+refresh appsettings.json before resolving their target, so a deployment step
+can register an environment for following steps in the same process.
+
+A missing environment fails the step instead of falling back to localhost.
+A step cannot combine a named environment with direct application or
+authentication URIs.
 
 ## Options
 
@@ -41,7 +35,7 @@ Scenario file name. Required.
 
 ```bash
 -u, --uri <VALUE>
-Application uri
+Application URI
 -p, --Password <VALUE>
 User password
 -l, --Login <VALUE>
@@ -49,7 +43,7 @@ User login (administrator permission required)
 -i, --IsNetCore
 Use NetCore application
 -e, --Environment <VALUE>
-Environment name
+Default environment name for steps that omit a target
 -m, --Maintainer <VALUE>
 Maintainer name
 -c, --dev <VALUE>
@@ -59,7 +53,7 @@ Workspace path
 -s, --Safe <VALUE>
 Safe action in this environment
 --clientId <VALUE>
-OAuth client id
+OAuth client ID
 --clientSecret <VALUE>
 OAuth client secret
 --authAppUri <VALUE>
@@ -67,9 +61,9 @@ OAuth app URI
 --silent
 Use default behavior without user interaction
 --restart-environment
-Restart environment after execute command
+Restart environment after command execution
 --db-server-uri <VALUE>
-Db server uri
+Database server URI
 --db-user <VALUE>
 Database user
 --db-password <VALUE>
@@ -77,7 +71,7 @@ Database password
 --backup-file <VALUE>
 Full path to backup file
 --db-working-folder <VALUE>
-Folder visible to db server
+Folder visible to the database server
 --db-name <VALUE>
 Desired database name
 --force
@@ -87,5 +81,25 @@ Callback process name
 --ep <VALUE>
 Path to the application root folder
 ```
+
+## Examples
+
+```bash
+Run a provisioning scenario that creates its first environment:
+clio run --file-name ./Phase1.yaml
+
+Supply a default environment for steps that omit a target:
+clio run --file-name ./Phase1.yaml -e dev
+```
+
+## Notes
+
+Scenarios run non-interactively. A step targeting an environment marked Safe
+fails closed because the runner cannot request production confirmation.
+
+## See Also
+
+create-workspace - Create a clio workspace
+list-environments - List registered environments
 
 - [Clio Command Reference](../../Commands.md#run)
