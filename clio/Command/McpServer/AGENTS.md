@@ -363,10 +363,11 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
 
 - **`baseParameters` are NOT merged into `parameters`.** The component catalog
   merges `baseInputs` into `inputs` because base inputs are authorable. The request
-  catalog's base fields (`$context`, `scopes`, `type`) are platform-injected at
-  dispatch time; merging them would teach an AI consumer to pass them through the
-  binding's `params` block. `RequestInfoTool.CreateDetailResponse` surfaces them as
-  a SEPARATE `baseParameters` response field instead.
+  catalog producer publishes the current BaseRequest field names and metadata; those
+  fields are platform-injected at dispatch time, so merging them would teach an AI
+  consumer to pass them through the binding's `params` block.
+  `RequestInfoTool.CreateDetailResponse` surfaces them as a SEPARATE
+  `baseParameters` response field instead.
 - **An empty `parameters` map is meaningful and stays on the wire.** It says "this
   request accepts NO parameters" (e.g. `crt.ClosePageRequest`); absence of the field
   would read as "unknown".
