@@ -471,6 +471,7 @@ public class BindingsModule {
 		services.AddTransient<GetClientUnitSchemaCommand>();
 		services.AddTransient<GetClassicPageSourcesCommand>();
 		services.AddTransient<IClassicListColumnParser, ClassicListColumnParser>();
+		services.AddTransient<IClassicListProfileReader, ClassicListProfileReader>();
 		services.AddTransient<IClassicListColumnResolver, ClassicListColumnResolver>();
 		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();

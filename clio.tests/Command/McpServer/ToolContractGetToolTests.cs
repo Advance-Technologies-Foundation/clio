@@ -184,6 +184,33 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The compile-creatio contract carries a create-business-process anti-pattern so an agent is told a process is interpreted and its NeedInstall flag is not a compile trigger (ENG-95706).")]
+	public void ToolContractGet_CompileCreatio_Should_WarnAgainstCompilingAfterProcessCreation() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "compile-creatio must resolve to a curated contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.AntiPatterns.Should().NotBeNull(because: "the compile-creatio contract enumerates unnecessary-compile anti-patterns");
+		ToolAntiPattern processAntiPattern = entry.AntiPatterns!
+			.Single(pattern => pattern.Pattern.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal));
+		processAntiPattern.Why.Should().Contain("NeedInstall",
+			because: "the anti-pattern must name the NeedInstall flag as the false compile trigger it is, so an agent does not force a compile off it");
+		processAntiPattern.Why.Should().Contain("Script Task",
+			because: "the anti-pattern must state that only a Script Task (custom C#) makes a process need compilation");
+		entry.Preconditions.Should().NotBeNull(because: "the compile-creatio contract enumerates when a compile is allowed");
+		entry.Preconditions!.Should().Contain(
+			precondition => precondition.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
+				&& precondition.Contains("Script Task", StringComparison.Ordinal),
+			because: "the process precondition must keep the Script-Task carve-out explicit so it cannot silently regress into a blanket 'never compile after a process' prohibition");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical clio MCP full contract set when the request omits tool names and asks for detail=full (legacy back-compat behavior).")]
 	public void ToolContractGet_Should_Return_Canonical_Contracts_When_Request_Is_Empty_And_DetailIsFull() {
 		// Arrange
