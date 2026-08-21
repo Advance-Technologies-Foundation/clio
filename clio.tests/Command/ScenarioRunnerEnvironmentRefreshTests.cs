@@ -47,6 +47,20 @@ public class ScenarioRunnerEnvironmentRefreshTests : BaseCommandTests<ScenarioRu
 	}
 
 	[Test]
+	[Description("Allows a provisioning scenario to start without a registered active environment.")]
+	public void Options_ShouldNotRequireEnvironmentAtTopLevel() {
+		// Arrange
+		ScenarioRunnerOptions options = new();
+
+		// Act
+		bool requiredEnvironment = options.RequiredEnvironment;
+
+		// Assert
+		requiredEnvironment.Should().BeFalse(
+			because: "the scenario itself may deploy and register its first environment");
+	}
+
+	[Test]
 	[Description("Reloads settings after deployment and gives the next scenario step the newly registered environment.")]
 	public void Execute_ShouldReloadEnvironmentCreatedByEarlierStep() {
 		// Arrange

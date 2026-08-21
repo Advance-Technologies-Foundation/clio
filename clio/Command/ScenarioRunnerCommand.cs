@@ -10,6 +10,8 @@ namespace Clio.Command;
 /// <summary>Options for executing a YAML scenario.</summary>
 [Verb("run", Aliases = ["scenario", "run-scenario"], HelpText = "Run scenario")]
 public class ScenarioRunnerOptions : EnvironmentOptions {
+	internal override bool RequiredEnvironment => false;
+
 	/// <summary>Gets or sets the scenario file path.</summary>
 	[Option("file-name", Required = true, HelpText = "Scenario file name")]
 	public string FileName { get; set; }
@@ -65,43 +67,14 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
 	}
 
 	private bool TryConfigureEnvironmentStep(EnvironmentOptions stepOptions, ScenarioRunnerOptions scenarioOptions) {
-		if (string.IsNullOrWhiteSpace(stepOptions.Environment)
-			&& string.IsNullOrWhiteSpace(stepOptions.Uri)
-			&& string.IsNullOrWhiteSpace(stepOptions.AuthAppUri)
-			&& !string.IsNullOrWhiteSpace(scenarioOptions.Environment)) {
-			stepOptions.Environment = scenarioOptions.Environment;
-		}
-
+		ApplyScenarioEnvironmentDefault(stepOptions, scenarioOptions);
 		bool hasNamedEnvironment = !string.IsNullOrWhiteSpace(stepOptions.Environment);
 		bool hasDirectUri = !string.IsNullOrWhiteSpace(stepOptions.Uri);
 		bool hasDirectAuthAppUri = !string.IsNullOrWhiteSpace(stepOptions.AuthAppUri);
-		if (hasNamedEnvironment && (hasDirectUri || hasDirectAuthAppUri)) {
-			_logger.WriteError(AmbiguousEnvironmentTargetMessage);
+		if (!ValidateTargetIdentity(hasNamedEnvironment, hasDirectUri, hasDirectAuthAppUri)
+			|| !TryResolveBaseSettings(stepOptions, hasNamedEnvironment, hasDirectUri,
+				out EnvironmentSettings baseSettings)) {
 			return false;
-		}
-		if (!hasDirectUri && hasDirectAuthAppUri) {
-			_logger.WriteError(IncompleteDirectTargetMessage);
-			return false;
-		}
-		EnvironmentSettings baseSettings;
-		if (!hasNamedEnvironment && hasDirectUri) {
-			baseSettings = new EnvironmentSettings();
-		}
-		else {
-			if (!TryReloadSettings()) {
-				return false;
-			}
-
-			baseSettings = _settingsRepository.FindEnvironment(stepOptions.Environment);
-			if (baseSettings is null) {
-				if (!stepOptions.RequiredEnvironment && !hasNamedEnvironment) {
-					baseSettings = new EnvironmentSettings { Login = "default" };
-				}
-				else {
-					_logger.WriteError(EnvironmentNotFoundError.Build(stepOptions.Environment, _settingsRepository));
-					return false;
-				}
-			}
 		}
 
 		EnvironmentSettings resolvedSettings = baseSettings.Fill(stepOptions, NonInteractiveConsole.Shared);
@@ -113,6 +86,53 @@ public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
 			NonInteractiveConsole.ForceInContainer);
 		Program.Container = container;
 		return true;
+	}
+
+	private static void ApplyScenarioEnvironmentDefault(EnvironmentOptions stepOptions,
+		ScenarioRunnerOptions scenarioOptions) {
+		if (string.IsNullOrWhiteSpace(stepOptions.Environment)
+			&& string.IsNullOrWhiteSpace(stepOptions.Uri)
+			&& string.IsNullOrWhiteSpace(stepOptions.AuthAppUri)
+			&& !string.IsNullOrWhiteSpace(scenarioOptions.Environment)) {
+			stepOptions.Environment = scenarioOptions.Environment;
+		}
+	}
+
+	private bool ValidateTargetIdentity(bool hasNamedEnvironment, bool hasDirectUri,
+		bool hasDirectAuthAppUri) {
+		if (hasNamedEnvironment && (hasDirectUri || hasDirectAuthAppUri)) {
+			_logger.WriteError(AmbiguousEnvironmentTargetMessage);
+			return false;
+		}
+		if (!hasDirectUri && hasDirectAuthAppUri) {
+			_logger.WriteError(IncompleteDirectTargetMessage);
+			return false;
+		}
+		return true;
+	}
+
+	private bool TryResolveBaseSettings(EnvironmentOptions stepOptions, bool hasNamedEnvironment,
+		bool hasDirectUri, out EnvironmentSettings baseSettings) {
+		if (!hasNamedEnvironment && hasDirectUri) {
+			baseSettings = new EnvironmentSettings();
+			return true;
+		}
+		if (!TryReloadSettings()) {
+			baseSettings = null;
+			return false;
+		}
+
+		baseSettings = _settingsRepository.FindEnvironment(stepOptions.Environment);
+		if (baseSettings is not null) {
+			return true;
+		}
+		if (!stepOptions.RequiredEnvironment && !hasNamedEnvironment) {
+			baseSettings = new EnvironmentSettings { Login = "default" };
+			return true;
+		}
+
+		_logger.WriteError(EnvironmentNotFoundError.Build(stepOptions.Environment, _settingsRepository));
+		return false;
 	}
 
 	private bool TryReloadSettings() {
