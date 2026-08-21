@@ -153,6 +153,7 @@ public sealed class ExportComponentRegistryToolE2ETests : McpContractFixtureBase
 
 		// Assert
 		response.Success.Should().BeFalse(because: "version and environment-name are mutually exclusive");
-		response.Error.Should().Contain("mutually exclusive");
+		response.Error.Should().Contain("mutually exclusive",
+			because: "the caller must be told which two arguments conflicted, exactly as the CLI verb reports it");
 	}
 }

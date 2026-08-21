@@ -232,12 +232,17 @@ public sealed class ExportComponentRegistryCommand {
 			string resolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason);
 			bool requiresVersionConfirmation = ComponentInfoResolution.RequiresVersionConfirmation(resolvedFrom);
 
+			// Count BEFORE writing: CountEntries parses the payload, and the registry client returns any
+			// 2xx body verbatim (no JSON validation, ComponentRegistryClient.TryFetchOnceAsync), so a proxy
+			// or CDN error page served with status 200 makes the parse throw. Writing first would leave that
+			// junk file on disk under a reported failure — and an explicit output-file is refuse-if-exists,
+			// so every retry to the same path would then fail with "already exists".
+			(int componentCount, int compositeCount, int inputCount) = CountEntries(content);
+
 			(string outputPath, string writeError) = WriteRegistry(outputFile, fetch.ResolvedVersion, content);
 			if (writeError != null) {
 				return Fail(writeError, schemaType.Warning);
 			}
-
-			(int componentCount, int compositeCount, int inputCount) = CountEntries(content);
 
 			return new ExportComponentRegistryResponse {
 				Success = true,
