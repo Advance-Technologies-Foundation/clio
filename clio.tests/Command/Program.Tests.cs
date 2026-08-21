@@ -102,6 +102,23 @@ public class ProgramTestCase : BaseClioModuleTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Builds the scenario runner without requiring an active environment before provisioning begins.")]
+	public void Resolve_Should_Not_Throw_For_ScenarioRunner_When_Active_Environment_Key_Is_Invalid() {
+		// Arrange
+		Program.Container = null;
+		AddWrongActiveEnvironmentFixture();
+		ScenarioRunnerOptions options = new() { FileName = "phase1.yaml" };
+
+		// Act
+		Action act = () => Program.Resolve<ScenarioRunnerCommand>(options, false);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a scenario may deploy and register its first environment before later steps consume it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Builds the bootstrap container for mcp-server without requiring a valid active environment in appsettings.json.")]
 	public void Resolve_Should_Not_Throw_For_McpServerCommand_When_Active_Environment_Key_Is_Invalid() {
 		// Arrange
