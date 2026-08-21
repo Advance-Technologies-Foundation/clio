@@ -1,0 +1,65 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    export-component-registry - Write the full Freedom UI component registry for a resolved
+    platform version to a file
+
+ALIASES
+    export-registry
+
+SYNOPSIS
+    clio export-component-registry [OPTIONS]
+
+DESCRIPTION
+    Writes the FULL Freedom UI component registry for a resolved platform
+    version to a file, byte-faithful to the source registry payload — no
+    re-serialization through a typed model, so per-input "deprecated" /
+    "deprecationReason" markers and every other producer field survive
+    unchanged.
+
+    Replaces dozens of per-component get-component-info round-trips when a
+    caller needs to validate many crt.* componentTypes and propMap keys at
+    once against a target platform version (e.g. a migration engine running
+    in CI, where no live Creatio stand exists to query directly).
+
+    The platform version is resolved with the same three-tier contract as
+    get-component-info:
+
+      1. an explicit --version wins;
+      2. --environment/--uri probes cliogate GetSysInfo on that environment;
+      3. neither flag falls back to "latest" and the response reports
+         "latest-fallback" with requiresVersionConfirmation: true — do not
+         silently assume the exported set matches any specific environment.
+
+    Documentation bodies (references.docs[] paths) are never fetched — only
+    their paths, already part of the registry payload as written. Fetching
+    every doc body would cost ~150-190 HTTP round-trips and 1.2-1.5 MB, none
+    of which is needed to validate componentType/propMap keys.
+
+    The registry content itself is written to the file, never returned in
+    the response — the response carries only the absolute output path,
+    version-resolution fields, and small structural counters (componentCount
+    / compositeCount / inputCount).
+
+OPTIONS
+    --version                          Explicit catalog version to export (3-part semver,
+                                       e.g. 8.3.4). Mutually exclusive with
+                                       --environment/--uri. Default: latest
+
+    --schema-type                      Component registry to export: 'web' (default) or
+                                       'mobile'
+
+    --output-file                      Destination file path. An explicit path must resolve
+                                       inside the workspace or the OS temp directory (symlinks
+                                       resolved); a path outside both, or one that already
+                                       exists, is rejected. Omit for the default (re-runnable):
+                                       <workspace-root>/.clio-migration/component-registry/<version>.json
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name

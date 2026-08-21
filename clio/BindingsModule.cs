@@ -542,6 +542,7 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureCommand>();
 		services.AddTransient<ComponentRegistryRefreshCommand>();
 		services.AddTransient<ComponentInfoCommand>();
+		services.AddTransient<ExportComponentRegistryCommand>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
@@ -669,6 +670,7 @@ public class BindingsModule {
 		services.AddTransient<ListKnowledgeSourcesCommand>();
 		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<ExportComponentRegistryTool>();
 		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
