@@ -14,7 +14,7 @@
 The AI App Development Toolkit cannot fully model an object schema through clio: there is no way to set the
 primary-display column, inherited-column captions cannot be overridden on a replacing/child schema, and the
 Color type (`dataValueType 18`) is rejected. All three gaps are verified live on Creatio 8 core 10.1.185, and
-the confirmed server contracts are recorded in the `.codex/workspace-diary.md` entry dated 2026-07-09 (treated
+the confirmed server contracts are recorded in the `.codex/archive/workspace-diary-2026-08.md` entry dated 2026-07-09 (treated
 as ground truth here). The `EntitySchemaDesignerService.svc/SaveSchema` payload clio already sends carries
 `primaryDisplayColumn`, `inheritedColumns`, and `isInherited`; the blockers are missing setter surfaces, one
 hard guard, and one missing type-registry entry — not persistence plumbing.

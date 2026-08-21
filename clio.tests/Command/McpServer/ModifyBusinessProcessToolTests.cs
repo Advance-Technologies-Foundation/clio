@@ -49,6 +49,52 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process emits the deterministic compile-not-required note after a successful edit, so an agent does not mistake 'edited' for 'must be compiled to run' and force compile-creatio (ENG-95706).")]
+	public void ModifyBusinessProcess_Should_Emit_CompileNotRequiredNote_On_Success() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(new FakeModifyBusinessProcessCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "the fake command reports a successful edit");
+		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
+			because: "a clio-edited process stays interpreted and needs no compile; the response note is the one channel the agent cannot skip (ENG-95706)");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process suppresses the compile-not-required note when the edit FAILS — a failed mutation must not be told 'no compile needed' (ENG-95706).")]
+	public void ModifyBusinessProcess_Should_Not_Emit_CompileNotRequiredNote_On_Failure() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeModifyBusinessProcessCommand resolvedCommand = new(exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(new FakeModifyBusinessProcessCommand(exitCode: 1), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().NotBe(0, because: "the fake command reports a failed edit");
+		result.Note.Should().NotBe(CommandExecutionResult.CompileNotRequiredNote,
+			because: "a success-only signal must not ride a failed mutation");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Forwards an addElement operation that adds a sendEmail element with its full email block verbatim — the tool is an opaque pass-through, so the new element type and every email field (mode, sender, To recipients, subject, HTML body, importance, ignoreErrors, manual-mode performer) ride through to the command without modification.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Forward_SendEmail_AddElement_Verbatim() {
@@ -166,16 +212,19 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	private sealed class FakeModifyBusinessProcessCommand : ModifyBusinessProcessCommand {
+		private readonly int _exitCode;
+
 		public ModifyBusinessProcessOptions? CapturedOptions { get; private set; }
 
-		public FakeModifyBusinessProcessCommand()
+		public FakeModifyBusinessProcessCommand(int exitCode = 0)
 			: base(Substitute.For<IModifyBusinessProcessService>(), Substitute.For<IProcessDescriber>(),
 				Substitute.For<ILogger>()) {
+			_exitCode = exitCode;
 		}
 
 		public override int Execute(ModifyBusinessProcessOptions options) {
 			CapturedOptions = options;
-			return 0;
+			return _exitCode;
 		}
 	}
 }

@@ -24,14 +24,13 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 	[Description("Invokes get-classic-list-columns through the real stdio MCP server against the configured sandbox and returns statically parsed schema columns.")]
 	[AllureTag(GetClassicListColumnsTool.ToolName)]
 	[AllureName("get-classic-list-columns resolves a sandbox Classic section as schema-default")]
-	[AllureDescription("Uses the configured sandbox and the section named by McpE2E:Sandbox:ClassicSchemaDefaultSectionSchema to prove the real read-only MCP path parses static list columns out of live Classic bodies, not just hand-written ones. Self-ignores while that setting is blank — no base Studio section is known to declare static list columns, so the stand has to seed one.")]
+	[AllureDescription("Uses the configured sandbox and the section named by McpE2E:Sandbox:ClassicSchemaDefaultSectionSchema to prove the real read-only MCP path parses static list columns out of live Classic bodies, not just hand-written ones. Asserted with ignore-profile=true, because the saved grid profile otherwise answers first on a seeded stand. On a product stand AccountSectionV2 satisfies this live; a bare Studio stand has no Account section and still has to seed one, and the test self-ignores while the setting is blank.")]
 	public async Task Resolve_ShouldReturnSchemaDefault_WhenConfiguredSandboxIsAvailable() {
-		// Arrange — which sections carry static list columns is a fact about the SEEDING, not about the product,
-		// so this half of the discrimination pair is OPT-IN like the other one. It defaulted to ContactSectionV2,
-		// but the CI stand resolves that section to entity-default (its live body declares none), so the default
-		// asserted a false premise and turned the build red instead of skipping. The schema-default branch itself
-		// stays covered by GetClassicListColumnsCommandTests against hand-written bodies; what this test adds is
-		// proof against a REAL body, which needs a stand that really seeds one.
+		// Arrange — which sections carry static list columns depends on the product installed, so this half of
+		// the discrimination pair stays OPT-IN. It defaulted to ContactSectionV2, but that section declares none
+		// (it resolves to entity-default), so the default asserted a false premise and turned the build red
+		// instead of skipping. On a product stand AccountSectionV2 is a live target for this half — verified
+		// against sae_m_seeenu_15888720_0820 — so the setting no longer requires a hand-seeded section there.
 		McpE2ESettings loaded = TestConfiguration.Load();
 		string? sectionSchema = loaded.Sandbox.ClassicSchemaDefaultSectionSchema;
 		if (string.IsNullOrWhiteSpace(sectionSchema)) {
@@ -53,6 +52,11 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 					new Dictionary<string, object?> {
 						["args"] = new Dictionary<string, object?> {
 							["schema-name"] = sectionSchema,
+							// ignore-profile is REQUIRED for this assertion to mean anything: a seeded stand holds
+							// a saved grid profile for most sections, and the profile source outranks the static
+							// one, so without the flag this test would assert schema-default on an answer that
+							// legitimately arrives as profile.
+							["ignore-profile"] = true,
 							["environment-name"] = arrangeContext.EnvironmentName
 						}
 					},
@@ -119,6 +123,9 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = neverConfiguredSection,
+					// Same reason as the schema-default half: the entity fallback is only reachable once the
+					// saved profile is taken out of the resolution order.
+					["ignore-profile"] = true,
 					["environment-name"] = arrangeContext.EnvironmentName
 				}
 			},
@@ -138,6 +145,82 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 			because: "the entity-default fallback is exactly the primary display column");
 		response.Notes.Should().NotBeEmpty(
 			because: "the response must say why the entity fallback was selected");
+	}
+
+	[Test]
+	[Description("Resolves a Classic section's saved grid profile through the real MCP path and reports the view, the configuration used, and the profile scope.")]
+	[AllureTag(GetClassicListColumnsTool.ToolName)]
+	[AllureName("get-classic-list-columns resolves a Classic section from its saved grid profile")]
+	[AllureDescription("The saved grid profile is what the Classic list actually renders, and it is the branch the ticket's original scope dropped: a product section declares far fewer columns in code than its list shows. This asserts the live default path returns source=profile with the provenance fields, and that the same section returns a DIFFERENT source once ignore-profile takes the profile out of the order — the discrimination the contract rests on.")]
+	public async Task Resolve_ShouldReturnProfile_WhenTheSectionHasASavedGridProfile() {
+		// Arrange — defaults to the same never-configured section as the entity-default half, because a stand
+		// that seeds product data holds a SYSTEM grid profile for it even though nobody ever opened it. A stand
+		// that does not can retarget this through the same setting.
+		McpE2ESettings settings = TestConfiguration.Load();
+		string? sectionSchema = settings.Sandbox.ClassicEntityDefaultSectionSchema;
+		if (string.IsNullOrWhiteSpace(sectionSchema)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:ClassicEntityDefaultSectionSchema with a seeded Classic "
+				+ "section to run the profile-source E2E.");
+			return;
+		}
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			GetClassicListColumnsTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = sectionSchema,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicListColumnsResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicListColumnsResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "reading a saved grid profile is a valid read-only request");
+		response.Success.Should().BeTrue(
+			because: $"section '{sectionSchema}' should resolve. Error: {response.Error}");
+		// Asserted, never ignored: skipping on the value under test is what would make this test unable to fail
+		// for the regression it exists to catch — a wrong QueryProfile key, a payload shape change, an inverted
+		// ignore-profile or a session degraded into the reader's failure path all land on a non-profile source,
+		// and reporting that as "ignored" would read as a stand-configuration problem instead of a defect.
+		response.Source.Should().Be("profile",
+			because: $"section '{sectionSchema}' must resolve from its saved grid profile on a seeded stand; "
+				+ $"notes: {string.Join(" | ", response.Notes ?? [])}");
+		response.Columns.Should().NotBeEmpty(
+			because: "a profile source means a stored configuration was read, so it carries columns");
+		response.View.Should().NotBeNullOrWhiteSpace(
+			because: "a profile answer must name the view it came from");
+		response.ViewType.Should().BeOneOf(["listed", "tiled"],
+			because: "a Classic grid stores both configurations, so the answer must name the one reported");
+		response.ProfileScope.Should().BeOneOf(["user", "shared", "unknown"],
+			because: "the scope is what keeps a personal layout from reading as the section's canonical set");
+
+		// The same section with the profile taken out of the order must answer from a DIFFERENT source. Without
+		// this second call the test could pass on a build where ignore-profile is silently ignored.
+		CallToolResult staticResult = await arrangeContext.Session.CallToolAsync(
+			GetClassicListColumnsTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = sectionSchema,
+					["ignore-profile"] = true,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicListColumnsResponse staticResponse =
+			EntitySchemaStructuredResultParser.Extract<GetClassicListColumnsResponse>(staticResult);
+		staticResponse.Success.Should().BeTrue(
+			because: $"the static branch must still resolve '{sectionSchema}'. Error: {staticResponse.Error}");
+		staticResponse.Source.Should().NotBe("profile",
+			because: "ignore-profile has to remove the profile from the resolution order, and this pair is the "
+				+ "live proof that the two questions return different answers");
+		staticResponse.ViewType.Should().BeNull(
+			because: "a static answer has no stored configuration to name");
 	}
 
 	[Test]

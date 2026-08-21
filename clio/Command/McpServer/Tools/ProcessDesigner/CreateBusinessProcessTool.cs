@@ -80,7 +80,7 @@ public class CreateBusinessProcessTool(
 		 + "changedColumns?:[<ColumnName>,...]} instead of a page save handler. changedColumns restricts an "
 		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
 		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
-		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder.")]
+		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful create the process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {
@@ -97,7 +97,21 @@ public class CreateBusinessProcessTool(
 			DescriptorJson = args.Descriptor,
 			PackageName = args.PackageName ?? string.Empty
 		};
-		return InternalExecute<CreateBusinessProcessCommand>(options);
+		// A business process built by clio is interpreted and runs as-is — it never needs compilation
+		// (clio cannot author a Script Task or an after-activity-save script, the only in-process C#).
+		// Emit the deterministic post-op note on success (same channel as update-entity-schema / create-page)
+		// so "created" is not mistaken for "must be compiled to run" — the note is the one reply the caller
+		// cannot skip. Do NOT run compile-creatio, and do not infer one from a raw process read (ENG-95706).
+		CommandExecutionResult result = InternalExecute<CreateBusinessProcessCommand>(options);
+		if (result.ExitCode != 0) {
+			return result;
+		}
+		// Append (not clobber) so a command-set success note is preserved (mirrors PageCreateTool).
+		return result with {
+			Note = string.IsNullOrWhiteSpace(result.Note)
+				? CommandExecutionResult.CompileNotRequiredNote
+				: result.Note + " " + CommandExecutionResult.CompileNotRequiredNote
+		};
 	}
 }
 
