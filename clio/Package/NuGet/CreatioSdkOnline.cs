@@ -57,20 +57,33 @@ namespace Clio.Project.NuGet
 					json = await response.Content.ReadAsStringAsync();
 				}).Wait();
 
-				var items = JsonSerializer.Deserialize<Model>(json);
-				var _ver = items.TopItems.FirstOrDefault().Items.Select(i => i.CatalogEntry.Version);
-				if (_versions == null) {
-					_versions = new List<Version>();
-				}
-				foreach (var item in _ver) {
-					_versions.Add(new Version(item));
-				}
-				_versions.Sort();
-				_versions.Reverse();
+				_versions = ParseVersionsFromNugetJson(json);
 			} catch (Exception e) {
 				logger.WriteError($"Error while getting Creatio SDK versions from NuGet: {e.Message}");
 				_versions = new List<Version>();
 			}
+		}
+
+		/// <summary>
+		/// Parses the NuGet registration index response into a version list sorted newest-first. Extracted
+		/// as a pure, static method (no HttpClient dependency) so this parsing/null-safety logic is directly
+		/// unit-testable without a real network call — mirroring the Cp.HandleExecStreamsAsync extraction
+		/// pattern used elsewhere in this codebase for the same reason.
+		/// </summary>
+		/// <exception cref="InvalidOperationException">
+		/// The response deserialized to null, or its top registration item had no catalog entries.
+		/// </exception>
+		internal static List<Version> ParseVersionsFromNugetJson(string json) {
+			var items = JsonSerializer.Deserialize<Model>(json);
+			var topItem = items?.TopItems?.FirstOrDefault();
+			if (topItem?.Items == null) {
+				throw new InvalidOperationException(
+					"NuGet registration response for creatiosdk did not contain any catalog items.");
+			}
+			List<Version> versions = topItem.Items.Select(i => new Version(i.CatalogEntry.Version)).ToList();
+			versions.Sort();
+			versions.Reverse();
+			return versions;
 		}
 
 		/// <summary>

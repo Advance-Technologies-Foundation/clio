@@ -9117,3 +9117,65 @@ Discovery: the distinction the caller needs is not failed-vs-absent (round 1 gav
 Discovery: the two existing failure tests already threw with distinctive messages ("403 Forbidden", "session expired") but asserted only the note's prose, so they passed both before and after the message was dropped. Asserting the message turns them into real pins.
 Files: clio/Command/ClassicListProfileReader.cs, clio.tests/Command/GetClassicListColumnsCommandTests.cs
 Impact: an operator reading `source: schema-default` now sees whether the stand has no profile or their session is broken.
+
+## 2026-08-20 23:44 – Strict odata-read filtering and paging contract
+Context: GitHub issue #1135 reported that raw filter, skip, and count arguments were silently discarded, widening reads without an error.
+Decision: retain the supported structured filters model and reject raw filter strings; reject unknown top-level and nested filter members; add first-class skip and count inputs and expose the server total separately as total-count.
+Discovery: the original tool accepted raw filter, but the structured-filter migration removed that property without strict binding and left stale wording. System.Text.Json also discarded misspelled nested filter members, and incomplete conditions were omitted by query construction. Live vbg proof showed the pre-fix disputed call returned the same first page, while the repaired build rejected raw filter, returned zero for an impossible structured Id, and returned distinct ordered pages with the same total of 13.
+Files: clio/Command/McpServer/Tools/ODataReadTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/ODataReadToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ODataReadToolE2ETests.cs
+Impact: odata-read can no longer silently broaden a query because of unsupported argument names or malformed structured filters, and agents can page and request a verified total through the published contract.
+
+## 2026-08-20 23:58 – Close structured-filter widening edge cases
+Context: the mandatory comprehensive pre-PR review of issue #1135 found three binder and grammar edge cases in the first repair commit.
+Decision: preserve JSON member presence with Undefined-valued JsonElement fields and an explicit filters-presence flag; reject present-null filters; allow only identifier-segment member paths; give raw filter callers a concrete structured example.
+Discovery: nullable JsonElement loses the distinction between an omitted value and explicit JSON null, making eq/ne null unreachable. A filter field was also an OData grammar boundary, not merely a column label; an injected field broadened an impossible vbg filter from zero to all 13 contacts before the allowlist was added.
+Files: clio/Command/McpServer/Tools/ODataKeyFormatter.cs, clio/Command/McpServer/Tools/ODataReadTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/ODataKeyFormatterTests.cs, clio.tests/Command/McpServer/ODataReadToolTests.cs, clio.mcp.e2e/ODataReadToolE2ETests.cs
+Impact: explicit null comparisons remain usable, while null filters and field-expression injection fail before environment resolution or HTTP; live vbg verification confirms all three boundaries.
+## 2026-08-20 22:21 – Preserve workspace content on empty restore (issue #1137)
+Context: `restore-workspace` reported `Done` and deleted `packages/placeholder.txt` when `.clio/workspaceSettings.json` contained no packages.
+Decision: Materialize the eligible package list, warn and skip package download when it is empty, and remove the redundant packages-root clear because the archiver already overwrites each requested package directory.
+Discovery: The shared-root clear also removed ignored and external package content during partial restores; package-scoped overwrite preserves those directories without weakening refresh semantics. The local MCP sandbox E2E target is configured but not registered on this machine, so the new real-server test compiles but requires the configured TeamCity sandbox to execute.
+Files: clio/Workspace/WorkspaceRestorer.cs, clio/Package/PackageDownloader.cs, clio/Command/McpServer/Tools/WorkspaceSyncTool.cs, clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs
+Impact: Empty restores are explicit, preserve workspace placeholders, and no longer let a successful exit imply that environment packages were downloaded.
+
+## 2026-08-20 23:08 – Verify workspace restore repair against vbg
+Context: Issue #1137 required real-environment proof and a comprehensive pre-PR review after the repair.
+Decision: Use the registered `vbg` environment for a disposable empty workspace, and strengthen the existing MCP sandbox E2E with unrelated package content during a non-empty restore.
+Discovery: The built CLI returned success with the new warning and preserved `packages/placeholder.txt` against `vbg`. The shared E2E harness has stale sandbox URL/readiness configuration, so it fails before invoking the branch; the direct CLI boundary proved the empty path while the E2E now covers partial-restore preservation in CI.
+Files: clio.mcp.e2e/WorkspaceSyncToolE2ETests.cs, clio.tests/Package/PackageDownloaderTests.cs, clio.tests/Workspace/WorkspaceRestorerTests.cs
+Impact: Both empty and partial restore regressions are pinned, and the final module gate passes 3,806 tests.
+
+## 2026-08-21 00:11 – GH #1136 Angular Jest setup ownership
+Context: Fresh `new-ui-project` scaffolds failed every real Angular spec because the template and `@angular-builders/jest` both initialized TestBed.
+Decision: Keep the Angular 19 Jest builder and the project-specific setup hook, but reduce both shipped `setup-jest.ts` files to the JIT compiler import so the builder is the single test-environment owner.
+Discovery: `@angular-builders/jest` 19.0.1 concatenates custom `setupFilesAfterEnv` with its own setup. A token-substituted shipped template with locked dependencies passed a real `TestBed` component test after the duplicate initializer was removed. A zero-spec scaffold still reports Jest's normal `No tests found`; `passWithNoTests` is deliberately not enabled.
+Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
+Impact: both default and empty scaffolds retain their Jest extension point while real specs can execute; structural tests prevent either template from reintroducing a second initializer.
+
+## 2026-08-21 00:37 – GH #1136 Claude review: make runner ownership explicit
+Context: Claude agreed with the Jest-builder ownership fix but found that direct `jest` invocation would bypass the builder-owned Angular test environment and that the regression did not pin `configPath`.
+Decision: Document `npm test` / `ng test` as the supported runner path in both setup files and READMEs, assert the complete setup contract, and pin the Angular builder's `configPath` and `tsConfig`.
+Discovery: The generated `jest.config.ts` is an extension consumed by `@angular-builders/jest`, not a supported standalone test entry point.
+Files: clio/tpl/ui-project/setup-jest.ts, clio/tpl/ui-project-Empty/setup-jest.ts, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md, clio.tests/Package/UiProjectCreatorIntegrationTests.cs
+Impact: maintainers and generated-project users can see the single-owner contract, while regression coverage protects the configuration link that makes it work.
+
+## 2026-08-21 00:48 – GH #1136 Claude rereview: make config assertions effective
+Context: Claude found that null-conditional chaining could skip the new `configPath` and `tsConfig` assertions when a node was missing, and that the generated README omitted the intentional zero-spec exit behavior.
+Decision: Bind optional JSON values to locals before asserting them, pin the complete project Jest configuration, and disclose the initial `No tests found` non-zero result in both READMEs.
+Discovery: FluentAssertions cannot execute after a null-conditional chain short-circuits; a local null value is required so `Should().Be(...)` actually fails.
+Files: clio.tests/Package/UiProjectCreatorIntegrationTests.cs, clio/tpl/ui-project/README.md, clio/tpl/ui-project-Empty/README.md
+Impact: removing the builder-to-config link or adding another project setup entry now fails the regression, and fresh-scaffold behavior is explicit to users.
+
+## 2026-08-21 01:20 – GH #1139 validate custom output payload binding
+Context: Issue #1139 asked how a Freedom UI remote-module `@CrtOutput` payload reaches a request handler and reported possible duplicate invocation.
+Decision: Publish the supported `@event.detail` request-parameter binding in clio-knowledge and make Clio's request catalog describe BaseRequest fields as producer-defined metadata rather than a fixed list.
+Discovery: Creatio UI source at `e8c0882bea89923e493c8476f1ecc177c7c22bd1` resolves nested `@event` expressions, passes Angular Elements output payloads through `event.detail`, and marks `$initialEvent` deprecated in favor of event binding expressions. One configured output creates one request binding, so duplicate invocation remains unconfirmed without a reproducible page/component/version.
+Files: clio/Command/McpServer/Tools/RequestInfoTool.cs, clio/Command/McpServer/Tools/RequestInfoCatalog.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/RequestInfoToolTests.cs, clio.mcp.e2e/RequestInfoToolE2ETests.cs, clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json
+Impact: Agents receive the current producer-owned BaseRequest surface including deprecation metadata, while the canonical guidance teaches payload binding without relying on deprecated `$initialEvent` access.
+
+## 2026-08-21 01:31 – GH #1139 close review coverage gaps
+Context: The comprehensive pre-PR review found that tests covered the curated tool contract but not the native `tools/list` description, and the first guidance draft retained an explicitly excluded generic payload guard.
+Decision: Pin the exact producer-driven wording on both MCP discovery surfaces, assert `$initialEvent` metadata from the checked-in producer snapshot, add Allure steps to the changed E2E paths, and remove the unproven guard from clio-knowledge.
+Discovery: Synthetic request-registry fixtures alone cannot protect the live producer evidence boundary; the pinned snapshot must assert the deprecation flag and reason directly.
+Files: clio.tests/Command/McpServer/RequestRegistrySnapshotTests.cs, clio.tests/Command/McpServer/RequestInfoToolTests.cs, clio.mcp.e2e/RequestInfoToolE2ETests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs
+Impact: A stale fixed BaseRequest list now fails unit and wire-level discovery tests, and the published guidance contains only behavior established by Creatio source.

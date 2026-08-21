@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
@@ -24,7 +26,9 @@ public class WorkspaceRestorerTests {
 	#region Fields: Private
 
 	private ICreatioSdk _creatioSdk;
+	private ILogger _logger;
 	private IPackageDownloader _packageDownloader;
+	private IWorkspacePackageFilter _workspacePackageFilter;
 	private WorkspaceRestorer _workspaceRestorer;
 
 	#endregion
@@ -34,18 +38,25 @@ public class WorkspaceRestorerTests {
 	[SetUp]
 	public void SetUp() {
 		_creatioSdk = Substitute.For<ICreatioSdk>();
+		_logger = Substitute.For<ILogger>();
 		_packageDownloader = Substitute.For<IPackageDownloader>();
+		_workspacePackageFilter = Substitute.For<IWorkspacePackageFilter>();
+		_workspacePackageFilter
+			.FilterPackages(Arg.Any<IEnumerable<string>>(), Arg.Any<WorkspaceSettings>())
+			.Returns(call => call.ArgAt<IEnumerable<string>>(0));
 		_workspaceRestorer = new WorkspaceRestorer(Substitute.For<INuGetManager>(),
 			Substitute.For<IWorkspacePathBuilder>(), Substitute.For<IEnvironmentScriptCreator>(),
 			Substitute.For<IWorkspaceSolutionCreator>(), _packageDownloader, _creatioSdk,
-			Substitute.For<IAbstractionsFileSystem>(), Substitute.For<ILogger>(),
-			Substitute.For<ITemplateProvider>(), Substitute.For<IWorkspacePackageFilter>());
+			Substitute.For<IAbstractionsFileSystem>(), _logger,
+			Substitute.For<ITemplateProvider>(), _workspacePackageFilter);
 	}
 
 	[TearDown]
 	public void TearDown() {
 		_creatioSdk.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
 		_packageDownloader.ClearReceivedCalls();
+		_workspacePackageFilter.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -81,6 +92,31 @@ public class WorkspaceRestorerTests {
 			because: "the restore cannot complete without the SDK, so it must say so rather than proceed");
 		_packageDownloader.ReceivedCalls().Should().BeEmpty(
 			because: "failing after packages are on disk would leave a half-restored workspace behind");
+	}
+
+	[Test]
+	[Description("Warns and skips package download when workspace settings contain no eligible packages, preventing a no-op restore from clearing local package content.")]
+	public void Restore_ShouldWarnAndSkipPackageDownload_WhenNoPackagesAreEligible() {
+		// Arrange
+		WorkspaceSettings workspaceSettings = new();
+		WorkspaceOptions options = new() {
+			IsNugetRestore = false, IsCreateSolution = false, AddBuildProps = false
+		};
+
+		// Act
+		_workspaceRestorer.Restore(workspaceSettings, new EnvironmentSettings(), options);
+
+		// Assert
+		_packageDownloader.ReceivedCalls().Should().BeEmpty(
+			because: "an empty restore must not enter the downloader that can replace local package content");
+		_logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => call.GetArguments().SingleOrDefault()?.ToString())
+			.Should().ContainSingle(message =>
+				message != null &&
+				message.Contains("workspaceSettings.json", StringComparison.Ordinal) &&
+				message.Contains("package download was skipped", StringComparison.Ordinal),
+				because: "the successful no-op must plainly explain why no packages were restored");
 	}
 
 	#endregion

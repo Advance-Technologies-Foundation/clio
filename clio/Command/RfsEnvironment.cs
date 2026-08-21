@@ -118,6 +118,13 @@ public class RfsEnvironment {
 			}
 
 			DirectoryInfo repositoryPackageFolder = repositoryPackageFolders.FirstOrDefault(s => s.Name == packageName);
+			if (repositoryPackageFolder == null) {
+				// Unreachable in practice: the missingPackages check above already guarantees every
+				// packageName is present in repositoryPackageFolders. Guarding explicitly turns a future
+				// invariant break into a clear diagnostic instead of a raw NullReferenceException.
+				throw new InvalidOperationException(
+					$"Package '{packageName}' was validated as present but its repository folder could not be located.");
+			}
 			string repositoryPackageContentFolderPath =
 				_packageUtilities.GetPackageContentFolderPath(repositoryPackageFolder.FullName);
 			_fileSystem.CreateDirectorySymLink(environmentPackageDirectoryPath, repositoryPackageContentFolderPath);
