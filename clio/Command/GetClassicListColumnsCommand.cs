@@ -14,6 +14,17 @@ public class GetClassicListColumnsOptions : EnvironmentOptions {
 	/// <summary>Classic section client-unit schema name.</summary>
 	[Option("schema-name", Required = true, HelpText = "Classic section schema name, for example 'ContactSectionV2'")]
 	public string SchemaName { get; set; }
+
+	/// <summary>Skips the saved grid profile and reports only what the section declares in code.</summary>
+	/// <remarks>
+	/// The saved profile is what the section actually renders, so it leads the resolution order and answers for
+	/// nearly every product section. This switch exists for the opposite question — "what does the section
+	/// DECLARE?" — which is the only answer a code reader can verify, and it makes the static branches
+	/// observable on a stand whose profiles are seeded.
+	/// </remarks>
+	[Option("ignore-profile", Required = false,
+		HelpText = "Skip the saved grid profile and resolve only statically declared columns")]
+	public bool IgnoreProfile { get; set; }
 }
 
 /// <summary>One resolved Classic list column.</summary>
@@ -49,9 +60,42 @@ public sealed class GetClassicListColumnsResponse {
 	[JsonPropertyName("entity")]
 	public string Entity { get; set; }
 
-	/// <summary>Resolution source: <c>schema-default</c>, <c>entity-default</c>, or <c>none</c>.</summary>
+	/// <summary>
+	/// Resolution source: <c>profile</c>, <c>schema-default</c>, <c>entity-default</c>, or <c>none</c>.
+	/// <see langword="null"/> on a failure response, where no source was resolved and naming one would be a
+	/// claim the command cannot make.
+	/// </summary>
 	[JsonPropertyName("source")]
 	public string Source { get; set; }
+
+	/// <summary>
+	/// Active view the saved profile named, for example <c>GridDataView</c>. Omitted unless the columns came
+	/// from a profile.
+	/// </summary>
+	[JsonPropertyName("view")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string View { get; set; }
+
+	/// <summary>
+	/// Which stored configuration the columns came from: <c>listed</c> or <c>tiled</c>. A Classic grid stores
+	/// both, with different sets and orders, so a profile answer is incomplete without saying which one it is.
+	/// Omitted unless the columns came from a profile.
+	/// </summary>
+	[JsonPropertyName("viewType")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ViewType { get; set; }
+
+	/// <summary>
+	/// Whether a profile answer is the shared default (<c>shared</c>), possibly the calling user's own
+	/// customization (<c>user</c>), or unclassifiable (<c>unknown</c>). Omitted unless the columns came from a
+	/// profile. This is the field that keeps the command from presenting one user's saved layout as the
+	/// section's canonical set. It classifies the GRID-SETTINGS row only: the active-view profile that selects
+	/// which view is reported is not classified, so a personal active-view selection can still steer a
+	/// <c>shared</c> answer.
+	/// </summary>
+	[JsonPropertyName("profileScope")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ProfileScope { get; set; }
 
 	/// <summary>Ordered effective default list columns.</summary>
 	[JsonPropertyName("columns")]
@@ -81,7 +125,7 @@ public class GetClassicListColumnsCommand(IClassicListColumnResolver resolver, I
 		string schemaName = options?.SchemaName;
 		try {
 			ArgumentNullException.ThrowIfNull(options);
-			response = resolver.Resolve(schemaName);
+			response = resolver.Resolve(schemaName, options.IgnoreProfile);
 			return true;
 		}
 		catch (Exception exception) {
