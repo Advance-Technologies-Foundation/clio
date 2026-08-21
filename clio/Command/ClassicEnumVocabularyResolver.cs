@@ -2,7 +2,9 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.RegularExpressions;
 using Clio.Common;
 
@@ -48,7 +50,7 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 	};
 
 	// NAME: 123 (or NAME: -1) followed by a comma or the closing brace. Comments AND string-literal contents are
-	// blanked out before this runs (SanitizeForMemberScan), so neither a JSDoc line nor a quoted description
+	// blanked out before this runs (BlankCommentsAndStringLiterals), so neither a JSDoc line nor a quoted description
 	// mentioning a colon and a digit can be mistaken for a member.
 	private static readonly Regex MemberRegex = new(
 		@"(?<![\w$])([A-Za-z_$][\w$]*)\s*:\s*(-?\d+)\s*(?=,|\}|$)",
@@ -62,8 +64,14 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 			warnings.Add("sysenums.js content is empty; enumVocabulary omitted.");
 			return new ClassicEnumVocabularyParseResult(enums, warnings);
 		}
+		// Comments and string-literal contents are blanked out ONCE, up front, and every later step (marker search,
+		// brace matching, member scan) reads that same blanked text. Doing it once is not just cheaper than three
+		// passes: it makes it impossible for the block finder and the member scanner to disagree about where a
+		// string or comment ends, because they are literally looking at the same characters. Blanking preserves
+		// length and therefore every offset, so positions in the blanked text still address the original source.
+		string scannable = BlankCommentsAndStringLiterals(sysEnumsJsContent);
 		foreach (string enumName in EnumNames) {
-			string block = ExtractObjectLiteral(sysEnumsJsContent, enumName);
+			string block = ExtractObjectLiteral(scannable, enumName);
 			if (block == null) {
 				warnings.Add(
 					$"Could not find a complete 'Terrasoft.{enumName} = {{ ... }}' block in sysenums.js; " +
@@ -84,7 +92,8 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 	// Finds `Terrasoft.<enumName> = { ... }` (the exact assignment, not an alias line such as
 	// `Terrasoft.core.enums.ViewItemType = Terrasoft.ViewItemType`, which resolves to an identifier rather than a
 	// brace) and returns the object-literal text INCLUDING the surrounding braces, or null when no such assignment
-	// with a matching closing brace exists (missing member, or the file is truncated mid-block).
+	// with a matching closing brace exists (missing member, or the file is truncated mid-block). Operates on the
+	// comment/string-blanked text, so a marker mentioned inside a quoted string cannot anchor the search.
 	private static string ExtractObjectLiteral(string content, string enumName) {
 		string marker = "Terrasoft." + enumName;
 		int searchFrom = 0;
@@ -93,34 +102,44 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 			if (markerIndex < 0) {
 				return null;
 			}
-			if (markerIndex > 0 && IsIdentifierChar(content[markerIndex - 1])) {
-				// The match is the tail of a longer identifier (e.g. a hypothetical XTerrasoft.ViewItemType) — advance
-				// by one so the next search still finds a real, later occurrence of the marker.
-				searchFrom = markerIndex + 1;
-				continue;
-			}
 			int afterMarker = markerIndex + marker.Length;
-			if (afterMarker < content.Length && IsIdentifierChar(content[afterMarker])) {
-				// A longer identifier that merely starts with this name (e.g. a hypothetical ViewItemTypeExtra) —
-				// keep scanning past it rather than mis-anchoring on a prefix match.
+			int skipTo = NextOffsetWhenMarkerIsPartOfLongerIdentifier(content, markerIndex, afterMarker);
+			if (skipTo >= 0) {
+				searchFrom = skipTo;
+				continue;
+			}
+			int openBraceIndex = FindAssignedObjectLiteralStart(content, afterMarker);
+			if (openBraceIndex < 0) {
 				searchFrom = afterMarker;
 				continue;
 			}
-			int cursor = SkipWhitespace(content, afterMarker);
-			if (cursor >= content.Length || content[cursor] != '=') {
-				searchFrom = afterMarker;
-				continue;
-			}
-			cursor = SkipWhitespace(content, cursor + 1);
-			if (cursor >= content.Length || content[cursor] != '{') {
-				// Not an object literal at this occurrence (e.g. the `Terrasoft.core.enums.X = Terrasoft.X` alias
-				// line) — keep scanning for the real assignment.
-				searchFrom = afterMarker;
-				continue;
-			}
-			int closingBraceIndex = FindMatchingBrace(content, cursor);
-			return closingBraceIndex < 0 ? null : content.Substring(cursor, closingBraceIndex - cursor + 1);
+			int closingBraceIndex = FindMatchingBrace(content, openBraceIndex);
+			return closingBraceIndex < 0
+				? null
+				: content.Substring(openBraceIndex, closingBraceIndex - openBraceIndex + 1);
 		}
+	}
+
+	// Guards the marker match on BOTH sides: a leading identifier char means the match is the tail of a longer name
+	// (a hypothetical XTerrasoft.ViewItemType) — advance by one so a real, later occurrence is still found; a
+	// trailing one means a longer name merely starts with it (ViewItemTypeExtra) — skip past it rather than
+	// mis-anchoring on a prefix. Returns the next search offset, or -1 when the marker stands on its own.
+	private static int NextOffsetWhenMarkerIsPartOfLongerIdentifier(string content, int markerIndex, int afterMarker) {
+		if (markerIndex > 0 && IsIdentifierChar(content[markerIndex - 1])) {
+			return markerIndex + 1;
+		}
+		return afterMarker < content.Length && IsIdentifierChar(content[afterMarker]) ? afterMarker : -1;
+	}
+
+	// Index of the `{` in `<marker> = {`, or -1 when this occurrence is not an object-literal assignment (e.g. the
+	// `Terrasoft.core.enums.X = Terrasoft.X` alias line, whose right-hand side is an identifier).
+	private static int FindAssignedObjectLiteralStart(string content, int afterMarker) {
+		int cursor = SkipWhitespace(content, afterMarker);
+		if (cursor >= content.Length || content[cursor] != '=') {
+			return -1;
+		}
+		cursor = SkipWhitespace(content, cursor + 1);
+		return cursor < content.Length && content[cursor] == '{' ? cursor : -1;
 	}
 
 	private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '$';
@@ -132,41 +151,20 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 		return index;
 	}
 
-	// Depth-counts braces from the opening `{`, skipping over block/line comments and string literals so a stray
-	// brace inside a JSDoc comment (e.g. `{@link ...}`) or a quoted value cannot desynchronize the count. Returns -1
-	// (truncated block) when the content ends before depth returns to zero.
-	private static int FindMatchingBrace(string content, int openBraceIndex) {
+	// Plain brace depth count from the opening `{`. No comment/string handling is needed here because the caller
+	// hands in the already-blanked text, so a stray brace inside a JSDoc comment (`{@link ...}`) or a quoted value
+	// has already been replaced by a space. Returns -1 (truncated block) when the content ends before depth returns
+	// to zero — which is also what an unterminated comment or string produces, since blanking swallows the rest.
+	private static int FindMatchingBrace(string blankedContent, int openBraceIndex) {
 		int depth = 0;
-		int i = openBraceIndex;
-		while (i < content.Length) {
-			char c = content[i];
-			if (c == '/' && i + 1 < content.Length && content[i + 1] == '*') {
-				int end = content.IndexOf("*/", i + 2, StringComparison.Ordinal);
-				if (end < 0) {
-					return -1;
-				}
-				i = end + 2;
-				continue;
-			}
-			if (c == '/' && i + 1 < content.Length && content[i + 1] == '/') {
-				int end = content.IndexOf('\n', i + 2);
-				i = end < 0 ? content.Length : end + 1;
-				continue;
-			}
-			if (c is '\'' or '"') {
-				i = SkipStringLiteral(content, i);
-				continue;
-			}
+		for (int i = openBraceIndex; i < blankedContent.Length; i++) {
+			char c = blankedContent[i];
 			if (c == '{') {
 				depth++;
 			}
-			else if (c == '}') {
-				depth--;
-				if (depth == 0) {
-					return i;
-				}
+			else if (c == '}' && --depth == 0) {
+				return i;
 			}
-			i++;
 		}
 		return -1;
 	}
@@ -177,67 +175,65 @@ internal sealed class ClassicEnumVocabularySourceParser : IClassicEnumVocabulary
 		while (i < content.Length && content[i] != quote) {
 			i += content[i] == '\\' && i + 1 < content.Length ? 2 : 1;
 		}
-		return i + 1; // past the closing quote (or past the end, on an unterminated literal)
+		return Math.Min(i + 1, content.Length); // past the closing quote, clamped on an unterminated literal
 	}
 
-	// Members only — comments AND string-literal contents are blanked out first (same char-level scan FindMatchingBrace
-	// uses, so the two can never disagree about where a string/comment ends) so neither a JSDoc line NOR a quoted
+	// Members only. The block handed in is already comment/string-blanked, so neither a JSDoc line NOR a quoted
 	// description value can be mistaken for `NAME: number`. A regex-only comment strip over raw text would get this
 	// wrong both ways: a colon+digit inside a quoted string (`DESC: "see LEGACY: 2 instead"`) would fabricate a
 	// phantom member, and a `//` inside a URL-shaped string value (`A: "http://x", B: 2`) would delete a real one.
 	// Non-numeric values are simply not matched by MemberRegex and are silently ignored, per the engine contract. A
 	// duplicate name keeps its LAST occurrence, mirroring plain JS object-literal semantics.
-	private static IReadOnlyDictionary<string, long> ParseMembers(string objectLiteralText) {
-		string sanitized = SanitizeForMemberScan(objectLiteralText);
+	private static IReadOnlyDictionary<string, long> ParseMembers(string blankedObjectLiteralText) {
 		var members = new Dictionary<string, long>(StringComparer.Ordinal);
-		foreach (Match match in MemberRegex.Matches(sanitized)) {
-			string name = match.Groups[1].Value;
+		foreach (GroupCollection groups in MemberRegex.Matches(blankedObjectLiteralText).Select(match => match.Groups)) {
+			string name = groups[1].Value;
 			if (BlockedMemberNames.Contains(name)) {
 				continue;
 			}
-			if (long.TryParse(match.Groups[2].Value, out long value)) {
+			if (long.TryParse(groups[2].Value, out long value)) {
 				members[name] = value;
 			}
 		}
 		return members;
 	}
 
-	// Replaces every block comment, line comment, and string-literal (quotes included) with spaces of the SAME
+	// Replaces every block comment, line comment, and string literal (quotes included) with spaces of the SAME
 	// length, so byte offsets stay meaningful for diagnostics and MemberRegex's `\s*` around the value still matches.
-	// Mirrors FindMatchingBrace's own comment/string skipping exactly (reusing SkipStringLiteral) rather than
-	// duplicating that logic as a second, potentially-drifting regex-based implementation.
-	private static string SanitizeForMemberScan(string text) {
-		var sanitized = new System.Text.StringBuilder(text.Length);
+	private static string BlankCommentsAndStringLiterals(string text) {
+		var blanked = new StringBuilder(text.Length);
 		int i = 0;
 		while (i < text.Length) {
-			char c = text[i];
-			if (c == '/' && i + 1 < text.Length && text[i + 1] == '*') {
-				int end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
-				int stop = end < 0 ? text.Length : end + 2;
-				AppendBlanks(sanitized, stop - i);
-				i = stop;
+			int regionEnd = FindSkippableRegionEnd(text, i);
+			if (regionEnd < 0) {
+				blanked.Append(text[i]);
+				i++;
 				continue;
 			}
-			if (c == '/' && i + 1 < text.Length && text[i + 1] == '/') {
-				int end = text.IndexOf('\n', i + 2);
-				int stop = end < 0 ? text.Length : end;
-				AppendBlanks(sanitized, stop - i);
-				i = stop;
-				continue;
-			}
-			if (c is '\'' or '"') {
-				int stop = SkipStringLiteral(text, i);
-				AppendBlanks(sanitized, stop - i);
-				i = stop;
-				continue;
-			}
-			sanitized.Append(c);
-			i++;
+			AppendBlanks(blanked, regionEnd - i);
+			i = regionEnd;
 		}
-		return sanitized.ToString();
+		return blanked.ToString();
 	}
 
-	private static void AppendBlanks(System.Text.StringBuilder sb, int count) {
+	// Index just past the comment or string literal that starts at <paramref name="i"/>, or -1 when nothing
+	// skippable starts there. An unterminated comment/literal reports the end of the text, so the rest is blanked
+	// (and any block still open is therefore reported as truncated by FindMatchingBrace).
+	private static int FindSkippableRegionEnd(string text, int i) {
+		char c = text[i];
+		bool hasNext = i + 1 < text.Length;
+		if (c == '/' && hasNext && text[i + 1] == '*') {
+			int end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+			return end < 0 ? text.Length : end + 2;
+		}
+		if (c == '/' && hasNext && text[i + 1] == '/') {
+			int end = text.IndexOf('\n', i + 2);
+			return end < 0 ? text.Length : end;
+		}
+		return c is '\'' or '"' ? SkipStringLiteral(text, i) : -1;
+	}
+
+	private static void AppendBlanks(StringBuilder sb, int count) {
 		for (int i = 0; i < count; i++) {
 			sb.Append(' ');
 		}
