@@ -16,8 +16,17 @@ public interface IContainerRegistryPreflightService {
 	/// </summary>
 	/// <param name="registryPrefix">Registry or repository prefix supplied by the user.</param>
 	/// <param name="registryImageReference">Fully qualified image reference that would be pushed.</param>
+	/// <param name="allowInsecureRegistry">
+	/// Required opt-in for any plaintext HTTP probing. When <paramref name="registryPrefix"/> has no explicit
+	/// scheme, setting this to <c>true</c> allows probing to fall back to a plaintext HTTP endpoint if HTTPS is
+	/// unreachable. When <paramref name="registryPrefix"/> explicitly specifies <c>http://</c>, that endpoint is
+	/// only probed if this is also <c>true</c> - otherwise validation fails immediately with a message pointing at
+	/// this flag. An explicit <c>https://</c> scheme is unaffected and always honored. Defaults to <c>false</c> so
+	/// credentials and probe traffic never leave the process over plaintext HTTP without an explicit opt-in.
+	/// </param>
 	/// <returns>Preflight result describing whether the push target appears usable.</returns>
-	ContainerRegistryPreflightResult ValidatePushTarget(string registryPrefix, string registryImageReference);
+	ContainerRegistryPreflightResult ValidatePushTarget(
+		string registryPrefix, string registryImageReference, bool allowInsecureRegistry = false);
 }
 
 /// <summary>
@@ -45,7 +54,8 @@ public sealed class ContainerRegistryPreflightService(
 		credentialProvider ?? throw new ArgumentNullException(nameof(credentialProvider));
 
 	/// <inheritdoc />
-	public ContainerRegistryPreflightResult ValidatePushTarget(string registryPrefix, string registryImageReference) {
+	public ContainerRegistryPreflightResult ValidatePushTarget(
+		string registryPrefix, string registryImageReference, bool allowInsecureRegistry = false) {
 		if (string.IsNullOrWhiteSpace(registryPrefix)) {
 			throw new ArgumentException("Registry prefix is required.", nameof(registryPrefix));
 		}
@@ -55,8 +65,22 @@ public sealed class ContainerRegistryPreflightService(
 		}
 
 		string repositoryName = ExtractRepositoryName(registryImageReference);
+		bool hasExplicitScheme =
+			Uri.TryCreate(registryPrefix.Trim().TrimEnd('/'), UriKind.Absolute, out Uri absolutePrefix);
+		bool isBareAuthorityPrefix = !hasExplicitScheme;
+		if (hasExplicitScheme
+			&& string.Equals(absolutePrefix.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+			&& !allowInsecureRegistry) {
+			return new ContainerRegistryPreflightResult(
+				false,
+				string.Empty,
+				$"Registry prefix '{registryPrefix}' explicitly specifies http:// but --allow-insecure-registry "
+				+ "was not set. Retry with --allow-insecure-registry if this registry is intentionally HTTP-only.");
+		}
+
 		List<string> probeErrors = [];
-		foreach (Uri endpoint in BuildCandidateEndpoints(registryPrefix)) {
+		bool anyProbeSuggestsMissingHttpsListener = false;
+		foreach (Uri endpoint in BuildCandidateEndpoints(registryPrefix, allowInsecureRegistry)) {
 			try {
 				ContainerRegistryCredentials credentials = _credentialProvider.TryResolveCredentials(registryPrefix, endpoint);
 				using HttpResponseMessage anonymousPingResponse =
@@ -118,16 +142,34 @@ public sealed class ContainerRegistryPreflightService(
 			}
 			catch (Exception exception) {
 				probeErrors.Add($"{endpoint} probe failed: {exception.Message}");
+				if (LooksLikeMissingHttpsListener(exception)) {
+					anyProbeSuggestsMissingHttpsListener = true;
+				}
 			}
 		}
 
 		string combinedMessage = probeErrors.Count == 0
 			? $"No reachable registry endpoint was found for '{registryPrefix}'."
 			: string.Join(Environment.NewLine, probeErrors);
+		if (!allowInsecureRegistry && isBareAuthorityPrefix && anyProbeSuggestsMissingHttpsListener) {
+			combinedMessage += " If this registry is intentionally HTTP-only, retry with --allow-insecure-registry.";
+		}
+
 		return new ContainerRegistryPreflightResult(false, string.Empty, combinedMessage);
 	}
 
-	private IEnumerable<Uri> BuildCandidateEndpoints(string registryPrefix) {
+	/// <summary>
+	/// Determines whether a probe failure looks like there is no HTTPS listener at all (connection refused or a
+	/// failed TLS handshake), as opposed to an unrelated HTTP error response, DNS failure, or timeout. Used to
+	/// decide whether suggesting <c>--allow-insecure-registry</c> is actually relevant to the failure at hand.
+	/// </summary>
+	private static bool LooksLikeMissingHttpsListener(Exception exception) {
+		return exception is HttpRequestException httpRequestException
+			&& httpRequestException.HttpRequestError
+				is HttpRequestError.ConnectionError or HttpRequestError.SecureConnectionError;
+	}
+
+	private IEnumerable<Uri> BuildCandidateEndpoints(string registryPrefix, bool allowInsecureRegistry) {
 		string trimmedPrefix = registryPrefix.Trim().TrimEnd('/');
 		if (Uri.TryCreate(trimmedPrefix, UriKind.Absolute, out Uri absolutePrefix)) {
 			yield return new Uri($"{absolutePrefix.Scheme}://{absolutePrefix.Authority}/");
@@ -136,7 +178,9 @@ public sealed class ContainerRegistryPreflightService(
 
 		string authority = trimmedPrefix.Split('/', 2, StringSplitOptions.RemoveEmptyEntries)[0];
 		yield return new Uri($"https://{authority}/");
-		yield return new Uri($"http://{authority}/");
+		if (allowInsecureRegistry) {
+			yield return new Uri($"http://{authority}/");
+		}
 	}
 
 	private string ExtractRepositoryName(string registryImageReference) {

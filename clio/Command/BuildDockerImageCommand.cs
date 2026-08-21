@@ -59,6 +59,13 @@ public class BuildDockerImageOptions {
 	/// </summary>
 	[Option("use-nerdctl", Required = false, HelpText = "Use the nerdctl CLI for this invocation, bypassing runtime CLI auto-detection")]
 	public bool UseNerdctl { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the registry push preflight may fall back to plaintext HTTP.
+	/// </summary>
+	[Option("allow-insecure-registry", Required = false, Default = false,
+		HelpText = "Required opt-in for any plaintext HTTP registry probing: allows falling back to HTTP when the registry prefix has no explicit scheme and does not respond over HTTPS, and allows probing an explicitly specified http:// prefix. Off by default.")]
+	public bool AllowInsecureRegistry { get; set; }
 }
 
 /// <summary>
