@@ -275,9 +275,22 @@ internal sealed class ClassicEnumVocabularyResolver(
 
 	// Case-insensitive: nothing about the hash's own casing is a documented platform contract, only that it is
 	// 32 hex characters, so matching only lowercase would silently omit enumVocabulary on a stand that happens to
-	// serve an uppercase-hex marker.
+	// serve an uppercase-hex marker. The optional leading '/0' is CAPTURED rather than merely tolerated, so a .NET
+	// Framework login page that already spells its static root is echoed back verbatim instead of re-derived; the
+	// IsNetCore split below is the fallback for a page that names '/core/...' with no root prefix.
 	private static readonly Regex ContentHashPathRegex = new(
-		"/core/([0-9a-fA-F]{32})/", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+		"((?:/0)?)/core/([0-9a-fA-F]{32})/", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+
+	// Same runtime split the rest of the repository applies to unauthenticated UI paths
+	// (EnvironmentRuntimeDetectionService.BuildUiMarkerUrl): .NET Core serves the login page at /Login/Login.html off
+	// the site root, while .NET Framework serves it at /0/Login/NuiLogin.aspx behind the /0 application root. Getting
+	// this wrong never fails loudly - it 404s and silently omits enumVocabulary on every stand of one runtime.
+	private static string BuildLoginPageUrl(string baseUri, bool isNetCore) =>
+		$"{baseUri}{(isNetCore ? "/Login/Login.html" : "/0/Login/NuiLogin.aspx")}";
+
+	// Static-content root for the hashed /core/... tree: the bare site root on .NET Core, /0 on .NET Framework - the
+	// same split SysImageUploader applies to static workspace roots.
+	private static string BuildStaticRoot(string baseUri, bool isNetCore) => isNetCore ? baseUri : baseUri + "/0";
 
 	/// <inheritdoc />
 	public ClassicEnumVocabularyParseResult Resolve() {
@@ -288,7 +301,8 @@ internal sealed class ClassicEnumVocabularyResolver(
 			warnings.Add("The environment URI is not configured; enumVocabulary omitted.");
 			return new ClassicEnumVocabularyParseResult(empty, warnings);
 		}
-		string loginPage = TryGetString($"{baseUri}/Login/NuiLogin.aspx", "the login page", warnings);
+		bool isNetCore = environmentSettings.IsNetCore;
+		string loginPage = TryGetString(BuildLoginPageUrl(baseUri, isNetCore), "the login page", warnings);
 		if (loginPage == null) {
 			return new ClassicEnumVocabularyParseResult(empty, warnings);
 		}
@@ -298,7 +312,9 @@ internal sealed class ClassicEnumVocabularyResolver(
 				"Could not find the '/core/<hash>/' content-hash marker on the login page; enumVocabulary omitted.");
 			return new ClassicEnumVocabularyParseResult(empty, warnings);
 		}
-		string sysEnumsUrl = $"{baseUri}/core/{hashMatch.Groups[1].Value}/Terrasoft/core/enums/sysenums.js";
+		string markedRoot = hashMatch.Groups[1].Value;
+		string staticRoot = markedRoot.Length > 0 ? baseUri + markedRoot : BuildStaticRoot(baseUri, isNetCore);
+		string sysEnumsUrl = $"{staticRoot}/core/{hashMatch.Groups[2].Value}/Terrasoft/core/enums/sysenums.js";
 		string sysEnumsJs = TryGetString(sysEnumsUrl, "sysenums.js", warnings);
 		if (sysEnumsJs == null) {
 			return new ClassicEnumVocabularyParseResult(empty, warnings);
