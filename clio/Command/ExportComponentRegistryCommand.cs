@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -401,17 +402,13 @@ public sealed class ExportComponentRegistryCommand {
 	// REFUSES rather than strips: the resolved path is reported back to the caller and consumed by the migration
 	// engine, so silently renaming the output file would be worse than declining to write it. '.' and '..' are
 	// all-allowed characters yet never file names, so they are rejected explicitly.
-	private static bool IsSafePathSegment(string value) {
-		if (string.IsNullOrWhiteSpace(value) || value == "." || value == "..") {
-			return false;
-		}
-		foreach (char c in value) {
-			if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_') {
-				return false;
-			}
-		}
-		return true;
-	}
+	// Written as All() rather than a foreach (Sonar S3267): this runs ONCE per export over a short version
+	// string, so the LINQ iterator allocation is irrelevant here — unlike CountObjectProperties above, which
+	// runs up to twice per component over a registry with hundreds of them and therefore keeps its foreach.
+	private static bool IsSafePathSegment(string value) =>
+		!string.IsNullOrWhiteSpace(value)
+			&& value != "." && value != ".."
+			&& value.All(c => char.IsLetterOrDigit(c) || c == '.' || c == '-' || c == '_');
 
 	// Best-effort: the caller is already failing, so a leftover temp file must not mask the real error.
 	// Catches EVERY exception, not just IOException: this runs from the write path's catch-and-rethrow, and a
