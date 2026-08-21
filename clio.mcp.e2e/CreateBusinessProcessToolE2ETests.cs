@@ -85,6 +85,8 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain(processName,
 			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "a clio-built process is interpreted and needs no compile; the success result carries the compile-not-required note over the real MCP path so an agent does not force compile-creatio (ENG-95706)");
 
 		// Readback: describe the built process and confirm the structure is really there — a server that
 		// returned success but built nothing would be caught here, unlike the success-echo assertion above.

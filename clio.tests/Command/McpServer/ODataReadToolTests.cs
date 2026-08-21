@@ -643,4 +643,55 @@ public sealed class ODataReadToolTests {
 		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
 			because: "an empty body is not identifiable as a routing miss, so the registration hint must not be appended");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("odata-read rejects an unknown argument member (the incident shape: `fields` instead of `select`, `filter` instead of `filters`) with a JsonException that names it, instead of silently dropping it and returning an unfiltered/unprojected read (ENG-95706).")]
+	public void ReadArgs_Should_Reject_Unknown_Member_Instead_Of_Silently_Dropping() {
+		// Arrange — verbatim shape from run_20260820_133837: `fields` (not `select`) and `filter` (not `filters`).
+		const string unknownMemberJson = "{\"environment-name\":\"dev\",\"entity\":\"VwSysProcess\",\"fields\":[\"Id\",\"Name\"],\"filter\":\"Name eq 'X'\"}";
+
+		// Act
+		Action deserialize = () => JsonSerializer.Deserialize<ODataReadArgs>(unknownMemberJson);
+
+		// Assert
+		deserialize.Should().Throw<JsonException>(
+			because: "an unrecognized member must fail with a named error the way a missing required member does, so silence is never read as acceptance (ENG-95706)")
+			.Which.Message.Should().Contain("fields",
+				because: "the error must name the offending member so the caller fixes it to select/filters instead of getting a silent unfiltered read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("odata-read rejects an unknown member inside the NESTED filter shape too (ENG-95706): a mistyped wrapper (`and`/`or` vs `all`/`any`) or condition key (`operator`/`val` vs `op`/`value`) must fail with a named JsonException, not vanish into an unfiltered read.")]
+	public void ReadArgs_Should_Reject_Unknown_Nested_Filter_Member() {
+		// Arrange / Act / Assert — wrong wrapper key (`and` instead of `all`/`any`).
+		const string badWrapperJson = "{\"environment-name\":\"dev\",\"entity\":\"Contact\",\"filters\":{\"and\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"X\"}]}}";
+		Action deserializeWrapper = () => JsonSerializer.Deserialize<ODataReadArgs>(badWrapperJson);
+		deserializeWrapper.Should().Throw<JsonException>(
+			because: "`and` is not a filters wrapper key (`all`/`any`); an unfiltered read must never result from a silently-dropped wrapper")
+			.Which.Message.Should().Contain("and", because: "the error must name the offending wrapper member");
+
+		// wrong condition key (`operator`/`val` instead of `op`/`value`).
+		const string badConditionJson = "{\"environment-name\":\"dev\",\"entity\":\"Contact\",\"filters\":{\"all\":[{\"field\":\"Name\",\"operator\":\"eq\",\"val\":\"X\"}]}}";
+		Action deserializeCondition = () => JsonSerializer.Deserialize<ODataReadArgs>(badConditionJson);
+		deserializeCondition.Should().Throw<JsonException>(
+			because: "`operator`/`val` are not condition keys (`op`/`value`); a dropped condition would collapse to an unfiltered read")
+			.Which.Message.Should().Contain("operator", because: "the error must name the offending condition member");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("odata-read still binds the correct argument members (select/filters/order-by/top), so the unknown-member guard does not reject valid calls.")]
+	public void ReadArgs_Should_Accept_Known_Members() {
+		// Arrange
+		const string validJson = "{\"environment-name\":\"dev\",\"entity\":\"VwSysProcess\",\"select\":[\"Id\",\"Name\"],\"order-by\":\"CreatedOn desc\",\"top\":5}";
+
+		// Act
+		ODataReadArgs args = JsonSerializer.Deserialize<ODataReadArgs>(validJson)!;
+
+		// Assert
+		args.Entity.Should().Be("VwSysProcess", because: "a well-formed odata-read payload must still bind");
+		args.Select.Should().BeEquivalentTo(new[] { "Id", "Name" }, because: "the projection must bind to select, not be dropped");
+	}
 }

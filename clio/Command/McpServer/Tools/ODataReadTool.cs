@@ -192,6 +192,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 /// <summary>
 /// Arguments for <see cref="ODataReadTool"/>.
 /// </summary>
+// Reject unknown members instead of silently dropping them (ENG-95706). A caller that sends `fields`
+// (not `select`) or `filter` (not `filters`) otherwise gets an UNFILTERED, UNPROJECTED read: the whole
+// table comes back, and the agent — seeing its own record missing from the noise — wrongly concludes the
+// record does not exist. An unrecognized member must fail with a named error, the way a missing REQUIRED
+// member already does, so silence is never read as acceptance.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ODataReadArgs {
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account, Activity).</summary>
 	[JsonPropertyName("entity")]
@@ -279,6 +285,10 @@ public sealed record ODataReadResponse(
 /// <summary>
 /// A single condition in a structured OData filter.
 /// </summary>
+// Reject unknown members like the top-level args (ENG-95706): a mistyped condition key
+// (e.g. `operator`/`val` instead of `op`/`value`) would otherwise be silently dropped, BuildCondition
+// would return null, the condition would vanish, and the read would come back unfiltered.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ODataFilterCondition {
 	/// <summary>OData field name to filter on.</summary>
 	[JsonPropertyName("field")]
@@ -305,6 +315,10 @@ public sealed record ODataFilterCondition {
 /// <summary>
 /// Structured filter object for <see cref="ODataReadArgs.Filters"/>.
 /// </summary>
+// Reject unknown members like the top-level args (ENG-95706): a mistyped wrapper key
+// (e.g. `and`/`or` instead of `all`/`any`) would otherwise leave All/Any null, produce no $filter, and
+// return the whole table — the exact silent-drop the guard exists to stop.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ODataFilters {
 	/// <summary>Conditions joined with AND.</summary>
 	[JsonPropertyName("all")]
