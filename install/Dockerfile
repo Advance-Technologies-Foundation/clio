@@ -23,6 +23,21 @@ RUN rm -rf /app/clio
 # Copy the published files from the build stage to the final image
 COPY --from=build /app/published /app/
 
+# Create a dedicated non-root user to run the app as (GH #1161: image ran as root).
+# --no-log-init avoids a known useradd issue with sparse/large log files for high
+# UIDs on some Debian-based images (this image is Debian-based).
+# --no-create-home is fine because ENV HOME=/app below points HOME at a directory
+# we already chown to this user.
+RUN useradd --uid 10001 --no-log-init --no-create-home --shell /usr/sbin/nologin clioapp \
+    && chown -R clioapp:clioapp /app
+
+# clio resolves its settings/config home via Environment.SpecialFolder.UserProfile,
+# which reads $HOME on Linux. Without this, a --no-create-home non-root user has no
+# $HOME and any clio command that writes settings would fail.
+ENV HOME=/app
+
+USER clioapp
+
 # Add a label to the image
 LABEL service=clio
 
