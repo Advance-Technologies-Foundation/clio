@@ -1,0 +1,7 @@
+steps:
+- action: restart
+  description: restart a direct URI
+  options:
+    uri: "https://localhost:40002"
+    login: Supervisor
+    password: Supervisor

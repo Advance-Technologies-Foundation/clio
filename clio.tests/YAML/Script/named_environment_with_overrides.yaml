@@ -1,0 +1,7 @@
+steps:
+- action: restart
+  description: restart a named environment with explicit credentials
+  options:
+    Environment: stored-environment
+    login: ScenarioUser
+    password: scenario-password

@@ -1,0 +1,13 @@
+steps:
+- action: deploy-creatio
+  description: deploy a fresh environment
+  options:
+    site-name: fresh-environment
+    silent: true
+
+- action: link-from-repository
+  description: link packages to the fresh environment
+  options:
+    repoPath: "."
+    packages: "*"
+    Environment: fresh-environment
