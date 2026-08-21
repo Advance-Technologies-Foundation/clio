@@ -89,6 +89,13 @@ public sealed class GetClassicPageSourcesResponse {
 	public int ChildPageCount { get; set; }
 
 	/// <summary>
+	/// Number of enum tables (of ViewItemType/ContentType/DataValueType) echoed from the TARGET stand's own
+	/// <c>sysenums.js</c> into <c>enumVocabulary</c> — the migration engine's enum-drift guard input (ENG-95412).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonPropertyName("enumVocabularyCount")]
+	public int EnumVocabularyCount { get; set; }
+
+	/// <summary>
 	/// Non-fatal gaps the caller must weigh before acting on the manifest (for example: no section resolved, so the
 	/// plan's List-page analysis will be empty). <c>null</c> when the collected sources are complete.
 	/// </summary>
@@ -107,7 +114,7 @@ public sealed class GetClassicPageSourcesResponse {
 /// manifest file, never returned in the response — the caller triggers the run and reads only the small summary.
 /// </summary>
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-	Justification = "Command composes its required collaborators (application client, URL builder, column manager, hierarchy client, section resolver, detail edit-page resolver, file system, logger) via constructor injection; grouping them into a parameter object would hide which Classic-migration lookup each collects and gain nothing behaviorally.")]
+	Justification = "Command composes its required collaborators (application client, URL builder, column manager, hierarchy client, section resolver, detail edit-page resolver, enum-vocabulary resolver, file system, logger) via constructor injection; grouping them into a parameter object would hide which Classic-migration lookup each collects and gain nothing behaviorally.")]
 public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions> {
 
 	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.ClientUnit;
@@ -184,6 +191,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private readonly IPageDesignerHierarchyClient _hierarchyClient;
 	private readonly IClassicSectionSchemaResolver _sectionResolver;
 	private readonly IClassicDetailEditPageResolver _childPageResolver;
+	private readonly IClassicEnumVocabularyResolver _enumVocabularyResolver;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 
@@ -200,6 +208,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	/// from the client this command already holds, so the metadata route is substitutable in tests and so the ESQ
 	/// column set stays next to the other Classic-migration lookups (ENG-94401).
 	/// </param>
+	/// <param name="enumVocabularyResolver">
+	/// Reads the target stand's own <c>sysenums.js</c> into the <c>enumVocabulary</c> manifest block, so the
+	/// migration engine's enum-drift guard has a real, stand-measured input (ENG-95412) rather than <c>undefined</c>.
+	/// </param>
 	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
 	/// <param name="logger">Logger for progress and error output.</param>
 	/// <remarks>
@@ -214,6 +226,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		IPageDesignerHierarchyClient hierarchyClient,
 		IClassicSectionSchemaResolver sectionResolver,
 		IClassicDetailEditPageResolver childPageResolver,
+		IClassicEnumVocabularyResolver enumVocabularyResolver,
 		IoFileSystem ioFileSystem,
 		ILogger logger) {
 		_applicationClient = applicationClient;
@@ -222,6 +235,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		_hierarchyClient = hierarchyClient;
 		_sectionResolver = sectionResolver;
 		_childPageResolver = childPageResolver;
+		_enumVocabularyResolver = enumVocabularyResolver;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 	}
@@ -318,6 +332,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 					"treating this as 'nothing to migrate'.");
 			}
 
+			// 6c. The stand's own enum vocabulary (best-effort; feeds the engine's enum-drift guard, ENG-95412).
+			JObject enumVocabulary = BuildEnumVocabulary(ctx);
+
 			// 7. Assemble the manifest in the engine's contract shape (omit empty fields, never null-fill).
 			var manifest = new JObject { ["schemas"] = schemas };
 			if (!string.IsNullOrWhiteSpace(entity)) {
@@ -330,6 +347,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			AddBlock(manifest, "detailSchemas", detailSchemas);
 			AddBlock(manifest, "section", section);
 			AddBlock(manifest, "childPageSchemas", childPageSchemas);
+			AddBlock(manifest, "enumVocabulary", enumVocabulary);
 
 			// 8. Write the manifest to disk. The bodies live here, not in the response.
 			(string manifestPath, string writeError) = WriteManifest(options, manifest);
@@ -350,6 +368,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				DetailCount = detailSchemas.Count,
 				SectionLayerCount = section.Count,
 				ChildPageCount = childPageSchemas.Count,
+				EnumVocabularyCount = enumVocabulary.Count,
 				Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings : null
 			};
 			return true;
@@ -894,6 +913,34 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			AddWarning(ctx, warning);
 		}
 		return (entityColumns, columnTitles);
+	}
+
+	// Best-effort: the stand's own enum vocabulary is an ENRICHER (like resources/entityColumns), never a reason to
+	// fail the whole collection. A per-enum or total omission is explained through ctx.Warnings by the resolver
+	// itself (same "logger alone does not reach an MCP caller" reasoning as every other enricher here) rather than
+	// re-derived from the empty result, so the resolver's specific reachability/parse failure reason is preserved.
+	private JObject BuildEnumVocabulary(PageSourcesRunContext ctx) {
+		var enumVocabulary = new JObject();
+		try {
+			ClassicEnumVocabularyParseResult result = _enumVocabularyResolver.Resolve();
+			foreach (string warning in result.Warnings) {
+				AddWarning(ctx, warning);
+			}
+			foreach (KeyValuePair<string, IReadOnlyDictionary<string, long>> enumTable in result.Enums) {
+				var members = new JObject();
+				foreach (KeyValuePair<string, long> member in enumTable.Value) {
+					members[member.Key] = member.Value;
+				}
+				enumVocabulary[enumTable.Key] = members;
+			}
+		}
+		catch (Exception ex) {
+			string warning = $"Could not gather the stand's own enum vocabulary: {ex.Message}. " +
+				"enumVocabulary is omitted, so the migration engine's enum-drift guard will have no input for this run.";
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
+		}
+		return enumVocabulary;
 	}
 
 	// Collects EVERY distinct detail-schema name referenced across every layer body (page chain + parent seed).

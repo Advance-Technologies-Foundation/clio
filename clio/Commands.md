@@ -468,7 +468,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>
-- [`run`](docs/commands/run.md) - Run scenario, `run-scenario`, `scenario`
+- [`run`](docs/commands/run.md) - Run a YAML scenario and refresh environments between dependent steps, `run-scenario`, `scenario`
 <a id="save-state"></a>
 <a id="save-manifest"></a>
 <a id="state"></a>

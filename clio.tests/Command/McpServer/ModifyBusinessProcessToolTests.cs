@@ -128,6 +128,42 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards a setElement operation carrying a changeData block verbatim — the tool is an opaque pass-through, so the target source, every value-source kind (constant, processParameter, sourceElement pair, expression) and the whole block ride through to the command unmodified. Guards the one thing this repo CAN assert about the changeData contract: that clio does not reshape it on the way to the server.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_ChangeData_SetElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string changeDataOps =
+			"[{\"op\":\"setElement\",\"elementName\":\"UpdateContact\",\"elementUpdate\":{\"changeData\":{"
+			+ "\"source\":\"Contact\",\"values\":["
+			+ "{\"column\":\"JobTitle\",\"value\":\"Manager\"},"
+			+ "{\"column\":\"Notes\",\"processParameter\":\"NoteTextParameter\"},"
+			+ "{\"column\":\"AccountId\",\"sourceElement\":\"RecordModifiedSignal\","
+			+ "\"sourceElementParameter\":\"RecordId\"},"
+			+ "{\"column\":\"DueDate\",\"expression\":\"[#DateValue.2026-09-01#]\"}]}}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", changeDataOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid changeData setElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(changeDataOps,
+			because: "the changeData block and every value-source kind in it must pass through unchanged — the "
+				+ "server owns the semantics, so any reshaping here would silently alter what the caller asked for");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a failed result without resolving any command when the environment name is empty.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Fail_When_Environment_Is_Empty() {
