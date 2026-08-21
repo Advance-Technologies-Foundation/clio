@@ -177,20 +177,15 @@ public class k8Commands : Ik8Commands
 		return "";
 	}
 
-	// private V1Namespace GetNamespaces(){
-	// 	
-	// 	//TODO - Can we do better ?
-	// 	var namespaces = _client.CoreV1.ListNamespace().Items.FirstOrDefault(ns => ns.Metadata.Name == K8NNameSpace);
-	 //        if (namespaces == null) {
-	 //        	throw new Exception($"{K8NNameSpace} namespace not found");
-	 //        }
-	// 	return namespaces;
-	// }
-
 	private V1Pod GetPodByLabel(string appName) {
 		V1Pod pod = _client.CoreV1
 			.ListNamespacedPod(K8NNameSpace, null, null, null, $"app={appName}")
 			.Items.FirstOrDefault();
+		if (pod == null) {
+			// GetBackupFullDestPath and every backup/restore caller dereference pod.Spec unguarded.
+			// Guarding at this single shared source closes that class of NPE for all of them.
+			throw new InvalidOperationException($"Pod with label 'app={appName}' was not found in namespace '{K8NNameSpace}'.");
+		}
 		return pod;
 	}
 
@@ -235,6 +230,10 @@ public class k8Commands : Ik8Commands
 		ActivePod currentPod = new (PodType.Postgres);
 		V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
 			.Items.FirstOrDefault(s=> s.Metadata.Name == currentPod.AppName);
+		if (statefulSet == null) {
+			throw new InvalidOperationException(
+				$"StatefulSet '{currentPod.AppName}' was not found in namespace '{K8NNameSpace}'.");
+		}
 		string serviceName = statefulSet.Spec.ServiceName;
 		
 		V1ServicePort pgPort = GetServicePort(currentPod.AppName, serviceName);
@@ -246,10 +245,8 @@ public class k8Commands : Ik8Commands
 		V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
 			.Items.FirstOrDefault(s=>s.Metadata.Name ==currentPod.SecretName);
 		
-		byte[] password = secrets?.Data[currentPod.PasswordKey];
-		byte[] username = secrets?.Data[currentPod.UsernameKey];
-		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
-		string usernameStr = Encoding.UTF8.GetString(username ?? Array.Empty<byte>());
+		string passwordStr = ReadSecretString(secrets, currentPod.PasswordKey);
+		string usernameStr = ReadSecretString(secrets, currentPod.UsernameKey);
 		
 		int dbPortValue = pgPort.Port >0? pgPort.Port: pgPort.NodePort ?? 5432;
 		int dbPortInternalValue = dbPortInternal.Port>0? dbPortInternal.Port : dbPortInternal.NodePort ?? 0;
@@ -263,6 +260,10 @@ public class k8Commands : Ik8Commands
 		ActivePod currentPod = new ActivePod(PodType.Mssql);
 		V1StatefulSet statefulSet = _client.AppsV1.ListNamespacedStatefulSet(K8NNameSpace)
 			.Items.FirstOrDefault(s=> s.Metadata.Name == currentPod.AppName);
+		if (statefulSet == null) {
+			throw new InvalidOperationException(
+				$"StatefulSet '{currentPod.AppName}' was not found in namespace '{K8NNameSpace}'.");
+		}
 		string serviceName = statefulSet.Spec.ServiceName;
 		
 		V1ServicePort dbPort = GetServicePort(currentPod.AppName, serviceName);
@@ -272,8 +273,7 @@ public class k8Commands : Ik8Commands
 		
 		V1Secret secrets = _client.CoreV1.ListNamespacedSecret(K8NNameSpace)
 			.Items.FirstOrDefault(s=>s.Metadata.Name ==currentPod.SecretName);
-		byte[] password = secrets?.Data[currentPod.PasswordKey];
-		string passwordStr = Encoding.UTF8.GetString(password ?? Array.Empty<byte>());
+		string passwordStr = ReadSecretString(secrets, currentPod.PasswordKey);
 
 		// var dbPortValue = dbPort.NodePort ?? dbPort.Port;
 		// var dbPortInternalValue = dbPortInternal.NodePort ?? dbPortInternal.Port;
@@ -291,7 +291,28 @@ public class k8Commands : Ik8Commands
 	private V1ServicePort GetServicePort(string appName, string serviceName ) {
 		V1Service service = _client.CoreV1.ListNamespacedService(K8NNameSpace, labelSelector:$"app={appName}")
 			.Items.FirstOrDefault(s=> s.Metadata.Name == serviceName);
-		return service?.Spec.Ports.FirstOrDefault();
+		V1ServicePort port = service?.Spec.Ports.FirstOrDefault();
+		if (port == null) {
+			// Guarding here (rather than at each of the 4 call sites per caller) closes every unguarded
+			// .Port/.NodePort dereference in GetPostgresConnectionString and GetMssqlConnectionString at
+			// once — the sibling gap a follow-up review found next to the statefulSet null-check above.
+			throw new InvalidOperationException(
+				$"Service port for app '{appName}' / service '{serviceName}' was not found in namespace '{K8NNameSpace}'.");
+		}
+		return port;
+	}
+
+	/// <summary>
+	/// Reads a UTF-8 secret value by key, returning an empty string when the secret, its data map, or the
+	/// key is absent. Extracted as a pure helper (no Kubernetes API call) so this null/missing-key safety
+	/// net — including the fix for the pre-existing crash risk of indexing V1Secret.Data directly with `[]`
+	/// when the key is missing — is directly unit-testable without mocking IKubernetes.
+	/// </summary>
+	internal static string ReadSecretString(V1Secret secret, string key) {
+		if (secret?.Data != null && secret.Data.TryGetValue(key, out byte[] value)) {
+			return Encoding.UTF8.GetString(value);
+		}
+		return string.Empty;
 	}
 
 	public bool NamespaceExists(string namespaceName)

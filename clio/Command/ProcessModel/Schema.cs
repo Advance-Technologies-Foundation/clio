@@ -329,7 +329,7 @@ public class FlowElement{
 	[JsonConverter(typeof(TimeZoneInfoJsonConverter))]
 	public TimeZoneInfo? TimeZoneInfo => string.IsNullOrWhiteSpace(TimeZoneOffset)
 		? null
-		: TimeZoneInfo.FindSystemTimeZoneById(TimeZoneOffset ?? "UTC");
+		: TimeZoneInfo.FindSystemTimeZoneById(TimeZoneOffset);
 
 	[JsonPropertyName("schemaUId")]
 	public Guid? SchemaUId { get; set; }

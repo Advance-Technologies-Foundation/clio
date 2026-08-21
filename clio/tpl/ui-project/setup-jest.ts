@@ -1,4 +1,2 @@
+// The @angular-builders/jest runner initializes Angular's test environment. Use npm test or ng test.
 import '@angular/compiler';
-import { setupZoneTestEnv } from 'jest-preset-angular/setup-env/zone';
-
-setupZoneTestEnv();

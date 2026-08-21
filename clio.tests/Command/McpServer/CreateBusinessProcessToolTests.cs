@@ -49,18 +49,20 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
-	[Description("Forwards a descriptor that contains a sendEmail element with its full email block verbatim — the tool is an opaque pass-through, so the new element type and every email field (mode, sender, To/Cc recipients, subject, HTML body, importance, ignoreErrors, manual-mode performer) ride through to the command without modification.")]
+	[Description("Forwards a descriptor that contains a sendEmail element with its full email block verbatim — the tool is an opaque pass-through, so the new element type and every email field (mode, sender, To/Cc recipients, subject, HTML body — including the [[param:…]] / [[element:…]] process-macro placeholders clio never resolves or rewrites, the server does — importance, ignoreErrors, manual-mode performer), plus the readData element, flows and parameters the macros reference, ride through to the command byte-for-byte.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Forward_SendEmail_Descriptor_Verbatim() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		const string sendEmailDescriptor =
-			"{\"name\":\"UsrSendEmailProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"SendEmail1\","
+			"{\"name\":\"UsrSendEmailProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"ReadOrder\",\"type\":\"readData\",\"readData\":{\"source\":\"Order\",\"mode\":\"first\"}},{\"name\":\"SendEmail1\","
 			+ "\"type\":\"sendEmail\",\"email\":{\"mode\":\"manual\",\"sender\":\"sales@example.com\","
-			+ "\"subject\":\"Order update\",\"body\":\"<p>Hello</p>\",\"bodyFormat\":\"html\","
+			+ "\"subject\":\"Order update\",\"body\":\"<p>Hello [[param:ContactName]], order [[element:ReadOrder.ResultEntity.Number]]</p>\",\"bodyFormat\":\"html\","
 			+ "\"to\":[{\"value\":\"to@example.com\"}],\"cc\":[{\"processParameter\":\"ManagerContact\"}],"
 			+ "\"importance\":\"high\",\"ignoreErrors\":true,"
-			+ "\"performer\":{\"type\":\"role\",\"role\":\"All employees\",\"showPage\":true}}}],\"flows\":[]}";
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"All employees\",\"showPage\":true}}}],"
+			+ "\"flows\":[{\"source\":\"ReadOrder\",\"target\":\"SendEmail1\"}],"
+			+ "\"parameters\":[{\"name\":\"ContactName\",\"type\":\"Text\",\"direction\":\"In\"}]}";
 		FakeCreateBusinessProcessCommand defaultCommand = new();
 		FakeCreateBusinessProcessCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -78,7 +80,9 @@ public class CreateBusinessProcessToolTests {
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command should receive the forwarded sendEmail descriptor");
 		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(sendEmailDescriptor,
-			because: "the sendEmail element and its whole email block must pass through unchanged (opaque pass-through)");
+			because: "the sendEmail element, its whole email block, and the [[param:…]] / [[element:…]] body "
+				+ "placeholders must pass through byte-for-byte (opaque pass-through) — clio never resolves or "
+				+ "rewrites the macros; the server does");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
