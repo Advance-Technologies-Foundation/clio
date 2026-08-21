@@ -11,7 +11,7 @@ namespace Clio.Utilities
 			ConsoleLogger.Instance.WriteLine($"Open {filePath}...");
 			if (OSPlatformChecker.GetIsWindowsEnvironment()) {
 #pragma warning disable CLIO004 // Static context; file-open requires direct Process usage
-				Process.Start(new ProcessStartInfo("cmd", $"/c start {filePath}") { CreateNoWindow = true });
+				Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
 #pragma warning restore CLIO004
 			} else {
 				string terminalPath = "/usr/bin/open";

@@ -212,7 +212,7 @@ public class WorkspaceService
 				}
 				: new ProcessStartInfo
 				{
-					FileName = "cmd.exe", // NOSONAR: Windows system command host resolves from the protected system path
+					FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"), // Resolved by absolute path: CreateProcess searches the calling process's own directory before System32
 					Arguments = $"/c code \"{workspacePath}\"",
 					UseShellExecute = false,
 					CreateNoWindow = true
