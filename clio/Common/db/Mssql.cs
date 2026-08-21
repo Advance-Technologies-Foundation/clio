@@ -132,6 +132,8 @@ public class Mssql : IMssql {
 			onMessage?.Invoke(message);
 		}
 
+		SqlIdentifierGuard.EnsureValidIdentifier(dbName, nameof(dbName));
+
 		try {
 			using SqlConnection connection = new(_builder.ConnectionString) {
 				FireInfoMessageEventOnUserErrors = true
@@ -150,18 +152,21 @@ public class Mssql : IMssql {
 			string sqlText = $@"
 
 			USE [master]
-			RESTORE DATABASE [{dbName}] 
-			FROM  DISK = N'{defaultPaths.DataPath}{backupFileName}' 
-			WITH  FILE = 1,  
-			MOVE N'TSOnline_Data' 
-			TO N'{defaultPaths.DataPath}{mdf}',  
-			MOVE N'TSOnline_Log' TO N'{defaultPaths.LogPath}{ldf}',  
+			RESTORE DATABASE [{dbName}]
+			FROM  DISK = @diskPath
+			WITH  FILE = 1,
+			MOVE N'TSOnline_Data'
+			TO @mdfPath,
+			MOVE N'TSOnline_Log' TO @ldfPath,
 			NOUNLOAD,  STATS = 5
 			";
 
 			SqlCommand cmd = new(sqlText, connection) {
 				CommandTimeout = 600
 			};
+			cmd.Parameters.AddWithValue("@diskPath", $"{defaultPaths.DataPath}{backupFileName}");
+			cmd.Parameters.AddWithValue("@mdfPath", $"{defaultPaths.DataPath}{mdf}");
+			cmd.Parameters.AddWithValue("@ldfPath", $"{defaultPaths.LogPath}{ldf}");
 			cmd.ExecuteNonQuery();
 			connection.Close();
 			return new DatabaseRestoreResult(true, messages);
@@ -179,14 +184,15 @@ public class Mssql : IMssql {
 			using SqlConnection connection = new(_builder.ConnectionString);
 			connection.Open();
 
-			string sqlText = $@"
-			SELECT 
-				count(name) as [Count] 
-			FROM 
-				sys.databases WHERE name = '{dbName}'
-			";
+			const string sqlText = """
+			SELECT
+				count(name) as [Count]
+			FROM
+				sys.databases WHERE name = @dbName
+			""";
 
 			SqlCommand cmd = new(sqlText, connection);
+			cmd.Parameters.AddWithValue("@dbName", dbName);
 			object result = cmd.ExecuteScalar();
 			connection.Close();
 			return int.Parse(result.ToString()) == 1;
@@ -199,6 +205,8 @@ public class Mssql : IMssql {
 
 	/// <inheritdoc />
 	public void RenameDb(string from, string to) {
+		SqlIdentifierGuard.EnsureValidIdentifier(from, nameof(from));
+		SqlIdentifierGuard.EnsureValidIdentifier(to, nameof(to));
 		using SqlConnection connection = new(_builder.ConnectionString);
 		connection.Open();
 		string sqlText = $"""
@@ -214,6 +222,7 @@ public class Mssql : IMssql {
 
 	/// <inheritdoc />
 	public void DropDb(string optionsDbName) {
+		SqlIdentifierGuard.EnsureValidIdentifier(optionsDbName, nameof(optionsDbName));
 		using SqlConnection connection = new(_builder.ConnectionString);
 		connection.Open();
 		string sqlText = $"""

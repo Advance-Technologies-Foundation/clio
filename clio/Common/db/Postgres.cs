@@ -43,6 +43,9 @@ public class Postgres : IPostgres
 	}
 	
 	public virtual bool CreateDbFromTemplate (string templateName, string dbName) {
+		SqlIdentifierGuard.EnsureValidIdentifier(templateName, nameof(templateName));
+		SqlIdentifierGuard.EnsureValidIdentifier(dbName, nameof(dbName));
+
 		//_logger.WriteInfo($"Creating database '{dbName}' from template '{templateName}'");
 		bool dbExists = CheckDbExists(dbName);
 		_logger.WriteInfo($"Database '{dbName}' exists: {dbExists}");
@@ -55,15 +58,16 @@ public class Postgres : IPostgres
 			_logger.WriteInfo($"Creating database '{dbName}' from template '{templateName}'");
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
-			
-			string killSqlConnections = @$"
+
+			const string killSqlConnections = """
 			SELECT pg_terminate_backend(pg_stat_activity.pid)
 			FROM pg_stat_activity
-			WHERE pg_stat_activity.datname = '{templateName}'
-			";
+			WHERE pg_stat_activity.datname = @templateName
+			""";
 			using NpgsqlCommand killConnectionCmd = dataSource.CreateCommand(killSqlConnections);
+			killConnectionCmd.Parameters.AddWithValue("@templateName", templateName);
 			killConnectionCmd.ExecuteNonQuery();
-			
+
 			using NpgsqlCommand cmd = dataSource.CreateCommand($"CREATE DATABASE \"{dbName}\" TEMPLATE=\"{templateName}\" ENCODING UTF8 CONNECTION LIMIT -1");
 			cmd.CommandTimeout = 600; // 10 minutes
 			cmd.ExecuteNonQuery();
@@ -84,7 +88,8 @@ public class Postgres : IPostgres
 	}
 	
 	public virtual bool CreateDb (string dbName) {
-		
+		SqlIdentifierGuard.EnsureValidIdentifier(dbName, nameof(dbName));
+
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
@@ -111,7 +116,8 @@ public class Postgres : IPostgres
 			
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
-			using NpgsqlCommand cmd = dataSource.CreateCommand($"UPDATE pg_database SET datistemplate='true' WHERE datname='{dbName}'");
+			using NpgsqlCommand cmd = dataSource.CreateCommand("UPDATE pg_database SET datistemplate='true' WHERE datname=@dbName");
+			cmd.Parameters.AddWithValue("@dbName", dbName);
 			cmd.ExecuteNonQuery();
 			cnn.Close();
 			return true;
@@ -131,15 +137,16 @@ public class Postgres : IPostgres
 	
 	public virtual bool CheckTemplateExists (string templateName) {
 		try {
-			string sqlText = @$"
-				SELECT COUNT(datname) 
-				FROM pg_catalog.pg_database d 
-				WHERE datistemplate = true AND datName = '{templateName}';
-			";
-			
+			const string sqlText = """
+				SELECT COUNT(datname)
+				FROM pg_catalog.pg_database d
+				WHERE datistemplate = true AND datName = @templateName;
+			""";
+
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
+			cmd.Parameters.AddWithValue("@templateName", templateName);
 			object result = cmd.ExecuteScalar();
 			cnn.Close();
 			return result is long and 1;
@@ -159,15 +166,16 @@ public class Postgres : IPostgres
 	
 	public virtual bool CheckDbExists (string templateName) {
 		try {
-			string sqlText = @$"
-				SELECT COUNT(datname) 
-				FROM pg_catalog.pg_database d 
-				WHERE datName = '{templateName}';
-			";
-			
+			const string sqlText = """
+				SELECT COUNT(datname)
+				FROM pg_catalog.pg_database d
+				WHERE datName = @dbName;
+			""";
+
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
+			cmd.Parameters.AddWithValue("@dbName", templateName);
 			object result = cmd.ExecuteScalar();
 			cnn.Close();
 			return result is long and 1;
@@ -186,21 +194,25 @@ public class Postgres : IPostgres
 	}
 	
 	public virtual bool DropDb(string dbName){
+		SqlIdentifierGuard.EnsureValidIdentifier(dbName, nameof(dbName));
+
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 
 			// PostgreSQL refuses to drop databases marked as templates until the flag is cleared.
 			using NpgsqlCommand clearTemplateFlagCmd = dataSource.CreateCommand(
-				$"UPDATE pg_database SET datistemplate='false' WHERE datname='{dbName}'");
+				"UPDATE pg_database SET datistemplate='false' WHERE datname=@dbName");
+			clearTemplateFlagCmd.Parameters.AddWithValue("@dbName", dbName);
 			clearTemplateFlagCmd.ExecuteNonQuery();
-			
-			string killSqlConnections = @$"
+
+			const string killSqlConnections = """
 			SELECT pg_terminate_backend(pg_stat_activity.pid)
 			FROM pg_stat_activity
-			WHERE pg_stat_activity.datname = '{dbName}'
-			";
+			WHERE pg_stat_activity.datname = @dbName
+			""";
 			using NpgsqlCommand killConnectionCmd = dataSource.CreateCommand(killSqlConnections);
+			killConnectionCmd.Parameters.AddWithValue("@dbName", dbName);
 			killConnectionCmd.ExecuteNonQuery();
 			using NpgsqlCommand cmd = dataSource.CreateCommand($"DROP DATABASE IF EXISTS \"{dbName}\";");
 			cmd.ExecuteNonQuery();
@@ -221,6 +233,8 @@ public class Postgres : IPostgres
 	}
 	
 	public virtual bool SetDatabaseComment(string dbName, string comment){
+		SqlIdentifierGuard.EnsureValidIdentifier(dbName, nameof(dbName));
+
 		try {
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
@@ -245,15 +259,16 @@ public class Postgres : IPostgres
 	
 	public virtual string GetDatabaseComment(string dbName){
 		try {
-			string sqlText = @$"
-				SELECT obj_description(oid, 'pg_database') 
-				FROM pg_database 
-				WHERE datname = '{dbName}'
-			";
-			
+			const string sqlText = """
+				SELECT obj_description(oid, 'pg_database')
+				FROM pg_database
+				WHERE datname = @dbName
+			""";
+
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
+			cmd.Parameters.AddWithValue("@dbName", dbName);
 			object result = cmd.ExecuteScalar();
 			cnn.Close();
 			return result?.ToString();
@@ -273,17 +288,18 @@ public class Postgres : IPostgres
 	
 	public virtual string FindTemplateBySourceFile(string sourceFileName){
 		try {
-			string sqlText = @$"
-				SELECT datname 
-				FROM pg_database 
-				WHERE datistemplate = true 
-				  AND shobj_description(oid, 'pg_database') LIKE '%sourceFile:{sourceFileName}%'
+			const string sqlText = """
+				SELECT datname
+				FROM pg_database
+				WHERE datistemplate = true
+				  AND shobj_description(oid, 'pg_database') LIKE @pattern
 				LIMIT 1
-			";
-			
+			""";
+
 			using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
 			using NpgsqlConnection cnn = dataSource.OpenConnection();
 			using NpgsqlCommand cmd = dataSource.CreateCommand(sqlText);
+			cmd.Parameters.AddWithValue("@pattern", $"%sourceFile:{sourceFileName}%");
 			object result = cmd.ExecuteScalar();
 			cnn.Close();
 			
