@@ -1,0 +1,7 @@
+steps:
+- action: restart
+  description: restart with an incomplete direct OAuth target
+  options:
+    auth-app-uri: "https://untrusted.invalid/connect/token"
+    client-id: explicit-client
+    client-secret: explicit-secret

@@ -1,6 +1,12 @@
 # run
 
-Run scenario.
+Run all commands declared in a YAML scenario in one clio process.
+
+Before every environment-dependent step, `run` refreshes `appsettings.json` and resolves the requested
+environment again. This allows a scenario to deploy and register a Creatio environment in one step and use
+that environment in the next step. If the environment is still missing, the step fails instead of falling
+back to `http://localhost`. A step must identify its target with either a named environment or direct
+application/authentication URIs, not both.
 
 
 ## Usage
@@ -20,7 +26,8 @@ Run scenario.
 ## Examples
 
 ```bash
-clio run -e dev
+clio run --file-name ./Phase1.yaml
+clio run --file-name ./Phase1.yaml -e dev
 ```
 
 ## Options

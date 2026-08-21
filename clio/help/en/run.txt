@@ -1,0 +1,20 @@
+Run all commands declared in a YAML scenario.
+
+Usage:
+  clio run --file-name <scenario.yaml> [options]
+
+Aliases:
+  run-scenario, scenario
+
+Options:
+  --file-name <VALUE>  Scenario file name. Required.
+  -e, --environment    Default environment name for steps that omit one.
+
+Environment-dependent steps refresh appsettings.json before resolving their target. This lets a deployment
+step register an environment for the following steps in the same scenario process. A missing environment
+fails the step instead of falling back to localhost. A step cannot combine a named environment with direct
+application or authentication URIs.
+
+Examples:
+  clio run --file-name ./Phase1.yaml
+  clio run --file-name ./Phase1.yaml -e dev

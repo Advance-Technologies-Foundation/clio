@@ -1,79 +1,130 @@
 using System;
-using System.Linq;
-using Microsoft.Extensions.DependencyInjection;
+using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.YAML;
 using CommandLine;
 
-
 namespace Clio.Command;
 
-[Verb("run", Aliases = ["scenario","run-scenario"], HelpText = "Run scenario")]
-public class ScenarioRunnerOptions : EnvironmentOptions{
-    [Option("file-name", Required = true, HelpText = "Scenario file name")]
-    public string FileName { get; set; }
+/// <summary>Options for executing a YAML scenario.</summary>
+[Verb("run", Aliases = ["scenario", "run-scenario"], HelpText = "Run scenario")]
+public class ScenarioRunnerOptions : EnvironmentOptions {
+	/// <summary>Gets or sets the scenario file path.</summary>
+	[Option("file-name", Required = true, HelpText = "Scenario file name")]
+	public string FileName { get; set; }
 }
 
-public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions>{
-    private readonly ILogger _logger;
-    private readonly IScenario _scenario;
-    private readonly ISettingsRepository _settingsRepository;
+/// <summary>Executes the commands declared in a YAML scenario.</summary>
+public class ScenarioRunnerCommand : Command<ScenarioRunnerOptions> {
+	private const string SettingsReloadFailedMessage =
+		"Scenario cannot refresh clio settings before an environment-dependent step.";
+	private const string AmbiguousEnvironmentTargetMessage =
+		"A scenario step cannot combine a named environment with a direct application or authentication URI.";
+	private const string IncompleteDirectTargetMessage =
+		"A direct authentication URI requires a direct application URI in the same scenario step.";
 
-    public ScenarioRunnerCommand(IScenario scenario, ILogger logger, ISettingsRepository settingsRepository) {
-        _scenario = scenario;
-        _logger = logger;
-        _settingsRepository = settingsRepository;
-    }
+	private readonly ILogger _logger;
+	private readonly IScenario _scenario;
+	private readonly ISettingsRepository _settingsRepository;
 
-    public override int Execute(ScenarioRunnerOptions options) {
-        int result = 0;
-        _logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario started");
+	/// <summary>Initializes a new instance of the <see cref="ScenarioRunnerCommand"/> class.</summary>
+	/// <param name="scenario">Scenario parser and step provider.</param>
+	/// <param name="logger">Command logger.</param>
+	/// <param name="settingsRepository">Repository used to resolve current environments.</param>
+	public ScenarioRunnerCommand(IScenario scenario, ILogger logger, ISettingsRepository settingsRepository) {
+		_scenario = scenario;
+		_logger = logger;
+		_settingsRepository = settingsRepository;
+	}
 
-        _scenario
-            .InitScript(options.FileName)
-            .GetSteps(GetType().Assembly.GetTypes())
-            .ToList()
-            .ForEach(step => {
-                _logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Starting step: {step.StepDescription}");
-                if (step.CommandOption is EnvironmentOptions stepOptions and not RegAppOptions) {
-                    if (!string.IsNullOrWhiteSpace(stepOptions.Environment)) {
-                        EnvironmentSettings settings = _settingsRepository.FindEnvironment(stepOptions.Environment);
-                        // Scenario steps are automation, never a human at the console: force a
-                        // non-interactive console into the step container so a compile step
-                        // (compile-configuration / compile-package) fails OPEN instead of blocking on the
-                        // heavy-operation prompt's Console.ReadKey on an attached TTY (ENG-93157, RC-15).
-                        IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
-                        Program.Container = container;
-                    }
-                    else if (!string.IsNullOrWhiteSpace(options.Environment)) {
-                        stepOptions.Environment = options.Environment;
-                        EnvironmentSettings settings = _settingsRepository.FindEnvironment(options.Environment);
-                        // Scenario steps are automation, never a human at the console: force a
-                        // non-interactive console into the step container so a compile step
-                        // (compile-configuration / compile-package) fails OPEN instead of blocking on the
-                        // heavy-operation prompt's Console.ReadKey on an attached TTY (ENG-93157, RC-15).
-                        IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
-                        Program.Container = container;
-                    }
-                    else {
-                        EnvironmentSettings settings = _settingsRepository.FindEnvironment(options.Environment);
-                        // Scenario steps are automation, never a human at the console: force a
-                        // non-interactive console into the step container so a compile step
-                        // (compile-configuration / compile-package) fails OPEN instead of blocking on the
-                        // heavy-operation prompt's Console.ReadKey on an attached TTY (ENG-93157, RC-15).
-                        IServiceProvider container = new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer);
-                        Program.Container = container;
-                    }
-                }
+	/// <inheritdoc />
+	public override int Execute(ScenarioRunnerOptions options) {
+		int result = 0;
+		_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario started");
 
-                result += Program.ExecuteCommandWithOption(step.CommandOption);
-                _logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Finished step: {step.StepDescription}");
-                _logger.WriteLine();
-            });
-        _logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario finished");
-        return result >= 1 ? 1 : 0;
-    }
+		foreach ((object commandOption, string stepDescription) in _scenario
+			.InitScript(options.FileName)
+			.GetSteps(GetType().Assembly.GetTypes())) {
+			_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Starting step: {stepDescription}");
+			if (commandOption is EnvironmentOptions stepOptions
+				&& stepOptions is not RegAppOptions and not PfInstallerOptions
+				&& !TryConfigureEnvironmentStep(stepOptions, options)) {
+				result += 1;
+				_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Finished step: {stepDescription}");
+				_logger.WriteLine();
+				continue;
+			}
+
+			result += Program.ExecuteCommandWithOption(commandOption);
+			_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Finished step: {stepDescription}");
+			_logger.WriteLine();
+		}
+		_logger.WriteInfo($"[{DateTime.Now:hh:mm:ss}] Scenario finished");
+		return result >= 1 ? 1 : 0;
+	}
+
+	private bool TryConfigureEnvironmentStep(EnvironmentOptions stepOptions, ScenarioRunnerOptions scenarioOptions) {
+		if (string.IsNullOrWhiteSpace(stepOptions.Environment)
+			&& string.IsNullOrWhiteSpace(stepOptions.Uri)
+			&& string.IsNullOrWhiteSpace(stepOptions.AuthAppUri)
+			&& !string.IsNullOrWhiteSpace(scenarioOptions.Environment)) {
+			stepOptions.Environment = scenarioOptions.Environment;
+		}
+
+		bool hasNamedEnvironment = !string.IsNullOrWhiteSpace(stepOptions.Environment);
+		bool hasDirectUri = !string.IsNullOrWhiteSpace(stepOptions.Uri);
+		bool hasDirectAuthAppUri = !string.IsNullOrWhiteSpace(stepOptions.AuthAppUri);
+		if (hasNamedEnvironment && (hasDirectUri || hasDirectAuthAppUri)) {
+			_logger.WriteError(AmbiguousEnvironmentTargetMessage);
+			return false;
+		}
+		if (!hasDirectUri && hasDirectAuthAppUri) {
+			_logger.WriteError(IncompleteDirectTargetMessage);
+			return false;
+		}
+		EnvironmentSettings baseSettings;
+		if (!hasNamedEnvironment && hasDirectUri) {
+			baseSettings = new EnvironmentSettings();
+		}
+		else {
+			if (!TryReloadSettings()) {
+				return false;
+			}
+
+			baseSettings = _settingsRepository.FindEnvironment(stepOptions.Environment);
+			if (baseSettings is null) {
+				if (!stepOptions.RequiredEnvironment && !hasNamedEnvironment) {
+					baseSettings = new EnvironmentSettings { Login = "default" };
+				}
+				else {
+					_logger.WriteError(EnvironmentNotFoundError.Build(stepOptions.Environment, _settingsRepository));
+					return false;
+				}
+			}
+		}
+
+		EnvironmentSettings resolvedSettings = baseSettings.Fill(stepOptions, NonInteractiveConsole.Shared);
+		resolvedSettings.EnvironmentPath = string.IsNullOrWhiteSpace(stepOptions.EnvironmentPath)
+			? baseSettings.EnvironmentPath
+			: stepOptions.EnvironmentPath;
+		IServiceProvider container = new BindingsModule().Register(
+			resolvedSettings,
+			NonInteractiveConsole.ForceInContainer);
+		Program.Container = container;
+		return true;
+	}
+
+	private bool TryReloadSettings() {
+		SettingsReloadResult reloadResult = _settingsRepository.Reload();
+		if (!string.IsNullOrWhiteSpace(reloadResult.Warning)) {
+			_logger.WriteWarning(reloadResult.Warning);
+		}
+		if (reloadResult.Reloaded || reloadResult.Report?.CanExecuteEnvTools == true) {
+			return true;
+		}
+
+		_logger.WriteError(SettingsReloadFailedMessage);
+		return false;
+	}
 }
-
-
