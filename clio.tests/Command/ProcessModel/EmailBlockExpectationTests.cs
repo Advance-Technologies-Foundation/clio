@@ -189,4 +189,79 @@ public class EmailBlockExpectationTests {
 
 	#endregion
 
+	#region Methods: MacroBodyElements / UnresolvedBodyMacros / BuildMacroWarning
+
+	[Test]
+	[Description("Only elements whose email.body carries a [[param:…]] / [[element:…]] placeholder are returned: a plain-HTML body has no macros to fail to resolve, so it need not be verified.")]
+	public void MacroBodyElements_ShouldReturnOnlyElementsWhoseBodyCarriesAMacro() {
+		// Arrange
+		const string descriptor = """
+			{"name":"UsrProc","elements":[
+				{"name":"PlainMail","type":"sendEmail","email":{"body":"<p>Hello</p>"}},
+				{"name":"ParamMail","type":"sendEmail","email":{"body":"<p>[[param:ContactName]]</p>"}},
+				{"name":"ElementMail","type":"sendEmail","email":{"body":"<p>[[element:ReadOrder.ResultEntity.Number]]</p>"}},
+				{"name":"NoBodyMail","type":"sendEmail","email":{"subject":"x"}}]}
+			""";
+
+		// Act
+		IReadOnlyList<string> macroElements = EmailBlockExpectation.MacroBodyElements(descriptor);
+
+		// Assert
+		macroElements.Should().BeEquivalentTo(["ParamMail", "ElementMail"],
+			because: "only a body that actually embeds a macro placeholder can fail to resolve on an old package");
+	}
+
+	[Test]
+	[Description("An element whose sent body carried a macro but comes back with hasBody:true and an empty body is the signature of a package that stored the placeholders verbatim without resolving them — reported so the caller is warned before a literal [[…]] is emailed.")]
+	public void UnresolvedBodyMacros_ShouldReportAMacroBodyThatCameBackEmptyDespiteHasBody() {
+		// Arrange — the old-package degradation: block present, hasBody true, but no decoded body.
+		DescribeProcessResult described = new() {
+			Elements = [new DescribedElement {
+				Name = "ParamMail", Email = new DescribedEmail { HasBody = true, Body = null }
+			}]
+		};
+
+		// Act
+		IReadOnlyList<string> unresolved = EmailBlockExpectation.UnresolvedBodyMacros(described, ["ParamMail"]);
+
+		// Assert
+		unresolved.Should().BeEquivalentTo(["ParamMail"],
+			because: "hasBody:true with a null body is the read-back signature of macros stored but not resolved");
+	}
+
+	[Test]
+	[Description("A healthy build decodes the tokens back into a non-null [[…]] author-form body, so an element whose body came back populated is NOT reported — the presence of [[ in the read-back is exactly what a resolved body looks like, so it must never be treated as the failure signal.")]
+	public void UnresolvedBodyMacros_ShouldStayQuiet_WhenTheBodyDecodedBackToAuthorForm() {
+		// Arrange — the healthy case: describe returns the decoded [[param:…]] body.
+		DescribeProcessResult described = new() {
+			Elements = [new DescribedElement {
+				Name = "ParamMail",
+				Email = new DescribedEmail { HasBody = true, Body = "<p>[[param:ContactName]]</p>" }
+			}]
+		};
+
+		// Act, Assert
+		EmailBlockExpectation.UnresolvedBodyMacros(described, ["ParamMail"]).Should().BeEmpty(
+			because: "a decoded body is present, so the macros resolved — decode reproducing [[…]] must not read as a failure");
+	}
+
+	[Test]
+	[Description("The macro warning names the affected element, states the literal would be emailed, and names the fix; nothing unresolved produces no warning.")]
+	public void BuildMacroWarning_ShouldStateConsequenceAndFix_AndBeSilentWhenClean() {
+		// Arrange, Act
+		string? warning = EmailBlockExpectation.BuildMacroWarning(["ParamMail"]);
+
+		// Assert
+		warning.Should().NotBeNull();
+		warning.Should().Contain("ParamMail", because: "the caller has to know which element's body did not resolve");
+		warning.Should().Contain("did NOT resolve",
+			because: "the observation is the point: the placeholders were stored, not resolved");
+		warning.Should().Contain("install-process-builder",
+			because: "a warning without the remedy leaves the caller stuck");
+		EmailBlockExpectation.BuildMacroWarning([]).Should().BeNull(
+			because: "a healthy build must stay silent rather than emit a reassuring non-message");
+	}
+
+	#endregion
+
 }

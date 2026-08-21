@@ -175,6 +175,51 @@ public class UiProjectCreatorIntegrationTests {
 		cleanScript.Should().Contain("packages/UsrRssReader/Files/src/js/rss_reader");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Delegates Angular test-environment initialization to the configured Jest builder for every shipped UI template.")]
+	public void Create_ShouldDelegateAngularTestEnvironmentSetupToJestBuilder_WhenTemplateIsScaffolded(
+		bool isEmpty) {
+		// Arrange
+		string projectPath = Path.Combine(_tempDir, "projects", ProjectName);
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, isEmpty, string.Empty, _ => false);
+
+		// Assert
+		string setupContent = File.ReadAllText(Path.Combine(projectPath, "setup-jest.ts"));
+		setupContent.ReplaceLineEndings("\n").Trim().Should().Be(
+			"// The @angular-builders/jest runner initializes Angular's test environment. Use npm test or ng test.\n" +
+			"import '@angular/compiler';",
+			because: "the generated setup should retain only project-specific compiler setup and document its runner-owned test environment");
+
+		string jestConfig = File.ReadAllText(Path.Combine(projectPath, "jest.config.ts"));
+		jestConfig.ReplaceLineEndings("\n").Trim().Should().Be(
+			"import type { Config } from 'jest';\n\n" +
+			"export default {\n" +
+			"  preset: 'jest-preset-angular',\n" +
+			"  setupFilesAfterEnv: ['<rootDir>/setup-jest.ts'],\n" +
+			"} satisfies Config;",
+			because: "the generated project should retain exactly one project-specific Jest setup extension point");
+
+		JsonObject packageJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "package.json"))).AsObject();
+		string testScript = packageJson["scripts"]?["test"]?.GetValue<string>();
+		testScript.Should().Be("ng test",
+			because: "the documented zero-spec exit behavior requires the package script to preserve Jest's default result");
+
+		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "angular.json"))).AsObject();
+		JsonNode testTarget = angularJson["projects"]?[ProjectName]?["architect"]?["test"];
+		string testBuilder = testTarget?["builder"]?.GetValue<string>();
+		string configPath = testTarget?["options"]?["configPath"]?.GetValue<string>();
+		string testTsConfig = testTarget?["options"]?["tsConfig"]?.GetValue<string>();
+		testBuilder.Should().Be("@angular-builders/jest:run",
+			because: "the builder must remain the single owner of Angular test-environment initialization");
+		configPath.Should().Be("jest.config.ts",
+			because: "the builder must load the project-specific setup extension point");
+		testTsConfig.Should().Be("tsconfig.spec.json",
+			because: "the builder must compile specs with the generated test TypeScript configuration");
+	}
+
 	#endregion
 
 	#region Methods: Private

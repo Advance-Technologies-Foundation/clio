@@ -66,6 +66,13 @@ public sealed class DataForgeEnrichmentBuilder(IToolCommandResolver commandResol
 				Coverage: context.Coverage,
 				Warnings: context.Warnings,
 				ContextSummary: BuildSummary(context));
+		} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			// Rethrow only when the CALLER's own token requested the cancellation — it must propagate
+			// instead of being degraded into a "dataforge:" warning. TaskCanceledException (which derives
+			// from OperationCanceledException) can also surface from Data Forge's own independent request
+			// timeout; that is an operational failure like any other and must still degrade to a warning
+			// rather than aborting an otherwise-valid schema operation (review #1143 follow-up).
+			throw;
 		} catch (Exception ex) {
 			return new ApplicationDataForgeResult(
 				Used: true,

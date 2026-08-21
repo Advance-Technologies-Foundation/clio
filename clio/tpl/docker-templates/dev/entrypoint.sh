@@ -10,7 +10,7 @@ REDIS_HOST=${REDIS_HOST:-$DB_HOST}
 REDIS_PORT=${REDIS_PORT:-6379}
 REDIS_DB=${REDIS_DB:-0}
 
-if [ -f /app/ConnectionStrings.config.template ]; then
+if [[ -f /app/ConnectionStrings.config.template ]]; then
     envsubst < /app/ConnectionStrings.config.template > /app/ConnectionStrings.config
 fi
 

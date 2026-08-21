@@ -72,9 +72,9 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>03179bd</c>, branch
-	/// <c>chore/restamp-1.3.0.0-changedata-rebundle</c> — the 1.3.0.0 restamp over merged <c>main</c>
-	/// <c>f8596e9</c>, the ENG-91851 changeData merge) following that repository's
+	/// (<c>packages/CrtProcessBuilder</c> at commit <c>074f955</c>, branch
+	/// <c>chore/restamp-1.2.0.0-readdata-rebundle</c> — the 1.2.0.0 restamp over merged <c>main</c>
+	/// <c>30b4816</c>, the ENG-91850 readData merge) following that repository's
 	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
 	/// here.
 	/// </summary>
@@ -110,7 +110,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"4D749EC13ADB93CBA5C6880137AC8063A2B11C0995114701AA4F4822BF4C1A9C";
+		"7A059992772E5DCCDE6517A79790DB5B66EB438CDC6AACD1435F9AC6F8A88ECF";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -135,7 +135,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.3.0.0";
+	private const string ExpectedArchiveVersion = "1.3.0.1";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -161,7 +161,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1787243426000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1787297993000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
