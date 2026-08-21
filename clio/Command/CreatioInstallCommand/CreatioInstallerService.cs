@@ -15,6 +15,7 @@ using Clio.Common.Database;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
 using Clio.Common.DbHub;
+using Clio.Common.IIS;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
@@ -137,6 +138,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IStageEventEmitter _stageEventEmitter;
 	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
+	private readonly IIisDeploymentPortReservation _iisDeploymentPortReservation;
 
 	#endregion
 
@@ -164,6 +166,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="creatioPackageVersionParser">Parser for version extraction from package filename.</param>
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
 	/// <param name="stageEventEmitter">Emitter that raises typed stage-progress events for the deploy run.</param>
+	/// <param name="iisDeploymentPortReservation">Machine-wide IIS port reservation held across deployment mutation.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
 	/// <param name="dbHubSynchronizationService">Best-effort dbHub source synchronization service.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
@@ -179,6 +182,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ICreatioPackageVersionParser creatioPackageVersionParser,
 		IPasswordResetScriptExecutor passwordResetScriptExecutor,
 		IStageEventEmitter stageEventEmitter,
+		IIisDeploymentPortReservation iisDeploymentPortReservation,
 		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null,
 		IDbHubSynchronizationService dbHubSynchronizationService = null) {
 		_packageArchiver = packageArchiver;
@@ -205,6 +209,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_creatioPackageVersionParser = creatioPackageVersionParser;
 		_passwordResetScriptExecutor = passwordResetScriptExecutor;
 		_stageEventEmitter = stageEventEmitter;
+		_iisDeploymentPortReservation = iisDeploymentPortReservation;
 		_dbHubSynchronizationService = dbHubSynchronizationService;
 		_dbOperationLogContextAccessor = dbOperationLogContextAccessor ?? NullDbOperationLogContextAccessor.Instance;
 	}
@@ -1337,13 +1342,6 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		IDeploymentStrategy strategy = SelectDeploymentStrategy(options);
 		bool isIisDeployment = strategy is IISDeploymentStrategy;
 
-		// Only use IIS root folder validation for IIS deployments
-		if (isIisDeployment) {
-			if (!_msFileSystem.Directory.Exists(_iisRootFolder)) {
-				_msFileSystem.Directory.CreateDirectory(_iisRootFolder);
-			}
-		}
-
 		// STEP 1: Get a site name from a user
 		while (string.IsNullOrEmpty(options.SiteName)) {
 			_logger.WriteLine("Please enter site name:");
@@ -1371,7 +1369,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// Only prompt for port on Windows IIS deployments
 		// DotNet deployments on macOS/Linux use default port or user-specified port
 		if (isIisDeployment) {
-			while (options.SitePort is <= 0 or > 65536) {
+			while (options.SitePort is <= 0 or > 65535) {
 				_logger.WriteLine(
 					$"Please enter site port, Max value - 65535:{Environment.NewLine}(recommended range between 40000 and 40100)");
 				if (int.TryParse(Console.ReadLine(), out int value)) {
@@ -1457,6 +1455,15 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Deploy,
 			BuildDeployManifest(synchronizeDbHub), OnStageChanged);
 		try {
+		using IDisposable portReservation = isIisDeployment
+			? _iisDeploymentPortReservation.Acquire(options.SitePort)
+			: null;
+
+		// The IIS port reservation is held before the first target mutation and remains held until this
+		// deployment either owns the IIS binding or has failed. Different ports can still deploy in parallel.
+		if (isIisDeployment && !_msFileSystem.Directory.Exists(_iisRootFolder)) {
+			_msFileSystem.Directory.CreateDirectory(_iisRootFolder);
+		}
 
 		// stage-build: copying from a network drive to the local products folder is the only work this
 		// stage performs; for a non-network source it is inert (skipped, not-applicable).

@@ -5,6 +5,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
+using Clio.Common.IIS;
 using Clio.Common.K8;
 using Clio.Tests.Command;
 using FluentAssertions;
@@ -43,6 +44,7 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 
 	private CreatioInstallerService _creatioInstallerService;
 	private IProcessExecutor _processExecutor;
+	private IIisDeploymentPortReservation _iisDeploymentPortReservation;
 
 	#endregion
 
@@ -58,6 +60,8 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 
 		_processExecutor = Substitute.For<IProcessExecutor>();
 		containerBuilder.AddSingleton(_processExecutor);
+		_iisDeploymentPortReservation = Substitute.For<IIisDeploymentPortReservation>();
+		containerBuilder.AddSingleton(_iisDeploymentPortReservation);
 	}
 
 	protected override MockFileSystem CreateFs() {
@@ -400,6 +404,34 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 		arguments[1].Should().BeOfType<string>("because process arguments should contain the URL to open");
 		((string)arguments[1]).Should().Contain("localhost:8091", "because non-IIS browser URL should use localhost");
 		arguments[2].Should().Be(false, "because browser launch should be fire-and-forget");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("IIS deployment rejects a reserved port before unzip, file copy, or database restore can mutate the target.")]
+	public void Execute_ShouldFailBeforeMutation_WhenIisPortCannotBeReserved() {
+		// Arrange
+		const int port = 40187;
+		string zipPath = Path.Combine(_localArtifactServerPath, "8.1.1",
+			"8.1.1.1417_Studio_Softkey_PostgreSQL_ENU.zip");
+		_iisDeploymentPortReservation.Acquire(port).Returns(_ => throw new InvalidOperationException(
+			"IIS port 40187 is not available."));
+		PfInstallerOptions options = new() {
+			SiteName = "collision-probe",
+			SitePort = port,
+			ZipFile = zipPath,
+			DeploymentMethod = "iis",
+			AutoRun = false
+		};
+
+		// Act
+		Action act = () => _creatioInstallerService.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*not available*",
+				because: "the machine-scoped port reservation is the first deployment mutation boundary");
+		_iisDeploymentPortReservation.Received(1).Acquire(port);
 	}
 
 	[Test]

@@ -71,6 +71,10 @@ public sealed class UninstallCreatioToolTests : BaseClioModuleTests {
 			because: "agents must not retry an already successful destructive uninstall after a profile warning");
 		description.Description.Should().Contain("application pool and its profile are preserved",
 			because: "agents must understand that uninstall does not destroy IIS resources used by another application");
+		description.Description.Should().Contain("EnvironmentPath is the authoritative target identity",
+			because: "agents must understand that named uninstall does not derive the destructive target from the environment URI");
+		description.Description.Should().Contain("Every safely",
+			because: "agents must understand that all exact-path IIS targets are removed after safety validation");
 	}
 
 	[Test]

@@ -127,6 +127,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	public override void Setup(){
 		EnvironmentSettings = new EnvironmentSettings {
 			Uri = "http://kkrylovn.tscrm.com:40090",
+			EnvironmentPath = InstalledCreatioPath,
 			Login = "",
 			Password = ""
 		};
@@ -163,42 +164,42 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	#endregion
 
 	[Test]
-	[Description("UninstallByEnvironmentName aborts with an error when no IIS site matches the environment URL.")]
-	public void UninstallByEnvironmentName_Exits_WhenNoSiteFoundByUrl(){
+	[Description("UninstallByEnvironmentName uses registered EnvironmentPath even when IIS bindings do not match the registered URI.")]
+	public void UninstallByEnvironmentName_UsesEnvironmentPath_WhenUriDoesNotMatch(){
 		//Arrange
 		MockStartedSite("https://google.ca");
+		AddPostgresConnectionStringFile();
 
 		//Act
-		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+		_sut.UninstallByEnvironmentName(EnvironmentName);
 
 		//Assert
-		act.Should().Throw<CreatioUninstallAbortedException>(
-			because: "a URI mismatch must fail rather than report a successful uninstall of a same-named site");
-		_loggerMock.Received(1).WriteError($"Could not correlate environment '{EnvironmentName}' with an IIS site URI.");
+		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, null);
+		_settingsRepositoryMock.Received(1).RemoveEnvironment(EnvironmentName);
 	}
 
 	[Test]
-	[Description("UninstallByEnvironmentName aborts with a typed terminal failure when IIS has no sites registered.")]
-	public void UninstallByEnvironmentName_Exits_WhenNoSiteFoundInIIS(){
+	[Description("UninstallByEnvironmentName removes a registered local non-IIS deployment using EnvironmentPath.")]
+	public void UninstallByEnvironmentName_RemovesLocalDeployment_WhenIisHasNoSites(){
 		//Arrange
 		MockNoSitesFound();
+		AddPostgresConnectionStringFile();
 		List<ClioStageEvent> events = CaptureStageEvents();
 
 		//Act
-		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+		_sut.UninstallByEnvironmentName(EnvironmentName);
 
 		//Assert
-		act.Should().Throw<CreatioUninstallAbortedException>(
-			because: "missing IIS state means the requested destructive target cannot be proven");
-		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
-			because: "MCP progress consumers need an honest terminal failure event");
-		events.Last().RunCompleted!.ErrorCode.Should().Be("uninstall-target-not-found",
-			because: "the failure should be machine-classifiable");
+		_iisScannerMock.DidNotReceive().TryStopIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_iisScannerMock.DidNotReceive().TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_settingsRepositoryMock.Received(1).RemoveEnvironment(EnvironmentName);
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Success,
+			because: "the registered path is sufficient authority for a local deployment that does not use IIS");
 	}
 
 	[Test]
-	[Description("UninstallByEnvironmentName should identify the correct installation directory path from the IIS site before running the pipeline")]
-	public void UninstallByEnvironmentName_ShouldLogResolvedDirectory_WhenSiteMatches(){
+	[Description("UninstallByEnvironmentName logs the registered EnvironmentPath before running the pipeline.")]
+	public void UninstallByEnvironmentName_ShouldLogRegisteredDirectory(){
 		// Arrange
 		MockStartedSite();
 
@@ -210,7 +211,53 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		// Assert
 		act.Should().Throw<CreatioUninstallAbortedException>(
 			"because the environment resolves to a directory but its configuration cannot be read");
-		_loggerMock.Received(1).WriteInfo($"Uninstalling Creatio from directory: {InstalledCreatioPath}");
+		_loggerMock.Received(1).WriteInfo($"Uninstalling Creatio from registered directory: {InstalledCreatioPath}");
+	}
+
+	[Test]
+	[Description("UninstallByEnvironmentName removes every safe IIS site mapped to the registered EnvironmentPath.")]
+	public void UninstallByEnvironmentName_ShouldRemoveAllIisSites_WhenPathIsShared(){
+		// Arrange
+		const string secondSiteName = "work-alias";
+		const string secondPoolName = "work-alias-pool";
+		_iisScannerMock.FindAllCreatioSites().Returns([
+			new UnregisteredSite(
+				new SiteBinding(EnvironmentName, "Started", "", InstalledCreatioPath, AppPoolName),
+				[new Uri(EnvironmentSettings.Uri)], SiteType.Core),
+			new UnregisteredSite(
+				new SiteBinding(secondSiteName, "Started", "", InstalledCreatioPath, secondPoolName),
+				[new Uri("https://alias.example.test:40100")], SiteType.Core)
+		]);
+		AddPostgresConnectionStringFile();
+
+		// Act
+		_sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		_iisScannerMock.Received(1).TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.Received(1).TryStopIisTarget(secondSiteName, InstalledCreatioPath, secondPoolName);
+		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.Received(1).TryDeleteIisTarget(secondSiteName, InstalledCreatioPath, secondPoolName);
+		_iisScannerMock.Received(1).TryStopAppPoolIfOwnedByTargets(AppPoolName,
+			Arg.Is<IReadOnlyCollection<string>>(names => names.Contains(EnvironmentName) && names.Contains(secondSiteName)));
+		_iisScannerMock.Received(1).TryStopAppPoolIfOwnedByTargets(secondPoolName,
+			Arg.Is<IReadOnlyCollection<string>>(names => names.Contains(EnvironmentName) && names.Contains(secondSiteName)));
+		_settingsRepositoryMock.Received(1).RemoveEnvironment(EnvironmentName);
+	}
+
+	[Test]
+	[Description("IIS path identity ignores Windows path casing and trailing directory separators.")]
+	public void PathsEqual_ShouldNormalizeCaseAndTrailingSeparators(){
+		// Arrange
+		string path = Path.Combine(Path.GetTempPath(), "clio", "work");
+		string alternate = path.ToUpperInvariant() + Path.DirectorySeparatorChar;
+
+		// Act
+		bool equal = CreatioUninstaller.PathsEqual(path, alternate);
+
+		// Assert
+		equal.Should().BeTrue(
+			because: "IIS may return the registered physical path with different casing or a trailing separator");
 	}
 
 	[TestCase("ConnectionStrings_PG")]
@@ -334,6 +381,24 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			because: "even lookup failures must emit the typed manifest first");
 		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
 			because: "the typed stream must terminate honestly");
+		_iisScannerMock.DidNotReceive().FindAllCreatioSites();
+	}
+
+	[Test]
+	[Description("UninstallByEnvironmentName aborts before discovery when the registration has no EnvironmentPath.")]
+	public void UninstallByEnvironmentName_Aborts_WhenEnvironmentPathIsMissing() {
+		// Arrange
+		EnvironmentSettings.EnvironmentPath = null;
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "a registered URI is not filesystem authority for destructive cleanup");
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+			because: "the missing local identity must surface as a typed terminal failure");
 		_iisScannerMock.DidNotReceive().FindAllCreatioSites();
 	}
 

@@ -78,6 +78,12 @@ public interface IIisScanner {
 	/// <returns><see langword="true"/> only when safe removal is verified.</returns>
 	bool TryDeleteIisTarget(string siteName, string physicalPath, string appPoolName);
 
+	/// <summary>Stops an application pool only when every current assignment belongs to the selected targets.</summary>
+	/// <param name="appPoolName">Application pool to inspect and stop.</param>
+	/// <param name="targetNames">Root-site or nested-application names selected for removal.</param>
+	/// <returns><see langword="true"/> when the pool was proven target-owned and the stop was requested.</returns>
+	bool TryStopAppPoolIfOwnedByTargets(string appPoolName, IReadOnlyCollection<string> targetNames);
+
 	/// <summary>Deletes an application pool only when a fresh IIS snapshot has no assignments.</summary>
 	/// <param name="appPoolName">The application pool to revalidate and remove.</param>
 	/// <returns><see langword="true"/> only when removal is verified.</returns>
@@ -416,6 +422,30 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			RemoveSite(siteName);
 		}
 		return IsIisTargetAbsent(ExecuteAppCmd("list app /xml"), siteName);
+	}
+
+	/// <inheritdoc />
+	public bool TryStopAppPoolIfOwnedByTargets(string appPoolName, IReadOnlyCollection<string> targetNames) {
+		if (string.IsNullOrWhiteSpace(appPoolName) || targetNames is null || targetNames.Count == 0
+			|| !TryReadCompleteApps(ExecuteAppCmd("list app /xml"), out XElement[] apps)) {
+			return false;
+		}
+		XElement[] assignments = [.. apps.Where(app => string.Equals(
+			app.Attribute("APPPOOL.NAME")!.Value, appPoolName, StringComparison.OrdinalIgnoreCase))];
+		if (assignments.Length == 0 || assignments.Any(app => !targetNames.Any(targetName =>
+			IsAssignmentOwnedByTarget(app, targetName)))) {
+			return false;
+		}
+		StopAppPool(appPoolName);
+		return true;
+	}
+
+	private static bool IsAssignmentOwnedByTarget(XElement app, string targetName) {
+		string appName = app.Attribute("APP.NAME")!.Value;
+		string siteName = app.Attribute("SITE.NAME")!.Value;
+		return targetName.Contains('/')
+			? string.Equals(appName, targetName, StringComparison.OrdinalIgnoreCase)
+			: string.Equals(siteName, targetName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private bool HasExpectedIisTargetIdentity(string siteName, string physicalPath, string appPoolName) {

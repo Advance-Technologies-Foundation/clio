@@ -18,6 +18,13 @@ Deploys Creatio application from a zip file. On Windows, deploys to Internet Inf
 Services (IIS) by default. On macOS and Linux, uses dotnet runtime. Supports cross-platform
 deployment with optional HTTPS configuration and automatic service management.
 
+For IIS deployments, clio reserves the requested port across concurrent clio
+processes before extracting files, restoring the database, or creating IIS
+objects. The command also checks existing IIS bindings and active listeners.
+If the port is already used or another clio deployment has reserved it, the
+deployment fails before changing the target. Deployments using different ports
+can still run in parallel.
+
 When `--site-name` and the configured `deploy-site-name` default are both
 omitted, interactive deployment prompts for the site name. The Windows Explorer
 "clio: deploy Creatio" action uses this prompt instead of deriving a name from
@@ -304,8 +311,10 @@ Password Reset Script (Creatio >= 8.3.3):
 - Script errors do not block deployment (warning only)
 
 Windows (Default - IIS):
+- Reserves and validates the requested port before deployment changes begin
 - Creates IIS Application Pool
 - Creates IIS Website with exactly one HTTP or HTTPS binding
+- Treats required IIS creation failures as deployment failures
 - HTTPS selects the pinned usable host certificate or the matching certificate
 with the latest expiration; missing certificates warn and fall back to HTTP
 - .NET Framework HTTPS switches ServiceModel config sources to `https` and sets

@@ -2,6 +2,7 @@
 using FluentValidation;
 using OneOf;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -171,14 +172,14 @@ namespace Clio.Common.ScenarioHandlers {
                 sb.AppendLine("Configured .NET Framework HTTPS settings.");
             }
 
-            sb.Append(CreateAppPool(siteName, isNetFramework));
-            sb.Append(CreateWebSite(siteName, sitePort, destinationFolder, protocol, hostName));
+            sb.Append(await CreateAppPool(siteName, isNetFramework));
+            sb.Append(await CreateWebSite(siteName, sitePort, destinationFolder, protocol, hostName));
             if (protocol == "https") {
                 _certificateBindingService.Attach(siteName, certificateThumbprint);
                 sb.AppendLine($"Attached HTTPS certificate {certificateThumbprint} from LocalMachine/My.");
             }
             if(isNetFramework) {
-                sb.Append(CreateWebApplication(siteName, Path.Combine(destinationFolder, "Terrasoft.WebApp")));
+                sb.Append(await CreateWebApplication(siteName, Path.Combine(destinationFolder, "Terrasoft.WebApp")));
             }
             sb.Append("EnableWindowsAuthentication: ").AppendLine(EnableWindowsAuthentication(siteName));
 
@@ -188,24 +189,23 @@ namespace Clio.Common.ScenarioHandlers {
             };
         }
 
-        private string CreateAppPool(string poolName, bool isNetFramework = true) {
+        private Task<string> CreateAppPool(string poolName, bool isNetFramework = true) {
             string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
             string command;
             if (isNetFramework) {
-                command = $"add apppool /name:{poolName}";
+                command = $"add apppool /name:\"{poolName}\"";
             }
             else {
-                command = $"add apppool /name:{poolName} /managedRuntimeVersion:\"\" /managedPipelineMode:\"Integrated\"";
+                command = $"add apppool /name:\"{poolName}\" /managedRuntimeVersion:\"\" /managedPipelineMode:\"Integrated\"";
             }
-            string result = _processExecutor.Execute(appcmdPath, command, true);
-            return result;
+            return ExecuteRequiredAppCmd(appcmdPath, command, $"Create IIS application pool '{poolName}'");
         }
 
-        private string CreateWebSite(string siteName, int port, string destinationFolder, string protocol, string hostName) {
+        private async Task<string> CreateWebSite(string siteName, int port, string destinationFolder, string protocol, string hostName) {
             string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
             string command = $"add site /name:\"{siteName}\" /bindings:\"{protocol}/*:{port}:{hostName}\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
-            
-            var result =  _processExecutor.Execute(appcmdPath, command, true);
+
+            string result = await ExecuteRequiredAppCmd(appcmdPath, command, $"Create IIS site '{siteName}'");
 
             // Enable Basic Authentication for the created site (moved to helper)
             var basicResult = EnableBasicAuthentication(siteName);
@@ -254,11 +254,23 @@ namespace Clio.Common.ScenarioHandlers {
             }
         }
 
-        private string CreateWebApplication(string siteName, string physicalPath) {
+        private Task<string> CreateWebApplication(string siteName, string physicalPath) {
             string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
             string command = $"add app /site.name:\"{siteName}\" /path:\"/0\" /physicalPath:\"{physicalPath}\" /applicationPool:\"{siteName}\"";
-            string result =  _processExecutor.Execute(appcmdPath, command, true);
-            return result;
+            return ExecuteRequiredAppCmd(appcmdPath, command, $"Create IIS application '{siteName}/0'");
+        }
+
+        private async Task<string> ExecuteRequiredAppCmd(string appcmdPath, string command, string operation) {
+            ProcessExecutionResult result = await _processExecutor.ExecuteAndCaptureAsync(
+                new ProcessExecutionOptions(appcmdPath, command));
+            string output = string.Join(Environment.NewLine,
+                new[] { result.StandardOutput, result.StandardError }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+            if (!result.Started || result.ExitCode != 0) {
+                string detail = string.IsNullOrWhiteSpace(output) ? "AppCmd returned no diagnostic output." : output;
+                throw new InvalidOperationException($"{operation} failed. {detail}");
+            }
+            return output;
         }
         
         private static void CopyFiles(string sourceDirectory, string destinationDirectory) {

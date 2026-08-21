@@ -48,15 +48,13 @@ public interface ICreatioUninstaller
 	/// <param name="environmentName">The name of the environment to uninstall.</param>
 	/// <remarks>
 	///     <list type="number">
-	///         This method performs the following operations:
-	///         <item>Sends a request to gather all registered sites in IIS.</item>
 	///         <item>Retrieves the environment settings based on the provided environment name.</item>
-	///         <item>Checks if any site matches the environment's URL.</item>
+	///         <item>Uses the registered <c>EnvironmentPath</c> as the destructive filesystem identity.</item>
+	///         <item>Finds and prevalidates every IIS target mapped to that normalized path.</item>
 	///         <item>
-	///             If a matching site is found, proceeds to <see cref="UninstallByPath"> uninstall</see> Creatio from the
-	///             directory associated with the site.
+	///             Stops and removes all safe matching IIS targets, then proceeds to
+	///             <see cref="UninstallByPath"> uninstall</see> Creatio from the registered directory.
 	///         </item>
-	///         <item>Logs warnings if no sites are found or if the specified environment cannot be matched to any site.</item>
 	///     </list>
 	///     Unregistering the environment is the final stage and runs only after the destructive cleanup
 	///     (drop-database, delete-files) has completed. When automatic dbHub synchronization is enabled,
@@ -64,8 +62,8 @@ public interface ICreatioUninstaller
 	///     so the operation can be retried.
 	/// </remarks>
 	/// <exception cref="CreatioUninstallAbortedException">
-	///     Thrown when the environment configuration cannot be read or no IIS site can be correlated with
-	///     the registered environment URI; the run is aborted before any destructive step.
+	///     Thrown when the environment is not registered with a local path or an IIS target mapped to that path
+	///     cannot be validated safely; the run is aborted before any destructive step.
 	/// </exception>
 	/// <seealso cref="UninstallByPath" />
 	public void UninstallByEnvironmentName(string environmentName);
@@ -151,8 +149,6 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	#endregion
 
 	#region Properties: Private
-
-	private IEnumerable<UnregisteredSite> AllSites { get; set; }
 
 	#endregion
 
@@ -272,23 +268,14 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 	public void UninstallByEnvironmentName(string environmentName){
 		EnvironmentSettings settings = _settingsRepository.FindEnvironment(environmentName);
-		if (settings is null || !Uri.TryCreate(settings.Uri, UriKind.Absolute, out Uri envUri)) {
-			AbortUnresolvedTarget($"Environment '{environmentName}' is not registered with a valid absolute URI.");
+		if (settings is null || string.IsNullOrWhiteSpace(settings.EnvironmentPath)) {
+			AbortUnresolvedTarget(
+				$"Environment '{environmentName}' is not registered with a local EnvironmentPath.");
 			return;
 		}
 
-		AllSites = _iisScanner.FindAllCreatioSites().ToList();
-
-		if (!AllSites.Any()) {
-			AbortUnresolvedTarget("IIS does not have any sites. The uninstall target could not be resolved.");
-		}
-		// A site name is user-controlled and is not sufficient authority for destructive cleanup.
-		// Correlate the registered clio environment URI with IIS before selecting its physical path.
-		string resolvedPath = AllSites.FirstOrDefault(all => all.Uris.Contains(envUri))?.siteBinding.path;
-		if (string.IsNullOrEmpty(resolvedPath)) {
-			AbortUnresolvedTarget($"Could not correlate environment '{environmentName}' with an IIS site URI.");
-		}
-		_logger.WriteInfo($"Uninstalling Creatio from directory: {resolvedPath}");
+		string resolvedPath = settings.EnvironmentPath;
+		_logger.WriteInfo($"Uninstalling Creatio from registered directory: {resolvedPath}");
 
 		// The environment name flows into the pipeline so unregister runs as the final stage and only
 		// after the destructive cleanup has succeeded (Correction C); a partial failure leaves it registered.
@@ -355,17 +342,27 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(environmentName);
 		bool synchronizeDbHub = hasEnvironment
 			&& _dbHubSynchronizationService?.IsAutomaticSynchronizationEnabled() == true;
-		UnregisteredSite targetSite = ResolveSite(creatioDirectoryPath);
-		string appPoolName = targetSite?.siteBinding.appPoolName;
-		bool includeProfileStage = !string.IsNullOrWhiteSpace(appPoolName);
-		if (targetSite is not null && !_iisScanner.IsIisTargetExclusive(targetSite.siteBinding.name)) {
-			AbortUnresolvedTarget(
-				$"IIS target '{targetSite.siteBinding.name}' contains other applications or could not be validated safely.");
+		IReadOnlyList<UnregisteredSite> targetSites = ResolveSites(creatioDirectoryPath);
+		foreach (UnregisteredSite targetSite in targetSites) {
+			if (!_iisScanner.IsIisTargetExclusive(targetSite.siteBinding.name)) {
+				AbortUnresolvedTarget(
+					$"IIS target '{targetSite.siteBinding.name}' contains other applications or could not be validated safely.");
+			}
 		}
-		AppPoolProfileCleanupTarget profileTarget = includeProfileStage
-			? _appPoolProfileCleaner.Prepare(appPoolName)
-			: null;
-		bool appPoolDeleted = false;
+		string[] appPoolNames = targetSites
+			.Select(site => site.siteBinding.appPoolName)
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		bool includeProfileStage = appPoolNames.Length > 0;
+		Dictionary<string, AppPoolProfileCleanupTarget> profileTargets = appPoolNames.ToDictionary(
+			name => name,
+			name => _appPoolProfileCleaner.Prepare(name),
+			StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, bool> appPoolDeleted = appPoolNames.ToDictionary(
+			name => name,
+			_ => false,
+			StringComparer.OrdinalIgnoreCase);
 
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
 			BuildUninstallManifest(includeProfileStage, synchronizeDbHub), OnStageChanged);
@@ -386,23 +383,30 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 		_stageEventEmitter.RunStage(StageIds.StopIis,
 			() => {
-				if (targetSite is not null && !_iisScanner.TryStopIisTarget(targetSite.siteBinding.name,
-					targetSite.siteBinding.path, appPoolName)) {
-					throw new CreatioUninstallAbortedException(
-						$"IIS target '{targetSite.siteBinding.name}' changed and cannot be stopped safely.");
+				foreach (UnregisteredSite targetSite in targetSites) {
+					if (!_iisScanner.TryStopIisTarget(targetSite.siteBinding.name,
+						targetSite.siteBinding.path, targetSite.siteBinding.appPoolName)) {
+						throw new CreatioUninstallAbortedException(
+							$"IIS target '{targetSite.siteBinding.name}' changed and cannot be stopped safely.");
+					}
 				}
-				if (targetSite is null) {
-					StopIISSite(creatioDirectoryPath, appPoolName, false);
+				string[] targetNames = targetSites.Select(site => site.siteBinding.name).ToArray();
+				foreach (string appPoolName in appPoolNames) {
+					_iisScanner.TryStopAppPoolIfOwnedByTargets(appPoolName, targetNames);
 				}
 			});
 
 		_stageEventEmitter.RunStage(StageIds.DeleteIis, () => {
-			if (targetSite is not null && !_iisScanner.TryDeleteIisTarget(targetSite.siteBinding.name,
-				targetSite.siteBinding.path, appPoolName)) {
-				throw new CreatioUninstallAbortedException(
-					$"IIS target '{targetSite.siteBinding.name}' changed or could not be removed safely.");
+			foreach (UnregisteredSite targetSite in targetSites) {
+				if (!_iisScanner.TryDeleteIisTarget(targetSite.siteBinding.name,
+					targetSite.siteBinding.path, targetSite.siteBinding.appPoolName)) {
+					throw new CreatioUninstallAbortedException(
+						$"IIS target '{targetSite.siteBinding.name}' changed or could not be removed safely.");
+				}
 			}
-			appPoolDeleted = includeProfileStage && _iisScanner.TryDeleteAppPoolIfUnused(appPoolName);
+			foreach (string appPoolName in appPoolNames) {
+				appPoolDeleted[appPoolName] = _iisScanner.TryDeleteAppPoolIfUnused(appPoolName);
+			}
 		});
 
 		_stageEventEmitter.RunStage(StageIds.DropDb, () => DropDatabase(dbInfo));
@@ -412,33 +416,41 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			_logger.WriteInfo($"Directory: {creatioDirectoryPath} deleted");
 		});
 
-		AppPoolProfileCleanupResult profileResult = null;
-		string profileWarning = null;
+		List<AppPoolProfileCleanupResult> profileResults = [];
+		List<string> profileWarnings = [];
 		if (includeProfileStage) {
-			if (!appPoolDeleted || !_iisScanner.IsAppPoolAbsent(appPoolName)) {
-				profileResult = new AppPoolProfileCleanupResult(AppPoolProfileCleanupStatus.NotApplicable);
+			foreach (string appPoolName in appPoolNames) {
+				AppPoolProfileCleanupResult result = !appPoolDeleted[appPoolName]
+					|| !_iisScanner.IsAppPoolAbsent(appPoolName)
+					? new AppPoolProfileCleanupResult(AppPoolProfileCleanupStatus.NotApplicable)
+					: _appPoolProfileCleaner.TryDelete(profileTargets[appPoolName]);
+				profileResults.Add(result);
+				if (result.Status == AppPoolProfileCleanupStatus.Deleted) {
+					_logger.WriteInfo($"Application-pool profile '{result.ProfilePath}' deleted");
+				}
+				else if (result.Status == AppPoolProfileCleanupStatus.Warning) {
+					string profileLabel = result.ProfilePath ?? $@"IIS APPPOOL\{appPoolName}";
+					profileWarnings.Add(
+						$"Application-pool profile '{profileLabel}' could not be removed because it is currently in use or Windows denied access. Delete it manually after the locking process exits.");
+				}
+			}
+			if (profileWarnings.Count > 0) {
+				AppPoolProfileCleanupResult[] warningResults = [.. profileResults
+					.Where(result => result.Status == AppPoolProfileCleanupStatus.Warning)];
+				string warningDetail = string.Join(" ", warningResults.Select(result => result.Detail));
+				string warningErrorCode = warningResults.Length == 1
+					? warningResults[0].ErrorCode
+					: "APPPOOL_PROFILE_DELETE_WARNING";
+				_stageEventEmitter.WarnStage(StageIds.DeleteApppoolProfile,
+					"One or more application-pool profiles could not be removed.", warningDetail,
+					warningErrorCode);
+			}
+			else if (profileResults.Any(result => result.Status == AppPoolProfileCleanupStatus.Deleted)) {
+				_stageEventEmitter.RunStage(StageIds.DeleteApppoolProfile, () => { });
 			}
 			else {
-				profileResult = _appPoolProfileCleaner.TryDelete(profileTarget);
-			}
-			switch (profileResult.Status) {
-				case AppPoolProfileCleanupStatus.Deleted:
-					_stageEventEmitter.RunStage(StageIds.DeleteApppoolProfile, () => { });
-					_logger.WriteInfo($"Application-pool profile '{profileResult.ProfilePath}' deleted");
-					break;
-				case AppPoolProfileCleanupStatus.NotApplicable:
-					_stageEventEmitter.SkipStage(StageIds.DeleteApppoolProfile,
-						ClioStageEventContract.SkipReasons.NotApplicable);
-					break;
-				case AppPoolProfileCleanupStatus.Warning:
-					string profileLabel = profileResult.ProfilePath ?? $@"IIS APPPOOL\{appPoolName}";
-					profileWarning =
-						$"Creatio was uninstalled, but application-pool profile '{profileLabel}' could not be removed "
-						+ "because it is currently in use or Windows denied access. Delete it manually after the locking process exits.";
-					_stageEventEmitter.WarnStage(StageIds.DeleteApppoolProfile,
-						"Application-pool profile could not be removed.", profileResult.Detail,
-						profileResult.ErrorCode);
-					break;
+				_stageEventEmitter.SkipStage(StageIds.DeleteApppoolProfile,
+					ClioStageEventContract.SkipReasons.NotApplicable);
 			}
 		}
 
@@ -473,20 +485,26 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		else {
 			_stageEventEmitter.SkipStage(StageIds.Unregister, ClioStageEventContract.SkipReasons.NotApplicable);
 		}
-		if (profileWarning is not null) {
-			_logger.WriteWarning(profileWarning);
+		foreach (string profileWarning in profileWarnings) {
+			_logger.WriteWarning($"Creatio was uninstalled, but {profileWarning}");
 		}
 
-		bool profileHasWarning = profileResult?.Status == AppPoolProfileCleanupStatus.Warning;
+		bool profileHasWarning = profileWarnings.Count > 0;
+		AppPoolProfileCleanupResult[] warningProfileResults = [.. profileResults
+			.Where(result => result.Status == AppPoolProfileCleanupStatus.Warning)];
+		string profileWarningDetail = string.Join(" ", warningProfileResults.Select(result => result.Detail));
+		string profileWarningErrorCode = warningProfileResults.Length == 1
+			? warningProfileResults[0].ErrorCode
+			: "APPPOOL_PROFILE_DELETE_WARNING";
 		if (profileHasWarning && dbHubWarning is not null) {
 			_stageEventEmitter.CompleteSuccessWithWarnings("Creatio was uninstalled with warnings.",
-				$"{profileResult.Detail} {dbHubWarning.Detail}".Trim(), "UNINSTALL_COMPLETED_WITH_WARNINGS",
+				$"{profileWarningDetail} {dbHubWarning.Detail}".Trim(), "UNINSTALL_COMPLETED_WITH_WARNINGS",
 				creatioDirectoryPath);
 		}
 		else if (profileHasWarning) {
 			_stageEventEmitter.CompleteSuccessWithWarnings(
-				"Creatio was uninstalled, but its application-pool profile could not be removed.",
-				profileResult.Detail, profileResult.ErrorCode, creatioDirectoryPath);
+				"Creatio was uninstalled, but one or more application-pool profiles could not be removed.",
+				profileWarningDetail, profileWarningErrorCode, creatioDirectoryPath);
 		}
 		else if (dbHubWarning is not null) {
 			_stageEventEmitter.CompleteSuccessWithWarnings("Creatio was uninstalled with a dbHub warning.",
@@ -497,19 +515,26 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		}
 	}
 
-	private UnregisteredSite ResolveSite(string creatioDirectoryPath){
-		AllSites ??= _iisScanner.FindAllCreatioSites().ToList();
-		return AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
+	private IReadOnlyList<UnregisteredSite> ResolveSites(string creatioDirectoryPath){
+		return _iisScanner.FindAllCreatioSites()
+			.Where(site => PathsEqual(site.siteBinding.path, creatioDirectoryPath))
+			.ToArray();
 	}
 
-	private void StopIISSite(string creatioDirectoryPath, string appPoolName, bool manageAppPool){
-		UnregisteredSite site = ResolveSite(creatioDirectoryPath);
-		if (site is not null) {
-			_iisScanner.StopSiteByName(site.siteBinding.name, appPoolName, manageAppPool);
-			_logger.WriteInfo($"IIS Stopped: {site.siteBinding.name}");
+	internal static bool PathsEqual(string firstPath, string secondPath) {
+		if (string.IsNullOrWhiteSpace(firstPath) || string.IsNullOrWhiteSpace(secondPath)) {
+			return false;
 		}
-		else {
-			_logger.WriteWarning($"IIS NOT Stopped DIR: {creatioDirectoryPath}");
+		try {
+			string normalizedFirst = Path.GetFullPath(firstPath).TrimEnd(
+				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			string normalizedSecond = Path.GetFullPath(secondPath).TrimEnd(
+				Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			return string.Equals(normalizedFirst, normalizedSecond, StringComparison.OrdinalIgnoreCase);
+		}
+		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+			or PathTooLongException) {
+			return false;
 		}
 	}
 

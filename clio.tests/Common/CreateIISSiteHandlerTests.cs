@@ -29,6 +29,12 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 		_httpsConfigurator = Substitute.For<INetFrameworkHttpsConfigurator>();
 		_certificateBindingService = Substitute.For<IIisCertificateBindingService>();
 		_processExecutor.Execute(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>()).Returns("ok");
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
+			Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0,
+				StandardOutput = "ok"
+			}));
 		containerBuilder.AddSingleton(_processExecutor);
 		containerBuilder.AddSingleton(_httpsConfigurator);
 		containerBuilder.AddSingleton(_certificateBindingService);
@@ -74,10 +80,9 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 		await _handler.Handle(request);
 
 		// Assert
-		_processExecutor.Received(1).Execute(
-			Arg.Any<string>(),
-			Arg.Is<string>(command => command.Contains("/bindings:\"http/*:40187:k-host.example.com\"", StringComparison.Ordinal)),
-			true);
+		await _processExecutor.Received(1).ExecuteAndCaptureAsync(
+			Arg.Is<ProcessExecutionOptions>(options => options.Arguments.Contains(
+				"/bindings:\"http/*:40187:k-host.example.com\"", StringComparison.Ordinal)));
 		_httpsConfigurator.DidNotReceive().Configure(Arg.Any<string>());
 		_certificateBindingService.DidNotReceive().Attach(Arg.Any<string>(), Arg.Any<string>());
 	}
@@ -93,10 +98,9 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 		await _handler.Handle(request);
 
 		// Assert
-		_processExecutor.Received(1).Execute(
-			Arg.Any<string>(),
-			Arg.Is<string>(command => command.Contains("/bindings:\"https/*:40187:k-host.example.com\"", StringComparison.Ordinal)),
-			true);
+		await _processExecutor.Received(1).ExecuteAndCaptureAsync(
+			Arg.Is<ProcessExecutionOptions>(options => options.Arguments.Contains(
+				"/bindings:\"https/*:40187:k-host.example.com\"", StringComparison.Ordinal)));
 		_httpsConfigurator.DidNotReceive().Configure(Arg.Any<string>());
 		_certificateBindingService.Received(1).Attach("handler-site", thumbprint);
 	}
@@ -114,12 +118,48 @@ internal class CreateIISSiteHandlerTests : BaseClioModuleTests {
 		// Assert
 		Received.InOrder(() => {
 			_httpsConfigurator.Configure(Path.Combine(_deploymentRoot, "handler-site"));
-			_processExecutor.Execute(
-				Arg.Any<string>(),
-				Arg.Is<string>(command => command.Contains("/bindings:\"https/*:40187:k-host.example.com\"", StringComparison.Ordinal)),
-				true);
+			_processExecutor.ExecuteAndCaptureAsync(
+				Arg.Is<ProcessExecutionOptions>(options => options.Arguments.Contains(
+					"/bindings:\"https/*:40187:k-host.example.com\"", StringComparison.Ordinal)));
 			_certificateBindingService.Attach("handler-site", thumbprint);
 		});
+	}
+
+	[Test]
+	[Description("Propagates a non-zero AppCmd site-creation exit code instead of reporting deployment success.")]
+	public async Task Handle_ShouldFail_WhenAppCmdCannotCreateSite() {
+		// Arrange
+		CreateIISSiteRequest request = CreateRequest("http", isNetFramework: false, certificateThumbprint: string.Empty);
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(call => {
+			ProcessExecutionOptions options = call.Arg<ProcessExecutionOptions>();
+			return Task.FromResult(options.Arguments.StartsWith("add site", StringComparison.Ordinal)
+				? new ProcessExecutionResult { Started = true, ExitCode = 1, StandardError = "duplicate binding" }
+				: new ProcessExecutionResult { Started = true, ExitCode = 0, StandardOutput = "ok" });
+		});
+
+		// Act
+		Func<Task> act = async () => await _handler.Handle(request);
+
+		// Assert
+		await act.Should().ThrowAsync<InvalidOperationException>(
+			because: "a losing IIS mutation must return a non-successful CLI and MCP result");
+		_certificateBindingService.DidNotReceive().Attach(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Quotes the IIS application-pool name so site names containing spaces remain one AppCmd argument.")]
+	public async Task Handle_ShouldQuoteApplicationPoolName() {
+		// Arrange
+		CreateIISSiteRequest request = CreateRequest("http", isNetFramework: false, certificateThumbprint: string.Empty);
+		request.Arguments["siteName"] = "handler site";
+
+		// Act
+		await _handler.Handle(request);
+
+		// Assert
+		await _processExecutor.Received(1).ExecuteAndCaptureAsync(
+			Arg.Is<ProcessExecutionOptions>(options => options.Arguments.Contains(
+				"add apppool /name:\"handler site\"", StringComparison.Ordinal)));
 	}
 
 	private CreateIISSiteRequest CreateRequest(string protocol, bool isNetFramework, string certificateThumbprint) {

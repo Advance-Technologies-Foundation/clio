@@ -22,8 +22,8 @@ namespace Clio.Mcp.E2E;
 /// <remarks>
 /// This fixture is deliberately non-destructive:
 /// deploy-creatio is invoked with an existing but corrupt archive so the run fails at the <c>unzip</c> stage and
-/// creates nothing. Uninstall is invoked for a fixture-only environment whose URI does not match an IIS site,
-/// proving the target-resolution failure contract without deleting an application, database, or files.
+/// creates nothing. Uninstall is invoked for a fixture-only environment with no registered EnvironmentPath,
+/// proving the named-target validation contract without deleting an application, database, or files.
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -163,11 +163,11 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Invokes uninstall-creatio for a fixture-only environment with no matching IIS site and verifies the MCP result fails with a typed terminal failure event without deleting anything.")]
+	[Description("Invokes uninstall-creatio for a fixture-only environment with no EnvironmentPath and verifies the MCP result fails with a typed terminal failure event without deleting anything.")]
 	[AllureTag(UninstallToolName)]
-	[AllureName("Uninstall creatio rejects an unresolved IIS target")]
-	[AllureDescription("Calls uninstall-creatio over the real MCP server for an isolated environment whose URI cannot correlate to an IIS site, then verifies exit code 1 and manifest-to-terminal-failure progress without touching a real instance.")]
-	public async Task UninstallCreatio_Should_Fail_Without_Deleting_When_Iis_Target_Cannot_Be_Resolved() {
+	[AllureName("Uninstall creatio rejects a missing registered EnvironmentPath")]
+	[AllureDescription("Calls uninstall-creatio over the real MCP server for an isolated environment without EnvironmentPath, then verifies exit code 1 and manifest-to-terminal-failure progress without touching a real instance.")]
+	public async Task UninstallCreatio_Should_Fail_Without_Deleting_When_EnvironmentPath_Is_Missing() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 		arrangeContext.Session.StartCapturingProgressNotifications();
@@ -187,12 +187,12 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		// Assert
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		execution.ExitCode.Should().Be(1,
-			because: "an uninstall whose environment URI cannot resolve to an IIS site must fail instead of reporting a false success");
+			because: "a named uninstall without EnvironmentPath must fail instead of guessing a destructive target");
 		execution.Output.Should().Contain(message =>
 			message.MessageType == LogDecoratorType.Error &&
 			message.Value != null &&
-			message.Value.Contains("Could not correlate", StringComparison.OrdinalIgnoreCase),
-			because: "the caller must receive an actionable target-resolution error");
+			message.Value.Contains("EnvironmentPath", StringComparison.OrdinalIgnoreCase),
+			because: "the caller must receive an actionable registered-path error");
 
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
 			progressToken,
@@ -203,7 +203,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		events[0].EventType.Should().Be(ClioStageEventContract.EventTypes.Manifest,
 			because: "target validation failures must still begin with the uninstall manifest");
 		events[^1].RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
-			because: "the unresolved target must terminate the typed progress stream as a failure");
+			because: "the missing registered path must terminate the typed progress stream as a failure");
 		events[^1].RunCompleted!.ErrorCode.Should().Be("uninstall-target-not-found",
 			because: "Ring and other MCP consumers need a stable machine-readable failure classification");
 	}

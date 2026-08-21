@@ -220,6 +220,41 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("An application pool is stopped when every assignment belongs to the IIS targets selected for removal.")]
+	public void TryStopAppPoolIfOwnedByTargets_ShouldStopPool_WhenAllAssignmentsAreTargets() {
+		// Arrange
+		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns(
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"work\" />"
+			+ "<APP APP.NAME=\"alias/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"alias\" /></appcmd>");
+
+		// Act
+		bool result = _scanner.TryStopAppPoolIfOwnedByTargets("shared", ["work", "alias"]);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "stopping a pool is safe when every application assigned to it is being removed");
+		_processExecutor.Received(1).Execute(Arg.Any<string>(), "stop apppool \"/apppool.name:shared\"", true);
+	}
+
+	[Test]
+	[Description("An application pool shared with an unrelated IIS application is left running.")]
+	public void TryStopAppPoolIfOwnedByTargets_ShouldPreservePool_WhenUnrelatedAssignmentRemains() {
+		// Arrange
+		_processExecutor.Execute(Arg.Any<string>(), "list app /xml", true).Returns(
+			"<appcmd><APP APP.NAME=\"work/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"work\" />"
+			+ "<APP APP.NAME=\"other/\" APPPOOL.NAME=\"shared\" SITE.NAME=\"other\" /></appcmd>");
+
+		// Act
+		bool result = _scanner.TryStopAppPoolIfOwnedByTargets("shared", ["work"]);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "stopping the shared pool would interrupt an unrelated application");
+		_processExecutor.DidNotReceive().Execute(Arg.Any<string>(),
+			"stop apppool \"/apppool.name:shared\"", true);
+	}
+
+	[Test]
 	[Description("A shared pool is not stopped or deleted when a fresh application inventory still references it.")]
 	public void TryDeleteAppPoolIfUnused_ShouldPreservePool_WhenAssignmentRemains() {
 		// Arrange
