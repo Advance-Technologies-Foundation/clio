@@ -14,8 +14,9 @@ public readonly record struct DevClioValidation(bool IsValid, string Message);
 
 /// <summary>
 /// Pure helpers for the dev-clio path override: validate a user-supplied path and turn a valid one into
-/// the <see cref="ClioIpcSettings"/> used to launch the clio MCP child. Kept free of I/O beyond the
-/// existence check so it is trivially unit-testable and shared by the settings VM and the composition root.
+/// the <see cref="ClioIpcSettings"/> used to launch the clio MCP child. Kept free of process-spawning I/O
+/// (only filesystem existence/env-var reads for path validation and trusted <c>dotnet</c> host resolution)
+/// so it is trivially unit-testable and shared by the settings VM and the composition root.
 /// </summary>
 public static class DevClioLaunch {
 	/// <summary>
@@ -44,8 +45,10 @@ public static class DevClioLaunch {
 	}
 
 	/// <summary>
-	/// Builds the launch configuration for a validated dev-clio path: a <c>.dll</c> is driven by
-	/// <c>dotnet</c>; a <c>.exe</c> is launched directly. Both append the <c>mcp-server</c> verb.
+	/// Builds the launch configuration for a validated dev-clio path: a <c>.dll</c> is driven by the
+	/// trusted <c>dotnet</c> host resolved to an absolute path (never a bare <c>"dotnet"</c> name, which
+	/// would be resolved via <c>PATH</c>); a <c>.exe</c> is launched directly. Both append the
+	/// <c>mcp-server</c> verb.
 	/// </summary>
 	/// <param name="path">A dev-clio build path that has passed <see cref="Validate"/>.</param>
 	/// <returns>The <see cref="ClioIpcSettings"/> that launches the dev clio.</returns>
@@ -57,7 +60,7 @@ public static class DevClioLaunch {
 		string trimmed = path.Trim();
 		bool isDll = trimmed.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
 		return isDll
-			? new ClioIpcSettings { Command = "dotnet", Args = new[] { trimmed, "mcp-server" } }
+			? new ClioIpcSettings { Command = DotNetHostResolver.ResolveOrDefault(), Args = new[] { trimmed, "mcp-server" } }
 			: new ClioIpcSettings { Command = trimmed, Args = new[] { "mcp-server" } };
 	}
 
