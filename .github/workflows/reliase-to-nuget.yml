@@ -200,5 +200,5 @@ jobs:
         run: |
           $version = "${{ steps.extract_version.outputs.VERSION }}"
           echo "Publishing clio package version $version to NuGet..."
-          dotnet nuget push ".\output\*.nupkg" --api-key ${{ secrets.CLIO_NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+          dotnet nuget push ".\output\*.nupkg" --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
           echo "Successfully published clio $version to NuGet!"
