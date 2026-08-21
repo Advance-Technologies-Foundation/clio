@@ -178,7 +178,8 @@ public sealed class BuildDockerImageService(
 		}
 
 		if (!sharedRegistryPreflightCompleted) {
-			int registryPreflightResult = ValidateRegistryPushTarget(containerImageCli, registryImageReference);
+			int registryPreflightResult =
+				ValidateRegistryPushTarget(containerImageCli, registryImageReference, options.AllowInsecureRegistry);
 			if (registryPreflightResult != 0) {
 				failedSteps.Add("registry-preflight");
 				return new BuildDockerImageTemplateResult(templateRequest.DisplayName, localImageReference, false, failedSteps);
@@ -386,7 +387,8 @@ public sealed class BuildDockerImageService(
 
 		foreach (string registryTarget in registryTargets) {
 			_logger.WriteInfo($"Running shared registry push preflight for batch against: {registryTarget}");
-			int registryPreflightResult = ValidateRegistryPushTarget(containerImageCli, registryTarget);
+			int registryPreflightResult =
+				ValidateRegistryPushTarget(containerImageCli, registryTarget, options.AllowInsecureRegistry);
 			if (registryPreflightResult != 0) {
 				return registryPreflightResult;
 			}
@@ -1127,7 +1129,8 @@ public sealed class BuildDockerImageService(
 
 	private int ValidateRegistryPushTarget(
 		ContainerImageCliKind containerImageCli,
-		string registryImageReference) {
+		string registryImageReference,
+		bool allowInsecureRegistry) {
 		if (string.IsNullOrWhiteSpace(registryImageReference)) {
 			return 0;
 		}
@@ -1139,7 +1142,7 @@ public sealed class BuildDockerImageService(
 
 		_logger.WriteInfo($"Running registry push preflight for: {registryImageReference}");
 		ContainerRegistryPreflightResult preflightResult =
-			_containerRegistryPreflightService.ValidatePushTarget(registryPrefix, registryImageReference);
+			_containerRegistryPreflightService.ValidatePushTarget(registryPrefix, registryImageReference, allowInsecureRegistry);
 		if (preflightResult.Success) {
 			_logger.WriteInfo(
 				$"Registry push preflight succeeded via '{preflightResult.Endpoint}' for '{registryImageReference}'.");

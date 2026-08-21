@@ -85,13 +85,38 @@ public class ContainerRegistryPreflightServiceTests {
 
 		// Act
 		ContainerRegistryPreflightResult result =
-			service.ValidatePushTarget("registry.krylov.cloud", "registry.krylov.cloud/creatio-prod:1.0.0");
+			service.ValidatePushTarget(
+				"registry.krylov.cloud", "registry.krylov.cloud/creatio-prod:1.0.0", allowInsecureRegistry: true);
 
 		// Assert
 		result.Success.Should().BeTrue(
-			"because the command should still be able to preflight plain HTTP registries on trusted local networks");
+			"because the command should still be able to preflight plain HTTP registries on trusted local networks when the caller opted in with --allow-insecure-registry");
 		result.Endpoint.Should().Be("http://registry.krylov.cloud/",
 			"because the fallback HTTP endpoint is the one that actually accepted the upload probe");
+	}
+
+	[Test]
+	[Description("ValidatePushTarget should not fall back to HTTP for a bare-authority registry prefix when allowInsecureRegistry is left at its default of false, and should mention the opt-in flag in the failure message.")]
+	public void ValidatePushTarget_ShouldNotFallbackToHttpAndShouldMentionFlag_WhenAllowInsecureRegistryIsDefault() {
+		// Arrange
+		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
+		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
+		using HttpClient httpClient = new(new StubHttpMessageHandler([
+			new StubResponse(HttpMethod.Get, "https://registry.krylov.cloud/v2/", new HttpRequestException("Connection refused"))
+		]));
+		ContainerRegistryPreflightService service = new(httpClient, credentialProvider);
+
+		// Act
+		ContainerRegistryPreflightResult result =
+			service.ValidatePushTarget("registry.krylov.cloud", "registry.krylov.cloud/creatio-prod:1.0.0");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			"because HTTPS was unreachable and the default (secure) mode must not silently fall back to plaintext HTTP");
+		result.Message.Should().NotContain("http://registry.krylov.cloud",
+			"because no plaintext HTTP endpoint should have been probed without an explicit opt-in");
+		result.Message.Should().Contain("--allow-insecure-registry",
+			"because the failure message should tell the operator how to opt in if the registry is intentionally HTTP-only");
 	}
 
 	[Test]
@@ -115,6 +140,32 @@ public class ContainerRegistryPreflightServiceTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			"because the preflight should reuse locally configured registry credentials when the CLI already knows how to authenticate");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("ValidatePushTarget should probe only the endpoint implied by an already-absolute registry prefix's explicit scheme, regardless of the allowInsecureRegistry flag.")]
+	public void ValidatePushTarget_ShouldUseExplicitSchemeEndpointOnly_RegardlessOfAllowInsecureRegistry(
+		bool allowInsecureRegistry) {
+		// Arrange
+		IContainerRegistryCredentialProvider credentialProvider = Substitute.For<IContainerRegistryCredentialProvider>();
+		credentialProvider.TryResolveCredentials(Arg.Any<string>(), Arg.Any<Uri>()).Returns((ContainerRegistryCredentials)null);
+		using HttpClient httpClient = new(new StubHttpMessageHandler([
+			new StubResponse(HttpMethod.Get, "http://myregistry:5000/v2/", new HttpResponseMessage(HttpStatusCode.OK)),
+			new StubResponse(HttpMethod.Post, "http://myregistry:5000/v2/repo/blobs/uploads/",
+				new HttpResponseMessage(HttpStatusCode.Accepted))
+		]));
+		ContainerRegistryPreflightService service = new(httpClient, credentialProvider);
+
+		// Act
+		ContainerRegistryPreflightResult result =
+			service.ValidatePushTarget("http://myregistry:5000", "myregistry:5000/repo:1.0.0", allowInsecureRegistry);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			"because an explicit http scheme in the registry prefix is honored as-is, independent of the allowInsecureRegistry opt-in");
+		result.Endpoint.Should().Be("http://myregistry:5000/",
+			"because the early-return absolute-prefix branch probes exactly the scheme and authority the caller specified, with no https-first attempt and no additional candidate");
 	}
 
 	private sealed record StubResponse(HttpMethod Method, string Uri, object Result);

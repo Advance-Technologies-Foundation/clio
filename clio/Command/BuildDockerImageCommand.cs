@@ -59,6 +59,13 @@ public class BuildDockerImageOptions {
 	/// </summary>
 	[Option("use-nerdctl", Required = false, HelpText = "Use the nerdctl CLI for this invocation, bypassing runtime CLI auto-detection")]
 	public bool UseNerdctl { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the registry push preflight may fall back to plaintext HTTP.
+	/// </summary>
+	[Option("allow-insecure-registry", Required = false, Default = false,
+		HelpText = "Allow falling back to a plaintext HTTP connection when probing a container registry that has no explicit scheme and does not respond over HTTPS. Off by default.")]
+	public bool AllowInsecureRegistry { get; set; }
 }
 
 /// <summary>

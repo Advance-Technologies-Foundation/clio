@@ -94,6 +94,17 @@ prepending `PREFIX`.
 Before the image build starts, clio runs a registry preflight probe against
 the final push target and fails fast if the registry is unreachable or
 upload initiation is rejected.
+When PREFIX has no explicit scheme, the preflight probes HTTPS only unless
+`--allow-insecure-registry` is set; see that option for the plaintext HTTP
+fallback behavior.
+
+--allow-insecure-registry
+Optional. Default: off. When PREFIX has no explicit scheme and the registry
+does not respond over HTTPS, allow the preflight probe to fall back to a
+plaintext HTTP connection. Off by default so credentials and probe traffic
+never leave the process over plaintext HTTP without an explicit opt-in.
+Has no effect when PREFIX already has an explicit scheme (for example
+`http://registry.internal:5000`); that scheme is always honored as-is.
 
 --use-docker
 Optional. Force docker for this invocation and bypass runtime CLI auto-detection.
@@ -209,6 +220,9 @@ without registry access
 8. If `--registry` is set, run registry push preflight before the expensive image build
 - probe `GET /v2/` to confirm registry availability
 - probe `POST /v2/<repository>/blobs/uploads/` to confirm upload initiation
+- when the registry prefix has no explicit scheme, probe HTTPS only, unless
+`--allow-insecure-registry` is set, in which case fall back to plaintext
+HTTP if HTTPS is unreachable
 - fail early when the registry is unreachable, rejects anonymous upload,
 or requires authentication
 - multi-template builds run this preflight once per invocation, then rely on
@@ -295,6 +309,13 @@ Use a custom template directory:
 clio build-docker-image \
 --from "/opt/builds/creatio-net8" \
 --template "/workspace/docker-templates/custom-prod"
+
+Push to an intentionally HTTP-only registry:
+clio build-docker-image \
+--from "/opt/builds/creatio-net8" \
+--template prod \
+--registry "registry.internal:5000" \
+--allow-insecure-registry
 ```
 
 ## Output
@@ -331,6 +352,12 @@ clio build-docker-image \
     "looks like a .NET Framework Creatio distribution"
         Use a Creatio .NET 8+ distribution. .NET Framework builds are not supported
         for Docker image creation.
+
+    "If this registry is intentionally HTTP-only, retry with --allow-insecure-registry."
+        The registry prefix has no explicit scheme and did not respond over HTTPS.
+        By default clio does not fall back to plaintext HTTP. If the registry is
+        genuinely HTTP-only and you accept sending credentials/probe traffic over
+        plaintext HTTP, retry the command with `--allow-insecure-registry`.
 
 ## Reporting Bugs
 

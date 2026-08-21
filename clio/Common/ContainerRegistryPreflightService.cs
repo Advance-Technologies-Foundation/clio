@@ -16,8 +16,14 @@ public interface IContainerRegistryPreflightService {
 	/// </summary>
 	/// <param name="registryPrefix">Registry or repository prefix supplied by the user.</param>
 	/// <param name="registryImageReference">Fully qualified image reference that would be pushed.</param>
+	/// <param name="allowInsecureRegistry">
+	/// When <c>true</c> and <paramref name="registryPrefix"/> has no explicit scheme, probing falls back to a
+	/// plaintext HTTP endpoint if HTTPS is unreachable. Defaults to <c>false</c> so credentials and probe traffic
+	/// never leave the process over plaintext HTTP without an explicit opt-in.
+	/// </param>
 	/// <returns>Preflight result describing whether the push target appears usable.</returns>
-	ContainerRegistryPreflightResult ValidatePushTarget(string registryPrefix, string registryImageReference);
+	ContainerRegistryPreflightResult ValidatePushTarget(
+		string registryPrefix, string registryImageReference, bool allowInsecureRegistry = false);
 }
 
 /// <summary>
@@ -45,7 +51,8 @@ public sealed class ContainerRegistryPreflightService(
 		credentialProvider ?? throw new ArgumentNullException(nameof(credentialProvider));
 
 	/// <inheritdoc />
-	public ContainerRegistryPreflightResult ValidatePushTarget(string registryPrefix, string registryImageReference) {
+	public ContainerRegistryPreflightResult ValidatePushTarget(
+		string registryPrefix, string registryImageReference, bool allowInsecureRegistry = false) {
 		if (string.IsNullOrWhiteSpace(registryPrefix)) {
 			throw new ArgumentException("Registry prefix is required.", nameof(registryPrefix));
 		}
@@ -55,8 +62,9 @@ public sealed class ContainerRegistryPreflightService(
 		}
 
 		string repositoryName = ExtractRepositoryName(registryImageReference);
+		bool isBareAuthorityPrefix = !Uri.TryCreate(registryPrefix.Trim().TrimEnd('/'), UriKind.Absolute, out _);
 		List<string> probeErrors = [];
-		foreach (Uri endpoint in BuildCandidateEndpoints(registryPrefix)) {
+		foreach (Uri endpoint in BuildCandidateEndpoints(registryPrefix, allowInsecureRegistry)) {
 			try {
 				ContainerRegistryCredentials credentials = _credentialProvider.TryResolveCredentials(registryPrefix, endpoint);
 				using HttpResponseMessage anonymousPingResponse =
@@ -124,10 +132,14 @@ public sealed class ContainerRegistryPreflightService(
 		string combinedMessage = probeErrors.Count == 0
 			? $"No reachable registry endpoint was found for '{registryPrefix}'."
 			: string.Join(Environment.NewLine, probeErrors);
+		if (!allowInsecureRegistry && isBareAuthorityPrefix && probeErrors.Count > 0) {
+			combinedMessage += " If this registry is intentionally HTTP-only, retry with --allow-insecure-registry.";
+		}
+
 		return new ContainerRegistryPreflightResult(false, string.Empty, combinedMessage);
 	}
 
-	private IEnumerable<Uri> BuildCandidateEndpoints(string registryPrefix) {
+	private IEnumerable<Uri> BuildCandidateEndpoints(string registryPrefix, bool allowInsecureRegistry) {
 		string trimmedPrefix = registryPrefix.Trim().TrimEnd('/');
 		if (Uri.TryCreate(trimmedPrefix, UriKind.Absolute, out Uri absolutePrefix)) {
 			yield return new Uri($"{absolutePrefix.Scheme}://{absolutePrefix.Authority}/");
@@ -136,7 +148,9 @@ public sealed class ContainerRegistryPreflightService(
 
 		string authority = trimmedPrefix.Split('/', 2, StringSplitOptions.RemoveEmptyEntries)[0];
 		yield return new Uri($"https://{authority}/");
-		yield return new Uri($"http://{authority}/");
+		if (allowInsecureRegistry) {
+			yield return new Uri($"http://{authority}/");
+		}
 	}
 
 	private string ExtractRepositoryName(string registryImageReference) {
