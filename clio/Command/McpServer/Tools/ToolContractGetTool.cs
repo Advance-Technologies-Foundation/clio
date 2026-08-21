@@ -1991,7 +1991,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, resolve lookup primary values, verify records by Id, or inspect selected fields.",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2001,11 +2001,17 @@ internal static class ToolContractCatalog {
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
-					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed.")
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
+					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
+					Field("count", BooleanType, "When true, requests the total number of matching records before top/skip paging. The response returns it as total-count; response count remains the number of records in this page.")
 				],
 				Validators: [
-					new ToolContractValidator(LimitFieldName, "invalid-top", "top",
-						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false.")
+					new ToolContractValidator("top-range", "invalid-top", "top",
+						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false."),
+					new ToolContractValidator("skip-range", "invalid-skip", "skip",
+						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
+					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
+						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2014,12 +2020,19 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field(CountFieldName, NumberType, "Number of records returned."),
+				Field(CountFieldName, NumberType, "Number of records returned in this page."),
+				Field("total-count", NumberType, "Total records matching the filter before top/skip paging; present when count=true."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
-				Field("next-link", StringType, "OData next-link URL when more records are available.")
+				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool.")
 			),
 			CommonErrorContract,
-			[],
+			[
+				Alias(ParameterScope, FiltersFieldName, "filter", RejectedStatus,
+					"Raw filter strings are not supported. Use the structured 'filters' object shown in this contract."),
+				Alias(ParameterScope, "top", LimitFieldName, RejectedStatus, "Use 'top' instead of 'limit'."),
+				Alias(ParameterScope, "order-by", "orderBy", RejectedStatus, "Use 'order-by' instead of 'orderBy'."),
+				EnvironmentNameParameterAlias()
+			],
 			[],
 			[
 				Example("Resolve a lookup row by display value", new Dictionary<string, object?> {
@@ -2049,7 +2062,9 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					[SelectFieldName] = new[] { "Id", "Name", "AccountId" },
 					["order-by"] = "Name asc",
-					["top"] = 10
+					["top"] = 10,
+					["skip"] = 20,
+					["count"] = true
 				}),
 				Example("Query records where a text field contains a value", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -4630,7 +4645,7 @@ internal static class ToolContractCatalog {
 				Field("items", ArrayType, "Flat list-mode request summaries, each with requestType and an optional description."),
 				Field("requestType", StringType, "Request type echoed back in detail mode."),
 				Field("parameters", ObjectType, "The ONLY keys a page schema may pass via the binding's params block. An EMPTY map means the request accepts NO parameters — do not invent any. A parameter may carry a valueSource annotation ({kind:'environment', tool:'<probe>'}): fill that value ONLY from the named probe tool's result (e.g. templateId -> list-printables, processName -> get-process-signature)."),
-				Field("baseParameters", ObjectType, "Fields every request inherits from BaseRequest ($context, scopes, type) — platform-injected at dispatch time; NEVER pass them via params."),
+				Field("baseParameters", ObjectType, "Current BaseRequest fields and producer metadata, including deprecated/deprecationReason when applicable — honor that guidance; these fields are platform-injected at dispatch time and must NEVER be passed via params."),
 				Field("documentation", StringType, "Per-request authoring recipe (canonical wiring, pitfalls, checklist) when the producer published one."),
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
@@ -5189,14 +5204,18 @@ internal static class ToolContractCatalog {
 					"`create-page` writes a page schema into the runtime catalog directly. The new page becomes available without compilation."),
 				new ToolAntiPattern(
 					$"{CreateEntityBusinessRuleTool.BusinessRuleCreateToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
+					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step."),
+				new ToolAntiPattern(
+					$"{ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"Do not decide to compile from a raw status column read off the process (odata/esq — e.g. `VwSysProcess`) — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true; none is a compile trigger (`NeedInstall` is a DB-install marker), and inferring `compile` from a column name is the trap. Within a process, compile only for C# you authored — a Script Task, or a user task with an after-activity-save script; everything else runs with no compile.")
 			],
 			Preconditions: [
 				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
-				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`."
+				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
+				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 
@@ -5575,7 +5594,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRestoreWorkspace() {
 		return new ToolContractDefinition(
 			RestoreWorkspaceTool.RestoreWorkspaceToolName,
-			"Restores the local workspace at workspace-path from the specified Creatio environment. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[
@@ -5597,13 +5616,14 @@ internal static class ToolContractCatalog {
 					RestoreWorkspaceTool.RestoreWorkspaceToolName,
 					PushWorkspaceTool.PushWorkspaceToolName
 				],
-				"Restore packages from the environment into the local workspace, then push local changes back with push-workspace."),
+				"Restore the packages listed in workspaceSettings.json from the environment into the local workspace, then push local changes back with push-workspace."),
 			[],
 			[],
 			Preconditions: [
 				"The environment is registered (see list-environments / reg-web-app).",
 				"cliogate is installed on the target environment; if restore fails with a missing-cliogate error, run install-gate and retry.",
-				"workspace-path is a local absolute path to an existing directory (network-share paths are not supported)."
+				"workspace-path is a local absolute path to an existing directory (network-share paths are not supported).",
+				"Only packages eligible from .clio/workspaceSettings.json are downloaded; when none are eligible, the tool warns and does not clear or delete existing package directories."
 			]);
 	}
 

@@ -14,7 +14,7 @@ escape_sed_replacement() {
     printf '%s' "$1" | sed -e 's/[\\/&|]/\\&/g'
 }
 
-if [ -f /app/ConnectionStrings.config.template ]; then
+if [[ -f /app/ConnectionStrings.config.template ]]; then
     db_host_escaped=$(escape_sed_replacement "$DB_HOST")
     db_port_escaped=$(escape_sed_replacement "$DB_PORT")
     db_name_escaped=$(escape_sed_replacement "$DB_NAME")

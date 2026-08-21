@@ -1094,6 +1094,47 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Propagates OperationCanceledException from the shared DataForgeEnrichmentBuilder as MCP cancellation instead of converting it into a normal ApplicationContextResponse error, and confirms CreateApplication is never called once enrichment observes the caller's own cancellation (review #1143 follow-up: the same builder rethrow used by sync-schemas must also be preserved by every other consumer, including create-app).")]
+	public async Task ApplicationCreate_Should_Propagate_Cancellation_From_Enrichment_Instead_Of_Creating_Application() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		using CancellationTokenSource cts = new();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		// Configured against the EXACT token (not Arg.Any<CancellationToken>()) so a future regression that
+		// forwards CancellationToken.None instead of the caller-supplied token stops matching and fails the
+		// assertions below, mirroring the SchemaSyncTool cancellation test this one is modeled on.
+		enrichmentService
+			.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), cts.Token)
+			.Returns(_ => {
+				cts.Cancel();
+				throw new OperationCanceledException(cts.Token);
+			});
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationCreateService, enrichmentService);
+
+		// Act
+		Func<Task> act = async () => await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Codex App",
+			Code: "UsrCodexApp",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: null,
+			ClientTypeId: null), cts.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "cancellation must propagate as MCP cancellation rather than be converted into a normal ApplicationContextResponse error");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(
+			default(EnvironmentSettings)!, default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Serializes the application context response using Clio kebab-case field names.")]
 	public void ApplicationContextResponse_Should_Serialize_Using_Clio_Field_Names() {
 		// Arrange
