@@ -4,7 +4,7 @@ applies-to:
   - clio/Command/McpServer/Tools/InstallerCommandTool.cs
   - clio/Common/DeploymentStrategies/DeploymentStrategyFactory.cs
   - clio/Command/CreatioInstallCommand/CreatioInstallerService.cs
-date: 2026-08-19
+date: 2026-08-21
 ---
 
 **What is true** — `DeploymentStrategyFactory.SelectStrategy` only ever returns
@@ -20,9 +20,7 @@ deployment needs.
 
 **What breaks if you ignore it** — a test or fixture that expects to deploy through MCP without
 touching IIS cannot: the IIS strategy runs unconditionally on a Windows agent, whether or not IIS is
-usable there. `CreatioInstallerService` then creates the configured IIS root
-(`settingsRepository.GetIISClioRootPath()`) before it reaches any deployment step, so a clean agent
-fails very early and the run reads as a deployment that produced no progress events rather than as a
-strategy that was never applicable. There is no argument you can add to the tool call to avoid it -
-the escape is an isolated `CLIO_HOME` with an IIS root override, or a new argument on
-`DeployCreatioArgs`.
+usable there. `CreatioInstallerService` now reserves and validates the requested IIS port before it
+creates the configured IIS root, but that safety check does not change the selected deployment
+strategy. There is no argument you can add to the tool call to avoid IIS on Windows - the escape is
+an isolated Windows host with working IIS, or a new argument on `DeployCreatioArgs`.

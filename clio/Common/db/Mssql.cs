@@ -76,7 +76,7 @@ public class Mssql : IMssql {
 	/// </summary>
 	public Mssql(string host, int port, string username, string password, bool isWindowsAuth = false) : this((ILogger)null) {
 		_builder = new SqlConnectionStringBuilder {
-			DataSource = host.Contains("\\") || port == 0 ? host : $"{host},{port}",
+			DataSource = port == 0 ? host : $"{host},{port}",
 			InitialCatalog = "master",
 			Encrypt = false,
 			IntegratedSecurity = isWindowsAuth
@@ -103,7 +103,7 @@ public class Mssql : IMssql {
 	/// <inheritdoc />
 	public void Init(string host, int port, string username, string password, bool isWindowsAuth = false) {
 		_builder = new SqlConnectionStringBuilder {
-			DataSource = !isWindowsAuth ? $"{host},{port}" : host,
+			DataSource = port == 0 ? host : $"{host},{port}",
 			InitialCatalog = "master",
 			Encrypt = false,
 			IntegratedSecurity = isWindowsAuth
