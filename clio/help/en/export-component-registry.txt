@@ -32,6 +32,16 @@ DESCRIPTION
          "latest-fallback" with requiresVersionConfirmation: true — do not
          silently assume the exported set matches any specific environment.
 
+    An explicit --version is normalised to the 3-part catalog key before the
+    fetch, so "8.3.4.5678" (the form Creatio reports as CoreVersion) and "8.3"
+    select the 8.3.4 / 8.3.0 catalog instead of degrading to "latest". Each
+    non-exact tier also carries a prose "versionWarning" on the response.
+
+    A repeat run is safe only without --output-file: the default path overwrites
+    its own prior output, while an explicit --output-file is refused once the
+    target exists ("already exists"), so a blind retry to the same path fails
+    even though the first run succeeded.
+
     Documentation bodies (references.docs[] paths) are never fetched — only
     their paths, already part of the registry payload as written. Fetching
     every doc body would cost ~150-190 HTTP round-trips and 1.2-1.5 MB, none

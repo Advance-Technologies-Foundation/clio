@@ -74,6 +74,16 @@ public sealed class ExportComponentRegistryResponse {
 	[JsonPropertyName("requiresVersionConfirmation")]
 	public bool RequiresVersionConfirmation { get; set; }
 
+	/// <summary>
+	/// Prose caveat for the resolved tier: the hard stop on <c>latest-fallback</c> and the soft
+	/// "catalog is a superset of the target environment" caveat on <c>environment-superset</c>; <c>null</c>
+	/// on an exact <c>environment</c> match. Without it an approximate export is indistinguishable from an
+	/// exact one unless the caller itself diffs <see cref="ResolvedTargetVersion"/> against what it requested.
+	/// </summary>
+	[JsonPropertyName("versionWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string VersionWarning { get; set; }
+
 	/// <summary>Non-null only when <c>schema-type</c> was an unrecognized value (fell back to web).</summary>
 	[JsonPropertyName("schemaTypeWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -219,8 +229,19 @@ public sealed class ExportComponentRegistryCommand {
 		CancellationToken cancellationToken) {
 		try {
 			IComponentRegistryClient registryClient = schemaType.IsMobile ? _mobileRegistryClient : _webRegistryClient;
+
+			// An explicit version reaches both surfaces raw, so normalise it to the 3-part catalog key BEFORE
+			// the fetch: '8.3.4.5678' (the exact form Creatio reports as CoreVersion, and what a user or agent
+			// pastes) and '8.3' both pass ValidateVersionArguments, but requesting them verbatim asks for a
+			// catalog file that does not exist, silently falls back to 'latest', and reports the approximation
+			// as environment-superset with requiresVersionConfirmation=false. Values that are not a version at
+			// all (the 'latest' sentinel of the fallback tier) are passed through untouched.
+			string requestedVersion =
+				PlatformVersionResolver.TryNormaliseToThreePartSemver(versionResolution.ResolvedVersion, out string normalisedVersion)
+					? normalisedVersion
+					: versionResolution.ResolvedVersion;
 			ComponentRegistryFetchResult fetch =
-				await registryClient.GetAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+				await registryClient.GetAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
 			string content;
 			using (fetch.Content) {
 				using var reader = new StreamReader(fetch.Content);
@@ -228,9 +249,10 @@ public sealed class ExportComponentRegistryCommand {
 			}
 
 			string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
-				versionResolution.Source, versionResolution.ResolvedVersion, fetch.ResolvedVersion);
+				versionResolution.Source, requestedVersion, fetch.ResolvedVersion);
 			string resolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason);
 			bool requiresVersionConfirmation = ComponentInfoResolution.RequiresVersionConfirmation(resolvedFrom);
+			string versionWarning = ComponentInfoResolution.GetVersionWarning(resolvedFrom);
 
 			// Count BEFORE writing: CountEntries parses the payload, and the registry client returns any
 			// 2xx body verbatim (no JSON validation, ComponentRegistryClient.TryFetchOnceAsync), so a proxy
@@ -251,6 +273,7 @@ public sealed class ExportComponentRegistryCommand {
 				ResolvedFrom = resolvedFrom,
 				ResolvedFromReason = resolvedFromReason,
 				RequiresVersionConfirmation = requiresVersionConfirmation,
+				VersionWarning = versionWarning,
 				SchemaTypeWarning = schemaType.Warning,
 				ComponentCount = componentCount,
 				CompositeCount = compositeCount,
@@ -303,29 +326,35 @@ public sealed class ExportComponentRegistryCommand {
 	// rather than through the typed ComponentCatalogState model, so a producer field the typed model does
 	// not map (e.g. deprecated/deprecationReason) still counts correctly and the counters can never disagree
 	// with what the file actually contains. Handles both registry shapes: legacy top-level array and the
-	// wrapped { components, composites, references } envelope.
+	// wrapped { components, composites, references } envelope. A body that is parseable JSON but carries
+	// neither shape is a hard failure, NOT an empty registry: a proxy/CDN JSON error body served with status
+	// 200 (or a future envelope rename) would otherwise be written to disk and reported as success with every
+	// counter at zero, and those counters are the downstream migration engine's only verification signal.
 	private static (int componentCount, int compositeCount, int inputCount) CountEntries(string content) {
 		using JsonDocument document = JsonDocument.Parse(content);
 		JsonElement root = document.RootElement;
 		JsonElement components = root.ValueKind == JsonValueKind.Array
 			? root
 			: root.TryGetProperty("components", out JsonElement componentsProperty) ? componentsProperty : default;
-		int componentCount = components.ValueKind == JsonValueKind.Array ? components.GetArrayLength() : 0;
+		if (components.ValueKind != JsonValueKind.Array) {
+			throw new InvalidOperationException(
+				"The fetched payload is not a component registry: expected a top-level array or an object with a "
+				+ "'components' array. Nothing was written.");
+		}
+		int componentCount = components.GetArrayLength();
 		int compositeCount = root.ValueKind == JsonValueKind.Object
 			&& root.TryGetProperty("composites", out JsonElement composites)
 			&& composites.ValueKind == JsonValueKind.Array
 				? composites.GetArrayLength()
 				: 0;
 		int inputCount = 0;
-		if (components.ValueKind == JsonValueKind.Array) {
-			foreach (JsonElement component in components.EnumerateArray()) {
-				// "inputs" (current wrapped-schema generation) and "properties" (legacy) describe the same
-				// component surface under different generations — today's registry never populates both
-				// non-empty on one component, so summing both is safe. If the producer ever ships a
-				// transitional entry carrying both, this would double-count that entry's field set.
-				inputCount += CountObjectProperties(component, "inputs");
-				inputCount += CountObjectProperties(component, "properties");
-			}
+		foreach (JsonElement component in components.EnumerateArray()) {
+			// "inputs" (current wrapped-schema generation) and "properties" (legacy) describe the same
+			// component surface under different generations — today's registry never populates both
+			// non-empty on one component, so summing both is safe. If the producer ever ships a
+			// transitional entry carrying both, this would double-count that entry's field set.
+			inputCount += CountObjectProperties(component, "inputs");
+			inputCount += CountObjectProperties(component, "properties");
 		}
 		return (componentCount, compositeCount, inputCount);
 	}

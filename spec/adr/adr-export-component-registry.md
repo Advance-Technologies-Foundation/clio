@@ -28,10 +28,12 @@ from a re-serialization of `ComponentCatalogState`/`ComponentRegistryEntry`. Ver
 against `clio.tests/Command/McpServer/Fixtures/ComponentRegistry.live-snapshot.json`: an
 `inputs` entry's `deprecated`/`deprecationReason` pair exists only as raw JSON — the typed
 model (`ComponentPropertyDefinition`) has no field for it. Re-serializing through the typed
-model would silently drop exactly the fields the ENG-95543 consumer needs. Response
-counters (component/composite/input counts) are still computed via
-`IComponentInfoCatalog.LoadAsync`/`ComponentCatalogState`, because counting doesn't need
-the fields the typed model drops.
+model would silently drop exactly the fields the ENG-95543 consumer needs. For the same
+reason the response counters (component/composite/input counts) are computed off the same
+raw bytes that are written to disk (`ExportComponentRegistryCommand.CountEntries`, a
+`JsonDocument` walk over the fetched JSON), not through `IComponentInfoCatalog.LoadAsync`/
+`ComponentCatalogState`: a counter derived from the typed model could disagree with what
+the file actually contains for any field that model does not map.
 
 ### D3 — No docs bodies
 `ComponentDocumentationLoader.LoadAsync` / `IComponentRegistryDocsClient.GetDocAsync` are
@@ -84,8 +86,9 @@ Reuse verbatim: `IComponentRegistryClient`/`ComponentRegistryClient` (including
 `RegistryFlavor.Web`/`Mobile` and `IMobileComponentRegistryClient` for `schema-type`),
 `ComponentRegistryCacheStore`, `ComponentInfoResolution` (version-tier contract:
 `resolvedTargetVersion`, `resolvedFrom`, `resolvedFromReason`, `requiresVersionConfirmation`),
-`BaseTool<TOptions>`, `SensitiveErrorTextRedactor`, `OutputPathConfinement`. Do not
-duplicate `OutputPathConfinementTests.cs`'s guard-level unit tests — only add thin
+`SensitiveErrorTextRedactor`, `OutputPathConfinement`. `BaseTool<TOptions>` is deliberately
+NOT on this list — see D4 for the eager environment-resolution constraint that rules it
+out. Do not duplicate `OutputPathConfinementTests.cs`'s guard-level unit tests — only add thin
 command/tool-level integration tests that prove the guard is wired in.
 
 ### D7 — Registration: long-tail by default
@@ -117,4 +120,6 @@ tool. Revisit only if a concrete hot-path MCP use case emerges.
 `clio/help/en/export-component-registry.txt`, `clio/docs/commands/export-component-registry.md`,
 `clio/Commands.md`, `clio/Wiki/WikiAnchors.txt`, `clio.mcp.e2e` coverage, PR body
 statements ("docs reviewed, no update required" is NOT applicable here — docs must be
-added; "MCP reviewed…"; ClioRing compatibility line), `./.codex/workspace-diary.md` entry.
+added; "MCP reviewed…"; ClioRing compatibility line), and a `docs/knowledge/McpServer/`
+record for the D4 constraint (the former `./.codex/workspace-diary.md` is archived
+read-only per AGENTS.md — do not append to it).

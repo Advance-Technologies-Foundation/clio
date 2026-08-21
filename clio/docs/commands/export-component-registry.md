@@ -32,6 +32,10 @@ Version resolution mirrors `get-component-info` exactly:
    `requiresVersionConfirmation: true` — the caller must not silently assume the exported component set matches
    any specific environment.
 
+An explicit `--version` is normalised to the 3-part catalog key before the fetch, so both `8.3.4.5678` (the form
+Creatio reports as `CoreVersion`) and `8.3` select the `8.3.4` / `8.3.0` catalog instead of asking for a file
+that does not exist and silently degrading to `latest`.
+
 **Documentation bodies are never fetched.** A component entry's `references.docs[]` array carries *paths* to
 markdown files; this command writes those paths as-is (they are already part of the registry payload) but never
 calls the docs client to fetch their content — that would cost ~150-190 HTTP round-trips and 1.2-1.5 MB, none of
@@ -86,12 +90,21 @@ clio export-component-registry --version 8.3.4 --schema-type mobile --output-fil
 
 The response JSON reports `success`, `outputFile` (absolute path), `resolvedTargetVersion`, `resolvedFrom`
 (`environment` | `environment-superset` | `latest-fallback`), `resolvedFromReason` (present only on
-`latest-fallback`), `requiresVersionConfirmation`, `schemaTypeWarning` (present only for an unrecognized
-`schema-type` value), `componentCount`, `compositeCount`, `inputCount`, and `error`. None of these fields carry
+`latest-fallback`), `requiresVersionConfirmation`, `versionWarning` (prose caveat: the hard stop on
+`latest-fallback`, the "this catalog is a superset of the target environment" caveat on `environment-superset`,
+absent on an exact match), `schemaTypeWarning` (present only for an unrecognized `schema-type` value),
+`componentCount`, `compositeCount`, `inputCount`, and `error`. None of these fields carry
 registry content — the file at `outputFile` is the only place the registry data lives.
 
 ## Notes
 
+- **A repeat run is safe only without `--output-file`.** The default path is tool-owned and overwrites its own
+  prior output; an explicit `--output-file` is refused once the target exists, so a blind retry against the same
+  path fails with "already exists" even though the first run succeeded. The MCP tool advertises
+  `Idempotent = false` for that reason.
+- A payload that is not a component registry (no top-level array and no `components` array — for example a proxy
+  or CDN error page served with status 200) fails the export **before** anything is written, rather than
+  reporting success with every counter at zero.
 - Read-only against the Creatio environment: the only write this command performs is the local output file. An
   `--environment`/`--uri` call only probes `GetSysInfo` (via cliogate) to resolve the platform version — it does
   not read or write any Creatio data.

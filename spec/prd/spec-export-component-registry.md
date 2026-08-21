@@ -36,17 +36,23 @@ missing.
 - **C1**: Must be a new MCP tool (`export-component-registry`), not a new argument on
   `get-component-info` — that tool is `ReadOnly = true` (ComponentInfoTool.cs:89); adding a
   file-write argument would silently change its safety contract. New tool's attributes:
-  `ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false`.
+  `ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false` (only the
+  default-path shape repeats safely; an explicit `output-file` is refused once it exists).
 - **C2**: `environment-name` and `version` are mutually exclusive (mirrors
   `ComponentInfoTool`'s existing mutual-exclusivity check).
 - **C3**: Must not duplicate logic already owned by `IComponentRegistryClient`,
-  `ComponentRegistryCacheStore`, `ComponentInfoResolution`, `BaseTool<TOptions>`,
-  `SensitiveErrorTextRedactor`, or `OutputPathConfinement` — reuse each verbatim. In
+  `ComponentRegistryCacheStore`, `ComponentInfoResolution`,
+  `SensitiveErrorTextRedactor`, or `OutputPathConfinement` — reuse each verbatim
+  (`BaseTool<TOptions>` excluded, see the revision note below). In
   particular, do not re-write `OutputPathConfinementTests.cs`-style unit tests for the
   guard itself; only add the thin command/tool-level integration tests.
   Shape follows `GetClassicPageSourcesCommand`/`GetClassicPageSourcesTool` (CLI
   `Command<TOptions>` + thin `BaseTool<TOptions>` MCP wrapper) rather than
-  `ComponentInfoTool` (no CLI verb, no `BaseTool` base) — because this feature needs both a
+  `ComponentInfoTool` (no CLI verb, no `BaseTool` base). REVISED during implementation: the
+  shipped shape follows `ComponentInfoCommand`/`ComponentInfoTool` (flat classes) because
+  `BaseTool.ResolveCommand` eagerly builds a per-environment container and would break the
+  explicit-version-only and no-flags paths (ADR D4). The rationale below still holds in that
+  this feature needs both a
   CLI verb and `output-file` confinement, which is the shape `GetClassicPageSourcesCommand`
   already solves, including bridging async registry-fetch work inside a synchronous
   `Execute`.
@@ -89,10 +95,10 @@ registry content in the response body.
   JSON only — `ComponentPropertyDefinition`/`ComponentRegistryEntry` do not model those
   fields. This is why CAP-02 requires a byte passthrough rather than re-serializing through
   `ComponentCatalogState`.
-- Counters (CAP-06) can be computed from `IComponentInfoCatalog.LoadAsync` /
-  `ComponentCatalogState` (Entries.Count, Composites.Count, sum of Inputs.Count) even
-  though that same typed model is unsafe to use for the file *content* — counting doesn't
-  need the fields it drops.
+- Counters (CAP-06) are computed off the same raw bytes written to disk, not from
+  `IComponentInfoCatalog.LoadAsync`/`ComponentCatalogState` (revised during implementation):
+  a counter derived from the typed model could disagree with the file's actual contents for
+  any field that model does not map.
 - The default-path contract (CAP-05, overwrite-on-rerun) and the explicit `output-file`
   contract (CAP-04, refuse-if-exists) are deliberately different, mirroring
   `GetClassicPageSourcesCommand.ResolveOutputPath` (default path bypasses

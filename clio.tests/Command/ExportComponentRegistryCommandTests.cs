@@ -35,6 +35,10 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 	}
 	""";
 
+	private const string SecondRunRegistry = """
+	{ "components": [ {"componentType":"crt.Label","description":"Label.","inputs":{"caption":{"type":"string"}}} ] }
+	""";
+
 	private const string MobileRegistry = """
 	{ "components": [ {"componentType":"crt.Toggle","description":"Mobile toggle.","inputs":{"value":{"type":"boolean"}}} ] }
 	""";
@@ -117,6 +121,32 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 		response.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromEnvironment,
 			because: "an explicit version that the registry actually served maps to the 'environment' tier");
 		_resolverFactory.CreateCallCount.Should().Be(0, because: "an explicit version must never trigger an environment probe");
+	}
+
+	[Test]
+	[Description("A known version whose per-version catalog is not published maps to resolvedFrom=environment-superset, needs no confirmation, and keys the default filename by the version the CDN actually served.")]
+	public async Task TryExportAsync_ShouldReportEnvironmentSuperset_WhenServedVersionDiffersFromRequested() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-superset-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		StubFetch(_webRegistryClient, SampleRegistryWithDeprecation, resolvedVersion: "latest");
+		ExportComponentRegistryOptions options = new() { Version = "8.2.1" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a served superset catalog is still a successful export");
+		response.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromEnvironmentSuperset,
+			because: "the version was known but the CDN served 'latest' instead of the requested per-version catalog");
+		response.ResolvedTargetVersion.Should().Be("latest",
+			because: "the response must report the version actually served, not the one requested");
+		response.RequiresVersionConfirmation.Should().BeFalse(
+			because: "the target version is known on the superset tier, so no confirmation gate applies");
+		response.OutputFile.Should().EndWith("latest.json",
+			because: "the default filename is keyed by the served version — requesting 8.2.1 while 'latest' is served writes latest.json, not 8.2.1.json");
 	}
 
 	[Test]
@@ -237,6 +267,8 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 
 		// Act
 		ExportComponentRegistryResponse first = await _command.TryExportAsync(options, CancellationToken.None);
+		string afterFirst = _ioFileSystem.File.ReadAllText(first.OutputFile);
+		StubFetch(_webRegistryClient, SecondRunRegistry);
 		ExportComponentRegistryResponse second = await _command.TryExportAsync(options, CancellationToken.None);
 
 		// Assert
@@ -248,6 +280,10 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 			because: "the default path is anchored under .clio-migration/component-registry");
 		second.OutputFile.Should().Contain("8.3.4.json",
 			because: "the default filename is keyed by the resolved version");
+		afterFirst.Should().Be(SampleRegistryWithDeprecation,
+			because: "the first run must have written its own payload before the second run replaced it");
+		_ioFileSystem.File.ReadAllText(second.OutputFile).Should().Be(SecondRunRegistry,
+			because: "the second run must actually rewrite the tool-owned default path, not skip or refuse the write");
 	}
 
 	[Test]
@@ -328,6 +364,139 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 		response.SchemaTypeWarning.Should().Contain("moblie",
 			because: "the warning must name the offending value so a typo is distinguishable from an intentional 'web' request");
 		await _webRegistryClient.Received(1).GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("A 200-status body that is not JSON at all fails the export and leaves no file behind — the count-before-write ordering that keeps a junk payload off disk.")]
+	public async Task TryExportAsync_ShouldFailWithoutWriting_WhenPayloadIsNotJson() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-nonjson-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		string scratch = _ioFileSystem.Path.Combine(tempRoot, "ecr-nonjson", "registry.json");
+		StubFetch(_webRegistryClient, "<html>502 Bad Gateway</html>");
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4", OutputFile = scratch };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a proxy or CDN error page served with status 200 is not a registry");
+		_ioFileSystem.File.Exists(_ioFileSystem.Path.GetFullPath(scratch)).Should().BeFalse(
+			because: "the payload must be parsed before it is written, so an unparseable body never reaches disk — "
+				+ "an explicit output-file is refuse-if-exists, so a junk file would block every retry to the same path");
+	}
+
+	[Test]
+	[Description("A 200-status body that is parseable JSON but carries no components array fails the export instead of reporting success with every counter at zero, and writes nothing to the default path.")]
+	public async Task TryExportAsync_ShouldFailWithoutWriting_WhenPayloadIsJsonButNotARegistry() {
+		// Arrange
+		string tempRoot = _ioFileSystem.Path.GetFullPath(_ioFileSystem.Path.GetTempPath());
+		string workspace = _ioFileSystem.Path.Combine(tempRoot, "ecr-notregistry-ws");
+		_ioFileSystem.Directory.CreateDirectory(workspace);
+		_ioFileSystem.Directory.SetCurrentDirectory(workspace);
+		StubFetch(_webRegistryClient, """{ "error": "gateway timeout" }""");
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "counters are the consumer's only verification signal, so 'no components array' must be an attributable failure, not an empty registry");
+		response.Error.Should().Contain("not a component registry",
+			because: "the caller must be told the payload shape was rejected rather than silently exported empty");
+		response.ComponentCount.Should().Be(0, because: "a failed export reports no counters");
+	}
+
+	[Test]
+	[Description("An explicit version is normalised to the 3-part catalog key before the fetch, so a 4-part CoreVersion string asks for the catalog that actually exists.")]
+	public async Task TryExportAsync_ShouldNormaliseExplicitVersion_BeforeFetchingTheCatalog() {
+		// Arrange
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4.5678" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a 4-part CoreVersion string is a valid platform version");
+		await _webRegistryClient.Received(1).GetAsync("8.3.4", Arg.Any<CancellationToken>());
+		response.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromEnvironment,
+			because: "the normalised catalog exists, so the tier must be the exact match — not a bogus superset caused by requesting '8.3.4.5678'");
+	}
+
+	[Test]
+	[Description("A malformed version is rejected with a format error before any registry fetch.")]
+	public async Task TryExportAsync_ShouldFail_WhenVersionIsNotAPlatformVersion() {
+		// Arrange
+		ExportComponentRegistryOptions options = new() { Version = "8.x" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a value that is not a platform version cannot select a catalog");
+		response.Error.Should().Contain("8.x",
+			because: "the error must name the offending value so the caller can correct it");
+		await _webRegistryClient.DidNotReceiveWithAnyArgs().GetAsync(default, default);
+	}
+
+	[Test]
+	[Description("The latest-fallback tier carries the prose version warning, not only the requiresVersionConfirmation boolean.")]
+	public async Task TryExportAsync_ShouldCarryVersionWarning_OnLatestFallback() {
+		// Arrange
+		ExportComponentRegistryOptions options = new();
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.VersionWarning.Should().Be(ComponentInfoResolution.LatestFallbackWarning,
+			because: "an unknown target version must reach the caller as the hard-stop prose, not only as a boolean flag");
+	}
+
+	[Test]
+	[Description("An exact per-version match carries no version warning.")]
+	public async Task TryExportAsync_ShouldCarryNoVersionWarning_OnExactMatch() {
+		// Arrange
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4" };
+
+		// Act
+		ExportComponentRegistryResponse response = await _command.TryExportAsync(options, CancellationToken.None);
+
+		// Assert
+		response.VersionWarning.Should().BeNull(
+			because: "the exact 'environment' tier is authoritative, so a caveat would be noise");
+	}
+
+	[Test]
+	[Description("The CLI entry point returns exit code 0 on success and writes the response envelope to stdout exactly once.")]
+	public async Task ExecuteAsync_ShouldReturnZero_AndLogOneEnvelope_OnSuccess() {
+		// Arrange
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4" };
+
+		// Act
+		int exitCode = await _command.ExecuteAsync(options, CancellationToken.None);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a successful export must not fail the shell pipeline");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("\"success\":true")));
+	}
+
+	[Test]
+	[Description("The CLI entry point returns exit code 1 on failure and still writes the JSON envelope so a pipeline can read the error.")]
+	public async Task ExecuteAsync_ShouldReturnOne_AndLogTheErrorEnvelope_OnFailure() {
+		// Arrange
+		ExportComponentRegistryOptions options = new() { Version = "8.3.4", Environment = "dev" };
+
+		// Act
+		int exitCode = await _command.ExecuteAsync(options, CancellationToken.None);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a rejected invocation must be visible to the shell as a failure");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("\"success\":false") && message.Contains("mutually exclusive")));
 	}
 
 	// This command has NO IComponentRegistryDocsClient dependency at all (unlike ComponentInfoCommand/Tool,

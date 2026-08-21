@@ -55,6 +55,8 @@ public sealed class ExportComponentRegistryToolE2ETests : McpContractFixtureBase
 			because: "with no environment-name/version supplied, the export must honestly report the latest-fallback tier");
 		response.RequiresVersionConfirmation.Should().BeTrue(
 			because: "an unknown target version must not be silently assumed by the caller");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.LatestFallbackWarning,
+			because: "the hard-stop caveat must reach the MCP caller as prose, not only as the boolean flag");
 		response.ComponentCount.Should().BeGreaterThan(0,
 			because: "the shipped registry carries a non-empty component set");
 

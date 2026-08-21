@@ -25,7 +25,9 @@ per-component `get-component-info` calls.
    `BindingsModule.cs`, discoverable via `McpToolInvokerRegistry` reflection (no addition to
    `McpCoreToolProfile.CoreToolTypes` or `ToolContractGetTool`'s curated catalog — long-tail,
    per ADR D7).
-2. MCP tool attributes: `ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false`.
+2. MCP tool attributes: `ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false`.
+   `Idempotent = false` because only the default-path shape repeats safely — an explicit `output-file`
+   is refused once it exists, so a blind retry turns a completed export into an "already exists" failure.
 3. Options (kebab-case): `--environment-name` (preferred) XOR `--version` (3-part semver,
    mutually exclusive — reject both/neither the way `ComponentInfoTool` does); `--schema-type`
    (`web` default | `mobile`); `--output-file` (optional); `--uri`/`--login`/`--password`
@@ -54,9 +56,13 @@ per-component `get-component-info` calls.
    tested separately.
 10. Response DTO contains no registry content (`componentType` does not appear anywhere in
     the serialized response) — only: absolute output path, `resolvedTargetVersion`,
-    `resolvedFrom`, `resolvedFromReason`, `requiresVersionConfirmation`, and counters
-    (component count, composite count, total input count), computed via
-    `IComponentInfoCatalog.LoadAsync`/`ComponentCatalogState`.
+    `resolvedFrom`, `resolvedFromReason`, `requiresVersionConfirmation`, `versionWarning`,
+    and counters (component count, composite count, total input count). Revised during
+    implementation: the counters are computed off the SAME raw bytes written to disk
+    (`ExportComponentRegistryCommand.CountEntries`), not via
+    `IComponentInfoCatalog.LoadAsync`/`ComponentCatalogState` — a counter derived from the
+    typed model could disagree with what the file actually contains, and a payload carrying
+    no `components` array fails the export instead of reporting zero counters.
 11. Errors routed through `SensitiveErrorTextRedactor` before returning to the caller.
 12. Companion artifacts, all present in the same PR:
     - `clio/help/en/export-component-registry.txt`
