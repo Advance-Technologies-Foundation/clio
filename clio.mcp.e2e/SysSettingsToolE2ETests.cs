@@ -29,37 +29,6 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ListToolName)]
-	[AllureName("list-sys-settings narrows the catalog to the search pattern")]
-	[AllureDescription("Invokes list-sys-settings twice against the sandbox environment - unfiltered and with a search pattern matching a known OOTB setting - and verifies the pattern narrows the catalog while still returning the match.")]
-	[Description("Invokes list-sys-settings twice against the sandbox environment - unfiltered and with a search pattern matching a known OOTB setting - and verifies the pattern narrows the catalog while still returning the match.")]
-	public async Task ListSysSettings_Should_Narrow_Catalog_To_Search_Pattern() {
-		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(requireReachableEnvironment: true);
-
-		// Act
-		CallToolResult unfilteredCall = await CallToolAsync(arrangeContext, ListToolName,
-			new Dictionary<string, object?> { ["environment-name"] = arrangeContext.EnvironmentName });
-		SysSettingsListResult unfiltered =
-			EntitySchemaStructuredResultParser.Extract<SysSettingsListResult>(unfilteredCall);
-		CallToolResult filteredCall = await CallToolAsync(arrangeContext, ListToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = arrangeContext.EnvironmentName,
-				["search-pattern"] = KnownPlatformSetting
-			});
-		SysSettingsListResult filtered =
-			EntitySchemaStructuredResultParser.Extract<SysSettingsListResult>(filteredCall);
-
-		// Assert
-		filtered.Success.Should().BeTrue(because: "filtering the catalog is a read-only narrowing");
-		filtered.Settings.Select(setting => setting.Code).Should().Contain(KnownPlatformSetting,
-			because: "the pattern is the known setting code, so the match must survive the filter");
-		filtered.Settings.Length.Should().BeLessThan(unfiltered.Settings.Length,
-			because: "a pattern that matches one known code must return fewer rows than the whole catalog - "
-				+ "an ignored filter would return an identical count");
-	}
-
-	[Test]
-	[AllureTag(ListToolName)]
 	[AllureName("list-sys-settings returns advertised structured payload with at least one known setting")]
 	[AllureDescription("Starts the real clio MCP server, invokes list-sys-settings against the configured sandbox environment, and verifies the structured response advertises the known OOTB Maintainer setting.")]
 	[Description("Starts the real clio MCP server, invokes list-sys-settings against the configured sandbox environment, and verifies the structured response advertises the known OOTB Maintainer setting.")]

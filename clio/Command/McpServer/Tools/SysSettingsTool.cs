@@ -45,12 +45,9 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver) {
 		OpenWorld = false)]
 	[Description("Lists Creatio system settings with their All-Users default values. " +
 	             "Binary settings (e.g. the logo) are listed with value <binary>; set them via update-sys-setting value-file-path. " +
-	             "Useful to discover settings before calling get-sys-setting or update-sys-setting. " +
-	             "Pass search-pattern to narrow the catalog: it is a case-insensitive substring matched against BOTH the " +
-	             "setting code and its display name. Omitting it returns EVERY setting, which is hundreds of rows on a " +
-	             "stock environment - filter unless you genuinely need the whole catalog.")]
+	             "Useful to discover settings before calling get-sys-setting or update-sys-setting.")]
 	public SysSettingsListResult ListSysSettings(
-		[Description("Parameters: environment-name (required); search-pattern (optional substring over code and name)")]
+		[Description("Parameters: environment-name (required)")]
 		[Required]
 		ListSysSettingsArgs args) {
 		SysSettingsCommand command;
