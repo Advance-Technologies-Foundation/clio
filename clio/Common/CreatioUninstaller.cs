@@ -248,7 +248,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			
 			// Parse host and port from DataSource (e.g., "server,1433" or "server\instance")
 			string host = dataSource;
-			int port = 1433; // Default MSSQL port
+			int port = dataSource.Contains('\\') ? 0 : 1433;
 			
 			// Check if DataSource contains port (e.g., "server,1433")
 			if (dataSource.Contains(',')) {
@@ -539,8 +539,11 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		DbHubWarning dbHubWarning = null;
 		if (synchronizeDbHub) {
 			if (!_settingsRepository.EnvironmentPathMatches(environmentName, registeredEnvironmentPath)) {
-				throw new CreatioUninstallAbortedException(
-					$"Environment '{environmentName}' changed while uninstall was running; its dbHub source and registration were preserved.");
+				string message =
+					$"Environment '{environmentName}' changed while uninstall was running; its dbHub source and registration were preserved.";
+				_stageEventEmitter.CompleteFailure("Uninstall registration changed", message,
+					"uninstall-registration-changed");
+				throw new CreatioUninstallAbortedException(message);
 			}
 			DbHubSyncResult dbHubResult = _dbHubSynchronizationService.RemoveEnvironmentSource(environmentName);
 			dbHubWarning = dbHubResult.Warning;
@@ -744,7 +747,8 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		}
 
 		if(info.DbType == "MsSql") {
-			_mssql.Init(host, cn.DbPort, cn.DbUsername, cn.DbPassword);
+			SqlConnectionStringBuilder builder = new(info.ConnectionString);
+			_mssql.Init(host, cn.DbPort, cn.DbUsername, cn.DbPassword, builder.IntegratedSecurity);
 			_mssql.DropDb(info.DbName);
 			_logger.WriteInfo($"MsSQL DB: {info.DbName} dropped");
 		} else {

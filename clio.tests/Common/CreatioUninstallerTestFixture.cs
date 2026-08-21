@@ -397,6 +397,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		AddPostgresConnectionStringFile();
 		_dbHubSynchronizationServiceMock.IsAutomaticSynchronizationEnabled().Returns(true);
 		_settingsRepositoryMock.EnvironmentPathMatches(EnvironmentName, InstalledCreatioPath).Returns(false);
+		List<ClioStageEvent> events = CaptureStageEvents();
 
 		// Act
 		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
@@ -407,6 +408,8 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_dbHubSynchronizationServiceMock.DidNotReceive().RemoveEnvironmentSource(EnvironmentName);
 		_settingsRepositoryMock.DidNotReceive().RemoveEnvironmentIfPathMatches(
 			EnvironmentName, InstalledCreatioPath);
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+			because: "a concurrent registration change must terminate the typed progress stream");
 	}
 
 	[Test]
@@ -877,7 +880,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		// The command should log that it's using Integrated Security (Windows Authentication)
 		_loggerMock.Received(1).WriteInfo("Parsed MSSQL connection: Host=ts1-agent39, Port=1433, Using Integrated Security");
 		// Integrated Security should be initialized with an empty username and password
-		_mssqlMock.Received(1).Init("ts1-agent39", 1433, "", "");
+		_mssqlMock.Received(1).Init("ts1-agent39", 1433, "", "", true);
 		// The database should be dropped using Windows Authentication
 		_mssqlMock.Received(1).DropDb("dbname");
 	}
@@ -903,8 +906,30 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		// The command should identify the database name and type from the connection string
 		_loggerMock.Received(1).WriteInfo("Found db: dbname, Server: MsSql");
 		// Named instance (server\instance) should be preserved as-is in the host parameter
-		_mssqlMock.Received(1).Init(@"tscore-ms-01\mssql2008", 1433, "", "");
+		_mssqlMock.Received(1).Init(@"tscore-ms-01\mssql2008", 0, "", "", true);
 		// The database should be dropped using the named instance connection
+		_mssqlMock.Received(1).DropDb("dbname");
+	}
+
+	[Test]
+	[Description("UninstallByPath should preserve a SQL-authenticated MSSQL named instance without adding a default port")]
+	public void UninstallByPath_HandlesSqlAuthenticatedMssqlNamedInstance(){
+		// Arrange
+		MockStartedSite();
+		string csPath = Path.Join(InstalledCreatioPath, ConnectionStringsFileName);
+		const string csContent = """
+								 <?xml version="1.0" encoding="utf-8"?>
+								 <connectionStrings>
+								   <add name="db" connectionString="Data Source=.\SQLEXPRESS;Initial Catalog=dbname;User ID=testuser;Password=testpass;" />
+								 </connectionStrings>
+								 """;
+		FileSystem.AddFile(csPath, new MockFileData(csContent));
+
+		// Act
+		_sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		_mssqlMock.Received(1).Init(@".\SQLEXPRESS", 0, "testuser", "testpass", false);
 		_mssqlMock.Received(1).DropDb("dbname");
 	}
 
