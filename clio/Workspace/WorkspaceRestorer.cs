@@ -16,6 +16,9 @@ namespace Clio.Workspace;
 #region Class: WorkspaceSettings
 
 public class WorkspaceRestorer : IWorkspaceRestorer{
+	private const string NoPackagesEligibleMessage =
+		"No packages are eligible for restore from .clio/workspaceSettings.json; package download was skipped.";
+
 	#region Fields: Private
 
 	private readonly ICreatioSdk _creatioSdk;
@@ -144,14 +147,20 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 		Version creatioSdkVersion = restoreWorkspaceOptions.IsNugetRestore == true
 			? _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion)
 			: null;
-		IEnumerable<string> packagesToDownload = _workspacePackageFilter
-			.FilterPackages(workspaceSettings.Packages, workspaceSettings);
+		IEnumerable<string> filteredPackages = _workspacePackageFilter
+			.FilterPackages(workspaceSettings.Packages, workspaceSettings) ?? [];
+		List<string> packagesToDownload = filteredPackages.ToList();
 		IList<string> externalPackages = workspaceSettings.ExternalPackages;
 		if (externalPackages != null && externalPackages.Any()) {
-			packagesToDownload = packagesToDownload.Where(p => !externalPackages.Contains(p));
+			packagesToDownload = packagesToDownload.Where(p => !externalPackages.Contains(p)).ToList();
 		}
-		_packageDownloader.DownloadPackages(packagesToDownload, environmentSettings,
-			_workspacePathBuilder.PackagesFolderPath);
+		if (packagesToDownload.Count == 0) {
+			_logger.WriteWarning(NoPackagesEligibleMessage);
+		}
+		else {
+			_packageDownloader.DownloadPackages(packagesToDownload, environmentSettings,
+				_workspacePathBuilder.PackagesFolderPath);
+		}
 		if (restoreWorkspaceOptions.IsNugetRestore == true) {
 			RestoreNugetCreatioSdk(creatioSdkVersion);
 			CreateEnvironmentScript(creatioSdkVersion);

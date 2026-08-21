@@ -152,7 +152,7 @@ Branch: `feature/ENG-94385-rename-crt-business-process-builder`.
 | `.clio/workspaceSettings.json` | | updated package name | 1 |
 | `docs/process-builder-architecture.md` / `.puml` | | updated names | 12 refs |
 | `.gitignore` | | updated path glob | 1 |
-| `.codex/workspace-diary.md` | historical entries | **append-only, do NOT rewrite** | 73 refs left as-is |
+| `.codex/archive/workspace-diary-2026-08.md` | historical entries | **archived, read-only, do NOT append** | 73 refs left as-is |
 
 **`InternalsVisibleTo` is automatic:** the csproj uses `<_Parameter1>$(MSBuildProjectName).Tests</_Parameter1>`,
 so renaming the project file changes the friend assembly to `CrtProcessBuilder.Tests` — the
@@ -1034,7 +1034,7 @@ Mapped to the ticket's suites; the ones the simplified scope removes are marked 
 | TC-X-9 | The verb is reachable on a **default** install (not feature-gated), and `clio install-process-builder -H` shows help — i.e. the Hint does not point at an unknown verb | P3 |
 | TC-H-1 | **Full** `dotnet test --filter "Category=Unit"` green — mandatory, because `Program.cs` + `BindingsModule.cs` are touched (`AGENTS.md:324-328`). A `Module=Command\|Module=McpServer` filter is **insufficient**: `HelpArtifactConsistencyTests` (`Module=Core`) and `McpFixturePolicyTests` (no Module) are invisible to it | P5 |
 | TC-H-2 | No new `CLIO*` analyzer warnings in edited files | P5 |
-| TC-H-3 | Workspace diary entry appended in both repos | P5 |
+| TC-H-3 | Knowledge record added in both repos where the code does not say it | P5 |
 
 ---
 
@@ -1118,7 +1118,7 @@ missing service.
 - **P5.4 Code review gates.** Comprehensive 3-lens review before opening the PR; triaged scoped
   review per post-open commit; comprehensive review before ready-to-merge.
 - ~~**P5.5 Release notes.** `RELEASE.md` — call out the new bundled package and its version.~~ **Dropped as unsatisfiable:** `RELEASE.md` is a release *process* guide (how to tag), not a changelog, and this repository has no `CHANGELOG.md`. There is nowhere this entry could go, so the obligation was removed rather than left as a permanently unmet checklist item.
-- **P5.6 Diary.** Append an entry to `.codex/workspace-diary.md` in **both** repos.
+- **P5.6 Knowledge.** Add a record under `docs/knowledge/` in **both** repos for each fact the code does not state.
 
 ---
 

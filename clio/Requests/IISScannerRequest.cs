@@ -193,12 +193,22 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 						site.Name == webApp.SiteName && site.Id == webApp.SiteId)
 					.Select(site => (site.Name, site.Uris, site.PhysicalPath)).FirstOrDefault();
 
+				if (rootSite.Uris == null) {
+					// No IIS site matched this web application's Name/Id pair (e.g. a stale or ambiguous
+					// Get-WebApplication listing) — rootSite defaults to all-null fields in that case.
+					// Skip this one webApp instead of crashing the whole remote scan.
+					return;
+				}
+
 				string newPath = webApp.Path.Substring(0, webApp.Path.Length - 2);
-				Uri rootUri = psf.ComputerName == "localhost" 
+				Uri rootUri = psf.ComputerName == "localhost"
 					? rootSite.Uris.FirstOrDefault()
 					: rootSite.Uris.FirstOrDefault(u => u.Host != "localhost");
-				
-				if (Uri.TryCreate(rootUri, newPath, out Uri value)) {
+
+				// rootUri can still be null here (e.g. every Uri was filtered out above), and
+				// Uri.TryCreate(Uri, string, out Uri) throws ArgumentNullException for a null baseUri
+				// rather than returning false — guard explicitly instead of relying on TryCreate.
+				if (rootUri != null && Uri.TryCreate(rootUri, newPath, out Uri value)) {
 					// For NetFramework apps, the environment path should be the parent of Terrasoft.WebApp
 					// webApp.PhysicalPath points to "C:\...\Terrasoft.WebApp", we need its parent
 					string environmentPath = Directory.GetParent(webApp.PhysicalPath)?.FullName ?? webApp.PhysicalPath;
@@ -575,9 +585,14 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		}
 		if (r == "registerAll") {
 			unregSites.ToList().ForEach(site => {
+				Uri firstUri = site.Uris.FirstOrDefault();
+				if (firstUri == null) {
+					_logger.WriteWarning($"Skipping site '{site.siteBinding.name}': no URI bindings were found.");
+					return;
+				}
 				_regCommand.Execute(new RegAppOptions {
 					IsNetCore = site.siteType == SiteType.Core,
-					Uri = site.Uris.FirstOrDefault().ToString(),
+					Uri = firstUri.ToString(),
 					EnvironmentName = site.siteBinding.name,
 					Login = "Supervisor",
 					Password = "Supervisor",

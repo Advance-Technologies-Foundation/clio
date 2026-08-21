@@ -11,11 +11,14 @@ from Creatio environment
 
 ## Description
 
-restore-workspace command restores a local clio workspace by downloading
-packages from a Creatio environment and setting up the development environment.
+restore-workspace downloads the packages listed in `.clio/workspaceSettings.json`
+from a Creatio environment and sets up the local development environment.
+
+When no packages are eligible after applying ignore and external-package settings,
+the command reports a warning and does not clear or delete existing package directories.
 
 The command performs the following operations:
-- Downloads package source code from Creatio environment
+- Downloads eligible package source code from the Creatio environment
 - Restores CreatioSDK NuGet package (optional, default: true)
 - Creates MainSolution.slnx file for IDE integration (optional, default: true)
 - Creates .build-props directory with build configuration (optional, default: true)
@@ -47,34 +50,34 @@ clio restore-workspace -e <ENVIRONMENT_NAME> [options]
 ## Options
 
 ```bash
---Environment           -e          Environment name (recommended method)
+--environment           -e          Environment name (recommended method)
 
---IsNugetRestore                    Restore CreatioSDK NuGet package
+--is-nuget-restore                    Restore CreatioSDK NuGet package
 Default: true
-Example: --IsNugetRestore false
+Example: --is-nuget-restore false
 
---IsCreateSolution                  Create MainSolution.slnx solution file
+--is-create-solution                  Create MainSolution.slnx solution file
 Default: true
-Example: --IsCreateSolution false
+Example: --is-create-solution false
 
---AddBuildProps                     Create .build-props directory and update
+--add-build-props                     Create .build-props directory and update
 project files with build props imports
 Default: true
-Example: --AddBuildProps false
+Example: --add-build-props false
 
---AppCode               -a          Application code for package filtering
+--app-code               -a          Application code for package filtering
 
 --uri                   -u          Server URI (alternative to -e)
 
---Login                 -l          Username for basic authentication
+--login                 -l          Username for basic authentication
 
---Password              -p          Password for basic authentication
+--password              -p          Password for basic authentication
 
---ClientId                          OAuth Client ID (OAuth authentication)
+--client-id                          OAuth Client ID (OAuth authentication)
 
---ClientSecret                      OAuth Client Secret (OAuth authentication)
+--client-secret                      OAuth Client Secret (OAuth authentication)
 
---AuthAppUri                        OAuth Authentication App URI
+--auth-app-uri                        OAuth Authentication App URI
 ```
 
 ## Output
@@ -100,25 +103,25 @@ clio restore-workspace -e dev
 clio restore-workspace -e dev
 
 Restore without creating solution file:
-clio restore-workspace -e dev --IsCreateSolution false
+clio restore-workspace -e dev --is-create-solution false
 
 Restore without NuGet SDK:
-clio restore-workspace -e dev --IsNugetRestore false
+clio restore-workspace -e dev --is-nuget-restore false
 
 Restore without build props:
-clio restore-workspace -e dev --AddBuildProps false
+clio restore-workspace -e dev --add-build-props false
 
 Restore using OAuth authentication:
 clio restore-workspace --uri https://mysite.com \
---ClientId abc123 --ClientSecret secret123 \
---AuthAppUri https://oauth.site.com
+--client-id abc123 --client-secret secret123 \
+--auth-app-uri https://oauth.site.com
 
 Restore using basic authentication:
 clio restore-workspace --uri https://mysite.com \
---Login administrator --Password mypass
+--login administrator --password mypass
 
 Restore with application code filter:
-clio restore-workspace -e dev --AppCode MyApp
+clio restore-workspace -e dev --app-code MyApp
 ```
 
 ## Authentication Methods
@@ -130,12 +133,12 @@ clio restore-workspace -e dev --AppCode MyApp
        Example: clio restore-workspace -e dev
 
     2. OAuth authentication:
-       Requires: --uri, --ClientId, --ClientSecret, --AuthAppUri
-       Example: clio restore-workspace --uri https://site.com --ClientId abc
+       Requires: --uri, --client-id, --client-secret, --auth-app-uri
+       Example: clio restore-workspace --uri https://site.com --client-id abc
 
     3. Basic authentication:
-       Requires: --uri, --Login, --Password
-       Example: clio restore-workspace --uri https://site.com --Login admin
+       Requires: --uri, --login, --password
+       Example: clio restore-workspace --uri https://site.com --login admin
 
 ## Workflow
 
@@ -185,6 +188,8 @@ configuration exists
 - MainSolution.slnx and .build-props are key updates that improve the
 development experience
 - Workspace configuration is stored in .clio/workspaceSettings.json
+- Only packages eligible from the `Packages` list are downloaded. An empty eligible
+  list produces a warning and does not clear the `packages/` directory.
 
 ## Troubleshooting
 
@@ -197,10 +202,14 @@ development experience
 
     Build errors after restore:
         Ensure build props were created:
-            clio restore-workspace -e dev --AddBuildProps true
+            clio restore-workspace -e dev --add-build-props true
 
     Missing packages:
         Check workspace settings filter in .clio/workspaceSettings.json
+
+    Warning: "No packages are eligible for restore":
+        Add the intended package names to .clio/workspaceSettings.json -> Packages,
+        or review IgnorePackages and ExternalPackages. Existing package directories are not cleared or deleted.
 
 ## See Also
 

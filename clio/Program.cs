@@ -1745,7 +1745,7 @@ internal class Program {
 					};
 			}
 		}
-		if (logAndSettings) {
+		if (logAndSettings && settings != null) {
 			ConsoleLogger.Instance.WriteInfo(settings.Uri);
 		}
 		if (Container == null) {
@@ -1807,14 +1807,18 @@ internal class Program {
 		}
 		if (string.IsNullOrEmpty(optionsFromCommandLine.Environment)) {
 			EnvironmentNameOptions result = new();
-			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile.Uri;
-			result.Login = optionsFromCommandLine.Login ?? optionFromFile.Login;
-			result.Password = optionsFromCommandLine.Password ?? optionFromFile.Password;
-			result.AuthAppUri = optionsFromCommandLine.AuthAppUri ?? optionFromFile.AuthAppUri;
-			result.ClientId = optionsFromCommandLine.ClientId ?? optionFromFile.ClientId;
-			result.ClientSecret = optionsFromCommandLine.ClientSecret ?? optionFromFile.ClientSecret;
+			// optionFromFile can legitimately be null here: reaching this branch only requires
+			// optionsFromCommandLine to carry a Uri (IsEmpty() checks Uri alone) with no Environment name —
+			// e.g. a direct --uri/--login call with no environment file involved. Null-conditional access
+			// falls back to null instead of throwing when optionFromFile is absent.
+			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile?.Uri;
+			result.Login = optionsFromCommandLine.Login ?? optionFromFile?.Login;
+			result.Password = optionsFromCommandLine.Password ?? optionFromFile?.Password;
+			result.AuthAppUri = optionsFromCommandLine.AuthAppUri ?? optionFromFile?.AuthAppUri;
+			result.ClientId = optionsFromCommandLine.ClientId ?? optionFromFile?.ClientId;
+			result.ClientSecret = optionsFromCommandLine.ClientSecret ?? optionFromFile?.ClientSecret;
 			result.IsNetCore = optionsFromCommandLine.IsNetCore.HasValue ? optionsFromCommandLine.IsNetCore
-				: optionFromFile.IsNetCore;
+				: optionFromFile?.IsNetCore;
 			return result;
 		}
 		return optionsFromCommandLine;

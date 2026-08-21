@@ -369,6 +369,10 @@ public sealed class WorkspaceSyncToolTests {
 			because: "the restore-workspace prompt should tell agents how to target the correct local workspace");
 		restorePrompt.Should().Contain(RestoreWorkspaceTool.RestoreWorkspaceToolName,
 			because: "the restore-workspace prompt should reference the exact MCP tool name");
+		restorePrompt.Should().Contain("workspaceSettings.json",
+			because: "the restore prompt should identify the package list that controls what is downloaded");
+		restorePrompt.Should().Contain("do not report that environment packages were restored",
+			because: "an MCP caller must not translate an empty-list warning into a misleading restore claim");
 	}
 
 	private sealed class FakePushWorkspaceCommand : PushWorkspaceCommand {
