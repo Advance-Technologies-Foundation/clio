@@ -4645,7 +4645,7 @@ internal static class ToolContractCatalog {
 				Field("items", ArrayType, "Flat list-mode request summaries, each with requestType and an optional description."),
 				Field("requestType", StringType, "Request type echoed back in detail mode."),
 				Field("parameters", ObjectType, "The ONLY keys a page schema may pass via the binding's params block. An EMPTY map means the request accepts NO parameters — do not invent any. A parameter may carry a valueSource annotation ({kind:'environment', tool:'<probe>'}): fill that value ONLY from the named probe tool's result (e.g. templateId -> list-printables, processName -> get-process-signature)."),
-				Field("baseParameters", ObjectType, "Fields every request inherits from BaseRequest ($context, scopes, type) — platform-injected at dispatch time; NEVER pass them via params."),
+				Field("baseParameters", ObjectType, "Current BaseRequest fields and producer metadata, including deprecated/deprecationReason when applicable — honor that guidance; these fields are platform-injected at dispatch time and must NEVER be passed via params."),
 				Field("documentation", StringType, "Per-request authoring recipe (canonical wiring, pitfalls, checklist) when the producer published one."),
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
