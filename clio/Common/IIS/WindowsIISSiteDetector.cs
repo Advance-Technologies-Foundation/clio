@@ -43,6 +43,16 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 	}
 
 	/// <summary>
+	/// Truncates a possibly-null string to at most <paramref name="maxLength"/> characters for compact debug
+	/// logging. Extracted as a pure helper — collapsing the redundant double null-check
+	/// `value?.Substring(0, Math.Min(N, value?.Length ?? 0))` (the inner null-conditional was dead code,
+	/// since the outer `?.` already guarantees value is non-null before the argument is evaluated) — so this
+	/// idiom is directly unit-testable without the class's Windows-only appcmd.exe/PowerShell dependencies.
+	/// </summary>
+	internal static string TruncateForLog(string value, int maxLength) =>
+		value?.Substring(0, Math.Min(maxLength, value.Length));
+
+	/// <summary>
 	///     Executes appcmd.exe with the specified arguments and returns the output.
 	/// </summary>
 	private string ExecuteAppCmd(string arguments) {
@@ -132,7 +142,7 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 			DebugLog("[PID] Method 1: Trying appcmd list wp...");
 			try {
 				string wpXml = ExecuteAppCmd($"list wp /apppool.name:\"{appPoolName}\" /xml");
-				DebugLog($"[PID] Method 1 output: {wpXml?.Substring(0, Math.Min(200, wpXml?.Length ?? 0))}");
+				DebugLog($"[PID] Method 1 output: {TruncateForLog(wpXml, 200)}");
 
 				if (!string.IsNullOrWhiteSpace(wpXml)) {
 					XElement wpRoot = XElement.Parse(wpXml);
@@ -188,7 +198,7 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 						DebugLog($"[PID] Method 3: Checking process {proc.Id}...");
 						string commandLine = GetProcessCommandLine(proc.Id);
 						DebugLog(
-							$"[PID] Method 3: Process {proc.Id} command line: {commandLine?.Substring(0, Math.Min(150, commandLine?.Length ?? 0))}");
+							$"[PID] Method 3: Process {proc.Id} command line: {TruncateForLog(commandLine, 150)}");
 
 						if (!string.IsNullOrWhiteSpace(commandLine) &&
 							commandLine.Contains(appPoolName, StringComparison.OrdinalIgnoreCase)) {

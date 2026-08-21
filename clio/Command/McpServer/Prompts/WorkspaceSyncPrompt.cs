@@ -41,8 +41,9 @@ public static class WorkspaceSyncPrompt {
 		[Description("Absolute path to the local workspace")]
 		string workspacePath) =>
 		$"""
-		 Use clio mcp server `{RestoreWorkspaceTool.RestoreWorkspaceToolName}` tool to restore the workspace at
-		 `{workspacePath}` from Creatio environment `{environmentName}`.
+		 Use clio mcp server `{RestoreWorkspaceTool.RestoreWorkspaceToolName}` tool to restore the packages listed
+		 in `.clio/workspaceSettings.json` at `{workspacePath}` from Creatio environment `{environmentName}`.
 		 Pass `workspace-path` exactly as provided and use `environment-name` `{environmentName}`.
+		 If the tool warns that no packages are eligible, do not report that environment packages were restored.
 		 """;
 }

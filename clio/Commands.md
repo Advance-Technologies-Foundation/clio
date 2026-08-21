@@ -297,7 +297,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pull-workspace"></a>
 <a id="pullw"></a>
 <a id="restorew"></a>
-- [`restore-workspace`](docs/commands/restore-workspace.md) - Restore editable packages into a workspace, `pull-workspace`, `pullw`, `restorew`
+- [`restore-workspace`](docs/commands/restore-workspace.md) - Restore packages listed in workspace settings without clearing ineligible package content, `pull-workspace`, `pullw`, `restorew`
 <a id="switch-nuget-to-dll-reference"></a>
 <a id="nuget2dll"></a>
 - [`switch-nuget-to-dll-reference`](docs/commands/switch-nuget-to-dll-reference.md) - Switches nuget references to dll references in csproj files, `nuget2dll`
