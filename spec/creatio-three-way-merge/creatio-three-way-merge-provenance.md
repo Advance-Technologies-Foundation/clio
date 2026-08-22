@@ -20,9 +20,14 @@ The standalone CLI project, batch scripts, solution, and build-output directorie
 
 ## Rights gate
 
-The resolver owner has authorized using and maintaining the resolver inside clio. Before copying
-source into this public repository, the GitHub issue must additionally record a statement from a
-rights holder that explicitly permits public modification and redistribution under the MIT License.
+On 2026-08-22 the rights holder confirmed that they have the necessary rights and authorized the
+resolver source at commit `e65852f9521b2c1d288883428b3dd7ebb6fc73be` for public modification and
+redistribution under the MIT License in the clio repository. The authorization is recorded in the
+GitHub issue and covers this source transfer.
+
+The rights holder explicitly did not authorize changes to `crt-git-integration-app`. clio and
+`crt-git-integration-app` are independent products. The source repository is read-only provenance
+and inspiration for this feature; the clio change must not modify, package, or migrate it.
 
 The import commit must preserve contributor attribution and add the resolver package's license and
 repository metadata. This document records provenance; it is not itself the license grant.
@@ -54,7 +59,5 @@ The source-transfer commit must prove:
 2. intentional adaptations are isolated and reviewed separately from the mechanical import;
 3. all retained semantic tests pass on Windows, Linux, and macOS;
 4. the built resolver assembly identity remains compatible with the existing Creatio descriptor;
-5. clio and the Creatio app consume the exact same `netstandard2.0` package asset;
-6. the app's copied DLL SHA-256 equals the pinned package asset SHA-256;
-7. the old resolver source/test copy is removed from `crt-git-integration-app` only after its
-   package and runtime smoke tests pass.
+5. the imported project builds as an independent clio-owned `netstandard2.0` library;
+6. no file in `crt-git-integration-app` is modified by the implementation or verification work.
