@@ -1372,10 +1372,13 @@ public sealed class WebToMobileConversionServiceTests {
 		addButton.PropertyName.Should().Be("tools",
 			because: "the second container is walked into its own slot, kept distinct from items");
 		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
-		panelValues.ContainsKey("items").Should().BeFalse(
-			because: "both child arrays are emitted as their own entries, neither carried as a value");
+		panelValues["items"]!.AsArray().Should().BeEmpty(
+			because: "Panel is occupied via an items child (Amount), so InitializeContainerItemSlots declares the "
+				+ "slot the differ requires — the array itself is never carried as a value, only the empty slot");
 		panelValues.ContainsKey("tools").Should().BeFalse(
-			because: "both child arrays are emitted as their own entries, neither carried as a value");
+			because: "Panel is occupied via 'tools' only through AddButton, which is out of this pass's scope "
+				+ "(scoped to the items slot only — see InitializeContainerItemSlots) — both child arrays are "
+				+ "still emitted as their own entries, never carried as a value");
 	}
 
 	[Test]
@@ -6057,6 +6060,166 @@ public sealed class WebToMobileConversionServiceTests {
 		sales.ParentName.Should().Be("Tabs");
 		sales.Index.Should().Be(1,
 			because: "the tab index is assigned AFTER the compaction — rebased to 0 it would land before the template's general tab");
+	}
+
+	#endregion
+
+	#region InitializeContainerItemSlots — the items slot on a container the differ requires
+
+	/// <summary>Builds a viewConfigDiff body from the guide's own elementMap exactly as the conversion guide
+	/// instructs a caller to: mobileValues pasted verbatim into each insert operation, nothing hand-patched.
+	/// Merge/drop/relocate-children entries never carry a viewConfigDiff operation of their own.</summary>
+	private static string BuildViewConfigDiffBody(MobilePageConversionGuide guide) {
+		var operations = new JsonArray();
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)) {
+				continue;
+			}
+			var operation = new JsonObject {
+				["operation"] = "insert",
+				["name"] = entry.MobileName,
+				["values"] = entry.MobileValues?.DeepClone() ?? new JsonObject()
+			};
+			if (entry.ParentName is { Length: > 0 }) {
+				operation["parentName"] = entry.ParentName;
+				operation["propertyName"] = entry.PropertyName is { Length: > 0 } ? entry.PropertyName : "items";
+			}
+			if (entry.Index is { } index) {
+				operation["index"] = index;
+			}
+			operations.Add(operation);
+		}
+		return new JsonObject { ["viewConfigDiff"] = operations }.ToJsonString();
+	}
+
+	[Test]
+	[Description("The core fix: a web-sourced container that survives conversion with a surviving items child gets an empty 'items' array initialized on its OWN mobileValues, across every mobile-supported container type BuildMobileValues drops the array for — a GridContainer, FlexContainer, ExpansionPanel and a converted TabContainer alike. Before the fix none of these carried 'items' at all.")]
+	public void Analyze_ContainerInsert_GetsItemsSlot_WhenChildSurvives_AcrossContainerTypes() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "FlexBox", "type": "crt.FlexContainer", "items": [ { "name": "FlexField", "type": "crt.Input" } ] },
+			  { "name": "GridBox", "type": "crt.GridContainer", "items": [ { "name": "GridField", "type": "crt.Input" } ] },
+			  { "name": "Panel", "type": "crt.ExpansionPanel", "items": [ { "name": "PanelField", "type": "crt.Input" } ] },
+			  { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			      { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "TabField", "type": "crt.Input" } ] } ] }
+			]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		foreach (string boxName in new[] { "FlexBox", "GridBox", "Panel", "OverviewTab" }) {
+			Element(guide, boxName).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+				because: $"{boxName} has a surviving items child, so the Creatio differ requires the slot to be physically declared — without it the child insert throws 'is not a container for other items'");
+		}
+	}
+
+	[Test]
+	[Description("crt.Timeline is NOT in emptyContainerRemoval.removableTypes, yet the slot-initialization pass is keyed on \"used as parent\", never on a container-type list — so a Timeline with a surviving child gets its items slot exactly like a rules-listed container. This is the exact type the original bug report's two repros both flagged as affected.")]
+	public void Analyze_TimelineContainer_GetsItemsSlot_WhenChildSurvives() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Timeline", "type": "crt.Timeline", "items": [
+				{ "name": "CallTile", "type": "crt.Input" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline", "crt.Input" };
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline" },
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules: RulesWithEmptyRemoval(), templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: TabbedContainerMap);
+
+		// Assert
+		Element(guide, "Timeline").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the pass keys on \"used as parent\", not a removableTypes list, so a type absent from that list still gets its slot");
+	}
+
+	[Test]
+	[Description("Regression guard for the pass-order constraint, genuinely sensitive to it (unlike a flat container whose only child is dropped before ever becoming an insert entry, which cascades identically regardless of ordering): Outer's only child Inner IS a surviving insert at snapshot time, so Outer is 'occupied via items' from the very first round. If InitializeContainerItemSlots ran BEFORE RemoveEmptyContainers, Outer's items would already be seeded to a non-null empty array by the time Inner itself drops (its own only child, Timeline, is unsupported) — IsEmptyRemovalCandidate reads items-ABSENCE, so a pre-seeded array would make Outer look non-empty forever and the cascade would stop one level too early. Running the pass strictly after RemoveEmptyContainers (as implemented) lets Outer's true emptiness show through and both containers cascade to drop.")]
+	public void Analyze_ShouldCascadeBothLevelsToDrop_WhenItemsSlotPassRunsAfterRemoval() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Outer", "type": "crt.GridContainer", "items": [
+				{ "name": "Inner", "type": "crt.GridContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		Element(guide, "Inner").Operation.Should().Be("drop",
+			because: "Inner's only child (Timeline) is unsupported and never becomes an insert, so Inner is never occupied and RemoveEmptyContainers drops it in round 1");
+		Element(guide, "Outer").Operation.Should().Be("drop",
+			because: "once Inner is a drop, Outer's true occupancy is empty too — this only cascades correctly if Outer's items slot was NOT pre-seeded by a too-early InitializeContainerItemSlots call");
+	}
+
+	[Test]
+	[Description("A merge twin the mobile template provides (Tabs) is used as parentName by every converted tab — it IS \"occupied\" by the same definition the pass uses — yet the pass must never fabricate a mobileValues object on it: its child-collection slot is the template's own concern, not the converter's.")]
+	public void Analyze_MergeTwinUsedAsParent_IsNeverGivenAnItemsSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		ElementMapEntry tabs = Element(guide, "Tabs");
+		tabs.Operation.Should().Be("merge", because: "Tabs is the mobile template's own twin, matched by name via the container map");
+		tabs.MobileValues.Should().BeNull(
+			because: "a merge twin carries no converter-owned mobileValues here — the pass only ever writes into an INSERT entry's own JsonObject, so SalesTab using Tabs as parentName must not fabricate one");
+	}
+
+	[Test]
+	[Description("Synthesized tab-area layers (MainTabContainer_*/Area_*, created by BuildTabAreaLayers with no webName) get their items slot from THIS SAME pass now that SynthesizedLayerEntry no longer seeds it inline — proving the pass genuinely runs AFTER BuildTabAreaLayers rather than only covering the web-sourced containers built earlier in the pipeline.")]
+	public void Analyze_SynthesizedTabAreaLayers_StillGetItemsSlot_ViaSharedPass() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		// Assert
+		(string main, string area) = LayerNames("OverviewTab");
+		Synthesized(guide, main).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the tab body layer is occupied by the Area card, and must get its slot from InitializeContainerItemSlots, not from a now-removed inline compensation in SynthesizedLayerEntry");
+		Synthesized(guide, area).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the Area card is occupied by the tab's moved content (LeadName), for the same reason");
+	}
+
+	[Test]
+	[Description("Integration-level reproduction of the bug report's repro B: a body built literally from the elementMap (mobileValues pasted verbatim, per the guide's own instructions, no hand-patched workaround) applies cleanly through the REAL differ clone (MobileDiffApplyValidator) for a nested Tabs -> TabContainer -> ExpansionPanel -> GridContainer chain. Before the fix this reproduced the exact reported error: 'Item \"SalesTab\" is not a container for other items'.")]
+	public void Analyze_ElementMapAsBuiltBody_AppliesCleanlyThroughRealDiffer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel", "items": [
+						{ "name": "ProductsListContainer", "type": "crt.GridContainer", "items": [
+							{ "name": "Budget", "type": "crt.Input" } ] } ] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		string body = BuildViewConfigDiffBody(guide);
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: $"every container insert in the chain must physically declare the items slot its own child targets; validator errors: {string.Join("; ", result.Errors)}");
 	}
 
 	#endregion
