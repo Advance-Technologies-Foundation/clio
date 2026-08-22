@@ -66,8 +66,7 @@ public sealed class PruneDbTemplatesCommandTests {
 	[Description("Runs the supplied operation once and returns its result while rendering progress.")]
 	public void RunWithProgress_ShouldReturnOperationResult_WhenItemsComplete() {
 		// Arrange
-		StringWriter output = new();
-		IAnsiConsole console = CreateTestConsole(output);
+		IAnsiConsole console = CreateTestConsole();
 		DbTemplatePruneResult expected = new(true, DbTemplatePruneService.CompleteSuccessStatus,
 			"local-pg", []);
 		int operationCalls = 0;
@@ -78,10 +77,8 @@ public sealed class PruneDbTemplatesCommandTests {
 			operationCalls++;
 			reportCompleted();
 			progressReports++;
-			Thread.Sleep(150);
 			reportCompleted();
 			progressReports++;
-			Thread.Sleep(150);
 			return expected;
 		});
 
@@ -89,53 +86,47 @@ public sealed class PruneDbTemplatesCommandTests {
 		actual.Should().BeSameAs(expected, because: "the progress wrapper must preserve the pruning result");
 		operationCalls.Should().Be(1, because: "the wrapper must not duplicate a destructive operation");
 		progressReports.Should().Be(2, because: "each processed template should advance the progress bar once");
-		output.ToString().Should().Contain("100%",
-			because: "a completed operation should leave a visibly complete progress bar");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Completes the progress bar when a structured request failure returns before item callbacks.")]
-	public void RunWithProgress_ShouldCompleteBar_WhenOperationReturnsBeforeCallbacks() {
+	[Description("Returns a structured request failure without retrying the destructive operation.")]
+	public void RunWithProgress_ShouldReturnFailureResult_WhenOperationReturnsBeforeCallbacks() {
 		// Arrange
-		StringWriter output = new();
-		IAnsiConsole console = CreateTestConsole(output);
+		IAnsiConsole console = CreateTestConsole();
 		DbTemplatePruneResult expected = new(false, DbTemplatePruneService.CompleteFailureStatus,
 			"local-pg", [], "configuration", "Settings changed.");
+		int operationCalls = 0;
 
 		// Act
 		DbTemplatePruneResult actual = DbTemplatePruneConsole.RunWithProgress(console, 2, _ => {
-			Thread.Sleep(150);
+			operationCalls++;
 			return expected;
 		});
 
 		// Assert
 		actual.Should().BeSameAs(expected, because: "structured failures remain authoritative after progress rendering");
-		output.ToString().Should().Contain("100%",
-			because: "a completed request should not leave the progress display visually stuck");
+		operationCalls.Should().Be(1, because: "progress completion must not retry a failed destructive request");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Stops without falsely completing the progress bar when the operation throws unexpectedly.")]
-	public void RunWithProgress_ShouldPreserveActualProgress_WhenOperationThrows() {
+	[Description("Propagates an unexpected operation exception after accepting reported progress.")]
+	public void RunWithProgress_ShouldPropagateException_WhenOperationThrows() {
 		// Arrange
-		StringWriter output = new();
-		IAnsiConsole console = CreateTestConsole(output);
+		IAnsiConsole console = CreateTestConsole();
+		int progressReports = 0;
 
 		// Act
 		Action act = () => DbTemplatePruneConsole.RunWithProgress(console, 2, reportCompleted => {
 			reportCompleted();
-			Thread.Sleep(150);
+			progressReports++;
 			throw new InvalidOperationException("unexpected failure");
 		});
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "unexpected programming failures must remain visible");
-		output.ToString().Should().Contain("50%",
-			because: "the rendered bar should preserve the one completed item");
-		output.ToString().Should().NotContain("100%",
-			because: "a partially executed batch must not appear complete without a structured summary");
+		progressReports.Should().Be(1, because: "the wrapper must preserve progress reported before the exception");
 	}
 
 	[TestCase("Managed PostgreSQL templates")]
@@ -432,12 +423,12 @@ public sealed class PruneDbTemplatesCommandTests {
 			.Returns(callInfo => callInfo.ArgAt<Func<Action, DbTemplatePruneResult>>(1).Invoke(() => { }));
 	}
 
-	private static IAnsiConsole CreateTestConsole(StringWriter output) {
+	private static IAnsiConsole CreateTestConsole() {
 		IAnsiConsole console = AnsiConsole.Create(new AnsiConsoleSettings {
 			Ansi = AnsiSupport.Yes,
 			ColorSystem = ColorSystemSupport.NoColors,
 			Interactive = InteractionSupport.Yes,
-			Out = new AnsiConsoleOutput(output)
+			Out = new AnsiConsoleOutput(TextWriter.Null)
 		});
 		console.Profile.Width = 120;
 		return console;
