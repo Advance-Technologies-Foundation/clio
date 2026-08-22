@@ -19,6 +19,8 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	// Builds the same REAL invoker registry BuildToolWithRegistry wraps in a tool, so contracts for
 	// uncurated tools derive from the same MCP tool input schema clio-run dispatches against (Codex
 	// review #1, story-6). Exposed separately so ENG-93885 tests can call ToolContractCatalog.GetContracts
@@ -2108,7 +2110,7 @@ public sealed class ToolContractGetToolTests {
 		// [Description] attribute is NOT merged in - a change made there alone ships invisible, which is what
 		// happened when the downgrade refusal was added and this contract kept saying the tool always installs.
 		// The E2E pins the same claims, but E2E is advisory and cannot fail a merge.
-		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ", RegexOptions.None, RegexTimeout);
 		curatedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
 			because: "a case where the tool does NOT install must be discoverable, or an agent meets the refusal "
 				+ "as a surprise. There are TWO — an environment already ahead, and a malformed bundled version "
