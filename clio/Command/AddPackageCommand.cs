@@ -62,14 +62,12 @@ public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger, I
 	public override int Execute(AddPackageOptions options) {
 		string originalCurrentDirectory = Environment.CurrentDirectory;
 		try {
-			ApplyWorkspacePath(options);
-			try {
-				packageCreator.Create(options.Name, options.AsApp);
-			}
-			catch (ArgumentException exception) when (exception.ParamName == "packageName") {
-				logger.WriteError(exception.Message);
+			if (!PackageCreator.IsValidPackageName(options.Name)) {
+				logger.WriteError(PackageCreator.InvalidPackageNameMessage);
 				return 1;
 			}
+			ApplyWorkspacePath(options);
+			packageCreator.Create(options.Name, options.AsApp);
 			logger.WriteInfo("Done");
 			return FollowUp(options);
 		}

@@ -117,6 +117,10 @@ internal class PackageCreatorTest : BaseClioModuleTests
 			because: "the conventional implementation should be colocated with its small interface");
 		resolver.Should().Contain("new LocalizableString(",
 			because: "the concrete adapter must own construction of the Creatio Core type");
+		resolver.Should().NotContain("#RootNameSpace#",
+			because: "the generated resolver namespace must not retain an unexpanded template macro");
+		resolver.Should().Contain($"namespace {PackageNameOne}App.LocalizableStrings",
+			because: "the resolver must use the exact application root namespace generated for the package");
 		string[] localizableStringConstructors = FileSystem.Directory
 			.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
 			.Where(path => FileSystem.File.ReadAllText(path).Contains("new LocalizableString("))
@@ -171,11 +175,11 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		string packageName = new('A', 70);
 
 		// Act
-		creator.Create(PackagesPath, packageName, false);
+		creator.Create(PackagesPath, packageName, true);
 
 		// Assert
 		FileSystem.Directory.Exists(Path.Combine(PackagesPath, packageName)).Should().BeTrue(
-			because: "Creatio accepts package names up to and including seventy characters");
+			because: "Creatio accepts application package names up to and including seventy characters");
 	}
 
 	[TestCase(false)]

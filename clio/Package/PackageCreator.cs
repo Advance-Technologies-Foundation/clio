@@ -280,11 +280,33 @@ public class PackageCreator : IPackageCreator{
 		SaveAppDescriptorToFile(appDescriptor, appDescriptorFile);
 	}
 
+	internal static bool IsValidPackageName(string packageName) {
+		bool isValid = !string.IsNullOrWhiteSpace(packageName)
+			&& packageName.Length <= MaxPackageNameLength
+			&& packageName != "_"
+			&& PackageNamePattern.IsMatch(packageName);
+		return isValid;
+	}
+
 	private static void ValidatePackageName(string packageName) {
-		if (string.IsNullOrWhiteSpace(packageName) || packageName.Length > MaxPackageNameLength
-			|| packageName == "_" || !PackageNamePattern.IsMatch(packageName)) {
+		if (!IsValidPackageName(packageName)) {
 			throw new ArgumentException(InvalidPackageNameMessage, nameof(packageName));
 		}
+	}
+
+	private void CreateCore(string packagesPath, string packageName, bool? asApp) {
+		CreatePackageIfNotExists(packagesPath, packageName, asApp == true);
+		if (asApp == true) {
+			AddLocalizationSchema(packagesPath, packageName);
+		}
+		AddPackageToWorkspaceIfNeeded(packageName);
+		if (asApp == true) {
+			AddAppDescriptor(packagesPath, packageName);
+		}
+		else {
+			UpdateAppDescriptorIfExists(packagesPath, packageName);
+		}
+		_workspaceSolutionCreator.Create();
 	}
 
 	#endregion
@@ -309,24 +331,12 @@ public class PackageCreator : IPackageCreator{
 	}
 
 	public void Create(string packagesPath, string packageName) {
-		Create(packagesPath, packageName, null);
+		CreateCore(packagesPath, packageName, null);
 	}
 
 	public void Create(string packagesPath, string packageName, bool? asApp) {
 		ValidatePackageName(packageName);
-		CreatePackageIfNotExists(packagesPath, packageName, asApp == true);
-		if (asApp == true) {
-			AddLocalizationSchema(packagesPath, packageName);
-		}
-		AddPackageToWorkspaceIfNeeded(packageName);
-		if ((asApp.HasValue && asApp.Value)
-			|| (asApp.HasValue && asApp.Value && _fileSystem.GetDirectories(packagesPath).Length == 1)) {
-			AddAppDescriptor(packagesPath, packageName);
-		}
-		else {
-			UpdateAppDescriptorIfExists(packagesPath, packageName);
-		}
-		_workspaceSolutionCreator.Create();
+		CreateCore(packagesPath, packageName, asApp);
 	}
 
 	#endregion

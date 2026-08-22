@@ -39,7 +39,6 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 	}
 
 	public override void TearDown() {
-		_packageCreator.RejectPackageName = false;
 		_logger.ClearReceivedCalls();
 		_chain.ReceivedItems.Clear();
 		base.TearDown();
@@ -54,6 +53,7 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 			Path.Combine(Path.GetTempPath(), $"add-package-{Guid.NewGuid():N}")).FullName;
 		AddPackageOptions options = new() {
 			Name = "MyPackage",
+			AsApp = true,
 			WorkspacePath = explicitWorkspacePath
 		};
 
@@ -65,6 +65,10 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 			result.Should().Be(0, "because the command should complete when follow-up execution succeeds");
 			NormalizeTempPathAlias(_packageCreator.CapturedCurrentDirectory).Should().Be(NormalizeTempPathAlias(explicitWorkspacePath),
 				"because package creation should run inside the explicit workspace path");
+			_packageCreator.CapturedPackageName.Should().Be(options.Name,
+				because: "the command must forward the requested package name unchanged");
+			_packageCreator.CapturedAsApp.Should().BeTrue(
+				because: "the command must forward application-package intent unchanged");
 			Environment.CurrentDirectory.Should().Be(originalCurrentDirectory,
 				"because the command should restore process-global current directory after execution");
 			_chain.ReceivedItems.Should().ContainSingle().Which.Should().BeSameAs(_chainItem,
@@ -77,10 +81,9 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 	}
 
 	[Test]
-	[Description("Returns a caller-correctable error message when the package creator rejects the package name.")]
+	[Description("Returns a caller-correctable error message before invoking package creation for an invalid name.")]
 	public void Execute_ShouldReturnValidationError_WhenPackageNameIsInvalid() {
 		// Arrange
-		_packageCreator.RejectPackageName = true;
 		AddPackageOptions options = new() { Name = "../Escape" };
 
 		// Act
@@ -89,7 +92,9 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 		// Assert
 		result.Should().Be(1, because: "invalid package names are caller-correctable command failures");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.StartsWith(PackageCreator.InvalidPackageNameMessage, StringComparison.Ordinal)));
+			message == PackageCreator.InvalidPackageNameMessage));
+		_packageCreator.CreateCallCount.Should().Be(0,
+			because: "invalid input must be rejected before package creation is invoked");
 		_chain.ReceivedItems.Should().BeEmpty(
 			because: "follow-up configuration must not run after package-name validation fails");
 	}
@@ -101,16 +106,19 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 
 	private sealed class FakePackageCreator : IPackageCreator {
 		public string CapturedCurrentDirectory { get; private set; }
-		public bool RejectPackageName { get; set; }
+		public string CapturedPackageName { get; private set; }
+		public bool? CapturedAsApp { get; private set; }
+		public int CreateCallCount { get; set; }
 
 		public void Create(string packageName, bool? asApp) {
-			if (RejectPackageName) {
-				throw new ArgumentException(PackageCreator.InvalidPackageNameMessage, nameof(packageName));
-			}
+			CreateCallCount++;
 			CapturedCurrentDirectory = Environment.CurrentDirectory;
+			CapturedPackageName = packageName;
+			CapturedAsApp = asApp;
 		}
 
 		public void Create(string packagesPath, string packageName) {
+			CreateCallCount++;
 			CapturedCurrentDirectory = Environment.CurrentDirectory;
 		}
 	}
