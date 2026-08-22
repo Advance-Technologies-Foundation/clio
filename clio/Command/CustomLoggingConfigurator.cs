@@ -138,7 +138,7 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 
 	private static FileEdit BuildRulesEdit(string path, TextFile text, string loggerName, string targetName, string level) {
 		XDocument document = Parse(path, text.Content);
-		XElement rules = RequireSingleChild(document.Root!, "rules", path);
+		XElement rules = RequireSingleChild(document.Root, "rules", path);
 		XElement[] loggers = rules.Elements().Where(element => element.Name.LocalName == "logger").ToArray();
 		XElement defaultLogger = loggers.FirstOrDefault(element => (string)element.Attribute("name") == "*")
 			?? throw new InvalidDataException($"Could not find the default logger (name='*') in '{path}'.");
@@ -159,9 +159,9 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 
 	private static FileEdit BuildTargetsEdit(string path, TextFile text, string targetName, string logPath) {
 		XDocument document = Parse(path, text.Content);
-		RequireVariable(document.Root!, "DefaultLayout", path);
-		RequireVariable(document.Root!, "TodayLogPath", path);
-		XElement targets = RequireSingleChild(document.Root!, "targets", path);
+		RequireVariable(document.Root, "DefaultLayout", path);
+		RequireVariable(document.Root, "TodayLogPath", path);
+		XElement targets = RequireSingleChild(document.Root, "targets", path);
 		XElement[] existing = targets.Elements().Where(element => element.Name.LocalName == "target"
 			&& string.Equals((string)element.Attribute("name"), targetName, StringComparison.OrdinalIgnoreCase)).ToArray();
 		if (existing.Length > 1 || existing.Length == 1 && !TargetMatches(existing[0], targetName, logPath)) {
@@ -172,7 +172,7 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 		}
 		XElement anchor = targets.Elements().FirstOrDefault(element => element.Name.LocalName == "target")
 			?? throw new InvalidDataException($"Could not find an existing target in '{path}'.");
-		string prefix = document.Root!.GetPrefixOfNamespace(XNamespace.Get(XsiNamespace));
+		string prefix = document.Root.GetPrefixOfNamespace(XNamespace.Get(XsiNamespace));
 		string declaration = string.IsNullOrWhiteSpace(prefix) ? $" xmlns:xsi=\"{XsiNamespace}\"" : string.Empty;
 		prefix = string.IsNullOrWhiteSpace(prefix) ? "xsi" : prefix;
 		string element = $"<target name=\"{targetName}\"{declaration} {prefix}:type=\"File\" layout=\"{DefaultLayout}\" fileName=\"{logPath}\" />";
@@ -209,10 +209,10 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 	}
 
 	private void CreateBackups(IEnumerable<FileEdit> edits, ICollection<Backup> backups) {
-		foreach (FileEdit edit in edits) {
-			string backupPath = edit.Path + $".clio-{Guid.NewGuid():N}.bak";
-			_fileSystem.File.Copy(edit.Path, backupPath);
-			backups.Add(new(edit.Path, backupPath));
+		foreach (string path in edits.Select(edit => edit.Path)) {
+			string backupPath = path + $".clio-{Guid.NewGuid():N}.bak";
+			_fileSystem.File.Copy(path, backupPath);
+			backups.Add(new(path, backupPath));
 		}
 	}
 
@@ -247,9 +247,9 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 
 	private void VerifySavedConfiguration(string rulesPath, string targetsPath, string loggerName,
 		string targetName, string level, string logPath) {
-		XElement[] loggers = RequireSingleChild(Parse(rulesPath, _fileSystem.File.ReadAllText(rulesPath)).Root!, "rules", rulesPath)
+		XElement[] loggers = RequireSingleChild(Parse(rulesPath, _fileSystem.File.ReadAllText(rulesPath)).Root, "rules", rulesPath)
 			.Elements().Where(element => element.Name.LocalName == "logger" && (string)element.Attribute("name") == loggerName).ToArray();
-		XElement[] targets = RequireSingleChild(Parse(targetsPath, _fileSystem.File.ReadAllText(targetsPath)).Root!, "targets", targetsPath)
+		XElement[] targets = RequireSingleChild(Parse(targetsPath, _fileSystem.File.ReadAllText(targetsPath)).Root, "targets", targetsPath)
 			.Elements().Where(element => element.Name.LocalName == "target" && (string)element.Attribute("name") == targetName).ToArray();
 		if (loggers.Length != 1 || !LoggerMatches(loggers[0], loggerName, targetName, level)
 			|| targets.Length != 1 || !TargetMatches(targets[0], targetName, logPath)) {
