@@ -236,6 +236,32 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 				"is feature-gated dead-ends the agent on every environment where the feature is off");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The curated guidance fixture contains unique, non-overlapping default and feature-gated names.")]
+	public void CuratedKnowledgeFixture_ShouldContainUniqueNames() {
+		// Arrange
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
+
+		// Act
+		string[] availableNames = document.RootElement.GetProperty("availableNames")
+			.EnumerateArray()
+			.Select(name => name.GetString()!)
+			.ToArray();
+		string[] featureGatedNames = document.RootElement.GetProperty("featureGatedNames")
+			.EnumerateArray()
+			.Select(name => name.GetString()!)
+			.ToArray();
+
+		// Assert
+		availableNames.Should().OnlyHaveUniqueItems(
+			because: "duplicate catalog names make a hand-merged fixture look complete after it is converted to a set");
+		featureGatedNames.Should().OnlyHaveUniqueItems(
+			because: "each feature-gated guidance name must have one canonical fixture entry");
+		availableNames.Should().NotIntersectWith(featureGatedNames,
+			because: "one guidance name cannot be both available by default and feature-gated");
+	}
+
 	/// <summary>
 	/// Guidance names the curated knowledge library publishes, read from the named fixture array:
 	/// <c>availableNames</c> resolve with the default feature-toggle state, <c>featureGatedNames</c>
@@ -255,14 +281,17 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 	/// the fixture states which generation it was checked against.
 	/// </remarks>
 	private static IReadOnlySet<string> CuratedKnowledgeNames(string arrayProperty) {
-		string path = Path.Combine(
-			TestContext.CurrentContext.TestDirectory,
-			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
-		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(path));
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
 		return document.RootElement.GetProperty(arrayProperty)
 			.EnumerateArray()
 			.Select(name => name.GetString()!)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+	}
+
+	private static string CuratedKnowledgeFixturePath() {
+		return Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
 	}
 
 	[Test]
