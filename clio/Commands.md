@@ -142,7 +142,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`activate-pkg`](docs/commands/activate-pkg.md) - Activate a package in Creatio, `activate-package`, `apkg`, `enable-package`
 <a id="add-package"></a>
 <a id="ap"></a>
-- [`add-package`](docs/commands/add-package.md) - Add package to workspace or local folder, `ap`
+- [`add-package`](docs/commands/add-package.md) - Add a package; `--as-app` also creates a localization schema and injectable resolver, `ap`
 <a id="check-nuget-update"></a>
 <a id="check"></a>
 - [`check-nuget-update`](docs/commands/check-nuget-update.md) - Check NuGet for Creatio package updates, `check`
