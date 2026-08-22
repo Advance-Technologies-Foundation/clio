@@ -354,6 +354,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
 - [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, `sql`
+<a id="export-component-registry"></a>
+<a id="export-registry"></a>
+- [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
 <a id="externalLink"></a>
 <a id="link"></a>
 - [`externalLink`](docs/commands/externalLink.md) - Handle external deep links, `link`
