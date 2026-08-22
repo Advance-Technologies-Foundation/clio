@@ -242,14 +242,15 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 	/// resolve only where their <c>requiredFeatures</c> are enabled.
 	/// </summary>
 	/// <remarks>
-	/// Each array holds item IDs, topic IDs, and legacy <c>docs://mcp/guides/</c> aliases for
-	/// guidance-role articles only — <see cref="Clio.Command.McpServer.Knowledge.KnowledgeResolver"/>
-	/// resolves a bare name against that role alone, so reference articles are reachable by URI only.
+	/// Each array holds item IDs and topic IDs for guidance-role articles only —
+	/// <see cref="Clio.Command.McpServer.Knowledge.KnowledgeResolver"/> returns only those values from
+	/// <c>GetNames</c>. Legacy aliases resolve only as complete <c>docs://</c> URIs and are not bare
+	/// guidance names; reference articles are likewise reachable by URI only.
 	/// Guidance content lives in clio-knowledge, so this fixture — not a compiled catalog — is what a
 	/// unit test can check shipped templates against without network access. Regenerate it from that
-	/// repository's <c>bundle-source.json</c> (currently tracking library version 1.13.43,
-	/// sequence 1013043000)
-	/// whenever the curated library publishes a new generation. A generation that only edits article
+	/// repository's <c>bundle-source.json</c> whenever the curated library publishes a new generation.
+	/// The fixture's own <c>libraryVersion</c> and <c>sequence</c> fields record the checked generation.
+	/// A generation that only edits article
 	/// bodies leaves the name arrays untouched; refresh the recorded version and sequence anyway, so
 	/// the fixture states which generation it was checked against.
 	/// </remarks>
