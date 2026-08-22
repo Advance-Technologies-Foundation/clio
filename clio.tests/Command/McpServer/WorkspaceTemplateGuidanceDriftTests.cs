@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -274,13 +275,26 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
 
 		// Act
-		Version version = Version.Parse(document.RootElement.GetProperty("libraryVersion").GetString()!);
-		long sequence = document.RootElement.GetProperty("sequence").GetInt64();
-		long expectedSequence = (version.Major * 1_000_000_000L)
-			+ (version.Minor * 1_000_000L)
-			+ (version.Build * 1_000L);
+		string libraryVersion = document.RootElement.GetProperty("libraryVersion").GetString()!;
+		bool hasValidVersionFormat = Regex.IsMatch(
+			libraryVersion,
+			"^[0-9]{1,7}(?:\\.[0-9]{1,3}){0,3}$",
+			RegexOptions.CultureInvariant);
+		string[] versionComponents = libraryVersion.Split('.');
+		ulong sequence = document.RootElement.GetProperty("sequence").GetUInt64();
+		ulong expectedSequence = Enumerable.Range(0, 4).Aggregate(
+			0UL,
+			(current, index) => (current * 1_000UL) + (index < versionComponents.Length
+				? ulong.Parse(versionComponents[index], CultureInfo.InvariantCulture)
+				: 0UL));
 
 		// Assert
+		hasValidVersionFormat.Should().BeTrue(
+			because: "the fixture version must satisfy the publisher's sequence derivation contract");
+		versionComponents.Length.Should().BeInRange(1, 4,
+			because: "the publisher accepts one to four version components for its four sequence slots");
+		expectedSequence.Should().BeGreaterThan(0UL,
+			because: "the publisher rejects a version that derives the reserved zero sequence");
 		sequence.Should().Be(expectedSequence,
 			because: "the fixture must identify one internally consistent curated-library generation");
 	}
