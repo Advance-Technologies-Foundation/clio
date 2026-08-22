@@ -266,6 +266,25 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			because: "feature-gated names must use the same deterministic order as default names");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The curated guidance fixture version and sequence identify the same published generation.")]
+	public void CuratedKnowledgeFixture_ShouldHaveConsistentGeneration_WhenLoaded() {
+		// Arrange
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
+
+		// Act
+		Version version = Version.Parse(document.RootElement.GetProperty("libraryVersion").GetString()!);
+		long sequence = document.RootElement.GetProperty("sequence").GetInt64();
+		long expectedSequence = (version.Major * 1_000_000_000L)
+			+ (version.Minor * 1_000_000L)
+			+ (version.Build * 1_000L);
+
+		// Assert
+		sequence.Should().Be(expectedSequence,
+			because: "the fixture must identify one internally consistent curated-library generation");
+	}
+
 	/// <summary>
 	/// Guidance names the curated knowledge library publishes, read from the named fixture array:
 	/// <c>availableNames</c> resolve with the default feature-toggle state, <c>featureGatedNames</c>
