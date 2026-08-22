@@ -157,23 +157,14 @@ Register the service/interface and tool dependencies in `clio/BindingsModule.cs`
 
 ## Resolver ownership and distribution
 
-On 2026-08-22 the resolver owner explicitly authorized using and maintaining
-`Creatio.ConflictResolver` inside clio. The implementation therefore uses source transfer rather
-than an opaque DLL or private package dependency.
+On 2026-08-22 the rights holder explicitly authorized the resolver snapshot for public modification
+and redistribution under clio's MIT license. The imported source is pinned to its source commit and
+tree, retains attribution, and carries package/license metadata.
 
-Before import, the issue must also record that the authorization comes from a rights holder and
-explicitly covers public modification and redistribution under clio's MIT license. The imported
-source is pinned to its source commit and tree, retains attribution, and carries package/license
-metadata. Authorization to use the code is not silently treated as that public-license grant.
-
-clio becomes the single source and semantic-test owner. The resolver remains one separate,
-`netstandard2.0`-only project so both consumers execute the same target binary:
-
-1. clio references the resolver project directly;
-2. clio's release produces one versioned resolver package;
-3. `crt-git-integration-app` pins that package and copies its `netstandard2.0` DLL into the existing
-   Creatio assembly location;
-4. after consumer verification, the resolver source copy in `crt-git-integration-app` is removed.
+clio independently owns its transferred source and semantic tests. The resolver remains one
+separate, `netstandard2.0`-only project referenced directly by clio. `crt-git-integration-app` is an
+independent product and remains untouched; it is not a consumer or migration target for this
+feature.
 
 The source transfer includes the existing semantic fixture suite and a provenance notice. It does
 not transfer the standalone resolver CLI, batch scripts, or a second solution. During the two-repo
@@ -183,11 +174,10 @@ second maintained implementation.
 The exact source commit, subtrees, baseline test result, and import verification procedure are
 recorded in `creatio-three-way-merge-provenance.md`.
 
-The resolver keeps its established assembly identity for the Creatio descriptor and uses an
-independently controlled package/informational version for `resolver-version`. clio release version
-properties must not flow into the resolver ProjectReference. The proven `System.Text.Json`
-compatibility line remains centrally pinned until both supported Creatio runtime families pass the
-app smoke test with a newer line.
+The resolver keeps its established assembly identity and uses an independently controlled
+package/informational version for `resolver-version`. clio release version properties must not flow
+into the resolver ProjectReference. The proven `System.Text.Json` compatibility line remains
+centrally pinned until clio's supported runtime paths validate a newer line.
 
 ## Non-goals
 
@@ -198,6 +188,7 @@ app smoke test with a newer line.
 - semantic business-process merge;
 - textual fallback for unsupported Creatio artifacts;
 - a second capabilities tool or a capabilities mode on the merge call.
+- modifying, packaging, or migrating `crt-git-integration-app`.
 
 ## Definition of done
 
