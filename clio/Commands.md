@@ -561,6 +561,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="last-compilation-log"></a>
 <a id="lcl"></a>
 - [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
+<a id="prune-db-templates"></a>
+- [`prune-db-templates`](docs/commands/prune-db-templates.md) - Interactively prune clio-managed PostgreSQL templates
 <a id="restart-web-app"></a>
 <a id="restart"></a>
 - [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart` (supports `--wait-ready` readiness polling)

@@ -213,6 +213,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments
 			["find-empty-iis-port"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-creatio-builds"] = PassthroughClassification.NotEnvironmentSensitive, // the exact false-positive FR-06 must not trip on
+			["list-db-templates"] = PassthroughClassification.NotEnvironmentSensitive,
+			["prune-db-templates"] = PassthroughClassification.NotEnvironmentSensitive,
 			["advise-theme-palette"] = PassthroughClassification.NotEnvironmentSensitive,
 			["reg-web-app"] = PassthroughClassification.NotEnvironmentSensitive,
 			["deploy-creatio"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "install-creatio" (InstallerCommandTool); actual tool name is deploy-creatio

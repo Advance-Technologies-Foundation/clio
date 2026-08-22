@@ -100,6 +100,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-app-sections",
 		"list-apps",
 		"list-creatio-builds",
+		// Inventories configured local PostgreSQL servers and performs no mutation.
+		"list-db-templates",
 		"list-entity-client-schemas",
 		"list-environments",
 		"list-knowledge-examples",

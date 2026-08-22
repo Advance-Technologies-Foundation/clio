@@ -178,6 +178,7 @@ remove-data-binding-row-db:remove-data-binding-row-db
 restart-web-app:restart-web-app,restart
 restore-configuration:restore-configuration,rc,restore
 restore-db:restore-db,rdb
+prune-db-templates:prune-db-templates
 restore-nuget-pkg:restore-nuget-pkg,restore-nuget,rn
 restore-workspace:restore-workspace,pull-workspace,pullw,restorew
 run:run,run-scenario,scenario
