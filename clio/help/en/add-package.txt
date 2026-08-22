@@ -12,18 +12,33 @@ OPTIONS
     <PACKAGE_NAME>
         Package name to add
 
-    -a
-        Controls whether an app-descriptor should be created or updated
+    -a, --as-app
+        Create an application descriptor, a <PACKAGE_NAME>LocalizableStrings
+        source-code schema, and an injectable adapter over Creatio LocalizableString
 
-    -e, --Environment <ENVIRONMENT_NAME>
+    -b, --build <CREATIO_BUILD_PATH>
+        Optional Creatio build archive or extracted directory used to download
+        build dependencies after creation
+
+    -e, --environment <ENVIRONMENT_NAME>
         Optional environment list used for download-configuration scenarios
 
 EXAMPLES
-    clio add-package MyPackage -a true
-        Add a package and update app descriptor metadata
+    clio add-package MyPackage -a
+        Add an application package with localization-ready backend primitives
 
-    clio add-package MyPackage -a true -e env_nf,env_n8
+    clio add-package MyPackage -a -e env_nf,env_n8
         Add a package and download configuration from multiple environments
+
+    clio add-package MyPackage -a --build C:\Builds\creatio.zip
+        Add an application package and download configuration from a Creatio build archive
+
+NOTES
+    The generated localization schema is only for package-level backend values
+    without a more natural owner. Keep page, process, object, and other
+    schema-specific resources with the schema that renders or consumes them.
+    Application code resolves ILocalizableStringResolver from dependency injection;
+    only LocalizableStringResolver constructs the concrete platform type.
 
 SEE ALSO
     new-pkg - Create a package skeleton

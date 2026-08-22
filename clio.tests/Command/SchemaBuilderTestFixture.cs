@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Common;
@@ -137,6 +138,35 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 	}
 
 	#endregion
+
+	[Test]
+	[Description("Applies source-code namespace, ownership documentation, and initial localizable values.")]
+	public void AddSchema_ShouldCustomizeGeneratedFiles_WhenSourceCodeOptionsProvided() {
+		// Arrange
+		FileSystem.AddDirectory(PackagePath);
+		ISchemaBuilder sut = Container.GetRequiredService<ISchemaBuilder>();
+		SourceCodeSchemaOptions options = new("TestPackageApp",
+			"Owns package-level values only.",
+			new Dictionary<string, string> {
+				["LocalizableStrings.PackageLevelExample.Value"] = "Value & example"
+			});
+
+		// Act
+		sut.AddSchema(SchemaType, SchemaName, PackagePath, options);
+
+		// Assert
+		string schema = FileSystem.File.ReadAllText(Path.Combine(PackagePath, "Schemas", SchemaName,
+			$"{SchemaName}.cs"));
+		string resources = FileSystem.File.ReadAllText(Path.Combine(PackagePath, "Resources",
+			$"{SchemaName}.SourceCode", "resource.en-US.xml"));
+		schema.Should().Contain("namespace TestPackageApp",
+			because: "the generated application namespace must not depend on free-text maintainer data");
+		schema.Should().Contain("/// Owns package-level values only.",
+			because: "the generated schema must explain its narrow ownership");
+		resources.Should().Contain(
+			"<Item Name=\"LocalizableStrings.PackageLevelExample.Value\" Value=\"Value &amp; example\" />",
+			because: "the generated schema must include an escaped concrete example value");
+	}
 
 	[Test]
 	public void AddSchema_CopiesMetadataFiles_AndAdjustsContent(){

@@ -21,22 +21,43 @@ clio add-package <PACKAGE_NAME> [OPTIONS]
 <PACKAGE_NAME>
 Package name to add
 
--a
-Controls whether an app-descriptor should be created or updated
+-a, --as-app
+Create an application descriptor, a `<PACKAGE_NAME>LocalizableStrings`
+source-code schema, and an injectable adapter over Creatio `LocalizableString`
 
--e, --Environment <ENVIRONMENT_NAME>
+-b, --build <CREATIO_BUILD_PATH>
+Optional Creatio build archive or extracted directory used to download build dependencies after creation
+
+-e, --environment <ENVIRONMENT_NAME>
 Optional environment list used for download-configuration scenarios
 ```
 
 ## Examples
 
 ```bash
-clio add-package MyPackage -a true
-Add a package and update app descriptor metadata
+clio add-package MyPackage -a
+Add an application package with localization-ready backend primitives
 
-clio add-package MyPackage -a true -e env_nf,env_n8
+clio add-package MyPackage -a -e env_nf,env_n8
 Add a package and download configuration from multiple environments
+
+clio add-package MyPackage -a --build C:\Builds\creatio.zip
+Add an application package and download configuration from a Creatio build archive
 ```
+
+## Localization ownership
+
+The generated `MyPackageLocalizableStrings` schema contains one example value,
+`LocalizableStrings.PackageLevelExample.Value`. Use this schema only for package-level backend values
+that have no more natural schema owner.
+
+Application code receives `ILocalizableStringResolver` through dependency injection. The generated
+`LocalizableStringResolver` is the only primitive that constructs Creatio Core's concrete
+`LocalizableString`; it exposes current-culture, strict-culture, and fallback operations. Do not replace
+this boundary with a static accessor or a `Helper` interface.
+
+Keep page, process, object, and other schema-specific resources with the schema that renders or consumes
+them. The generated primitive is not a central localization registry.
 
 ## See Also
 

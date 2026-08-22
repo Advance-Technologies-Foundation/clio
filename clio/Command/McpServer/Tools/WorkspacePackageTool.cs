@@ -14,11 +14,13 @@ public class WorkspacePackageTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<AddPackageOptions>(addPackageCommand, logger, commandResolver) {
+	internal const string AddPackageToolName = "add-package";
 
 	/// <summary>
 	/// Adds a package to the specified workspace and optionally bootstraps follow-up configuration download.
 	/// </summary>
-	[McpServerTool(Name = "add-package", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = AddPackageToolName, ReadOnly = false, Destructive = false, Idempotent = false,
+		OpenWorld = false)]
 	[Description("""
 				 Adds a package to a specified local workspace.
 				 
@@ -117,7 +119,7 @@ public record AddPackageArgs(
 	string EnvironmentName = null,
 
 	[property:JsonPropertyName("as-app")]
-	[Description("Whether to create an application descriptor for the package")]
+	[Description("Whether to create an application descriptor, backend localization schema, and injectable LocalizableString adapter")]
 	bool? AsApp = null,
 
 	[property:JsonPropertyName("build-zip-path")]

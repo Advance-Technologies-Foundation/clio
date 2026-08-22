@@ -24,7 +24,7 @@ public class AddPackageOptions : EnvironmentOptions{
 	/// Creates an application descriptor for the package when requested.
 	/// </summary>
 	[Option('a', "as-app", Required = false,
-		HelpText = "Create application in package")]
+		HelpText = "Create application package with localization schema and injectable resolver")]
 	public bool AsApp { get; set; }
 
 	[Option("asApp", Required = false, Hidden = true, HelpText = "Alias for --as-app")]

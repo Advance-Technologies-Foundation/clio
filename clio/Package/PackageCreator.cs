@@ -30,6 +30,7 @@ public class PackageCreator : IPackageCreator{
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly IFileSystem _fileSystem;
 	private readonly IJsonConverter _jsonConverter;
+	private readonly ISchemaBuilder _schemaBuilder;
 	private readonly IStandalonePackageFileManager _standalonePackageFileManager;
 	private readonly ITemplateProvider _templateProvider;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -47,7 +48,7 @@ public class PackageCreator : IPackageCreator{
 		IWorkspaceSolutionCreator workspaceSolutionCreator, ITemplateProvider templateProvider,
 		IWorkspacePathBuilder workspacePathBuilder, IStandalonePackageFileManager standalonePackageFileManager,
 		IJsonConverter jsonConverter, IWorkingDirectoriesProvider workingDirectoriesProvider,
-		IFileSystem fileSystem) {
+		IFileSystem fileSystem, ISchemaBuilder schemaBuilder) {
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		templateProvider.CheckArgumentNull(nameof(templateProvider));
 		workspace.CheckArgumentNull(nameof(workspace));
@@ -57,6 +58,7 @@ public class PackageCreator : IPackageCreator{
 		jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 		workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 		fileSystem.CheckArgumentNull(nameof(fileSystem));
+		schemaBuilder.CheckArgumentNull(nameof(schemaBuilder));
 		_environmentSettings = environmentSettings;
 		_workspace = workspace;
 		_workspaceSolutionCreator = workspaceSolutionCreator;
@@ -66,6 +68,7 @@ public class PackageCreator : IPackageCreator{
 		_jsonConverter = jsonConverter;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_fileSystem = fileSystem;
+		_schemaBuilder = schemaBuilder;
 	}
 
 	#endregion
@@ -102,6 +105,19 @@ public class PackageCreator : IPackageCreator{
 		SaveAppDescriptorToFile(addDescriptorDto, appDescriptorPath);
 	}
 
+	private void AddLocalizationSchema(string packagesPath, string packageName) {
+		string packagePath = _fileSystem.Combine(packagesPath, packageName);
+		string schemaName = $"{packageName}LocalizableStrings";
+		SourceCodeSchemaOptions options = new(
+			RootNameSpace(packageName),
+			"Owns package-level backend localizable values that have no more natural schema owner. " +
+			"Page and other schema resources stay with the schema that renders or consumes them.",
+			new Dictionary<string, string> {
+				["LocalizableStrings.PackageLevelExample.Value"] = "Package-level localizable value"
+			});
+		_schemaBuilder.AddSchema("source-code", schemaName, packagePath, options);
+	}
+
 	private void AddPackageToWorkspaceIfNeeded(string packageName) {
 		if (!IsWorkspace) {
 			return;
@@ -117,14 +133,20 @@ public class PackageCreator : IPackageCreator{
 		_workspaceSolutionCreator.Create();
 	}
 
-	private void ApplyMacrosToCsFiles(string packagesPath, string packageName) {
+	private void ApplyMacrosToCsFiles(string packagesPath, string packageName, bool includeLocalizationServices) {
 		string packageFilesPath = _standalonePackageFileManager.BuildFilesPath(packagesPath, packageName);
+		string localizationServices = string.Empty;
+		if (includeLocalizationServices) {
+			localizationServices = "serviceCollection.AddTransient<LocalizableStrings.ILocalizableStringResolver, " +
+				"LocalizableStrings.LocalizableStringResolver>();";
+		}
 		string[] csFiles = _fileSystem.GetFiles(packageFilesPath, "*.cs", SearchOption.AllDirectories);
 		foreach (string csFilePath in csFiles) {
 			string csFileContent = _fileSystem.ReadAllText(csFilePath);
 			string newCsFileContent = csFileContent
 									  .Replace("#PackageName#", packageName)
-									  .Replace("#RootNameSpace#", RootNameSpace(packageName));
+									  .Replace("#RootNameSpace#", RootNameSpace(packageName))
+									  .Replace("#LocalizationServices#", localizationServices);
 			_fileSystem.WriteAllTextToFile(csFilePath, newCsFileContent);
 		}
 	}
@@ -174,21 +196,24 @@ public class PackageCreator : IPackageCreator{
 		_jsonConverter.SerializeObjectToFile(descriptor, descriptorPath);
 	}
 
-	private void CreatePackageIfNotExists(string packagesPath, string packageName) {
+	private void CreatePackageIfNotExists(string packagesPath, string packageName, bool includeLocalizationServices) {
 		string packagePath = _fileSystem.Combine(packagesPath, packageName);
 		if (_fileSystem.ExistsDirectory(packagePath)) {
 			throw new InvalidOperationException($"Directory '{packagePath}' already exists");
 		}
 
 		_templateProvider.CopyTemplateFolder("package", packagePath);
+		if (includeLocalizationServices) {
+			_templateProvider.CopyTemplateFolder("package-localization", packagePath, "", "", false);
+		}
 		CreatePackageDescriptorToFileSystem(packagePath, packageName);
-		CreatePackageProj(packagesPath, packageName);
+		CreatePackageProj(packagesPath, packageName, includeLocalizationServices);
 	}
 
-	private void CreatePackageProj(string packagesPath, string packageName) {
+	private void CreatePackageProj(string packagesPath, string packageName, bool includeLocalizationServices) {
 		ApplyMacrosToProjectFiles(packagesPath, packageName);
 		RenameTemplatePackageNameCsproj(packagesPath, packageName);
-		ApplyMacrosToCsFiles(packagesPath, packageName);
+		ApplyMacrosToCsFiles(packagesPath, packageName, includeLocalizationServices);
 		ApplyMacrosToCsProjFile(packagesPath, packageName);
 		RenameMainAppCs(packagesPath, packageName);
 	}
@@ -269,7 +294,10 @@ public class PackageCreator : IPackageCreator{
 	}
 
 	public void Create(string packagesPath, string packageName, bool? asApp) {
-		CreatePackageIfNotExists(packagesPath, packageName);
+		CreatePackageIfNotExists(packagesPath, packageName, asApp == true);
+		if (asApp == true) {
+			AddLocalizationSchema(packagesPath, packageName);
+		}
 		AddPackageToWorkspaceIfNeeded(packageName);
 		if ((asApp.HasValue && asApp.Value)
 			|| (asApp.HasValue && asApp.Value && _fileSystem.GetDirectories(packagesPath).Length == 1)) {
