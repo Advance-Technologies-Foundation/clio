@@ -71,7 +71,8 @@ public sealed class ClioSettingsViewModelTests {
 		sut.HasValidationError.Should().BeFalse("because a real clio.dll passes validation");
 		sut.IsDevOverrideActive.Should().BeTrue("because a valid dev override is now active");
 		persisted.Should().Be(_devClioDll, "because the override round-trips through app-settings.json");
-		resolved.Command.Should().Be("dotnet", "because a .dll dev build is launched via dotnet");
+		resolved.Command.Should().Be(DotNetHostResolver.ResolveOrDefault(),
+			"because a .dll dev build is launched via the trusted, absolute dotnet host rather than a bare PATH-resolved name");
 		resolved.Args.Should().HaveCount(2, "because resolution passes the dev dll then the mcp-server verb");
 		resolved.Args[0].Should().Be(_devClioDll, "because the launch points at the dev dll");
 		resolved.Args[1].Should().Be("mcp-server", "because the dll is run as the mcp-server");

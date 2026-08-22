@@ -79,13 +79,31 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 		return Path.Combine(userPath, companyName, productName, "appsettings.json");
 	}
 
+	/// <summary>
+	/// Resolves the trusted <c>dotnet</c> host used to launch a <c>clio.dll</c> under test by reusing the
+	/// current test process's own image instead of a bare <c>"dotnet"</c> name resolved via
+	/// <c>CreateProcess</c>'s search order (calling-process directory first, then <c>PATH</c> — the same
+	/// defect class fixed in GH-1162). The e2e suite always runs as a <c>dotnet</c>-hosted process (for
+	/// example via <c>dotnet test</c>), so <see cref="Environment.ProcessPath"/> already IS an absolute,
+	/// trusted <c>dotnet</c> muxer capable of launching the sibling clio.dll build on the same machine.
+	/// </summary>
+	private static string ResolveCurrentDotNetHostPath() {
+		string? processPath = Environment.ProcessPath;
+		if (!string.IsNullOrWhiteSpace(processPath) && File.Exists(processPath)) {
+			return processPath;
+		}
+		// Unexpected: the current process image could not be resolved. This is test-harness-only code
+		// exercised on a developer/CI machine that already controls its own PATH, not shipped product.
+		return "dotnet"; // NOSONAR: last-resort fallback only when Environment.ProcessPath is unavailable.
+	}
+
 	private static string ResolveSettingsPathFromClioProcess(
 		string clioProcessPath,
 		IReadOnlyDictionary<string, string?>? processEnvironmentVariables) {
 		ProcessStartInfo startInfo;
 		string fullPath = Path.GetFullPath(clioProcessPath);
 		if (fullPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) {
-			startInfo = new ProcessStartInfo("dotnet") {
+			startInfo = new ProcessStartInfo(ResolveCurrentDotNetHostPath()) {
 				ArgumentList = { fullPath, "info", "--settings-file" }
 			};
 		}

@@ -318,7 +318,7 @@ public sealed class ClioToolInstallation : IClioToolInstallation {
 	public string TargetPath => Path.GetFullPath(ClioIpcSettings.Default.Command);
 
 	/// <inheritdoc />
-	public string? DotNetHostPath => ResolveDotNetHostPath();
+	public string? DotNetHostPath => DotNetHostResolver.TryResolve();
 
 	/// <inheritdoc />
 	public bool IsInstalled {
@@ -334,25 +334,6 @@ public sealed class ClioToolInstallation : IClioToolInstallation {
 		return Directory.Exists(storePath);
 		}
 	}
-
-	private static string? ResolveDotNetHostPath() {
-		string executableName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
-		var candidates = new List<string?> {
-			Environment.GetEnvironmentVariable("DOTNET_HOST_PATH"),
-			CombineRoot(Environment.GetEnvironmentVariable("DOTNET_ROOT"), executableName),
-			CombineRoot(Environment.GetEnvironmentVariable("DOTNET_ROOT_X64"), executableName)
-		};
-		if (OperatingSystem.IsWindows()) {
-			candidates.Add(CombineRoot(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-				"dotnet", executableName));
-		}
-		return candidates.Where(candidate => !string.IsNullOrWhiteSpace(candidate))
-			.Select(candidate => Path.GetFullPath(candidate!))
-			.FirstOrDefault(File.Exists);
-	}
-
-	private static string? CombineRoot(string? root, params string[] parts) =>
-		string.IsNullOrWhiteSpace(root) ? null : Path.Combine(new[] { root }.Concat(parts).ToArray());
 }
 
 /// <summary>Default shell-free process runner for dotnet tool update.</summary>

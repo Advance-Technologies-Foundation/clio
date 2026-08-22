@@ -8,24 +8,28 @@ namespace ClioRing.Tests;
 /// <summary>
 /// Unit tests for <see cref="DevClioLaunch.Build"/> (story 11): the pure resolution of a validated dev-clio
 /// build path into the <see cref="ClioIpcSettings"/> that launches the clio MCP child process. A <c>.dll</c>
-/// is driven by <c>dotnet</c> (dll then the <c>mcp-server</c> verb); a <c>.exe</c> is launched directly with
-/// only the <c>mcp-server</c> verb. These assert the exact resolved Command/Args at the source (the settings
-/// VM tests cover the same shape via the composition root; this pins the pure builder directly).
+/// is driven by the trusted, absolute <c>dotnet</c> host (dll then the <c>mcp-server</c> verb) instead of a
+/// bare <c>"dotnet"</c> name resolved via <c>PATH</c>; a <c>.exe</c> is launched directly with only the
+/// <c>mcp-server</c> verb. These assert the exact resolved Command/Args at the source (the settings VM tests
+/// cover the same shape via the composition root; this pins the pure builder directly).
 /// </summary>
 [TestFixture]
 [Category("Unit")]
 public sealed class DevClioLaunchTests {
 	[Test]
-	[Description("A .dll dev-clio path resolves to 'dotnet <dll> mcp-server' with the exact args in order.")]
+	[Description("A .dll dev-clio path resolves to '<resolved dotnet host> <dll> mcp-server' with the exact args in order.")]
 	public void Build_ShouldLaunchViaDotnetWithDllThenMcpServer_WhenPathIsDll() {
 		// Arrange — a dev clio.dll build path.
 		const string dll = @"C:\dev\clio\clio.dll";
+		string expectedHost = DotNetHostResolver.ResolveOrDefault();
 
 		// Act — build the launch settings.
 		ClioIpcSettings resolved = DevClioLaunch.Build(dll);
 
-		// Assert — a .dll is driven by dotnet, passing the dll then the mcp-server verb, in that exact order.
-		resolved.Command.Should().Be("dotnet", because: "a .dll dev build is launched via the dotnet host");
+		// Assert — a .dll is driven by the resolved absolute dotnet host, not a bare "dotnet" name, passing
+		// the dll then the mcp-server verb, in that exact order.
+		resolved.Command.Should().Be(expectedHost,
+			because: "a .dll dev build is launched via the trusted, absolute dotnet host, never a bare PATH-resolved name");
 		resolved.Args.Should().Equal(new[] { dll, "mcp-server" },
 			because: "dotnet receives the dev dll first then the mcp-server verb, in order");
 	}
@@ -46,17 +50,19 @@ public sealed class DevClioLaunchTests {
 	}
 
 	[Test]
-	[Description("The .dll detection is case-insensitive so a .DLL extension still resolves to the dotnet launch path.")]
+	[Description("The .dll detection is case-insensitive so a .DLL extension still resolves to the resolved dotnet launch path.")]
 	public void Build_ShouldTreatUppercaseDllAsDll_WhenExtensionCaseDiffers() {
 		// Arrange — a dev build path with an upper-case .DLL extension.
 		const string dll = @"C:\dev\clio\CLIO.DLL";
+		string expectedHost = DotNetHostResolver.ResolveOrDefault();
 
 		// Act — build the launch settings.
 		ClioIpcSettings resolved = DevClioLaunch.Build(dll);
 
-		// Assert — case-insensitive extension matching still routes a .DLL through the dotnet host.
-		resolved.Command.Should().Be("dotnet", because: "the .dll extension check is case-insensitive");
+		// Assert — case-insensitive extension matching still routes a .DLL through the resolved, absolute
+		// dotnet host rather than a bare "dotnet" name.
+		resolved.Command.Should().Be(expectedHost, because: "the .dll extension check is case-insensitive");
 		resolved.Args.Should().Equal(new[] { dll, "mcp-server" },
-			because: "an upper-case .DLL is still driven by dotnet with the dll then the mcp-server verb");
+			because: "an upper-case .DLL is still driven by the resolved dotnet host with the dll then the mcp-server verb");
 	}
 }
