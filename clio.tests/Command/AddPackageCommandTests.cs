@@ -44,16 +44,17 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 		base.TearDown();
 	}
 
-	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
 	[Description("Uses the explicit workspace path for add-package execution when MCP supplies one.")]
-	public void Execute_Should_Use_Explicit_Workspace_Path_When_Provided() {
+	public void Execute_Should_Use_Explicit_Workspace_Path_When_Provided(bool asApp) {
 		// Arrange
 		string originalCurrentDirectory = Environment.CurrentDirectory;
 		string explicitWorkspacePath = Directory.CreateDirectory(
 			Path.Combine(Path.GetTempPath(), $"add-package-{Guid.NewGuid():N}")).FullName;
 		AddPackageOptions options = new() {
 			Name = "MyPackage",
-			AsApp = true,
+			AsApp = asApp,
 			WorkspacePath = explicitWorkspacePath
 		};
 
@@ -67,7 +68,7 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 				"because package creation should run inside the explicit workspace path");
 			_packageCreator.CapturedPackageName.Should().Be(options.Name,
 				because: "the command must forward the requested package name unchanged");
-			_packageCreator.CapturedAsApp.Should().BeTrue(
+			_packageCreator.CapturedAsApp.Should().Be(asApp,
 				because: "the command must forward application-package intent unchanged");
 			Environment.CurrentDirectory.Should().Be(originalCurrentDirectory,
 				"because the command should restore process-global current directory after execution");
