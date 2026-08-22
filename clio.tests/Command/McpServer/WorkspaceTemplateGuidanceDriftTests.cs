@@ -239,7 +239,7 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 	[Test]
 	[Category("Unit")]
 	[Description("The curated guidance fixture contains unique, non-overlapping default and feature-gated names.")]
-	public void CuratedKnowledgeFixture_ShouldContainUniqueNames() {
+	public void CuratedKnowledgeFixture_ShouldContainUniqueNonOverlappingNames_WhenLoaded() {
 		// Arrange
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
 
@@ -254,11 +254,11 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			.ToArray();
 
 		// Assert
-		availableNames.Should().OnlyHaveUniqueItems(
+		availableNames.Should().OnlyHaveUniqueItems(name => name.ToUpperInvariant(),
 			because: "duplicate catalog names make a hand-merged fixture look complete after it is converted to a set");
-		featureGatedNames.Should().OnlyHaveUniqueItems(
+		featureGatedNames.Should().OnlyHaveUniqueItems(name => name.ToUpperInvariant(),
 			because: "each feature-gated guidance name must have one canonical fixture entry");
-		availableNames.Should().NotIntersectWith(featureGatedNames,
+		availableNames.Intersect(featureGatedNames, StringComparer.OrdinalIgnoreCase).Should().BeEmpty(
 			because: "one guidance name cannot be both available by default and feature-gated");
 	}
 
