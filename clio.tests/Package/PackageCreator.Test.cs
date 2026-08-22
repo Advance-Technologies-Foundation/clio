@@ -44,12 +44,9 @@ internal class PackageCreatorTest : BaseClioModuleTests
 	}
 	
 	private PackageCreator InitCreator(){
-		PackageCreator creator = new(Container.GetRequiredService<EnvironmentSettings>(),
-			Container.GetRequiredService<IWorkspace>(), Container.GetRequiredService<IWorkspaceSolutionCreator>(),
-			Container.GetRequiredService<ITemplateProvider>(), Container.GetRequiredService<IWorkspacePathBuilder>(),
-			Container.GetRequiredService<IStandalonePackageFileManager>(), Container.GetRequiredService<IJsonConverter>(),
-			Container.GetRequiredService<IWorkingDirectoriesProvider>(),
-			Container.GetRequiredService<Clio.Common.IFileSystem>(), Container.GetRequiredService<ISchemaBuilder>());
+		PackageCreator creator = Container.GetRequiredService<IPackageCreator>()
+			.Should().BeOfType<PackageCreator>(because: "production DI must resolve the package creator implementation")
+			.Subject;
 		return creator;
 	}
 
@@ -144,6 +141,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 	[TestCase("Package-Name")]
 	[TestCase("123Package")]
 	[TestCase("_")]
+	[TestCase("PackageName\n")]
 	[TestCase("PackageNameThatIsLongerThanTheCreatioPackageNameLimitOfSeventyCharacters123456")]
 	[Description("Rejects unsafe package names before package or localization files are written.")]
 	public void Create_ShouldRejectWithoutWriting_WhenPackageNameIsInvalid(string packageName) {
@@ -158,7 +156,7 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		act.Should().Throw<ArgumentException>(
 			because: "a package name becomes folder, project, namespace, and schema names")
 			.WithParameterName("packageName")
-			.WithMessage("Package name must start with a letter or underscore and contain only letters, digits, and underscores.*");
+			.WithMessage($"{PackageCreator.InvalidPackageNameMessage}*");
 		FileSystem.AllFiles.OrderBy(path => path).Should().Equal(filesBefore,
 			because: "validation must run before any path derived from an unsafe name is written");
 		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(

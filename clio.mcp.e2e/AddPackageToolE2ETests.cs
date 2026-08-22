@@ -7,6 +7,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using Clio.Package;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -144,7 +145,7 @@ public sealed class AddPackageToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert the package-name contract is reported", () =>
 			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error
 				&& message.Value != null
-				&& message.Value.Contains("Package name must start with a letter or underscore"),
+				&& message.Value.Contains(PackageCreator.InvalidPackageNameMessage),
 				because: "the failure must explain the accepted package-name contract"));
 		AllureApi.Step("Assert invalid input cannot escape the packages directory", () =>
 			Directory.Exists(Path.Combine(workspacePath, "EscapedPackage")).Should().BeFalse(

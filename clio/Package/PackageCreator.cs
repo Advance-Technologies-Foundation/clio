@@ -26,8 +26,16 @@ public interface IPackageCreator{
 #region Class: PackageCreator
 
 public class PackageCreator : IPackageCreator{
+	#region Constants: Internal
+	internal const string InvalidPackageNameMessage =
+		"Package name must start with a letter or underscore and contain only letters, digits, and underscores. " +
+		"Its length must be 1 to 70 characters, and a lone underscore is not valid.";
+
+	#endregion
+
 	#region Fields: Private
-	private static readonly Regex PackageNamePattern = new("^[A-Za-z_][A-Za-z0-9_]*$",
+
+	private static readonly Regex PackageNamePattern = new("\\A[A-Za-z_][A-Za-z0-9_]*\\z",
 		RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 	private const int MaxPackageNameLength = 70;
 
@@ -275,10 +283,7 @@ public class PackageCreator : IPackageCreator{
 	private static void ValidatePackageName(string packageName) {
 		if (string.IsNullOrWhiteSpace(packageName) || packageName.Length > MaxPackageNameLength
 			|| packageName == "_" || !PackageNamePattern.IsMatch(packageName)) {
-			throw new ArgumentException(
-				"Package name must start with a letter or underscore and contain only letters, digits, and underscores. " +
-				"Its length must be 1 to 70 characters, and a lone underscore is not valid.",
-				nameof(packageName));
+			throw new ArgumentException(InvalidPackageNameMessage, nameof(packageName));
 		}
 	}
 

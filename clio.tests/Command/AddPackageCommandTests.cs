@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Clio.Command;
+using Clio.Command.ChainItems;
 using Clio.Common;
 using Clio.Package;
 using ErrorOr;
@@ -12,22 +13,45 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
-[Category("Unit")]
 [Property("Module", "Command")]
-public class AddPackageCommandTests {
+public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
+	private AddPackageCommand _command = null!;
+	private FakePackageCreator _packageCreator = null!;
+	private ILogger _logger = null!;
+	private FakeFollowUpChain _chain = null!;
+	private FakeChainItem _chainItem = null!;
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
+		_packageCreator = new FakePackageCreator();
+		_logger = Substitute.For<ILogger>();
+		_chain = new FakeFollowUpChain();
+		_chainItem = new FakeChainItem();
+		containerBuilder.AddSingleton<IPackageCreator>(_packageCreator);
+		containerBuilder.AddSingleton(_logger);
+		containerBuilder.AddSingleton<IFollowUpChain>(_chain);
+		containerBuilder.AddKeyedSingleton<IFollowupUpChainItem>(nameof(DconfChainItem), _chainItem);
+	}
+
+	public override void Setup() {
+		base.Setup();
+		_command = Container.GetRequiredService<AddPackageCommand>();
+	}
+
+	public override void TearDown() {
+		_packageCreator.RejectPackageName = false;
+		_logger.ClearReceivedCalls();
+		_chain.ReceivedItems.Clear();
+		base.TearDown();
+	}
 
 	[Test]
 	[Description("Uses the explicit workspace path for add-package execution when MCP supplies one.")]
 	public void Execute_Should_Use_Explicit_Workspace_Path_When_Provided() {
 		// Arrange
-		FakePackageCreator packageCreator = new();
-		ILogger logger = Substitute.For<ILogger>();
-		IFollowupUpChainItem chainItem = new FakeChainItem();
 		string originalCurrentDirectory = Environment.CurrentDirectory;
 		string explicitWorkspacePath = Directory.CreateDirectory(
 			Path.Combine(Path.GetTempPath(), $"add-package-{Guid.NewGuid():N}")).FullName;
-		FakeFollowUpChain chain = new();
-		AddPackageCommand command = new(packageCreator, logger, chain, chainItem);
 		AddPackageOptions options = new() {
 			Name = "MyPackage",
 			WorkspacePath = explicitWorkspacePath
@@ -35,15 +59,15 @@ public class AddPackageCommandTests {
 
 		try {
 			// Act
-			int result = command.Execute(options);
+			int result = _command.Execute(options);
 
 			// Assert
 			result.Should().Be(0, "because the command should complete when follow-up execution succeeds");
-			NormalizeTempPathAlias(packageCreator.CapturedCurrentDirectory).Should().Be(NormalizeTempPathAlias(explicitWorkspacePath),
+			NormalizeTempPathAlias(_packageCreator.CapturedCurrentDirectory).Should().Be(NormalizeTempPathAlias(explicitWorkspacePath),
 				"because package creation should run inside the explicit workspace path");
 			Environment.CurrentDirectory.Should().Be(originalCurrentDirectory,
 				"because the command should restore process-global current directory after execution");
-			chain.ReceivedItems.Should().ContainSingle().Which.Should().BeSameAs(chainItem,
+			_chain.ReceivedItems.Should().ContainSingle().Which.Should().BeSameAs(_chainItem,
 				"because the configured follow-up item should still be added to the chain");
 		}
 		finally {
@@ -56,20 +80,17 @@ public class AddPackageCommandTests {
 	[Description("Returns a caller-correctable error message when the package creator rejects the package name.")]
 	public void Execute_ShouldReturnValidationError_WhenPackageNameIsInvalid() {
 		// Arrange
-		FakePackageCreator packageCreator = new() { RejectPackageName = true };
-		ILogger logger = Substitute.For<ILogger>();
-		FakeFollowUpChain chain = new();
-		AddPackageCommand command = new(packageCreator, logger, chain, new FakeChainItem());
+		_packageCreator.RejectPackageName = true;
 		AddPackageOptions options = new() { Name = "../Escape" };
 
 		// Act
-		int result = command.Execute(options);
+		int result = _command.Execute(options);
 
 		// Assert
 		result.Should().Be(1, because: "invalid package names are caller-correctable command failures");
-		logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("Package name", StringComparison.Ordinal)));
-		chain.ReceivedItems.Should().BeEmpty(
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.StartsWith(PackageCreator.InvalidPackageNameMessage, StringComparison.Ordinal)));
+		_chain.ReceivedItems.Should().BeEmpty(
 			because: "follow-up configuration must not run after package-name validation fails");
 	}
 
@@ -80,11 +101,11 @@ public class AddPackageCommandTests {
 
 	private sealed class FakePackageCreator : IPackageCreator {
 		public string CapturedCurrentDirectory { get; private set; }
-		public bool RejectPackageName { get; init; }
+		public bool RejectPackageName { get; set; }
 
 		public void Create(string packageName, bool? asApp) {
 			if (RejectPackageName) {
-				throw new ArgumentException("Package name is invalid.", nameof(packageName));
+				throw new ArgumentException(PackageCreator.InvalidPackageNameMessage, nameof(packageName));
 			}
 			CapturedCurrentDirectory = Environment.CurrentDirectory;
 		}
