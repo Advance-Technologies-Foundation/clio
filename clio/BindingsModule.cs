@@ -909,6 +909,9 @@ public class BindingsModule {
 		services.AddTransient<DeployAppCommand>();
 		services.AddTransient<ApplicationManager>();
 		services.AddTransient<RestoreDbCommand>();
+		services.AddTransient<PruneDbTemplatesCommand>();
+		services.AddTransient<IDbTemplatePruneService, DbTemplatePruneService>();
+		services.AddTransient<IDbTemplatePruneConsole, DbTemplatePruneConsole>();
 		services.AddTransient<IDbClientFactory, DbClientFactory>();
 		services.AddTransient<IDbConnectionTester, DbConnectionTester>();
 		services.AddTransient<IBackupFileDetector, BackupFileDetector>();

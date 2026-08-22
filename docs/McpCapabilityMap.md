@@ -576,6 +576,8 @@ This is the ops-heavy part of the MCP surface.
 - `restore-db-by-environment`
 - `restore-db-by-credentials`
 - `restore-db-to-local-server`
+- `list-db-templates`
+- `prune-db-templates`
 - `get-fsm-mode`
 - `set-fsm-mode`
 - `compile-creatio`
@@ -588,6 +590,7 @@ What an external AI can practically do here:
 - choose a safe local IIS port
 - deploy Creatio from an archive
 - restore a database in several targeting modes
+- inventory clio-managed PostgreSQL templates on a configured local server, then delete only an explicit approved name list
 - toggle FSM mode and then compile
 - fully uninstall a local Creatio instance
 
@@ -596,6 +599,8 @@ How the AI should think about this area:
 - this is not just build/deploy
 - it is a local-host and target-environment control surface
 - destructive power is high, especially for restore and uninstall flows
+- `list-db-templates` is read-only; `prune-db-templates` is destructive, rejects empty or implicit-all
+  selections, revalidates every name, skips any database with connected sessions, and never force-disconnects
 
 **Typed stage-event progress contract (`deploy-creatio` / `uninstall-creatio`).** Both tools
 emit a versioned, typed progress stream over MCP `notifications/progress` in the
