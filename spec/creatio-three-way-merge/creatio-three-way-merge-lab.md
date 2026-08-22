@@ -11,20 +11,14 @@ The normative assertions live in
 
 ## Checked-in lab artifacts
 
-Keep the harness deliberately small:
+Keep the harness deliberately small: this runbook, the normative test plan, and a sanitized receipt
+for each accepted run. The first run is documented in
+`creatio-three-way-merge-first-run.md`.
 
-- one guarded PowerShell driver with `Setup`, `Run`, `Evidence`, `Reset`, and `Cleanup` actions;
-- one configuration template containing paths, environment aliases, Git identities, and disposable
-  names, never credentials;
-- this runbook and the normative test plan.
-
-The driver automates deterministic Git/clio mechanics, invariant checks, and evidence capture. It
-stops at live Creatio authoring checkpoints for the agent or operator. Do not add an agent launcher,
-YAML orchestration framework, one script per phase, or another MCP tool.
-
-The first manual run validates the exact commands before the driver is treated as the canonical
-rerun path. Subsequent runs use the checked-in driver so setup, evidence, reset, and cleanup do not
-depend on operator memory.
+Do not add an agent launcher, YAML orchestration framework, one script per phase, or another MCP
+tool. Add a guarded script only after a command sequence has been repeated manually and omitting the
+script has caused a real rerun problem. The live lab itself is retained outside the product
+repository so the two Creatio instances and three Git workspaces can be reused.
 
 ## Fixed roles
 
@@ -57,7 +51,7 @@ or connection strings. Record:
 The run must fail before mutation unless A and B resolve to different hosts, report the same Creatio
 version, all three clones are clean, and all branches start at the recorded B0 commit.
 
-The driver writes run state and receipts beneath the configured lab root, outside the three clones.
+Write run state and machine evidence beneath the configured lab root, outside the three clones.
 Every mutating action validates its target against that state first.
 
 ## Setup
