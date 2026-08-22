@@ -52,6 +52,27 @@ public class AddPackageCommandTests {
 		}
 	}
 
+	[Test]
+	[Description("Returns a caller-correctable error message when the package creator rejects the package name.")]
+	public void Execute_ShouldReturnValidationError_WhenPackageNameIsInvalid() {
+		// Arrange
+		FakePackageCreator packageCreator = new() { RejectPackageName = true };
+		ILogger logger = Substitute.For<ILogger>();
+		FakeFollowUpChain chain = new();
+		AddPackageCommand command = new(packageCreator, logger, chain, new FakeChainItem());
+		AddPackageOptions options = new() { Name = "../Escape" };
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "invalid package names are caller-correctable command failures");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Package name", StringComparison.Ordinal)));
+		chain.ReceivedItems.Should().BeEmpty(
+			because: "follow-up configuration must not run after package-name validation fails");
+	}
+
 	private static string? NormalizeTempPathAlias(string? path) =>
 		path is not null && path.StartsWith("/private/var/", StringComparison.Ordinal)
 			? path[8..]
@@ -59,8 +80,12 @@ public class AddPackageCommandTests {
 
 	private sealed class FakePackageCreator : IPackageCreator {
 		public string CapturedCurrentDirectory { get; private set; }
+		public bool RejectPackageName { get; init; }
 
 		public void Create(string packageName, bool? asApp) {
+			if (RejectPackageName) {
+				throw new ArgumentException("Package name is invalid.", nameof(packageName));
+			}
 			CapturedCurrentDirectory = Environment.CurrentDirectory;
 		}
 

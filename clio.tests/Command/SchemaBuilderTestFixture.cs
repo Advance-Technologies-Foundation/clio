@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [Property("Module", "Command")]
+[NonParallelizable]
 public class SchemaBuilderTestFixture : BaseClioModuleTests {
 
 	#region Constants: Private
@@ -19,6 +20,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 		: "~/TestPackage";
 	private const string SchemaName = "MyService";
 	private const string SchemaType = "source-code";
+	private string _originalExecutingDirectory;
 
 	#endregion
 
@@ -74,6 +76,7 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 	#region Methods: Public
 
 	public override void Setup() {
+		_originalExecutingDirectory = WorkingDirectoriesProvider._executingDirectory;
 		base.Setup();
 		string tplFileContent = File.ReadAllText("tpl/schemas-template/source-code/Resources/resource.en-US.xml.tpl");
 
@@ -132,9 +135,9 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 		}
 	}
 
-	[TearDown]
-	public void TearDown() {
-		WorkingDirectoriesProvider._executingDirectory = null;
+	public override void TearDown() {
+		WorkingDirectoriesProvider._executingDirectory = _originalExecutingDirectory;
+		base.TearDown();
 	}
 
 	#endregion
@@ -166,6 +169,27 @@ public class SchemaBuilderTestFixture : BaseClioModuleTests {
 		resources.Should().Contain(
 			"<Item Name=\"LocalizableStrings.PackageLevelExample.Value\" Value=\"Value &amp; example\" />",
 			because: "the generated schema must include an escaped concrete example value");
+	}
+
+	[Test]
+	[Description("Escapes and prefixes every line of customized source-code schema documentation.")]
+	public void AddSchema_ShouldGenerateValidXmlDocumentation_WhenDocumentationContainsMultipleLines() {
+		// Arrange
+		FileSystem.AddDirectory(PackagePath);
+		ISchemaBuilder sut = Container.GetRequiredService<ISchemaBuilder>();
+		SourceCodeSchemaOptions options = new("TestPackageApp", "Owner & maintainer\nSecond <line>",
+			new Dictionary<string, string>());
+
+		// Act
+		sut.AddSchema(SchemaType, SchemaName, PackagePath, options);
+
+		// Assert
+		string schema = FileSystem.File.ReadAllText(Path.Combine(PackagePath, "Schemas", SchemaName,
+			$"{SchemaName}.cs"));
+		schema.Should().Contain("/// Owner &amp; maintainer",
+			because: "XML-sensitive characters must be escaped in generated documentation");
+		schema.Should().Contain("/// Second &lt;line&gt;",
+			because: "every documentation line must remain a C# XML documentation comment");
 	}
 
 	[Test]

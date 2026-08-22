@@ -14,7 +14,8 @@ namespace #RootNameSpace#.LocalizableStrings {
 		/// <summary>Resolves a schema resource using the current culture and Creatio fallback behavior.</summary>
 		/// <param name="resourceSchemaName">Name of the schema that owns the resource.</param>
 		/// <param name="resourceItemName">Exact persisted resource item name.</param>
-		/// <returns>The value for the current culture, including configured fallback.</returns>
+		/// <returns>The value for the current culture, including configured fallback, or <c>null</c>
+		/// when the resource manager is unavailable.</returns>
 		string GetValue(string resourceSchemaName, string resourceItemName);
 
 		/// <summary>Resolves a schema resource strictly for one culture.</summary>

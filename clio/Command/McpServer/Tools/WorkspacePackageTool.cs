@@ -27,6 +27,8 @@ public class WorkspacePackageTool(
 				 The workspace path is required because the command updates local workspace state and may
 				 trigger follow-up configuration download behavior. When `build-zip-path` is omitted, the
 				 follow-up flow may need the requested environment to download configuration from Creatio.
+				 Read get-guidance name=localizable-values before using or extending localization primitives
+				 generated with `as-app`.
 				 """)]
 	public CommandExecutionResult AddPackage(
 		[Description("add-package parameters")] [Required] AddPackageArgs args
@@ -105,7 +107,7 @@ public class CreateIntegrationTestProjectTool(
 /// </summary>
 public record AddPackageArgs(
 	[property:JsonPropertyName("name")]
-	[Description("Package name")]
+	[Description("Package name, 1 to 70 characters, starting with a letter or non-lone underscore and containing only letters, digits, and underscores")]
 	[Required]
 	string Name,
 

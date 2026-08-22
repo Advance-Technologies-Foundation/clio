@@ -11,13 +11,15 @@ namespace Clio.Command;
 
 #region Class: AddPackageOptions
 
-[Verb("add-package", Aliases = ["ap"], HelpText = "Add package to workspace or local folder")]
+[Verb("add-package", Aliases = ["ap"],
+	HelpText = "Add a package; --as-app also creates a localization schema and injectable resolver")]
 public class AddPackageOptions : EnvironmentOptions{
 	/// <summary>
 	/// Package name to create.
 	/// </summary>
 
-	[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
+	[Value(0, MetaName = "Name", Required = true,
+		HelpText = "Package name, 1 to 70 characters, starting with a letter or non-lone underscore and containing only letters, digits, and underscores")]
 	public string Name { get; set; }
 
 	/// <summary>
@@ -61,7 +63,13 @@ public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger, I
 		string originalCurrentDirectory = Environment.CurrentDirectory;
 		try {
 			ApplyWorkspacePath(options);
-			packageCreator.Create(options.Name, options.AsApp);
+			try {
+				packageCreator.Create(options.Name, options.AsApp);
+			}
+			catch (ArgumentException exception) when (exception.ParamName == "packageName") {
+				logger.WriteError(exception.Message);
+				return 1;
+			}
 			logger.WriteInfo("Done");
 			return FollowUp(options);
 		}

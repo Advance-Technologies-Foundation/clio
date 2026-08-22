@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using Clio.Workspace;
 using Clio.Workspaces;
@@ -26,6 +27,9 @@ public interface IPackageCreator{
 
 public class PackageCreator : IPackageCreator{
 	#region Fields: Private
+	private static readonly Regex PackageNamePattern = new("^[A-Za-z_][A-Za-z0-9_]*$",
+		RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+	private const int MaxPackageNameLength = 70;
 
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly IFileSystem _fileSystem;
@@ -268,6 +272,16 @@ public class PackageCreator : IPackageCreator{
 		SaveAppDescriptorToFile(appDescriptor, appDescriptorFile);
 	}
 
+	private static void ValidatePackageName(string packageName) {
+		if (string.IsNullOrWhiteSpace(packageName) || packageName.Length > MaxPackageNameLength
+			|| packageName == "_" || !PackageNamePattern.IsMatch(packageName)) {
+			throw new ArgumentException(
+				"Package name must start with a letter or underscore and contain only letters, digits, and underscores. " +
+				"Its length must be 1 to 70 characters, and a lone underscore is not valid.",
+				nameof(packageName));
+		}
+	}
+
 	#endregion
 
 	#region Methods: Protected
@@ -294,6 +308,7 @@ public class PackageCreator : IPackageCreator{
 	}
 
 	public void Create(string packagesPath, string packageName, bool? asApp) {
+		ValidatePackageName(packageName);
 		CreatePackageIfNotExists(packagesPath, packageName, asApp == true);
 		if (asApp == true) {
 			AddLocalizationSchema(packagesPath, packageName);

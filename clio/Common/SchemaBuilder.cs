@@ -127,7 +127,12 @@ public class SchemaBuilder : ISchemaBuilder
 		if (string.IsNullOrWhiteSpace(documentation)) {
 			return string.Empty;
 		}
-		string classDocumentation = $"\t/// <summary>\n\t/// {documentation}\n\t/// </summary>\n";
+		string normalizedDocumentation = documentation.Replace("\r\n", "\n").Replace('\r', '\n');
+		string[] documentationLines = normalizedDocumentation.Split('\n');
+		string documentationBody = string.Join(Environment.NewLine, documentationLines.Select(line =>
+			$"\t/// {System.Security.SecurityElement.Escape(line)}"));
+		string classDocumentation = $"\t/// <summary>{Environment.NewLine}{documentationBody}" +
+			$"{Environment.NewLine}\t/// </summary>{Environment.NewLine}";
 		return classDocumentation;
 	}
 

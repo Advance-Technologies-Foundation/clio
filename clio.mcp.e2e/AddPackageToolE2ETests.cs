@@ -1,3 +1,4 @@
+using System.Linq;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -33,8 +34,9 @@ public sealed class AddPackageToolE2ETests : McpContractFixtureBase {
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		string packageName = $"Pkg{Guid.NewGuid():N}"[..18];
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(settings,
-			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory]);
+		await AllureApi.Step("Arrange an empty clio workspace", async () =>
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(settings,
+				["create-workspace", workspaceName, "--empty", "--directory", rootDirectory]));
 		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
@@ -50,37 +52,102 @@ public sealed class AddPackageToolE2ETests : McpContractFixtureBase {
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(because: "a valid local package creation must succeed");
-		execution.ExitCode.Should().Be(0, because: "add-package should complete successfully");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "successful MCP execution must expose informational command output");
+		AllureApi.Step("Assert the MCP call has no protocol error", () =>
+			callResult.IsError.Should().NotBeTrue(because: "a valid local package creation must succeed"));
+		AllureApi.Step("Assert add-package succeeds", () =>
+			execution.ExitCode.Should().Be(0, because: "add-package should complete successfully"));
+		AllureApi.Step("Assert successful command output is reported", () =>
+			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
+				because: "successful MCP execution must expose informational command output"));
 		string packagePath = Path.Combine(workspacePath, "packages", packageName);
-		File.Exists(Path.Combine(packagePath, "Files", "app-descriptor.json")).Should().BeTrue(
-			because: "as-app must create the application descriptor");
+		AllureApi.Step("Assert the application descriptor is generated", () =>
+			File.Exists(Path.Combine(packagePath, "Files", "app-descriptor.json")).Should().BeTrue(
+				because: "as-app must create the application descriptor"));
 		string schemaName = $"{packageName}LocalizableStrings";
 		string schema = await File.ReadAllTextAsync(Path.Combine(packagePath, "Schemas", schemaName,
 			$"{schemaName}.cs"));
 		string resources = await File.ReadAllTextAsync(Path.Combine(packagePath, "Resources",
 			$"{schemaName}.SourceCode", "resource.en-US.xml"));
-		schema.Should().Contain("no more natural schema owner",
-			because: "the generated schema must explain its narrow ownership");
-		resources.Should().Contain("LocalizableStrings.PackageLevelExample.Value",
-			because: "the generated package must contain a concrete localization example");
+		AllureApi.Step("Assert the schema documents narrow ownership", () =>
+			schema.Should().Contain("no more natural schema owner",
+				because: "the generated schema must explain its narrow ownership"));
+		AllureApi.Step("Assert the resource contains a concrete example", () =>
+			resources.Should().Contain("LocalizableStrings.PackageLevelExample.Value",
+				because: "the generated package must contain a concrete localization example"));
 		string sourceRoot = Path.Combine(packagePath, "Files", "src", "cs");
 		string resolver = await File.ReadAllTextAsync(Path.Combine(sourceRoot, "LocalizableStrings",
 			"LocalizableStringResolver.cs"));
 		string application = await File.ReadAllTextAsync(Path.Combine(sourceRoot, $"{packageName}App.cs"));
-		resolver.Should().Contain("interface ILocalizableStringResolver",
-			because: "generated application code must depend on an injectable abstraction");
-		resolver.Should().Contain("class LocalizableStringResolver : ILocalizableStringResolver",
-			because: "the conventional implementation should be colocated with its small interface");
-		resolver.Should().Contain("new LocalizableString(",
-			because: "only the concrete adapter should construct the Creatio Core type");
-		resolver.Should().Contain("LocalizableString localizableString = Create(",
-			because: "the generated reference code must keep return values inspectable in a debugger");
-		resolver.Should().Contain("throwIfNoManager: false",
-			because: "the generated adapter must document the missing-manager behavior at the call site");
-		application.Should().Contain("AddTransient<LocalizableStrings.ILocalizableStringResolver",
-			because: "the application composition root must register the generated adapter");
+		AllureApi.Step("Assert the injectable resolver interface is generated", () =>
+			resolver.Should().Contain("interface ILocalizableStringResolver",
+				because: "generated application code must depend on an injectable abstraction"));
+		AllureApi.Step("Assert the conventional resolver implementation is colocated", () =>
+			resolver.Should().Contain("class LocalizableStringResolver : ILocalizableStringResolver",
+				because: "the conventional implementation should be colocated with its small interface"));
+		AllureApi.Step("Assert the adapter constructs the Creatio Core type", () =>
+			resolver.Should().Contain("new LocalizableString(",
+				because: "only the concrete adapter should construct the Creatio Core type"));
+		string[] localizableStringConstructors = Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+			.Where(path => File.ReadAllText(path).Contains("new LocalizableString("))
+			.ToArray();
+		AllureApi.Step("Assert only the adapter constructs LocalizableString", () =>
+			localizableStringConstructors.Should().ContainSingle()
+				.Which.Should().Be(Path.Combine(sourceRoot, "LocalizableStrings", "LocalizableStringResolver.cs"),
+					because: "no generated consumer may bypass the injectable localization boundary"));
+		AllureApi.Step("Assert resolver return values remain debugger-friendly", () =>
+			resolver.Should().Contain("LocalizableString localizableString = Create(",
+				because: "the generated reference code must keep return values inspectable in a debugger"));
+		AllureApi.Step("Assert missing resource managers do not throw", () =>
+			resolver.Should().Contain("throwIfNoManager: false",
+				because: "the generated adapter must document the missing-manager behavior at the call site"));
+		AllureApi.Step("Assert the composition root registers the resolver", () =>
+			application.Should().Contain("AddTransient<LocalizableStrings.ILocalizableStringResolver",
+				because: "the application composition root must register the generated adapter"));
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("add-package rejects unsafe package names before writing")]
+	[AllureDescription("Invokes the real add-package MCP tool with a traversal-shaped package name and verifies a structured failure without files outside the packages directory.")]
+	[Description("Rejects a path-traversal package name through the real add-package MCP tool before writing files.")]
+	public async Task AddPackage_ShouldRejectWithoutWriting_WhenPackageNameContainsPathTraversal() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string rootDirectory = CreateFixtureDirectory("add-package-invalid-name");
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
+		string workspacePath = Path.Combine(rootDirectory, workspaceName);
+		await AllureApi.Step("Arrange an empty clio workspace for invalid input", async () =>
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(settings,
+				["create-workspace", workspaceName, "--empty", "--directory", rootDirectory]));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step("Invoke add-package with an unsafe name", async () =>
+			await arrangeContext.Session.CallToolAsync(ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["name"] = "../EscapedPackage",
+						["workspace-path"] = workspacePath,
+						["as-app"] = true
+					}
+				}, arrangeContext.CancellationTokenSource.Token));
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		AllureApi.Step("Assert validation remains a structured MCP result", () =>
+			callResult.IsError.Should().NotBeTrue(
+				because: "caller-correctable name validation must remain a structured command result"));
+		AllureApi.Step("Assert unsafe package names are rejected", () =>
+			execution.ExitCode.Should().Be(1,
+				because: "a package name containing path traversal must be rejected"));
+		AllureApi.Step("Assert the package-name contract is reported", () =>
+			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error
+				&& message.Value != null
+				&& message.Value.Contains("Package name must start with a letter or underscore"),
+				because: "the failure must explain the accepted package-name contract"));
+		AllureApi.Step("Assert invalid input cannot escape the packages directory", () =>
+			Directory.Exists(Path.Combine(workspacePath, "EscapedPackage")).Should().BeFalse(
+				because: "the invalid name must not escape the workspace packages directory"));
 	}
 }

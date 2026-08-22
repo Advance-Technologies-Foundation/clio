@@ -85,6 +85,8 @@ public class AddPackageToolTests {
 
 		// Assert
 		attribute.Should().NotBeNull(because: "the add-package method must remain discoverable as an MCP tool");
+		WorkspacePackageTool.AddPackageToolName.Should().Be("add-package",
+			because: "renaming a public MCP tool is a breaking contract change");
 		attribute!.Name.Should().Be(WorkspacePackageTool.AddPackageToolName,
 			because: "unit and E2E tests must consume the production tool-name constant");
 	}

@@ -120,6 +120,13 @@ internal class PackageCreatorTest : BaseClioModuleTests
 			because: "the conventional implementation should be colocated with its small interface");
 		resolver.Should().Contain("new LocalizableString(",
 			because: "the concrete adapter must own construction of the Creatio Core type");
+		string[] localizableStringConstructors = FileSystem.Directory
+			.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+			.Where(path => FileSystem.File.ReadAllText(path).Contains("new LocalizableString("))
+			.ToArray();
+		string constructorPath = localizableStringConstructors.Should().ContainSingle().Which;
+		Path.GetFullPath(constructorPath).Should().Be(Path.GetFullPath(resolverPath),
+			because: "only the injectable adapter may construct Creatio's concrete localization primitive");
 		resolver.Should().Contain("LocalizableString localizableString = Create(",
 			because: "generated code must expose platform values to debugger breakpoints before returning");
 		resolver.Should().Contain("throwIfNoManager: false",
@@ -129,6 +136,48 @@ internal class PackageCreatorTest : BaseClioModuleTests
 			because: "the generated abstraction must be resolvable from the application composition root");
 		app.Should().NotContain("#LocalizationServices#",
 			because: "template macros must not leak into generated source");
+	}
+
+	[TestCase("")]
+	[TestCase("../Escape")]
+	[TestCase(@"..\Escape")]
+	[TestCase("Package-Name")]
+	[TestCase("123Package")]
+	[TestCase("_")]
+	[TestCase("PackageNameThatIsLongerThanTheCreatioPackageNameLimitOfSeventyCharacters123456")]
+	[Description("Rejects unsafe package names before package or localization files are written.")]
+	public void Create_ShouldRejectWithoutWriting_WhenPackageNameIsInvalid(string packageName) {
+		// Arrange
+		PackageCreator creator = InitCreator();
+		string[] filesBefore = FileSystem.AllFiles.OrderBy(path => path).ToArray();
+
+		// Act
+		Action act = () => creator.Create(PackagesPath, packageName, true);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "a package name becomes folder, project, namespace, and schema names")
+			.WithParameterName("packageName")
+			.WithMessage("Package name must start with a letter or underscore and contain only letters, digits, and underscores.*");
+		FileSystem.AllFiles.OrderBy(path => path).Should().Equal(filesBefore,
+			because: "validation must run before any path derived from an unsafe name is written");
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "an invalid package name must not reach schema generation");
+	}
+
+	[Test]
+	[Description("Accepts a valid package name at Creatio's seventy-character boundary.")]
+	public void Create_ShouldCreatePackage_WhenPackageNameHasSeventyCharacters() {
+		// Arrange
+		PackageCreator creator = InitCreator();
+		string packageName = new('A', 70);
+
+		// Act
+		creator.Create(PackagesPath, packageName, false);
+
+		// Assert
+		FileSystem.Directory.Exists(Path.Combine(PackagesPath, packageName)).Should().BeTrue(
+			because: "Creatio accepts package names up to and including seventy characters");
 	}
 
 	[TestCase(false)]

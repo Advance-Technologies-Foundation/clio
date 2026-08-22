@@ -2,7 +2,7 @@
 
 ## Name
 
-add-package - Add package to workspace or local folder
+add-package - Add a package; --as-app also creates a localization schema and injectable resolver
 
 ## Description
 
@@ -19,14 +19,16 @@ clio add-package <PACKAGE_NAME> [OPTIONS]
 
 ```bash
 <PACKAGE_NAME>
-Package name to add
+Package name to add, from 1 to 70 characters. Start with a letter or a
+non-lone underscore; then use only letters, digits, and underscores.
 
 -a, --as-app
-Create an application descriptor, a `<PACKAGE_NAME>LocalizableStrings`
-source-code schema, and an injectable adapter over Creatio `LocalizableString`
+Create an application descriptor, a <PACKAGE_NAME>LocalizableStrings
+source-code schema, and an injectable adapter over Creatio LocalizableString
 
 -b, --build <CREATIO_BUILD_PATH>
-Optional Creatio build archive or extracted directory used to download build dependencies after creation
+Optional Creatio build archive or extracted directory used to download
+build dependencies after creation
 
 -e, --environment <ENVIRONMENT_NAME>
 Optional environment list used for download-configuration scenarios
@@ -45,19 +47,21 @@ clio add-package MyPackage -a --build C:\Builds\creatio.zip
 Add an application package and download configuration from a Creatio build archive
 ```
 
-## Localization ownership
+## Notes
 
-The generated `MyPackageLocalizableStrings` schema contains one example value,
-`LocalizableStrings.PackageLevelExample.Value`. Use this schema only for package-level backend values
-that have no more natural schema owner.
+The generated <PACKAGE_NAME>LocalizableStrings schema contains one example
+value, LocalizableStrings.PackageLevelExample.Value. Use this schema only for
+package-level backend values that have no more natural schema owner.
 
-Application code receives `ILocalizableStringResolver` through dependency injection. The generated
-`LocalizableStringResolver` is the only primitive that constructs Creatio Core's concrete
-`LocalizableString`; it exposes current-culture, strict-culture, and fallback operations. Do not replace
-this boundary with a static accessor or a `Helper` interface.
+Application code receives ILocalizableStringResolver through dependency
+injection. LocalizableStringResolver is the only generated primitive that
+constructs Creatio Core's concrete LocalizableString; it exposes current-
+culture, strict-culture, and fallback operations. Do not replace this boundary
+with a static accessor or a Helper interface.
 
-Keep page, process, object, and other schema-specific resources with the schema that renders or consumes
-them. The generated primitive is not a central localization registry.
+Keep page, process, object, and other schema-specific resources with the schema
+that renders or consumes them. The generated primitive is not a central
+localization registry.
 
 ## See Also
 
