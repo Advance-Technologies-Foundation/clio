@@ -23,6 +23,11 @@ The two Creatio instances must have the same version and begin with the exact sa
 Do not create the EntitySchema independently on both instances because that would create different
 schema UIds.
 
+Use named branches in three independent clones rather than detached HEADs. Give each actor a
+workspace-scoped Git identity and a separate clio configuration directory. The reusable setup,
+execution, evidence, reset, and cleanup procedure is defined in
+`creatio-three-way-merge-lab.md`.
+
 ## Test data
 
 - Package: `UsrMergeProof`
@@ -31,8 +36,9 @@ schema UIds.
 - Developer 2 column: `UsrDeveloperAText`, text
 - Developer 3 column: `UsrDeveloperBNumber`, integer
 
-Use a dedicated disposable package, repository, environments, records, and branches. Record their
-exact identities before mutation so cleanup is deterministic.
+Use a dedicated disposable package, repository, records, and branches with two exclusively owned,
+long-lived lab Creatio instances. Record their exact identities before mutation so reset and cleanup
+are deterministic.
 
 ## Phase 1: create the common base
 
@@ -101,9 +107,7 @@ Expected result:
 
 - `status=resolved`;
 - `artifact-kind=entity-schema-metadata`;
-- `support-level=semantic`;
-- `can-apply-automatically=true`;
-- `merged-content` contains the base column plus both independently authored columns exactly once;
+- `content` contains the base column plus both independently authored columns exactly once;
 - original package and schema identities remain unchanged;
 - resolver verification passes and no conflict marker remains.
 
@@ -113,7 +117,7 @@ durable-handler test, because the durable unmatched-name handler is unreachable 
 
 ## Phase 5: finish the Git merge
 
-Developer 1 writes only the returned `merged-content`, stages it, and proves `git ls-files -u` is
+Developer 1 writes only the returned `content`, stages it, and proves `git ls-files -u` is
 empty. Run `git diff --cached --check`, scan the staged blob for conflict markers, commit the merge,
 and verify the merge commit has A1 and B1 as its two parents.
 
@@ -139,16 +143,18 @@ valid beyond JSON formatting.
 
 ## Negative acceptance scenarios
 
-Use the same real Git-stage flow for these controls:
+Exercise these controls with deterministic inline stage fixtures through the packaged MCP server.
+The reusable real-Creatio lab owns the positive merge and one real `conflicts-remain` no-write
+control; it does not recreate every negative case through Creatio.
 
 | Scenario | Required result |
 |---|---|
 | Both developers change the same EntitySchema property differently | `conflicts-remain`; marker content returned; no automatic write or stage. |
-| `ProcessSchemaManager` metadata or process resources | `manual-required`; no result content. |
-| C# or SQL conflict | `manual-required`; no result content. |
+| `ProcessSchemaManager` metadata or process resources | `not-implemented`; type-specific `not implemented yet` diagnostic; no result content. |
+| C# or SQL conflict | `not-implemented`; type-specific `not implemented yet` diagnostic; no result content. |
 | Unknown manager | `unsupported`; no result content. |
-| ClientUnit without supported markers | fail closed; no automatically applicable content. |
-| Missing or conflicted descriptor evidence | fail closed; no automatically applicable content. |
+| ClientUnit without supported markers | `unsupported`; no result content. |
+| Missing or conflicted descriptor evidence | `invalid-input`; no result content. |
 | Descriptor manager, schema name, or schema UId does not match any metadata input | `invalid-input`; no result content. |
 | Resolver verification fails | `invalid-input`; no result content. |
 
@@ -165,10 +171,15 @@ MCP call and prove that clio changed neither.
 - Invoke the same request twice and require a byte-identical response.
 - Run parallel requests with distinct inputs and compare every result to its sequential baseline,
   proving the resolver has no cross-request state leakage.
+- Exercise max-size parallel requests through the resolver concurrency bound and assert the agreed
+  allocation/working-set ceiling, so the 4 MiB per-call limit cannot multiply without bound.
 - Exceed the 4 MiB aggregate input budget and prove rejection occurs before resolver parsing.
 - Produce an oversized resolver output and prove it is withheld with `status=invalid-input`.
 - Assert the curated contract teaches callers to branch on `status`, never on a generic success
   convention, and contains the exact support matrix.
+- Assert `tools/list` compactly names supported and recognized but not-yet-implemented types. For
+  every recognized unimplemented type, assert `status=not-implemented` and a
+  type-specific `Merge for <artifact-kind> is not implemented yet.` diagnostic.
 - Run the external-process MCP E2E on Windows, Linux, and macOS-capable CI agents where available.
 - Run ClioRing contract tests and Windows x64 NativeAOT publish because the tool catalog changes.
 
@@ -181,9 +192,11 @@ Retain a sanitized receipt containing:
 - B0, A1, B1, and merge commit SHAs;
 - stage 1, 2, and 3 blob SHAs;
 - package/schema UIds and package archive hashes;
-- raw MCP status/report and merged-content SHA-256;
+- raw MCP status/report and content SHA-256;
 - `git ls-files -u` before and after;
 - installation, compilation, schema read-back, and record round-trip results;
-- exact cleanup results for branches, records, packages, workspaces, and both disposable instances.
+- exact cleanup results for branches, records, packages, and workspaces, plus proof that both lab
+  instances were reset to the recorded B0 state.
 
-The test is incomplete if any disposable environment or repository resource remains unintentionally.
+The test is incomplete if any disposable repository/package resource remains unintentionally or
+either retained lab instance is not returned to the recorded B0 state.
