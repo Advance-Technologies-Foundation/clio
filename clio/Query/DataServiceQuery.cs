@@ -110,6 +110,8 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	private readonly IFileSystem _fileSystem;
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	#endregion
 
 	#region Fields: Protected
@@ -149,11 +151,12 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			return json;
 		}
 		foreach (string variable in variables) {
-			string pattern = "{{" + variable.Split('=')[0] + "}}";
-			Regex regex = new(pattern);
+			string pattern = Regex.Escape("{{" + variable.Split('=')[0] + "}}");
+			Regex regex = new(pattern, RegexOptions.None, RegexTimeout);
 			Match match = regex.Match(json);
 			if (match.Success) {
-				json = regex.Replace(json, variable.Split('=')[1]);
+				string replacementValue = variable.Split('=')[1];
+				json = regex.Replace(json, _ => replacementValue);
 			}
 		}
 		return json;
