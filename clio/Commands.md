@@ -127,6 +127,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Package Management
 
+<a id="add-custom-logging"></a>
+- [`add-custom-logging`](docs/commands/add-custom-logging.md) - Add package-specific NLog file routing to a local Creatio environment
 <a id="add-package-dependency"></a>
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>

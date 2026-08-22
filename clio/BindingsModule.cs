@@ -704,6 +704,7 @@ public class BindingsModule {
 		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
@@ -835,6 +836,10 @@ public class BindingsModule {
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();
 		services.AddTransient<AddPackageCommand>();
+		services.AddTransient<IValidator<AddCustomLoggingOptions>, AddCustomLoggingOptionsValidator>();
+		services.AddTransient<ICustomLoggingConfigurator, CustomLoggingConfigurator>();
+		services.AddTransient<IEnvironmentRestartService, EnvironmentRestartService>();
+		services.AddTransient<AddCustomLoggingCommand>();
 		services.AddTransient<UnlockPackageCommand>();
 		services.AddTransient<LockPackageCommand>();
 		services.AddTransient<DataServiceQuery>();

@@ -1,6 +1,7 @@
 activate-pkg:activate-pkg,activate-package,apkg,enable-package
 add-data-binding-row:add-data-binding-row
 add-item:add-item,create
+add-custom-logging:add-custom-logging
 add-package:add-package,ap
 add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
 remove-package-dependency:remove-package-dependency,remove-pkg-dependency,remove-pkg-dep

@@ -328,6 +328,7 @@ internal sealed class CommandHelpCatalog {
 	private static readonly HashSet<string> PackageCommands =
 		[
 			"activate-pkg",
+			"add-custom-logging",
 			"add-package",
 			"check-nuget-update",
 			"compile-configuration",
