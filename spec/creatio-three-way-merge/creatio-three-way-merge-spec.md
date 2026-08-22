@@ -180,6 +180,9 @@ not transfer the standalone resolver CLI, batch scripts, or a second solution. D
 migration, behavior changes are made only in clio so the temporary old app copy cannot become a
 second maintained implementation.
 
+The exact source commit, subtrees, baseline test result, and import verification procedure are
+recorded in `creatio-three-way-merge-provenance.md`.
+
 The resolver keeps its established assembly identity for the Creatio descriptor and uses an
 independently controlled package/informational version for `resolver-version`. clio release version
 properties must not flow into the resolver ProjectReference. The proven `System.Text.Json`
