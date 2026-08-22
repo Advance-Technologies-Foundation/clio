@@ -102,9 +102,20 @@ misread as confirmed delivery.
 ### 7. Privacy / value-level guards
 The event name is carried in the dedicated OTLP `event_name` field (decision 9), not as an
 attribute. Beyond it, only an allow-listed set of scalar attributes is stored (`schema_version`,
-`session_id`, `event_timestamp`, `platform`, `clio_version`, `coding_agent`, anonymous random
-`installation_id`, `plugin_version`, `event_id`, optional `duration_ms` and
-`duration_since_session_start_ms`). Unknown fields are rejected; agent-supplied free strings are
+`session_id`, `event_timestamp`, `platform`, `clio_version`, anonymous random
+`installation_id`, `event_id`, optional `coding_agent`, `plugin_version`, `duration_ms` and
+`duration_since_session_start_ms`).
+
+**Amended by ENG-92551** (`schema_version` 2): the set additionally carries `workflow`, optional
+`variant`, optional `model` and the optional counters `input_tokens`, `output_tokens`,
+`cached_input_tokens`. All are bounded — `workflow`/`variant`/`model` are short lowercase tokens, the
+counters are non-negative integers — and none can hold free text, so the privacy posture is unchanged:
+still no prompts, secrets, tokens, customer data or generated content. Two further changes in the same
+amendment: `coding_agent` and `plugin_version` became OPTIONAL (an agent with no toolkit context is
+told to omit them rather than fabricate a value), and `coding_agent` is stored canonicalised to a
+lowercase slug rather than as the caller sent it, so one host is one cohort.
+
+Unknown fields are rejected; agent-supplied free strings are
 length-bounded and `session_id` is shape-checked, as defense in depth against oversized or
 PII-shaped values. No prompts, secrets, tokens, customer data, or generated content are collected.
 
@@ -114,6 +125,13 @@ fields. v1 **descopes** these on both clio and CAADT: event outcome is encoded b
 (`implementation_completed` vs `implementation_failed`), and `entry_point`/`model`/
 `model_reasoning` are deferred until there is a confirmed product question that needs them. The
 required identity/timing/agent/version fields and the anonymized installation id are collected.
+
+**Amended by ENG-92551 — `model` is no longer descoped.** The confirmed product question arrived:
+with several models driving the same flows, "which model was this run on" is the first thing asked of
+any change in the funnel, so `model` is now collected as an optional bounded token. `entry_point` and
+`model_reasoning` remain descoped. `result` remains encoded by the stage name, which the same change
+generalised — a run's outcome is `workflow_completed` / `workflow_failed` / `plan_blocked` with the
+flow in the `workflow` field, rather than a per-flow event name.
 
 ### 9. Event name is a single source of truth on the dedicated OTLP field
 The event name is carried exactly once end-to-end. clio stores it in the dedicated `event_name`

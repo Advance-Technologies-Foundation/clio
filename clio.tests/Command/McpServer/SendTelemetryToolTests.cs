@@ -427,7 +427,7 @@ public sealed class SendTelemetryToolTests
 		document.RootElement.TryGetProperty("body", out _).Should().BeFalse(
 			because: "single-source events carry no body; the event name lives only in event_name");
 		JsonElement attributes = document.RootElement.GetProperty("attributes");
-		AttributeValue(attributes, "schema_version").Should().Be("1",
+		AttributeValue(attributes, "schema_version").Should().Be("2",
 			because: "every event must carry a schema_version so consumers can parse evolving payloads");
 		AttributeValue(attributes, "duration_ms").Should().Be("12345",
 			because: "duration_ms should be stored when the agent supplies it");
