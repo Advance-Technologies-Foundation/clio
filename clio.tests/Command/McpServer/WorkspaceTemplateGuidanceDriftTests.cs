@@ -260,6 +260,10 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 			because: "each feature-gated guidance name must have one canonical fixture entry");
 		availableNames.Intersect(featureGatedNames, StringComparer.OrdinalIgnoreCase).Should().BeEmpty(
 			because: "one guidance name cannot be both available by default and feature-gated");
+		availableNames.Should().BeInAscendingOrder(StringComparer.Ordinal,
+			because: "the fixture must preserve the deterministic order emitted by the guidance resolver");
+		featureGatedNames.Should().BeInAscendingOrder(StringComparer.Ordinal,
+			because: "feature-gated names must use the same deterministic order as default names");
 	}
 
 	/// <summary>
