@@ -39,11 +39,14 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 	private const string XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
 	private const string DefaultLayout = "${DefaultLayout}";
 	private const string TodayLogPath = "${TodayLogPath}";
-	private static readonly Regex SafePackageName = new(@"^[A-Za-z_][A-Za-z0-9_.-]*$", RegexOptions.Compiled);
-	private static readonly Regex SafeFileName = new(@"^[A-Za-z0-9][A-Za-z0-9_.-]*$", RegexOptions.Compiled);
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly Regex SafePackageName = new(@"^[A-Za-z_][A-Za-z0-9_.-]*$", RegexOptions.Compiled,
+		RegexTimeout);
+	private static readonly Regex SafeFileName = new(@"^[A-Za-z0-9][A-Za-z0-9_.-]*$", RegexOptions.Compiled,
+		RegexTimeout);
 	private static readonly Regex LoggerConstant = new(
 		@"^\s*(?:internal\s+)?const\s+string\s+LoggerName\s*=\s*""(?<name>[A-Za-z_][A-Za-z0-9_.-]*)""\s*;\s*$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline);
+		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline, RegexTimeout);
 	private static readonly string[] SupportedMinLevels = ["Trace", "Debug", "Info", "Warn", "Error", "Fatal", "Off"];
 	private static readonly HashSet<string> ReservedFileNames = new(StringComparer.OrdinalIgnoreCase) {
 		"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -184,11 +187,7 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 		List<Backup> backups = [];
 		bool verified = false;
 		try {
-			foreach (FileEdit edit in changed) {
-				string backup = edit.Path + $".clio-{Guid.NewGuid():N}.bak";
-				_fileSystem.File.Copy(edit.Path, backup);
-				backups.Add(new(edit.Path, backup));
-			}
+			CreateBackups(changed, backups);
 			foreach (FileEdit edit in changed) {
 				_fileSystem.File.WriteAllText(edit.Path, edit.UpdatedContent, edit.Encoding);
 			}
@@ -197,27 +196,52 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 			return null;
 		}
 		catch (Exception exception) when (IsExpectedFailure(exception)) {
-			List<string> errors = [];
-			foreach (Backup backup in backups.AsEnumerable().Reverse()) {
-				try {
-					_fileSystem.File.WriteAllBytes(backup.OriginalPath, _fileSystem.File.ReadAllBytes(backup.BackupPath));
-					_fileSystem.File.Delete(backup.BackupPath);
-				}
-				catch (Exception restoreException) when (restoreException is IOException or UnauthorizedAccessException) {
-					errors.Add($"Could not restore '{backup.OriginalPath}' from '{backup.BackupPath}': {restoreException.Message}");
-				}
-			}
+			List<string> errors = RestoreBackups(backups);
 			return errors.Count == 0
 				? $"Failed to update NLog configuration: {exception.Message}. Original files were restored."
 				: $"Failed to update NLog configuration: {exception.Message}. Rollback also failed: {string.Join("; ", errors)}";
 		}
 		finally {
 			if (verified) {
-				foreach (Backup backup in backups) {
-					try { _fileSystem.File.Delete(backup.BackupPath); }
-					catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
-				}
+				DeleteBackups(backups);
 			}
+		}
+	}
+
+	private void CreateBackups(IEnumerable<FileEdit> edits, ICollection<Backup> backups) {
+		foreach (FileEdit edit in edits) {
+			string backupPath = edit.Path + $".clio-{Guid.NewGuid():N}.bak";
+			_fileSystem.File.Copy(edit.Path, backupPath);
+			backups.Add(new(edit.Path, backupPath));
+		}
+	}
+
+	private List<string> RestoreBackups(IEnumerable<Backup> backups) {
+		List<string> errors = [];
+		foreach (Backup backup in backups.Reverse()) {
+			try {
+				_fileSystem.File.WriteAllBytes(backup.OriginalPath, _fileSystem.File.ReadAllBytes(backup.BackupPath));
+				TryDeleteBackup(backup.BackupPath);
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+				errors.Add($"Could not restore '{backup.OriginalPath}' from '{backup.BackupPath}': {exception.Message}");
+			}
+		}
+		return errors;
+	}
+
+	private void DeleteBackups(IEnumerable<Backup> backups) {
+		foreach (Backup backup in backups) {
+			TryDeleteBackup(backup.BackupPath);
+		}
+	}
+
+	private void TryDeleteBackup(string path) {
+		try {
+			_fileSystem.File.Delete(path);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			// The configuration is already verified or restored; a stale backup is safer than reporting failure.
 		}
 	}
 
@@ -294,7 +318,8 @@ internal sealed class CustomLoggingConfigurator(IFileSystem fileSystem) : ICusto
 		string targetName = null, string logPath = null) => new(false, false, loggerName, targetName, logPath, message);
 	private static bool IsExpectedFailure(Exception exception) => exception is IOException
 		or UnauthorizedAccessException or XmlException or InvalidDataException or InvalidOperationException
-		or ArgumentException or NotSupportedException or System.Security.SecurityException;
+		or ArgumentException or NotSupportedException or RegexMatchTimeoutException
+		or System.Security.SecurityException;
 	private sealed record TextFile(string Content, Encoding Encoding);
 	private sealed record FileEdit(string Path, string UpdatedContent, Encoding Encoding, bool Changed) {
 		public static FileEdit Unchanged(string path, TextFile text) => new(path, text.Content, text.Encoding, false);
