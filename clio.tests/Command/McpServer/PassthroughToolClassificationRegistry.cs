@@ -236,9 +236,10 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
-			// --- NotApplicable (137): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (138): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
+			["add-custom-logging"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
 			["add-package-dependency"] = PassthroughClassification.NotApplicable,
 			["check-auth-code-flow"] = PassthroughClassification.NotApplicable,
