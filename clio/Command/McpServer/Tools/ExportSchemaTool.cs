@@ -38,10 +38,12 @@ public class ExportSchemaTool(
 				 Works for every schema kind the platform can export, including addons (business rules,
 				 related pages) which have no other read surface.
 
-				 A schema name is unique only per package, so a name that exists in several packages is
-				 REFUSED with the list of packages — re-run with `package-name`. Nothing on the ENVIRONMENT
-				 is changed, but the command does write a bundle folder on the local disk, which is why it
-				 is not annotated as read-only.
+				 A schema name is unique only per package AND schema manager, so a name that matches more
+				 than one layer is REFUSED with every candidate listed as `'package' (manager)`. Re-run with
+				 `package-name` when the candidates differ by package, or with `manager-name` when they all
+				 live in the same package — the refusal message names the one that applies. Nothing on the
+				 ENVIRONMENT is changed, but the command does write a bundle folder on the local disk, which
+				 is why it is not annotated as read-only.
 
 				 Requires cliogate 2.0.0.46 or newer on the environment.
 				 """)]
