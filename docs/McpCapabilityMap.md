@@ -399,12 +399,22 @@ This is the second major design-oriented surface after page tools.
 - `set-entity-schema-properties`
 - `get-entity-schema-column-properties`
 - `sync-schemas`
+- `export-schema`
+- `import-schema`
 
 What an external AI can practically do here:
 
 - create entities directly in a remote package
 - create explicit lookup schemas
 - read structured schema metadata before mutating
+- move a SINGLE schema of any kind between environments (`export-schema` / `import-schema`), including
+  addons that have no other read surface, instead of pushing the whole package. Both delegate to the
+  platform schema importer, so an exported bundle keeps the schema's original `UId` and repeated
+  transfers stay safe. Neither is annotated read-only: `export-schema` changes nothing on the
+  environment but writes a bundle folder on local disk, and `import-schema` offers `dry-run` for a
+  REPLACE / CREATE / refused-NEW-LAYER preview before it writes. A schema name that matches more than
+  one layer is refused with every candidate listed as `'package' (manager)` rather than resolved to an
+  arbitrary one. Both require cliogate 2.0.0.46 or newer on the environment.
 - mutate one column or a whole schema batch
 - create `Color` columns (dataValueType 18; read back as the named `Color` type)
 - override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
