@@ -2732,3 +2732,52 @@ stories:
     depends_on:
       - story-process-element-connections-3
     blocks: []
+
+  # --- localization-ready-packages (clio#1178) ---
+  - id: story-localization-ready-packages-1
+    title: "Publish the Creatio localization lab"
+    feature: "localization-ready-packages"
+    repo: "creatio-localization-lab"
+    size: M
+    status: done
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-1.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on: []
+    blocks:
+      - story-localization-ready-packages-2
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-2
+    title: "Generate a package-level localization schema for application packages"
+    feature: "localization-ready-packages"
+    repo: "clio"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-2.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+    blocks:
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-3
+    title: "Publish localization guidance through clio-knowledge"
+    feature: "localization-ready-packages"
+    repo: "clio-knowledge"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-3.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+      - story-localization-ready-packages-2
+    blocks: []

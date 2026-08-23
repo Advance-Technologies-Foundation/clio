@@ -94,6 +94,7 @@ internal class Program {
 		typeof(ComponentRegistryRefreshOptions),
 		typeof(ComponentInfoCommandOptions),
 		typeof(GetUserCultureCommandOptions),
+		typeof(AddCustomLoggingOptions),
 		typeof(AddPackageOptions),
 		typeof(CreateDataBindingOptions),
 		typeof(AddDataBindingRowOptions),
@@ -202,6 +203,7 @@ internal class Program {
 		typeof(DeployAppOptions),
 		typeof(ListInstalledAppsOptions),
 		typeof(RestoreDbCommandOptions),
+		typeof(PruneDbTemplatesOptions),
 		typeof(SetWebServiceUrlOptions),
 		typeof(ActivatePkgOptions),
 		typeof(PackageHotFixCommandOptions),
@@ -519,6 +521,7 @@ internal class Program {
 			ComponentRegistryRefreshOptions opts => Resolve<ComponentRegistryRefreshCommand>().Execute(opts),
 			ComponentInfoCommandOptions opts => Resolve<ComponentInfoCommand>().Execute(opts),
 			GetUserCultureCommandOptions opts => Resolve<GetUserCultureCommand>().Execute(opts),
+			AddCustomLoggingOptions opts => Resolve<AddCustomLoggingCommand>(opts).Execute(opts),
 			AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
 			CreateDataBindingOptions opts => Resolve<CreateDataBindingCommand>(opts).Execute(opts),
 			AddDataBindingRowOptions opts => Resolve<AddDataBindingRowCommand>().Execute(opts),
@@ -590,6 +593,7 @@ internal class Program {
 			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
 			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
+			PruneDbTemplatesOptions opts => Resolve<PruneDbTemplatesCommand>(opts).Execute(opts),
 			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
 			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
 			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
@@ -1749,7 +1753,7 @@ internal class Program {
 					};
 			}
 		}
-		if (logAndSettings) {
+		if (logAndSettings && settings != null) {
 			ConsoleLogger.Instance.WriteInfo(settings.Uri);
 		}
 		if (Container == null) {
@@ -1811,14 +1815,18 @@ internal class Program {
 		}
 		if (string.IsNullOrEmpty(optionsFromCommandLine.Environment)) {
 			EnvironmentNameOptions result = new();
-			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile.Uri;
-			result.Login = optionsFromCommandLine.Login ?? optionFromFile.Login;
-			result.Password = optionsFromCommandLine.Password ?? optionFromFile.Password;
-			result.AuthAppUri = optionsFromCommandLine.AuthAppUri ?? optionFromFile.AuthAppUri;
-			result.ClientId = optionsFromCommandLine.ClientId ?? optionFromFile.ClientId;
-			result.ClientSecret = optionsFromCommandLine.ClientSecret ?? optionFromFile.ClientSecret;
+			// optionFromFile can legitimately be null here: reaching this branch only requires
+			// optionsFromCommandLine to carry a Uri (IsEmpty() checks Uri alone) with no Environment name —
+			// e.g. a direct --uri/--login call with no environment file involved. Null-conditional access
+			// falls back to null instead of throwing when optionFromFile is absent.
+			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile?.Uri;
+			result.Login = optionsFromCommandLine.Login ?? optionFromFile?.Login;
+			result.Password = optionsFromCommandLine.Password ?? optionFromFile?.Password;
+			result.AuthAppUri = optionsFromCommandLine.AuthAppUri ?? optionFromFile?.AuthAppUri;
+			result.ClientId = optionsFromCommandLine.ClientId ?? optionFromFile?.ClientId;
+			result.ClientSecret = optionsFromCommandLine.ClientSecret ?? optionFromFile?.ClientSecret;
 			result.IsNetCore = optionsFromCommandLine.IsNetCore.HasValue ? optionsFromCommandLine.IsNetCore
-				: optionFromFile.IsNetCore;
+				: optionFromFile?.IsNetCore;
 			return result;
 		}
 		return optionsFromCommandLine;

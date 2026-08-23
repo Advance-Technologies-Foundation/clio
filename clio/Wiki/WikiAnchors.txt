@@ -1,6 +1,7 @@
 activate-pkg:activate-pkg,activate-package,apkg,enable-package
 add-data-binding-row:add-data-binding-row
 add-item:add-item,create
+add-custom-logging:add-custom-logging
 add-package:add-package,ap
 add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
 remove-package-dependency:remove-package-dependency,remove-pkg-dependency,remove-pkg-dep
@@ -180,6 +181,7 @@ remove-data-binding-row-db:remove-data-binding-row-db
 restart-web-app:restart-web-app,restart
 restore-configuration:restore-configuration,rc,restore
 restore-db:restore-db,rdb
+prune-db-templates:prune-db-templates
 restore-nuget-pkg:restore-nuget-pkg,restore-nuget,rn
 restore-workspace:restore-workspace,pull-workspace,pullw,restorew
 run:run,run-scenario,scenario

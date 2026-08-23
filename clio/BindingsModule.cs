@@ -285,6 +285,21 @@ public class BindingsModule {
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = TelemetryFlushService.PostTimeout);
+		// Dedicated client for the unauthenticated sysenums.js fetch (ENG-95412 enumVocabulary). Timeout is 120s
+		// (a cold stand's first hit measured 29-92s in the field; a probe-sized timeout would misreport a merely-slow
+		// stand as unreachable). AllowAutoRedirect=false + UseCookies=false match the auth/upload clients above — an
+		// unauthenticated GET to an operator-registered host has no reason to follow a redirect. The response-size
+		// cap is a defence-in-depth bound: sysenums.js is a small static file (~50KB today), so a multi-megabyte
+		// response is itself the signal something is wrong, well before the brace-matched parser would need to look at it.
+		services.AddHttpClient(ClassicEnumVocabularyResolver.HttpClientName)
+			.ConfigureHttpClient(client => {
+				client.Timeout = TimeSpan.FromSeconds(120);
+				client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
+			})
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -459,6 +474,7 @@ public class BindingsModule {
 		services.AddTransient<GetClientUnitSchemaCommand>();
 		services.AddTransient<GetClassicPageSourcesCommand>();
 		services.AddTransient<IClassicListColumnParser, ClassicListColumnParser>();
+		services.AddTransient<IClassicListProfileReader, ClassicListProfileReader>();
 		services.AddTransient<IClassicListColumnResolver, ClassicListColumnResolver>();
 		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();
@@ -470,6 +486,8 @@ public class BindingsModule {
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
 		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
+		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
+		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -691,6 +709,7 @@ public class BindingsModule {
 		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
@@ -822,6 +841,10 @@ public class BindingsModule {
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();
 		services.AddTransient<AddPackageCommand>();
+		services.AddTransient<IValidator<AddCustomLoggingOptions>, AddCustomLoggingOptionsValidator>();
+		services.AddTransient<ICustomLoggingConfigurator, CustomLoggingConfigurator>();
+		services.AddTransient<IEnvironmentRestartService, EnvironmentRestartService>();
+		services.AddTransient<AddCustomLoggingCommand>();
 		services.AddTransient<UnlockPackageCommand>();
 		services.AddTransient<LockPackageCommand>();
 		services.AddTransient<DataServiceQuery>();
@@ -896,6 +919,9 @@ public class BindingsModule {
 		services.AddTransient<DeployAppCommand>();
 		services.AddTransient<ApplicationManager>();
 		services.AddTransient<RestoreDbCommand>();
+		services.AddTransient<PruneDbTemplatesCommand>();
+		services.AddTransient<IDbTemplatePruneService, DbTemplatePruneService>();
+		services.AddTransient<IDbTemplatePruneConsole, DbTemplatePruneConsole>();
 		services.AddTransient<IDbClientFactory, DbClientFactory>();
 		services.AddTransient<IDbConnectionTester, DbConnectionTester>();
 		services.AddTransient<IBackupFileDetector, BackupFileDetector>();

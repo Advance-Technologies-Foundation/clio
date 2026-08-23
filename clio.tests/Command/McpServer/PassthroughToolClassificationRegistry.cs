@@ -213,6 +213,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments
 			["find-empty-iis-port"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-creatio-builds"] = PassthroughClassification.NotEnvironmentSensitive, // the exact false-positive FR-06 must not trip on
+			["list-db-templates"] = PassthroughClassification.NotEnvironmentSensitive,
+			["prune-db-templates"] = PassthroughClassification.NotEnvironmentSensitive,
 			["advise-theme-palette"] = PassthroughClassification.NotEnvironmentSensitive,
 			["reg-web-app"] = PassthroughClassification.NotEnvironmentSensitive,
 			["deploy-creatio"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "install-creatio" (InstallerCommandTool); actual tool name is deploy-creatio
@@ -234,9 +236,10 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
-			// --- NotApplicable (137): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (138): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
+			["add-custom-logging"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
 			["add-package-dependency"] = PassthroughClassification.NotApplicable,
 			["check-auth-code-flow"] = PassthroughClassification.NotApplicable,

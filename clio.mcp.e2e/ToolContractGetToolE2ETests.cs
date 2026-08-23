@@ -1,4 +1,5 @@
 using System;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -1075,6 +1076,94 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			precondition => precondition.Contains("postpone", StringComparison.Ordinal)
 				&& precondition.Contains("standing consent", StringComparison.Ordinal),
 			because: "the real MCP server must advertise the ENG-93157 proceed/postpone confirmation invariant, including that a repeated request is not standing consent");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises that a business process's NeedInstall is not a compile trigger")]
+	[Description("ENG-95706: the real MCP server must serve the compile-creatio contract with a create-business-process anti-pattern (a process is interpreted; NeedInstall=true is not a compile trigger; compile only for a Script Task) and a matching Script-Task carve-out precondition, so the steering that stops an agent forcing a full compile off a process's NeedInstall flag is verified end to end, not only in unit tests.")]
+	public async Task ToolContractGet_Should_Advertise_ProcessNeedInstall_Is_Not_A_Compile_Trigger() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.Name.Should().Be(CompileCreatioTool.CompileCreatioToolName);
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "the live contract enumerates unnecessary-compile anti-patterns");
+		contract.AntiPatterns!.Should().Contain(
+			antiPattern => antiPattern.Pattern.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
+				&& antiPattern.Why.Contains("NeedInstall", StringComparison.Ordinal)
+				&& antiPattern.Why.Contains("Script Task", StringComparison.Ordinal),
+			because: "the real MCP server must advertise the ENG-95706 anti-pattern naming NeedInstall as a false compile trigger and Script Task as the only case that needs a compile");
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the live contract must spell out when compilation is allowed");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
+				&& precondition.Contains("Script Task", StringComparison.Ordinal),
+			because: "the live contract must keep the Script-Task carve-out explicit so the process precondition never reads as a blanket 'never compile after a process' prohibition");
+	}
+
+	[Test]
+	[Description("The live get-request-info contract describes baseParameters as producer-defined metadata without hard-coding a BaseRequest field list.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract keeps request base parameters producer-driven")]
+	[AllureDescription("Requests the get-request-info contract from the live MCP server and verifies its baseParameters description follows the producer catalog rather than naming a fixed BaseRequest field set.")]
+	public async Task ToolContractGet_Should_Keep_Request_BaseParameters_Producer_Driven_When_Contract_Is_Requested() {
+		// Arrange
+		await using var context = AllureApi.Step(
+			"Arrange a real MCP server session",
+			() => Arrange(TimeSpan.FromMinutes(3)));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Act by requesting the get-request-info contract",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = new[] { RequestInfoTool.ToolName }
+				}));
+
+		// Assert
+		AllureApi.Step("Assert the contract request succeeded", () =>
+			response.Success.Should().BeTrue(
+				because: "the live MCP server should expose the curated get-request-info contract"));
+		ToolContractDefinition contract = AllureApi.Step(
+			"Assert the requested contract is returned",
+			() => {
+				response.Tools.Should().ContainSingle(
+					because: "only get-request-info was requested");
+				return response.Tools!.Single();
+			});
+		ToolContractField baseParameters = AllureApi.Step(
+			"Assert the baseParameters output field is present",
+			() => contract.OutputContract.Fields.Single(field => field.Name == "baseParameters"));
+		AllureApi.Step("Assert the baseParameters description is producer-driven", () =>
+			baseParameters.Description.Should().Contain("Current BaseRequest fields and producer metadata",
+				because: "the live contract must describe a producer-driven field surface instead of a fixed list"));
+		AllureApi.Step("Assert the baseParameters description explains deprecation metadata", () =>
+			baseParameters.Description.Should().Contain("deprecated/deprecationReason",
+				because: "the live contract must tell agents to honor producer deprecation metadata"));
+		AllureApi.Step("Assert the baseParameters description requires honoring deprecations", () =>
+			baseParameters.Description.Should().Contain("honor that guidance",
+				because: "the live contract must turn producer deprecation metadata into an agent action"));
+		AllureApi.Step("Assert the baseParameters description forbids authoring platform fields", () =>
+			baseParameters.Description.Should().Contain("must NEVER be passed via params",
+				because: "producer-owned BaseRequest fields are not authorable request parameters"));
+		AllureApi.Step("Assert the baseParameters description omits known producer field names", () =>
+			baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
+				because: "the served contract must not restore a fixed list of producer fields"));
 	}
 
 	private static async Task<ToolContractGetResponse> CallAsync(

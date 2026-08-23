@@ -22,4 +22,4 @@ As a maintainer, I want end-to-end proof that progress notifications flow throug
 ## Definition of Done
 - [ ] E2E harness overload + TC-E2E-1 added.
 - [ ] Capability map + command docs updated (or explicitly confirmed unchanged).
-- [ ] Workspace diary entry appended.
+- [ ] Knowledge record added under `docs/knowledge/` where the code does not say it.

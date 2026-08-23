@@ -138,6 +138,7 @@ public class GetClassicPageSourcesToolTests {
 				Substitute.For<IPageDesignerHierarchyClient>(),
 				Substitute.For<IClassicSectionSchemaResolver>(),
 				Substitute.For<IClassicDetailEditPageResolver>(),
+				Substitute.For<IClassicEnumVocabularyResolver>(),
 				Substitute.For<System.IO.Abstractions.IFileSystem>(),
 				ConsoleLogger.Instance) {
 		}

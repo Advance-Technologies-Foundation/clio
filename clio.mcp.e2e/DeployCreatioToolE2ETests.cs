@@ -56,6 +56,8 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 			because: "the deploy-creatio contract description should tell the agent to review full infrastructure first");
 		contract.Description.Should().Contain("show-passing-infrastructure",
 			because: "the deploy-creatio contract description should tell the agent to fetch deployable recommendations second");
+		contract.Description.Should().Contain("reserves and revalidates sitePort",
+			because: "the real discovery contract should disclose command-level concurrent IIS port protection");
 		contract.Description.Should().Contain("existing forced-password-change state",
 			because: "the real MCP contract should disclose the preserved database behavior used by Ring");
 		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(

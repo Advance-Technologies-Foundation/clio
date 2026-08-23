@@ -3,6 +3,7 @@
 	<Group Type="String">
 		<Items>
 			<Item Name="Caption" Value="[SCHEMA_NAME]" />
+[RESOURCE_ITEMS]
 		</Items>
 	</Group>
 </Resources>

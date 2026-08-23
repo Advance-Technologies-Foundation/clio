@@ -127,6 +127,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Package Management
 
+<a id="add-custom-logging"></a>
+- [`add-custom-logging`](docs/commands/add-custom-logging.md) - Add package-specific NLog file routing to a local Creatio environment
 <a id="add-package-dependency"></a>
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
@@ -142,7 +144,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`activate-pkg`](docs/commands/activate-pkg.md) - Activate a package in Creatio, `activate-package`, `apkg`, `enable-package`
 <a id="add-package"></a>
 <a id="ap"></a>
-- [`add-package`](docs/commands/add-package.md) - Add package to workspace or local folder, `ap`
+- [`add-package`](docs/commands/add-package.md) - Add a package; `--as-app` also creates a localization schema and injectable resolver, `ap`
 <a id="check-nuget-update"></a>
 <a id="check"></a>
 - [`check-nuget-update`](docs/commands/check-nuget-update.md) - Check NuGet for Creatio package updates, `check`
@@ -297,7 +299,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pull-workspace"></a>
 <a id="pullw"></a>
 <a id="restorew"></a>
-- [`restore-workspace`](docs/commands/restore-workspace.md) - Restore editable packages into a workspace, `pull-workspace`, `pullw`, `restorew`
+- [`restore-workspace`](docs/commands/restore-workspace.md) - Restore packages listed in workspace settings without clearing ineligible package content, `pull-workspace`, `pullw`, `restorew`
 <a id="switch-nuget-to-dll-reference"></a>
 <a id="nuget2dll"></a>
 - [`switch-nuget-to-dll-reference`](docs/commands/switch-nuget-to-dll-reference.md) - Switches nuget references to dll references in csproj files, `nuget2dll`
@@ -471,7 +473,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>
-- [`run`](docs/commands/run.md) - Run scenario, `run-scenario`, `scenario`
+- [`run`](docs/commands/run.md) - Run a YAML scenario and refresh environments between dependent steps, `run-scenario`, `scenario`
 <a id="save-state"></a>
 <a id="save-manifest"></a>
 <a id="state"></a>
@@ -517,7 +519,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dc"></a>
 <a id="ic"></a>
 <a id="install-creatio"></a>
-- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, with Explorer support for unambiguous local infrastructure defaults, `dc`, `ic`, `install-creatio`
+- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with collision-safe IIS port reservation and local infrastructure defaults, `dc`, `ic`, `install-creatio`
 <a id="deploy-identity"></a>
 - [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="get-identity-service-config"></a>
@@ -567,6 +569,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="last-compilation-log"></a>
 <a id="lcl"></a>
 - [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
+<a id="prune-db-templates"></a>
+- [`prune-db-templates`](docs/commands/prune-db-templates.md) - Interactively prune clio-managed PostgreSQL templates
 <a id="restart-web-app"></a>
 <a id="restart"></a>
 - [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart` (supports `--wait-ready` readiness polling)
@@ -592,7 +596,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`turn-fsm`](docs/commands/turn-fsm.md) - Turn file system mode on or off for an environment, `fsm`, `tfsm`
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
-- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local Creatio with shared-pool-safe IIS profile and best-effort dbHub cleanup, `uc`
+- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall by registered EnvironmentPath with all-site and shared-pool-safe IIS cleanup, `uc`
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>

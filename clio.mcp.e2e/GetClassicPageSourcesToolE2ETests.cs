@@ -305,6 +305,56 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			because: "no file may be written to the out-of-bounds path");
 	}
 
+	[Test]
+	[Description("Echoes the target stand's own enum vocabulary (ViewItemType/ContentType/DataValueType) from its live sysenums.js into the manifest, so the migration engine's enum-drift guard (enumDriftIssues) has a real input instead of undefined (ENG-95412).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources echoes the stand's own enumVocabulary")]
+	[AllureDescription("Collects ContactPageV2 sources on a real stand and verifies enumVocabulary was measured from the stand's own sysenums.js — not merely present, but carrying plausible member counts for ViewItemType/ContentType/DataValueType — so the engine's enum-drift guard receives a genuine, stand-specific input on every real run rather than a hardcoded copy of its own pinned tables.")]
+	public async Task GetPageSources_Should_Echo_EnumVocabulary_From_Stand() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources-enum-vocabulary");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = outputFile
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+
+		// Assert — the stand served its own sysenums.js and all three DRIFT_TABLES enums were measured from it
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		response.EnumVocabularyCount.Should().Be(3,
+			because: "a reachable stand's sysenums.js declares all three DRIFT_TABLES enums " +
+				"(ViewItemType/ContentType/DataValueType); a lower count means the fetch or parse degraded and must " +
+				"be visible here rather than silently passing as success");
+
+		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		manifest.RootElement.TryGetProperty("enumVocabulary", out JsonElement enumVocabulary).Should().BeTrue(
+			because: "the stand-measured enum tables must reach the manifest the engine folds, not only the response counter");
+		foreach (string enumName in new[] { "ViewItemType", "ContentType", "DataValueType" }) {
+			enumVocabulary.TryGetProperty(enumName, out JsonElement members).Should().BeTrue(
+				because: $"'{enumName}' is one of the engine's DRIFT_TABLES and must be present when the stand served sysenums.js");
+			members.EnumerateObject().Count().Should().BeGreaterThan(0,
+				because: $"'{enumName}' must carry at least one real numeric member, never an empty placeholder object");
+			foreach (JsonProperty member in members.EnumerateObject()) {
+				member.Value.ValueKind.Should().Be(JsonValueKind.Number,
+					because: $"every echoed member of '{enumName}' must be the numeric value core assigns it");
+			}
+		}
+	}
+
 	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);

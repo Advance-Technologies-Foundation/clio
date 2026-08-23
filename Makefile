@@ -3,7 +3,7 @@
 #
 # Cross-platform: works on macOS/Linux. On Windows use build.ps1 or build.cmd directly.
 
-.PHONY: build build-debug build-release test test-unit test-integration test-analyzers test-mcp-e2e test-module lint check-pr clean help
+.PHONY: build build-debug build-release test test-unit test-integration test-analyzers test-mcp-e2e test-module lint check-pr check-knowledge clean help
 
 # ── Build ────────────────────────────────────────────────────────────────────
 
@@ -59,6 +59,8 @@ ifndef FILTER
 endif
 	dotnet test clio.tests/clio.tests.csproj --filter "$(FILTER)" --no-build
 
+BASE ?= origin/master
+
 # ── Lint / Analyze ───────────────────────────────────────────────────────────
 
 ## lint: build in Debug to surface all CLIO analyzer warnings
@@ -68,6 +70,10 @@ lint:
 ## verify-docs: check that agent-doc wrappers are in sync with the canonical doc
 verify-docs:
 	pwsh ./scripts/verify-agent-docs.ps1
+
+## check-knowledge: report which docs/knowledge records this branch touches, and any dead applies-to paths
+check-knowledge:
+	python3 ./scripts/check-knowledge-applies-to.py --base $(BASE)
 
 # ── PR workflow ───────────────────────────────────────────────────────────────
 
