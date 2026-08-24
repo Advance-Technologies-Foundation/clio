@@ -26,6 +26,15 @@
   take their dependencies via **constructor injection**, and call collaborating
   **services** directly. Existing command families such as the skill commands
   (`clio/Command/SkillCommands.cs`) are the reference pattern.
+  - **Narrow exception — a command whose contract allows a call with no environment at
+    all.** `Command<TOptions>`'s MCP counterpart `BaseTool<T>` resolves the command out of a
+    per-environment container before the arguments are seen, so a command that must also work
+    from an explicit `--version` or from no arguments cannot use that pair. Those are written
+    as flat classes resolving `EnvironmentSettings` lazily themselves —
+    `ComponentInfoCommand`/`ComponentInfoTool` and
+    `ExportComponentRegistryCommand`/`ExportComponentRegistryTool` are the two members. See
+    `docs/knowledge/McpServer/basetool-resolvecommand-forces-an-environment-resolution.md`;
+    do not widen this exception for convenience.
 - Commands are registered via DI in `clio/BindingsModule.cs` and wired as verbs in
   `clio/Program.cs` — never forget to register.
 - `IApplicationClient` / `CreatioClient` is the ONLY way to talk to Creatio HTTP API — never use raw `HttpClient`

@@ -176,6 +176,9 @@ enabled") rather than silently honored:
   passthrough-capable before this feature.
 - `get-component-info` — the `environment-name`/`uri` (mixed-input) path. The header-only,
   no-argument path was already compliant before this feature (documented `latest-fallback`).
+- `export-component-registry` — the `environment-name`/`uri` (mixed-input) path, mirroring
+  `get-component-info` exactly. The header-only and explicit-`version` paths never resolve an
+  environment at all (documented `latest-fallback` / authoritative version).
 - `build-theme` — the version-resolution probe only. Falls back **soft** (not an error) to the
   newest bundled template when no header-derived tenant is available, and on mixed input (a
   header plus an explicit `environment-name`) — never a header-blind name lookup. When the caller
