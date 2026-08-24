@@ -31,6 +31,10 @@ public interface ISchemaBundleStore {
 	/// </param>
 	/// <param name="bundle">Bundle to write.</param>
 	/// <returns>The full path of the bundle folder that was written.</returns>
+	/// <remarks>
+	/// A write that fails part-way removes the folder it created, so a failed export never leaves a partial
+	/// bundle behind for the no-overwrite guard to reject on the retry.
+	/// </remarks>
 	/// <exception cref="InvalidOperationException">Thrown when the bundle folder already exists.</exception>
 	string Write(string bundleDirectory, SchemaBundle bundle);
 
@@ -84,12 +88,44 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 				+ "export never overwrites an existing bundle.");
 		}
 		_fileSystem.CreateDirectory(bundleDirectory);
-		_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, DescriptorFileName),
-			SystemTextJson.JsonSerializer.Serialize(bundle.Descriptor, WriteOptions));
-		_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, SchemaDataFileName),
-			bundle.SchemaData);
+		try {
+			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, DescriptorFileName),
+				SystemTextJson.JsonSerializer.Serialize(bundle.Descriptor, WriteOptions));
+			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, SchemaDataFileName),
+				bundle.SchemaData);
+		}
+		catch {
+			RollBackFailedBundle(bundleDirectory);
+			throw;
+		}
+		// Deliberately OUTSIDE the rollback: by this point the authoritative payload is on disk and the export
+		// has succeeded, so the projections are best-effort (see TryWriteProjections) and must never be able to
+		// take the artifact back down with them.
 		TryWriteProjections(bundleDirectory, bundle.SchemaData);
 		return bundleDirectory;
+	}
+
+	/// <summary>
+	/// Removes the bundle folder after a write that did not complete.
+	/// </summary>
+	/// <remarks>
+	/// The folder is ours and was just created by <see cref="Write"/> — it did not exist a moment earlier,
+	/// because Write refuses an existing one — so nothing but this failed attempt can be inside it. That same
+	/// no-overwrite guard is why the rollback matters: a half-written folder left behind rejects every retry
+	/// until the operator deletes it by hand, turning a transient disk or permission error into manual cleanup.
+	/// The cleanup itself is best-effort and never replaces the original failure, which is what the caller needs
+	/// to see; a cleanup that also fails is reported as a warning naming the folder to remove.
+	/// </remarks>
+	private void RollBackFailedBundle(string bundleDirectory) {
+		try {
+			_fileSystem.DeleteDirectoryIfExists(bundleDirectory);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+			or System.Security.SecurityException or NotSupportedException or ArgumentException) {
+			_logger?.WriteWarning(
+				$"The export failed and '{bundleDirectory}' could not be cleaned up: {exception.Message}. "
+				+ "Remove that folder before retrying — export never overwrites an existing bundle.");
+		}
 	}
 
 	/// <inheritdoc/>

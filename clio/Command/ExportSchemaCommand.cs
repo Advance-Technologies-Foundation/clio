@@ -78,6 +78,7 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 			if (string.IsNullOrWhiteSpace(schemaName)) {
 				throw new InvalidOperationException("Schema name cannot be empty.");
 			}
+			EnsureNameIsUsableAsFolderName(schemaName);
 			// Resolve the bundle path BEFORE any network call: export-schema is MCP-callable, so an explicit
 			// destination can come from an agent rather than a shell.
 			(string bundleDirectory, string pathError) = ResolveBundleDirectory(options, schemaName);
@@ -134,6 +135,37 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 				null);
 			return (System.IO.Path.Combine(anchor, schemaName), null);
 		}
+	}
+
+	/// <summary>
+	/// Refuses a schema name that cannot serve as the bundle folder name.
+	/// </summary>
+	/// <remarks>
+	/// The name becomes the bundle folder name on BOTH branches of <see cref="ResolveBundleDirectory"/>, but only
+	/// the explicit-destination branch is followed by <see cref="OutputPathConfinement.Resolve"/>. The
+	/// tool-owned default deliberately is not (see that method's remarks for why), so a name carrying a path
+	/// separator or a <c>..</c> segment would be combined straight into the anchor and escape it — and
+	/// <c>export-schema</c> is MCP-callable, so the name can arrive from an agent rather than a shell. The check
+	/// lives here, ahead of both branches, rather than patching only the unguarded one: a Creatio schema name is
+	/// an identifier and never legitimately contains any of this, so refusing it early also gives the operator a
+	/// message about the name instead of one about a path.
+	/// </remarks>
+	/// <param name="schemaName">Trimmed schema name.</param>
+	/// <exception cref="InvalidOperationException">Thrown when the name cannot be a folder name.</exception>
+	private static void EnsureNameIsUsableAsFolderName(string schemaName) {
+		// Path.GetInvalidFileNameChars() is platform-specific — on Unix it lists only '/' and NUL, so '\\' is
+		// named explicitly rather than relied upon, and the '.'/'..' segments are valid file-name characters
+		// throughout and have to be rejected as whole names.
+		bool isTraversalSegment = schemaName is "." or "..";
+		bool hasSeparator = schemaName.IndexOfAny(['/', '\\']) >= 0;
+		bool hasInvalidChar = schemaName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0;
+		if (!isTraversalSegment && !hasSeparator && !hasInvalidChar) {
+			return;
+		}
+		throw new InvalidOperationException(
+			$"'{schemaName}' cannot be used as a schema name: it becomes the bundle folder name, so it must not "
+			+ "contain a path separator, be a '.' or '..' segment, or carry a character that is invalid in a "
+			+ "file name. Pass the plain schema name, and use --destination to choose where the bundle goes.");
 	}
 
 	private SchemaBundleDescriptor BuildDescriptor(SchemaLayerDto schema) =>

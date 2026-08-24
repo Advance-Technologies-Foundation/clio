@@ -151,6 +151,51 @@ public class ExportSchemaCommandTests : BaseCommandTests<ExportSchemaOptions> {
 			Arg.Any<SchemaBundle>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a schema name that would escape the default destination, before any remote call")]
+	[TestCase("../../etc/clio-escape")]
+	[TestCase("..")]
+	[TestCase(".")]
+	[TestCase("Usr/Nested")]
+	[TestCase("Usr\\Nested")]
+	public void Execute_Should_Reject_A_Schema_Name_That_Cannot_Be_A_Folder_Name(string schemaName) {
+		// Arrange — no --destination, which is the default branch that does NOT go through
+		// OutputPathConfinement, so the name itself is the only thing standing between an MCP caller and a
+		// write outside the anchor.
+		ExportSchemaOptions options = new() { SchemaName = schemaName, PackageName = PackageName };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "the name becomes the bundle folder name, so a separator or a traversal segment would "
+				+ "place the bundle outside the resolved anchor");
+		_schemaTransferClient.DidNotReceive().Export(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_schemaBundleStore.DidNotReceive().Write(Arg.Any<string>(), Arg.Any<SchemaBundle>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses an escaping schema name on the explicit-destination branch too")]
+	public void Execute_Should_Reject_A_Traversing_Schema_Name_With_An_Explicit_Destination() {
+		// Arrange
+		ExportSchemaOptions options = new() {
+			SchemaName = "../../clio-escape",
+			PackageName = PackageName,
+			Destination = System.IO.Path.GetTempPath()
+		};
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the check is applied to the name ahead of both destination branches");
+		_schemaTransferClient.DidNotReceive().Export(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_schemaBundleStore.DidNotReceive().Write(Arg.Any<string>(), Arg.Any<SchemaBundle>());
+	}
+
 	private static SchemaLayerDto BuildLayer() =>
 		new() {
 			SchemaName = SchemaName,

@@ -300,6 +300,76 @@ public class ImportSchemaCommandTests : BaseCommandTests<ImportSchemaOptions> {
 		_schemaTransferClient.DidNotReceive().Import(Arg.Any<string>(), Arg.Any<string>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a REPLACE when the bundle carries no uId, so an unverifiable identity is not a match")]
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase("   ")]
+	public void Execute_Should_Refuse_When_The_Bundle_Carries_No_UId(string bundleUId) {
+		// Arrange
+		// A payload with no `UId` member reads back as a blank SchemaUId, so this is a real bundle shape. The
+		// package owns the name, which is what classifies the import as a REPLACE — and a replacement can only
+		// be claimed once the identity is confirmed, which a blank uId cannot do.
+		GivenBundleWithUId(bundleUId);
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(BuildLayers(TargetPackage));
+
+		// Act
+		int result = _sut.Execute(BuildOptions());
+
+		// Assert
+		result.Should().Be(1,
+			because: "with no uId the bundle cannot be shown to be the layer it would overwrite, and a blind "
+				+ "overwrite is exactly what the identity guard exists to prevent");
+		_schemaTransferClient.DidNotReceive().Import(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses the same case under --dry-run, so the plan never reports an unconfirmed REPLACE")]
+	public void Execute_Should_Refuse_A_Dry_Run_When_The_Bundle_Carries_No_UId() {
+		// Arrange
+		GivenBundleWithUId(null);
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns(BuildLayers(TargetPackage));
+		ImportSchemaOptions options = BuildOptions();
+		options.DryRun = true;
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a dry run whose plan says REPLACE is the thing the operator trusts before the real run");
+		_schemaTransferClient.DidNotReceive().Import(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still creates from a bundle with no uId when the target package owns nothing of that name")]
+	public void Execute_Should_Import_A_Bundle_Without_UId_When_There_Is_Nothing_To_Replace() {
+		// Arrange
+		// The guard belongs to the REPLACE decision only: with nothing to overwrite there is no identity to
+		// confirm, so a uId-less bundle must still be importable.
+		GivenBundleWithUId(null);
+		_schemaTransferClient.FindLayers(SchemaName, Arg.Any<string>()).Returns([]);
+
+		// Act
+		int result = _sut.Execute(BuildOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a CREATE overwrites nothing, so there is no identity to verify");
+		_schemaTransferClient.Received(1).Import(Payload, TargetPackage);
+	}
+
+	private void GivenBundleWithUId(string bundleUId) =>
+		_schemaBundleStore.Read(Arg.Any<string>()).Returns(new SchemaBundle(
+			new SchemaBundleDescriptor {
+				SchemaName = SchemaName,
+				SchemaUId = bundleUId,
+				ManagerName = "AddonSchemaManager"
+			},
+			Payload));
+
 	private static ImportSchemaOptions BuildOptions() =>
 		new() {
 			Path = BundlePath,

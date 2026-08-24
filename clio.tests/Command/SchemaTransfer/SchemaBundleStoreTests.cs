@@ -97,6 +97,72 @@ public class SchemaBundleStoreTests {
 	}
 
 	[Test]
+	[Description("Write removes the folder it created when an authoritative write fails, so a retry is not blocked")]
+	[TestCase(SchemaBundleStore.DescriptorFileName)]
+	[TestCase(SchemaBundleStore.SchemaDataFileName)]
+	public void Write_Should_Roll_Back_The_Bundle_Directory_When_An_Authoritative_Write_Fails(string failingFile) {
+		// Arrange
+		// The counterpart of the projection case above: here it is one of the two files the bundle IS that
+		// fails, so the export produced nothing — and leaving the folder behind would make the "already exists"
+		// guard reject every retry until the operator deleted it by hand.
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		string failingPath = System.IO.Path.Combine(BundleDirectory, failingFile);
+		_fileSystem
+			.When(fs => fs.WriteAllTextToFile(failingPath, Arg.Any<string>()))
+			.Do(_ => throw new IOException("The disk is full."));
+
+		// Act
+		Action act = () => _sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), PlatformPayload));
+
+		// Assert
+		act.Should().Throw<IOException>(
+			because: "an export that could not write its own payload has failed and must say so");
+		_fileSystem.Received(1).DeleteDirectoryIfExists(BundleDirectory);
+	}
+
+	[Test]
+	[Description("Write reports the folder to remove by hand when the rollback itself cannot delete it")]
+	public void Write_Should_Warn_When_The_Rollback_Cannot_Delete_The_Bundle_Directory() {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		_fileSystem
+			.When(fs => fs.WriteAllTextToFile(SchemaDataPath, Arg.Any<string>()))
+			.Do(_ => throw new IOException("The disk is full."));
+		_fileSystem
+			.When(fs => fs.DeleteDirectoryIfExists(BundleDirectory))
+			.Do(_ => throw new UnauthorizedAccessException("Access to the path is denied."));
+
+		// Act
+		Action act = () => _sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), PlatformPayload));
+
+		// Assert
+		act.Should().Throw<IOException>()
+			.WithMessage("The disk is full.",
+				because: "the cleanup is best-effort and must not replace the failure the caller has to act on");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains(BundleDirectory)));
+	}
+
+	[Test]
+	[Description("Write keeps a completed bundle when only its projections fail, so a rollback is not triggered")]
+	public void Write_Should_Not_Roll_Back_When_Only_A_Projection_Fails() {
+		// Arrange
+		// The rollback deliberately does not cover TryWriteProjections: by then schema-data.json is on disk and
+		// the export has succeeded, so deleting the folder would destroy the artifact the operator came for.
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		_fileSystem
+			.When(fs => fs.WriteAllTextToFile(
+				Arg.Is<string>(path => path != SchemaDataPath && path != DescriptorPath), Arg.Any<string>()))
+			.Do(_ => throw new IOException("The disk is full."));
+
+		// Act
+		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), PlatformPayload));
+
+		// Assert
+		_fileSystem.DidNotReceive().DeleteDirectoryIfExists(Arg.Any<string>());
+		_fileSystem.DidNotReceive().DeleteDirectory(Arg.Any<string>(), Arg.Any<bool>());
+	}
+
+	[Test]
 	[Description("Write refuses an existing bundle folder rather than overwriting a previous handover")]
 	public void Write_Should_Refuse_When_Bundle_Directory_Exists() {
 		// Arrange

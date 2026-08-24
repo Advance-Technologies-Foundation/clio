@@ -166,9 +166,28 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 	/// when the bundle carries no <c>ManagerName</c> the gate's lookup does not narrow by manager, so both come
 	/// back. Testing only the first match would refuse (or replace) against an arbitrary one of them.
 	/// </para>
+	/// <para>
+	/// A bundle that carries NO <c>SchemaUId</c> is refused outright, before any layer is compared. The uId is
+	/// read from the authoritative payload (<c>SchemaBundleStore.DescribeFromPayload</c>) and is absent whenever
+	/// the payload has no <c>UId</c> member, so it is a real state and not a defensive check — and "no uId" makes
+	/// the identity UNVERIFIABLE, not matching. Treating it as a match is what would let a bundle of unknown
+	/// identity replace any same-named schema in the package while the plan and <c>--dry-run</c> both report a
+	/// safe REPLACE, which is precisely the outcome this method exists to prevent. A blank <c>ManagerName</c> is
+	/// deliberately NOT treated the same way: the paragraph above documents it as a supported bundle shape that
+	/// the gate's own lookup handles by not narrowing, so the manager is a narrowing hint here rather than a
+	/// second identity that has to be confirmed.
+	/// </para>
 	/// </remarks>
 	private static void EnsureOneLayerIsTheSameSchema(SchemaBundleDescriptor bundleIdentity, string targetPackage,
 		IReadOnlyList<SchemaLayerDto> targetPackageLayers) {
+		if (string.IsNullOrWhiteSpace(bundleIdentity.SchemaUId)) {
+			throw new InvalidOperationException(
+				$"Package '{targetPackage}' already owns a schema named '{bundleIdentity.SchemaName}', but this "
+				+ $"bundle carries no uId, so it cannot be confirmed to be that same schema. A REPLACE is only "
+				+ $"safe once the identity matches, so it is refused rather than reported as one. Re-export the "
+				+ $"schema from the source environment so its {SchemaBundleStore.SchemaDataFileName} carries a "
+				+ $"UId, or import into a package that does not own this name.");
+		}
 		if (targetPackageLayers.Any(layer => !UIdsDisagree(bundleIdentity.SchemaUId, layer.SchemaUId)
 			&& !ManagersDisagree(bundleIdentity.ManagerName, layer.ManagerName))) {
 			return;
@@ -185,6 +204,17 @@ public class ImportSchemaCommand : Command<ImportSchemaOptions> {
 			+ "first.");
 	}
 
+	/// <summary>
+	/// Tells whether two uIds are known to be different identities.
+	/// </summary>
+	/// <remarks>
+	/// A pure predicate: "cannot be compared" reads as "does not disagree", so a blank value never turns into a
+	/// refusal from inside a LINQ predicate. A blank BUNDLE uId can no longer reach here — it is refused by
+	/// <see cref="EnsureOneLayerIsTheSameSchema"/> first. A blank LAYER uId can, and is tolerated on purpose:
+	/// it is a field missing from the gate's response about a layer that demonstrably exists, and refusing an
+	/// import over the shape of the server's answer would be a worse failure than falling back to the manager
+	/// comparison.
+	/// </remarks>
 	private static bool UIdsDisagree(string bundleUId, string layerUId) {
 		if (string.IsNullOrWhiteSpace(bundleUId) || string.IsNullOrWhiteSpace(layerUId)) {
 			return false;
