@@ -121,9 +121,8 @@ internal static class TextTokenResolver {
 	/// <summary>
 	/// Resolves a <c>text-on-*</c> token against the <paramref name="bgHex"/> background by trying
 	/// <see cref="ColorMetrics.White"/>, then the role palette's 900 stop, then <see cref="ColorMetrics.Dark"/>,
-	/// and taking the first that meets the text contrast minimum. All three can fail it — those two constants are
-	/// the platform primitives, and the darker one is a near-black — so the highest-contrast fallback is a live
-	/// path, not a guard.
+	/// and returning the first that meets the text contrast minimum. When none of the three meets it, returns
+	/// the highest-contrast candidate.
 	/// </summary>
 	internal static TextOnColorResolution ResolveTextOnColorToken(string token, string bgHex, PaletteSet palettes) {
 		string paletteName = TextOnColorPalette[token];

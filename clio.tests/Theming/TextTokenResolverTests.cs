@@ -85,6 +85,19 @@ public sealed class TextTokenResolverTests {
 	}
 
 	[Test]
+	[Description("resolveTextOnColorToken picks the dark reference when it is the highest-contrast candidate and none of the three reaches AA.")]
+	public void ResolveTextOnColorToken_ShouldPickDarkReference_WhenItWinsTheHighestContrastFallback() {
+		// Act
+		TextOnColorResolution resolved = TextTokenResolver.ResolveTextOnColorToken("text-on-accent", "#fc172d", Palettes);
+
+		// Assert
+		resolved.Kind.Should().Be(TextOnColorKind.BaseDark,
+			because: "no candidate reaches AA over #fc172d (white 3.96, accent-900 3.70, dark 4.48), so the "
+				+ "highest-contrast one wins — and it is neither the first candidate nor the winner of the "
+				+ "two-candidate rule this replaced, so the assertion discriminates the new fallback");
+	}
+
+	[Test]
 	[Description("resolveTextOnColorToken picks the highest-contrast candidate when none of the three reaches AA.")]
 	public void ResolveTextOnColorToken_ShouldPickHighestContrast_WhenNoCandidateReachesAa() {
 		// Act

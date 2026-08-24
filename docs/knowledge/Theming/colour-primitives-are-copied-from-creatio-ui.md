@@ -4,6 +4,7 @@ applies-to:
   - clio/Theming/ColorMetrics.cs
   - clio/Theming/TextTokenResolver.cs
   - clio/Theming/ThemeCssBuilder.cs
+  - clio.tests/Theming/TextTokenResolverTests.cs
   - clio.tests/Theming/Fixtures/theme-css-golden.json
 ticket: ENG-94155
 date: 2026-08-24

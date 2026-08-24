@@ -57,7 +57,8 @@ public interface IThemeCssBuilder {
 	/// <exception cref="ArgumentException">A required input is missing, or a colour, theme class, or font
 	/// family is invalid.</exception>
 	/// <exception cref="InvalidOperationException">The template does not match the expected contract — an
-	/// unresolved <c>&lt;%…%&gt;</c> placeholder remained, or a palette stop was not substituted.</exception>
+	/// unresolved <c>&lt;%…%&gt;</c> placeholder remained, or a palette stop was not substituted — or a
+	/// <c>text-on-*</c> token resolved to a kind the builder cannot express as a CSS value.</exception>
 	string Build(string templateCss, BuildThemeInput options);
 }
 

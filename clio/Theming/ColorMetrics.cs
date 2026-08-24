@@ -57,10 +57,10 @@ internal enum AccentSimilarityBand {
 /// </summary>
 internal static class ColorMetrics {
 
-	/// <summary>The light contrast reference; the platform's <c>--crt-color-base-light</c> primitive.</summary>
+	/// <summary>The light reference for contrast comparisons; mirrors the platform's <c>--crt-color-base-light</c> primitive.</summary>
 	internal const string White = "#ffffff";
 
-	/// <summary>The dark contrast reference; the platform's <c>--crt-color-base-dark</c> primitive, which is a near-black, not pure black.</summary>
+	/// <summary>The dark reference for contrast comparisons; mirrors the platform's <c>--crt-color-base-dark</c> primitive.</summary>
 	internal const string Dark = "#181818";
 
 	/// <summary>Minimum WCAG contrast against white for a colour to be considered usable.</summary>
