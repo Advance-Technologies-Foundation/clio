@@ -706,6 +706,7 @@ public class BindingsModule {
 		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
@@ -837,6 +838,10 @@ public class BindingsModule {
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();
 		services.AddTransient<AddPackageCommand>();
+		services.AddTransient<IValidator<AddCustomLoggingOptions>, AddCustomLoggingOptionsValidator>();
+		services.AddTransient<ICustomLoggingConfigurator, CustomLoggingConfigurator>();
+		services.AddTransient<IEnvironmentRestartService, EnvironmentRestartService>();
+		services.AddTransient<AddCustomLoggingCommand>();
 		services.AddTransient<UnlockPackageCommand>();
 		services.AddTransient<LockPackageCommand>();
 		services.AddTransient<DataServiceQuery>();
@@ -911,6 +916,9 @@ public class BindingsModule {
 		services.AddTransient<DeployAppCommand>();
 		services.AddTransient<ApplicationManager>();
 		services.AddTransient<RestoreDbCommand>();
+		services.AddTransient<PruneDbTemplatesCommand>();
+		services.AddTransient<IDbTemplatePruneService, DbTemplatePruneService>();
+		services.AddTransient<IDbTemplatePruneConsole, DbTemplatePruneConsole>();
 		services.AddTransient<IDbClientFactory, DbClientFactory>();
 		services.AddTransient<IDbConnectionTester, DbConnectionTester>();
 		services.AddTransient<IBackupFileDetector, BackupFileDetector>();

@@ -11,20 +11,22 @@ namespace Clio.Command;
 
 #region Class: AddPackageOptions
 
-[Verb("add-package", Aliases = ["ap"], HelpText = "Add package to workspace or local folder")]
+[Verb("add-package", Aliases = ["ap"],
+	HelpText = "Add a package; --as-app also creates a localization schema and injectable resolver")]
 public class AddPackageOptions : EnvironmentOptions{
 	/// <summary>
 	/// Package name to create.
 	/// </summary>
 
-	[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
+	[Value(0, MetaName = "Name", Required = true,
+		HelpText = "Package name, 1 to 70 characters, starting with a letter or non-lone underscore and containing only letters, digits, and underscores")]
 	public string Name { get; set; }
 
 	/// <summary>
 	/// Creates an application descriptor for the package when requested.
 	/// </summary>
 	[Option('a', "as-app", Required = false,
-		HelpText = "Create application in package")]
+		HelpText = "Create application package with localization schema and injectable resolver")]
 	public bool AsApp { get; set; }
 
 	[Option("asApp", Required = false, Hidden = true, HelpText = "Alias for --as-app")]
@@ -60,6 +62,10 @@ public class AddPackageCommand(IPackageCreator packageCreator, ILogger logger, I
 	public override int Execute(AddPackageOptions options) {
 		string originalCurrentDirectory = Environment.CurrentDirectory;
 		try {
+			if (!PackageCreator.IsValidPackageName(options.Name)) {
+				logger.WriteError(PackageCreator.InvalidPackageNameMessage);
+				return 1;
+			}
 			ApplyWorkspacePath(options);
 			packageCreator.Create(options.Name, options.AsApp);
 			logger.WriteInfo("Done");

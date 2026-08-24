@@ -127,6 +127,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Package Management
 
+<a id="add-custom-logging"></a>
+- [`add-custom-logging`](docs/commands/add-custom-logging.md) - Add package-specific NLog file routing to a local Creatio environment
 <a id="add-package-dependency"></a>
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
@@ -142,7 +144,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`activate-pkg`](docs/commands/activate-pkg.md) - Activate a package in Creatio, `activate-package`, `apkg`, `enable-package`
 <a id="add-package"></a>
 <a id="ap"></a>
-- [`add-package`](docs/commands/add-package.md) - Add package to workspace or local folder, `ap`
+- [`add-package`](docs/commands/add-package.md) - Add a package; `--as-app` also creates a localization schema and injectable resolver, `ap`
 <a id="check-nuget-update"></a>
 <a id="check"></a>
 - [`check-nuget-update`](docs/commands/check-nuget-update.md) - Check NuGet for Creatio package updates, `check`
@@ -564,6 +566,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="last-compilation-log"></a>
 <a id="lcl"></a>
 - [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
+<a id="prune-db-templates"></a>
+- [`prune-db-templates`](docs/commands/prune-db-templates.md) - Interactively prune clio-managed PostgreSQL templates
 <a id="restart-web-app"></a>
 <a id="restart"></a>
 - [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart` (supports `--wait-ready` readiness polling)

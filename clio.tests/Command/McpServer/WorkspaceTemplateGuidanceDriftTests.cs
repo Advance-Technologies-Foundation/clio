@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -236,32 +237,98 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 				"is feature-gated dead-ends the agent on every environment where the feature is off");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The curated guidance fixture contains unique, non-overlapping default and feature-gated names.")]
+	public void CuratedKnowledgeFixture_ShouldContainUniqueNonOverlappingNames_WhenLoaded() {
+		// Arrange
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
+
+		// Act
+		string[] availableNames = document.RootElement.GetProperty("availableNames")
+			.EnumerateArray()
+			.Select(name => name.GetString()!)
+			.ToArray();
+		string[] featureGatedNames = document.RootElement.GetProperty("featureGatedNames")
+			.EnumerateArray()
+			.Select(name => name.GetString()!)
+			.ToArray();
+
+		// Assert
+		availableNames.Should().OnlyHaveUniqueItems(name => name.ToUpperInvariant(),
+			because: "duplicate catalog names make a hand-merged fixture look complete after it is converted to a set");
+		featureGatedNames.Should().OnlyHaveUniqueItems(name => name.ToUpperInvariant(),
+			because: "each feature-gated guidance name must have one canonical fixture entry");
+		availableNames.Intersect(featureGatedNames, StringComparer.OrdinalIgnoreCase).Should().BeEmpty(
+			because: "one guidance name cannot be both available by default and feature-gated");
+		availableNames.Should().BeInAscendingOrder(StringComparer.Ordinal,
+			because: "the fixture must preserve the deterministic order emitted by the guidance resolver");
+		featureGatedNames.Should().BeInAscendingOrder(StringComparer.Ordinal,
+			because: "feature-gated names must use the same deterministic order as default names");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated guidance fixture version and sequence identify the same published generation.")]
+	public void CuratedKnowledgeFixture_ShouldHaveConsistentGeneration_WhenLoaded() {
+		// Arrange
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
+
+		// Act
+		string libraryVersion = document.RootElement.GetProperty("libraryVersion").GetString()!;
+		bool hasValidVersionFormat = Regex.IsMatch(
+			libraryVersion,
+			"^[0-9]{1,7}(?:\\.[0-9]{1,3}){0,3}$",
+			RegexOptions.CultureInvariant);
+		string[] versionComponents = libraryVersion.Split('.');
+		ulong sequence = document.RootElement.GetProperty("sequence").GetUInt64();
+		ulong expectedSequence = Enumerable.Range(0, 4).Aggregate(
+			0UL,
+			(current, index) => (current * 1_000UL) + (index < versionComponents.Length
+				? ulong.Parse(versionComponents[index], CultureInfo.InvariantCulture)
+				: 0UL));
+
+		// Assert
+		hasValidVersionFormat.Should().BeTrue(
+			because: "the fixture version must satisfy the publisher's sequence derivation contract");
+		versionComponents.Length.Should().BeInRange(1, 4,
+			because: "the publisher accepts one to four version components for its four sequence slots");
+		expectedSequence.Should().BeGreaterThan(0UL,
+			because: "the publisher rejects a version that derives the reserved zero sequence");
+		sequence.Should().Be(expectedSequence,
+			because: "the fixture must identify one internally consistent curated-library generation");
+	}
+
 	/// <summary>
 	/// Guidance names the curated knowledge library publishes, read from the named fixture array:
 	/// <c>availableNames</c> resolve with the default feature-toggle state, <c>featureGatedNames</c>
 	/// resolve only where their <c>requiredFeatures</c> are enabled.
 	/// </summary>
 	/// <remarks>
-	/// Each array holds item IDs, topic IDs, and legacy <c>docs://mcp/guides/</c> aliases for
-	/// guidance-role articles only — <see cref="Clio.Command.McpServer.Knowledge.KnowledgeResolver"/>
-	/// resolves a bare name against that role alone, so reference articles are reachable by URI only.
+	/// Each array holds item IDs and topic IDs for guidance-role articles only —
+	/// <see cref="Clio.Command.McpServer.Knowledge.KnowledgeResolver"/> returns only those values from
+	/// <c>GetNames</c>. Legacy aliases resolve only as complete <c>docs://</c> URIs and are not bare
+	/// guidance names; reference articles are likewise reachable by URI only.
 	/// Guidance content lives in clio-knowledge, so this fixture — not a compiled catalog — is what a
 	/// unit test can check shipped templates against without network access. Regenerate it from that
-	/// repository's <c>bundle-source.json</c> (currently tracking library version 1.13.36,
-	/// sequence 1013036000)
-	/// whenever the curated library publishes a new generation. A generation that only edits article
+	/// repository's <c>bundle-source.json</c> whenever the curated library publishes a new generation.
+	/// The fixture's own <c>libraryVersion</c> and <c>sequence</c> fields record the checked generation.
+	/// A generation that only edits article
 	/// bodies leaves the name arrays untouched; refresh the recorded version and sequence anyway, so
 	/// the fixture states which generation it was checked against.
 	/// </remarks>
 	private static IReadOnlySet<string> CuratedKnowledgeNames(string arrayProperty) {
-		string path = Path.Combine(
-			TestContext.CurrentContext.TestDirectory,
-			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
-		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(path));
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(CuratedKnowledgeFixturePath()));
 		return document.RootElement.GetProperty(arrayProperty)
 			.EnumerateArray()
 			.Select(name => name.GetString()!)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+	}
+
+	private static string CuratedKnowledgeFixturePath() {
+		return Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
 	}
 
 	[Test]
