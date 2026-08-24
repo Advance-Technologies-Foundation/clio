@@ -10,16 +10,19 @@ internal sealed record TextTokenResolution(string PaletteName, int Step);
 
 /// <summary>Which kind of colour a <c>text-on-*</c> token resolves to.</summary>
 internal enum TextOnColorKind {
-	/// <summary>The base light colour.</summary>
+	/// <summary>The light contrast reference.</summary>
 	BaseLight,
+
+	/// <summary>The dark contrast reference.</summary>
+	BaseDark,
 
 	/// <summary>A specific palette stop.</summary>
 	Palette
 }
 
-/// <summary>How a <c>text-on-*</c> token is satisfied: either the base light colour, or a specific palette stop.</summary>
+/// <summary>How a <c>text-on-*</c> token is satisfied: the light reference, the dark reference, or a specific palette stop.</summary>
 internal sealed record TextOnColorResolution {
-	/// <summary>Whether the token resolves to the base light colour or a palette stop.</summary>
+	/// <summary>Whether the token resolves to the light reference, the dark reference, or a palette stop.</summary>
 	internal TextOnColorKind Kind { get; private init; }
 
 	/// <summary>The palette name when <see cref="Kind"/> is <see cref="TextOnColorKind.Palette"/>; otherwise <c>null</c>.</summary>
@@ -28,9 +31,14 @@ internal sealed record TextOnColorResolution {
 	/// <summary>The palette step when <see cref="Kind"/> is <see cref="TextOnColorKind.Palette"/>; otherwise <c>0</c>.</summary>
 	internal int Step { get; private init; }
 
-	/// <summary>The light-base resolution.</summary>
+	/// <summary>The light-reference resolution.</summary>
 	internal static TextOnColorResolution BaseLight() {
 		return new() { Kind = TextOnColorKind.BaseLight };
+	}
+
+	/// <summary>The dark-reference resolution.</summary>
+	internal static TextOnColorResolution BaseDark() {
+		return new() { Kind = TextOnColorKind.BaseDark };
 	}
 
 	/// <summary>A palette-stop resolution.</summary>
@@ -42,7 +50,8 @@ internal sealed record TextOnColorResolution {
 /// <summary>
 /// Resolves text colour tokens to accessible palette stops: walks a palette from a start step toward 900
 /// for the first stop that meets the text contrast minimum on white, derives the link-hover stop one
-/// step darker, and chooses base-light versus the darkest palette stop for a <c>text-on-*</c> background.
+/// step darker, and chooses between the light reference, the darkest palette stop, and the dark reference for a
+/// <c>text-on-*</c> background.
 /// </summary>
 internal static class TextTokenResolver {
 
@@ -109,19 +118,28 @@ internal static class TextTokenResolver {
 		return new TextTokenResolution(PaletteNames.Primary, next);
 	}
 
-	/// <summary>Resolves a <c>text-on-*</c> token to the base light colour or the role palette's 900 stop.</summary>
-	internal static TextOnColorResolution ResolveTextOnColorToken(string token, string bgHex, PaletteSet palettes, string baseLightHex = null) {
-		baseLightHex ??= ColorMetrics.White;
+	/// <summary>
+	/// Resolves a <c>text-on-*</c> token against the <paramref name="bgHex"/> background by trying
+	/// <see cref="ColorMetrics.White"/>, then the role palette's 900 stop, then <see cref="ColorMetrics.Dark"/>,
+	/// and taking the first that meets the text contrast minimum. All three can fail it — those two constants are
+	/// the platform primitives, and the darker one is a near-black — so the highest-contrast fallback is a live
+	/// path, not a guard.
+	/// </summary>
+	internal static TextOnColorResolution ResolveTextOnColorToken(string token, string bgHex, PaletteSet palettes) {
 		string paletteName = TextOnColorPalette[token];
-		if (ColorMetrics.ContrastRatio(baseLightHex, bgHex) >= TextContrastMin) {
-			return TextOnColorResolution.BaseLight();
+		(TextOnColorResolution Resolution, double Contrast)[] candidates = {
+			(TextOnColorResolution.BaseLight(),
+				ColorMetrics.ContrastRatio(ColorMetrics.White, bgHex)),
+			(TextOnColorResolution.Palette(paletteName, 900),
+				ColorMetrics.ContrastRatio(palettes[paletteName][900], bgHex)),
+			(TextOnColorResolution.BaseDark(),
+				ColorMetrics.ContrastRatio(ColorMetrics.Dark, bgHex))
+		};
+		foreach ((TextOnColorResolution resolution, double contrast) in candidates) {
+			if (contrast >= TextContrastMin) {
+				return resolution;
+			}
 		}
-		string stop900 = palettes[paletteName][900];
-		if (ColorMetrics.ContrastRatio(stop900, bgHex) >= TextContrastMin) {
-			return TextOnColorResolution.Palette(paletteName, 900);
-		}
-		double cWhite = ColorMetrics.ContrastRatio(baseLightHex, bgHex);
-		double c900 = ColorMetrics.ContrastRatio(stop900, bgHex);
-		return cWhite >= c900 ? TextOnColorResolution.BaseLight() : TextOnColorResolution.Palette(paletteName, 900);
+		return candidates.OrderByDescending(candidate => candidate.Contrast).First().Resolution;
 	}
 }

@@ -159,9 +159,13 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 				continue;
 			}
 			TextOnColorResolution resolved = TextTokenResolver.ResolveTextOnColorToken(token, backgroundPalette[background.Value.Step], palettes);
-			string value = resolved.Kind == TextOnColorKind.BaseLight
-				? "var(--crt-color-base-light)"
-				: $"var(--crt-palette-{resolved.PaletteName}-{resolved.Step})";
+			string value = resolved.Kind switch {
+				TextOnColorKind.BaseLight => "var(--crt-color-base-light)",
+				TextOnColorKind.BaseDark => "var(--crt-color-base-dark)",
+				TextOnColorKind.Palette => $"var(--crt-palette-{resolved.PaletteName}-{resolved.Step})",
+				_ => throw new InvalidOperationException(
+					$"Unsupported text-on-colour resolution kind '{resolved.Kind}' for token '{token}'.")
+			};
 			next = SetColorDeclaration(next, token, value);
 		}
 		return next;
