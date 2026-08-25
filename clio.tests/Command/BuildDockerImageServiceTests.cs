@@ -991,6 +991,50 @@ public class BuildDockerImageServiceTests {
 	}
 
 	[Test]
+	[Description("Execute should ignore include-db for the bundled db template, which always packages only the database payload.")]
+	public void Execute_ShouldIgnoreIncludeDbForBundledDbTemplate() {
+		// Arrange
+		string sourceDirectory = CreateDatabaseSourceDirectory("Db Only Source");
+		string templateDirectory = CreateTemplateDirectory("db-template-include", "FROM busybox:1.36.1\nCOPY db/ ./\n");
+		_templatePathProvider.ResolveTemplate("db")
+			.Returns(new DockerTemplateResolution("db", templateDirectory, true));
+		string stagedBackupContents = string.Empty;
+		bool stagedApplicationSourceExists = true;
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal)) {
+					string workingDirectory = executionOptions.WorkingDirectory ?? string.Empty;
+					stagedBackupContents = _msFileSystem.File.ReadAllText(
+						_msFileSystem.Path.Combine(workingDirectory, "db", "backup.dump"));
+					stagedApplicationSourceExists = _msFileSystem.Directory.Exists(
+						_msFileSystem.Path.Combine(workingDirectory, "source"));
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "db",
+			IncludeDb = true
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because include-db is irrelevant to the bundled db template and must not alter its build");
+		stagedBackupContents.Should().Be("backup-data",
+			"because the bundled db template stages the database payload regardless of include-db");
+		stagedApplicationSourceExists.Should().BeFalse(
+			"because include-db must not make the bundled db template stage application source files");
+	}
+
+	[Test]
 	[Description("Execute should build the bundled db template from a directory source by staging only the db folder and applying db source labels.")]
 	public void Execute_ShouldBuildBundledDbTemplateFromDirectorySource() {
 		// Arrange

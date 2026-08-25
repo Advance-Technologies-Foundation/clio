@@ -117,6 +117,11 @@ packages the same payload as a separate, much smaller image; prefer it when the
 consumer can pull two images, and use `--include-db` when the consumer expects
 one self-contained application image.
 Cost: the image grows by the size of the backup (typically a few hundred MB).
+Data sensitivity: this bakes the database backup into the image. If that
+backup holds production or customer data, anyone who can pull the image can
+read it, and it persists in the registry's layer history even if a later
+build omits it. Push such images only to a registry with matching access
+controls.
 ```
 
 ## Registry Authentication

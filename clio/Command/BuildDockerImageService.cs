@@ -571,6 +571,9 @@ public sealed class BuildDockerImageService(
 			string buildContextSourcePath = _fileSystem.Combine(buildContextPath, SourceFolderName);
 			_fileSystem.CopyDirectory(sourceRootPath, buildContextSourcePath, true);
 			if (!options.IncludeDb) {
+				// Defensive re-check, not the primary enforcement point: PrepareBuildSource has already
+				// stripped `db` from the application source root when the flag is off. Kept so a future
+				// change to that method cannot silently start shipping the payload from here.
 				RemoveDatabaseDirectory(buildContextSourcePath);
 			}
 		}
