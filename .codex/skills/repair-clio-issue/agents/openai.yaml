@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repair Clio Issue"
+  short_description: "Repair a diagnosed Clio issue"
+  default_prompt: "Use $repair-clio-issue to implement and validate this diagnosed issue."

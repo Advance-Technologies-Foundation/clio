@@ -181,7 +181,14 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 		if (string.IsNullOrWhiteSpace(sessionPath) || !_fileSystem.File.Exists(sessionPath)) {
 			return (null, BuildSkipWarning("browser-session storageState was not available."));
 		}
-		string storageStateJson = await _fileSystem.File.ReadAllTextAsync(sessionPath).ConfigureAwait(false);
+		string storageStateJson;
+		try {
+			storageStateJson = await _fileSystem.File.ReadAllTextAsync(sessionPath, cancellationToken).ConfigureAwait(false);
+		} catch (OperationCanceledException) {
+			return (null, BuildTimeoutWarning("acquiring browser-session cookies"));
+		} catch (Exception ex) {
+			return (null, LogAndBuildFailureWarning("could not obtain browser-session cookies", ex));
+		}
 		IReadOnlyList<BrowserCookie> cookies = StorageStateJson.ParseCookies(storageStateJson);
 		if (cookies.Count == 0) {
 			return (null, BuildSkipWarning("browser-session storageState did not contain usable cookies."));

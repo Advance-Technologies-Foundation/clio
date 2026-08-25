@@ -121,10 +121,16 @@ internal static class PageBodyAstLinter {
 
 	// Per-recursion context propagated to children to bound rule scopes.
 	// The flags are orthogonal — each addresses one rule's scoping problem.
+	// `EnclosingPropertyKey` is DIFFERENT from the other three: it is NOT
+	// propagated through the subtree, only set for the exact node that is a
+	// property's `Value` (recomputed to null on every other edge — see
+	// ComputeChildContext) — it answers "which property, if any, owns ME
+	// directly", not "am I anywhere under property X".
 	private readonly record struct VisitContext(
 		bool InsideValidators,
 		bool InsideConverters,
-		bool EnclosingFunctionIsValidatorInstance);
+		bool EnclosingFunctionIsValidatorInstance,
+		string EnclosingPropertyKey);
 
 	private static void Visit(Node node, VisitContext ctx, int depth, List<PageBodyLintFinding> findings) {
 		if (depth > MaxAstDepth) {
@@ -139,7 +145,7 @@ internal static class PageBodyAstLinter {
 		switch (node) {
 			case ObjectExpression obj:
 				CheckSchemaSectionShapes(obj, findings);
-				CheckEntityDataSourceStaticFilters(obj, findings);
+				CheckEntityDataSourceStaticFilters(obj, ctx, findings);
 				CheckUnscopedAttributeChangeHandler(obj, depth, findings);
 				break;
 			case Property prop:
@@ -182,12 +188,12 @@ internal static class PageBodyAstLinter {
 		if (parent is Property prop && ReferenceEquals(child, prop.Value)) {
 			string key = TryGetStaticPropertyName(prop);
 			if (key == "validators") {
-				return currentCtx with { InsideValidators = true, EnclosingFunctionIsValidatorInstance = false };
+				return currentCtx with { InsideValidators = true, EnclosingFunctionIsValidatorInstance = false, EnclosingPropertyKey = key };
 			}
 			if (key == "converters") {
-				return currentCtx with { InsideConverters = true };
+				return currentCtx with { InsideConverters = true, EnclosingPropertyKey = key };
 			}
-			return currentCtx;
+			return currentCtx with { EnclosingPropertyKey = key };
 		}
 		// Identify the validator-instance function: the IFunction that is the
 		// `Argument` of a `return` statement (so the enclosing factory's body
@@ -207,9 +213,9 @@ internal static class PageBodyAstLinter {
 		if (currentCtx.InsideValidators && child is IFunction) {
 			bool isValidatorInstance = parent is ReturnStatement ret
 				&& ReferenceEquals(child, ret.Argument);
-			return currentCtx with { EnclosingFunctionIsValidatorInstance = isValidatorInstance };
+			return currentCtx with { EnclosingFunctionIsValidatorInstance = isValidatorInstance, EnclosingPropertyKey = null };
 		}
-		return currentCtx;
+		return currentCtx with { EnclosingPropertyKey = null };
 	}
 
 	#endregion
@@ -291,7 +297,20 @@ internal static class PageBodyAstLinter {
 	// AST-shape Warning (the common inline + split-with-schema shapes ARE covered). No regex counterpart
 	// in SchemaValidationService — the invalid shape is JSON-structural. Warning severity: an invisible
 	// no-op, not a structural break, so it must not fail the write.
-	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, List<PageBodyLintFinding> findings) {
+	//
+	// False-positive carve-out (GH-1125): a Freedom UI Dashboard container's generated
+	// `_designOptions` block also carries `entitySchemaName` alongside a `filters` array
+	// (`{ "entitySchemaName": ..., "dependencies": [], "filters": [] }`) — the SAME
+	// co-located-key signature this rule keys off, even though it is designer-owned
+	// dashboard metadata, not a `crt.EntityDataSource` config, so the "filters is an
+	// ignored EntityDataSource config key" claim this rule warns about does not apply to
+	// it. `_designOptions` is never a legitimate `crt.EntityDataSource` config location,
+	// so the object that is DIRECTLY the value of a property literally named
+	// `_designOptions` is excluded outright.
+	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, VisitContext ctx, List<PageBodyLintFinding> findings) {
+		if (ctx.EnclosingPropertyKey == "_designOptions") {
+			return;
+		}
 		Property filtersProp = null;
 		bool hasEntitySchemaName = false;
 		foreach (Node element in obj.Properties) {

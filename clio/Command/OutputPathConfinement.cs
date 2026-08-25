@@ -43,7 +43,9 @@ internal static class OutputPathConfinement {
 	internal static (string path, string error) Resolve(IoFileSystem fileSystem, string outputFile) {
 		// H1: reading the process-global cwd (for the anchor) must serialize against the MCP workspace tools that
 		// PIN cwd. In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
-		// is uncontended. lock is reentrant, so a caller already holding it (the bundle command) is unaffected.
+		// is uncontended. Callers that resolve a tool-owned DEFAULT anchor instead go through
+		// PageOutputDirectoryResolver.ResolveDefaultAnchor, which takes the same lock — the two are alternative
+		// branches of one decision (explicit path vs default), so they never nest.
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
 			string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
@@ -131,6 +133,29 @@ internal static class OutputPathConfinement {
 				"path or remove the existing file.");
 		}
 	}
+
+	/// <summary>
+	/// Byte-exact counterpart of <see cref="WriteAtomic(IoFileSystem, string, string)"/>, for a payload that must
+	/// land on disk exactly as it arrived on the wire. The string overload round-trips through a decoder and a
+	/// <see cref="StreamWriter"/>, which normalises the encoding (a BOM on the source is dropped, an invalid
+	/// sequence becomes U+FFFD); a caller that advertises a byte-faithful copy has to bypass that.
+	/// </summary>
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, byte[] content) {
+		string directory = fileSystem.Path.GetDirectoryName(resolvedPath);
+		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
+			fileSystem.Directory.CreateDirectory(directory);
+		}
+		try {
+			using Stream stream = fileSystem.File.Open(resolvedPath, FileMode.CreateNew, FileAccess.Write);
+			stream.Write(content, 0, content.Length);
+		}
+		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
+			throw new IOException(
+				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
+				"path or remove the existing file.");
+		}
+	}
+
 
 	/// <summary>
 	/// True when <paramref name="fullCandidate"/> (an already-resolved absolute path) lies within the workspace

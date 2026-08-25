@@ -17,6 +17,15 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "odata-create";
 
+	/// <summary>
+	/// Next step offered when a row's side effect cannot be verified. Kept in one place so every unknown path
+	/// gives identical advice.
+	/// </summary>
+	private const string UnknownSideEffectGuidance =
+		"Side effect UNKNOWN: Creatio may have written the record before failing (a post-insert entity event "
+		+ "handler that throws is reported as a failed request). Do NOT retry blindly - it may duplicate the row. "
+		+ "Read the entity back (odata-read, filtering on the values you sent) and re-send only if it is absent.";
+
 	/// <summary>Creates one or more Creatio records using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[Description(
@@ -25,6 +34,12 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		"entity in one call rather than one call per row. Each row is inserted sequentially and reported " +
 		"independently — a failed row does not abort the rest unless 'stop-on-error' is set. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
+		"CRITICAL for failed rows — read 'record-created' before reacting: true inserted, false definitely not " +
+		"inserted (rejected locally, safe to fix and re-send), null UNKNOWN. Null means Creatio failed the call " +
+		"but may already have written the record, which happens when a post-insert entity event handler throws; " +
+		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
+		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
+		"state. " +
 		"Call get-tool-contract for odata-create to see usage examples and discovery workflow hints.")]
 	public ODataCreateBatchResponse Create(
 		[Description("Parameters: entity, rows, environment-name (all required); stop-on-error (optional).")]
@@ -72,19 +87,29 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 				return new ODataRowResult {
 					Index = index,
 					Success = false,
+					// Rejected locally: no request left clio, so not-inserted is KNOWN, not assumed.
+					RecordCreated = false,
 					Error = "row must be a non-empty object of field/value pairs."
 				};
 			}
 			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), 30_000);
 			return ParseCreated(responseJson, index);
 		} catch (Exception ex) {
-			return new ODataRowResult { Index = index, Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
+			// The request may have reached Creatio and been applied before the failure surfaced here, so the
+			// side effect is unknown - never report not-inserted from a transport-level failure.
+			return new ODataRowResult {
+				Index = index,
+				Success = false,
+				RecordCreated = null,
+				RetryGuidance = UnknownSideEffectGuidance,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
+			};
 		}
 	}
 
 	private static ODataRowResult ParseCreated(string json, int index) {
 		if (string.IsNullOrWhiteSpace(json)) {
-			return new ODataRowResult { Index = index, Success = true };
+			return new ODataRowResult { Index = index, Success = true, RecordCreated = true };
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(json);
@@ -92,7 +117,13 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			if (ODataResponseError.TryDetect(root, out string serverError)) {
 				// Redact like the sibling error paths: a routing Message can embed the absolute request
 				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
-				return new ODataRowResult { Index = index, Success = false, Error = SensitiveErrorTextRedactor.Redact(serverError) };
+				return new ODataRowResult {
+					Index = index,
+					Success = false,
+					RecordCreated = null,
+					RetryGuidance = UnknownSideEffectGuidance,
+					Error = SensitiveErrorTextRedactor.Redact(serverError)
+				};
 			}
 			// The primary key is normally a GUID string, but some entities key on a numeric column;
 			// accept either representation so a created record is never misreported as a failure.
@@ -112,13 +143,15 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 				return new ODataRowResult {
 					Index = index,
 					Success = false,
+					RecordCreated = null,
+					RetryGuidance = UnknownSideEffectGuidance,
 					Error = SensitiveErrorTextRedactor.Redact($"OData create did not return a record Id. Response: {Truncate(json)}")
 				};
 			}
-			return new ODataRowResult { Index = index, Success = true, Id = id };
+			return new ODataRowResult { Index = index, Success = true, RecordCreated = true, Id = id };
 		} catch (JsonException) {
 			// A non-JSON body on a successful POST still means the record was created.
-			return new ODataRowResult { Index = index, Success = true };
+			return new ODataRowResult { Index = index, Success = true, RecordCreated = true };
 		}
 	}
 

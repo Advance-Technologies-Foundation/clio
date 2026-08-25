@@ -8,19 +8,49 @@ SYNOPSIS
     clio get-classic-list-columns [OPTIONS]
 
 DESCRIPTION
-    Resolves the default visible column set of a Classic section through read-only
-    Creatio APIs. Static columns declared by getGridDataColumns or
-    initColumnsConfig are returned with source schema-default. When the section
-    does not declare static columns, the entity primary display column is
-    returned with source entity-default. If neither source exists, the command
-    succeeds with source none and an empty columns array.
+    Resolves the effective column set of a Classic section list through read-only
+    Creatio APIs, in this order.
 
-    The command does not read or write user profile data and does not change
+    1. profile - the saved grid profile, which is what the list actually renders.
+       The response also carries view (the active view name), viewType (listed or
+       tiled - a grid stores both, with different sets and orders) and
+       profileScope (shared, user, or unknown).
+    2. schema-default - static columns declared by getGridDataColumns or
+       initColumnsConfig in the section hierarchy.
+    3. entity-default - the entity primary display column.
+    4. none - no source exists. The command still succeeds, with an empty columns
+       array.
+
+    A product section normally resolves to profile: its code declares far fewer
+    columns than the list shows, because getGridDataColumns and initColumnsConfig
+    are a load-adding layer rather than the view definition. Use --ignore-profile
+    for the narrower question of what the section declares in code.
+
+    profileScope is what keeps one user's saved layout from being read as the
+    section's canonical set: shared means only the product/system grid-settings row
+    exists, user means the calling user also has a personal row for this list, and
+    unknown means the distinction could not be established. It classifies the
+    grid-settings row only - the active-view profile that selects WHICH view is
+    reported is not classified, so a personal active-view selection can still steer
+    a shared answer. The profile is read for the CALLING user; there is no option to
+    read another user's profile, because the platform route the command uses always
+    answers for the caller.
+
+    A profile read that FAILS is never reported as "no profile exists": the answer
+    falls back to the static declaration and notes says the profile could not be
+    read. A profile that exists but yields no column configuration is named in notes
+    too. On a failure response (success false) source is null and view, viewType and
+    profileScope are omitted.
+
+    The command reads profile data but never writes it, and does not change
     packages, schemas, or application data.
 
 OPTIONS
     --schema-name                      Classic section schema name, for example
                                        'ContactSectionV2' (required)
+
+    --ignore-profile                   Skip the saved grid profile and resolve only
+                                       statically declared columns
 
     --uri                    -u       Application uri
 
@@ -35,6 +65,10 @@ OPTIONS
 EXAMPLES
     clio get-classic-list-columns -e dev --schema-name ContactSectionV2
         Resolve ContactSectionV2 list columns and print the source-aware JSON result
+
+    clio get-classic-list-columns -e dev --schema-name AccountSectionV2 --ignore-profile
+        Report only the columns AccountSectionV2 declares in code, skipping the
+        saved grid profile
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

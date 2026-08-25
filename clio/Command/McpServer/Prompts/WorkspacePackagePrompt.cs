@@ -24,7 +24,7 @@ public static class WorkspacePackagePrompt {
 		string workspacePath,
 		[Description("Creatio environment name used for follow-up download when needed")]
 		string environmentName = null,
-		[Description("Whether to create an application descriptor for the package")]
+		[Description("Whether to create an application descriptor, backend localization schema, and injectable LocalizableString adapter")]
 		bool asApp = false,
 		[Description("Path to a Creatio zip file or extracted directory to get configuration from")]
 		string buildZipPath = null) =>
@@ -32,6 +32,10 @@ public static class WorkspacePackagePrompt {
 		 Use clio mcp server `add-package` tool to create package `{name}` in the workspace at
 		 `{workspacePath}`.
 		 Pass `workspace-path` exactly as provided and set `as-app` to `{asApp}`.
+		 When `as-app` is true, use the generated `ILocalizableStringResolver` abstraction instead of
+		 constructing Creatio `LocalizableString` in consumers. Keep the generated localization schema for
+		 package-level backend values without a natural owner; keep page and other schema-specific resources
+		 with their owning schema.
 		 Use `build-zip-path` value `{buildZipPath ?? "<not provided>"}` when configuration should come
 		 from a local build archive or extracted directory.
 		 When `build-zip-path` is not provided, the follow-up flow may need environment access to

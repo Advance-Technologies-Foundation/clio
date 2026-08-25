@@ -456,6 +456,11 @@ public class SysSettingsManager : ISysSettingsManager
 			if (optionsType == LookupTypeName) {
 				bool isGuid = Guid.TryParse(stringValue, out Guid id);
 				if (!isGuid) {
+					if (sysSetting is null) {
+						_logger.WriteError(
+							$"SysSettings with code: {code} is not updated. The setting does not exist, so its lookup reference schema cannot be resolved.");
+						return false;
+					}
 					Guid referenceSchemaUIduid = sysSetting.ReferenceSchemaUIdId;
 					string entityName = GetSysSchemaNameByUid(referenceSchemaUIduid);
 					if (string.IsNullOrEmpty(entityName)) {

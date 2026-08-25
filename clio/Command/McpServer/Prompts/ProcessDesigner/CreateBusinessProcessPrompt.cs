@@ -36,7 +36,10 @@ public static class CreateBusinessProcessPrompt {
 		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
 		 HTML custom-message `body` (`bodyFormat` `html` only), `importance`, `ignoreErrors`, and a manual-mode
-		 `performer`; email TEMPLATES are not supported (custom message only). Confirm the target package with the
+		 `performer`; email TEMPLATES are not supported (custom message only). To put PROCESS DATA in the body use the
+		 by-name macros the server resolves for you — `[[param:Name]]`, `[[element:Element.Output]]`, or
+		 `[[element:Element.Output.Column]]`; the exact parameter/element names come from the `parameters[]` / `elements[]` you declare in THIS same descriptor
+		 — there is no process to `describe-business-process` yet (that is the modify path); an unknown name is rejected, and column names are case-sensitive. Confirm the target package with the
 		 user before building.
 		 """;
 }
