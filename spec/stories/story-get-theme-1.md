@@ -34,8 +34,10 @@ tweaks).
 - [x] DI + dispatch wiring (`BindingsModule.cs`, `Program.cs`, `CommandHelpCatalog.cs`)
 - [x] Docs: `Commands.md`, `help/en/get-theme.txt` (+ `help.txt` index), `docs/commands/get-theme.md`,
       `Wiki/WikiAnchors.txt`
-- [x] Guidance: `ThemingGuidanceResource` ("Read a theme's content" section + read-before-update in the
-      no-code flow), `GuidanceCatalog` + `RoutingGuidanceResource` descriptions, `docs/McpCapabilityMap.md`
+- [x] Capability map: `docs/McpCapabilityMap.md`, and the tool description points at `get-guidance theming`
+- [ ] Guidance article: the "Read a theme's content" section and the read-before-update step in the no-code
+      flow are owed to the `clio-knowledge` repository (guidance left this repository while this story was
+      open, so it is a pull request there with a `libraryVersion` + `sequence` bump, not a change here)
 - [x] Unit tests: `GetThemeCommandTests` (Module=Command), `GetThemeToolTests` (Module=McpServer)
 - [x] MCP E2E: `GetThemeToolE2ETests` (hermetic discovery + arg validation),
       `GetThemeHappyPathE2ETests` (hermetic happy path — stubbed catalog + theme.css, runs in CI),

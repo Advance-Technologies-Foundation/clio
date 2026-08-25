@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using System;
+using System.Reflection;
 using Clio.Command;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -14,6 +15,7 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 
 	private const string ThemeId = "fb73e945-fe28-4834-838b-3986693c1a3d";
 	private const string CssFilePath = "Terrasoft.Configuration/Pkg/Custom/Files/themes/" + ThemeId + "/theme.css?hash=abc123";
+	private const string AbsentThemeId = "9c4b1f27-08d5-4a63-9f10-2b7e5c6d3a41";
 	private const string CssContent = ".brand-dark { --crt-test: #112233; }";
 
 	private static readonly string CatalogJson =
@@ -102,6 +104,39 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	}
 
 	[Test, Category("Unit")]
+	[Description("Carries the configured timeout and retry policy into the catalog read as well as the CSS fetch, so a transient blip on either of the two round trips is retried under the caller's policy rather than the defaults.")]
+	public void GetTheme_ShouldCarryConfiguredRetryPolicyIntoBothRequests_WhenReading() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss();
+		GetThemeOptions options = new() { Id = ThemeId, TimeOut = 5_000, MaxAttempts = 4, RetryDelay = 3 };
+
+		// Act
+		bool result = _command.TryGetTheme(options, out _);
+
+		// Assert
+		result.Should().BeTrue(because: "the stubbed catalog and CSS make the read succeed");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetAvailableThemes")), "{}", 5_000, 4, 3);
+		_applicationClient.Received(1).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains(CssFilePath)), 5_000, 4, 3);
+	}
+
+	[Test, Category("Unit")]
+	[Description("The options class declares the theming Creatio version floor so the command is gated to 10.0.0+ like the rest of the theming surface.")]
+	public void GetThemeOptions_ShouldDeclareCreatioVersionFloor() {
+		// Arrange
+		// Act
+		RequiresCreatioVersionAttribute attribute = typeof(GetThemeOptions)
+			.GetCustomAttribute<RequiresCreatioVersionAttribute>();
+
+		// Assert
+		attribute.Should().NotBeNull(because: "the theming surface is only available on Creatio 10.0.0+");
+		attribute.MinVersion.Should().Be(ThemeServiceRequirement.MinVersion,
+			because: "get-theme shares the theming service version floor");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Returns the full envelope — id, caption, cssClassName, cssFilePath, cssContent, and length — when the theme exists and its CSS is fetched.")]
 	public void TryGetTheme_ShouldReturnMetadataAndContent_WhenThemeExists() {
 		// Arrange
@@ -149,15 +184,14 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	public void TryGetTheme_ShouldReturnNotFound_WhenIdIsAbsentFromCatalog() {
 		// Arrange
 		ArrangeCatalog();
-		const string absentId = "9c4b1f27-08d5-4a63-9f10-2b7e5c6d3a41";
 
 		// Act
-		bool result = _command.TryGetTheme(new GetThemeOptions { Id = absentId },
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = AbsentThemeId },
 			out GetThemeResponse response);
 
 		// Assert
 		result.Should().BeFalse(because: "an unknown theme id must not be reported as a successful read");
-		response.Error.Should().Contain(absentId).And.Contain("list-themes",
+		response.Error.Should().Contain(AbsentThemeId).And.Contain("list-themes",
 			because: "the not-found error must name the id and point the caller at the catalog");
 		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(),
 			Arg.Any<int>(), Arg.Any<int>());
@@ -241,6 +275,24 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 		response.CssContent.Should().Be(string.Empty,
 			because: "the empty content is the theme's actual state");
 		response.CssContentLength.Should().Be(0, because: "the reported length must match the empty content");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Treats a response with no body as an empty theme rather than throwing, so the documented empty-content contract holds when the environment returns nothing at all.")]
+	public void TryGetTheme_ShouldReturnEmptyContent_WhenCssResponseHasNoBody() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss(null);
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a body-less response must not fail the read");
+		response.CssContent.Should().BeEmpty(
+			because: "a missing body is reported as empty content, not as a null the caller must guard");
+		response.CssContentLength.Should().Be(0,
+			because: "the reported length must match the empty content");
 	}
 
 	[Test, Category("Unit")]
@@ -425,8 +477,11 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 
 		// Assert
 		result.Should().BeFalse(because: "an existing output-file must not be silently overwritten");
+		response.Error.Should().Contain("already exists",
+			because: "the refusal must name the reason, not surface as a generic write failure");
 		FileSystem.File.ReadAllText(outputFile).Should().Be("old content",
 			because: "the refused write must leave the existing file intact");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
 	[Test, Category("Unit")]
@@ -452,28 +507,39 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 		// Arrange
 		ArrangeCatalog();
 		ArrangeCss();
+		string printed = null;
+		_logger.WriteInfo(Arg.Do<string>(message => printed = message));
 
 		// Act
 		int exitCode = _command.Execute(new GetThemeOptions { Id = ThemeId });
 
 		// Assert
 		exitCode.Should().Be(0, because: "a successful read exits with 0");
-		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains("\"success\":true") && message.Contains("cssContent")));
+		printed.Should().Contain("\"success\":true",
+			because: "the printed envelope must report the success");
+		printed.Should().Contain("\"cssContent\":",
+			because: "the CSS itself must reach stdout; the cssContentLength key alone would satisfy a bare "
+				+ "\"cssContent\" substring");
 	}
 
 	[Test, Category("Unit")]
-	[Description("Prints the failure envelope and returns exit code 1 when the theme is not found.")]
+	[Description("Prints the failure envelope and returns exit code 1 when the id is a well-formed GUID that the catalog does not list.")]
 	public void Execute_ShouldPrintFailureEnvelopeAndReturnOne_WhenThemeIsNotFound() {
 		// Arrange
 		ArrangeCatalog();
+		string printed = null;
+		_logger.WriteInfo(Arg.Do<string>(message => printed = message));
 
 		// Act
-		int exitCode = _command.Execute(new GetThemeOptions { Id = "missing-theme" });
+		int exitCode = _command.Execute(new GetThemeOptions { Id = AbsentThemeId });
 
 		// Assert
 		exitCode.Should().Be(1, because: "a failed read exits non-zero");
-		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.Contains("\"success\":false") && message.Contains("missing-theme")));
+		printed.Should().Contain("\"success\":false",
+			because: "the printed envelope must report the failure");
+		printed.Should().Contain("was not found",
+			because: "the catalog-resolution failure must be the one reported, not an argument rejection");
+		printed.Should().Contain("list-themes",
+			because: "the not-found error points the caller at the catalog");
 	}
 }

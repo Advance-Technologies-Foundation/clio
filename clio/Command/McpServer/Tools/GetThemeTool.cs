@@ -39,7 +39,8 @@ public class GetThemeTool(
 		"Set output-file to write the CSS to disk and keep it out of the transcript. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public GetThemeResponse GetTheme(
-		[Description("Parameters: environment-name (required); id (required); output-file (optional).")]
+		[Description("Parameters: id (required); environment-name (required unless the request carries "
+			+ "credential passthrough, which supplies the target environment itself); output-file (optional).")]
 		[Required] GetThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
@@ -73,10 +74,15 @@ public class GetThemeTool(
 /// MCP arguments for the <c>get-theme</c> tool.
 /// </summary>
 public sealed record GetThemeArgs {
+	/// <summary>
+	/// Registered clio environment name. Required on every path except a credential-passthrough request,
+	/// which carries the target environment itself and refuses an explicit one.
+	/// </summary>
 	[JsonPropertyName("environment-name")]
 	[Description("Registered clio environment name.")]
-	[Required]
 	public string? EnvironmentName { get; init; }
+
+	/// <summary>Id (a GUID) of the theme to read.</summary>
 	[JsonPropertyName("id")]
 	[Description("Id (a GUID) of the theme to read (see list-themes).")]
 	[Required]

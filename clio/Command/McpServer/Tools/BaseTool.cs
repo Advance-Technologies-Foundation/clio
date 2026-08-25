@@ -30,7 +30,7 @@ public abstract class BaseTool<T>(
 	/// </returns>
 	private protected CommandExecutionResult RejectIfPassthroughUnsupported(string toolName,
 		string alternativeGuidance) {
-		if (passthroughGuard is null || !passthroughGuard.IsPassthroughActive) {
+		if (!IsPassthroughActive) {
 			return null;
 		}
 		return CommandExecutionResult.FromValidationError(
@@ -38,21 +38,11 @@ public abstract class BaseTool<T>(
 	}
 
 	/// <summary>
-	/// True when a credential-passthrough context is active for the current request (an authorized
-	/// <c>X-Integration-Credentials</c> header was accepted by the <c>mcp-http</c> middleware).
+	/// True when a credential-passthrough context is active for the current request, meaning the target
+	/// environment comes from the accepted <c>X-Integration-Credentials</c> header and an explicit
+	/// <c>environment</c> argument is refused. <see langword="false"/> on stdio, on an HTTP request carrying
+	/// no credential header, and when no guard is wired.
 	/// </summary>
-	/// <remarks>
-	/// The counterpart of <see cref="RejectIfPassthroughUnsupported"/> for tools that ARE passthrough-capable:
-	/// use it to make an <c>environment-name</c> argument OPTIONAL under passthrough. On that path the tenant
-	/// comes exclusively from the header and <see cref="IToolCommandResolver"/> REJECTS an explicit
-	/// <c>environment</c> argument (FR-19), so a hard pre-resolver "environment-name is required" check would
-	/// leave the tool unreachable in passthrough mode: omitting the name fails the tool's own check and
-	/// supplying it fails the resolver's. Tools that pass the argument straight through
-	/// (<c>get-page</c>, <c>get-schema</c>) let the resolver arbitrate and need no check at all.
-	/// <see langword="false"/> on stdio, on HTTP requests carrying no credential header, and whenever no
-	/// guard is wired (direct construction in tests) — so the pre-check keeps its helpful error everywhere
-	/// passthrough is not in play.
-	/// </remarks>
 	private protected bool IsPassthroughActive => passthroughGuard?.IsPassthroughActive == true;
 
 	// FR-05 (ENG-93208): resolves the per-tenant execution-lock key for the given options. Runs the

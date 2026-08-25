@@ -17,6 +17,8 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public class GetThemeToolTests {
 
+	private const string ThemeId = "b5f2c7a1-9e04-4d68-8c31-6ad0f4e27b93";
+
 	[Test]
 	[Category("Unit")]
 	[Description("Declares the safety flags on the get-theme tool method: write-capable only through the confined output-file (ReadOnly=false), non-destructive, idempotent, closed-world.")]
@@ -62,7 +64,7 @@ public class GetThemeToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		GetThemeResponse envelope = new() {
-			Success = true, Id = "ocean-theme", Caption = "Ocean", CssClassName = "ocean-theme",
+			Success = true, Id = ThemeId, Caption = "Ocean", CssClassName = "ocean-theme",
 			CssFilePath = "a/theme.css", CssContent = ".ocean-theme {}", CssContentLength = 15
 		};
 		FakeGetThemeCommand defaultCommand = new();
@@ -75,7 +77,7 @@ public class GetThemeToolTests {
 
 		// Act
 		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
-			EnvironmentName = "docker_fix2", Id = "ocean-theme", OutputFile = "out/theme.css"
+			EnvironmentName = "docker_fix2", Id = ThemeId, OutputFile = "out/theme.css"
 		});
 
 		// Assert
@@ -84,7 +86,7 @@ public class GetThemeToolTests {
 			because: "the resolved command's envelope must be surfaced unchanged");
 		commandResolver.Received(1).Resolve<GetThemeCommand>(Arg.Is<GetThemeOptions>(options =>
 			options.Environment == "docker_fix2"
-			&& options.Id == "ocean-theme"
+			&& options.Id == ThemeId
 			&& options.OutputFile == "out/theme.css"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command instance should have been queried for the theme");
@@ -104,7 +106,7 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = "ocean-theme" });
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = ThemeId });
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a read request without an environment name is invalid");
@@ -122,7 +124,7 @@ public class GetThemeToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 		FakeGetThemeCommand defaultCommand = new();
 		FakeGetThemeCommand resolvedCommand = new(new GetThemeResponse {
-			Success = true, Id = "ocean-theme", CssContent = ".ocean-theme {}"
+			Success = true, Id = ThemeId, CssContent = ".ocean-theme {}"
 		});
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<GetThemeCommand>(Arg.Any<GetThemeOptions>()).Returns(resolvedCommand);
@@ -133,7 +135,7 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, passthroughGuard);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = "ocean-theme" });
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = ThemeId });
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -154,7 +156,7 @@ public class GetThemeToolTests {
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, passthroughGuard);
 
 		// Act
-		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = "ocean-theme" });
+		GetThemeResponse result = tool.GetTheme(new GetThemeArgs { Id = ThemeId });
 
 		// Assert
 		result.Error.Should().Contain("environment-name",
@@ -177,8 +179,9 @@ public class GetThemeToolTests {
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a read request without a theme id is invalid");
-		result.Error.Should().Contain("id",
-			because: "the failure must name the exact field the caller has to add");
+		result.Error.Should().Contain("id is required and cannot be empty",
+			because: "the failure must name the exact field the caller has to add, and a bare \"id\" substring "
+				+ "is also satisfied by the legacy-alias hint");
 		commandResolver.DidNotReceive().Resolve<GetThemeCommand>(Arg.Any<GetThemeOptions>());
 		ConsoleLogger.Instance.ClearMessages();
 	}
@@ -193,7 +196,7 @@ public class GetThemeToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		GetThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 		GetThemeArgs args = new() {
-			Id = "ocean-theme",
+			Id = ThemeId,
 			ExtensionData = new Dictionary<string, JsonElement> {
 				["environmentName"] = JsonSerializer.SerializeToElement("docker_fix2"),
 				["outputFile"] = JsonSerializer.SerializeToElement("out/theme.css")
@@ -222,14 +225,14 @@ public class GetThemeToolTests {
 
 		// Act
 		GetThemeArgs kebab = JsonSerializer.Deserialize<GetThemeArgs>(
-			"""{"environment-name":"docker_fix2","id":"ocean-theme","output-file":"out/theme.css"}""", options)!;
+			$$"""{"environment-name":"docker_fix2","id":"{{ThemeId}}","output-file":"out/theme.css"}""", options)!;
 		GetThemeArgs camel = JsonSerializer.Deserialize<GetThemeArgs>(
 			"""{"environmentName":"docker_fix2","outputFile":"out/theme.css"}""", options)!;
 
 		// Assert
 		kebab.EnvironmentName.Should().Be("docker_fix2",
 			because: "the advertised kebab-case environment-name field must bind");
-		kebab.Id.Should().Be("ocean-theme", because: "the advertised id field must bind");
+		kebab.Id.Should().Be(ThemeId, because: "the advertised id field must bind");
 		kebab.OutputFile.Should().Be("out/theme.css", because: "the advertised output-file field must bind");
 		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
 			because: "every kebab field binds to a declared parameter, so nothing overflows");
@@ -262,7 +265,7 @@ public class GetThemeToolTests {
 
 		// Act
 		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
-			EnvironmentName = "docker_fix2", Id = "ocean-theme"
+			EnvironmentName = "docker_fix2", Id = ThemeId
 		});
 
 		// Assert
@@ -294,7 +297,7 @@ public class GetThemeToolTests {
 
 		// Act
 		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
-			EnvironmentName = "docker_fix2", Id = "ocean-theme"
+			EnvironmentName = "docker_fix2", Id = ThemeId
 		});
 
 		// Assert
@@ -315,7 +318,7 @@ public class GetThemeToolTests {
 		string cssWithTabsAndNewlines = ".ocean-theme {\n\t--crt-test: url(\"data:image/svg+xml;utf8,<svg/>\");\n}";
 		string longCaption = new string('c', 250);
 		GetThemeResponse envelope = new() {
-			Success = true, Id = "ocean-theme", Caption = longCaption, CssClassName = "ocean-theme",
+			Success = true, Id = ThemeId, Caption = longCaption, CssClassName = "ocean-theme",
 			CssFilePath = "a/theme.css", CssContent = cssWithTabsAndNewlines,
 			CssContentLength = cssWithTabsAndNewlines.Length
 		};
@@ -329,7 +332,7 @@ public class GetThemeToolTests {
 
 		// Act
 		GetThemeResponse result = tool.GetTheme(new GetThemeArgs {
-			EnvironmentName = "docker_fix2", Id = "ocean-theme"
+			EnvironmentName = "docker_fix2", Id = ThemeId
 		});
 
 		// Assert
