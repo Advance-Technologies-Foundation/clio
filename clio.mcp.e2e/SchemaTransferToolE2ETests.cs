@@ -202,11 +202,11 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 		File.Exists(Path.Combine(bundleDirectory, "schema-data.json")).Should().BeTrue(
 			because: "the platform payload is what import-schema actually writes, so it must be in the bundle");
 		JsonElement descriptor = JsonDocument.Parse(File.ReadAllText(descriptorPath)).RootElement;
-		descriptor.GetProperty("SchemaName").GetString().Should().Be(sandbox.SchemaName,
+		descriptor.GetProperty("schemaName").GetString().Should().Be(sandbox.SchemaName,
 			because: "the descriptor must name the schema that was exported, not a stale or copied identity");
-		descriptor.GetProperty("SchemaUId").GetString().Should().NotBeNullOrWhiteSpace(
+		descriptor.GetProperty("schemaUId").GetString().Should().NotBeNullOrWhiteSpace(
 			because: "the UId is what keeps the imported schema the SAME schema rather than a divergent copy");
-		descriptor.GetProperty("PackageName").GetString().Should().Be(sandbox.PackageName,
+		descriptor.GetProperty("sourcePackageName").GetString().Should().Be(sandbox.PackageName,
 			because: "the export must record the package the live layer came from");
 
 		replaceImport.ExitCode.Should().Be(0,
