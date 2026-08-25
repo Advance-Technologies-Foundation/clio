@@ -80,7 +80,7 @@ public sealed class MobileDiffApplyValidatorTests {
 	}
 
 	[Test]
-	[Description("The fix's contract: once the container insert declares an empty 'items' array, the identical child insert applies cleanly — this is exactly what WebToMobileAnalysisService.InitializeContainerItemSlots now guarantees for every converter-created container.")]
+	[Description("The fix's contract: once the container insert declares an empty 'items' array, the identical child insert applies cleanly — this is exactly what WebToMobileAnalysisService.InitializeContainerChildSlots now guarantees for every converter-created container.")]
 	public void Validate_ContainerInsertWithItemsSlot_IsValid() {
 		// Arrange
 		const string body = """
