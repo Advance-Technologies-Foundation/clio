@@ -72,6 +72,11 @@ internal static class ODataKeyedWrite {
 	/// <param name="response">The raw response body returned by the PATCH/DELETE request.</param>
 	/// <returns>A redacted failure message, or <c>null</c> when the response is consistent with success.</returns>
 	internal static string ValidateWriteResponse(string response) {
+		// Whitespace counts as "no body", not as an unparsable body: a proxy that pads an otherwise
+		// empty 204 with a newline is the realistic source of a whitespace-only response, and Creatio
+		// itself always answers a genuine failure with one of the recognized JSON error shapes. Treating
+		// whitespace as a failure would therefore turn successful writes into false negatives, which is
+		// the worse outcome here - the caller would re-send an update that already landed.
 		if (string.IsNullOrWhiteSpace(response)) {
 			return null;
 		}

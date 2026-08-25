@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ODataDeleteToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 
@@ -150,5 +151,30 @@ public sealed class ODataDeleteToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue(because: "an empty body is Creatio's normal successful DELETE response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A recognized Creatio OData error body returned with a non-failing HTTP status is reported as a failure, not swallowed as a successful delete — a before-delete business rule or an FK constraint rejection is the most likely non-empty DELETE body.")]
+	public void Delete_Should_Fail_When_Response_Is_ODataError() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"code\":\"\",\"message\":\"The DELETE request violates a foreign key constraint\"}}");
+		ODataDeleteTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an OData error envelope must not be reported as a successful delete");
+		response.Error.Should().Be("The DELETE request violates a foreign key constraint");
 	}
 }

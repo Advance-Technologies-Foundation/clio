@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ODataUpdateToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 	private static JsonElement Obj(string json) => JsonDocument.Parse(json).RootElement.Clone();
@@ -183,5 +184,30 @@ public sealed class ODataUpdateToolTests {
 		// Assert
 		response.Success.Should().BeFalse(because: "an OData error envelope must not be reported as a successful update");
 		response.Error.Should().Be("Column Name is required");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A valid JSON response body that is not one of the recognized Creatio error shapes is reported as success — this pins the third ValidateWriteResponse branch, so a broadened error detector cannot start failing every PATCH that answers with a plain body.")]
+	public void Update_Should_Succeed_When_Response_Is_Valid_Json_Without_Error() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{}");
+		ODataUpdateTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an empty JSON object carries none of the recognized error members, so it is consistent with a successful PATCH");
+		response.Error.Should().BeNull();
 	}
 }
