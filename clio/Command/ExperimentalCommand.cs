@@ -165,8 +165,8 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	internal static readonly string[] StandaloneFeatureKeys = [];
 
 	// One-time warnings shown only when a feature is ENABLED (never on disable/list). Keyed
-	// case-insensitively. TEMPORARY (ENG-94250): the mobile-page-converter Beta heads-up — remove the
-	// entry when the converter graduates out of Beta.
+	// case-insensitively. TEMPORARY: the mobile-page-converter Beta heads-up — remove the entry when the
+	// converter graduates out of Beta.
 	internal static readonly IReadOnlyDictionary<string, string> FeatureEnableNotices =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["mobile-page-converter"] =
