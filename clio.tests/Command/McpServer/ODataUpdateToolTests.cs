@@ -110,4 +110,78 @@ public sealed class ODataUpdateToolTests {
 		response.Error.Should().Contain("data is required");
 		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An empty PATCH response body (Creatio's normal 204 No Content on success) is reported as success.")]
+	public void Update_Should_Succeed_On_Empty_Response_Body() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		ODataUpdateTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an empty body is Creatio's normal successful PATCH response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A non-JSON response body (an IIS/proxy error page instead of Creatio's OData pipeline) must never be reported as a successful update — the write's transport layer never throws on a non-2xx status, so the body is the only signal available.")]
+	public void Update_Should_Fail_When_Response_Is_Not_Json() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html><head><title>404 - File or directory not found.</title></head></html>");
+		ODataUpdateTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an HTML error page proves the request never reached Creatio's OData pipeline");
+		response.Error.Should().Contain("was not JSON", because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A recognized Creatio OData error body returned with a non-failing HTTP status is reported as a failure, not swallowed as a successful update.")]
+	public void Update_Should_Fail_When_Response_Is_ODataError() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
+		ODataUpdateTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an OData error envelope must not be reported as a successful update");
+		response.Error.Should().Be("Column Name is required");
+	}
 }
