@@ -52,6 +52,7 @@ namespace #RootNameSpace# {
 			// tear down the platform connection's DB executors and clear UserConnection.Current
 			// mid-request. Expose it through a Func accessor so the container never owns its lifetime.
 			serviceCollection.AddTransient<Func<UserConnection>>(sp => () => UserConnection);
+			#LocalizationServices#
 
 			InjectedServices?.ToList().ForEach(service => service(serviceCollection));
 			return serviceCollection.BuildServiceProvider();

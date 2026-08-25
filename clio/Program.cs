@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -93,7 +93,9 @@ internal class Program {
 		typeof(HealthCheckOptions),
 		typeof(ComponentRegistryRefreshOptions),
 		typeof(ComponentInfoCommandOptions),
+		typeof(ExportComponentRegistryOptions),
 		typeof(GetUserCultureCommandOptions),
+		typeof(AddCustomLoggingOptions),
 		typeof(AddPackageOptions),
 		typeof(CreateDataBindingOptions),
 		typeof(AddDataBindingRowOptions),
@@ -202,6 +204,7 @@ internal class Program {
 		typeof(DeployAppOptions),
 		typeof(ListInstalledAppsOptions),
 		typeof(RestoreDbCommandOptions),
+		typeof(PruneDbTemplatesOptions),
 		typeof(SetWebServiceUrlOptions),
 		typeof(ActivatePkgOptions),
 		typeof(PackageHotFixCommandOptions),
@@ -226,6 +229,8 @@ internal class Program {
 		typeof(CreateUserTaskOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
+		typeof(ExportSchemaOptions),
+		typeof(ImportSchemaOptions),
 		typeof(SetApplicationVersionOption),
 		typeof(SetApplicationIconOption),
 		typeof(RestartOptions),
@@ -516,7 +521,9 @@ internal class Program {
 			HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
 			ComponentRegistryRefreshOptions opts => Resolve<ComponentRegistryRefreshCommand>().Execute(opts),
 			ComponentInfoCommandOptions opts => Resolve<ComponentInfoCommand>().Execute(opts),
+			ExportComponentRegistryOptions opts => Resolve<ExportComponentRegistryCommand>().Execute(opts),
 			GetUserCultureCommandOptions opts => Resolve<GetUserCultureCommand>().Execute(opts),
+			AddCustomLoggingOptions opts => Resolve<AddCustomLoggingCommand>(opts).Execute(opts),
 			AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
 			CreateDataBindingOptions opts => Resolve<CreateDataBindingCommand>(opts).Execute(opts),
 			AddDataBindingRowOptions opts => Resolve<AddDataBindingRowCommand>().Execute(opts),
@@ -588,6 +595,7 @@ internal class Program {
 			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
 			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
+			PruneDbTemplatesOptions opts => Resolve<PruneDbTemplatesCommand>(opts).Execute(opts),
 			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
 			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
 			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
@@ -613,6 +621,8 @@ internal class Program {
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
 			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
+			ExportSchemaOptions opts => Resolve<ExportSchemaCommand>(opts).Execute(opts),
+			ImportSchemaOptions opts => Resolve<ImportSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 			WatchCompilationOptions opts => Resolve<WatchCompilationCommand>(opts).Execute(opts),

@@ -176,6 +176,9 @@ enabled") rather than silently honored:
   passthrough-capable before this feature.
 - `get-component-info` — the `environment-name`/`uri` (mixed-input) path. The header-only,
   no-argument path was already compliant before this feature (documented `latest-fallback`).
+- `export-component-registry` — the `environment-name`/`uri` (mixed-input) path, mirroring
+  `get-component-info` exactly. The header-only and explicit-`version` paths never resolve an
+  environment at all (documented `latest-fallback` / authoritative version).
 - `build-theme` — the version-resolution probe only. Falls back **soft** (not an error) to the
   newest bundled template when no header-derived tenant is available, and on mixed input (a
   header plus an explicit `environment-name`) — never a header-blind name lookup. When the caller
@@ -356,6 +359,8 @@ This area gives the AI a clean application-level view of the platform.
   Uninstall an application by name or code.
 - `install-application`
   Install an application package into a target environment.
+- `add-custom-logging`
+  Configure package-specific NLog file routing in a registered local Net8 or .NET Framework installation. Reads the package's generated `Constants.LoggerName`, validates and rollback-protects both NLog file updates, and restarts Creatio only when explicitly requested.
 - `add-package-dependency`
   Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (classic symptom: `GetSchemaDesignItem returned an HTML error page` on a layered object). Idempotent — re-adding an existing dependency is a no-op. See `get-guidance name=package-dependencies`.
 - `remove-package-dependency`
@@ -397,12 +402,22 @@ This is the second major design-oriented surface after page tools.
 - `set-entity-schema-properties`
 - `get-entity-schema-column-properties`
 - `sync-schemas`
+- `export-schema`
+- `import-schema`
 
 What an external AI can practically do here:
 
 - create entities directly in a remote package
 - create explicit lookup schemas
 - read structured schema metadata before mutating
+- move a SINGLE schema of any kind between environments (`export-schema` / `import-schema`), including
+  addons that have no other read surface, instead of pushing the whole package. Both delegate to the
+  platform schema importer, so an exported bundle keeps the schema's original `UId` and repeated
+  transfers stay safe. Neither is annotated read-only: `export-schema` changes nothing on the
+  environment but writes a bundle folder on local disk, and `import-schema` offers `dry-run` for a
+  REPLACE / CREATE / refused-NEW-LAYER preview before it writes. A schema name that matches more than
+  one layer is refused with every candidate listed as `'package' (manager)` rather than resolved to an
+  arbitrary one. Both require cliogate 2.0.0.46 or newer on the environment.
 - mutate one column or a whole schema batch
 - create `Color` columns (dataValueType 18; read back as the named `Color` type)
 - override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
@@ -576,6 +591,8 @@ This is the ops-heavy part of the MCP surface.
 - `restore-db-by-environment`
 - `restore-db-by-credentials`
 - `restore-db-to-local-server`
+- `list-db-templates`
+- `prune-db-templates`
 - `get-fsm-mode`
 - `set-fsm-mode`
 - `compile-creatio`
@@ -588,6 +605,7 @@ What an external AI can practically do here:
 - choose a safe local IIS port
 - deploy Creatio from an archive
 - restore a database in several targeting modes
+- inventory clio-managed PostgreSQL templates on a configured local server, then delete only an explicit approved name list
 - toggle FSM mode and then compile
 - fully uninstall a local Creatio instance
 
@@ -596,6 +614,8 @@ How the AI should think about this area:
 - this is not just build/deploy
 - it is a local-host and target-environment control surface
 - destructive power is high, especially for restore and uninstall flows
+- `list-db-templates` is read-only; `prune-db-templates` is destructive, rejects empty or implicit-all
+  selections, revalidates every name, skips any database with connected sessions, and never force-disconnects
 
 **Typed stage-event progress contract (`deploy-creatio` / `uninstall-creatio`).** Both tools
 emit a versioned, typed progress stream over MCP `notifications/progress` in the
