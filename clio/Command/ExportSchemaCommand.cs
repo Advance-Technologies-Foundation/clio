@@ -116,9 +116,10 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 	/// user's home directory counts as untrusted, so a plain <c>clio export-schema Foo</c> run from <c>$HOME</c>
 	/// would be refused even though the help text promises the current directory. The default is anchored the way
 	/// every other default output path in this repo is — workspace root if there is one, never bare <c>$HOME</c>.
-	/// The cwd read happens under <see cref="McpServer.Tools.McpToolExecutionLock.CwdLock"/> because the MCP
-	/// workspace tools PIN process cwd; an unsynchronized read could default one tenant's bundle into another
-	/// tenant's pinned directory. Overwrite protection is not lost with the confinement guard:
+	/// The default is resolved through <see cref="PageOutputDirectoryResolver.ResolveDefaultAnchor"/>, the shared
+	/// utility both the CLI commands and the MCP tools use; it owns the cwd synchronization the MCP workspace
+	/// tools require, so this command does not reach into the MCP layer for it. The two branches are mutually
+	/// exclusive, so nothing nests. Overwrite protection is not lost with the confinement guard:
 	/// <see cref="ISchemaBundleStore.Write"/> refuses an existing bundle folder on both branches.
 	/// </remarks>
 	private (string path, string error) ResolveBundleDirectory(ExportSchemaOptions options, string schemaName) {
@@ -126,15 +127,8 @@ public class ExportSchemaCommand : Command<ExportSchemaOptions> {
 			return OutputPathConfinement.Resolve(
 				_ioFileSystem, System.IO.Path.Combine(options.Destination.Trim(), schemaName));
 		}
-		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
-			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
-				_ioFileSystem,
-				_ioFileSystem.Directory.GetCurrentDirectory(),
-				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-				ClioRuntimePaths.Home,
-				null);
-			return (System.IO.Path.Combine(anchor, schemaName), null);
-		}
+		string anchor = PageOutputDirectoryResolver.ResolveDefaultAnchor(_ioFileSystem);
+		return (System.IO.Path.Combine(anchor, schemaName), null);
 	}
 
 	/// <summary>
