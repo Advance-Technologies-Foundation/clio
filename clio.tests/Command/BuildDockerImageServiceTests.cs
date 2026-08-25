@@ -897,6 +897,100 @@ public class BuildDockerImageServiceTests {
 	}
 
 	[Test]
+	[Description("Execute should strip the source db folder from a bundled prod application image when include-db is not requested.")]
+	public void Execute_ShouldStripDatabaseFolderFromApplicationImage_WhenIncludeDbIsNotRequested() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectoryWithDatabase("app-with-db");
+		string templateDirectory = CreateTemplateDirectory("prod-template", "FROM base\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", templateDirectory, true));
+		bool stagedDatabaseExists = true;
+		string dockerIgnoreContents = string.Empty;
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal)) {
+					string workingDirectory = executionOptions.WorkingDirectory ?? string.Empty;
+					stagedDatabaseExists = _msFileSystem.Directory.Exists(
+						_msFileSystem.Path.Combine(workingDirectory, "source", "db"));
+					string dockerIgnorePath = _msFileSystem.Path.Combine(workingDirectory, ".dockerignore");
+					dockerIgnoreContents = _msFileSystem.File.Exists(dockerIgnorePath)
+						? _msFileSystem.File.ReadAllText(dockerIgnorePath)
+						: string.Empty;
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because a source containing a db folder is still a valid application source");
+		stagedDatabaseExists.Should().BeFalse(
+			"because the default behaviour keeps the database payload out of the application image");
+		dockerIgnoreContents.Should().Contain("source/db",
+			"because clio also excludes the database payload through .dockerignore by default");
+	}
+
+	[Test]
+	[Description("Execute should keep the source db folder in a bundled prod application image when include-db is requested.")]
+	public void Execute_ShouldKeepDatabaseFolderInApplicationImage_WhenIncludeDbIsRequested() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectoryWithDatabase("app-with-db-included");
+		string templateDirectory = CreateTemplateDirectory("prod-template-include", "FROM base\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", templateDirectory, true));
+		string stagedBackupContents = string.Empty;
+		string dockerIgnoreContents = string.Empty;
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal)) {
+					string workingDirectory = executionOptions.WorkingDirectory ?? string.Empty;
+					string stagedBackupPath = _msFileSystem.Path.Combine(
+						workingDirectory, "source", "db", "backup.dump");
+					stagedBackupContents = _msFileSystem.File.Exists(stagedBackupPath)
+						? _msFileSystem.File.ReadAllText(stagedBackupPath)
+						: string.Empty;
+					string dockerIgnorePath = _msFileSystem.Path.Combine(workingDirectory, ".dockerignore");
+					dockerIgnoreContents = _msFileSystem.File.Exists(dockerIgnorePath)
+						? _msFileSystem.File.ReadAllText(dockerIgnorePath)
+						: string.Empty;
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod",
+			IncludeDb = true
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because include-db does not change how the application source is validated");
+		stagedBackupContents.Should().Be("backup-data",
+			"because include-db must stage the source db payload so the built image carries it at /app/db");
+		dockerIgnoreContents.Should().NotContain("source/db",
+			"because a .dockerignore entry for the database payload would defeat include-db");
+	}
+
+	[Test]
 	[Description("Execute should build the bundled db template from a directory source by staging only the db folder and applying db source labels.")]
 	public void Execute_ShouldBuildBundledDbTemplateFromDirectorySource() {
 		// Arrange
@@ -1256,6 +1350,14 @@ public class BuildDockerImageServiceTests {
 		_logger.Received().WriteError(Arg.Is<string>(s =>
 			s.Contains("must be a directory", StringComparison.Ordinal)));
 		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>());
+	}
+
+	private string CreateDotNetSourceDirectoryWithDatabase(string leafName) {
+		string sourceDirectory = CreateDotNetSourceDirectory(leafName);
+		string databaseDirectory = _msFileSystem.Path.Combine(sourceDirectory, "db");
+		_msFileSystem.Directory.CreateDirectory(databaseDirectory);
+		_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(databaseDirectory, "backup.dump"), "backup-data");
+		return sourceDirectory;
 	}
 
 	private string CreateDotNetSourceDirectory(string leafName) {

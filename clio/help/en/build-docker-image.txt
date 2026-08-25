@@ -28,6 +28,10 @@ DESCRIPTION
     directory in the source payload and packages only that database payload. Template
     `base` does not require `--from`.
 
+    By default the source `db` folder is EXCLUDED from application images (`dev`,
+    `prod`, custom Creatio templates) — it is shipped separately by template `db`.
+    Pass `--include-db` to keep it in the application image at `/app/db` instead.
+
     Image naming is automatic:
     - Repository: creatio-<template-name>
     - Tag: sanitized source archive or directory name
@@ -90,6 +94,18 @@ OPTIONS
     --use-nerdctl
         Optional. Force nerdctl for this invocation and bypass runtime CLI auto-detection.
         clio always adds `--namespace k8s.io` when nerdctl is used.
+
+    --include-db
+        Optional. Off by default. Keep the source `db` folder in the built application
+        image, so the product `.backup` lands at `/app/db`. This matches the layout of
+        the published Creatio image. Kubernetes charts that seed a template database
+        from the application image read the backup from that path, so an image built
+        WITHOUT this flag cannot bootstrap a database that way.
+        Ignored by templates `base` and `db`. The dedicated `db` template still
+        packages the same payload as a separate, much smaller image; prefer it when the
+        consumer can pull two images, and use `--include-db` when the consumer expects
+        one self-contained application image.
+        Cost: the image grows by the size of the backup (typically a few hundred MB).
 
 REGISTRY AUTHENTICATION
     `build-docker-image` does not currently accept registry username/password
