@@ -64,6 +64,7 @@ download-application:download-application,dapp,download-app
 download-configuration:download-configuration,dconf
 env-ui:env-ui,far,gui
 execute-sql-script:execute-sql-script,sql
+export-component-registry:export-component-registry,export-registry
 experimental:experimental,exp
 externalLink:externalLink,link
 extract-pkg-zip:extract-pkg-zip,extract,unzip,extract-package

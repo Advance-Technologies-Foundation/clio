@@ -191,6 +191,10 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-component-info"] = PassthroughClassification.Routed,
 			["get-request-info"] = PassthroughClassification.Routed,
 			["build-theme"] = PassthroughClassification.Routed,
+			// export-component-registry mirrors get-component-info exactly: version resolution routes the
+			// hasEnvironment branch through IToolCommandResolver.Resolve<EnvironmentSettings>, never
+			// ISettingsRepository directly (ADR export-component-registry D4/notes).
+			["export-component-registry"] = PassthroughClassification.Routed,
 
 			// --- Guarded (3): audited class c3, fail-fast under passthrough (Story 1) ---
 			["link-from-repository-by-environment"] = PassthroughClassification.Guarded,
@@ -424,6 +428,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-component-info"] = [Entry("outer")],
 			["get-request-info"] = [Entry("outer")],
 			["build-theme"] = [Entry("version")],
+			["export-component-registry"] = [Entry("outer")],
 
 			["link-from-repository-by-environment"] = [GuardedEntry("by-environment")],
 			["link-from-repository-by-env-package-path"] = [GuardedEntry("env-package-path-preparation")],
@@ -603,6 +608,14 @@ internal static class PassthroughToolClassificationRegistry {
 			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRejectMixedInput_BeforeNamedTenantProbe)),
 		new("get-request-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(RequestInfoToolTests),
 			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRouteEnvironmentProbeThroughCommandResolver_WhenEnvironmentNameProvided)),
+
+		// --- export-component-registry (outer) ---
+		new("export-component-registry", "outer", PassthroughScenario.HeaderOnly, typeof(ExportComponentRegistryToolTests),
+			nameof(ExportComponentRegistryToolTests.ExportComponentRegistry_ShouldNeverCallCommandResolver_WhenHeaderOnly)),
+		new("export-component-registry", "outer", PassthroughScenario.MixedInput, typeof(ExportComponentRegistryToolTests),
+			nameof(ExportComponentRegistryToolTests.ExportComponentRegistry_ShouldRejectMixedInput_BeforeNamedTenantProbe)),
+		new("export-component-registry", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(ExportComponentRegistryToolTests),
+			nameof(ExportComponentRegistryToolTests.ExportComponentRegistry_ShouldResolveVersion_ViaToolCommandResolver_ForEnvironmentName)),
 
 		// --- build-theme (version) ---
 		new("build-theme", "version", PassthroughScenario.HeaderOnly, typeof(BuildThemeToolTests),

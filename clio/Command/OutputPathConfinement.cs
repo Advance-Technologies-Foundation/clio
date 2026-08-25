@@ -135,6 +135,29 @@ internal static class OutputPathConfinement {
 	}
 
 	/// <summary>
+	/// Byte-exact counterpart of <see cref="WriteAtomic(IoFileSystem, string, string)"/>, for a payload that must
+	/// land on disk exactly as it arrived on the wire. The string overload round-trips through a decoder and a
+	/// <see cref="StreamWriter"/>, which normalises the encoding (a BOM on the source is dropped, an invalid
+	/// sequence becomes U+FFFD); a caller that advertises a byte-faithful copy has to bypass that.
+	/// </summary>
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, byte[] content) {
+		string directory = fileSystem.Path.GetDirectoryName(resolvedPath);
+		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
+			fileSystem.Directory.CreateDirectory(directory);
+		}
+		try {
+			using Stream stream = fileSystem.File.Open(resolvedPath, FileMode.CreateNew, FileAccess.Write);
+			stream.Write(content, 0, content.Length);
+		}
+		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
+			throw new IOException(
+				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
+				"path or remove the existing file.");
+		}
+	}
+
+
+	/// <summary>
 	/// True when <paramref name="fullCandidate"/> (an already-resolved absolute path) lies within the workspace
 	/// anchor OR the OS temp root. Both bounds are the two locations the schema-writing tools write to; everything
 	/// else — parent-traversal escapes, absolute system paths, other volumes — is out of bounds. A <c>null</c> or
