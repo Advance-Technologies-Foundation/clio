@@ -293,6 +293,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-environment"] = PassthroughClassification.NotApplicable,
 			["execute-esq"] = PassthroughClassification.NotApplicable,
+			["export-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["experimental"] = PassthroughClassification.NotApplicable,
 			["find-app"] = PassthroughClassification.NotApplicable,
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,
@@ -321,6 +322,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
 			["get-target-package"] = PassthroughClassification.NotApplicable,
+			["import-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["install-application"] = PassthroughClassification.NotApplicable,
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,

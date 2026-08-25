@@ -57,6 +57,36 @@ internal static class PageOutputDirectoryResolver {
 	}
 
 	/// <summary>
+	/// Resolves the TOOL-OWNED default anchor: the same resolution as <see cref="ResolveAnchor"/>, but reading
+	/// the process current directory and the user's home directory itself instead of taking them as parameters.
+	/// </summary>
+	/// <remarks>
+	/// The cwd read happens under <see cref="McpServer.Tools.McpToolExecutionLock.CwdLock"/> because the MCP
+	/// workspace tools PIN the process current directory; an unsynchronized read could anchor one tenant's
+	/// default output inside another tenant's pinned directory. Callers — CLI commands and MCP tools alike —
+	/// go through this method rather than taking that lock themselves, so the synchronization stays owned by
+	/// the shared resolver and a CLI command never has to reach into the MCP layer for it. In the
+	/// single-threaded CLI path the lock is uncontended.
+	/// <para>
+	/// This is for the default only. An EXPLICIT caller-supplied path goes through
+	/// <see cref="OutputPathConfinement.Resolve"/>, which resolves its own anchor under the same lock.
+	/// </para>
+	/// </remarks>
+	/// <param name="fileSystem">File-system abstraction used to read the cwd and probe for the workspace marker.</param>
+	/// <returns>The workspace root above the current directory, the current directory itself, or the managed
+	/// clio home root when the current directory is the bare home directory.</returns>
+	public static string ResolveDefaultAnchor(IFileSystem fileSystem) {
+		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
+			return ResolveAnchor(
+				fileSystem,
+				fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				null);
+		}
+	}
+
+	/// <summary>
 	/// Walks up from <paramref name="startDirectory"/> looking for a directory that contains
 	/// <c>.clio/workspaceSettings.json</c>. Matches the workspace marker <em>file</em> — not the
 	/// bare <c>.clio</c> directory — so an orphaned <c>~/.clio</c> (e.g. a pre-consolidation cache

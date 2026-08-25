@@ -1,0 +1,66 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    import-schema - Import a schema bundle into a package of a Creatio environment
+
+ALIASES
+    schema-import
+
+SYNOPSIS
+    clio import-schema <Path> --package-name <Package> -e <Environment> [--dry-run] [--allow-new-layer]
+
+DESCRIPTION
+    Writes a bundle produced by 'clio export-schema' into a package, creating or
+    replacing exactly one schema and leaving the rest of the package untouched.
+
+    The schema keeps its original UId, so the target environment holds the same
+    schema rather than a divergent copy and later updates line up instead of
+    colliding.
+
+    Before writing, the command looks up where the schema name already exists and
+    reports what it is about to do:
+
+      CREATE     - the schema does not exist on the target
+      REPLACE    - the schema already exists in the target package
+      NEW LAYER  - the schema exists in OTHER packages only
+
+    The NEW LAYER case is refused by default, naming the packages found. Creating a
+    same-named schema in a second package is sometimes intended and sometimes the
+    duplicate-key defect ("IU_Name_Manager_Package") this command exists to avoid, and
+    the two cannot be told apart from here. Pass --allow-new-layer to do it
+    deliberately, or point --package-name at the owning package to replace instead.
+
+    The import saves the schema but does not build it. Run 'clio compile-configuration'
+    when the schema carries source code, and 'clio update-db-structure' when it changes
+    the database structure.
+
+OPTIONS
+    <Path>                             Bundle folder produced by export-schema,
+                                       or its schema-data.json (required)
+
+    --package-name                     Target package that will own the schema (required)
+                                       (No -p short form: -p is --password.)
+
+    --dry-run                          Report the planned action and write nothing
+
+    --allow-new-layer                  Proceed when the schema name is already owned by
+                                       a different package, creating a new layer
+
+    -e, --environment                  Environment name
+
+REQUIREMENTS
+    cliogate 2.0.0.46 or newer must be installed on the environment.
+    Install or update it with: clio install-gate -e <environment>
+
+    The target package must be unlocked. Use 'clio unlock-package' when it is not.
+
+EXAMPLES
+    See what the import would do, without writing:
+        clio import-schema ./Leads_FormPageBusinessRule --package-name UsrCustomerApp -e prod --dry-run
+
+    Apply it:
+        clio import-schema ./Leads_FormPageBusinessRule --package-name UsrCustomerApp -e prod
+
+SEE ALSO
+    export-schema, delete-schema, compile-configuration, update-db-structure
