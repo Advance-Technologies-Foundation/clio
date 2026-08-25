@@ -30,7 +30,7 @@ SYNOPSIS
 
 OPTIONS
 
-    --id                            Id of the theme to read (see list-themes)
+    --id                            Id (a GUID) of the theme to read (see list-themes)
 
     --output-file                   Path to write the theme CSS to; when set,
                                     cssContent is omitted from the response

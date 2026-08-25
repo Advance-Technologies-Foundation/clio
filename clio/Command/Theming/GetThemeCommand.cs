@@ -18,8 +18,8 @@ namespace Clio.Command.Theming;
 [RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]
 public class GetThemeOptions : RemoteCommandOptions
 {
-	/// <summary>Id of the theme to read (required).</summary>
-	[Option("id", Required = true, HelpText = "Id of the theme to read")]
+	/// <summary>Id (a GUID) of the theme to read (required).</summary>
+	[Option("id", Required = true, HelpText = "Id (a GUID) of the theme to read")]
 	public string Id { get; set; }
 
 	/// <summary>

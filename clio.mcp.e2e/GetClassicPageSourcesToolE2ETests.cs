@@ -116,8 +116,14 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
 		response.SectionLayerCount.Should().BeGreaterThan(0,
 			because: "the Contact entity has a Classic section bound through SysModule, so the section chain must be gathered");
-		response.Warnings.Should().BeNull(
-			because: "complete page sources carry no warnings; a failed SysModule lookup would degrade to the naming " +
+		// Scoped to section warnings on purpose: a stock product legitimately carries other gaps (a communication
+		// detail declares no bound entity, so its child pages cannot be looked up), and asserting "no warnings at all"
+		// would fail on that unrelated, honest gap instead of on a broken section lookup.
+		string[] sectionWarnings = (response.Warnings ?? [])
+			.Where(warning => warning.Contains("section", StringComparison.OrdinalIgnoreCase))
+			.ToArray();
+		sectionWarnings.Should().BeEmpty(
+			because: "a resolved section reports nothing; a failed SysModule lookup would degrade to the naming " +
 				"conventions and report the reason here");
 
 		// Assert — the manifest carries the section bodies the engine folds into the Freedom List page
@@ -126,6 +132,104 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			because: "a resolved section must reach the manifest, not just the response counter");
 		section.GetArrayLength().Should().Be(response.SectionLayerCount,
 			because: "the reported section-layer count must match what was actually written");
+	}
+
+	[Test]
+	[Description("The reported detail count agrees exactly with the manifest and no truncation gap is reported on a live stand (ENG-94402). Names what it proves: on a narrow product this passes with or without the caps — the unbounded fan-out itself is pinned by the unit regression tests, this is the live consistency witness.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources reports a detail count consistent with its manifest and no truncation")]
+	[AllureDescription("Live witness that the response counter and the manifest agree and that no cap/truncation warning is reported. Deliberately product-agnostic — the detail count of a given page differs per installed product (Studio ContactPageV2 gathers 9, a Sales product far more), so this asserts CONSISTENCY and the absence of truncation rather than any specific number. It does NOT by itself prove the caps are gone: on a narrow (Studio) stand the page stays under the retired caps, so that claim rests on the unit regression tests (250/250/120/30).")]
+	public async Task GetPageSources_Should_Report_DetailCount_ConsistentWithManifest_AndNoTruncation() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources-uncapped");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = outputFile
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+
+		// Assert — the whole unit was collected. The count itself is product-dependent (Studio gathers far fewer
+		// details for the same page than a Sales product), so the invariant asserted here is that the response
+		// counter and the manifest agree EXACTLY: a cap would have shortened one without the other noticing.
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		int manifestDetailCount = manifest.RootElement.TryGetProperty("detailSchemas", out JsonElement detailSchemas)
+			? detailSchemas.EnumerateObject().Count()
+			: 0; // the block is omitted (never null-filled) when the page resolved no details on this product
+		manifestDetailCount.Should().Be(response.DetailCount,
+			because: "every detail the response counts must be in the manifest — nothing may be dropped in between, "
+				+ "and the block is omitted only when the count is genuinely zero");
+
+		// Assert — no cap truncated the unit. The retired caps were the only source of these messages, so their
+		// absence on the widest product page is the live proof the fan-out is unbounded.
+		(response.Warnings ?? []).Should().NotContain(
+			warning => warning.Contains("stopped at") || warning.Contains("remainder is omitted")
+				|| warning.Contains("remainder is ignored") || warning.Contains("depth cap"),
+			because: "a complete collection may not report a truncation gap");
+	}
+
+	[Test]
+	[Description("Populates childPageSchemas from live SysModuleEdit metadata for a page with details, so the structural zero the body-scan route produced cannot return.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources populates childPageSchemas from SysModuleEdit")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the child pages each detail's entity registers in SysModuleEdit reached the manifest. Before ENG-94401 child pages were resolved by scanning detail bodies for a getEditPageName token, which matches nothing on a stock product (0 of 845 page-detail pairs), so childPageSchemas was structurally always empty and a migration plan silently omitted every child page.")]
+	public async Task GetPageSources_Should_Populate_ChildPageSchemas_From_SysModuleEdit() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources-child-pages");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = outputFile
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+
+		// Assert — the page has details, and their entities' registered pages were resolved
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		response.DetailCount.Should().BeGreaterThan(0,
+			because: "ContactPageV2 references details, without which there would be no child page to resolve");
+		response.ChildPageCount.Should().BeGreaterThan(0,
+			because: "the detail entities register edit pages in SysModuleEdit, so a zero here means the metadata " +
+				"route regressed back to the body scan that matches nothing on a stock product");
+
+		// Assert — the child pages are real nested manifests on disk, not just a counter
+		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		manifest.RootElement.TryGetProperty("childPageSchemas", out JsonElement childPages).Should().BeTrue(
+			because: "resolved child pages must reach the manifest the engine folds, not only the response counter");
+		childPages.EnumerateObject().Count().Should().Be(response.ChildPageCount,
+			because: "the reported child-page count must match what was actually written");
+		foreach (JsonProperty childPage in childPages.EnumerateObject()) {
+			childPage.Value.TryGetProperty("schemas", out JsonElement childSchemas).Should().BeTrue(
+				because: $"child page '{childPage.Name}' must carry its own layer chain for the engine to fold");
+			childSchemas.GetArrayLength().Should().BeGreaterThan(0,
+				because: $"child page '{childPage.Name}' must carry at least one real layer body, never an empty shell");
+		}
 	}
 
 	[Test]
@@ -199,6 +303,56 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			because: "the failure must name the offending option");
 		File.Exists(resolvedEscape).Should().BeFalse(
 			because: "no file may be written to the out-of-bounds path");
+	}
+
+	[Test]
+	[Description("Echoes the target stand's own enum vocabulary (ViewItemType/ContentType/DataValueType) from its live sysenums.js into the manifest, so the migration engine's enum-drift guard (enumDriftIssues) has a real input instead of undefined (ENG-95412).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources echoes the stand's own enumVocabulary")]
+	[AllureDescription("Collects ContactPageV2 sources on a real stand and verifies enumVocabulary was measured from the stand's own sysenums.js — not merely present, but carrying plausible member counts for ViewItemType/ContentType/DataValueType — so the engine's enum-drift guard receives a genuine, stand-specific input on every real run rather than a hardcoded copy of its own pinned tables.")]
+	public async Task GetPageSources_Should_Echo_EnumVocabulary_From_Stand() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources-enum-vocabulary");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = MultiLayerPage,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["output-file"] = outputFile
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+
+		// Assert — the stand served its own sysenums.js and all three DRIFT_TABLES enums were measured from it
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		response.EnumVocabularyCount.Should().Be(3,
+			because: "a reachable stand's sysenums.js declares all three DRIFT_TABLES enums " +
+				"(ViewItemType/ContentType/DataValueType); a lower count means the fetch or parse degraded and must " +
+				"be visible here rather than silently passing as success");
+
+		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		manifest.RootElement.TryGetProperty("enumVocabulary", out JsonElement enumVocabulary).Should().BeTrue(
+			because: "the stand-measured enum tables must reach the manifest the engine folds, not only the response counter");
+		foreach (string enumName in new[] { "ViewItemType", "ContentType", "DataValueType" }) {
+			enumVocabulary.TryGetProperty(enumName, out JsonElement members).Should().BeTrue(
+				because: $"'{enumName}' is one of the engine's DRIFT_TABLES and must be present when the stand served sysenums.js");
+			members.EnumerateObject().Count().Should().BeGreaterThan(0,
+				because: $"'{enumName}' must carry at least one real numeric member, never an empty placeholder object");
+			foreach (JsonProperty member in members.EnumerateObject()) {
+				member.Value.ValueKind.Should().Be(JsonValueKind.Number,
+					because: $"every echoed member of '{enumName}' must be the numeric value core assigns it");
+			}
+		}
 	}
 
 	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

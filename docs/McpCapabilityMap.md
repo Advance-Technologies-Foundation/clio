@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-07-09`
+Snapshot date: `2026-08-10`
 
 ## One-sentence summary
 
@@ -27,8 +27,9 @@ is discovered through `get-tool-contract`, not `tools/list`:
 - the full invokable catalog (~137 tools) indexed by `get-tool-contract` (each entry carries `resident`
   and `destructive` flags, plus `aliases` when a legacy name maps to it)
 - `67` prompts
-- `92` resources
-- `1` resource template
+- a small fixed set of CLI-help and mechanical resources
+- a dynamic, paginated resource catalog supplied by active trusted knowledge libraries
+- generic canonical and publisher-declared legacy resource templates
 
 Important shape of the surface:
 
@@ -119,6 +120,7 @@ Typical examples:
 - `create-workspace`
 - `list-environments`
 - `find-empty-iis-port`
+- `list-knowledge-examples`
 
 ### 4. HTTP credential-passthrough edge (multi-tenant) + standard OAuth authorization
 
@@ -174,13 +176,14 @@ enabled") rather than silently honored:
   passthrough-capable before this feature.
 - `get-component-info` — the `environment-name`/`uri` (mixed-input) path. The header-only,
   no-argument path was already compliant before this feature (documented `latest-fallback`).
+- `export-component-registry` — the `environment-name`/`uri` (mixed-input) path, mirroring
+  `get-component-info` exactly. The header-only and explicit-`version` paths never resolve an
+  environment at all (documented `latest-fallback` / authoritative version).
 - `build-theme` — the version-resolution probe only. Falls back **soft** (not an error) to the
   newest bundled template when no header-derived tenant is available, and on mixed input (a
-  header plus an explicit `environment-name`) — never a header-blind name lookup. The soft
-  fallback is not silent: when the caller explicitly named an `environment-name` that could not
-  be resolved, the result carries a non-fatal `warnings` entry naming the environment and the
-  newest-version fallback (the resolution catch is scoped to `EnvironmentResolutionException`, so
-  an unexpected fault surfaces as a real error rather than a silent newest-version build).
+  header plus an explicit `environment-name`) — never a header-blind name lookup. When the caller
+  explicitly named an `environment-name` that could not be resolved, the fallback is disclosed in
+  a non-fatal `warnings` entry rather than applied silently.
 
 **Passthrough-unsupported** — fails fast with one uniform error naming the tool and the
 alternative (register the target environment and use the stdio path, or a non-passthrough
@@ -194,6 +197,13 @@ alternative (register the target environment and use the stdio path, or a non-pa
 These three remain unsupported by design: the environment name doubles as a local
 package-directory selector with no passthrough equivalent, and routing was judged
 disproportionate for v1 (see the ADR's decision matrix for `link-from-repository-*`).
+
+`create-theme` is unreachable over passthrough for a different reason, so it is in neither list:
+it hard-requires `environment-name`, so a missing one fails the tool's own validation and a
+supplied one trips the uniform explicit-environment rejection above. Its brand mode runs the same
+version-resolution probe as `build-theme`, through the same per-request resolver as the create call
+itself, so the build and the theme write always target the same tenant — but that tenant is always
+the named environment, never a header-derived one.
 
 ## What An AI Learns About Execution Semantics
 
@@ -349,6 +359,8 @@ This area gives the AI a clean application-level view of the platform.
   Uninstall an application by name or code.
 - `install-application`
   Install an application package into a target environment.
+- `add-custom-logging`
+  Configure package-specific NLog file routing in a registered local Net8 or .NET Framework installation. Reads the package's generated `Constants.LoggerName`, validates and rollback-protects both NLog file updates, and restarts Creatio only when explicitly requested.
 - `add-package-dependency`
   Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (classic symptom: `GetSchemaDesignItem returned an HTML error page` on a layered object). Idempotent — re-adding an existing dependency is a no-op. See `get-guidance name=package-dependencies`.
 - `remove-package-dependency`
@@ -390,12 +402,22 @@ This is the second major design-oriented surface after page tools.
 - `set-entity-schema-properties`
 - `get-entity-schema-column-properties`
 - `sync-schemas`
+- `export-schema`
+- `import-schema`
 
 What an external AI can practically do here:
 
 - create entities directly in a remote package
 - create explicit lookup schemas
 - read structured schema metadata before mutating
+- move a SINGLE schema of any kind between environments (`export-schema` / `import-schema`), including
+  addons that have no other read surface, instead of pushing the whole package. Both delegate to the
+  platform schema importer, so an exported bundle keeps the schema's original `UId` and repeated
+  transfers stay safe. Neither is annotated read-only: `export-schema` changes nothing on the
+  environment but writes a bundle folder on local disk, and `import-schema` offers `dry-run` for a
+  REPLACE / CREATE / refused-NEW-LAYER preview before it writes. A schema name that matches more than
+  one layer is refused with every candidate listed as `'package' (manager)` rather than resolved to an
+  arbitrary one. Both require cliogate 2.0.0.46 or newer on the environment.
 - mutate one column or a whole schema batch
 - create `Color` columns (dataValueType 18; read back as the named `Color` type)
 - override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
@@ -569,6 +591,8 @@ This is the ops-heavy part of the MCP surface.
 - `restore-db-by-environment`
 - `restore-db-by-credentials`
 - `restore-db-to-local-server`
+- `list-db-templates`
+- `prune-db-templates`
 - `get-fsm-mode`
 - `set-fsm-mode`
 - `compile-creatio`
@@ -581,6 +605,7 @@ What an external AI can practically do here:
 - choose a safe local IIS port
 - deploy Creatio from an archive
 - restore a database in several targeting modes
+- inventory clio-managed PostgreSQL templates on a configured local server, then delete only an explicit approved name list
 - toggle FSM mode and then compile
 - fully uninstall a local Creatio instance
 
@@ -589,6 +614,8 @@ How the AI should think about this area:
 - this is not just build/deploy
 - it is a local-host and target-environment control surface
 - destructive power is high, especially for restore and uninstall flows
+- `list-db-templates` is read-only; `prune-db-templates` is destructive, rejects empty or implicit-all
+  selections, revalidates every name, skips any database with connected sessions, and never force-disconnects
 
 **Typed stage-event progress contract (`deploy-creatio` / `uninstall-creatio`).** Both tools
 emit a versioned, typed progress stream over MCP `notifications/progress` in the
@@ -670,15 +697,20 @@ Important behavior and safety:
 
 These tools help an external AI design Creatio business processes (BPMN). clio makes no LLM call —
 an MCP prompt/guidance teaches the agent the intent→BPMN translation; deterministic tools execute.
-All tools in this section except `get-process-signature` are gated behind the `process-designer`
-feature toggle and require the `clioprocessbuilder` (ProcessDesignService) package on the target
-environment.
+All tools in this section are gated behind the `process-designer` feature toggle and require the
+`CrtProcessBuilder` (ProcessDesignService) package on the target environment — **with two exceptions,
+both listed below**: `get-process-signature`, which reads the built-in DataService and needs neither;
+and `install-process-builder`, which is neither gated nor a consumer of the package, because it is the
+remedy that INSTALLS it. Gating the remedy, or implying it needs what it provides, would hide it
+exactly when the gated tools tell a caller to run it.
 
-- `create-business-process` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — builds a NEW process from a declarative JSON descriptor (`name`, `caption`, `packageName`, `elements[]`, `flows[]`, `parameters[]`, `mappings[]`) and saves it server-side in one call; diagram layout is automatic. The buildable slice is startEvent/signalStart/endEvent/userTask joined by plain sequence flows; unsupported elements are rejected with a clear message, and a signal start carries no record filter (it fires for every record of its object).
-- `modify-business-process` (`ReadOnly=false`, `Destructive=true`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — edits an EXISTING process (by `process-name` or `process-uid`) with an ordered operations array: addElement / removeElement / addFlow / removeFlow / addParameter / addMapping / setParameter / removeParameter. Atomic: any failed operation aborts the whole edit (nothing is saved). Removals are not structurally validated and every edit re-lays-out the whole diagram; re-sending addMapping overwrites a binding in place (there is no removeMapping/clear op).
+- `install-process-builder` (`ReadOnly=false`, `Destructive=true`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — installs (or updates) the `CrtProcessBuilder` package into a registered environment, which is the remedy for every "package missing or older than required" refusal above. **Deliberately NOT feature-gated**, unlike the rest of this section: a gated primitive is filtered out of registration, so gating the remedy would hide it exactly when the gated tools tell callers to run it. The package is bundled inside clio (nothing is downloaded) and ships as **source** — the target compiles it during installation, which is why the call is substantially slower than a plain package install — by an amount that depends on the target environment, not on anything clio controls, so no duration should be quoted to a user — and why it works unchanged on both .NET Framework and .NET hosts. A **restart does happen** and you never request it (the platform recycles itself on .NET Framework, the installer issues it on .NET); the tool waits the instance back out before judging the result, so do not follow it with `restart-web-app`. It is `Destructive=true` for that reason — a configuration build plus a restart on a live instance, where recovery from a failed compile is an explicit restore, not a rollback. The tool verifies the **outcome**: it asks the package's own service whether it is serving (`Ping`, ungated) and fails unless it answers. So "installed but never compiled" is reported rather than looking like success — which `list-packages` cannot distinguish, because the recorded version moves when the archive is accepted whether or not anything compiled. The check is **liveness, not identity**: on an UPGRADE a stale assembly that still answers passes, so treat a successful install of a new version as authoritative only once the functionality works. It **installs in every case but two**, both about an environment moving BACKWARDS, both exit 1, and neither retryable: (1) the environment already carries a NEWER version than this clio ships, so the install would move the recorded version backwards for everyone using it — say the fix is to update clio; (2) this clio's OWN bundled version carries a pre-release suffix, which would make case (1) undetectable, so the distribution is refused rather than installed — nothing about the target environment is wrong, say the fix is to reinstall or update clio. There is no already-current skip otherwise, and a sequential re-run costs one configuration build. The override is CLI-only and deliberately absent from this tool. A CONCURRENT re-run is refused outright while a configuration build is in flight on the same environment. If the MCP response deadline is reached first you get an in-progress note, which is **not a verdict** — the install may still fail; wait, then retry the process-designer tool you came from rather than calling this one again.
+
+- `create-business-process` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — builds a NEW process from a declarative JSON descriptor (`name`, `caption`, `packageName`, `elements[]`, `flows[]`, `parameters[]`, `mappings[]`) and saves it server-side in one call; diagram layout is automatic. The buildable slice is startEvent/signalStart/endEvent/userTask joined by plain sequence flows; unsupported elements are rejected with a clear message. A `signalStart` carries its record trigger in `signal` (`entity` + `on` = added|modified|deleted), optionally narrowed two independent ways: a data source `filter` restricts WHICH records fire it, and `signal.changedColumns` (column names, valid only for `on:modified`) restricts WHICH column changes count. A `readData` element takes a `readData` block — `source` (required), `mode` (`first` only; collection/count/aggregation are rejected as planned), `columns` (top-level column NAMES; omit or `[]` = all columns; dotted linked-object paths rejected), single-column `sort` (`asc` default) — plus the element's separate record `filter`, which unlike a signalStart filter MAY reference process/element parameters. Its only output parameter is `ResultEntity` (the whole record): the read record's column values are not referenceable downstream yet (ENG-91844). A `changeData` element takes a `changeData` block — `source` (required) and `values` (one entry per column, each with exactly one of `value`/`processParameter`/`sourceElement`+`sourceElementParameter`/`expression`; `value` is a plain constant for TEXT columns only and non-empty — a non-text constant is refused at build, the runtime would read the raw string typed and fail at run time); WHICH records are updated is the element's record `filter`, effectively mandatory (the runtime refuses an empty one) — target a single record by filtering `Id` against a process parameter or a trigger output. Any element may also carry `useBackgroundMode` — an element-level platform flag; omit it to keep that element kind's default (a `signalStart` defaults to background mode). Also carries the sendEmail element's `email` block (custom message, recipients, mode, options, performer) — same contract as the tool description.
+- `modify-business-process` (`ReadOnly=false`, `Destructive=true`, `Idempotent=false`, `OpenWorld=false`, **environment-sensitive**) — edits an EXISTING process (by `process-name` or `process-uid`) with an ordered operations array: addElement / removeElement / addFlow / removeFlow / addParameter / addMapping / setParameter / removeParameter / setFilter / clearFilter / setSignal / setElement / setConnections / clearConnections (the middle two edit an existing element in place, preserving it and its flows: `setSignal` reconfigures a signalStart's record trigger and tracked-change columns, `setElement` changes element-level fields such as `useBackgroundMode` on any element kind; the last two bind and unbind the "Connected to" links of the Activity a user-task element creates — `setConnections` is an UPSERT keyed on `column`, so columns you do not list are left alone, and it is supported on six user tasks only). `setElement` also takes `elementUpdate.readData` — a partial in-place update of a readData element (omitted fields keep their values; `columns: []` resets to all columns) with two refusals: a designer-made collection/count/aggregation element cannot be converted to first-record (explicit `mode:'first'` included — remove and re-add instead), and a `source` retarget is refused while any other parameter still maps from the element (the refusal names each dependent); a retarget that proceeds clears the columns, sort and old-entity filter. `setElement` likewise takes `elementUpdate.changeData` — partial in-place update of a Modify data element (omitted `source` keeps the target; a supplied `values` array replaces the whole assignment set; a source retarget REQUIRES `values` for the new entity in the same update — the server refuses a values-less retarget, the cleared element would be silently skipped by the runtime; the same refusal covers a values-less update on an element with no stored values, and a retarget is refused while another parameter still maps from the element; on ANY target change (first configuration included) the stored filter clears unless it already targets the incoming object). Atomic: any failed operation aborts the whole edit (nothing is saved). Removals are not structurally validated and every edit re-lays-out the whole diagram; re-sending addMapping overwrites a binding in place (there is no removeMapping/clear op). Also carries the sendEmail element's `email` block (custom message, recipients, mode, options, performer) — same contract as the tool description.
 - `list-user-tasks` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — returns the environment's user-task palette (built-in + custom; name + UId) for `userTaskName` selection when building a process.
-- `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 (enforced subset: R1–R3, R7, R9–R15, R17). The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). A validation pass does NOT imply buildability — the rules cover the full BPMN catalog while the builder covers only the slice above.
-- `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,parameters,signal?}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and raw `expression` — expressions are returned verbatim, not decoded into semantics. Unbound element inputs are omitted.
+- `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 (enforced subset: R1–R3, R7, R9–R15, R17). The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `CrtProcessBuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). A validation pass does NOT imply buildability — the rules cover the full BPMN catalog while the builder covers only the slice above.
+- `describe-business-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,useBackgroundMode,parameters,signal?,filter?,connections?,deprecated?,writesConnectionsAtRuntime?}]` — where `connections` lists the element's BOUND "Connected to" links with both the raw persisted macro and a decoded source, and `writesConnectionsAtRuntime` is the verdict to read before trusting a binding (`false` and `null` both mean `setConnections` is refused there) — where `signal` carries `entity`/`on` plus `changedColumns` for a column-restricted `modified` trigger — `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). A readData element returns its `readData` block (`source`, `mode`, `columns` as top-level names, `sort`); `mode:'first'` round-trips into create/modify, `collection`/`function` report a designer-made mode, and `sort` is the EFFECTIVE PRIMARY entry (the one the runtime's ORDER BY ranks first) — a designer-made element's active secondary sort entries and linked-object columns are not expressible here, so a described block is not a lossless copy of such an element. A changeData element returns its `changeData` block (`source`, `values` — constants in `value`, parameter and element-output bindings decoded back to `processParameter` / `sourceElement` + `sourceElementParameter` (a decoded `sourceElement` still obeys the create-time earlier-in-`elements[]` rule); a CONSTANT always reads back in `value` — including one the write path would refuse (non-text or empty), so feeding that row back is refused naming the column; a recognized binding that fails the assignment type check reads back as its raw `[#…#]` expression; and a stored source this API cannot re-apply (a disabled row, a legacy or entity mapping, a system value/setting, a missing packed value) reads back as its COLUMN ALONE and is refused if fed back). Each parameter carries `direction` and `isResult` (detect outputs by `isResult`); parameter values carry their `source` (ConstValue/Mapping/Script) and raw `expression` — expressions are returned verbatim, not decoded into semantics. Unbound element inputs are omitted. Also carries the sendEmail element's `email` block (custom message, recipients, mode, options, performer) — same contract as the tool description.
 - `get-process-signature` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads a process's parameter signature (codes, captions, CLR types, direction, lookup reference schema). Shipped and NOT feature-gated: it reads the built-in DataService, not ProcessDesignService. Primary workflow: authoring crt.RunBusinessProcessRequest via the request catalog (get-request-info).
 
 What an external AI can practically do here:
@@ -694,14 +726,22 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+These tools manage custom themes — one part of branding a Creatio app: build a theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `advise-theme-palette` runs offline; `build-theme` needs no environment, and both it and `create-theme` in brand mode reach fonts.google.com for a short bounded availability probe per custom font family, because brand mode drives the same build engine (both still work without connectivity: the `@import` is kept and a "could not verify" warning is returned); the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
-  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment. Each custom font family is checked against Google Fonts: one the catalogue does not publish gets NO `@import` plus a warning (it then renders only where installed locally), and an unverifiable probe keeps the import plus a warning — so the emitted CSS can vary with probe outcomes, which the warnings always disclose.
 - `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme`
-  Create a theme on the environment from inline `css-content` plus a caption.
+  Create a theme on the environment from inline `css-content` plus a caption, or — brand mode — from brand colours and fonts (`primary`, plus optional secondary/accent/success/error, fonts, and font weights), with the CSS built server-side in the same call so it never enters the agent context. Exactly one of the two CSS sources per call. There is no `version` argument: the theme is written to a named environment, so the build template always follows that environment's own version, resolved once by the version-floor gate. (`build-theme` keeps `version` — it builds for a target the caller names rather than writes to one.) Brand mode runs the same Google Fonts availability probe as `build-theme`, with the same suppression and warning outcomes, so on that path the tool reaches fonts.google.com as well as the addressed tenant; the inline `css-content` path stays tenant-only.
+  Stable error codes travelling in the `error` message, on top of the version-gate codes above:
+  `theme-css-source-conflict` (both CSS sources supplied), `theme-css-source-missing` (neither supplied),
+  `theme-brand-primary-missing` (brand parameters without `primary`, which is what enables the brand mode),
+  and `theme-build-failed: <engine message>` (the server-side build rejected the brand inputs or the build
+  phase faulted — raised before any HTTP write, so nothing was created). Non-fatal build advisories travel in
+  `warnings` on both the success and the failure paths. `error` is redacted before it leaves the tool;
+  advisories travel verbatim, because each is static text or a locally computed value — a font advisory
+  carries only a family name the build already validated against the font-family grammar.
 - `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
 - `delete-theme`
@@ -719,7 +759,7 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 
 What an external AI can practically do here:
 
-- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- build a theme without an environment (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
 - apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - modify an existing theme without losing manual tweaks: read its current CSS with `get-theme`, edit it, and apply it back with `update-theme`
 - restyle, remove, and confirm themes on an environment
@@ -728,38 +768,126 @@ What an external AI can practically do here:
 Companion surfaces:
 
 - `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
-- `get-guidance name=branding` — the rest of the branding surface: product logos and the shell background image.
+- `get-guidance name=branding` — the rest of the branding surface: product logos, the browser-tab favicon, and the shell background image.
 
 ### 13. Branding
 
-These tools brand a Creatio app: the product logos and the shell background image.
-Both act on a registered environment (`environment-name`) and require the `CanCustomizeBranding`
-license (precheck with `check-theming-access`). All tools take a single `args` object with
-kebab-case fields.
+These tools brand a Creatio app: the product logos, the browser-tab favicon, and the shell
+background image. Each apply tool
+also binds the applied branding into a package (data bindings) so it travels with an install.
+All act on a registered environment (`environment-name`). Applying branding requires the
+`CanCustomizeBranding` license (precheck with `check-theming-access`); the binding side additionally
+needs an editable (unlocked) target package and rights to modify package configuration. All tools
+take a single `args` object with kebab-case fields.
 
 - `upload-image`
   Upload a local image file to the environment and return the created `image-id`. Additive only
   (`Destructive=false`) — each call stores a new image. Requires forms-auth credentials
   (login/password) on the environment.
 - `set-background-image`
-  Set an image as the environment's shell background for all users — pass exactly one of `file`
-  (a local image, uploaded and applied in one call) or `image-id` (an image already uploaded with
-  `upload-image`). A confirmed write (`Destructive=true`: it replaces the currently configured
-  background, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued
-  through `clio-run-destructive`). Idempotent — re-applying the same image converges to the same
-  state.
+  Set an image as the environment's shell background for all users and bind it into a package —
+  pass exactly one of `file` (a local image, uploaded and applied in one call) or `image-id` (an
+  image already uploaded with `upload-image`); `keep-icon-background=true` leaves the
+  `UsePanelIconBackground` feature untouched instead of turning it off. A confirmed write
+  (`Destructive=true`: it replaces the currently configured background, so the MCP host prompts
+  before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`).
+  Idempotent — re-applying the same image converges to the same state and refreshes the packaged
+  snapshot. The `warnings` entries on the result are where delivery gaps (a `SecureText` setting, a
+  customized gallery tag, a feature state that is not confirmed off) are surfaced.
+- `set-logo`
+  Apply the product logos and the browser-tab favicon from local image files and bind them into a
+  package. `logo` brands **every** slot from one file; a slot argument gives that slot its own file
+  and overrides `logo` for it —
+  `login-logo` (login page), `menu-logo` (main menu), `configuration-logo` (configuration page),
+  `dark-logo` (the Freedom UI top panel — a dark surface, pass the white/light variant). At least one
+  of them is required, and passing `logo` alone brands all four slots, not just the login page.
+  The stock splash logo is suppressed automatically. A confirmed write (`Destructive=true`: the
+  logos change for all users and cannot be automatically reverted; re-issued through
+  `clio-run-destructive` on the lazy surface). Idempotent — re-applying the same files converges.
+  Only the images this run applied are bound, so a slot nobody branded stays out of the package. When
+  the environment refuses one image and accepts another, the result is `success: false` naming the
+  refused image — but the accepted ones are already written and already bound, so read `applied` and
+  `bound` before retrying and re-run only what was refused.
+
+  `favicon` is the fifth image argument, never taken from `logo`: it writes `FaviconImage` plus the
+  `UseFaviconFromSysSettings` gate, without which the platform keeps the stock icon, and binds both —
+  the gate only once it reads as on, since the binding snapshots the value it will force onto the
+  install target. A gate that can neither be turned on nor already reads as on fails the run.
+  Pass a square icon — clio uploads it as it is, with no resizing or conversion. A refused favicon
+  fails the run exactly like a refused logo slot. Unlike the logos, the change needs a sign-out rather
+  than a refresh.
+
+  On both tools the `package` field on the result names the resolved delivery target. It is present as
+  soon as the run resolved one — including on a failure — and absent only when the run never got that
+  far, so its presence does NOT by itself mean anything was bound. What landed is in `bound` — the
+  settings or parts the delivery confirmed, omitted when it confirmed none — and the reason for each gap is in
+  `warnings`, which names every difference between what was applied and what the package will deliver,
+  and a mid-delivery failure names in `error` the parts that were bound before it and stay in the
+  package. Re-run only what those name as unfinished.
+
+  On both tools the `package` argument names the binding target. There is no default package: when it is
+  omitted the bindings land in the package the environment's `CurrentPackageId` system setting names,
+  and when that setting is unset or dangling the tool FAILS with an actionable error rather than
+  falling back to a well-known package. The apply runs first and the packaging second by design: an
+  unusable target (absent, locked) leaves the branding applied on the environment and fails naming the
+  package problem, so the fix is to resolve the package and re-run — not to expect a rollback. Resolve
+  the target with `get-target-package` first to stay out of that state.
+
+- **`get-target-package`** (read-only probe, non-resident — reachable via `clio-run`) answers which
+  package a run's design-time writes land in, without writing anything: pass `package` to check a name
+  the user gave, or omit it to resolve the `CurrentPackageId` package the agent cannot read for itself
+  (`get-sys-setting` returns the All-Users default, which that per-developer setting normally has
+  none of). It returns `package-name`, which the agent states to the user and then passes to
+  `create-theme` / `set-logo` / `set-background-image` so one branding operation lands in one package.
+  On failure it separates a definitive answer (`resolutionFailed: true` — absent, locked, or no current
+  package; ask the user for another one) from an unreachable environment (`resolutionFailed: false` —
+  retry; never report that no target package exists).
 
 What an external AI can practically do here:
 
 - apply a shell background in one call: `set-background-image` with the local file (or with the
-  `image-id` of an already-uploaded image)
-- write the four product logo slots as Binary sys settings (`update-sys-setting` +
-  `value-file-path`) — the slot list and rules live in the `branding` guidance
+  `image-id` of an already-uploaded image) — the background data lands in the target package in the
+  same call
+- apply the product logos in one call: `set-logo` with `logo` for the whole product, plus a slot
+  argument wherever a slot needs its own file (typically `dark-logo` with the light variant) — the
+  logo data lands in the target package in the same call; the slot list and rules live in the
+  `branding` guidance, including the package-notification contract (name the target package to the
+  user)
+- brand the browser tab in the same call: `set-logo` with `favicon` pointing at a square icon — the
+  icon and its gate land in the target package too
 
 Companion surfaces:
 
-- `get-guidance name=branding` — the logo slots, the background flow, and the license gate.
+- `get-guidance name=branding` — the logo slots, the favicon, the background flow, and the license gate.
 - `get-guidance name=theming` — colours, fonts, and custom themes.
+
+### 13. Knowledge And Reference-Example Discovery
+
+Clio keeps trusted knowledge catalogs on disk and exposes their registered reference examples
+without cloning the example repositories. The example code itself may be entirely absent from the
+local machine: discovery reads only active, locally cached, signed knowledge catalogs.
+
+- `list-knowledge-examples` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`,
+  `OpenWorld=false`, pure local) — returns every matching example with publisher/source provenance,
+  use case, supporting capabilities, compatibility and trust metadata, repository entry points,
+  and an immutable full commit revision. Optional `source`, `search`, `capability`, and `status`
+  filters narrow the result and are combined with `AND`.
+
+What an external AI can practically do here:
+
+- discover all vetted examples known to the active catalogs before downloading any code
+- search by primary topic or find different implementations that share a supporting capability
+- inspect the repository URL, entry points, compatibility notes, and exact revision
+- decide whether a relevant repository should be cloned or otherwise pulled using an external Git
+  or workspace mechanism
+
+Important behavior:
+
+- listing never contacts Git, NuGet, or a referenced example repository and never clones code
+- example repositories do not need to be installed locally to be discoverable
+- the catalog itself must already be cached; use the knowledge lifecycle commands to install or
+  update trusted source catalogs
+- invalid cached catalog entries are reported as diagnostics rather than silently trusted
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
@@ -782,7 +910,8 @@ Important observation:
 
 ## Resource Layer: What The AI Can Read
 
-The MCP resource surface is still small, but it now has one MCP-native guidance article in addition to CLI help.
+Clio owns a small fixed mechanics surface. Guidance and supporting reference content are discovered
+at runtime from active trusted knowledge libraries, so the total resource count is intentionally dynamic.
 
 - `docs://help/command/{commandName}`
   Generic command help lookup by CLI verb name or alias
@@ -790,18 +919,21 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for the restart command
 - `docs://help/flushdb`
   Dedicated help resource for Redis flush help
-- `docs://mcp/guides/app-modeling`
-  Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
-- `docs://mcp/guides/theming`
-  Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment
+- `docs://knowledge/{libraryId}/{itemId}`
+  Canonical identity for one installed publisher-owned knowledge item
+- `docs://mcp/guides/{...}` and `docs://mcp/references/{...}`
+  Generic compatibility routes resolved only from legacy URIs declared by the publisher
+- `resources/list`
+  Paginated discovery for active guidance and supporting references, including publisher-owned title and description metadata
 
 How an external AI should interpret resources:
 
-- most resources are command-centric, but the modeling guide is intentionally cross-tool
-- they are good for understanding CLI semantics
-- they can now also carry stable MCP-owned workflow guardrails that would otherwise be duplicated in consumer AGENTS instructions
+- fixed Clio resources are command-centric and explain delivery mechanics
+- knowledge-library resources carry workflow and domain guidance without requiring a Clio release
+- source priority, participation, and topic pins resolve competing providers while namespaced URIs retain exact access
 
-That means prompts, tool descriptions, and the modeling guide together carry the MCP-specific guidance surface.
+That means prompts and tool descriptions advertise when knowledge is needed, while active external
+libraries own the detailed article content and discovery metadata.
 
 ## Instruction Ownership: What Should Move Into clio MCP
 
@@ -918,7 +1050,7 @@ If you are integrating another AI client with this MCP, the most reliable mental
 3. Prefer the structured read tools before mutating anything.
 4. Prefer batch tools such as `sync-schemas` and `sync-pages` when the workflow is already known.
 5. Use prompts as recipes, not just as help text.
-6. Use resources both for CLI help and for stable cross-tool modeling guidance such as `docs://mcp/guides/app-modeling`.
+6. Use fixed resources for CLI help and discover current cross-tool guidance through `resources/list` or `get-guidance` from active trusted knowledge libraries.
 7. Expect destructive power and local-machine side effects in many tools.
 
 ## Most Natural AI Workflows

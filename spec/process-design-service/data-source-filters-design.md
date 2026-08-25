@@ -212,7 +212,7 @@ Nested groups, `between`, `in (multiple)`, and date-relative filters are increme
 ## 8. Implementation deltas (as shipped — supersedes §6–§7 where they differ)
 
 This document is the original research/design; several decisions were made during implementation. The
-shipped feature differs as follows (see `.codex/workspace-diary.md` for the blow-by-blow):
+shipped feature differs as follows (see `.codex/archive/workspace-diary-2026-08.md` for the blow-by-blow):
 
 - **Vocabulary (beyond §6):** negative string comparisons (`notContains` / `notStartWith` / `notEndWith`);
   relative-date / system **macros** (`Today`, `CurrentUser`, `NextNDays`(+arg), …) as a right-hand

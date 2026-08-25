@@ -329,7 +329,7 @@ public class FlowElement{
 	[JsonConverter(typeof(TimeZoneInfoJsonConverter))]
 	public TimeZoneInfo? TimeZoneInfo => string.IsNullOrWhiteSpace(TimeZoneOffset)
 		? null
-		: TimeZoneInfo.FindSystemTimeZoneById(TimeZoneOffset ?? "UTC");
+		: TimeZoneInfo.FindSystemTimeZoneById(TimeZoneOffset);
 
 	[JsonPropertyName("schemaUId")]
 	public Guid? SchemaUId { get; set; }
@@ -1107,7 +1107,10 @@ public static class ManagerMap{
 			"webservice" => EventType.WebServiceTask,
 			"callactivity" => EventType.SubProcess,
 			"eventsubprocessexpanded" => EventType.EventSubProcess,
-			"usertask" or "performtask" => EventType.UserTask,
+			// "sendemail" is the dedicated build/describe token for the Send email element (EmailTemplateUserTask) —
+			// an activity like any user task for the connection rules; the camelCase data-id emailTemplateUserTask
+			// is already covered by the "usertask"-suffix arm below.
+			"usertask" or "performtask" or "sendemail" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

@@ -149,14 +149,15 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	public void TryGetTheme_ShouldReturnNotFound_WhenIdIsAbsentFromCatalog() {
 		// Arrange
 		ArrangeCatalog();
+		const string absentId = "9c4b1f27-08d5-4a63-9f10-2b7e5c6d3a41";
 
 		// Act
-		bool result = _command.TryGetTheme(new GetThemeOptions { Id = "missing-theme" },
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = absentId },
 			out GetThemeResponse response);
 
 		// Assert
 		result.Should().BeFalse(because: "an unknown theme id must not be reported as a successful read");
-		response.Error.Should().Contain("missing-theme").And.Contain("list-themes",
+		response.Error.Should().Contain(absentId).And.Contain("list-themes",
 			because: "the not-found error must name the id and point the caller at the catalog");
 		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(),
 			Arg.Any<int>(), Arg.Any<int>());

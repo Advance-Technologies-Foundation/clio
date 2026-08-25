@@ -4,6 +4,7 @@ using Clio;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -67,12 +68,13 @@ public sealed class SafeEnvironmentFillTests {
 		result.Should().BeTrue("because the user explicitly confirmed with 'y'");
 	}
 
-	[Test]
-	[Description("RealInteractiveConsole.Prompt returns false when stdin is a terminal and the user presses a key other than 'y'.")]
-	public void Prompt_ShouldReturnFalse_WhenInteractiveAndUserDeclines() {
+	[TestCase('n')]
+	[TestCase('\u001b')]
+	[Description("RealInteractiveConsole.Prompt returns false when stdin is a terminal and the user declines or presses Escape.")]
+	public void Prompt_ShouldReturnFalse_WhenInteractiveAndUserDoesNotConfirm(char answer) {
 		// Arrange — use TextWriter.Null to avoid writing to the global Console.Out, which other
 		// test fixtures running in parallel may have redirected to a StringWriter that gets disposed.
-		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'n',
+		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => answer,
 			output: TextWriter.Null);
 
 		// Act
@@ -80,6 +82,82 @@ public sealed class SafeEnvironmentFillTests {
 
 		// Assert
 		result.Should().BeFalse("because any key other than 'y'/'Y' declines the confirmation");
+	}
+
+	[Test]
+	[Description("NonInteractiveConsole.IsInteractive is false so warn-and-proceed confirmations (ENG-93157) skip the prompt and proceed without blocking.")]
+	public void IsInteractive_ShouldBeFalse_WhenNonInteractiveConsole() {
+		// Arrange
+		var sut = new NonInteractiveConsole();
+
+		// Act
+		bool isInteractive = sut.IsInteractive;
+
+		// Assert
+		isInteractive.Should().BeFalse(
+			because: "an explicitly non-interactive host cannot ask the user, so warn-and-proceed confirmations must fail open and continue");
+	}
+
+	[Test]
+	[Description("RealInteractiveConsole.IsInteractive reflects whether stdin is a terminal: false on redirected stdin (MCP stdio / CI), true on a real terminal.")]
+	public void IsInteractive_ShouldReflectInputRedirection_WhenRealConsole() {
+		// Arrange
+		var redirected = new RealInteractiveConsole(isInputRedirected: () => true, readKey: () => 'y');
+		var terminal = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'y');
+
+		// Act
+		bool redirectedIsInteractive = redirected.IsInteractive;
+		bool terminalIsInteractive = terminal.IsInteractive;
+
+		// Assert
+		redirectedIsInteractive.Should().BeFalse(
+			because: "redirected stdin (MCP stdio / CI pipe) means no interactive prompt is possible");
+		terminalIsInteractive.Should().BeTrue(
+			because: "a real terminal can prompt the user");
+	}
+
+	[Test]
+	[Description("NonInteractiveConsole.ForceInContainer overrides the default RealInteractiveConsole so any automation host (MCP resolver, scenario runner) that builds a child container resolves the shared non-interactive console — the single mechanism that keeps compile confirmations from blocking on Console.ReadKey (ENG-93157, RC-14/RC-15).")]
+	public void ForceInContainer_ShouldRegisterSharedNonInteractiveConsole() {
+		// Arrange — start from the production default (RealInteractiveConsole), then apply the override.
+		var services = new ServiceCollection();
+		services.AddSingleton<IInteractiveConsole>(RealInteractiveConsole.Shared);
+		NonInteractiveConsole.ForceInContainer(services);
+
+		// Act
+		IInteractiveConsole resolved = services.BuildServiceProvider().GetRequiredService<IInteractiveConsole>();
+
+		// Assert
+		resolved.Should().BeSameAs(NonInteractiveConsole.Shared,
+			because: "ForceInContainer must make the container resolve the shared non-interactive console, overriding the default, so automation-resolved commands never prompt");
+	}
+
+	[Test]
+	[Description("RC-22 boundary guard: ForceInContainer overrides the IInteractiveConsole SERVICE (constructor-injected consumers get the shared non-interactive console) but does NOT retroactively rebind a singleton already built with a different console — mirroring the pre-built ISettingsRepository whose RealInteractiveConsole is baked in at construction and is therefore unaffected.")]
+	public void ForceInContainer_ShouldNotRebindAlreadyConstructedSingletons() {
+		// Arrange — mimic BindingsModule.RegisterInto: a singleton is built (capturing the console) BEFORE
+		// additionalRegistrations (ForceInContainer) run.
+		var services = new ServiceCollection();
+		services.AddSingleton<IInteractiveConsole>(RealInteractiveConsole.Shared);
+		var prebuilt = new ConsoleCapturingService(RealInteractiveConsole.Shared);
+		services.AddSingleton(prebuilt);
+		NonInteractiveConsole.ForceInContainer(services);
+		var provider = services.BuildServiceProvider();
+
+		// Act
+		IInteractiveConsole resolvedConsole = provider.GetRequiredService<IInteractiveConsole>();
+		ConsoleCapturingService resolvedService = provider.GetRequiredService<ConsoleCapturingService>();
+
+		// Assert
+		resolvedConsole.Should().BeSameAs(NonInteractiveConsole.Shared,
+			because: "constructor-injected consumers resolved after the override get the non-interactive console");
+		resolvedService.CapturedConsole.Should().BeSameAs(RealInteractiveConsole.Shared,
+			because: "a singleton already built with a different console (like the pre-built ISettingsRepository) is NOT retroactively rebound by ForceInContainer — this is the RC-22 boundary");
+	}
+
+	private sealed class ConsoleCapturingService {
+		public IInteractiveConsole CapturedConsole { get; }
+		public ConsoleCapturingService(IInteractiveConsole capturedConsole) => CapturedConsole = capturedConsole;
 	}
 
 	[Test]

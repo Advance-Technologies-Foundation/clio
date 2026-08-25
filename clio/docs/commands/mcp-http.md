@@ -15,7 +15,27 @@ HTTP using the Streamable HTTP transport (JSON-RPC 2.0 over POST).
 This server exposes the same clio tools available in stdio mode
 (`clio mcp-server`) to AI agents and platforms that connect over HTTP.
 
+The endpoint uses hybrid protocol sessions. Discovery-first clients negotiating
+MCP `2026-07-28` or later are stateless and receive no `Mcp-Session-Id`.
+Clients using the legacy `initialize` handshake (`2025-11-25` or earlier) keep
+a stateful session on the same endpoint for backward-compatible server-to-client flows.
+
 The server runs until the process is terminated (Ctrl+C or SIGTERM).
+
+Before the endpoint starts accepting requests, Clio bootstraps the same built-in
+`creatio-curated` source used by `mcp-server`. It installs the latest stable signed release of
+`Advance-Technologies-Foundation/clio-knowledge` from asset `clio-knowledge-bundle.zip`, discovered
+through `https://api.github.com/`. No Git CLI or branch is used. A valid published local generation is
+reused without a remote update check. A missing generation gets a five-second startup installation
+budget before HTTP startup completes, so mandatory first-request guidance is available whenever that
+bounded bootstrap succeeds. A cached activation marker whose installation or
+last clean successful publisher check is more than **3 days** old is logged as a warning naming that
+marker's `libraryVersion` and the `update-knowledge --source creatio-curated` call that checks for a
+newer release. A warm start never contacts the publisher, so this is the only staleness signal available;
+startup still proceeds.
+The source cannot be removed;
+disable it with `clio disable-knowledge-source --alias creatio-curated`. A bootstrap retrieval
+failure or timeout is logged as a warning and does not prevent the HTTP host from starting.
 
 ## Prerequisites
 
@@ -62,8 +82,8 @@ on the LAN with no credential check — use it only on trusted networks, or conf
 | `--path` | `/mcp` | MCP endpoint path |
 | `--platform-api-key` | _(unset)_ | **Non-OAuth dev/offline fallback.** Comma-separated platform API key set (also read from `CLIO_MCP_HTTP_PLATFORM_API_KEY`). Setting at least one key **enables** per-request credential passthrough; with no key set the credential header is ignored (fail-closed, off by default). **IGNORED entirely when `--auth-authority` is configured** — see [Platform-API-key disposition](#platform-api-key-disposition-devoffline-fallback-only). See also [Credential passthrough](#credential-passthrough-multi-tenant-edge). |
 | `--allowed-base-urls` | _(unset)_ | Comma-separated SSRF allowlist of origins a passthrough target `url` may reach. Each entry **must include a scheme** (e.g. `https://tenant.creatio.com`). |
-| `--session-idle-ttl` | `5m` | Idle time after which an unused per-session container is evicted. Accepts `90s` / `5m` / `1h` / `1d`, bare seconds (`300`), or a `TimeSpan` (`00:05:00`). |
-| `--max-sessions` | `50` | Maximum per-session containers kept in memory; the least-recently-used one is evicted when exceeded. |
+| `--session-idle-ttl` | `5m` | Idle time after which an unused credential-scoped tenant container is evicted. This cache is independent of the MCP transport session. Accepts `90s` / `5m` / `1h` / `1d`, bare seconds (`300`), or a `TimeSpan` (`00:05:00`). |
+| `--max-sessions` | `50` | Maximum credential-scoped tenant containers kept in memory; the least-recently-used one is evicted when exceeded. |
 | `--credentials-header-name` | `X-Integration-Credentials` | Name of the request header carrying the base64-encoded JSON credentials. |
 | `--auth-authority` | _(unset)_ | OIDC authority (discovery/JWKS base URL) of the OAuth 2.1 Authorization Server whose access tokens this edge accepts (also `CLIO_MCP_HTTP_AUTH_AUTHORITY`). Setting it **enables** standard bearer-JWT authorization; unset ⇒ off, behaves as before. |
 | `--auth-audience` | _(unset)_ | Comma-separated accepted audience(s) validated against the token `aud` (also `CLIO_MCP_HTTP_AUTH_AUDIENCE`). |
@@ -236,9 +256,10 @@ The caller-supplied `url` is validated **before any outbound call** (Story 6):
 
 clio stores **no** passthrough credential. Each request builds an **ephemeral**
 `EnvironmentSettings` directly from the header — never written to settings, disk, or
-`appsettings.json`. Per-tenant containers are **pooled in memory** and evicted by idle-TTL
+`appsettings.json`. Credential-scoped per-tenant containers are **pooled in memory** and evicted by idle-TTL
 (`--session-idle-ttl`) and an LRU cap (`--max-sessions`), so a rotating stream of tokens
-stays memory-bounded. The bounded cache also auto-recovers stale sessions: an evicted
+stays memory-bounded. This cache is process-scoped and does not depend on an MCP transport
+session. The bounded cache also auto-recovers stale containers: an evicted
 container is transparently rebuilt from the request on the next call after the idle window.
 
 ### Arg policy (mode-gated)
@@ -285,19 +306,34 @@ clio mcp-http --host 0.0.0.0 \
 
 ## Testing with curl
 
-Send an `initialize` request:
+Send a legacy `initialize` request. Streamable HTTP requires the client to accept both JSON and
+SSE responses. Copy the `Mcp-Session-Id` response header for the remaining requests:
 
 ```shell
-curl -X POST http://localhost:8005/mcp \
+curl -i -X POST http://localhost:8005/mcp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
 ```
 
-List available tools:
+Complete the legacy initialization lifecycle:
+
+```shell
+curl -i -X POST http://localhost:8005/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2025-11-25" \
+  -H "Mcp-Session-Id: <session-id-from-initialize>" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+```
+
+List available tools on the same session:
 
 ```shell
 curl -X POST http://localhost:8005/mcp \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2025-11-25" \
   -H "Mcp-Session-Id: <session-id-from-initialize>" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```

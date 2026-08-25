@@ -1,0 +1,53 @@
+@startuml
+title CrtProcessBuilder - package architecture (major blocks)
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+component "clio\nBuildProcess / ModifyProcess / DescribeProcess\nListUserTasks / Ping" as CLIO
+
+package "CrtProcessBuilder (Creatio package, source only)" {
+
+  rectangle "**Entry point**\nProcessDesignService - WCF, BodyStyle=Wrapped\nCrtProcessBuilderApp - DI composition root, one scope per request\nProcessDesignGuard - CheckCanManageSolution\n(Ping is ungated by design)" as ENTRY
+
+  rectangle "**Wire contracts**\nBuildContracts / ModifyContracts / DescribeContracts" as CONTRACTS
+
+  rectangle "**Orchestration**\nProcessDesigner\nProcessBuildHandler / ProcessModifyHandler\nProcessDescriber / UserTaskCatalog" as ORCH
+
+  rectangle "**Graph assembly** (build path)\nProcessGraphBuilder\nProcessElementFactory + element handlers:\nstartEvent, signalStart, userTask, endEvent\nProcessLayoutEngine - stateless auto-layout" as GRAPH
+
+  rectangle "**Operations** (modify path)\nProcessOperationExecutor\n12 x IProcessOperation:\nadd/remove Element, add/remove Flow,\nadd/set/remove Parameter, addMapping,\nset/clear Filter, setSignal, setElement" as OPS
+
+  rectangle "**Element configuration services**\nProcessParameterService\nProcessMappingService + ParameterTypeCompatibility\nProcessFilterService + ProcessFilterApplier + DatePartCatalog\nProcessSignalApplier" as SVC
+
+  rectangle "**Schema access and validation**\nProcessSchemaRepository - load / save\nProcessSchemaValidator\nEntitySchemaResolver" as SCHEMA
+
+  rectangle "**Package payload**\ndescriptor.json\nFiles/Libs: ATF.Repository.dll, ErrorOr.dll\nSchemas/CrtProcessBuilderCompileMarker - source-code schema\n(without it the package installs but is never compiled)" as PAYLOAD
+}
+
+package "Creatio platform" {
+  rectangle "**Terrasoft.Core**\nProcessSchema*, SchemaManager.SaveSchema\nEntitySchemaManager, Terrasoft.FilterGroup" as CORE
+  database "SysSchema / SysPackage" as DB
+}
+
+CLIO --> ENTRY : HTTP POST JSON
+ENTRY --> CONTRACTS : deserialize
+ENTRY --> ORCH
+ORCH --> GRAPH : build
+ORCH --> OPS : modify
+GRAPH --> SVC
+OPS --> SVC
+GRAPH --> SCHEMA
+OPS --> SCHEMA
+SVC --> SCHEMA
+ORCH --> SCHEMA : describe / read back
+SCHEMA --> CORE
+CORE --> DB
+PAYLOAD .[#888].> CORE : compiled by the target\nduring installation
+
+note bottom of OPS
+  The whole batch is applied inside one save:
+  any failure rolls it back. There is no
+  removeMapping operation - addMapping overwrites.
+end note
+@enduml

@@ -40,6 +40,23 @@ jobs:
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
 
+      - name: Verify required .NET SDKs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installedSdks = @(dotnet --list-sdks)
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list installed .NET SDKs (exit code $LASTEXITCODE)."
+          }
+
+          foreach ($majorVersion in 8, 10) {
+            if (-not ($installedSdks -match "^$majorVersion\.\d+\.\d+\s")) {
+              throw "Required .NET $majorVersion SDK is not installed on this self-hosted runner. Installed SDKs: $($installedSdks -join '; ')"
+            }
+          }
+
+          Write-Host "Required .NET 8 and .NET 10 SDKs are already installed."
+
       - name: Extract Version from Tag
         id: extract_version
         run: |
@@ -65,7 +82,7 @@ jobs:
             $ErrorActionPreference = 'Stop'
             $version = "${{ steps.extract_version.outputs.VERSION }}"
             echo "Testing clio with version: $version"
-            dotnet test .\clio.tests\clio.tests.csproj -nowarn:none `
+            dotnet test .\clio.tests\clio.tests.csproj --framework net10.0 -nowarn:none `
             /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
             /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml" `
             /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version;

@@ -1,4 +1,4 @@
-# Clio Command Reference
+﻿# Clio Command Reference
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
@@ -127,6 +127,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Package Management
 
+<a id="add-custom-logging"></a>
+- [`add-custom-logging`](docs/commands/add-custom-logging.md) - Add package-specific NLog file routing to a local Creatio environment
 <a id="add-package-dependency"></a>
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
@@ -142,7 +144,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`activate-pkg`](docs/commands/activate-pkg.md) - Activate a package in Creatio, `activate-package`, `apkg`, `enable-package`
 <a id="add-package"></a>
 <a id="ap"></a>
-- [`add-package`](docs/commands/add-package.md) - Add package to workspace or local folder, `ap`
+- [`add-package`](docs/commands/add-package.md) - Add a package; `--as-app` also creates a localization schema and injectable resolver, `ap`
 <a id="check-nuget-update"></a>
 <a id="check"></a>
 - [`check-nuget-update`](docs/commands/check-nuget-update.md) - Check NuGet for Creatio package updates, `check`
@@ -234,6 +236,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update"></a>
 - [`update-cli`](docs/commands/update-cli.md) - Update clio, `update`
 
+<a id="config"></a>
+- [`config`](docs/commands/config.md) - View and set deploy defaults and agent knowledge-feedback approval
+
 ## Workspace
 
 <a id="add-data-binding-row"></a>
@@ -294,7 +299,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pull-workspace"></a>
 <a id="pullw"></a>
 <a id="restorew"></a>
-- [`restore-workspace`](docs/commands/restore-workspace.md) - Restore editable packages into a workspace, `pull-workspace`, `pullw`, `restorew`
+- [`restore-workspace`](docs/commands/restore-workspace.md) - Restore packages listed in workspace settings without clearing ineligible package content, `pull-workspace`, `pullw`, `restorew`
 <a id="switch-nuget-to-dll-reference"></a>
 <a id="nuget2dll"></a>
 - [`switch-nuget-to-dll-reference`](docs/commands/switch-nuget-to-dll-reference.md) - Switches nuget references to dll references in csproj files, `nuget2dll`
@@ -345,18 +350,29 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
 <a id="delete-schema"></a>
 - [`delete-schema`](docs/commands/delete-schema.md) - Delete a schema from a workspace package
+<a id="export-schema"></a>
+<a id="schema-export"></a>
+- [`export-schema`](docs/commands/export-schema.md) - Export a single schema into a reviewable bundle folder, `schema-export`
+<a id="import-schema"></a>
+<a id="schema-import"></a>
+- [`import-schema`](docs/commands/import-schema.md) - Import a schema bundle into a package of a Creatio environment, `schema-import`
 <a id="download-configuration"></a>
 <a id="dconf"></a>
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
 - [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, `sql`
+<a id="export-component-registry"></a>
+<a id="export-registry"></a>
+- [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
 <a id="externalLink"></a>
 <a id="link"></a>
 - [`externalLink`](docs/commands/externalLink.md) - Handle external deep links, `link`
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
+<a id="get-classic-list-columns"></a>
+- [`get-classic-list-columns`](docs/commands/get-classic-list-columns.md) - Resolve the effective default columns of a Classic section list without changing Creatio data
 <a id="get-classic-page-sources"></a>
 <a id="classic-page-sources"></a>
 <a id="get-classic-migration-bundle"></a>
@@ -460,7 +476,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>
-- [`run`](docs/commands/run.md) - Run scenario, `run-scenario`, `scenario`
+- [`run`](docs/commands/run.md) - Run a YAML scenario and refresh environments between dependent steps, `run-scenario`, `scenario`
 <a id="save-state"></a>
 <a id="save-manifest"></a>
 <a id="state"></a>
@@ -506,7 +522,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dc"></a>
 <a id="ic"></a>
 <a id="install-creatio"></a>
-- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, with Explorer support for unambiguous local infrastructure defaults, `dc`, `ic`, `install-creatio`
+- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with collision-safe IIS port reservation and local infrastructure defaults, `dc`, `ic`, `install-creatio`
 <a id="deploy-identity"></a>
 - [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="get-identity-service-config"></a>
@@ -538,6 +554,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="restore-db"></a>
 <a id="rdb"></a>
 - [`restore-db`](docs/commands/restore-db.md) - Restore a database backup, `rdb`
+<a id="read-data-binding-db"></a>
+<a id="get-data-binding-db"></a>
+- [`read-data-binding-db`](docs/commands/read-data-binding-db.md) - Report which columns a DB-first data binding actually ships, `get-data-binding-db`
 
 ## Local Instance Management
 
@@ -553,6 +572,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="last-compilation-log"></a>
 <a id="lcl"></a>
 - [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
+<a id="prune-db-templates"></a>
+- [`prune-db-templates`](docs/commands/prune-db-templates.md) - Interactively prune clio-managed PostgreSQL templates
 <a id="restart-web-app"></a>
 <a id="restart"></a>
 - [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart` (supports `--wait-ready` readiness polling)
@@ -578,7 +599,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`turn-fsm`](docs/commands/turn-fsm.md) - Turn file system mode on or off for an environment, `fsm`, `tfsm`
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
-- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local Creatio with shared-pool-safe IIS profile and best-effort dbHub cleanup, `uc`
+- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall by registered EnvironmentPath with all-site and shared-pool-safe IIS cleanup, `uc`
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>
@@ -607,12 +628,17 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-theme"></a>
 - [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
 
+## Branding
+
+<a id="set-logo"></a>
+- [`set-logo`](docs/commands/set-logo.md) - Apply the product logos and the browser-tab favicon from local image files and bind them into a package as data bindings
+<a id="set-background-image"></a>
+- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background and bind it into a package as data bindings
+
 ## Customization
 
 <a id="upload-image"></a>
 - [`upload-image`](docs/commands/upload-image.md) - Upload a local image to an environment and print its image id
-<a id="set-background-image"></a>
-- [`set-background-image`](docs/commands/set-background-image.md) - Set an image as the environment's shell background, from a local file or an uploaded image id
 
 ## Record rights
 
@@ -623,6 +649,26 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
+<a id="install-knowledge"></a>
+- [`install-knowledge`](docs/commands/install-knowledge.md) - Install verified knowledge from one source or all enabled sources
+<a id="update-knowledge"></a>
+- [`update-knowledge`](docs/commands/update-knowledge.md) - Update verified knowledge from one source or all enabled sources
+<a id="info-knowledge"></a>
+- [`info-knowledge`](docs/commands/info-knowledge.md) - Show local knowledge state, with optional bounded update checks
+<a id="delete-knowledge"></a>
+- [`delete-knowledge`](docs/commands/delete-knowledge.md) - Delete installed knowledge while retaining source configuration
+<a id="add-knowledge-source"></a>
+- [`add-knowledge-source`](docs/commands/add-knowledge-source.md) - Add a signed GitHub Release, direct Git checkout, or signed NuGet knowledge source
+<a id="remove-knowledge-source"></a>
+- [`remove-knowledge-source`](docs/commands/remove-knowledge-source.md) - Remove one non-built-in source and best-effort clean its managed cache
+<a id="enable-knowledge-source"></a>
+- [`enable-knowledge-source`](docs/commands/enable-knowledge-source.md) - Enable one configured knowledge source
+<a id="disable-knowledge-source"></a>
+- [`disable-knowledge-source`](docs/commands/disable-knowledge-source.md) - Disable one configured source without deleting its cache
+<a id="list-knowledge-sources"></a>
+- [`list-knowledge-sources`](docs/commands/list-knowledge-sources.md) - List all configured knowledge sources
+<a id="list-knowledge-examples"></a>
+- [`list-knowledge-examples`](docs/commands/list-knowledge-examples.md) - Discover registered reference examples without cloning their repositories
 <a id="install-dbhub"></a>
 - [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
 <a id="sync-dbhub"></a>
@@ -640,13 +686,17 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
+<a id="install-process-builder"></a>
+<a id="installprocessbuilder"></a>
+<a id="update-process-builder"></a>
+- [`install-process-builder`](docs/commands/install-process-builder.md) - Install or update the bundled process-builder package in Creatio, `installprocessbuilder`, `update-process-builder`
 <a id="install-toolkit"></a>
 - [`install-toolkit`](docs/commands/install-toolkit.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-http"></a>
-- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP (Streamable HTTP), with standard OAuth 2.1 Resource-Server authorization (off by default; whole-endpoint when configured) and an optional multi-tenant per-request credential-passthrough edge (dev/offline platform-api-key fallback when OAuth is not configured)
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over Streamable HTTP with hybrid stateless-modern/stateful-legacy protocol support, standard OAuth 2.1 Resource-Server authorization, and optional multi-tenant credential passthrough
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`

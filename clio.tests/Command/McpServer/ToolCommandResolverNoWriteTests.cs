@@ -39,7 +39,6 @@ public class ToolCommandResolverNoWriteTests {
 		ToolCommandResolver resolver = new(
 			settingsRepository,
 			settingsBootstrapService,
-			new NonInteractiveConsole(),
 			accessor,
 			Substitute.For<ITargetUrlValidator>(),
 			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));

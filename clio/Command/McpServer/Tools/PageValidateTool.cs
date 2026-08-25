@@ -20,8 +20,8 @@ public sealed class PageValidateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
-	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed-construct check for mobile). " +
-		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` for the contracts it enforces.")]
+	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed constructs, diff-apply, and placement checks for mobile — `type` must sit inside `values`, a `merge` must not author child elements in a Scaffold slot the template already fills, and a button in the Scaffold `actions` slot is flagged). " +
+		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` / `mobile-page-modification` for the contracts it enforces.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args,
@@ -31,8 +31,11 @@ public sealed class PageValidateTool(
 		// insert) to the caller for analysis — no heuristic body normalization.
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
+			// No templateBaseContext: validate-page has no schema/environment identity, so the apply-oracle seeds
+			// its own base. cancellationToken is now named (it moved past templateBaseContext, CA1068).
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
-				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources, cancellationToken).ConfigureAwait(false);
+				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
+				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
 				Validation = mobileResult

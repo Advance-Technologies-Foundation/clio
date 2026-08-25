@@ -52,6 +52,60 @@ name instead of trying to edit a non-existent local `insert`.
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
+  The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
+  sections — so a body rejected through MCP still saves from the command line.
+  - **Rejected — an authored component's `type` outside `values`.** In `viewConfigDiff`, an
+    `operation:"insert"` or `operation:"set"` that supplies a `values` object carrying no usable `"type"`,
+    while putting `"type"` on the operation object, is refused. (A type present in BOTH places is fine when the
+    two agree — the `values` copy is the one that applies.) The Creatio differ builds the element from `values` alone, so the type is
+    discarded and the page would persist an element the mobile runtime cannot render — the write would
+    otherwise succeed and the component would simply never appear. (`set` is included because it is
+    `remove` + `insert` on the same payload.)
+  - **Rejected — a flat `insert`.** A `"type"` on the operation object with no `values` object at all is
+    refused for the same reason: `insert` declares no required parameters, so the differ does not reject it
+    — it persists a typeless element. A flat `set` is left to the differ, which refuses it for the missing
+    required `values`.
+  - **Rejected — a `merge` that authors child elements in a Scaffold slot the template already fills.** An array
+    (or a lone object) of item configs — objects carrying a non-empty `name` — placed on `Scaffold`'s `actions`,
+    `leading` or `items`. `items` is the page body: every non-blank template puts a `MainContainer` there, so a
+    merge authoring into it is discarded just like the navigation slots. (Membership is only consulted when the
+    merge targets the Scaffold itself, so an `items` slot on any other container stays advisory.) Where the target already holds elements in a slot, the differ strips the whole property out of
+    the merge before copying anything, so the write succeeds and the children never reach the page.
+    Stand-verified for ENG-95429: the button appeared zero times in the server-merged `viewConfig` while
+    remaining in the saved body. Those two slots are blocked rather than warned about because every shipped
+    *form* template populates them — `actions` carries its Save button, `leading` its Close/Cancel — so in
+    practice a merge into them is the discard case. Put the child in a page container instead: its own `insert`
+    with `propertyName: "items"` plus a `layoutConfig`. **Residual:** `BlankMobilePageTemplate` ships a bare
+    Scaffold with no content, so on a page built from it those slots may be empty, the merge would apply, and
+    clio still refuses — it validates `viewConfigDiff` against an empty base and cannot see which case a body is
+    in. Author the child with an `insert` there too rather than reaching for `validate: false`.
+  - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
+    slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
+    `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.
+    clio validates `viewConfigDiff` against an empty base and cannot tell the two apart, so it steers rather
+    than refuses. To author into a slot the target genuinely lacks, use the platform's two-step idiom: a
+    `merge` creating the slot as an empty array (never flagged), then one `insert` per child — an `insert`
+    into a property the target does not carry throws. Both are `merge`-only: for `insert`/`set` the `values`
+    object becomes the element, so children declared there are the documented way to author a container.
+  - **Warned — no type anywhere**, when `values` carries element properties but declares no `type`
+    (an entry that authors nothing — absent or empty `values` — is silent by design).
+  - **Warned — two DIFFERENT types**, one on the operation object and one inside `values`. The element still
+    renders, as the `values` copy. Two identical types are accepted silently.
+  - **Warned — an operation whose letter case does not match** the differ's exact-case dispatch
+    (`"Insert"`): the whole operation is discarded, so it authors nothing.
+  - **Warned — a `crt.Button` inserted into the Scaffold `actions` slot** (`parentName: "Scaffold"`,
+    `propertyName: "actions"`). ENG-95429: the save succeeds, but a button placed there does not appear on the
+    Freedom UI mobile designer canvas, so nobody can see or edit it there. Place it as an item of a page
+    container instead — `propertyName: "items"` on a container the page or its template actually declares
+    (confirm the name with `get-page`) — and give it a `layoutConfig`; that is the shape the designer itself
+    emits. Advisory rather than blocking: `actions` is a legitimate runtime slot (the platform's own Save
+    button lives there), so the defect is design-time discoverability, not an invalid write.
+  - If an offending entry came back from `get-page`, the page already carries the defect — correct it in the
+    body you send back.
+  - **Not enforced:** the same type-placement and merge-slot defects break **web** pages identically and are not checked
+    there; `sync-pages` with `validate: false` skips these checks along with every other one.
+  Call `clio get-guidance --name mobile-page-modification` for details.
 - **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
   `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
@@ -129,6 +183,17 @@ use `--mode replace` to save it verbatim. Both surfaces refuse it: the CLI verb 
 while merging, and the MCP `update-page` tool detects it up front, before any server
 round-trip. Note the `--body` value is always a raw string with `/**MARKER*/` pairs, never a
 structured object.
+
+The rejection message names **which** body is full-config, because the fix differs:
+
+- **Your incoming body is full-config** — you authored it, so convert it to the diff form
+  (`*_DIFF` markers) or use `--mode replace`.
+- **The current page on the server is full-config** — every page `create-app-section`
+  generates is stored this way. You did not author that body and cannot convert it, so
+  append is **not supported** against it by design: a `*_DIFF` is a list of operations
+  relative to a base and cannot be losslessly derived from an already-resolved full-config
+  body without that base (see ENG-93090), and merging diff-form operations into a full-config
+  body would produce an unloadable mixed form. `--mode replace` is the only path for such a page.
 
 ## Synopsis
 

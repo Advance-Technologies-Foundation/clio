@@ -116,7 +116,7 @@ public sealed class GetThemeToolE2ETests : McpContractFixtureBase {
 [NonParallelizable]
 public sealed class GetThemeHappyPathE2ETests {
 
-	private const string ThemeId = "e2e-hermetic-theme";
+	private const string ThemeId = "3f8c6d1a-5b74-4e29-9d03-7a1c8e5f2b60";
 	private const string ThemeCaption = "Clio MCP E2E hermetic theme";
 	private const string ThemeCssClassName = "e2e-hermetic-theme";
 	private const string ThemeCssContent = ".e2e-hermetic-theme{color:#003366}";

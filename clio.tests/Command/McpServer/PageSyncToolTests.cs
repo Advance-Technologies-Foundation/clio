@@ -891,6 +891,132 @@ public sealed class PageSyncToolTests {
 		return hierarchyClient;
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Pre-resolves the mobile apply-oracle base OFF the per-tenant lock: a mobile page whose path diff needs a base triggers a get-page read requested with ExcludeOwnBody (replace semantics) for that schema, so the locked save loop does no network I/O.")]
+	public async Task SyncPages_PreResolvesMobileBase_OffLock_WithReplaceSemantics() {
+		// Arrange — a mobile body whose viewModelConfigDiff inserts into a template-owned array with no inline base,
+		// so it needs an externally-resolved base (MobileDiffApplyValidator.NeedsResolvedBase).
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		// Empty rows → the base read fails fast and the resolver degrades to (null, null); we only assert HOW the
+		// pre-resolution get-page was requested, which happens before that.
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		Clio.EnvironmentOptions capturedGetOptions = null;
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Do<Clio.EnvironmentOptions>(o => capturedGetOptions = o)).Returns(getCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		await tool.SyncPages(args, null);
+
+		// Assert
+		capturedGetOptions.Should().BeOfType<PageGetOptions>(
+			because: "sync-pages pre-resolves the mobile base via a get-page read off the lock");
+		PageGetOptions getOptions = (PageGetOptions)capturedGetOptions;
+		getOptions.SchemaName.Should().Be("UsrLeads_MobileFormPage",
+			because: "the base is resolved for the mobile page being synced");
+		getOptions.ExcludeOwnBody.Should().BeTrue(
+			because: "sync-pages writes the body verbatim (replace semantics), so the base excludes the page's own body");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When a mobile base pre-resolution FAILS on the sync-pages batch path, the injected logger records a warning (parity with update-page) so the degraded validation is not silent.")]
+	public async Task SyncPages_PreResolveMobileBaseFailure_LogsWarning() {
+		// Arrange — same mobile body needing a base, but the get-page read fails (empty rows), so the resolver
+		// degrades to (null, null). With a logger injected into PageSyncTool it must leave a diagnostic trail.
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
+		ILogger logger = Substitute.For<ILogger>();
+		string capturedWarning = null;
+		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => capturedWarning = ci.Arg<string>());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()),
+			logger: logger);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		await tool.SyncPages(args, null);
+
+		// Assert
+		capturedWarning.Should().NotBeNull(
+			because: "a failed base pre-resolution on the sync batch path must leave a diagnostic trail")
+			.And.Contain("UsrLeads_MobileFormPage",
+			because: "the warning names the schema whose base could not be resolved");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed mobile base pre-resolution surfaces in the PER-PAGE result (a Validation warning), not just a log line — so a body validated against the permissive seeded stub is not reported as a clean pass.")]
+	public async Task SyncPages_PreResolveMobileBaseFailure_SurfacesWarningInPageResult() {
+		// Arrange — mobile body needs a base, but the get-page read fails (empty rows) so resolution degrades.
+		const string mobileBody =
+			"{ \"viewConfigDiff\": [], " +
+			"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"x\" } } ], " +
+			"\"modelConfigDiff\": [] }";
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IApplicationClient getAppClient = Substitute.For<IApplicationClient>();
+		getAppClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
+			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Should().ContainSingle(
+			because: "the batch had one page")
+			.Which.Validation.Warnings.Should().Contain(w => w.Contains("could not be resolved") && w.Contains("seeded base"),
+			because: "a degraded validation must be visible in the per-page result, not only in a log line");
+	}
+
 	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) =>
 		CreateSuccessfulPageUpdateCommandWithClient(out _, schemaType);
 
@@ -1252,5 +1378,38 @@ public sealed class PageSyncToolTests {
 			because: "an unresolvable environment on the non-passthrough path must fail the batch, matching the pre-change baseline");
 		response.Pages[0].Error.Should().Contain("environment name or an explicit URI is required",
 			because: "the resolver's existing EnvironmentResolutionException throw is the mechanism that still enforces requiredness on stdio/registered-environment paths — AC-05 must not regress this");
+	}
+
+	[Test]
+	[Description("The sync-pages tool [Description] surfaces the single-sourced custom-CSS policy and routes it to the page-modification-components sub-guide (ENG-92541 RC-3/RB-A5/RB-A7).")]
+	public void SyncPages_Description_Should_Carry_CustomCssPolicy_RoutedToComponentsSubGuide() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute descriptionAttribute =
+			typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+				.Cast<System.ComponentModel.DescriptionAttribute>()
+				.Single();
+
+		// Act
+		string description = descriptionAttribute.Description;
+
+		// Assert — pin the actual policy CONTENT, not `Contains(const)` (which is tautological because
+		// the description is composed from that const); a future edit that guts the const's wording
+		// must fail this test (ENG-92541, N-2). Asserting the same phrase set as update-page also keeps
+		// the two descriptions from drifting apart (RB-A5).
+		description.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "AC1: sync-pages must state that custom CSS is a last resort, not a default");
+		description.Should().Contain("NATIVE inputs first",
+			because: "AC1: native-first must be stated in the surface the agent reads when calling sync-pages");
+		description.Should().Contain("already-inserted component",
+			because: "RC-3: the policy must explicitly cover the style-an-existing-component path");
+		description.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles is custom CSS too and must be named so the agent does not treat it as native");
+		description.Should().Contain("platform-upgrade compatibility",
+			because: "AC4: the upgrade-compatibility risk must be stated before the agent applies CSS");
+		description.Should().Contain("explicit confirmation",
+			because: "AC5: the description must require explicit user confirmation before applying custom CSS");
+		description.Should().Contain("page-modification-components",
+			because: "the CSS trigger must route to the sub-guide that carries the STOP block rather than the entry guide whose GATE table has no general visual-styling row (ENG-92541, RC-3)");
 	}
 }

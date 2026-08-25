@@ -18,7 +18,22 @@ DESCRIPTION
 
     The manifest contains the replacing-schema layer chain, parent-template
     seed layers, merged resources, entity columns, column titles, and best-effort
-    related schemas such as details, sections, and child edit pages.
+    related schemas such as details, sections, and child pages. It also carries
+    "enumVocabulary": the TARGET stand's own ViewItemType/ContentType/DataValueType
+    enum tables, read live from that stand's sysenums.js (never copied from the
+    engine's pinned tables), so the engine's enum-drift guard can catch a stand
+    running a different platform version. An enum that could not be measured is
+    omitted, never written as an empty object; "enumVocabularyCount" in the
+    response reports how many of the three were resolved.
+
+    Child pages come from SysModuleEdit metadata: each detail's bound entity is
+    resolved (the page's own details config wins when it overrides the entity,
+    otherwise the detail body) and every page that entity registers - its edit
+    card and its add mini page - is nested. One entity can register several
+    pages, so childPageCount can exceed detailCount. Each detail entry is
+    annotated with its resolved "entity" and "editPage" - the keys the engine
+    resolves a child page by - or "editPage": false when the metadata verified
+    the entity registers no edit card.
 
     Layer bodies are written to the manifest file, not returned in stdout. The
     response reports only the absolute manifest path and a small summary.
@@ -26,8 +41,20 @@ DESCRIPTION
     The section is resolved from SysModule metadata first and only then by the
     <Entity>Section[V2] / <PagePrefix>Section[V2] naming conventions, so a
     renamed section or one whose name carries a UId infix is still found. When
-    the collected sources are incomplete - no section resolved, or the metadata
-    lookup failed - the response carries a "warnings" list saying so.
+    the collected sources are incomplete - no section resolved, a metadata
+    lookup failed, a schema body could not be loaded, a detail's entity could
+    not be determined so its child pages were never looked up, or the
+    parent-template walk stopped early - the response carries a "warnings" list
+    saying so. Read "warnings" before planning from the manifest: an empty
+    childPageSchemas with no warning means the details genuinely register no
+    child page.
+
+    A migration unit is collected WHOLE: there is no limit on how many details
+    or child edit pages a page may carry, and the parent-template chain is
+    walked to its base template however deep it is. A page with 250 details
+    yields all 250. On a very wide page this costs one designer round-trip per
+    detail, so the run takes proportionally longer - a slow complete unit is
+    preferred over a fast truncated one.
 
 OPTIONS
     --schema-name                      Classic client-unit (page) schema name to collect

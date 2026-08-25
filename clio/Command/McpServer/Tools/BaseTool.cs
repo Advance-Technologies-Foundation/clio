@@ -95,21 +95,7 @@ public abstract class BaseTool<T>(
 	/// <paramref name="executor"/> do not leak into the next tool invocation's <c>execution-log-messages</c>.
 	/// </summary>
 	private protected TResponse ExecuteWithCleanLog<TResponse>(EnvironmentOptions options, Func<TResponse> executor) =>
-		ExecuteUnderTenantLock(options, () => {
-			// Establish a FRESH per-flow capture buffer for this scope (FIX 6, ENG-93208), matching
-			// InternalExecute. Setting PreserveMessages = true resets the flow-local buffer, so log lines
-			// this executor produces are isolated from the process-wide MCP-mode flag (Program.cs) and any
-			// parent-flow context rather than merely being cleared on exit. Saved/restored in finally.
-			bool previousPreserveMessages = logger.PreserveMessages;
-			logger.PreserveMessages = true;
-			try {
-				return executor();
-			}
-			finally {
-				logger.ClearMessages();
-				logger.PreserveMessages = previousPreserveMessages;
-			}
-		});
+		ExecuteUnderTenantLock(options, () => WithCleanLog(executor));
 
 	/// <summary>
 	/// Environment-less overload of <see cref="ExecuteWithCleanLog{TResponse}(EnvironmentOptions, Func{TResponse})"/>
@@ -117,7 +103,45 @@ public abstract class BaseTool<T>(
 	/// fallback lock; must NOT be used to execute a per-tenant command (that would serialize tenants).
 	/// </summary>
 	private protected TResponse ExecuteWithCleanLog<TResponse>(Func<TResponse> executor) =>
-		ExecuteWithCleanLog(null, executor);
+		ExecuteUnderTenantLock(null, () => WithCleanLog(executor));
+
+	/// <summary>
+	/// Runs <paramref name="executor"/> serialized against other calls to the SAME tool rather than against
+	/// a tenant, with the same fresh capture buffer as the other overloads. Use this for a tool that resolves
+	/// no environment and acquires no session container, yet still needs mutual exclusion against itself —
+	/// typically because the command it delegates to mutates state every call shares. Serializing per tool
+	/// keeps it off <see cref="McpToolExecutionLock.SharedFallbackKey"/>, which every environment-less tool
+	/// shares, so a slow call blocks only concurrent calls to this same tool. The session-container in-use
+	/// markers are deliberately not taken: there is no container on this path to protect from eviction.
+	/// </summary>
+	/// <param name="executor">The work to run.</param>
+	private protected TResponse ExecuteWithCleanLogUnderToolLock<TResponse>(Func<TResponse> executor) {
+		string toolLockKey = $"tool:{GetType().FullName}";
+		lock (McpToolExecutionLock.GetLock(toolLockKey)) {
+			try {
+				return WithCleanLog(executor);
+			}
+			finally {
+				McpToolExecutionLock.MarkAvailable(toolLockKey);
+			}
+		}
+	}
+
+	private TResponse WithCleanLog<TResponse>(Func<TResponse> executor) {
+		// Establish a FRESH per-flow capture buffer for this scope (FIX 6, ENG-93208), matching
+		// InternalExecute. Setting PreserveMessages = true resets the flow-local buffer, so log lines
+		// this executor produces are isolated from the process-wide MCP-mode flag (Program.cs) and any
+		// parent-flow context rather than merely being cleared on exit. Saved/restored in finally.
+		bool previousPreserveMessages = logger.PreserveMessages;
+		logger.PreserveMessages = true;
+		try {
+			return executor();
+		}
+		finally {
+			logger.ClearMessages();
+			logger.PreserveMessages = previousPreserveMessages;
+		}
+	}
 
 	/// <summary>
 	/// Resolves an environment-scoped command for the current MCP call and runs <paramref name="executor"/>
@@ -133,14 +157,29 @@ public abstract class BaseTool<T>(
 		T options,
 		Func<TCommand, TResponse> executor,
 		Func<string, TResponse> onFailure) where TCommand : Command<T> {
+		return ExecuteResolved<TCommand, TResponse>(options, (resolvedCommand, _) => executor(resolvedCommand),
+			onFailure);
+	}
+
+	/// <summary>
+	/// Overload of <see cref="ExecuteResolved{TCommand,TResponse}(T,Func{TCommand,TResponse},Func{string,TResponse})"/>
+	/// that also hands the executor the version resolution the floor gate performed for this invocation, so a
+	/// tool needing the target's version (for example to select a version-matched artifact) reuses that probe
+	/// instead of paying a second environment round-trip. The resolution is <see langword="null"/> when no
+	/// version requirement was triggered and none was resolved.
+	/// </summary>
+	private protected TResponse ExecuteResolved<TCommand, TResponse>(
+		T options,
+		Func<TCommand, CreatioVersionResolution, TResponse> executor,
+		Func<string, TResponse> onFailure) where TCommand : Command<T> {
 		// Review (Codex #6): pass options to ExecuteWithCleanLog so this typed-response path runs under the
 		// PER-TENANT lock (not the shared fallback, which would serialize independent tenants) AND marks the
 		// session-container in-use for the call — the reserve-before-Acquire guard (review #5). The
 		// parameterless overload would key on the fallback and leave the resolved container evictable mid-call.
 		return ExecuteWithCleanLog(options as EnvironmentOptions, () => {
 			try {
-				TCommand resolvedCommand = ResolveCommand<TCommand>(options);
-				return executor(resolvedCommand);
+				ResolvedCall<TCommand> resolved = ResolveCall<TCommand>(options);
+				return executor(resolved.Command, resolved.GateResolution);
 			}
 			catch (CreatioVersionRequirementException ex) {
 				// Review (b-horodyskyi): this typed-response path lands in the model/host transcript like
@@ -173,51 +212,125 @@ public abstract class BaseTool<T>(
 		// during which a concurrent different-tenant Acquire could LRU-evict and dispose the container
 		// mid-resolve. This costs one extra settings.Fill (the M2 single-fill optimization is bypassed on
 		// this path) — an accepted trade for closing the eviction window.
-		string tenantKey = options is EnvironmentOptions environmentOptions
-			? ResolveTenantLockKey(environmentOptions)
-			: McpToolExecutionLock.SharedFallbackKey;
+		string tenantKey = ResolveExecutionTenantKey(options);
 		CommandExecutionResult result;
 		IReadOnlyList<LogMessage> messagesToForward = null;
 		string correlationId = null;
 		lock (McpToolExecutionLock.GetLock(tenantKey)) {
 			McpToolExecutionLock.MarkInUse(tenantKey);
 			try {
-				TCommand resolvedCommand;
-				try {
-					// ResolveCommand resolves the env-scoped command AND enforces this options type's
-					// [RequiresPackage] and [RequiresCreatioVersion] declarations against the per-call target
-					// environment (Acquire happens inside, now guarded by the reservation above). An unmet
-					// package requirement surfaces as a PackageRequirementException (exit 1), an
-					// unmet/undeterminable version as a CreatioVersionRequirementException (exit code 78,
-					// mirroring the CLI dispatch gate), an environment/argument failure as an
-					// EnvironmentResolutionException (exit 1); each becomes a caller-actionable failed result.
-					resolvedCommand = ResolveCommand<TCommand>(options);
-				} catch (PackageRequirementException ex) {
-					// Surface the actionable install hint verbatim, without the exception-chain decoration.
-					return CommandExecutionResult.FromError(ex.Message);
-				} catch (CreatioVersionRequirementException ex) {
-					// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
-					return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
-				} catch (EnvironmentResolutionException e) {
-					// Expected, caller-actionable environment/argument failure → exit code 1.
-					return CommandExecutionResult.FromResolverError(e);
-				} catch (Exception e) {
-					// Unexpected DI/bootstrap/wiring failure → exit code -1, so a real bug is not
-					// misreported as a routine validation error and stays diagnosable.
-					return CommandExecutionResult.FromException(e);
-				}
-
-				configureCommand?.Invoke(resolvedCommand);
-				(result, messagesToForward, correlationId) = RunCommandUnderHeldLock(resolvedCommand, options, tenantKey);
+				(result, messagesToForward, correlationId) =
+					ResolveAndRun(options, tenantKey, configureCommand);
 			}
 			finally {
 				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		// Forward log notifications OUTSIDE the execution lock to avoid blocking other tool invocations on
-		// stdio I/O performed by SendNotificationAsync.
-		McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
+		// stdio I/O performed by SendNotificationAsync. Null on a resolve-failure path, which produced its
+		// result without running the command and so has nothing to forward.
+		if (messagesToForward is not null) {
+			McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
+		}
 		return result;
+	}
+
+	/// <summary>
+	/// Same as <see cref="InternalExecute{TCommand}"/> but WITHOUT the broad per-tenant execution lock.
+	/// </summary>
+	/// <remarks>
+	/// For a tool whose work is DETACHED past the MCP response deadline. Holding the per-tenant monitor
+	/// across such a call keeps it held after the caller was answered, so every unrelated same-tenant tool —
+	/// including read-only ones — stalls behind work nobody is waiting for any more (review Blocker,
+	/// which is why <c>compile-creatio</c> takes no <c>GetLock</c> either).
+	/// <para>
+	/// A caller on this path MUST provide its own narrow mutual exclusion — see
+	/// <see cref="McpToolExecutionLock.TryReserveConfigurationBuild"/> — and must fail fast rather than
+	/// queue, since queueing is what the missing lock no longer does for it.
+	/// </para>
+	/// <para>
+	/// The session-container in-flight pin is still taken, so a concurrent different-tenant Acquire cannot
+	/// LRU-evict and dispose the resolved command's client mid-run. It is released through
+	/// <see cref="McpToolExecutionLock.MarkSessionContainerAvailable"/> and never
+	/// <see cref="McpToolExecutionLock.MarkAvailable"/>: the latter decrements the <c>GetLock</c>-owned
+	/// in-use count, which this path never incremented, and would stray-decrement an unrelated holder.
+	/// </para>
+	/// </remarks>
+	private protected CommandExecutionResult InternalExecuteWithoutTenantLock<TCommand>(T options,
+		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
+		string tenantKey = ResolveExecutionTenantKey(options);
+		McpToolExecutionLock.MarkInUse(tenantKey);
+		CommandExecutionResult result;
+		IReadOnlyList<LogMessage> messagesToForward;
+		string correlationId;
+		try {
+			(result, messagesToForward, correlationId) = ResolveAndRun(options, tenantKey, configureCommand);
+		}
+		finally {
+			McpToolExecutionLock.MarkSessionContainerAvailable(tenantKey);
+		}
+		if (messagesToForward is not null) {
+			McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
+		}
+		return result;
+	}
+
+	// The per-tenant key both execution paths key their guards on. Computed up-front so the pending
+	// in-use reservation drains into the container the instant Acquire creates it (see the reserve-before-
+	// Acquire note on InternalExecute<TCommand>).
+	private string ResolveExecutionTenantKey(T options) =>
+		options is EnvironmentOptions environmentOptions
+			? ResolveTenantLockKey(environmentOptions)
+			: McpToolExecutionLock.SharedFallbackKey;
+
+	// Resolves the env-scoped command — mapping every requirement/resolution failure to its established
+	// exit code — and runs it. Assumes the caller has already taken whatever mutual exclusion it wants and
+	// marked the session-container in-flight guard, so it serves both the locked and the lock-free entry.
+	// Messages come back for the caller to forward AFTER it releases, so stdio I/O never happens under a
+	// held lock; they are null when resolution failed and the command never ran.
+	private (CommandExecutionResult Result, IReadOnlyList<LogMessage> Messages, string CorrelationId)
+		ResolveAndRun<TCommand>(T options, string tenantKey, Action<TCommand> configureCommand)
+		where TCommand : Command<T> {
+		TCommand resolvedCommand;
+		try {
+			// ResolveCommand resolves the env-scoped command AND enforces this options type's
+			// [RequiresPackage] and [RequiresCreatioVersion] declarations against the per-call target
+			// environment (Acquire happens inside, now guarded by the reservation above). An unmet
+			// package requirement surfaces as a PackageRequirementException (exit 1), an
+			// unmet/undeterminable version as a CreatioVersionRequirementException (exit code 78,
+			// mirroring the CLI dispatch gate), an environment/argument failure as an
+			// EnvironmentResolutionException (exit 1); each becomes a caller-actionable failed result.
+			resolvedCommand = ResolveCommand<TCommand>(options);
+		} catch (PackageRequirementException ex) {
+			// Expected, caller-actionable refusal (a package the caller can install) → exit code 1,
+			// like the sibling gates below, and NOT FromError's -1. The distinction is load-bearing,
+			// not cosmetic: docs/McpCapabilityMap.md teaches agents that -1 means "clio itself failed,
+			// retrying the same call won't help", whereas the whole point of this refusal is that the
+			// caller CAN fix it — install the named package, then retry. Reporting it as -1 tells the
+			// agent not to bother, which breaks the install-then-retry remediation the hint describes.
+			// Neither FromValidationError nor FromError redacts, so never enrich this message with the target
+			// URI or any connection detail — route dynamic text through FromException(redactSensitive: true).
+			// It used to be flatly STATIC (package name + attribute Hint, both source literals). It no longer
+			// is: the convergence refusal forwarded through this same path embeds the version the ENVIRONMENT
+			// recorded, which is attacker-influenceable by anyone able to install a package on that target. That
+			// is admissible only because it arrives already clamped to a version-shaped allowlist by
+			// TextUtilities.SanitizeVersionForDisplay — so the rule for anything added here is not "keep it
+			// static" but "nothing reaches this unclamped".
+			return (CommandExecutionResult.FromValidationError(ex.Message), null, null);
+		} catch (CreatioVersionRequirementException ex) {
+			// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
+			return (CommandExecutionResult.FromCreatioVersionRequirementError(ex), null, null);
+		} catch (EnvironmentResolutionException e) {
+			// Expected, caller-actionable environment/argument failure → exit code 1.
+			return (CommandExecutionResult.FromResolverError(e), null, null);
+		} catch (Exception e) {
+			// Unexpected DI/bootstrap/wiring failure → exit code -1, so a real bug is not
+			// misreported as a routine validation error and stays diagnosable.
+			return (CommandExecutionResult.FromException(e), null, null);
+		}
+
+		configureCommand?.Invoke(resolvedCommand);
+		return RunCommandUnderHeldLock(resolvedCommand, options, tenantKey);
 	}
 
 	/// <summary>
@@ -237,17 +350,15 @@ public abstract class BaseTool<T>(
 	/// (unmet requirement) and any other verification failure propagate to the caller.
 	/// </remarks>
 	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> =>
-		ResolveCommand<TCommand>(options, out _);
+		ResolveCall<TCommand>(options).Command;
 
-	/// <summary>
-	/// Overload of <see cref="ResolveCommand{TCommand}(T)"/> that also outputs the cache key the command's
-	/// container was acquired under, so the execution path locks / marks-in-use on that exact key (M2).
-	/// </summary>
-	private protected TCommand ResolveCommand<TCommand>(T options, out string tenantKey) where TCommand : Command<T> {
-		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options, out tenantKey);
-		EnforceCreatioVersionRequirements(options);
+	private sealed record ResolvedCall<TCommand>(TCommand Command, CreatioVersionResolution GateResolution);
+
+	private ResolvedCall<TCommand> ResolveCall<TCommand>(T options) where TCommand : Command<T> {
+		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options, out _);
+		CreatioVersionResolution gateResolution = EnforceCreatioVersionRequirements(options);
 		EnforcePackageRequirements(options);
-		return resolvedCommand;
+		return new ResolvedCall<TCommand>(resolvedCommand, gateResolution);
 	}
 
 	// Enforces this options type's [RequiresPackage] declarations against the per-call target
@@ -269,7 +380,7 @@ public abstract class BaseTool<T>(
 	}
 
 	// Enforces this options type's [RequiresCreatioVersion] declaration against the per-call target
-	// environment. It runs on the ResolveCommand path (before the package gate, mirroring the CLI
+	// environment. It runs on the ResolveCall path (before the package gate, mirroring the CLI
 	// dispatch order), so BOTH BaseTool execution paths — InternalExecute<TCommand> and the
 	// typed-response/ExecuteWithCleanLog path — are version-gated uniformly. Cheap static pre-check first: options types without
 	// [RequiresCreatioVersion] skip resolution entirely, so non-gated tools stay zero-cost and never
@@ -279,12 +390,12 @@ public abstract class BaseTool<T>(
 	// InternalExecute<TCommand> and to a typed failure by each typed-response tool's own catch); a
 	// malformed [RequiresCreatioVersion] (e.g. on a non-bool property) propagates as
 	// InvalidOperationException so a developer error stays distinguishable from a version refusal.
-	private void EnforceCreatioVersionRequirements(T options) {
+	private CreatioVersionResolution EnforceCreatioVersionRequirements(T options) {
 		if (!RequiresCreatioVersionAttribute.IsDefinedOn(typeof(T))) {
-			return;
+			return null;
 		}
 		ICreatioVersionChecker checker = ResolveFromCallContainer<ICreatioVersionChecker>(options);
-		checker.EnsureRequirements(options);
+		return checker.EnsureRequirements(options);
 	}
 
 	// Resolves an arbitrary service from the per-call, environment-scoped container using the SAME

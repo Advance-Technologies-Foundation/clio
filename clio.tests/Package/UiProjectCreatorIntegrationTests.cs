@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Xml;
@@ -82,6 +83,50 @@ public class UiProjectCreatorIntegrationTests {
 	}
 
 	[Test]
+	[Description("Preserves the complete existing package tree while scaffolding a UI project that targets it.")]
+	public void Create_ShouldPreserveExistingPackageContent_WhenPackageIsReused() {
+		// Arrange
+		string packagePath = Path.Combine(_tempDir, "packages", PackageName);
+		string descriptorPath = Path.Combine(packagePath, CreatioPackage.DescriptorName);
+		string descriptorContent =
+			$"{{\"Descriptor\":{{\"Name\":\"{PackageName}\",\"UId\":\"{Guid.NewGuid()}\",\"PackageVersion\":\"1.2.3\"}}}}";
+		Dictionary<string, byte[]> originalPackageFiles = new() {
+			[descriptorPath] = System.Text.Encoding.UTF8.GetBytes(descriptorContent),
+			[Path.Combine(packagePath, "Schemas", "ExistingSchema", "schema.json")] =
+				System.Text.Encoding.UTF8.GetBytes("{\"existing\":true}"),
+			[Path.Combine(packagePath, "Data", "ExistingData", "data.json")] =
+				System.Text.Encoding.UTF8.GetBytes("{\"rows\":[1]}"),
+			[Path.Combine(packagePath, "DataBinding", "ExistingBinding", "binding.json")] =
+				System.Text.Encoding.UTF8.GetBytes("{\"bound\":true}"),
+			[Path.Combine(packagePath, "Files", "existing.bin")] = [0x00, 0xFF, 0x10, 0x80]
+		};
+		foreach ((string path, byte[] content) in originalPackageFiles) {
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+			File.WriteAllBytes(path, content);
+		}
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, true, string.Empty, _ => false);
+
+		// Assert
+		string[] actualPackageFiles = Directory.GetFiles(packagePath, "*", SearchOption.AllDirectories);
+		actualPackageFiles.Should().BeEquivalentTo(originalPackageFiles.Keys,
+			because: "reusing a package must neither add nor remove package content");
+		foreach ((string path, byte[] content) in originalPackageFiles) {
+			File.ReadAllBytes(path).Should().Equal(content,
+				because: "every existing package file must remain byte-for-byte equivalent");
+		}
+		File.Exists(Path.Combine(_tempDir, "projects", ProjectName, "package.json")).Should().BeTrue(
+			because: "the Angular project should still be scaffolded when its host package already exists");
+		string angularJsonPath = Path.Combine(_tempDir, "projects", ProjectName, "angular.json");
+		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(angularJsonPath)).AsObject();
+		string outputPath = angularJson["projects"]?[ProjectName]?["architect"]?["build"]?["options"]?
+			["outputPath"]?.GetValue<string>();
+		outputPath.Should().Be($"../../packages/{PackageName}/Files/src/js/{ProjectName}",
+			because: "the empty project must emit its bundle into the reused package");
+	}
+
+	[Test]
 	[Description("Generates all four esproj-integration artifacts from the real shipped templates.")]
 	public void Create_Should_Produce_All_Esproj_Artifacts_From_Real_Templates() {
 		// Act
@@ -128,6 +173,51 @@ public class UiProjectCreatorIntegrationTests {
 		string cleanScript = packageJson["scripts"]["clean"].GetValue<string>();
 		cleanScript.Should().NotContain("<%distPath%>", "the dist path token must be substituted");
 		cleanScript.Should().Contain("packages/UsrRssReader/Files/src/js/rss_reader");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Delegates Angular test-environment initialization to the configured Jest builder for every shipped UI template.")]
+	public void Create_ShouldDelegateAngularTestEnvironmentSetupToJestBuilder_WhenTemplateIsScaffolded(
+		bool isEmpty) {
+		// Arrange
+		string projectPath = Path.Combine(_tempDir, "projects", ProjectName);
+
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, isEmpty, string.Empty, _ => false);
+
+		// Assert
+		string setupContent = File.ReadAllText(Path.Combine(projectPath, "setup-jest.ts"));
+		setupContent.ReplaceLineEndings("\n").Trim().Should().Be(
+			"// The @angular-builders/jest runner initializes Angular's test environment. Use npm test or ng test.\n" +
+			"import '@angular/compiler';",
+			because: "the generated setup should retain only project-specific compiler setup and document its runner-owned test environment");
+
+		string jestConfig = File.ReadAllText(Path.Combine(projectPath, "jest.config.ts"));
+		jestConfig.ReplaceLineEndings("\n").Trim().Should().Be(
+			"import type { Config } from 'jest';\n\n" +
+			"export default {\n" +
+			"  preset: 'jest-preset-angular',\n" +
+			"  setupFilesAfterEnv: ['<rootDir>/setup-jest.ts'],\n" +
+			"} satisfies Config;",
+			because: "the generated project should retain exactly one project-specific Jest setup extension point");
+
+		JsonObject packageJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "package.json"))).AsObject();
+		string testScript = packageJson["scripts"]?["test"]?.GetValue<string>();
+		testScript.Should().Be("ng test",
+			because: "the documented zero-spec exit behavior requires the package script to preserve Jest's default result");
+
+		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "angular.json"))).AsObject();
+		JsonNode testTarget = angularJson["projects"]?[ProjectName]?["architect"]?["test"];
+		string testBuilder = testTarget?["builder"]?.GetValue<string>();
+		string configPath = testTarget?["options"]?["configPath"]?.GetValue<string>();
+		string testTsConfig = testTarget?["options"]?["tsConfig"]?.GetValue<string>();
+		testBuilder.Should().Be("@angular-builders/jest:run",
+			because: "the builder must remain the single owner of Angular test-environment initialization");
+		configPath.Should().Be("jest.config.ts",
+			because: "the builder must load the project-specific setup extension point");
+		testTsConfig.Should().Be("tsconfig.spec.json",
+			because: "the builder must compile specs with the generated test TypeScript configuration");
 	}
 
 	#endregion

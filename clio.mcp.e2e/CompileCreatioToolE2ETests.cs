@@ -25,6 +25,29 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 
 	[Test]
 	[AllureTag(ToolName)]
+	[AllureDescription("Verifies, against the live MCP server, that compile-creatio is a long-tail tool: it is NOT advertised in the native tools/list (resident set), yet is discoverable via the get-tool-contract compact index. This establishes that get-tool-contract is compile-creatio's served agent-facing channel, so the ENG-93157 confirmation invariant is served there (asserted by ToolContractGet_Should_Advertise_CompileCreatio_Confirmation_Precondition), not in a native tool description (RC-19).")]
+	[AllureName("Compile Creatio is a long-tail tool served via get-tool-contract")]
+	[Description("compile-creatio is not resident in tools/list but is reachable via the get-tool-contract index, so its served contract (with the confirmation precondition) is the agent-facing channel (RC-19).")]
+	public async Task CompileCreatio_Should_BeLongTail_ServedViaToolContract()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+
+		// Act
+		bool advertisedNatively = await arrangeContext.Session.IsToolAdvertisedAsync(
+			ToolName, arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> reachable = await arrangeContext.Session.ListReachableToolNamesAsync(
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		advertisedNatively.Should().BeFalse(
+			because: "compile-creatio is a long-tail tool dispatched via clio-run, not resident in tools/list, so its SDK [Description] is not the served agent-facing channel");
+		reachable.Should().Contain(ToolName,
+			because: "compile-creatio must still be discoverable through the get-tool-contract compact index, which carries its confirmation-bearing contract");
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
 	[AllureDescription("Starts the real clio MCP server, invokes compile-creatio with an invalid environment name, and verifies that the tool fails with readable diagnostics.")]
 	[AllureName("Compile Creatio reports invalid environment failures")]
 	[Description("Reports invalid environment failures for compile-creatio through the real MCP server.")]

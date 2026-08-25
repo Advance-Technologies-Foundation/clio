@@ -24,6 +24,12 @@ By default, the underlying entity schema is preserved so that data in the
 underlying database table is not lost. Pass `--delete-entity-schema` to also
 remove the entity schema.
 
+> **This is not the command for removing a section from a workplace.** It deletes
+> the section itself, from every workplace at once. To take a section out of one
+> workplace while keeping it elsewhere, delete only its `SysModuleInWorkplace`
+> row — read `get-guidance name=workplaces` for the recipe and the matching data
+> binding update.
+
 ## Synopsis
 
 ```bash

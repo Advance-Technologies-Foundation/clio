@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -133,6 +134,31 @@ public sealed class ToolContractGetToolTests {
 			because: "an arg-bearing tool must expose a usable property schema, not an empty fallback");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated odata-read input contract aligned with every bound ODataReadArgs JSON member.")]
+	public void ToolContractGet_Should_Keep_ODataRead_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(ODataReadArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArgumentNames,
+			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("total-count",
+			because: "a requested total must be discoverable separately from page count");
+		contract.Aliases.Should().Contain(alias => alias.Alias == "filter" && alias.Status == "rejected",
+			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
+	}
+
 	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
 	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
 	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.
@@ -154,6 +180,33 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract must derive from the real dispatched MCP schema, which carries the environmentName argument clio-run binds");
 		entry.InputSchema.Required.Should().Contain("environmentName",
 			because: "environmentName is marked [Required] on the tool method, so the derived contract must mark it required");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The compile-creatio contract carries a create-business-process anti-pattern so an agent is told a process is interpreted and its NeedInstall flag is not a compile trigger (ENG-95706).")]
+	public void ToolContractGet_CompileCreatio_Should_WarnAgainstCompilingAfterProcessCreation() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "compile-creatio must resolve to a curated contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.AntiPatterns.Should().NotBeNull(because: "the compile-creatio contract enumerates unnecessary-compile anti-patterns");
+		ToolAntiPattern processAntiPattern = entry.AntiPatterns!
+			.Single(pattern => pattern.Pattern.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal));
+		processAntiPattern.Why.Should().Contain("NeedInstall",
+			because: "the anti-pattern must name the NeedInstall flag as the false compile trigger it is, so an agent does not force a compile off it");
+		processAntiPattern.Why.Should().Contain("Script Task",
+			because: "the anti-pattern must state that only a Script Task (custom C#) makes a process need compilation");
+		entry.Preconditions.Should().NotBeNull(because: "the compile-creatio contract enumerates when a compile is allowed");
+		entry.Preconditions!.Should().Contain(
+			precondition => precondition.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
+				&& precondition.Contains("Script Task", StringComparison.Ordinal),
+			because: "the process precondition must keep the Script-Task carve-out explicit so it cannot silently regress into a blanket 'never compile after a process' prohibition");
 	}
 
 	[Test]
@@ -437,12 +490,46 @@ public sealed class ToolContractGetToolTests {
 			because: "FSM-mode toggles are a canonical trigger for full compilation");
 		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("C# schemas", StringComparison.Ordinal),
 			because: "C# schema changes are the primary precondition for package compilation");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("postpone", StringComparison.Ordinal),
+			because: "the contract must require the user to be warned and to confirm-now-or-postpone before compilation (ENG-93157)");
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: "the contract must call out flows where compilation is never required");
 		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(PageUpdateTool.ToolName, StringComparison.Ordinal),
 			because: "page-body edits applied through update-page must never be followed by compile-creatio");
 		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(ApplicationCreateTool.ApplicationCreateToolName, StringComparison.Ordinal),
 			because: "create-app never requires a follow-up compilation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create-app contract requires the navigation placement and audience decision BEFORE the call, because the tool itself places the section in the administrators-only My applications workplace.")]
+	public void ToolContractGet_Should_Require_NavigationPlacement_Before_ApplicationCreate() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationCreateTool.ApplicationCreateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "create-app is part of the canonical executable contract surface");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "a live run built the whole app before asking where it belonged, so the requirement must be attached to the call that causes it");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("BEFORE this call", StringComparison.Ordinal),
+			because: "the ordering is the substance of the requirement — asking afterwards makes the user re-decide finished work");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("System administrators", StringComparison.Ordinal),
+			because: "the reason the decision cannot be deferred is that the default placement is visible to administrators only");
+		contract.Preconditions!.Should().Contain(
+			precondition => precondition.Contains("get-guidance name=workplaces", StringComparison.Ordinal),
+			because: "the contract states the requirement; the workplaces guide owns the option set and the write recipes");
+		contract.AntiPatterns!.Should().Contain(
+			pattern => pattern.Pattern.Contains("THEN ask which workplace", StringComparison.Ordinal),
+			because: "the observed failure order must be named as an anti-pattern, not only implied by the precondition");
 	}
 
 	[Test]
@@ -1998,6 +2085,97 @@ public sealed class ToolContractGetToolTests {
 			},
 			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical install-process-builder contract, whose flow stops at itself and whose rationale must not claim the tool can tell which build is serving.")]
+	public void ToolContractGet_Should_Return_InstallProcessBuilder_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			InstallProcessBuilderTool.InstallProcessBuilderToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the five process-designer tools are feature-gated and may be absent, so their remediation "
+				+ "tool must be discoverable through get-tool-contract to be reachable at all");
+		ToolContractDefinition contract = result.Tools!.Single();
+		// The CURATED string, which is what an agent actually reads: install-process-builder is deliberately
+		// non-resident, so it is never in tools/list and this contract is its only description. The tool's
+		// [Description] attribute is NOT merged in - a change made there alone ships invisible, which is what
+		// happened when the downgrade refusal was added and this contract kept saying the tool always installs.
+		// The E2E pins the same claims, but E2E is advisory and cannot fail a merge.
+		string curatedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		curatedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
+			because: "a case where the tool does NOT install must be discoverable, or an agent meets the refusal "
+				+ "as a surprise. There are TWO — an environment already ahead, and a malformed bundled version "
+				+ "— and this regex covers the first; the second is pinned below. Do not reword either into a "
+				+ "claim that exactly one exists: the contract said that after the second refusal shipped");
+		curatedDescription.Should().MatchRegex(@"(?i)update clio",
+			because: "stating the refusal without the remedy just produces a retry loop");
+		curatedDescription.Should().NotMatchRegex(@"(?i)no skip|always installs|never refuses",
+			because: "the contradicting claim is the regression that actually shipped; a positive-match-only "
+				+ "guard stays green while the same description asserts both halves");
+		curatedDescription.Should().NotMatchRegex(@"(?i)\b(one|1) (case|exception)\b|but one\b",
+			because: "there are TWO refusals now. The 'exactly one' framing survived the first refusal being "
+				+ "added and had to be caught in review twice, so it is banned rather than trusted to whoever "
+				+ "edits this string next");
+		curatedDescription.Should().MatchRegex(@"(?i)pre-release suffix",
+			because: "the second refusal is reachable from MCP — the tool builds its own options and Force "
+				+ "defaults to false — so an agent that meets it must find it in the only description it gets");
+		curatedDescription.Should().NotMatchRegex(@"(?i)--force",
+			because: "the contract must not hand an agent the literal bypass invocation right after telling it "
+				+ "not to work around the refusal");
+		// The no-duration guard has to live on THIS surface too, and the same reasoning as above applies with
+		// more force: the tool is non-resident, so the curated contract is the only description an agent ever
+		// receives, and a figure quoted here reaches the user as a promise about a duration that is a property
+		// of the target, not of clio. The patterns are shared with InstallProcessBuilderToolTests rather than
+		// restated, because two copies of a ban drift and the [Description] copy already proved that a claim
+		// can walk past a guard phrased slightly differently.
+		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationRangePattern,
+			because: "an agent once read '~15-75 s' out of a description and repeated it to a user as a "
+				+ "promise; elapsed time depends on the target's configuration size, host and load");
+		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationFigurePattern,
+			because: "a single figure is the same promise as a range, only harder to spot");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(
+			InstallProcessBuilderToolTests.DurationRangePattern,
+			because: "the flow notes are read alongside the description and carry the same weight, so a "
+				+ "duration banned from one must not be reachable through the other");
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(
+			InstallProcessBuilderToolTests.DurationFigurePattern,
+			because: "same surface, same promise — a figure here is what an agent quotes when the description "
+				+ "declines to give one");
+		contract.Name.Should().Be(InstallProcessBuilderTool.InstallProcessBuilderToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",
+			because: "the package ships inside clio, so the target environment is the only thing to supply");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] { InstallProcessBuilderTool.InstallProcessBuilderToolName },
+			because: "the flow must stop at this tool: naming a process-designer tool as the follow-up would "
+				+ "point at one this server may not expose while the feature is off");
+		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
+		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
+		// back to "the NEW build is serving: it compares the version the serving build reports against the
+		// one it installed", so this test and its E2E mirror both passed green over the one claim they exist
+		// to block. Widening the ban to "which build" is WRONG too: a correct note has to be able to say
+		// "does not prove WHICH build is serving", and a regex cannot tell an assertion from its negation.
+		// So ban only the verb no correct phrasing needs — both false versions claimed a COMPARISON — and
+		// separately require the limit to be stated, which catches the other failure mode: silence.
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)compar",
+			because: "the tool compares nothing: the probe is the package's ungated Ping, which proves an "
+				+ "assembly exists and answers, not which sources it was built from. A version-reporting "
+				+ "operation was built for that and DROPPED — for a source-only package the reported version "
+				+ "could only come from a hand-maintained duplicate in the shipped sources, since the assembly "
+				+ "version belongs to the platform and descriptor.json never reaches the target's build "
+				+ "directory (both measured on a stand)");
+		contract.PreferredFlow.Notes.Should().MatchRegex(@"(?i)does not prove|stale|only once the functionality",
+			because: "banning the false claim is not sufficient — the note must positively carry the LIMIT, or "
+				+ "the next rewrite satisfies the ban by saying nothing at all and an agent is left assuming "
+				+ "the strong reading again");
+	}
 	[Test]
 	[Category("Unit")]
 	[Description("Exposes curated contracts for the deploy lifecycle tools so the most consequential tools are discoverable.")]
@@ -2047,6 +2225,12 @@ public sealed class ToolContractGetToolTests {
 			precondition.Contains("cliogate", StringComparison.Ordinal) &&
 			precondition.Contains("install-gate", StringComparison.Ordinal),
 			because: "restore-workspace should tell callers how to satisfy the cliogate prerequisite");
+		restore.Description.Should().Contain("workspaceSettings.json",
+			because: "the contract should not imply that restore-workspace downloads every package in the environment");
+		restore.Preconditions.Should().Contain(precondition =>
+			precondition.Contains("none are eligible", StringComparison.Ordinal) &&
+			precondition.Contains("does not clear or delete", StringComparison.Ordinal),
+			because: "callers should understand the successful warning and directory-preservation behavior before invoking restore-workspace");
 
 		ToolContractDefinition assert = result.Tools!.Single(contract =>
 			contract.Name == AssertInfrastructureTool.AssertInfrastructureToolName);
@@ -2421,7 +2605,7 @@ public sealed class ToolContractGetToolTests {
 		index.Index!.Select(entry => entry.Name).Should().Contain(toolName,
 			because: "with a null registry BuildIndexToolNames unions CanonicalToolNames with the schema catalog, so an uncurated registered tool still appears in the compact index");
 	}
-	
+
 	[Test]
 	[Category("Unit")]
 	[Description("Pins the curated get-request-info contract: input args, the environment-name/version mutual-exclusion validator, the rejected kebab-case aliases, the output envelope fields, and the memory-authored-params anti-pattern.")]
@@ -2461,6 +2645,17 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "parameters"
 				&& field.Description.Contains("valueSource", StringComparison.Ordinal),
 			because: "the parameters field must explain the valueSource probe annotation so an agent fills environment-dependent values from the named probe, never from memory");
+		ToolContractField baseParameters = contract.OutputContract.Fields.Single(field => field.Name == "baseParameters");
+		baseParameters.Description.Should().Contain("Current BaseRequest fields and producer metadata",
+			because: "the contract must describe a producer-driven field surface instead of a fixed BaseRequest list");
+		baseParameters.Description.Should().Contain("deprecated/deprecationReason",
+			because: "the contract must tell agents to honor producer deprecation metadata");
+		baseParameters.Description.Should().Contain("honor that guidance",
+			because: "publishing deprecation keys is insufficient unless the contract tells agents to act on them");
+		baseParameters.Description.Should().Contain("must NEVER be passed via params",
+			because: "producer-owned BaseRequest fields are not part of the authorable request surface");
+		baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
+			because: "the contract prose must not restore a fixed list of known producer fields");
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
 		contract.AntiPatterns!.Should().Contain(pattern =>

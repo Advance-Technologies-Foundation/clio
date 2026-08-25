@@ -5,6 +5,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -64,6 +65,13 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 		toolNames.Should().Contain(ToolName,
 			because: "get-mobile-page-conversion-guide must be advertised so MCP callers can discover the conversion-guide tool");
 	}
+
+	// The freedom-page-web-to-mobile-conversion article itself is no longer Clio-owned: since
+	// "Externalize guidance delivery mechanics" (#927) get-guidance serves only articles delivered by an
+	// installed, verified knowledge bundle, and the article now lives in the clio-knowledge repository.
+	// A hermetic NoEnvironment fixture installs no knowledge source, so asserting the article's wording
+	// here could only pass by contacting a real remote. The tool-surface contract stays covered by the
+	// discovery and invalid-environment tests below; the article's wording belongs to clio-knowledge.
 
 	[Test]
 	[Description("Returns a structured failure (not a protocol error) when the target environment is not registered, so the caller can read why the source page could not be read.")]
@@ -148,5 +156,36 @@ public sealed class MobilePageConversionGuideToolFeatureGateE2ETests : McpContra
 		// Assert
 		toolNames.Should().NotContain(ToolName,
 			because: "get-mobile-page-conversion-guide is gated behind the mobile-page-converter feature flag and must be absent when the flag is off");
+	}
+
+	[Test]
+	[Description("Hides the freedom-page-web-to-mobile-conversion guidance article when the mobile-page-converter feature flag is disabled, proving the article shares the tool's feature gate.")]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance hides the conversion article when its feature flag is off")]
+	[AllureDescription("Starts the real clio MCP server with mobile-page-converter disabled and verifies get-guidance treats freedom-page-web-to-mobile-conversion as unknown and omits it from availableGuides.")]
+	public async Task GuidanceGet_TreatsConversionGuideAsUnknown_WhenFeatureFlagDisabled() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			GuidanceGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["name"] = "freedom-page-web-to-mobile-conversion"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-guidance reports an unknown guidance name as a structured failure, not a protocol-level error");
+		GuidanceGetResponse response = EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
+		response.Success.Should().BeFalse(
+			because: "the conversion article is gated behind the disabled mobile-page-converter feature and must resolve as unknown");
+		response.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article over the real MCP transport");
+		response.AvailableGuides.Should().NotContain("freedom-page-web-to-mobile-conversion",
+			because: "a disabled gated guide must not be advertised in availableGuides");
 	}
 }

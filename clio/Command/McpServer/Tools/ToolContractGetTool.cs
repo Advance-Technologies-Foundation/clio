@@ -82,15 +82,15 @@ public sealed class ToolContractGetTool {
 			// since it hard-crashes on the index shape and cannot be patched. Every other client is
 			// unaffected — this only flips the no-names/non-full-detail branch inside GetContracts.
 			//
-			// Load-bearing SDK assumption (pinned to ModelContextProtocol 1.4.1, see Directory.Packages.props):
+			// Load-bearing SDK assumption (verified against ModelContextProtocol 2.2.0, see Directory.Packages.props):
 			// Server.ClientInfo is captured while the SDK handles the `initialize` REQUEST, independent of the
 			// `notifications/initialized` notification. This is what makes detection work for the real CAADT
 			// 1.4.0 client, which deliberately never sends `notifications/initialized`: ClientInfo is already
 			// populated by the time any `tools/call` (including this one) is dispatched. If a future SDK bump
 			// ever moved ClientInfo capture onto the `initialized` notification, requestContext.Server.ClientInfo
 			// would be null here for that client and IsLegacyStdioClient(null) => false would silently re-break
-			// it (no exception, every shipped test still passes). If you upgrade the SDK, re-verify this
-			// initialize-time capture behavior against the real client before trusting it.
+			// it (no exception, ordinary modern-client tests still pass). The SDK-upgrade gate therefore
+			// re-verifies initialize-time capture against the real CAADT 1.4 client before every MCP bump.
 			bool legacyNoNamesFullShape = IsLegacyStdioClient(requestContext?.Server?.ClientInfo);
 			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
 			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
@@ -642,6 +642,7 @@ internal static class ToolContractCatalog {
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
 			[InstallGateTool.InstallGateToolName] = BuildInstallGate(),
+			[InstallProcessBuilderTool.InstallProcessBuilderToolName] = BuildInstallProcessBuilder(),
 			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
@@ -1460,7 +1461,13 @@ internal static class ToolContractCatalog {
 			[
 				new ToolAntiPattern(
 					"create-app → create-app-section → delete-app-section",
-					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead.")
+					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead."),
+				new ToolAntiPattern(
+					"create-app, build the pages, THEN ask which workplace the app belongs to",
+					"Asking after the build makes the user re-decide finished work, and until they answer only System administrators can open the app. Settle the placement and its audience in the same turn you confirm the environment, before this call.")
+			],
+			Preconditions: [
+				"Navigation placement and audience are settled BEFORE this call. This tool puts the new section in the `My applications` workplace, which is granted to `System administrators` only, so an app created without that decision is unreachable for ordinary users. When the request does not name a target workplace, ask it together with the environment confirmation - which workplace the section AND its home page belong to (offer a NEW workplace named for the app and recommend it when scaffolding), and which roles should see it. Read `get-guidance name=workplaces` for the option set and the write recipes; apply the navigation writes after the app exists, but take the DECISION first."
 			]);
 	}
 
@@ -1654,7 +1661,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionDelete() {
 		return new ToolContractDefinition(
 			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
-			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
+			"Deletes a section from an existing installed application and returns structured readback of the deleted section. Removes the section ITSELF, so it disappears from every workplace it was placed in.",
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
@@ -1709,7 +1716,12 @@ internal static class ToolContractCatalog {
 					],
 					"Use this shorter flow when the target app is already known and inspected.")
 			],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"delete-app-section to take a section out of ONE workplace",
+					"This deletes the SysModule record and every SysModuleInWorkplace placement, so the section disappears from every workplace. To remove a section from a single workplace, delete only that SysModuleInWorkplace row and update its data binding — call get-guidance with name 'workplaces' first.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationSectionGetList() {
@@ -1979,7 +1991,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, resolve lookup primary values, verify records by Id, or inspect selected fields.",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -1989,11 +2001,17 @@ internal static class ToolContractCatalog {
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
-					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed.")
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
+					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
+					Field("count", BooleanType, "When true, requests the total number of matching records before top/skip paging. The response returns it as total-count; response count remains the number of records in this page.")
 				],
 				Validators: [
-					new ToolContractValidator(LimitFieldName, "invalid-top", "top",
-						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false.")
+					new ToolContractValidator("top-range", "invalid-top", "top",
+						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false."),
+					new ToolContractValidator("skip-range", "invalid-skip", "skip",
+						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
+					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
+						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2002,12 +2020,19 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field(CountFieldName, NumberType, "Number of records returned."),
+				Field(CountFieldName, NumberType, "Number of records returned in this page."),
+				Field("total-count", NumberType, "Total records matching the filter before top/skip paging; present when count=true."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
-				Field("next-link", StringType, "OData next-link URL when more records are available.")
+				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool.")
 			),
 			CommonErrorContract,
-			[],
+			[
+				Alias(ParameterScope, FiltersFieldName, "filter", RejectedStatus,
+					"Raw filter strings are not supported. Use the structured 'filters' object shown in this contract."),
+				Alias(ParameterScope, "top", LimitFieldName, RejectedStatus, "Use 'top' instead of 'limit'."),
+				Alias(ParameterScope, "order-by", "orderBy", RejectedStatus, "Use 'order-by' instead of 'orderBy'."),
+				EnvironmentNameParameterAlias()
+			],
 			[],
 			[
 				Example("Resolve a lookup row by display value", new Dictionary<string, object?> {
@@ -2037,7 +2062,9 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					[SelectFieldName] = new[] { "Id", "Name", "AccountId" },
 					["order-by"] = "Name asc",
-					["top"] = 10
+					["top"] = 10,
+					["skip"] = 20,
+					["count"] = true
 				}),
 				Example("Query records where a text field contains a value", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -3736,7 +3763,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageSync() {
 		return new ToolContractDefinition(
 			PageSyncTool.ToolName,
-			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
+			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance. " +
+			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
@@ -4617,7 +4645,7 @@ internal static class ToolContractCatalog {
 				Field("items", ArrayType, "Flat list-mode request summaries, each with requestType and an optional description."),
 				Field("requestType", StringType, "Request type echoed back in detail mode."),
 				Field("parameters", ObjectType, "The ONLY keys a page schema may pass via the binding's params block. An EMPTY map means the request accepts NO parameters — do not invent any. A parameter may carry a valueSource annotation ({kind:'environment', tool:'<probe>'}): fill that value ONLY from the named probe tool's result (e.g. templateId -> list-printables, processName -> get-process-signature)."),
-				Field("baseParameters", ObjectType, "Fields every request inherits from BaseRequest ($context, scopes, type) — platform-injected at dispatch time; NEVER pass them via params."),
+				Field("baseParameters", ObjectType, "Current BaseRequest fields and producer metadata, including deprecated/deprecationReason when applicable — honor that guidance; these fields are platform-injected at dispatch time and must NEVER be passed via params."),
 				Field("documentation", StringType, "Per-request authoring recipe (canonical wiring, pitfalls, checklist) when the producer published one."),
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
@@ -4674,7 +4702,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
+			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior. " +
+			SchemaValidationService.CustomCssPolicySummary,
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -5175,13 +5204,18 @@ internal static class ToolContractCatalog {
 					"`create-page` writes a page schema into the runtime catalog directly. The new page becomes available without compilation."),
 				new ToolAntiPattern(
 					$"{CreateEntityBusinessRuleTool.BusinessRuleCreateToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
+					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step."),
+				new ToolAntiPattern(
+					$"{ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"Do not decide to compile from a raw status column read off the process (odata/esq — e.g. `VwSysProcess`) — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true; none is a compile trigger (`NeedInstall` is a DB-install marker), and inferring `compile` from a column name is the trap. Within a process, compile only for C# you authored — a Script Task, or a user task with an after-activity-save script; everything else runs with no compile.")
 			],
 			Preconditions: [
+				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
-				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`."
+				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
+				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 
@@ -5214,6 +5248,40 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"A gate-dependent tool reported \"you need to install the cliogate package version ... or higher\", or this is a freshly deployed instance that has not yet had cliogate installed."
+			]);
+	}
+
+	private static ToolContractDefinition BuildInstallProcessBuilder() {
+		return new ToolContractDefinition(
+			InstallProcessBuilderTool.InstallProcessBuilderToolName,
+			"Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio environment, making ProcessDesignService reachable there. The package ships as source and the TARGET compiles it during installation, so the call is substantially slower than a plain package install - how much depends entirely on the target environment, so do not quote a duration to the user. A restart does happen (the platform recycles itself on .NET Framework, the installer issues it on .NET) but you never trigger it yourself - the tool waits for the instance to answer its health check before judging the result. It checks the outcome rather than the install call: it asks the package's own service whether it is serving (Ping, ungated) and fails unless it answers. So it reports \"installed but never compiled\" instead of looking like success - which list-packages cannot distinguish, because the recorded version moves when the archive is accepted whether or not anything compiled. The check is liveness, not identity: on an UPGRADE a stale assembly that still answers will pass. It installs in every case but two, and re-running is otherwise safe (one configuration build on the target). Both exceptions exist to stop an environment moving BACKWARDS, both report exit code 1, and neither is retryable. The override is the same for both and is deliberately NOT available to you - it is a command-line flag a human runs after deciding the rollback is what they want, so do not reach for a shell to get around either one. (1) It REFUSES when the environment already carries a NEWER version than this clio ships, because installing would move that environment's recorded version backwards for everyone using it; say the fix is to update clio. (2) It REFUSES when this clio's OWN bundled version carries a pre-release suffix, which would make such a move undetectable - nothing about the target environment is wrong, so say the fix is to reinstall or update clio. Reinstalling the SAME version is not a downgrade and is allowed - that is the repair path when a package installed but never compiled. Take the gated tool's refusal as the signal to call this rather than comparing versions yourself: the gate checks the version the environment recorded against the version clio bundles.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install the process-builder package after a process-designer tool refused",
+					new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					})
+			],
+			Flow(
+				[
+					InstallProcessBuilderTool.InstallProcessBuilderToolName
+				],
+				"Install the package, then retry whichever process-designer tool sent you here - that retry IS the confirmation, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: the five process-designer tools are [FeatureToggle(\"process-designer\")]-gated and are NOT advertised while that feature is off, so naming one would point at a tool this server may not expose. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app).",
+				"A process-designer tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) are feature-gated and may be absent from this server's tool list; this one never is, so it stays reachable as the remedy.",
+				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
 			]);
 	}
 
@@ -5436,7 +5504,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
 			new ToolInputSchemaContract(
 				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
 				[
@@ -5526,7 +5594,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRestoreWorkspace() {
 		return new ToolContractDefinition(
 			RestoreWorkspaceTool.RestoreWorkspaceToolName,
-			"Restores the local workspace at workspace-path from the specified Creatio environment. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[
@@ -5548,13 +5616,14 @@ internal static class ToolContractCatalog {
 					RestoreWorkspaceTool.RestoreWorkspaceToolName,
 					PushWorkspaceTool.PushWorkspaceToolName
 				],
-				"Restore packages from the environment into the local workspace, then push local changes back with push-workspace."),
+				"Restore the packages listed in workspaceSettings.json from the environment into the local workspace, then push local changes back with push-workspace."),
 			[],
 			[],
 			Preconditions: [
 				"The environment is registered (see list-environments / reg-web-app).",
 				"cliogate is installed on the target environment; if restore fails with a missing-cliogate error, run install-gate and retry.",
-				"workspace-path is a local absolute path to an existing directory (network-share paths are not supported)."
+				"workspace-path is a local absolute path to an existing directory (network-share paths are not supported).",
+				"Only packages eligible from .clio/workspaceSettings.json are downloaded; when none are eligible, the tool warns and does not clear or delete existing package directories."
 			]);
 	}
 
@@ -5664,7 +5733,15 @@ internal static class ToolContractCatalog {
 			[
 				Field("created", NumberType, "Number of rows created."),
 				Field("failed", NumberType, "Number of rows that failed."),
-				Field("results", ArrayType, "Per-row outcomes for every attempted row; each item has index, success, id, and error."),
+				Field("unverified", NumberType,
+					"Failed rows whose side effect could NOT be verified (a subset of 'failed'). Non-zero means the "
+					+ "batch must not be blindly re-sent."),
+				Field("results", ArrayType,
+					"Per-row outcomes for every attempted row; each item has index, success, id, error, "
+					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
+					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
+					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
+					+ "duplicates it."),
 				Field("error", StringType, "Request-level error that prevented any row from being attempted.")
 			]);
 	}

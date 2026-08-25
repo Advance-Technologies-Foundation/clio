@@ -12,8 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 ///
 /// Background: the syntactic floor catches grammar errors
 /// but not the semantic anti-patterns described in the guidance resources
-/// (<c>PageSchemaHandlersGuidanceResource</c>, <c>PageSchemaValidatorsGuidanceResource</c>,
-/// <c>PageSchemaConvertersGuidanceResource</c>, <c>PageModificationGuidanceResource</c>).
+/// The matching authoring rules are delivered by external page-schema knowledge articles.
 /// Each rule below maps to one or more "DO NOT" entries in those guides.
 ///
 /// Severity model:
@@ -63,6 +62,8 @@ internal static class PageBodyAstLinter {
 	internal const string RuleBodyTooDeeplyNested = "body-too-deeply-nested";
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
+	internal const string RuleEntityDataSourceStaticFilters = "entity-data-source-static-filters";
+	internal const string RuleHandlerAttributeChangeUnscopedWrite = "handler-attribute-change-unscoped-write";
 
 	#endregion
 
@@ -120,10 +121,16 @@ internal static class PageBodyAstLinter {
 
 	// Per-recursion context propagated to children to bound rule scopes.
 	// The flags are orthogonal — each addresses one rule's scoping problem.
+	// `EnclosingPropertyKey` is DIFFERENT from the other three: it is NOT
+	// propagated through the subtree, only set for the exact node that is a
+	// property's `Value` (recomputed to null on every other edge — see
+	// ComputeChildContext) — it answers "which property, if any, owns ME
+	// directly", not "am I anywhere under property X".
 	private readonly record struct VisitContext(
 		bool InsideValidators,
 		bool InsideConverters,
-		bool EnclosingFunctionIsValidatorInstance);
+		bool EnclosingFunctionIsValidatorInstance,
+		string EnclosingPropertyKey);
 
 	private static void Visit(Node node, VisitContext ctx, int depth, List<PageBodyLintFinding> findings) {
 		if (depth > MaxAstDepth) {
@@ -138,6 +145,8 @@ internal static class PageBodyAstLinter {
 		switch (node) {
 			case ObjectExpression obj:
 				CheckSchemaSectionShapes(obj, findings);
+				CheckEntityDataSourceStaticFilters(obj, ctx, findings);
+				CheckUnscopedAttributeChangeHandler(obj, depth, findings);
 				break;
 			case Property prop:
 				CheckProperty(prop, ctx, findings);
@@ -179,12 +188,12 @@ internal static class PageBodyAstLinter {
 		if (parent is Property prop && ReferenceEquals(child, prop.Value)) {
 			string key = TryGetStaticPropertyName(prop);
 			if (key == "validators") {
-				return currentCtx with { InsideValidators = true, EnclosingFunctionIsValidatorInstance = false };
+				return currentCtx with { InsideValidators = true, EnclosingFunctionIsValidatorInstance = false, EnclosingPropertyKey = key };
 			}
 			if (key == "converters") {
-				return currentCtx with { InsideConverters = true };
+				return currentCtx with { InsideConverters = true, EnclosingPropertyKey = key };
 			}
-			return currentCtx;
+			return currentCtx with { EnclosingPropertyKey = key };
 		}
 		// Identify the validator-instance function: the IFunction that is the
 		// `Argument` of a `return` statement (so the enclosing factory's body
@@ -204,9 +213,9 @@ internal static class PageBodyAstLinter {
 		if (currentCtx.InsideValidators && child is IFunction) {
 			bool isValidatorInstance = parent is ReturnStatement ret
 				&& ReferenceEquals(child, ret.Argument);
-			return currentCtx with { EnclosingFunctionIsValidatorInstance = isValidatorInstance };
+			return currentCtx with { EnclosingFunctionIsValidatorInstance = isValidatorInstance, EnclosingPropertyKey = null };
 		}
-		return currentCtx;
+		return currentCtx with { EnclosingPropertyKey = null };
 	}
 
 	#endregion
@@ -269,6 +278,193 @@ internal static class PageBodyAstLinter {
 				Message: $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
 		}
 	}
+
+	// Rule 11: a `crt.EntityDataSource` config that carries a `filters` block. `filters` is not a
+	// recognized `crt.EntityDataSource` config key (unlike entitySchemaName / attributes /
+	// loadParameters / useRecordDeactivation …), so it is never applied at runtime — update-page
+	// persists it and returns success while the list silently shows UNFILTERED data (ENG-93867).
+	//
+	// Keyed off the config SIGNATURE — an object holding BOTH a `filters` key and an `entitySchemaName`
+	// key — rather than the enclosing `type: "crt.EntityDataSource"` descriptor. This matches the config
+	// object whether it is emitted inline inside the full descriptor (`{ type, scope, config: { … } }`)
+	// OR carried by a separate/narrower diff `merge` op that splits the descriptor from its config (the
+	// config merge still carries `entitySchemaName` alongside the ignored `filters`). `entitySchemaName`
+	// is unique to an EntityDataSource config, so this does NOT fire on a `crt.IndicatorWidget`'s
+	// `config.data.providing.filters` — that object exposes `schemaName`, never `entitySchemaName`.
+	//
+	// Known residual gap: a `filters`-ONLY narrow merge into a `[…, "config"]` path, with no co-located
+	// `entitySchemaName`, is not flagged — catching that needs diff-path semantics, out of scope for this
+	// AST-shape Warning (the common inline + split-with-schema shapes ARE covered). No regex counterpart
+	// in SchemaValidationService — the invalid shape is JSON-structural. Warning severity: an invisible
+	// no-op, not a structural break, so it must not fail the write.
+	//
+	// False-positive carve-out (GH-1125): a Freedom UI Dashboard container's generated
+	// `_designOptions` block also carries `entitySchemaName` alongside a `filters` array
+	// (`{ "entitySchemaName": ..., "dependencies": [], "filters": [] }`) — the SAME
+	// co-located-key signature this rule keys off, even though it is designer-owned
+	// dashboard metadata, not a `crt.EntityDataSource` config, so the "filters is an
+	// ignored EntityDataSource config key" claim this rule warns about does not apply to
+	// it. `_designOptions` is never a legitimate `crt.EntityDataSource` config location,
+	// so the object that is DIRECTLY the value of a property literally named
+	// `_designOptions` is excluded outright.
+	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, VisitContext ctx, List<PageBodyLintFinding> findings) {
+		if (ctx.EnclosingPropertyKey == "_designOptions") {
+			return;
+		}
+		Property filtersProp = null;
+		bool hasEntitySchemaName = false;
+		foreach (Node element in obj.Properties) {
+			if (!TryGetInitProperty(element, out Property prop, out string key)) {
+				continue;
+			}
+			if (key == "filters") {
+				filtersProp = prop;
+			} else if (key == "entitySchemaName") {
+				hasEntitySchemaName = true;
+			}
+		}
+		if (filtersProp is null || !hasEntitySchemaName) {
+			return;
+		}
+		findings.Add(new PageBodyLintFinding(
+			Rule: RuleEntityDataSourceStaticFilters,
+			Severity: LintSeverity.Warning,
+			Line: filtersProp.Location.Start.Line,
+			Column: filtersProp.Location.Start.Column + 1,
+			Message: "`config.filters` on a `crt.EntityDataSource` is never applied — `filters` is not a recognized data-source config key. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
+	}
+
+	// Rule 12: a `crt.HandleViewModelAttributeChangeRequest` handler entry that is NOT scoped to the
+	// triggering attribute but writes a view-model attribute through a `$context` set call. This request
+	// fires on EVERY attribute change, so an unscoped handler that writes an attribute re-enters on its
+	// OWN write — with a value that is no longer the one it expected — and typically clears the field it
+	// just set (or loops). The canonical scope is an early attributeName guard that returns through next
+	// when the changed attribute is not the target (page-schema-handlers guidance). requestArgumentPropertyName
+	// does NOT scope this handler — it is silently ignored, which is exactly the trap this rule surfaces. No
+	// regex counterpart in SchemaValidationService / SchemaHandlerValidationService — the self-retrigger
+	// footgun is a data-flow shape, not a token match. Warning severity — the page still saves and renders,
+	// and the field is just wiped at runtime.
+	//
+	// Keyed off the handler entry ObjectExpression: the request key equals the target literal, a handler
+	// function (arrow OR shorthand method), and — inside that function's subtree — a `$context` set-call write
+	// with NO attributeName reference. Referencing attributeName anywhere in the body (member access such as
+	// request dot attributeName, destructuring, a comparison, or a COMPUTED bracket access on the
+	// attributeName key) is treated as "author is scope-aware" and suppresses the warning. The bracket form is
+	// matched as a computed member access on the attributeName property literal, NOT as a bare attributeName
+	// string anywhere — an incidental literal must not suppress the warning.
+	//
+	// Heuristic limits (all acceptable for a non-blocking Warning; NOT "zero false positives"):
+	//   - False negative: the attributeName reference is a scope-awareness PROXY, not proof the write is
+	//     guarded — a handler reading attributeName for an unrelated purpose while writing UNCONDITIONALLY is
+	//     missed (pinned by Lint_ShouldNotWarn_WhenAttributeNameReferencedButWriteUnconditional). A write via a
+	//     local $context alias is also missed (see IsContextSetCall).
+	//   - False positive: a guard hidden behind a helper call — an early return driven by a helper predicate on
+	//     request — is not seen, since detecting it needs inter-procedural data-flow analysis, so such a scoped
+	//     handler is still warned. The proxy trades these residuals for catching the common shapes.
+	private static void CheckUnscopedAttributeChangeHandler(ObjectExpression obj, int depth, List<PageBodyLintFinding> findings) {
+		Property requestProp = null;
+		Property handlerProp = null;
+		foreach (Node element in obj.Properties) {
+			// Accept BOTH init properties (`handler: (r, n) => {}`) AND shorthand methods
+			// (`async handler(r, n) {}`) — TryGetInitProperty rejects methods, which would MISS the genuine
+			// bug when `handler` is written as a shorthand method.
+			if (!TryGetEntryProperty(element, out Property prop, out string key)) {
+				continue;
+			}
+			if (key == "request") {
+				requestProp = prop;
+			} else if (key == "handler") {
+				handlerProp = prop;
+			}
+		}
+		if (requestProp?.Value is not Literal { Value: "crt.HandleViewModelAttributeChangeRequest" }) {
+			return;
+		}
+		if (handlerProp?.Value is not IFunction handlerFn) {
+			return;
+		}
+		bool referencesAttributeName = false;
+		bool writesContextAttribute = false;
+		ScanHandlerBody((Node)handlerFn, depth, ref referencesAttributeName, ref writesContextAttribute);
+		if (referencesAttributeName || !writesContextAttribute) {
+			return;
+		}
+		findings.Add(new PageBodyLintFinding(
+			Rule: RuleHandlerAttributeChangeUnscopedWrite,
+			Severity: LintSeverity.Warning,
+			Line: requestProp.Location.Start.Line,
+			Column: requestProp.Location.Start.Column + 1,
+			Message: "A `crt.HandleViewModelAttributeChangeRequest` handler that writes a view-model attribute via `$context.set(...)` is not scoped to the triggering attribute, so it re-fires on its own write and can clear the value or loop. Scope it with an early guard: `if (request.attributeName !== \"<Attr>\") return next?.handle(request);` (per page-schema-handlers guidance). If the write is an intentional cross-field recompute, still guard it so it does not re-enter on its own write — skip when `request.attributeName` is the attribute you are writing. Note: `requestArgumentPropertyName` does NOT scope this handler — it is silently ignored."));
+	}
+
+	// Like TryGetInitProperty but ALSO accepts shorthand-method properties (`handler(r, n) {}`), whose
+	// `Value` is the method's function. Used for the handler-entry keys (`request`, `handler`) where a
+	// method-form `handler` is legitimate; the converters / data-source rules keep using TryGetInitProperty,
+	// which rejects methods.
+	private static bool TryGetEntryProperty(Node node, out Property prop, out string key) {
+		prop = null;
+		key = null;
+		if (node is not Property candidate || candidate.Computed || candidate.Kind != PropertyKind.Init) {
+			return false;
+		}
+		string staticKey = TryGetStaticPropertyName(candidate);
+		if (staticKey is null) {
+			return false;
+		}
+		prop = candidate;
+		key = staticKey;
+		return true;
+	}
+
+	// Walk the handler function subtree once, collecting the two orthogonal signals the rule needs:
+	//   - an `attributeName` reference — either an Identifier (member access `request.attributeName`,
+	//     destructuring `const { attributeName } = request`, or a comparison) OR a COMPUTED member access
+	//     whose property literal is `"attributeName"` (bracket access `request["attributeName"]`) → author is
+	//     scope-aware, suppress. The bracket arm is deliberately anchored to a computed MemberExpression, not
+	//     a bare `"attributeName"` string literal anywhere in the body — an incidental literal (e.g.
+	//     `$context.set("attributeName", x)` or a log string) must NOT suppress the warning.
+	//   - a `$context.set(...)` call (`request.$context.set` or a destructured `$context.set`) → the
+	//     handler writes an attribute, which is what makes an unscoped handler self-retrigger.
+	// Bounded by MaxAstDepth for the same StackOverflow reason the main traversal is; short-circuits
+	// as soon as both signals are known.
+	private static void ScanHandlerBody(Node node, int depth, ref bool referencesAttributeName, ref bool writesContextAttribute) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (node is Identifier { Name: "attributeName" }
+			or MemberExpression { Computed: true, Property: Literal { Value: "attributeName" } }) {
+			referencesAttributeName = true;
+		} else if (node is CallExpression call && IsContextSetCall(call.Callee)) {
+			writesContextAttribute = true;
+		}
+		if (referencesAttributeName && writesContextAttribute) {
+			return;
+		}
+		foreach (Node child in node.ChildNodes) {
+			ScanHandlerBody(child, depth + 1, ref referencesAttributeName, ref writesContextAttribute);
+			if (referencesAttributeName && writesContextAttribute) {
+				return;
+			}
+		}
+	}
+
+	// Matches a set call on the live ViewModel context: the callee is a set member either on the
+	// destructured $context identifier or on a member access whose inner property is $context (typically
+	// request.$context).
+	//
+	// Accepted false negative (deliberate, second of two): a write through a LOCAL ALIAS that drops the
+	// $context member — assigning request.$context to a local variable and calling set on that variable —
+	// is NOT detected, so an unscoped handler writing that way is not flagged. Following aliases needs
+	// data-flow analysis, mirroring the same alias limitation on IsContextExecuteRequest and consistent with
+	// the rule's documented heuristic limits (a non-blocking Warning that tolerates residual misses; see the
+	// CheckUnscopedAttributeChangeHandler doc). Pinned by Lint_ShouldNotWarn_WhenAttributeChangeHandlerWritesViaAliasedContext.
+	private static bool IsContextSetCall(Node callee) =>
+		callee is MemberExpression { Property: Identifier { Name: "set" }, Computed: false, Object: var target }
+		&& target switch {
+			Identifier { Name: "$context" } => true,
+			MemberExpression { Property: Identifier { Name: "$context" }, Computed: false } => true,
+			_ => false
+		};
 
 	// CheckProperty intentionally has no rules left: `params-empty` and
 	// `converter-crt-prefix-reserved` now run inside CheckSchemaSectionShape

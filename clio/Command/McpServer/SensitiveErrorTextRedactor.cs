@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace Clio.Command.McpServer;
@@ -64,6 +66,13 @@ internal static partial class SensitiveErrorTextRedactor {
 		@"(?<![\w:./@-])(?:\[[0-9A-Fa-f:]+\]|(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?|\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\b",
 		RegexOptions.CultureInvariant)]
 	private static partial Regex HostPortRegex();
+
+	/// <summary>Redacts every entry of <paramref name="texts"/> under the same rules as <see cref="Redact"/>.</summary>
+	/// <param name="texts">The raw, possibly-sensitive lines.</param>
+	/// <returns>The redacted lines in input order, safe to surface to the MCP client.</returns>
+	public static List<string> RedactAll(IEnumerable<string> texts) {
+		return texts.Select(Redact).ToList();
+	}
 
 	/// <summary>
 	/// Returns <paramref name="text"/> with absolute file paths, URIs, and credential/connection-string

@@ -427,6 +427,21 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "backslashes must be JSON-escaped through JsonSerializer to avoid request corruption");
 	}
 
+	[Test]
+	[Description("Fails loudly with a clear error instead of a NullReferenceException when the sys-setting does not exist but the caller explicitly requests Lookup handling for a non-Guid value (sonar csharpsquid:S2259).")]
+	public void UpdateSysSetting_LookupType_ReturnsFalse_WhenSettingDoesNotExist() {
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>>());
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		bool result = sut.UpdateSysSetting("UsrMissingCode", "Not A Guid", "Lookup");
+
+		result.Should().BeFalse(
+			because: "there is no sys-setting to resolve a reference schema against, so the update must fail closed instead of throwing");
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
 	#endregion
 
 	#region TryListSysSettings — SecureText masking

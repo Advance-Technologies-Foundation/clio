@@ -33,8 +33,8 @@ public class UpdateThemeTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
 		"(full overwrite by id; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
-		" or later on the target environment. Only inline CSS content is accepted; to supply CSS " +
-		"from a file, use the clio CLI (--css-content-file) instead. For the theme workflow, read get-guidance theming first.")]
+		" or later on the target environment. Only inline CSS content is accepted. " +
+		"For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult UpdateTheme(
 		[Description("Parameters: environment-name (required), id (required), caption (required), " +
 			"css-class-name (required), css-content (required).")]
@@ -81,7 +81,7 @@ public sealed record UpdateThemeArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("id")]
-	[property: Description("Id of the existing theme to overwrite.")]
+	[property: Description("Id (a GUID) of the existing theme to overwrite.")]
 	[property: Required]
 	string? Id = null,
 

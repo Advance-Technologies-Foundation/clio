@@ -78,7 +78,7 @@ public sealed record GetThemeArgs {
 	[Required]
 	public string? EnvironmentName { get; init; }
 	[JsonPropertyName("id")]
-	[Description("Id of the theme to read (see list-themes).")]
+	[Description("Id (a GUID) of the theme to read (see list-themes).")]
 	[Required]
 	public string? Id { get; init; }
 

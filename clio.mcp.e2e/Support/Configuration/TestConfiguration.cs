@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 internal static class TestConfiguration {
+	private static string? _sharedClioHome;
+
 	public static McpE2ESettings Load() {
 		IConfigurationRoot configuration = new ConfigurationBuilder()
 			.SetBasePath(TestContext.CurrentContext.TestDirectory)
@@ -25,9 +27,19 @@ internal static class TestConfiguration {
 		if (!settings.ProcessEnvironmentVariables.ContainsKey("CLIO_NO_UPDATE_CHECK")) {
 			settings.ProcessEnvironmentVariables["CLIO_NO_UPDATE_CHECK"] = "true";
 		}
+		if (!string.IsNullOrWhiteSpace(_sharedClioHome)) {
+			settings.ProcessEnvironmentVariables["CLIO_HOME"] = _sharedClioHome;
+		}
 
 		return settings;
 	}
+
+	internal static void UseSharedClioHome(string clioHome) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(clioHome);
+		_sharedClioHome = Path.GetFullPath(clioHome);
+	}
+
+	internal static void ClearSharedClioHome() => _sharedClioHome = null;
 
 	public static void EnsureSandboxIsConfigured(McpE2ESettings settings) {
 		settings.Sandbox.EnvironmentName.Should().NotBeNullOrWhiteSpace(
@@ -145,9 +157,8 @@ internal static class TestConfiguration {
 
 	/// <summary>
 	/// Derives the build configuration and target framework moniker from the running test
-	/// assembly directory (for example <c>.../clio.mcp.e2e/bin/Debug/net8.0</c>) so the sibling
-	/// clio output directory is resolved for the framework actually under test. Hardcoding a single
-	/// moniker (previously <c>net10.0</c>) broke the multi-targeted suite when CI runs net8.0.
+	/// assembly directory (for example <c>.../clio.mcp.e2e/bin/Debug/net10.0</c>) so the sibling
+	/// clio output directory is resolved for the framework actually under test.
 	/// </summary>
 	private static (string Configuration, string TargetFramework) ResolveCurrentBuildOutputLayout() {
 		string assemblyDirectory = Path.GetDirectoryName(typeof(TestConfiguration).Assembly.Location) ?? string.Empty;
@@ -155,7 +166,7 @@ internal static class TestConfiguration {
 			? null
 			: new DirectoryInfo(assemblyDirectory);
 
-		string targetFramework = targetFrameworkDirectory?.Name is { Length: > 0 } tfm ? tfm : "net8.0";
+		string targetFramework = targetFrameworkDirectory?.Name is { Length: > 0 } tfm ? tfm : "net10.0";
 		string configuration = targetFrameworkDirectory?.Parent?.Name is { Length: > 0 } cfg ? cfg : "Debug";
 		return (configuration, targetFramework);
 	}

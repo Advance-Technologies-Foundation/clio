@@ -66,6 +66,57 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
+	// An exception whose own message is the curated, caller-facing one — the marker
+	// ServiceResponseJsonGuard's NonJsonServiceResponseException carries (ENG-93365).
+	private sealed class AuthoritativeMessageException : InvalidOperationException, Clio.Common.IAuthoritativeErrorMessage {
+		public AuthoritativeMessageException(string message, Exception innerException)
+			: base(message, innerException) {
+		}
+	}
+
+	// A real SDK-built tool that throws a marked exception wrapping a raw parser failure, so the dispatch
+	// path's message selection is exercised end to end: Ring dispatches through clio-run, so this path —
+	// not just McpToolErrorFilter — must stop the unwrap at the authoritative message.
+	[McpServerToolType]
+	private static class AuthoritativeThrowingToolType {
+		internal const string CuratedMessage =
+			"SelectQuery returned an HTML page instead of JSON (URL: http://local/0/DataService). "
+			+ "Verify that the environment is registered with valid credentials.";
+
+		internal const string RawParserMessage =
+			"'<' is an invalid start of a value. LineNumber: 0 | BytePositionInLine: 0.";
+
+		[McpServerTool(Name = "authoritative-throwing-tool", Destructive = false)]
+		[System.ComponentModel.Description("Always throws an authoritative-message exception.")]
+		public static string Throw([System.ComponentModel.Description("payload")] string value) =>
+			throw new AuthoritativeMessageException(CuratedMessage, new JsonException(RawParserMessage));
+	}
+
+	private static McpServerTool BuildAuthoritativeThrowingTool() =>
+		McpServerTool.Create(
+			typeof(AuthoritativeThrowingToolType).GetMethod(nameof(AuthoritativeThrowingToolType.Throw))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
+	// A real SDK-built tool that throws an UNMARKED wrapper around the real cause — the counterpart case,
+	// pinning that the marker stop did not turn the dispatch path into "always surface the outer message".
+	[McpServerToolType]
+	private static class WrappedThrowingToolType {
+		internal const string OuterMessage = "Outer wrapper message.";
+		internal const string InnerMessage = "Environment with key 'NoSuchEnv' not found.";
+
+		[McpServerTool(Name = "wrapped-throwing-tool", Destructive = false)]
+		[System.ComponentModel.Description("Always throws a wrapped exception with no marker.")]
+		public static string Throw([System.ComponentModel.Description("payload")] string value) =>
+			throw new InvalidOperationException(OuterMessage, new InvalidOperationException(InnerMessage));
+	}
+
+	private static McpServerTool BuildWrappedThrowingTool() =>
+		McpServerTool.Create(
+			typeof(WrappedThrowingToolType).GetMethod(nameof(WrappedThrowingToolType.Throw))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
 	// A real SDK-built tool that catches internally and RETURNS a structured error result with raw
 	// sensitive text (path + URI), rather than throwing — the return-path redaction guard.
 	[McpServerToolType]
@@ -193,11 +244,8 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
-	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
-	// executor reuses this context and only sets Params/MatchedPrimitive before InvokeAsync).
 	private static RequestContext<CallToolRequestParams> CallContext() =>
-		(RequestContext<CallToolRequestParams>)System.Runtime.CompilerServices.RuntimeHelpers
-			.GetUninitializedObject(typeof(RequestContext<CallToolRequestParams>));
+		McpRequestContextTestFactory.CreateCallToolContext(ClioRunTool.ToolName);
 
 	private void RegisterTool(string name, McpServerTool tool, bool destructive) {
 		_registry.TryGetTool(name, out Arg.Any<McpServerTool>())
@@ -562,6 +610,43 @@ public sealed class ClioRunDispatchTests {
 			because: "a failing dispatched tool must yield a structured error result, not escape to the generic outer filter");
 		ErrorText(result).Should().Contain(ThrowingToolType.FailureMessage,
 			because: "the real (inner-most) failure message must be surfaced so the agent can self-correct instead of seeing a generic 'An error occurred' message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated message of an IAuthoritativeErrorMessage exception on the clio-run dispatch path — Ring dispatches through clio-run, so a revert of the SurfacedExceptionMessage delegation must fail a test here, not only in McpToolErrorFilterTests (ENG-93365).")]
+	public async Task RunAsync_ShouldKeepAuthoritativeMessage_WhenDispatchedToolThrowsMarkedException() {
+		// Arrange
+		RegisterTool("authoritative-throwing-tool", BuildAuthoritativeThrowingTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(
+			"authoritative-throwing-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		text.Should().Contain("HTML page instead of JSON",
+			because: "the classified message was built for the agent and must survive the dispatch unwrap");
+		text.Should().NotContain("is an invalid start of a value",
+			because: "the raw parser text the classified message replaces must not reach the transcript through clio-run");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still unwraps to the inner-most message on the clio-run dispatch path for an UNMARKED wrapped exception, so the marker stop did not regress the dispatch-wrapper case.")]
+	public async Task RunAsync_ShouldUnwrapToInnerMessage_WhenDispatchedToolThrowsUnmarkedWrapper() {
+		// Arrange
+		RegisterTool("wrapped-throwing-tool", BuildWrappedThrowingTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(
+			"wrapped-throwing-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		ErrorText(result).Should().Contain(WrappedThrowingToolType.InnerMessage,
+			because: "an unmarked wrapper must keep yielding the inner-most cause, unchanged by the ENG-93365 guard");
 	}
 
 	[Test]

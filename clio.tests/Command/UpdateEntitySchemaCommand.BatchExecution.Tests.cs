@@ -5,6 +5,7 @@ using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using Clio.Common.Responses;
 using Clio.Package;
 using FluentAssertions;
@@ -27,6 +28,7 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 	private UpdateEntitySchemaCommand _command = null!;
 	private IApplicationPackageListProvider _packageListProvider = null!;
 	private IRemoteEntitySchemaDesignerClient _designerClient = null!;
+	private IRuntimeEntitySchemaReader _runtimeEntitySchemaReader = null!;
 	private ILogger _logger = null!;
 	private EntityDesignSchemaDto _loadedSchema = null!;
 	private EntityDesignSchemaDto? _savedSchema;
@@ -42,7 +44,16 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 		base.AdditionalRegistrations(containerBuilder);
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_designerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
+		_runtimeEntitySchemaReader = Substitute.For<IRuntimeEntitySchemaReader>();
 		_logger = Substitute.For<ILogger>();
+		_runtimeEntitySchemaReader.GetByName(Arg.Any<string>()).Returns(callInfo =>
+			new RuntimeEntitySchemaResult(
+				UId: Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+				Name: callInfo.Arg<string>(),
+				PrimaryColumnUId: IdColumnUId,
+				PrimaryDisplayColumnName: null,
+				PrimaryDisplayColumnUId: null,
+				Columns: []));
 
 		_packageListProvider.GetPackages().Returns([
 			new PackageInfo(new PackageDescriptor {
@@ -83,6 +94,7 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => _designerClient);
+		containerBuilder.AddTransient(_ => _runtimeEntitySchemaReader);
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
@@ -96,6 +108,7 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 		]);
 		UpdateEntitySchemaOptions options = new() {
 			Environment = "dev",
+			CaptionCulture = "en-US",
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			Operations = [
@@ -136,6 +149,7 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 		]);
 		UpdateEntitySchemaOptions options = new() {
 			Environment = "dev",
+			CaptionCulture = "en-US",
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			Operations = [

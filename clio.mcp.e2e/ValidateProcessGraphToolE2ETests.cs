@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// Story 5 (ai-business-process-generation) end-to-end coverage for <c>validate-process-graph</c>.
 /// NOT in CI — run manually. The tool is feature-toggled (<c>process-designer</c>) and, since
-/// the env-scoping fix, requires the <c>clioprocessbuilder</c> package on the named environment, so
+/// the env-scoping fix, requires the <c>CrtProcessBuilder</c> package on the named environment, so
 /// it is no longer hermetic: the advertisement and refusal cases run without a Creatio instance, but
 /// the happy-path graph validation requires a reachable sandbox environment with the package.
 /// </summary>
@@ -81,13 +81,13 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path against a reachable environment with clioprocessbuilder, a valid Start -> Read data -> End graph validates with zero error findings.")]
+	[Description("Over the real MCP path against a reachable environment with CrtProcessBuilder, a valid Start -> Read data -> End graph validates with zero error findings.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph reports a valid graph as having no errors")]
 	public async Task ValidateProcessGraph_Should_ReportNoErrors_WhenGraphIsValid() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
-		string environmentName = ResolveEnvironmentOrIgnore();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
 		Dictionary<string, object?> graph = new() {
 			["environment-name"] = environmentName,
 			["nodes"] = new[] {
@@ -104,18 +104,52 @@ public sealed class ValidateProcessGraphToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(because: "a validation call against a valid graph should return a structured payload");
-		response.Success.Should().BeTrue(because: "validating a well-formed graph on an environment with clioprocessbuilder succeeds");
+		response.Success.Should().BeTrue(because: "validating a well-formed graph on an environment with CrtProcessBuilder succeeds");
 		response.HasErrors.Should().BeFalse(because: "Start -> Read data -> End violates no connection rule");
 	}
 
 	[Test]
-	[Description("Over the real MCP path against a reachable environment with clioprocessbuilder, a start event with an incoming flow surfaces an R1 error finding.")]
+	[Description("Over the real MCP path, a sendEmail node classifies as a user task rather than an unknown type: ManagerMap.ResolveDataId maps the 'sendEmail' build token, so the graph validates with no UNKNOWN finding. Purely client-side classification — it needs no sendEmail support in the deployed CrtProcessBuilder package.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph classifies a sendEmail node as a known type")]
+	public async Task ValidateProcessGraph_Should_ClassifySendEmail_AsKnownType() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("m", "sendEmail"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "m", "sequence"), Edge("m", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "validating a graph with a sendEmail node returns a structured payload");
+		response.Success.Should().BeTrue(because: "the graph is well formed");
+		(response.Findings ?? new List<ValidateProcessGraphFinding>())
+			.Where(finding => finding.RuleId == "UNKNOWN")
+			.Should().BeEmpty(
+				because: "'sendEmail' is a known build type, so it must not be reported as an unrecognized element "
+					+ "type the way it was before the token was mapped");
+		response.HasErrors.Should().BeFalse(
+			because: "Start -> Send email -> End violates no connection rule once the node type is recognized");
+	}
+
+	[Test]
+	[Description("Over the real MCP path against a reachable environment with CrtProcessBuilder, a start event with an incoming flow surfaces an R1 error finding.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph surfaces an R1 error for a start with an incoming flow")]
 	public async Task ValidateProcessGraph_Should_SurfaceR1Error_WhenStartHasIncomingFlow() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
-		string environmentName = ResolveEnvironmentOrIgnore();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
 		Dictionary<string, object?> graph = new() {
 			["environment-name"] = environmentName,
 			["nodes"] = new[] {
@@ -137,13 +171,42 @@ public sealed class ValidateProcessGraphToolE2ETests {
 			because: "the R1 violation must be reported in the response findings");
 	}
 
-	private static string ResolveEnvironmentOrIgnore() {
+	// Ignores on BOTH conditions that make these tests meaningless: no environment configured, and a configured
+	// environment that cannot be reached. Checking only the former made an unreachable stand FAIL the fixture
+	// instead of skipping it, which is how every other Sandbox fixture here behaves and what the tier's
+	// Skipped-not-Failed contract expects — an absent stand is not a product defect, and reporting it as one
+	// buries real failures in the same run.
+	private static async Task<string> ResolveEnvironmentOrIgnoreAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
+		// Resolve the clio binary the same way ArrangeAsync does. Without this the reachability probe
+		// spawns whatever the raw settings point at, which fails in about three seconds instead of
+		// pinging - and a probe that cannot run reads as "environment unreachable", turning a healthy
+		// stand into three silent skips. A gate that fails open like that is worse than no gate.
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore($"Configure McpE2E:Sandbox:EnvironmentName (with clioprocessbuilder installed) to run {ToolName} graph-validation E2E tests.");
+			Assert.Ignore($"Configure McpE2E:Sandbox:EnvironmentName (with CrtProcessBuilder installed) to run {ToolName} graph-validation E2E tests.");
 		}
+
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"{ToolName} graph-validation E2E requires a reachable configured sandbox environment. "
+				+ $"'{environmentName}' was not reachable.");
+		}
+
 		return environmentName!;
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: cts.Token);
+			return result.ExitCode == 0;
+		} catch (OperationCanceledException) {
+			return false;
+		}
 	}
 
 	private static Dictionary<string, object?> Node(string name, string type) =>

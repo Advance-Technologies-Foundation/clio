@@ -1,7 +1,10 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Common.Telemetry;
 using CommandLine;
 
@@ -13,11 +16,20 @@ public class McpServerCommandOptions : BaseCommandOptions
 { }
 
 
+/// <summary>
+/// Starts Clio's standard-input/output MCP host.
+/// </summary>
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ITelemetryFlushScheduler flushScheduler,
 	ISessionContainerCache sessionContainerCache,
-	ITenantExecutionLockProvider tenantExecutionLockProvider) : Command<McpServerCommandOptions>{
+	ITenantExecutionLockProvider tenantExecutionLockProvider,
+	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
+	ILogger logger) : Command<McpServerCommandOptions>{
+	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
+		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
+
 	public override int Execute(McpServerCommandOptions options) {
+		BootstrapCuratedKnowledge(curatedKnowledgeBootstrapService, logger);
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
 		// per-tenant lock provider and session-container cache, so per-tenant serialization and the
 		// in-flight eviction guard operate on the SAME instances ToolCommandResolver uses.
@@ -72,6 +84,74 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Reports one non-fatal curated knowledge bootstrap phase.
+	/// </summary>
+	/// <param name="result">The phase result to report.</param>
+	/// <param name="logger">The host logger.</param>
+	/// <returns>The bootstrap result.</returns>
+	internal static CuratedKnowledgeBootstrapResult ReportCuratedKnowledgeBootstrap(
+		CuratedKnowledgeBootstrapResult result,
+		ILogger logger) {
+		if (result.Success) {
+			logger.WriteDebug(result.Message);
+			if (!string.IsNullOrWhiteSpace(result.StalenessWarning)) {
+				// A stale marker is a successful bootstrap, so it is reported as a warning rather than
+				// a failure. Later activation still validates the candidate and may fall back; WriteDebug
+				// would keep the very silence this reports.
+				WarnDuringStartup(result.StalenessWarning, logger);
+			}
+		} else {
+			WarnDuringStartup(
+				$"MCP is starting without built-in curated knowledge: {result.Message} "
+				+ $"Retry with install-knowledge --source {CuratedKnowledgeSourceDefaults.Alias}.",
+				logger);
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Emits one startup warning so it is visible on the stdio transport as well as in the log sinks.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="ConsoleLogger"/> suppresses every console write in MCP server mode, because stdout is
+	/// the JSON-RPC channel and a stray line there corrupts the protocol. That leaves an operator with
+	/// no startup diagnostic at all unless a log file happens to be configured — the silence reported in
+	/// issue #1100. Standard error is not part of the transport, so a warning written there reaches the
+	/// host's captured log without touching the protocol stream; it is the channel MCP hosts read.
+	/// The logger call is kept as well so the log file and any additional sinks still receive the line.
+	/// </remarks>
+	/// <param name="message">The warning text.</param>
+	/// <param name="logger">The host logger.</param>
+	private static void WarnDuringStartup(string message, ILogger logger) {
+		string safeMessage = TextUtilities.SanitizeForDisplay(
+			SensitiveErrorTextRedactor.Redact(message),
+			maxLength: 1_000);
+		logger.WriteWarning(safeMessage);
+		if (Program.IsMcpServerMode) {
+			try {
+				Console.Error.WriteLine($"[WAR] {safeMessage}");
+			} catch (IOException) {
+				// Stderr is an advisory host channel and may be closed by a detached launcher.
+			} catch (ObjectDisposedException) {
+				// Losing the advisory sink must never prevent the MCP transport from starting.
+			}
+		}
+	}
+
+	/// <summary>
+	/// Repairs and installs the curated source before the MCP transport starts accepting requests.
+	/// </summary>
+	/// <param name="bootstrapService">The curated knowledge bootstrap service.</param>
+	/// <param name="logger">The host logger.</param>
+	/// <returns>The non-fatal bootstrap result.</returns>
+	internal static CuratedKnowledgeBootstrapResult BootstrapCuratedKnowledge(
+		ICuratedKnowledgeBootstrapService bootstrapService,
+		ILogger logger) {
+		using CancellationTokenSource startupBudget = new(CuratedKnowledgeBootstrapTimeout);
+		return ReportCuratedKnowledgeBootstrap(bootstrapService.Bootstrap(startupBudget.Token), logger);
 	}
 
 	/// <summary>

@@ -1,6 +1,7 @@
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -44,6 +45,121 @@ public class ModifyBusinessProcessToolTests {
 			because: "the resolved command should receive the forwarded modify-business-process options");
 		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(SampleOperations,
 			because: "the inline operations must be carried through to the command without modification");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process emits the deterministic compile-not-required note after a successful edit, so an agent does not mistake 'edited' for 'must be compiled to run' and force compile-creatio (ENG-95706).")]
+	public void ModifyBusinessProcess_Should_Emit_CompileNotRequiredNote_On_Success() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(new FakeModifyBusinessProcessCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "the fake command reports a successful edit");
+		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
+			because: "a clio-edited process stays interpreted and needs no compile; the response note is the one channel the agent cannot skip (ENG-95706)");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process suppresses the compile-not-required note when the edit FAILS — a failed mutation must not be told 'no compile needed' (ENG-95706).")]
+	public void ModifyBusinessProcess_Should_Not_Emit_CompileNotRequiredNote_On_Failure() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeModifyBusinessProcessCommand resolvedCommand = new(exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(new FakeModifyBusinessProcessCommand(exitCode: 1), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", SampleOperations, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().NotBe(0, because: "the fake command reports a failed edit");
+		result.Note.Should().NotBe(CommandExecutionResult.CompileNotRequiredNote,
+			because: "a success-only signal must not ride a failed mutation");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Forwards an addElement operation that adds a sendEmail element with its full email block verbatim — the tool is an opaque pass-through, so the new element type and every email field (mode, sender, To recipients, subject, HTML body, importance, ignoreErrors, manual-mode performer) ride through to the command without modification.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_SendEmail_AddElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string sendEmailOps =
+			"[{\"op\":\"addElement\",\"element\":{\"name\":\"SendEmail1\",\"type\":\"sendEmail\","
+			+ "\"email\":{\"mode\":\"manual\",\"sender\":\"sales@example.com\",\"subject\":\"Order update\","
+			+ "\"body\":\"<p>Hello</p>\",\"bodyFormat\":\"html\",\"to\":[{\"value\":\"to@example.com\"}],"
+			+ "\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"All employees\",\"showPage\":true}}}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", sendEmailOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid sendEmail addElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(sendEmailOps,
+			because: "the sendEmail addElement operation and its whole email block must pass through unchanged (opaque pass-through)");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Forwards a setElement operation carrying a changeData block verbatim — the tool is an opaque pass-through, so the target source, every value-source kind (constant, processParameter, sourceElement pair, expression) and the whole block ride through to the command unmodified. Guards the one thing this repo CAN assert about the changeData contract: that clio does not reshape it on the way to the server.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_ChangeData_SetElement_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string changeDataOps =
+			"[{\"op\":\"setElement\",\"elementName\":\"UpdateContact\",\"elementUpdate\":{\"changeData\":{"
+			+ "\"source\":\"Contact\",\"values\":["
+			+ "{\"column\":\"JobTitle\",\"value\":\"Manager\"},"
+			+ "{\"column\":\"Notes\",\"processParameter\":\"NoteTextParameter\"},"
+			+ "{\"column\":\"AccountId\",\"sourceElement\":\"RecordModifiedSignal\","
+			+ "\"sourceElementParameter\":\"RecordId\"},"
+			+ "{\"column\":\"DueDate\",\"expression\":\"[#DateValue.2026-09-01#]\"}]}}}]";
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", changeDataOps, "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid changeData setElement operation must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the forwarded operations");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(changeDataOps,
+			because: "the changeData block and every value-source kind in it must pass through unchanged — the "
+				+ "server owns the semantics, so any reshaping here would silently alter what the caller asked for");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -132,15 +248,19 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	private sealed class FakeModifyBusinessProcessCommand : ModifyBusinessProcessCommand {
+		private readonly int _exitCode;
+
 		public ModifyBusinessProcessOptions? CapturedOptions { get; private set; }
 
-		public FakeModifyBusinessProcessCommand()
-			: base(Substitute.For<IModifyBusinessProcessService>(), Substitute.For<ILogger>()) {
+		public FakeModifyBusinessProcessCommand(int exitCode = 0)
+			: base(Substitute.For<IModifyBusinessProcessService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
+			_exitCode = exitCode;
 		}
 
 		public override int Execute(ModifyBusinessProcessOptions options) {
 			CapturedOptions = options;
-			return 0;
+			return _exitCode;
 		}
 	}
 }

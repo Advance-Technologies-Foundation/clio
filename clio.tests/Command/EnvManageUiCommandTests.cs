@@ -53,6 +53,58 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 
 	#endregion
 
+	#region Tests: Compile action
+
+	[Test]
+	[Description("RC-12: the env-ui 'Compile configuration' action runs the compile silently, so the shared heavy-operation prompt does not fire inside the interactive menu and a declined prompt cannot be rendered as a misleading 'failed' banner.")]
+	public void BuildEnvUiCompileOptions_ShouldBeSilent_ForEnvUiCompileAction()
+	{
+		// Act
+		CompileConfigurationOptions options = EnvManageUiCommand.BuildEnvUiCompileOptions("dev");
+
+		// Assert
+		options.IsSilent.Should().BeTrue(
+			because: "selecting Compile from the env-ui menu is the explicit compile intent, so it must not re-prompt and cannot postpone into a misleading failure banner (RC-12)");
+		options.Environment.Should().Be("dev",
+			because: "the compile must target the environment the user selected in the menu");
+	}
+
+	[Test]
+	[Description("RC-21: even though the env-ui compile runs silently, the heavy-operation warning (AC-1) is still surfaced to the user on this interactive menu path.")]
+	public void WarnHeavyCompilation_ShouldWriteSiteCompilationWarning()
+	{
+		// Arrange — capture the warning text passed to the logger.
+		string warning = null;
+		_logger.WriteWarning(Arg.Do<string>(message => warning = message));
+
+		// Act
+		_command.WarnHeavyCompilation();
+
+		// Assert
+		warning.Should().Be(CompileConfigurationCommand.SiteCompilationWarning,
+			because: "AC-1 requires the heavy-operation warning to be shown on the env-ui compile path (RC-21)");
+	}
+
+	[Test]
+	[Description("RC-21: the env-ui compile menu path emits the AC-1 heavy-operation warning before it attempts to build/run the compile.")]
+	public void ExecuteCompileConfiguration_ShouldWarn_BeforeCompiling()
+	{
+		// Arrange — the substitute service provider cannot build the real compile command, so the call
+		// throws while constructing it; the AC-1 warning is emitted first, which is what this asserts.
+		string warning = null;
+		_logger.WriteWarning(Arg.Do<string>(message => warning = message));
+		var environmentSettings = new EnvironmentSettings { Uri = "http://localhost", Login = "s", Password = "p" };
+
+		// Act
+		try { _command.ExecuteCompileConfiguration("dev", environmentSettings); } catch { /* command build fails on the substitute provider, after the warning */ }
+
+		// Assert
+		warning.Should().Be(CompileConfigurationCommand.SiteCompilationWarning,
+			because: "the warning must be surfaced before compilation is attempted on the env-ui path (RC-21)");
+	}
+
+	#endregion
+
 	#region Tests: Constructor
 
 	[Test]

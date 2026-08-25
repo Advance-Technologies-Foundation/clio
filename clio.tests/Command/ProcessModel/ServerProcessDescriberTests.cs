@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using ATF.Repository.Providers;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -85,7 +87,7 @@ public sealed class ServerProcessDescriberTests {
 	[Test]
 	[Description("Leaves direction/isResult unset (null) when an older server omits them, so the absent fields serialize away cleanly.")]
 	public void Describe_ShouldLeaveDirectionAndIsResultNull_WhenServerOmitsThem() {
-		// Arrange — an older clioprocessbuilder that does not report direction/isResult on parameters
+		// Arrange — an older CrtProcessBuilder that does not report direction/isResult on parameters
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
@@ -134,6 +136,143 @@ public sealed class ServerProcessDescriberTests {
 		filter.Groups.Should().ContainSingle(because: "the nested group is deserialized");
 		filter.Groups[0].LogicalOperation.Should().Be("or", because: "the nested group operator round-trips");
 		filter.Groups[0].Conditions[0].Column.Should().Be("Address", because: "the nested condition round-trips");
+	}
+
+	[Test]
+	[Description("Deserializes the element-level useBackgroundMode flag reported for every element, and leaves it null when an older server omits it.")]
+	public void Describe_ShouldReadElementBackgroundMode_WhenServerReportsIt() {
+		// Arrange — one element reporting the flag, one (older-server shape) omitting it
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\",\"useBackgroundMode\":true},"
+			+ "{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000002\",\"name\":\"EndEvent1\",\"type\":\"ProcessSchemaTerminateEvent\",\"buildType\":\"endevent\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Elements[0].UseBackgroundMode.Should().BeTrue(
+			because: "the element-level background-mode flag must be deserialized, not dropped by the clio DTO");
+		result.Value.Elements[1].UseBackgroundMode.Should().BeNull(
+			because: "an omitted flag stays null so it serializes away (WhenWritingNull) for an older server");
+	}
+
+	[Test]
+	[Description("Deserializes a Send email element's email configuration (mode, sender, subject, hasBody, the decoded body, importance, ignoreErrors, recipients, manual-mode performer) from the server response into the DescribedEmail DTO, so describe read-back surfaces the email block instead of dropping it.")]
+	public void Describe_ShouldReadSendEmailConfiguration_WhenServerReportsIt() {
+		// Arrange — the shape a runtime-verified CrtProcessBuilder DescribeProcess returns for a configured element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"manual\",\"sender\":\"[#Lookup.5e487721-02e2-48ee-b755-dfa5160f5315.11111111-2222-3333-4444-555555555555#]\",\"senderDisplay\":\"sales@example.com\","
+			+ "\"subject\":\"After modify\",\"hasBody\":true,\"body\":\"<p>Hi [[param:ContactName]]</p>\",\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"to\":[{\"name\":\"Recipient1\",\"uid\":\"p1\",\"type\":\"MaxSizeText\",\"source\":\"ConstValue\",\"value\":\"to@example.com\"}],"
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"[#Lookup.84f44b9a-4bc3-4cbf-a1a8-cec02c1c029c.a29a3ba5-4b0d-de11-9a51-005056c00008#]\",\"roleDisplay\":\"All employees\",\"showPage\":true}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.Should().NotBeNull(because: "the email block must be deserialized, not dropped by the clio DTO");
+		email.Mode.Should().Be("manual", because: "the send-mode token maps to the DTO's mode property");
+		email.SenderDisplay.Should().Be("sales@example.com",
+			because: "senderDisplay carries the human-readable mailbox identity alongside the sender formula");
+		email.Subject.Should().Be("After modify", because: "the subject constant survives the read-back");
+		email.HasBody.Should().BeTrue(
+			because: "hasBody flags that a custom-message body is present on the element");
+		email.Body.Should().Be("<p>Hi [[param:ContactName]]</p>",
+			because: "the body field carries the decoded HTML (process-macro tokens back in [[param:…]] author form), "
+				+ "so a dropped [JsonPropertyName(\"body\")] or a rename would surface here rather than silently");
+		email.Importance.Should().Be("high", because: "the importance token maps to the DTO");
+		email.IgnoreErrors.Should().BeTrue(because: "the ignore-sending-errors flag maps to the DTO");
+		email.To.Should().ContainSingle(because: "the recipient list must survive read-back")
+			.Which.Value.Should().Be("to@example.com",
+				because: "the recipient's constant address is carried on the parameter's value");
+		email.Performer.Type.Should().Be("role",
+			because: "the manual-mode performer kind maps to the nested performer DTO");
+		email.Performer.RoleDisplay.Should().Be("All employees",
+			because: "roleDisplay carries the resolved role name for a human reader");
+		email.Performer.ShowPage.Should().BeTrue(
+			because: "the show-execution-page flag is part of the performer block");
+	}
+
+	[Test]
+	[Description("Leaves the email block's hasBody unset (null) when an older server omits it, so the absent flag serializes away instead of defaulting to false and reading as a verified 'no body'.")]
+	public void Describe_ShouldLeaveEmailHasBodyNull_WhenServerOmitsIt() {
+		// Arrange — an older CrtProcessBuilder that reports an email block without the hasBody flag
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"auto\",\"subject\":\"After modify\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.Should().NotBeNull(because: "the email block itself is still reported by an older server");
+		email.HasBody.Should().BeNull(
+			because: "an omitted hasBody stays null rather than defaulting to false, which would be indistinguishable "
+				+ "from a server that reported 'this element has no custom-message body'. DEFENSIVE only: the server "
+				+ "declares hasBody as a non-nullable bool introduced in the same commit as the email block, so no "
+				+ "shipped build reports the block without the flag");
+		email.IgnoreErrors.Should().BeNull(
+			because: "ignoreErrors is genuinely optional on the server (a nullable bool there), so it is the flag that "
+				+ "really does arrive absent — hasBody is modelled the same way for safety, not from a known gap");
+	}
+
+	[Test]
+	[Description("Deserializes a signal start's record trigger — entity, on, and the tracked-change columns array — from the server response into the DescribedSignal DTO, so describe read-back surfaces changedColumns instead of dropping them.")]
+	public void Describe_ShouldReadSignalTrackedColumns_WhenServerReportsThem() {
+		// Arrange — a signalStart on Order, on:modified, restricted to the Amount + StatusId columns
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"signal\":{\"entity\":\"Order\",\"entitySchemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\",\"on\":\"modified\",\"changedColumns\":[\"Amount\",\"StatusId\"]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedSignal signal = result.Value.Elements[0].Signal;
+		signal.Should().NotBeNull(because: "a signal start's record trigger must be surfaced, not dropped by the clio DTO");
+		signal.Entity.Should().Be("Order", because: "the trigger entity round-trips");
+		signal.On.Should().Be("modified", because: "the change type round-trips");
+		signal.ChangedColumns.Should().BeEquivalentTo(new[] { "Amount", "StatusId" },
+			because: "the tracked-change columns array must be deserialized so describe round-trips them into a build/modify");
+	}
+
+	[Test]
+	[Description("Leaves the signal's changedColumns null when the server omits them (an any-change signal), so the absent field serializes away cleanly.")]
+	public void Describe_ShouldLeaveSignalChangedColumnsNull_WhenServerOmitsThem() {
+		// Arrange — an any-change signalStart (no changedColumns)
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"signal\":{\"entity\":\"Order\",\"on\":\"modified\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Elements[0].Signal.ChangedColumns.Should().BeNull(
+			because: "an omitted changedColumns stays null so it serializes away (WhenWritingNull) for an any-change signal");
 	}
 
 	[Test]
@@ -336,6 +475,110 @@ public sealed class ServerProcessDescriberTests {
 
 		result.IsError.Should().BeTrue(because: "a describe needs a code, uid, or caption");
 		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("Deserializes an element's connections[] entry in full — column, registration state, raw macro and the decoded source — plus the element-level deprecated and writesConnectionsAtRuntime facts, because a member clio's DTO does not declare is dropped SILENTLY and the tool description promises all of them.")]
+	public void Describe_ShouldReadConnectionsAndCapabilityFacts_WhenServerReportsThem() {
+		// Arrange — one fixed-record connection on a registered column, and both element-level facts
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"connections\":[{\"column\":\"Account\",\"registered\":true,\"source\":\"Script\","
+			+ "\"value\":\"[#Lookup.c449d832-a4cc-4b01-b9d5-8a12c42a9f89.e308b781-3c5b-4ecb-89ef-5c1ed4da488e#]\","
+			+ "\"recordId\":\"e308b781-3c5b-4ecb-89ef-5c1ed4da488e\",\"referenceSchema\":\"Account\"}],"
+			+ "\"deprecated\":false,\"writesConnectionsAtRuntime\":true}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedElement element = result.Value.Elements[0];
+		element.Connections.Should().HaveCount(1,
+			because: "an undeclared collection member deserializes to null, which is how four promised fields were "
+				+ "dropped in silence once already");
+		DescribedConnection connection = element.Connections[0];
+		connection.Column.Should().Be("Account", because: "the column names the connection and is its identity");
+		connection.Registered.Should().BeTrue(
+			because: "registration is what tells a caller whether the connection is a full citizen or a half one");
+		connection.RecordId.Should().Be("e308b781-3c5b-4ecb-89ef-5c1ed4da488e",
+			because: "the decoded source is what makes the read-back re-appliable without translating a metapath");
+		connection.ReferenceSchema.Should().Be("Account", because: "the entity travels as a NAME the write side takes");
+		connection.Value.Should().StartWith("[#Lookup.",
+			because: "the raw persisted macro travels alongside the decoded form, which is the forward-compatibility guarantee");
+		element.WritesConnectionsAtRuntime.Should().BeTrue(
+			because: "this is the verdict a caller is told to read before trusting a binding, so it must reach them");
+		element.Deprecated.Should().BeFalse(because: "the retirement fact is reported per element and must not be dropped");
+	}
+
+	[Test]
+	[Description("Leaves connections/deprecated/writesConnectionsAtRuntime null when an older CrtProcessBuilder omits them, so a stale package degrades to 'not established' rather than to a wrong answer.")]
+	public void Describe_ShouldLeaveConnectionsAndCapabilityFactsNull_WhenServerOmitsThem() {
+		// Arrange — the pre-connections server shape
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedElement element = result.Value.Elements[0];
+		element.Connections.Should().BeNull(because: "absent is not empty: nothing was reported, so nothing is claimed");
+		element.WritesConnectionsAtRuntime.Should().BeNull(
+			because: "null means NOT ESTABLISHED, which is exactly what an older package can say about it");
+		element.Deprecated.Should().BeNull(because: "same reason — an omitted fact must not read as false");
+	}
+
+	[Test]
+	[Description("A field a NEWER server reports that this build does not declare — at the graph root, on an element and inside the email block — survives the clio DTO round trip through [JsonExtensionData] under the command's own serializer options, so clio does not structurally lag the server by a release.")]
+	public void Describe_ShouldPreserveUnknownServerFields_WhenReserializingTheGraph() {
+		// Arrange — a root fact, an element block and an email-block field the DTOs do not declare. Without an
+		// overflow bag each is dropped without a trace, the silent-loss failure the connections DTO calls out.
+		// The email case is the one that matters most: that block is where the next email feature lands.
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"futureRootFact\":\"kept\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\","
+			+ "\"email\":{\"mode\":\"auto\",\"futureEmailFact\":\"kept\"},"
+			+ "\"futureBlock\":{\"setting\":42}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act — re-serialize with the SAME options DescribeProcessCommand uses for its output (WriteIndented +
+		// WhenWritingNull), so this asserts what a caller actually reads rather than a default-options shape.
+		JsonSerializerOptions commandOutputOptions = new() {
+			WriteIndented = true,
+			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+		};
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, commandOutputOptions);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "an undeclared member must not fail the read");
+		result.Value.AdditionalData.Should().ContainKey("futureRootFact",
+			because: "the root overflow bag is what keeps an undeclared server field addressable at all");
+		result.Value.Elements[0].AdditionalData.Should().ContainKey("futureBlock",
+			because: "an element-level block needs the same protection — that is where a new email/signal-shaped "
+				+ "feature lands first");
+		result.Value.Elements[0].Email.AdditionalData.Should().ContainKey("futureEmailFact",
+			because: "the email block is the feature under active development, so a field a newer server adds there "
+				+ "(a template selection, a body format) must not be the one thing that still vanishes");
+
+		// Re-parse rather than string-match: under WriteIndented the exact spacing is a formatting detail, and
+		// asserting on it would make this test pass or fail for the wrong reason.
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["futureRootFact"]!.GetValue<string>().Should().Be("kept",
+			because: "capturing it is only half the fix: the describe output is what the caller reads, so the "
+				+ "field has to come back out on re-serialization");
+		output["elements"]![0]!["futureBlock"]!["setting"]!.GetValue<int>().Should().Be(42,
+			because: "the element block must survive verbatim, nesting included, not be flattened or stringified");
+		output["elements"]![0]!["email"]!["futureEmailFact"]!.GetValue<string>().Should().Be("kept",
+			because: "the email block's unknown field has to reach the output too, not just the in-memory bag");
 	}
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).

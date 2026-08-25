@@ -1,4 +1,4 @@
-#pragma warning disable CLIO001 // This is DI class, warning not applicable
+﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -10,6 +10,7 @@ using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.SchemaTransfer;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
@@ -17,11 +18,14 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Resources;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Branding;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
@@ -81,12 +85,16 @@ public class BindingsModule {
 
 	public static string k8sDns = "127.0.0.1";
 	private static readonly object BootstrapDiagnosticsSyncRoot = new();
+	private static readonly Version DevelopmentKnowledgeBundleClioVersion = new(8, 1, 0);
 	private static bool _bootstrapDiagnosticsLogged;
 	private readonly IFileSystem _fileSystem;
 
 	#endregion
 
 	#region Constructors: Public
+
+	private static readonly Clio.Theming.IGoogleFontsAvailabilityCache SharedGoogleFontsAvailabilityCache =
+		new Clio.Theming.GoogleFontsAvailabilityCache(TimeProvider.System);
 
 	public BindingsModule(IFileSystem fileSystem = null){
 		_fileSystem = fileSystem;
@@ -238,6 +246,16 @@ public class BindingsModule {
 		services.AddTransient<IRingDistributionService, RingDistributionService>();
 		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
+		services.AddSingleton(SharedGoogleFontsAvailabilityCache);
+		services.AddHttpClient<Clio.Theming.IGoogleFontsCatalog, Clio.Theming.GoogleFontsCatalog>()
+			.ConfigureHttpClient(client => {
+				client.Timeout = Clio.Theming.GoogleFontsCatalog.ProbeTimeout;
+				client.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
+			})
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction
 		// (avoids `InvalidOperationException` on reused instances and races on a shared
@@ -267,6 +285,21 @@ public class BindingsModule {
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = TelemetryFlushService.PostTimeout);
+		// Dedicated client for the unauthenticated sysenums.js fetch (ENG-95412 enumVocabulary). Timeout is 120s
+		// (a cold stand's first hit measured 29-92s in the field; a probe-sized timeout would misreport a merely-slow
+		// stand as unreachable). AllowAutoRedirect=false + UseCookies=false match the auth/upload clients above — an
+		// unauthenticated GET to an operator-registered host has no reason to follow a redirect. The response-size
+		// cap is a defence-in-depth bound: sysenums.js is a small static file (~50KB today), so a multi-megabyte
+		// response is itself the signal something is wrong, well before the brace-matched parser would need to look at it.
+		services.AddHttpClient(ClassicEnumVocabularyResolver.HttpClientName)
+			.ConfigureHttpClient(client => {
+				client.Timeout = TimeSpan.FromSeconds(120);
+				client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
+			})
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -362,6 +395,7 @@ public class BindingsModule {
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
 		services.AddTransient<FeatureCommand>();
+		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
@@ -380,6 +414,8 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<ISchemaTransferClient, SchemaTransferClient>();
+		services.AddTransient<ISchemaBundleStore, SchemaBundleStore>();
 		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
 		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
@@ -437,6 +473,10 @@ public class BindingsModule {
 		services.AddTransient<ClientUnitSchemaUpdateCommand>();
 		services.AddTransient<GetClientUnitSchemaCommand>();
 		services.AddTransient<GetClassicPageSourcesCommand>();
+		services.AddTransient<IClassicListColumnParser, ClassicListColumnParser>();
+		services.AddTransient<IClassicListProfileReader, ClassicListProfileReader>();
+		services.AddTransient<IClassicListColumnResolver, ClassicListColumnResolver>();
+		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
 		services.AddTransient<SqlSchemaGetCommand>();
@@ -445,6 +485,9 @@ public class BindingsModule {
 		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
+		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
+		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
+		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -519,6 +562,7 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureCommand>();
 		services.AddTransient<ComponentRegistryRefreshCommand>();
 		services.AddTransient<ComponentInfoCommand>();
+		services.AddTransient<ExportComponentRegistryCommand>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
@@ -583,11 +627,72 @@ public class BindingsModule {
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
 		services.AddTransient<DeleteSchemaTool>();
+		services.AddTransient<ExportSchemaTool>();
+		services.AddTransient<ImportSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<MobilePageConversionGuideTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
+		services.AddTransient<KnowledgeManagementTools>();
+		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
+		services.AddSingleton<IBuiltInKnowledgeBundleTrustStore, BuiltInKnowledgeBundleTrustStore>();
+		services.AddSingleton<IKnowledgeBundleTrustStore, ConfiguredKnowledgeBundleTrustStore>();
+		services.AddSingleton<IKnowledgeTrustFingerprintService, KnowledgeTrustFingerprintService>();
+		services.AddHttpClient(KnowledgeBundleNuGetClient.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
+			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+		services.AddSingleton<KnowledgeBundleNuGetClient>();
+		services.AddSingleton<IKnowledgeArtifactTransport>(provider =>
+			provider.GetRequiredService<KnowledgeBundleNuGetClient>());
+		services.AddHttpClient(KnowledgeGitHubReleaseTransport.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
+			// Redirects are resolved by the transport so every hop can be checked against the host and
+			// scheme allowlist before it is followed.
+			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+			.ConfigureHttpClient(client => client.DefaultRequestHeaders.UserAgent.ParseAdd("clio-knowledge-client"));
+		services.AddSingleton<KnowledgeGitHubReleaseTransport>();
+		services.AddSingleton<IKnowledgeArtifactTransport>(provider =>
+			provider.GetRequiredService<KnowledgeGitHubReleaseTransport>());
+		services.AddSingleton<KnowledgeGitTransport>();
+		services.AddSingleton<IKnowledgeRepositoryTransport>(provider => provider.GetRequiredService<KnowledgeGitTransport>());
+		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
+		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
+		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
+		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
+			new Version(1, 1, 0),
+			new HashSet<string>(StringComparer.Ordinal) {
+				KnowledgeFeedbackPolicyTools.ConfigureToolName,
+				GuidanceGetTool.ToolName,
+				KnowledgeFeedbackPolicyTools.GetToolName,
+				KnowledgeManagementTools.ListKnowledgeExamplesToolName
+			}));
+		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
+		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
+		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
+		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
+		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
+		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
+		services.AddSingleton<ICuratedKnowledgeBootstrapService, CuratedKnowledgeBootstrapService>();
+		services.AddSingleton<IKnowledgeReferenceExampleParser, KnowledgeReferenceExampleParser>();
+		services.AddSingleton<IKnowledgeReferenceExampleService, KnowledgeReferenceExampleService>();
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
+		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
+		services.AddTransient<InstallKnowledgeCommand>();
+		services.AddTransient<UpdateKnowledgeCommand>();
+		services.AddTransient<InfoKnowledgeCommand>();
+		services.AddTransient<DeleteKnowledgeCommand>();
+		services.AddTransient<AddKnowledgeSourceCommand>();
+		services.AddTransient<RemoveKnowledgeSourceCommand>();
+		services.AddTransient<EnableKnowledgeSourceCommand>();
+		services.AddTransient<DisableKnowledgeSourceCommand>();
+		services.AddTransient<ListKnowledgeSourcesCommand>();
+		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<ExportComponentRegistryTool>();
 		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
@@ -600,20 +705,24 @@ public class BindingsModule {
 		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<UploadImageTool>();
 		services.AddTransient<SetBackgroundImageTool>();
+		services.AddTransient<SetLogoTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
 		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<GetTargetPackageTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
+		services.AddTransient<InstallProcessBuilderTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<GetCreatioInfoTool>();
@@ -673,6 +782,7 @@ public class BindingsModule {
 		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
+		services.AddTransient<InstallProcessBuilderCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<ReferenceCommand>();
 		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
@@ -690,6 +800,7 @@ public class BindingsModule {
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
+		services.AddTransient<ReadDataBindingDbCommand>();
 		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
@@ -718,6 +829,10 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
+		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
+		services.AddTransient<IPackageDataBindingWriter, PackageDataBindingWriter>();
+		services.AddTransient<IPackageDataBinder, EnvironmentPackageDataBinder>();
+		services.AddTransient<GetTargetPackageCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
 		services.AddTransient<MergeWorkspacesCommand>();
@@ -729,6 +844,10 @@ public class BindingsModule {
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();
 		services.AddTransient<AddPackageCommand>();
+		services.AddTransient<IValidator<AddCustomLoggingOptions>, AddCustomLoggingOptionsValidator>();
+		services.AddTransient<ICustomLoggingConfigurator, CustomLoggingConfigurator>();
+		services.AddTransient<IEnvironmentRestartService, EnvironmentRestartService>();
+		services.AddTransient<AddCustomLoggingCommand>();
 		services.AddTransient<UnlockPackageCommand>();
 		services.AddTransient<LockPackageCommand>();
 		services.AddTransient<DataServiceQuery>();
@@ -772,6 +891,7 @@ public class BindingsModule {
 		services.AddTransient<ISysImageUploader, SysImageUploader>();
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
+		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
@@ -803,6 +923,9 @@ public class BindingsModule {
 		services.AddTransient<DeployAppCommand>();
 		services.AddTransient<ApplicationManager>();
 		services.AddTransient<RestoreDbCommand>();
+		services.AddTransient<PruneDbTemplatesCommand>();
+		services.AddTransient<IDbTemplatePruneService, DbTemplatePruneService>();
+		services.AddTransient<IDbTemplatePruneConsole, DbTemplatePruneConsole>();
 		services.AddTransient<IDbClientFactory, DbClientFactory>();
 		services.AddTransient<IDbConnectionTester, DbConnectionTester>();
 		services.AddTransient<IBackupFileDetector, BackupFileDetector>();
@@ -812,7 +935,7 @@ public class BindingsModule {
 		services.AddTransient<GetCreatioInfoCommand>();
 		services.AddTransient<SetApplicationVersionCommand>();
 		services.AddTransient<ApplyEnvironmentManifestCommand>();
-		services.AddTransient<EnvironmentManager>();
+		services.AddTransient<IEnvironmentManager, EnvironmentManager>();
 		services.AddTransient<GetWebServiceUrlCommand>();
 		services.AddTransient<MockDataCommand>();
 		services.AddTransient<AssertCommand>();
@@ -896,6 +1019,8 @@ public class BindingsModule {
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
+		services.AddTransient<ExportSchemaCommand>();
+		services.AddTransient<ImportSchemaCommand>();
 		services.AddTransient<CreatioInstallerService>();
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
@@ -934,6 +1059,13 @@ public class BindingsModule {
 				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
+		// Singleton so the descriptor is decompressed out of the bundled archive once rather than once per
+		// gated call: the archive cannot change under a running container, and on the MCP path this sits on
+		// the hot path of every gated tool invocation. It is excluded from RegisterAssemblyInterfaceTypes for
+		// the reason recorded there — an auto-registered transient would win or lose on declaration order.
+		// IBundledPackageConvergence is NOT registered here: it is stateless, so the auto-scan's transient
+		// is correct for it.
+		services.AddSingleton<IBundledPackageCatalog, BundledPackageCatalog>();
 		services.AddTransient<IRequiredPackageChecker, RequiredPackageChecker>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
@@ -1057,10 +1189,17 @@ public class BindingsModule {
 		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
 		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
 					options.Capabilities ??= new();
+					// MCP9005: advertise the deprecated Logging capability for legacy initialize clients
+					// retained by the hybrid HTTP transport. Modern discovery-first clients do not depend on it.
+#pragma warning disable MCP9005
 					options.Capabilities.Logging = new();
+#pragma warning restore MCP9005
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
-				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
+				.WithRequestFilters(filters => {
+					filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors);
+					filters.AddListResourcesFilter(KnowledgeResourceDiscoveryFilter.AppendKnowledgeResources);
+				});
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
 			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
 		return mcpServerBuilder;
@@ -1132,11 +1271,16 @@ public class BindingsModule {
 		}
 	}
 	
-	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
 		foreach (Type type in types) {
 			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
+				continue;
+			}
+			// An exception is never a service. Registering one (they carry a marker interface such as
+			// IAuthoritativeErrorMessage) makes DI try to construct it, and its `string message` ctor cannot be
+			// resolved — ValidateOnBuild then fails and the whole host, mcp-server included, refuses to start.
+			if (typeof(Exception).IsAssignableFrom(type)) {
 				continue;
 			}
 			foreach (Type implementedInterface in type.GetInterfaces()) {
@@ -1148,6 +1292,9 @@ public class BindingsModule {
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
 					|| implementedInterface == typeof(IReauthExecutor)
+					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
+					// counter); it is created by CreatioClientAdapter, not resolved from DI.
+					|| implementedInterface == typeof(ILoginDiagnostics)
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
@@ -1187,12 +1334,34 @@ public class BindingsModule {
 					// The restart readiness-wait registry (ENG-91315), like the compile registry above, is
 					// registered explicitly as a SINGLETON; the auto-scan would give restart-by-environment-name
 					// and restart-status each their own empty table and silently break status polling.
-					|| implementedInterface == typeof(IRestartOperationRegistry)) {
+					|| implementedInterface == typeof(IRestartOperationRegistry)
+					// The bundled-package catalog is registered explicitly as a SINGLETON so the archive's
+					// descriptor is decompressed once instead of on every gated call. Its ctor resolves
+					// cleanly, so the auto-scan WOULD register it — as a transient, and which registration
+					// won would then depend on declaration order rather than on intent.
+					|| implementedInterface == typeof(IBundledPackageCatalog)
+					// Knowledge services use explicit singleton registrations because they retain immutable
+					// runtime snapshots, source locks, and transport clients across MCP requests.
+					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
+					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
+					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
+					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);
 			}
 		}
+	}
+
+	internal static Version ResolveKnowledgeBundleClioVersion(Version assemblyVersion) {
+		if (assemblyVersion is null
+				|| (assemblyVersion.Major == 0
+					&& assemblyVersion.Minor == 0
+					&& assemblyVersion.Build <= 0
+					&& assemblyVersion.Revision <= 0)) {
+			return DevelopmentKnowledgeBundleClioVersion;
+		}
+		return assemblyVersion;
 	}
 
 	private static void RegisterFluentValidators(IServiceCollection services){

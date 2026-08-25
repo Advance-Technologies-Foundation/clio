@@ -202,6 +202,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	private readonly ILogger _logger;
 	private readonly string _cdnBaseUrl;
 	private readonly RegistryFlavor _flavor;
+	private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
 
 	public ComponentRegistryClient(
 		IHttpClientFactory httpClientFactory,
@@ -240,8 +241,10 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger,
-		string cdnBaseUrl)
-		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, cdnBaseUrl, RegistryFlavor.Web) {
+		string cdnBaseUrl,
+		Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
+		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, cdnBaseUrl, RegistryFlavor.Web,
+			delayAsync) {
 	}
 
 	internal ComponentRegistryClient(
@@ -250,12 +253,14 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IFileSystem fileSystem,
 		ILogger logger,
 		string cdnBaseUrl,
-		RegistryFlavor flavor) {
+		RegistryFlavor flavor,
+		Func<TimeSpan, CancellationToken, Task>? delayAsync = null) {
 		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
 		_cacheStore = cacheStore ?? throw new ArgumentNullException(nameof(cacheStore));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_flavor = flavor ?? throw new ArgumentNullException(nameof(flavor));
+		_delayAsync = delayAsync ?? ((delay, token) => Task.Delay(delay, token));
 		_cdnBaseUrl = string.IsNullOrWhiteSpace(cdnBaseUrl) ? DefaultCdnBaseUrl : cdnBaseUrl;
 		if (!_cdnBaseUrl.EndsWith('/')) {
 			_cdnBaseUrl += "/";
@@ -432,10 +437,10 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		return new MemoryStream(payload, writable: false);
 	}
 
-	private static async Task<bool> DelayBackoffAsync(int attempt, CancellationToken cancellationToken) {
+	private async Task<bool> DelayBackoffAsync(int attempt, CancellationToken cancellationToken) {
 		TimeSpan backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
 		try {
-			await Task.Delay(backoff, cancellationToken).ConfigureAwait(false);
+			await _delayAsync(backoff, cancellationToken).ConfigureAwait(false);
 			return true;
 		} catch (TaskCanceledException) {
 			return false;

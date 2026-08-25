@@ -54,6 +54,39 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("The update-page get-tool-contract description carries the ENG-92541 custom-CSS policy (native-first + upgrade-risk + explicit confirmation) and routes to page-modification-components, over the real MCP contract surface (AGENTS.md mandates e2e for a changed tool [Description], not only unit-level reflection).")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract description carries the custom-CSS policy")]
+	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served description carries the native-first custom-CSS policy and routes to page-modification-components.")]
+	public async Task PageUpdateTool_Contract_Should_Carry_CustomCssPolicy() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		contract.Description.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "the real MCP contract surface for update-page must carry the native-first custom-CSS policy end to end, not only via the unit-level reflection test (AGENTS.md e2e mandate, N-1)");
+		contract.Description.Should().Contain("platform-upgrade compatibility",
+			because: "AC4: the upgrade-compatibility risk must be present on the served contract description");
+		contract.Description.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles must be named as custom CSS on the served contract description");
+		contract.Description.Should().Contain("page-modification-components",
+			because: "RC-3: the served contract must route the CSS policy to the sub-guide that carries the STOP block");
+	}
+
+	[Test]
 	[Description("update-page fails fast at the JavaScript-syntax gate before any remote call when the body contains an `await X = Y` (the actual production incident body), and the structured response carries the {line, column, message} per the AC.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on JavaScript syntax error before any remote call")]
@@ -1134,6 +1167,92 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "mobile pages do not support the 'validators' key — update-page must reject the body");
 		response.Error.Should().Contain("validators",
 			because: "the error should identify the disallowed 'validators' key");
+	}
+
+	[Test]
+	[Description("ENG-95429 on the WRITE path: update-page refuses to save a mobile body whose merge authors a button inside the Scaffold actions slot. The insert-scoped slot rule cannot see this shape, and a stand run proved the write otherwise succeeds while the button reaches the merged config zero times.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects a mobile merge that authors children in a Scaffold slot")]
+	[AllureDescription("Sends the stand-verified merge shape through the real MCP server and verifies update-page returns success=false naming the child that would go missing.")]
+	public async Task PageUpdateTool_Should_Reject_Mobile_Merge_Authoring_Children_In_Scaffold_Slot() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMergeAuthoredButton = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "Scaffold",
+			      "values": { "actions": [ { "type": "crt.Button", "name": "UsrMergeProbeButton",
+			                                 "clicked": { "request": "crt.SaveRecordRequest" } } ] } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBodyWithMergeAuthoredButton
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a validation failure is a structured tool result, not a protocol error");
+		response.Success.Should().BeFalse(
+			because: "the differ strips the slot out of the merge, so the save must abort instead of persisting an operation that creates nothing");
+		response.Error.Should().Contain("UsrMergeProbeButton",
+			because: "the entry is named after the merged element, so only the child name locates the defect");
+	}
+
+	[Test]
+	[Description("ENG-95429 on the WRITE path: update-page refuses to save a mobile body whose viewConfigDiff insert carries its component type on the operation object instead of inside 'values'. The defect being fixed is a write that SUCCEEDS while persisting an unrenderable element, so this asserts the save is actually aborted end to end — unit coverage of the validator alone cannot show that.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects a mobile insert whose type sits outside values")]
+	[AllureDescription("Sends the ENG-95429 shape through the real MCP server and verifies update-page returns success=false naming the element, rather than saving an element the mobile runtime cannot render.")]
+	public async Task PageUpdateTool_Should_Reject_Mobile_Insert_With_Type_Outside_Values() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMisplacedType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton", "type": "crt.Button",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrSomeProcess",
+			                                           "processRunType": "RegardlessOfThePage" } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBodyWithMisplacedType
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a validation failure is a structured tool result, not a protocol error");
+		response.Success.Should().BeFalse(
+			because: "the differ discards an operation-level type, so the save must abort instead of persisting an unrenderable element");
+		response.Error.Should().Contain("RunProcessButton",
+			because: "the failure must name the offending element so the agent fixes the right entry");
+		response.Error.Should().Contain("values",
+			because: "the actionable fix must survive into the write-path response, not only the validator result");
 	}
 
 	[Test]

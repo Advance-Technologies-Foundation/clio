@@ -39,7 +39,7 @@ public sealed class CompileCreatioTool(
 	/// Compiles Creatio fully or rebuilds a single package for a registered environment.
 	/// </summary>
 	[McpServerTool(Name = CompileCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`. Long-running: streams notifications/progress while compiling. If the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the compile is still running server-side; do NOT retry, poll compile-status instead.")]
+	[Description("BEFORE CALLING: compilation is a HEAVY operation that forces a runtime reload affecting EVERY user connected to the environment. Every time (not once per session), first warn the user of that impact and ask whether to compile now or postpone; call this tool ONLY after the user confirms. A repeated or explicit request to compile is NOT itself that confirmation, and a prior in-session warning or answer is NOT standing consent — re-ask before every call, including an identical repeat. If the user postpones, do NOT call this tool — tell them it can be run later. Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`. Do NOT decide to compile a business process from a raw status column: never read the raw process record (odata/esq — e.g. `VwSysProcess`) to judge readiness — use `describe-business-process`. A freshly-saved process shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all = true, and NONE of them is a compile trigger (`NeedInstall` is a DB-install marker); inferring `compile` from a column NAME is the trap here. Within a process, compile ONLY for C# YOU authored — a Script Task, or a user task carrying an after-activity-save script (case (1) above); everything else (add/read/modify data, formulas, connections, signals, using an already-compiled user task) runs with no compile. A CUSTOM user-task SCHEMA is a separate obligation: creating or changing one needs a compile. Long-running: streams notifications/progress while compiling. If the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the compile is still running server-side; do NOT retry, poll compile-status instead.")]
 	public async Task<CommandExecutionResult> CompileCreatio(
 		[Description("Compilation parameters")] [Required] CompileCreatioArgs args,
 		global::ModelContextProtocol.Server.McpServer server = null,
@@ -63,7 +63,7 @@ public sealed class CompileCreatioTool(
 		// every unrelated same-tenant tool for the multi-minute (past-deadline detached) compile duration.
 		// Reserved BEFORE registry.Begin so a rejected duplicate creates no tracked record (also curbs the
 		// unbounded-record growth a bogus-env loop could cause).
-		if (!McpToolExecutionLock.TryReserveCompile(tenantKey))
+		if (!McpToolExecutionLock.TryReserveConfigurationBuild(tenantKey, out McpToolExecutionLock.BuildReservation reservation))
 		{
 			return new CommandExecutionResult(1, [
 				new ErrorMessage(CompileAlreadyInProgressMessage(args.EnvironmentName))
@@ -102,7 +102,7 @@ public sealed class CompileCreatioTool(
 						// heartbeat work delegate, so it runs on the (possibly detached, past-deadline)
 						// continuation — spanning the real compile duration — and covers a resolution throw too
 						// (which happens before Execute's own try/finally is ever entered).
-						McpToolExecutionLock.ReleaseCompile(tenantKey);
+						McpToolExecutionLock.ReleaseConfigurationBuild(tenantKey, reservation);
 					}
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
 					return result;
@@ -168,7 +168,7 @@ public sealed class CompileCreatioTool(
 		string tenantKey = options is EnvironmentOptions environmentOptions
 			? commandResolver.GetTenantKey(environmentOptions)
 			: McpToolExecutionLock.SharedFallbackKey;
-		// Compile<->compile exclusion is handled by the narrow TryReserveCompile reservation in the caller,
+		// Compile<->compile exclusion is handled by the narrow TryReserveConfigurationBuild reservation in the caller,
 		// NOT by the broad per-tenant execution monitor: the multi-minute compile (detached past the MCP
 		// response deadline) must not serialize unrelated same-tenant tools, and the core only forbids a
 		// concurrent COMPILE (review Blocker, ENG-91315). So this path takes no GetLock. It still pins the

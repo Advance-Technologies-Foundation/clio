@@ -44,6 +44,58 @@ public sealed class McpToolErrorFilterTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Keeps the message of an IAuthoritativeErrorMessage exception instead of unwrapping to the inner parser exception, so a classified non-JSON response reaches the agent (ENG-93365).")]
+	public async Task HandleCallToolErrors_Should_Keep_Authoritative_Message_Instead_Of_Inner_Parser_Text() {
+		// Arrange
+		JsonException parserException = new("'<' is an invalid start of a value. LineNumber: 0 | BytePositionInLine: 0.");
+		AuthoritativeMessageException executionException = new(
+			"SelectQuery returned an HTML page instead of JSON (URL: endpoint). Verify the environment credentials.",
+			parserException);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw executionException);
+		RequestContext<CallToolRequestParams> context = CreateContext("find-entity-schema");
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("HTML page instead of JSON",
+			because: "the classified message was built for the agent and must survive the unwrap");
+		text.Should().NotContain("is an invalid start of a value",
+			because: "the raw parser text the classified message replaces must not reach the transcript (ENG-93365)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still unwraps to the inner-most message for an ordinary wrapped exception, so a dispatch wrapper never hides the real cause.")]
+	public async Task HandleCallToolErrors_Should_Unwrap_To_Inner_Message_For_Ordinary_Wrapped_Exception() {
+		// Arrange
+		InvalidOperationException executionException = new(
+			"Outer wrapper message.",
+			new InvalidOperationException("Environment with key 'NoSuchEnv' not found."));
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw executionException);
+		RequestContext<CallToolRequestParams> context = CreateContext("find-entity-schema");
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("Environment with key 'NoSuchEnv' not found",
+			because: "an unmarked wrapper must keep yielding the inner-most cause, unchanged by the ENG-93365 guard");
+	}
+
+	private sealed class AuthoritativeMessageException : InvalidOperationException, Clio.Common.IAuthoritativeErrorMessage
+	{
+		public AuthoritativeMessageException(string message, Exception innerException)
+			: base(message, innerException) {
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Redacts absolute paths, URIs (with credentials), and connection-string hosts from the surfaced exception message while keeping the logical reason the agent self-corrects on — the message lands in the model/host transcript.")]
 	public async Task HandleCallToolErrors_Should_Redact_Sensitive_Tokens_From_Execution_Exception() {
 		// Arrange
@@ -423,16 +475,8 @@ public sealed class McpToolErrorFilterTests
 			new FakeRetrySafeTool());
 
 	private static RequestContext<CallToolRequestParams> CreateContext(
-		string toolName, IDictionary<string, JsonElement>? arguments = null) {
-		RequestContext<CallToolRequestParams> context =
-			(RequestContext<CallToolRequestParams>)RuntimeHelpers.GetUninitializedObject(
-				typeof(RequestContext<CallToolRequestParams>));
-		context.Params = new CallToolRequestParams {
-			Name = toolName,
-			Arguments = arguments
-		};
-		return context;
-	}
+		string toolName, IDictionary<string, JsonElement>? arguments = null) =>
+		McpRequestContextTestFactory.CreateCallToolContext(toolName, arguments);
 
 	private static McpServerTool CreateRealTool() =>
 		McpServerTool.Create(GetFakeToolMethod(), new FakeToolWithCompositeArgs());

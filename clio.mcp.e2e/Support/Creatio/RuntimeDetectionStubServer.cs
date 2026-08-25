@@ -56,6 +56,13 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 		}
 	}
 
+	/// <summary>
+	/// Marker embedded in the HTML body the stub returns for a SelectQuery against
+	/// <see cref="RuntimeDetectionStubServerConfiguration.HtmlSelectQuerySchemaName"/>. Tests assert it is
+	/// absent from the surfaced error so a leaked response body is caught.
+	/// </summary>
+	public const string SelectQueryHtmlBodyMarker = "select-query-secret-marker";
+
 	private static string BuildScript(RuntimeDetectionStubServerConfiguration configuration, int port) {
 		string configJson = JsonSerializer.Serialize(configuration);
 		return $$"""
@@ -109,6 +116,17 @@ http.createServer((request, response) => {
     }
     if (request.method === "GET" && url === "/0/Login/NuiLogin.aspx") {
       sendText(response, config.NetFrameworkUiMarkerEnabled ? 200 : 404, config.NetFrameworkUiMarkerEnabled ? "OK" : "Not Found");
+      return;
+    }
+    if (request.method === "POST"
+      && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
+      && config.HtmlSelectQuerySchemaName
+      && body.includes('"' + config.HtmlSelectQuerySchemaName + '"')) {
+      // ENG-93365: the stand answered a specific SelectQuery with an HTML error page instead of JSON.
+      // Keyed on the queried schema so the runtime-detection probe (SysAdminUnit) still gets valid JSON
+      // and environment registration is unaffected.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>Runtime Error</title></head><body>Server Error in '/' Application. {{SelectQueryHtmlBodyMarker}}</body></html>");
       return;
     }
     if (request.method === "POST" && url === "/DataService/json/SyncReply/SelectQuery") {
@@ -204,4 +222,5 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? CoreVersion = null,
 	string? ThemeCatalogJson = null,
 	string? ThemeCssPath = null,
-	string? ThemeCssContent = null);
+	string? ThemeCssContent = null,
+	string? HtmlSelectQuerySchemaName = null);

@@ -561,6 +561,107 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance");
 	}
 
+	[Test]
+	[Description("validate-page returns a WARNING (not a hard failure) when a crt.EntityDataSource carries a config.filters block — the key is a silent runtime no-op, so the agent is advised to move the static filter to a _PredefinedFilter attribute while the body stays valid (ENG-93867). Proves the entity-data-source-static-filters lint rule surfaces through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about config.filters on a crt.EntityDataSource")]
+	[AllureDescription("Sends a body whose modelConfigDiff registers a crt.EntityDataSource with a config.filters block and verifies validate-page surfaces an advisory WARNING carrying entity-data-source-static-filters while keeping valid=true — the block is an invisible no-op, not a structural break.")]
+	public async Task PageValidateTool_Should_Warn_On_EntityDataSource_Config_Filters() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithDataSourceFilters = ValidPageBody.Replace(
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/",
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[" +
+				"{\"operation\":\"merge\",\"path\":[\"dataSources\"],\"values\":{" +
+				"\"EmailDS\":{\"type\":\"crt.EntityDataSource\",\"scope\":\"viewElement\",\"config\":{" +
+				"\"entitySchemaName\":\"Activity\",\"attributes\":{\"Title\":{\"path\":\"Title\"}}," +
+				"\"filters\":{\"items\":{},\"logicalOperation\":0,\"isEnabled\":true,\"filterType\":6,\"rootSchemaName\":\"Activity\"}}}}}" +
+				"]/**SCHEMA_MODEL_CONFIG_DIFF*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithDataSourceFilters);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "config.filters on a crt.EntityDataSource is a silent no-op, not a structural break — validate-page must advise rather than block so the page still saves");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a Warning-severity lint finding must not demote content-ok — only Error findings block");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must flag the ignored config.filters block as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("entity-data-source-static-filters", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the warning to the related-list static-filter guidance");
+	}
+
+	[Test]
+	[Description("validate-page does NOT warn about entity-data-source-static-filters when a generated Dashboard's `_designOptions` block carries both entitySchemaName and a filters array — `_designOptions` is designer-owned dashboard metadata, not a crt.EntityDataSource config, even though it shares the same co-located-key signature (GH-1125). Proves the false-positive carve-out reaches the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page does not warn about a Dashboard's _designOptions.filters")]
+	[AllureDescription("Sends a body whose viewConfigDiff registers a Dashboards entry with a _designOptions block carrying entitySchemaName + filters and verifies validate-page returns valid=true with no entity-data-source-static-filters warning — the block is designer-generated dashboard metadata, not a crt.EntityDataSource config.")]
+	public async Task PageValidateTool_Should_Not_Warn_On_Dashboard_DesignOptions_Filters() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithDashboardDesignOptions = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"merge\",\"name\":\"Dashboards\",\"values\":{" +
+				"\"_designOptions\":{\"entitySchemaName\":\"UsrExample\",\"dependencies\":[],\"filters\":[]}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithDashboardDesignOptions);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the Dashboard's generated _designOptions block is a legitimate shape, not a lint violation of any kind");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().BeNullOrEmpty(
+			because: "the _designOptions.filters array is designer-generated dashboard metadata, not a crt.EntityDataSource config key — warning about it as an ignored EntityDataSource filter would misdirect the agent toward a non-existent fix");
+	}
+
+	[Test]
+	[Description("validate-page returns a WARNING (not a hard failure) when a crt.HandleViewModelAttributeChangeRequest handler is not scoped to an attribute but writes a view-model attribute via $context.set(...) — the unscoped handler re-fires on its own write and clears the field at runtime (ENG-95557). Proves the handler-attribute-change-unscoped-write lint rule surfaces through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about an unscoped attribute-change handler that writes an attribute")]
+	[AllureDescription("Sends a body whose SCHEMA_HANDLERS array holds an unscoped crt.HandleViewModelAttributeChangeRequest handler that calls $context.set(...) and verifies validate-page surfaces an advisory WARNING carrying handler-attribute-change-unscoped-write while keeping valid=true — the self-retrigger footgun is a runtime clear, not a structural break.")]
+	public async Task PageValidateTool_Should_Warn_On_Unscoped_AttributeChange_Handler_Write() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithUnscopedHandler = ValidPageBody.Replace(
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"handlers: /**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+				"handler: async (request, next) => { await request.$context.set(\"UsrCountryCode\", request.value); " +
+				"return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithUnscopedHandler);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an unscoped attribute-change handler that writes an attribute is a runtime self-retrigger footgun, not a structural break — validate-page must advise rather than block so the page still saves");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "a Warning-severity lint finding must not demote content-ok — only Error findings block");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "validate-page must flag the unscoped attribute-change write as an advisory warning");
+		response.Validation.Warnings!.Should().Contain(
+			e => e.Contains("handler-attribute-change-unscoped-write", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the warning to the page-schema-handlers scoping guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -643,6 +744,338 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Errors!.Should().Contain(
 			e => e.Contains("ProductsList") && e.Contains("is not a container for other items"),
 			because: "validate-page must surface the server-faithful differ exception so the agent fixes the diff before writing");
+	}
+
+	[Test]
+	[Description("ENG-95429: returns valid=false for a mobile JSON body whose viewConfigDiff insert declares its component type on the operation object instead of inside 'values'. The Creatio differ builds the element from 'values' only, so the type is dropped and the page would persist a button that never renders while the write reports success.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile insert whose type sits outside values")]
+	[AllureDescription("Sends the ENG-95429 shape — a run-process button whose 'type' is a sibling of 'values' rather than a member of it — and verifies validate-page blocks it end-to-end instead of accepting an unrenderable element.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Insert_With_Type_Outside_Values() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMisplacedType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton", "type": "crt.Button",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithMisplacedType);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the differ discards an operation-level type, so the write would persist a button the mobile runtime cannot render");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().NotBeNullOrEmpty(
+			because: "the misplaced type must be surfaced as an actionable validation error");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("RunProcessButton") && e.Contains("values"),
+			because: "validate-page must name the element and point at 'values' so the agent fixes the insert before writing");
+	}
+
+	[Test]
+	[Description("A mobile body whose insert declares no component type anywhere passes validation but comes back with the advisory. One of the end-to-end proofs that a warning raised by ValidateMobilePage reaches Validation.Warnings on a MOBILE body; the Scaffold/actions case below covers the same wire.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page surfaces a mobile warning without blocking")]
+	[AllureDescription("Sends a mobile body with an insert that carries element properties but no type, and verifies validate-page returns valid=true with the typeless-element warning present.")]
+	public async Task PageValidateTool_Should_Surface_Mobile_Warning_Without_Blocking() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithTypelessInsert = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "MysteryElement",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "visible": true } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithTypelessInsert);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a missing type is advisory — it is not provably a misplacement, so it must not block the write");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().Contain(w => w.Contains("MysteryElement"),
+			because: "the mobile warning wire must be proven end to end, not only in unit scope");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "nothing in this body is a blocking defect");
+	}
+
+	[Test]
+	[Description("ENG-95429: a well-formed crt.Button insert into Scaffold/actions passes validation (valid=true) but comes back with the placement warning. This is the body a coding agent actually produced; the type-placement rule correctly stays silent on it, so the slot advisory is the only thing that can steer the author to a placement the mobile designer canvas can show.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about a mobile button in the Scaffold actions slot")]
+	[AllureDescription("Sends the stand-verified ENG-95429 body — type inside values, correct operation case, inserted into Scaffold/actions — and verifies validate-page accepts it but returns the non-blocking placement warning pointing at a page container's items with a layoutConfig.")]
+	public async Task PageValidateTool_Should_Warn_About_Mobile_Button_In_Scaffold_Actions() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithButtonInActions = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton",
+			      "parentName": "Scaffold", "propertyName": "actions",
+			      "values": { "type": "crt.Button",
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrSomeProcess",
+			                                           "processRunType": "RegardlessOfThePage" } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithButtonInActions);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the placement is undiscoverable in the designer, not invalid — the rule steers rather than refuses");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().NotBeNullOrEmpty(
+			because: "the whole point of the rule is that this body is otherwise clean and would pass unremarked");
+		response.Validation.Warnings!.Should().Contain(
+			w => w.Contains("RunProcessButton") && w.Contains("layoutConfig"),
+			because: "the agent must reach the working placement from the warning alone, without another round-trip");
+	}
+
+	[Test]
+	[Description("ENG-95429: a merge that authors a button inside values.actions is REJECTED end to end. Verified on a stand before the rule existed - the write succeeded, the operation persisted in the page body, and the button appeared zero times in the server-merged viewConfig, because the differ strips a slot the target already populates. The slot-placement rule cannot see this shape: it matches insert only.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile merge that authors children in a Scaffold slot")]
+	[AllureDescription("Sends the stand-verified merge shape - a crt.Button nested in values.actions of a merge on Scaffold - and verifies validate-page refuses it with an error naming the slot and the child that would go missing.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Merge_Authoring_Children_In_Slot() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithMergeAuthoredButton = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "Scaffold",
+			      "values": { "actions": [ { "type": "crt.Button", "name": "UsrMergeProbeButton",
+			                                 "clicked": { "request": "crt.SaveRecordRequest" } } ] } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithMergeAuthoredButton);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the elements are provably never created, so accepting the body would let the silent failure through again");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("UsrMergeProbeButton") && e.Contains("actions"),
+			because: "the author must see which child goes missing and from which slot, not just that the merge is wrong");
+	}
+
+	[Test]
+	[Description("Companion to the merge-slot rejection: a merge that sets only scalar properties stays valid end to end. This is the shape the mobile designer emits throughout a real page, so a false positive here would refuse almost every mobile write.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts a mobile merge that sets scalar properties")]
+	[AllureDescription("Sends a layoutConfig-only merge taken from a real mobile page body and verifies validate-page accepts it, proving the merge-slot rule is scoped to authored child elements.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Merge_Of_Scalar_Properties() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithScalarMerge = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "merge", "name": "AreaProfileContainer",
+			      "values": { "layoutConfig": { "column": 1, "colSpan": 1, "row": 1, "rowSpan": 1 } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithScalarMerge);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an ordinary property merge must stay writable - the rule targets authored child elements only");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "the everyday designer-emitted merge must reach the save path with nothing to fix");
+		response.Validation.Warnings.Should().BeNullOrEmpty(
+			because: "a warning on the everyday designer-emitted merge would still push the agent to rewrite correct code");
+	}
+
+	[Test]
+	[Description("ENG-95347: returns valid=true for a mobile list body whose item-scope attributes are declared ONLY inside the collection attribute's nested viewModelConfig.attributes map and bound from the list's itemLayout. Before this fix the binding validator collected only top-level attribute names, rejected this body as undeclared, and pushed authors to re-declare the attributes at page root — creating the duplicate declarations that break mobile-runtime saves.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts itemLayout bindings to nested item-scope attributes")]
+	[AllureDescription("Sends a mobile list body where the itemLayout binds to an attribute declared only in the collection attribute's viewModelConfig.attributes, and verifies validate-page returns valid=true end-to-end with no undeclared-binding error.")]
+	public async Task PageValidateTool_Should_Accept_ItemLayout_Binding_To_Nested_Collection_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithNestedItemScopeAttributes = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_LeadName" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithNestedItemScopeAttributes);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "SimilarLeadListDS_LeadName is declared in the collection attribute's nested viewModelConfig.attributes — the item scope the itemLayout binding resolves against at mobile runtime — so no root-level duplicate declaration is required");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "a correctly-nested item-scope declaration must not be reported as an undeclared binding");
+	}
+
+	[Test]
+	[Description("ENG-95347 counterpart guard: returns valid=false when the itemLayout binds to a name absent from BOTH the root attributes map and the collection attribute's nested viewModelConfig.attributes — accepting nested declarations must not turn the undeclared-binding check off.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page still rejects an itemLayout binding to an undeclared attribute")]
+	[AllureDescription("Sends the same nested-declaration mobile list body but binds the itemLayout title to a name declared nowhere, and verifies validate-page returns valid=false with the undeclared-binding error naming it.")]
+	public async Task PageValidateTool_Should_Reject_ItemLayout_Binding_To_Undeclared_Nested_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithUndeclaredNestedBinding = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_NotDeclared" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithUndeclaredNestedBinding);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "SimilarLeadListDS_NotDeclared is declared neither at the root attributes map nor in the nested item-scope attributes, so the binding cannot resolve at mobile runtime");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("SimilarLeadListDS_NotDeclared"),
+			because: "the undeclared-binding error must name the attribute so the agent can fix the declaration before writing");
+	}
+
+	[Test]
+	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]
+	[AllureDescription("Sends the corrected ENG-95429 shape (type inside 'values', everything else identical to the rejected body) and verifies validate-page accepts it end-to-end with no errors.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Insert_With_Type_Inside_Values() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithCorrectType = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.Button",
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithCorrectType);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a type inside 'values' is exactly what the differ applies, so the canonical shape must keep passing");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "the type-placement rule must not fire on a correctly authored insert");
+		response.Validation.Warnings.Should().BeNullOrEmpty(
+			because: "the canonical shape must come back completely clean — a warning here would still push the agent to 'fix' correct code");
+	}
+
+	[Test]
+	[Description("Returns valid=true for a mobile JSON body whose viewModelConfigDiff is the ENG-94101 insert-delta shape: an 'insert' appends a new entry into a template-owned array (Items.modelConfig.filterAttributes) rather than a root merge replacing it. Proves the new merge+insert diff contract validates through the real MCP wire — the apply-oracle seeds a container at the insert path so a template-owned-array append does not false-positive as not-a-container.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts the ENG-94101 template-array insert-delta shape")]
+	[AllureDescription("Sends a mobile JSON body whose viewModelConfigDiff appends a filter entry via an insert at the array's own path (no own base section) and verifies validate-page accepts it end-to-end — the observable output shape the converter now emits.")]
+	public async Task PageValidateTool_Should_Accept_Mobile_Body_With_TemplateArray_InsertDelta() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithInsertDelta = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [
+			    { "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
+			      "values": { "name": "QuickFilter_x_Items", "loadOnChange": true } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithInsertDelta);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an insert appending to a template-owned array is the ENG-94101 contract; the oracle seeds the container path so it resolves instead of false-positiving as not-a-container");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "the insert-delta shape is a valid mobile data-section diff and must pass content validation");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no error should be reported for the canonical template-array insert-delta the converter now emits");
 	}
 
 	[Test]

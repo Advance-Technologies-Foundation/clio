@@ -34,7 +34,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	}
 
 	private static UpdateThemeOptions ValidOptions() => new() {
-		Id = "ocean-theme",
+		Id = "d53a816b-65ed-4b5b-ad3b-f739280add45",
 		Caption = "Ocean",
 		CssClassName = "ocean-theme",
 		CssContent = ".ocean-theme{--crt-x:2}"
@@ -94,7 +94,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 
 		// Assert
 		exitCode.Should().Be(0, because: "a success=true response means the theme was overwritten");
-		capturedBody.Should().Contain("\"id\":\"ocean-theme\"", because: "the target id must be sent");
+		capturedBody.Should().Contain("\"id\":\"d53a816b-65ed-4b5b-ad3b-f739280add45\"", because: "the target id must be sent");
 		capturedBody.Should().Contain("\"cssClassName\":\"ocean-theme\"", because: "the css class name must be sent in camelCase");
 		capturedBody.Should().NotContain("packageUId", because: "UpdateTheme has no package parameter — a theme cannot be re-homed");
 	}

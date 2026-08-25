@@ -1,0 +1,4 @@
+interface:
+  display_name: "Investigate Clio Issue"
+  short_description: "Diagnose ownership of a Clio issue"
+  default_prompt: "Use $investigate-clio-issue to diagnose this claimed Clio issue."

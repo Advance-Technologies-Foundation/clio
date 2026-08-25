@@ -63,10 +63,26 @@ internal class HelpArtifactConsistencyTests {
 	}
 
 	[Test]
+	[Description("The custom logging command is explicitly classified under Package Management.")]
+	public void AddCustomLogging_ShouldUsePackageManagementGroup_WhenCatalogBuilt() {
+		// Arrange
+		CommandHelpCatalog catalog = new();
+
+		// Act
+		bool found = catalog.TryGetCommand("add-custom-logging", out HelpCommandMetadata command);
+
+		// Assert
+		found.Should().BeTrue(because: "the new command must be present in the canonical help catalog");
+		command.GroupId.Should().Be(HelpGroupId.PackageManagement,
+			because: "package-specific logging configuration belongs under Package Management");
+	}
+
+	[Test]
 	[Description("Every Classic->Freedom schema migration verb is classified in the Development group with an explicit description so the catalog does not fall back to source-index classification.")]
 	public void ClassicToFreedomSchemaCommands_ShouldBeClassifiedWithDescription_WhenCatalogBuilt() {
 		// Arrange
 		string[] verbs = [
+			"get-classic-list-columns",
 			"get-classic-page-sources",
 			"list-entity-client-schemas"
 		];

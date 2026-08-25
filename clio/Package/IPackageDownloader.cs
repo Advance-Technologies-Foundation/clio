@@ -14,8 +14,12 @@ namespace Clio.Package
 			string destinationPath = null);
 		void DownloadZipPackage(string packageName, EnvironmentSettings environmentSettings = null,
 			string destinationPath = null);
+		/// <summary>
+		/// Downloads and overwrites the requested package directories without clearing unrelated content from
+		/// the shared destination root.
+		/// </summary>
 		void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
-			string destinationPath = null); 
+			string destinationPath = null);
 		void DownloadPackage(string packageName, EnvironmentSettings environmentSettings  = null,
 			string destinationPath = null);
 

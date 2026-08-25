@@ -31,6 +31,7 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 	#region Fields: Private
 
 	private readonly IServerReadinessWaiter _readinessWaiter;
+	private string _servicePathOverride;
 
 	#endregion
 
@@ -47,7 +48,10 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 	#region Properties: Protected
 
 	protected override string ServicePath =>
-		EnvironmentSettings.IsNetCore ? "/ServiceModel/AppInstallerService.svc/RestartApp"
+		_servicePathOverride ?? GetServicePath(EnvironmentSettings.IsNetCore);
+
+	internal static string GetServicePath(bool isNetCore) =>
+		isNetCore ? "/ServiceModel/AppInstallerService.svc/RestartApp"
 			: @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 
 	#endregion
@@ -69,6 +73,22 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 		return WaitForReadiness(options) ? 0 : 1;
 	}
 
+	internal int ExecuteForEnvironment(
+		RestartOptions options,
+		EnvironmentSettings environment,
+		IApplicationClient applicationClient) {
+		EnvironmentSettings = environment ?? throw new ArgumentNullException(nameof(environment));
+		ApplicationClient = applicationClient ?? throw new ArgumentNullException(nameof(applicationClient));
+		string runtimeRoot = environment.Uri.TrimEnd('/') + (environment.IsNetCore ? string.Empty : "/0");
+		_servicePathOverride = runtimeRoot + GetServicePath(environment.IsNetCore);
+		try {
+			return Execute(options);
+		}
+		finally {
+			_servicePathOverride = null;
+		}
+	}
+
 	/// <summary>
 	/// Polls the instance's health-check endpoint until it answers or <see cref="RestartOptions.ReadyTimeout"/>
 	/// elapses, WITHOUT issuing the restart request. Exposed separately from <see cref="Execute"/> so the MCP
@@ -85,7 +105,11 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 			// Clamp to a sane ceiling (Finding 3): this wait pins the session container for its whole duration,
 			// so an unbounded caller-chosen timeout is a hardening gap. Bounds both the CLI --ready-timeout and
 			// the MCP waitTimeoutSeconds paths, which both funnel through here.
-			Timeout = TimeSpan.FromSeconds(Math.Clamp(options.ReadyTimeout, 1, RestartOptions.MaxReadyTimeoutSeconds))
+			Timeout = TimeSpan.FromSeconds(Math.Clamp(options.ReadyTimeout, 1, RestartOptions.MaxReadyTimeoutSeconds)),
+			// A restart must not report ready on the liveness ping alone: after a restart the application layer
+			// can answer /api/HealthCheck/Ping while still serving a login page / a 25s+ login during warm-up
+			// (ENG-94417). Require an authenticated application-layer round-trip before declaring readiness.
+			RequireAuthenticatedReadiness = true
 		});
 
 	#endregion

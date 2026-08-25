@@ -1,0 +1,288 @@
+using System.Text.RegularExpressions;
+using Allure.NUnit;
+using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Common;
+using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
+using FluentAssertions;
+using ModelContextProtocol.Protocol;
+
+namespace Clio.Mcp.E2E;
+
+/// <summary>
+/// Stand-free end-to-end contract tests for <c>install-process-builder</c>.
+/// </summary>
+/// <remarks>
+/// The fixture runs against an isolated <c>CLIO_HOME</c> whose <c>Features</c> map is EMPTY, so the real
+/// MCP server starts with <c>process-designer</c> off — the shipping default. That is not incidental
+/// setup: it is the whole point of this fixture. <c>install-process-builder</c> is the remediation the
+/// gated process-designer tools point at, so it must stay reachable on exactly the server where those
+/// tools are invisible. Asserting that with the feature state pinned by construction (rather than read
+/// from whatever the developer's own appsettings happens to say) is what makes the invariant a test
+/// instead of a coincidence.
+/// <para>
+/// The unit twin (<c>InstallProcessBuilderToolTests.InstallProcessBuilderTool_Should_Not_Be_FeatureGated</c>)
+/// asserts the ABSENCE of the attribute; this asserts the CONSEQUENCE — that the real server, having
+/// filtered its primitives, still advertises the tool.
+/// </para>
+/// </remarks>
+[TestFixture]
+[AllureNUnit]
+[AllureFeature(InstallProcessBuilderTool.InstallProcessBuilderToolName)]
+[Category("McpE2E.NoEnvironment")]
+[Parallelizable(ParallelScope.Self)]
+public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtureBase {
+
+	private const string ToolName = InstallProcessBuilderTool.InstallProcessBuilderToolName;
+
+	/// <summary>
+	/// The five <c>[FeatureToggle("process-designer")]</c> MCP tools whose refusals name
+	/// <c>install-process-builder</c> as the fix.
+	/// </summary>
+	private static readonly string[] FeatureGatedProcessDesignerTools = [
+		CreateBusinessProcessTool.CreateBusinessProcessToolName,
+		ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+		DescribeProcessTool.ToolName,
+		ListUserTasksTool.ListUserTasksToolName,
+		ValidateProcessGraphTool.ToolName
+	];
+
+	/// <inheritdoc />
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
+		// An EMPTY Features map means process-designer is off, which is the shipping default and the
+		// condition under which the remediation tool has to be reachable.
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome(
+			"""
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "Autoupdate": false,
+			  "Features": {},
+			  "Environments": {
+			    "dev": {
+			      "Uri": "http://localhost",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": true
+			    }
+			  }
+			}
+			""",
+			GetType().Name);
+	}
+
+	[Test]
+	[Description("With process-designer off, the real MCP server still advertises install-process-builder while hiding the five gated tools that name it as the remediation.")]
+	[AllureTag(ToolName)]
+	[AllureName("install-process-builder stays reachable while the process-designer tools are gated off")]
+	[AllureDescription("Starts the real clio MCP server with an isolated CLIO_HOME whose Features map is empty, and verifies that install-process-builder is reachable while the five [FeatureToggle(\"process-designer\")] tools are not — so the advertised remediation is not filtered out by the very gate that makes it necessary.")]
+	public async Task InstallProcessBuilder_Should_StayReachable_WhileProcessDesignerToolsAreGatedOff() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+
+		// Assert
+		bool advertised = await context.Session.IsToolAdvertisedAsync(
+			ToolName, context.CancellationTokenSource.Token);
+
+		// Assert
+		toolNames.Should().Contain(ToolName,
+			because: "install-process-builder is the remediation the gated tools point at, so a server with "
+				+ "process-designer off must still be able to reach it — a gated primitive is filtered out of "
+				+ "registration and would be unreachable exactly when it is needed");
+		advertised.Should().BeFalse(
+			because: "this pins WHICH of the two reachability paths applies, and the assertion above is nearly "
+				+ "vacuous without it. ListReachableToolNamesAsync unions tools/list with the get-tool-contract "
+				+ "index, and this tool is deliberately absent from McpCoreToolProfile.CoreToolTypes — so it is "
+				+ "never in tools/list and is reached through the curated index plus clio-run. Its index entry "
+				+ "is unconditional, so the Contain above would stay green even if [FeatureToggle] were added "
+				+ "to the tool — the exact regression this fixture exists to block. Pinning non-residency here "
+				+ "means a change to EITHER half (residency or gating) has to come past a red test");
+		toolNames.Should().NotIntersectWith(FeatureGatedProcessDesignerTools,
+			because: "this fixture's CLIO_HOME leaves Features empty, so the five [FeatureToggle(\"process-designer\")] "
+				+ "tools must be invisible on every MCP surface — if they were reachable here the asymmetry this "
+				+ "test claims to prove would not exist and the assertion above would be vacuous");
+		toolNames.Should().Contain(GetProcessSignatureTool.ToolName,
+			because: "get-process-signature is the other deliberately ungated member of the process-designer "
+				+ "namespace (it reads the built-in DataService), which shows the gate is per-tool rather than "
+				+ "per-namespace");
+	}
+
+	[Test]
+	[Description("get-tool-contract returns the curated install-process-builder contract: environment-name required, and a description that states the outcome check without claiming the install needs no restart.")]
+	[AllureTag(ToolName)]
+	[AllureName("install-process-builder advertises a curated contract with the corrected restart wording")]
+	[AllureDescription("Reads the curated install-process-builder contract over the real MCP path and verifies the required argument, that the preferred flow stops at this tool rather than naming a feature-gated follow-up, that the flow note claims no version comparison while still stating the liveness-only limit, and that the description does not reassert the retracted \"no application restart\" claim.")]
+	public async Task InstallProcessBuilder_Contract_Should_Describe_Arguments_And_Outcome_Verification() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await GetContractAsync(context, ToolName);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "install-process-builder carries a curated contract, so a named lookup must succeed");
+		response.Tools.Should().NotBeNull(
+			because: "a successful named contract lookup must carry the tool definition");
+		ToolContractDefinition contract = response.Tools!.Single(tool => tool.Name == ToolName);
+		contract.InputSchema.Required.Should().Equal(["environment-name"],
+			because: "the environment is the tool's only argument and it is mandatory — the package ships inside "
+				+ "clio, so there is nothing else for the caller to supply");
+		contract.PreferredFlow.Tools.Should().Equal([ToolName],
+			because: "the flow must stop at this tool. It used to name list-user-tasks as a confirmation step, "
+				+ "which contradicted the assertion above in this same fixture: that tool is feature-gated and "
+				+ "absent from this very server, so the contract was telling an agent to call something it "
+				+ "could not see");
+		contract.PreferredFlow.Tools.Should().NotContain(ListUserTasksTool.ListUserTasksToolName,
+			because: "naming a [FeatureToggle]-gated tool in the flow of an ungated one is the drift this pins: "
+				+ "the two halves of this fixture would otherwise assert a contradiction and call it correct");
+		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
+		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
+		// back to "the NEW build is serving: it compares the version the serving build reports against the
+		// one it installed", so this test and its E2E mirror both passed green over the one claim they exist
+		// to block. Widening the ban to "which build" is WRONG too: a correct note has to be able to say
+		// "does not prove WHICH build is serving", and a regex cannot tell an assertion from its negation.
+		// So ban only the verb no correct phrasing needs — both false versions claimed a COMPARISON — and
+		// separately require the limit to be stated, which catches the other failure mode: silence.
+		contract.PreferredFlow.Notes.Should().NotMatchRegex(@"(?i)compar",
+			because: "the tool compares nothing: the probe is the package's ungated Ping, which proves an "
+				+ "assembly exists and answers, not which sources it was built from. A version-reporting "
+				+ "operation was built for that and DROPPED — for a source-only package the reported version "
+				+ "could only come from a hand-maintained duplicate in the shipped sources, since the assembly "
+				+ "version belongs to the platform and descriptor.json never reaches the target's build "
+				+ "directory (both measured on a stand)");
+		contract.PreferredFlow.Notes.Should().MatchRegex(@"(?i)does not prove|stale|only once the functionality",
+			because: "banning the false claim is not sufficient — the note must positively carry the LIMIT, or "
+				+ "the next rewrite satisfies the ban by saying nothing at all and an agent is left assuming "
+				+ "the strong reading again");
+		contract.Description.Should().MatchRegex(@"(?i)liveness,\s+not\s+identity",
+			because: "the LIMIT is part of the contract, not a footnote: on an upgrade a stale assembly that "
+				+ "still answers passes the check, so an agent must not read a successful install of a new "
+				+ "version as proof the new code is running. Stating only the capability and omitting its "
+				+ "boundary is how an agent comes to trust a verdict the tool never gave");
+		contract.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
+			because: "the contract must name the package it installs so an agent can match it against the refusal "
+				+ "text of the tool that sent it here");
+		// Whitespace-normalised, because `.` does not match a newline and the contract text is re-wrapped
+		// freely; a purely cosmetic re-wrap must not turn this red.
+		string normalizedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		normalizedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
+			because: "a case where this tool does NOT install must be in the contract, or an agent meets "
+				+ "the refusal as a surprise. Within one sentence, so 'it never refuses ... a newer version' "
+				+ "cannot satisfy it across two");
+		normalizedDescription.Should().MatchRegex(@"(?i)update clio",
+			because: "an agent that meets the refusal must be told the ONE thing that resolves it; stating the "
+				+ "refusal without the remedy just produces a retry loop, and retrying cannot succeed");
+		normalizedDescription.Should().MatchRegex(@"(?i)command[- ]line|\bCLI\b",
+			because: "--force is deliberately not an argument of this tool, so the contract must say the "
+				+ "override lives elsewhere rather than leaving an agent hunting for a parameter that has been "
+				+ "withheld on purpose");
+		normalizedDescription.Should().NotMatchRegex(@"(?i)--force",
+			because: "the contract must NOT hand over the literal bypass invocation. Naming the flag right "
+				+ "after 'do not work around this' is what makes the workaround easy to reach for: concrete "
+				+ "syntax outweighs an abstract prohibition, and any host that also grants a shell can run it");
+		normalizedDescription.Should().NotMatchRegex(@"(?i)no skip|always installs|never refuses",
+			because: "this is the regression that actually shipped: the curated contract kept saying 'It "
+				+ "ALWAYS installs - there is no skip' after the refusal existed. A positive-match-only guard "
+				+ "stays green while the same description asserts both halves");
+		normalizedDescription.Should().NotMatchRegex(@"(?i)\b(one|1) (case|exception)\b|but one\b",
+			because: "the same drift recurred for the SECOND refusal: 'installs in every case but one' outlived "
+				+ "the malformed-bundled-version refusal, which is reachable from MCP");
+		normalizedDescription.Should().MatchRegex(@"(?i)pre-release suffix",
+			because: "an agent meeting the second refusal must find it in the only description it receives");
+		contract.Description.Should().NotMatchRegex(@"(?i)no\s+(application\s+)?restart",
+			because: "the live runs disproved that claim on both runtimes — .NET Framework recycles itself and the "
+				+ "installer restarts .NET hosts — so the contract must not tell an agent a restart does not happen");
+		// Duration ban, mirrored from ToolContractGetToolTests. The patterns are restated rather than shared
+		// because this is a separate assembly; keep the two in step. They deliberately also catch the short
+		// spellings ("~30 s", "45 sec", "2 min") — the earlier form only looked for the full words, and the
+		// abbreviations are exactly what a rewrite reaches for once the words are banned.
+		foreach (string durationPattern in new[] {
+			@"(?i)\d+\s*(-|–|to)\s*\d+\s*(s|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours)\b",
+			@"(?i)\d+\s*(s|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours)\b"
+		}) {
+			normalizedDescription.Should().NotMatchRegex(durationPattern,
+				because: "elapsed time is a property of the TARGET — configuration size, host, load — not of "
+					+ "clio, and this contract is the ONLY description a non-resident tool's caller receives. An "
+					+ "agent read '~15-75 s' out of a description once and repeated it to a user as a promise");
+			contract.PreferredFlow.Notes.Should().NotMatchRegex(durationPattern,
+				because: "the notes are read alongside the description, so a figure banned from one must not be "
+					+ "reachable through the other");
+		}
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the tool needs package-install permission plus SysPackage read access on a registered "
+				+ "environment, and an agent that reads the contract before calling should learn that from it. "
+				+ "CanManageProcessDesign is NOT this tool's requirement — it gates the process-designer tools "
+				+ "the caller retries afterwards");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes install-process-builder with an unknown environment name, and verifies a readable structured failure rather than a transport error.")]
+	[AllureTag(ToolName)]
+	[AllureName("install-process-builder reports invalid environment failures")]
+	[AllureDescription("Calls install-process-builder with an unregistered environment name over the real MCP path and verifies the result stays a structured command-execution envelope with exit code 1 and a human-readable diagnostic.")]
+	public async Task InstallProcessBuilder_Should_Report_Invalid_Environment_Failure() {
+		// Arrange
+		string invalidEnvironmentName = $"missing-install-process-builder-env-{Guid.NewGuid():N}";
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, invalidEnvironmentName);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an unresolvable environment is an expected command outcome, so it must come back as a normal "
+				+ "command-execution envelope rather than an MCP transport error");
+		execution.ExitCode.Should().Be(1,
+			because: $"install-process-builder routes through the shared BaseTool resolver catch, which returns "
+				+ $"FromResolverError (ExitCode=1) for an expected environment-resolution failure, not the "
+				+ $"unexpected-exception code -1. Actual execution: {DescribeExecution(execution)}");
+		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+			because: "a failed execution should emit error diagnostics");
+		string combinedOutput = string.Join(
+			Environment.NewLine,
+			(execution.Output ?? []).Select(message => $"{message.MessageType}: {message.Value}"));
+		combinedOutput.Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|not registered)",
+			because: "the failure should help a human understand that the requested environment is not registered");
+	}
+
+	private static async Task<ToolContractGetResponse> GetContractAsync(ArrangeContext context, string toolName) {
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { toolName } }
+			},
+			context.CancellationTokenSource.Token);
+		callResult.IsError.Should().NotBeTrue(
+			because: "a named contract lookup for an advertised tool is a valid request shape");
+		return EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+	}
+
+	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, string environmentName) {
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		toolNames.Should().Contain(ToolName,
+			because: "the install-process-builder tool must be discoverable before the end-to-end call");
+		return await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["environment-name"] = environmentName }
+			},
+			context.CancellationTokenSource.Token);
+	}
+
+	private static string DescribeExecution(CommandExecutionEnvelope execution) {
+		string messages = execution.Output is null
+			? "<no messages>"
+			: string.Join(" | ", execution.Output.Select(message => $"{message.MessageType}: {message.Value}"));
+		return $"ExitCode={execution.ExitCode}; Messages={messages}";
+	}
+}

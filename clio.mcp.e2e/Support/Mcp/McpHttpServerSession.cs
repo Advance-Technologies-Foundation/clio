@@ -12,14 +12,15 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Mcp;
 
 /// <summary>
-/// Manual / live-stand-only harness for the <c>clio mcp-http</c> edge — the ENG-93208 credential-passthrough
-/// fixtures (Story 15c/15d/AC-07) and the ENG-93386 standard-OAuth-authorization fixtures (Story 8) both
-/// reuse this session. Spawns a single <c>clio mcp-http</c> process bound to loopback and lets a test
+/// Process-level harness for the <c>clio mcp-http</c> edge. Hermetic transport-contract tests use it
+/// without a Creatio environment; the ENG-93208 credential-passthrough fixtures (Story 15c/15d/AC-07)
+/// and the ENG-93386 standard-OAuth-authorization fixtures (Story 8) reuse it with live stands. It
+/// spawns a single <c>clio mcp-http</c> process bound to loopback and lets a test
 /// connect one or more Streamable-HTTP MCP clients to it, each carrying its own <c>Authorization: Bearer
 /// &lt;value&gt;</c> (a legacy platform-api-key OR a live OAuth JWT, depending on the fixture) and an
 /// optional per-request <c>X-Integration-Credentials</c> header.
 /// <para>
-/// NOT run in CI. The passthrough fixtures need a live Creatio stand and <c>--platform-api-key</c>
+/// The live passthrough fixtures are not run in CI. They need a Creatio stand and <c>--platform-api-key</c>
 /// (<see cref="McpHttpPassthroughStand"/>); the OAuth fixtures need a live identity-platform Authorization
 /// Server and <c>--auth-*</c> flags (<see cref="McpHttpOAuthStand"/>). When the relevant live-stand env
 /// vars are absent the fixtures <c>Assert.Ignore</c> before this helper is touched.
@@ -110,7 +111,9 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 	public async Task<McpClient> ConnectAsync(
 		string? platformApiKey,
 		string? integrationCredentialsBase64,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken,
+		string? protocolVersion = null,
+		Implementation? clientInfo = null) {
 		Dictionary<string, string> headers = [];
 		if (!string.IsNullOrWhiteSpace(platformApiKey)) {
 			headers["Authorization"] = $"Bearer {platformApiKey}";
@@ -129,7 +132,9 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 		return await McpClient.CreateAsync(
 			transport,
 			new McpClientOptions {
-				ClientInfo = new Implementation { Name = "clio.mcp.e2e.http", Version = "1.0.0" }
+				ClientInfo = clientInfo
+					?? new Implementation { Name = "clio.mcp.e2e.http", Version = "1.0.0" },
+				ProtocolVersion = protocolVersion
 			},
 			NullLoggerFactory.Instance,
 			cancellationToken);

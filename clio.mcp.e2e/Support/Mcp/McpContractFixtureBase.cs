@@ -1,3 +1,4 @@
+using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 
 namespace Clio.Mcp.E2E.Support.Mcp;
@@ -64,8 +65,10 @@ public abstract class McpContractFixtureBase {
 		string safePurpose = string.IsNullOrWhiteSpace(purpose)
 			? "fixture"
 			: string.Concat(purpose.Select(character => char.IsLetterOrDigit(character) ? character : '-'));
+		// The temp root is resolved to its physical location because clio refuses a knowledge root whose
+		// ancestry contains a reparse point, and the system temp directory is itself a symlink on macOS.
 		string directoryPath = Path.Combine(
-			Path.GetTempPath(),
+			PhysicalPath.Resolve(Path.GetTempPath()),
 			$"clio-mcp-e2e-{safePurpose}-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(directoryPath);
 		_fixtureDirectories.Add(directoryPath);

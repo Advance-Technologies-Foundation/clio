@@ -16,6 +16,7 @@ using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.DbHub;
 using Clio.Common.IIS;
+using Clio.Command.McpServer.Knowledge;
 using ConsoleTables;
 using YamlDotNet.Serialization;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -204,7 +205,7 @@ namespace Clio
 		//[Newtonsoft.Json.JsonIgnore]
 		public string EnvironmentPath { get; set; } = string.Empty;
 
-		public EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
+		public virtual EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
 			var result = new EnvironmentSettings();
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;
@@ -343,6 +344,40 @@ namespace Clio
 			&& string.IsNullOrWhiteSpace(DeploymentMethod);
 	}
 
+	/// <summary>
+	/// Configures how agents reconcile observed behavior with Clio knowledge and report discrepancies.
+	/// </summary>
+	public sealed class KnowledgeFeedbackSettings {
+		/// <summary>Gets or sets the requested policy mode: <c>ask</c>, <c>auto</c>, or <c>off</c>.</summary>
+		[JsonProperty("mode")]
+		public string Mode { get; set; } = "ask";
+
+		/// <summary>Gets or sets the exact GitHub repository URL where an agent should file reports.</summary>
+		[JsonProperty("destination")]
+		public string Destination { get; set; } =
+			"https://github.com/Advance-Technologies-Foundation/clio";
+
+		/// <summary>Gets or sets the report detail policy: <c>full</c> or <c>sanitized</c>.</summary>
+		[JsonProperty("reporting-scope")]
+		public string ReportingScope { get; set; } = "sanitized";
+
+		/// <summary>
+		/// Gets or sets the standing approval that authorizes automatic reporting under one exact
+		/// reporting-policy article hash.
+		/// </summary>
+		[JsonProperty("standing-approval", NullValueHandling = NullValueHandling.Ignore)]
+		public KnowledgeFeedbackStandingApproval StandingApproval { get; set; }
+	}
+
+	/// <summary>
+	/// Records the exact reporting-policy guidance a user approved for automatic issue filing.
+	/// </summary>
+	public sealed class KnowledgeFeedbackStandingApproval {
+		/// <summary>Gets or sets the SHA-256 of the exact reporting-policy article that was approved.</summary>
+		[JsonProperty("policy-hash")]
+		public string PolicyHash { get; set; }
+	}
+
 	public class Settings
 	{
 		/// <summary>
@@ -356,6 +391,8 @@ namespace Clio
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
 			Features = new Dictionary<string, bool>();
+			Knowledge = new KnowledgeConfiguration();
+			KnowledgeFeedback = new KnowledgeFeedbackSettings();
 		}
 
 		//TODO: This wont work for Mac and Linux
@@ -399,6 +436,22 @@ namespace Clio
 			get;
 			set;
 		}
+
+		/// <summary>
+		/// Gets or sets the multi-source knowledge configuration.
+		/// </summary>
+		[JsonProperty("knowledge")]
+		public KnowledgeConfiguration Knowledge { get; set; }
+
+		/// <summary>Gets or sets agent feedback and standing-approval policy.</summary>
+		[JsonProperty("knowledge-feedback")]
+		public KnowledgeFeedbackSettings KnowledgeFeedback { get; set; }
+
+		/// <summary>
+		/// Gets or sets the legacy knowledge root used only for one-time migration.
+		/// </summary>
+		[JsonProperty("knowledge-root-path", NullValueHandling = NullValueHandling.Ignore)]
+		public string LegacyKnowledgeRootPath { get; set; }
 
 		private string _containerImageCli;
 
@@ -496,6 +549,7 @@ namespace Clio
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
 		private const int SettingsLockTimeoutSeconds = 30;
+		private const int SettingsUpdateAttemptLimit = 3;
 		private static readonly object SchemaFileLock = new ();
 		private static readonly ConcurrentDictionary<string, object> ProcessSettingsLocks = new();
 		[ThreadStatic]
@@ -556,6 +610,49 @@ namespace Clio
 			AttachDbServers(_settings);
 			TrySaveSchema(_fileSystem);
 		}
+
+		/// <inheritdoc />
+		public SettingsReloadResult Reload() {
+			// The bootstrap service reads the file on every call (it never caches) and already takes the
+			// settings file lock, which is re-entrant for this thread — so a concurrent reg-web-app from
+			// another process or thread either finishes before this read starts or waits for it, and a
+			// partially written file is never observed.
+			SettingsBootstrapResult result;
+			try {
+				// Explicitly the NON-repairing read: GetResult writes the file back when a migration is
+				// pending or the file is missing, and this method is called by a ReadOnly MCP tool on every
+				// invocation. A read must not rewrite appsettings.json.
+				result = _settingsBootstrapService.GetResultWithoutRepairs();
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+				or TimeoutException or Newtonsoft.Json.JsonException) {
+				return new SettingsReloadResult(false, null, BuildReloadWarning(exception.Message));
+			}
+			SettingsBootstrapReport report = result?.Report;
+			// "file-missing" is as much a reason to keep the current snapshot as "broken": the non-repairing
+			// read does not create the file, so it hands back an empty (not an authoritative) Settings, and
+			// replacing the live one with it would silently clear every registered environment.
+			if (result is null
+				|| string.Equals(report?.Status, "broken", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(report?.Status, SettingsBootstrapService.FileMissingStatus,
+					StringComparison.OrdinalIgnoreCase)) {
+				string issue = report?.Issues?.FirstOrDefault()?.Message
+					?? $"{FileName} could not be read.";
+				return new SettingsReloadResult(false, report, BuildReloadWarning(issue));
+			}
+			// Same post-load normalization the constructor and UpdateSettingsIfChanged apply: without it a
+			// hand-edited file can leave Features/Knowledge null and drops the OrdinalIgnoreCase rebuild
+			// that IsFeatureEnabled depends on. It runs on a LOCAL snapshot, and only the fully initialized
+			// object is published — a concurrent reader either sees the whole old snapshot or the whole new
+			// one, never one with null Environments/Features halfway through normalization.
+			Settings fresh = NormalizeSettings(result.Settings);
+			AttachDbServers(fresh);
+			_settings = fresh;
+			return new SettingsReloadResult(true, report, null);
+		}
+
+		private static string BuildReloadWarning(string reason) =>
+			$"Could not re-read {AppSettingsFile}: {reason} The previously loaded settings are still in use.";
 
 		internal static Settings CreateDefaultSettings(Settings settings = null) {
 			Settings result = settings ?? new Settings();
@@ -749,10 +846,39 @@ namespace Clio
 		}
 
 		private void EnsureSettingsCollections() {
-			_settings ??= new Settings();
-			_settings.Environments ??= new Dictionary<string, EnvironmentSettings>();
-			_settings.Features ??= new Dictionary<string, bool>();
-			EnsureFeaturesComparer();
+			_settings = NormalizeSettings(_settings);
+		}
+
+		// Takes the instance to normalize as a parameter rather than reading the field, so a caller that
+		// is building a replacement snapshot (Reload) can finish it on a local variable and publish it
+		// with a single reference assignment — readers never observe a half-initialized _settings.
+		private static Settings NormalizeSettings(Settings settings) {
+			Settings result = settings ?? new Settings();
+			result.Environments ??= new Dictionary<string, EnvironmentSettings>();
+			result.Features ??= new Dictionary<string, bool>();
+			result.Knowledge ??= new KnowledgeConfiguration();
+			result.KnowledgeFeedback ??= new KnowledgeFeedbackSettings();
+			result.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+				StringComparer.OrdinalIgnoreCase);
+			result.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
+			EnsureFeaturesComparer(result);
+			EnsureKnowledgeComparers(result);
+			return result;
+		}
+
+		private static void EnsureKnowledgeComparers(Settings settings) {
+			if (!ReferenceEquals(settings.Knowledge.Sources.Comparer, StringComparer.OrdinalIgnoreCase)) {
+				Dictionary<string, KnowledgeSourceConfiguration> sources = new(StringComparer.OrdinalIgnoreCase);
+				foreach ((string alias, KnowledgeSourceConfiguration source) in settings.Knowledge.Sources) {
+					sources[alias] = source;
+				}
+				settings.Knowledge.Sources = sources;
+			}
+			if (!ReferenceEquals(settings.Knowledge.TopicPins.Comparer, StringComparer.Ordinal)) {
+				settings.Knowledge.TopicPins = new Dictionary<string, string>(
+					settings.Knowledge.TopicPins,
+					StringComparer.Ordinal);
+			}
 		}
 
 		// Feature keys are compared case-insensitively (see ISettingsRepository.IsFeatureEnabled).
@@ -760,8 +886,8 @@ namespace Clio
 		// OrdinalIgnoreCase comparer. This makes IsFeatureEnabled/SetFeature/GetFeatures all
 		// case-insensitive in one place; the convention is: the command writes the key as-given and
 		// lookups never depend on casing. The rebuild is idempotent and skipped once applied.
-		private void EnsureFeaturesComparer() {
-			if (ReferenceEquals(_settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
+		private static void EnsureFeaturesComparer(Settings settings) {
+			if (ReferenceEquals(settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
 				return;
 			}
 			// Rebuild manually rather than via the Dictionary(IDictionary, IEqualityComparer) copy-constructor:
@@ -770,45 +896,69 @@ namespace Clio
 			Dictionary<string, bool> rebuilt = new(StringComparer.OrdinalIgnoreCase);
 			// On a case-collision the last-enumerated value wins; this is acceptable because such a
 			// state only arises from a manual appsettings.json edit (the command never writes colliding keys).
-			foreach (KeyValuePair<string, bool> kvp in _settings.Features) {
+			foreach (KeyValuePair<string, bool> kvp in settings.Features) {
 				rebuilt[kvp.Key] = kvp.Value;
 			}
-			_settings.Features = rebuilt;
+			settings.Features = rebuilt;
 		}
 
-		private void UpdateSettings(Action<Settings> mutation) {
+		private void UpdateSettings(Action<Settings> mutation) => UpdateSettingsIfChanged(settings => {
+			mutation(settings);
+			return true;
+		});
+
+		private void UpdateSettingsIfChanged(Func<Settings, bool> mutation) {
 			ExecuteWithSettingsLock(_fileSystem, () => {
-				for (int attempt = 0; attempt < 3; attempt++) {
-					string expectedContent;
-					try {
-						_settings = LoadLatestSettings(out expectedContent);
-					}
-					catch (Newtonsoft.Json.JsonException) when (attempt < 2) {
-						Thread.Sleep(10);
+				for (int attempt = 0; attempt < SettingsUpdateAttemptLimit; attempt++) {
+					if (!TryReloadSettingsForUpdate(attempt, out string expectedContent)) {
 						continue;
-					}
-					catch (Newtonsoft.Json.JsonException exception) {
-						throw new InvalidOperationException(
-							"Cannot update settings because appsettings.json changed to unreadable content.", exception);
 					}
 					AttachDbServers(_settings);
 					EnsureSettingsCollections();
-					mutation(_settings);
+					bool changed = mutation(_settings);
 					EnsureSettingsCollections();
-					try {
-						SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
+					if (!changed) {
 						return true;
 					}
-					catch (SettingsFileChangedException) {
-						if (attempt == 2) {
-							throw new IOException(
-								"appsettings.json kept changing while clio was updating it. Try the command again.");
-						}
-						// An editor changed the file after it was reloaded. Retry the mutation against that version.
+					if (TrySaveMutatedSettings(expectedContent, attempt)) {
+						return true;
 					}
+					// An editor changed the file after it was reloaded. Retry the mutation against that version.
 				}
 				throw new InvalidOperationException("Settings update retry loop ended unexpectedly.");
 			});
+		}
+
+		// Returns false only when the reload is retryable; the final attempt reports unreadable content instead.
+		private bool TryReloadSettingsForUpdate(int attempt, out string expectedContent) {
+			try {
+				_settings = LoadLatestSettings(out expectedContent);
+				return true;
+			}
+			catch (Newtonsoft.Json.JsonException) when (attempt < SettingsUpdateAttemptLimit - 1) {
+				Thread.Sleep(10);
+				expectedContent = null;
+				return false;
+			}
+			catch (Newtonsoft.Json.JsonException exception) {
+				throw new InvalidOperationException(
+					"Cannot update settings because appsettings.json changed to unreadable content.", exception);
+			}
+		}
+
+		// Returns false only when the optimistic-concurrency check failed and another attempt remains.
+		private bool TrySaveMutatedSettings(string expectedContent, int attempt) {
+			try {
+				SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
+				return true;
+			}
+			catch (SettingsFileChangedException) {
+				if (attempt == SettingsUpdateAttemptLimit - 1) {
+					throw new IOException(
+						"appsettings.json kept changing while clio was updating it. Try the command again.");
+				}
+				return false;
+			}
 		}
 
 		private Settings LoadLatestSettings(out string expectedContent) {
@@ -1082,6 +1232,95 @@ namespace Clio
 			});
 		}
 
+		public bool RemoveEnvironmentIfPathMatches(string environment, string expectedEnvironmentPath) {
+			bool removed = false;
+			UpdateSettingsIfChanged(settings => {
+				string actualKey = settings.Environments.Keys.FirstOrDefault(key =>
+					string.Equals(key, environment, StringComparison.OrdinalIgnoreCase));
+				if (actualKey is null
+					|| !EnvironmentPathsMatch(settings.Environments[actualKey].EnvironmentPath,
+						expectedEnvironmentPath)) {
+					return false;
+				}
+				removed = settings.Environments.Remove(actualKey);
+				if (removed && string.Equals(settings.ActiveEnvironmentKey, actualKey,
+					StringComparison.OrdinalIgnoreCase)) {
+					settings.ActiveEnvironmentKey = settings.Environments.Keys.FirstOrDefault();
+				}
+				return removed;
+			});
+			return removed;
+		}
+
+		public bool EnvironmentPathMatches(string environment, string expectedEnvironmentPath) {
+			bool matches = false;
+			UpdateSettingsIfChanged(settings => {
+				string actualKey = settings.Environments.Keys.FirstOrDefault(key =>
+					string.Equals(key, environment, StringComparison.OrdinalIgnoreCase));
+				matches = actualKey is not null
+					&& EnvironmentPathsMatch(settings.Environments[actualKey].EnvironmentPath,
+						expectedEnvironmentPath);
+				return false;
+			});
+			return matches;
+		}
+
+		public EnvironmentSettings FindCurrentEnvironment(string environment) {
+			EnvironmentSettings result = null;
+			UpdateSettingsIfChanged(settings => {
+				string actualKey = settings.Environments.Keys.FirstOrDefault(key =>
+					string.Equals(key, environment, StringComparison.OrdinalIgnoreCase));
+				result = actualKey is null ? null : settings.Environments[actualKey];
+				return false;
+			});
+			return result;
+		}
+
+		private static bool TryNormalizeAbsolutePath(string path, out string normalizedPath) {
+			normalizedPath = null;
+			try {
+				if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) {
+					return false;
+				}
+				normalizedPath = DirectoryPathIdentity.Normalize(path);
+				return true;
+			}
+			catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+				or PathTooLongException or InvalidOperationException) {
+				return false;
+			}
+		}
+
+		private static bool EnvironmentPathsMatch(string firstPath, string secondPath) {
+			StringComparison comparison = OperatingSystem.IsWindows()
+				? StringComparison.OrdinalIgnoreCase
+				: StringComparison.Ordinal;
+			if (TryNormalizeLexicalAbsolutePath(firstPath, out string firstLexical)
+				&& TryNormalizeLexicalAbsolutePath(secondPath, out string secondLexical)
+				&& string.Equals(firstLexical, secondLexical, comparison)) {
+				return true;
+			}
+			return TryNormalizeAbsolutePath(firstPath, out string firstPhysical)
+				&& TryNormalizeAbsolutePath(secondPath, out string secondPhysical)
+				&& string.Equals(firstPhysical, secondPhysical, comparison);
+		}
+
+		private static bool TryNormalizeLexicalAbsolutePath(string path, out string normalizedPath) {
+			normalizedPath = null;
+			try {
+				if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) {
+					return false;
+				}
+				normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar,
+					Path.AltDirectorySeparatorChar);
+				return true;
+			}
+			catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+				or PathTooLongException) {
+				return false;
+			}
+		}
+
 		public static void OpenSettingsFile() {
 			FileManager.OpenFile(AppSettingsFile);
 		}
@@ -1117,6 +1356,267 @@ namespace Clio
 
 		public string GetWorkspacesRoot() {
 			return _settings.WorkspacesRoot;
+		}
+
+		public string GetKnowledgeRootPath() {
+			EnsureSettingsCollections();
+			if (!string.IsNullOrWhiteSpace(_settings.Knowledge.RootPath)) {
+				return _settings.Knowledge.RootPath;
+			}
+			if (string.IsNullOrWhiteSpace(_settings.LegacyKnowledgeRootPath)) {
+				return null;
+			}
+			string migrated = NormalizeKnowledgeRootPath(_settings.LegacyKnowledgeRootPath, "knowledge-root-path");
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				if (string.IsNullOrWhiteSpace(settings.Knowledge.RootPath)) {
+					settings.Knowledge.RootPath = migrated;
+				}
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return _settings.Knowledge.RootPath;
+		}
+
+		public void SetKnowledgeRootPath(string path) {
+			string normalized = NormalizeKnowledgeRootPath(path, nameof(path));
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.RootPath = normalized;
+				settings.LegacyKnowledgeRootPath = null;
+			});
+		}
+
+		public string GetOrCreateKnowledgeRootPath(string defaultPath) {
+			string normalizedDefault = NormalizeKnowledgeRootPath(defaultPath, nameof(defaultPath));
+			string resolved = null;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				// Precedence: the current root wins, then the legacy root being migrated, then the caller default.
+				string candidate = settings.Knowledge.RootPath;
+				if (string.IsNullOrWhiteSpace(candidate)) {
+					candidate = settings.LegacyKnowledgeRootPath;
+				}
+				if (string.IsNullOrWhiteSpace(candidate)) {
+					candidate = normalizedDefault;
+				}
+				resolved = NormalizeKnowledgeRootPath(candidate, "knowledge.root-path");
+				settings.Knowledge.RootPath = resolved;
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return resolved;
+		}
+
+		/// <inheritdoc />
+		public KnowledgeConfiguration GetKnowledgeConfiguration() {
+			GetKnowledgeRootPath();
+			EnsureSettingsCollections();
+			return KnowledgeSourceConfigurationValidator.ValidateAndClone(_settings.Knowledge);
+		}
+
+		/// <inheritdoc />
+		public void SetKnowledgeConfiguration(KnowledgeConfiguration configuration) {
+			KnowledgeConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(configuration);
+			UpdateSettings(settings => {
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(validated);
+				settings.LegacyKnowledgeRootPath = null;
+			});
+		}
+
+		/// <inheritdoc />
+		public void UpsertKnowledgeSource(string alias, KnowledgeSourceConfiguration source) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				Dictionary<string, KnowledgeSourceConfiguration> sources = new(
+					settings.Knowledge.Sources,
+					StringComparer.OrdinalIgnoreCase);
+				sources[alias] = validated;
+				KnowledgeConfiguration candidate = new() {
+					RootPath = settings.Knowledge.RootPath,
+					Sources = sources,
+					TopicPins = settings.Knowledge.TopicPins ?? new Dictionary<string, string>(StringComparer.Ordinal)
+				};
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(candidate);
+				settings.LegacyKnowledgeRootPath = null;
+			});
+		}
+
+		/// <inheritdoc />
+		public bool TryAddKnowledgeSource(string alias, KnowledgeSourceConfiguration source) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
+			bool added = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (settings.Knowledge.Sources.ContainsKey(alias)
+						|| settings.Knowledge.Sources.Values.Any(candidate => string.Equals(
+							candidate.LibraryId,
+							validated.LibraryId,
+							StringComparison.OrdinalIgnoreCase))) {
+					return;
+				}
+				settings.Knowledge.Sources[alias] = validated;
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(settings.Knowledge);
+				settings.LegacyKnowledgeRootPath = null;
+				added = true;
+			});
+			return added;
+		}
+
+		/// <inheritdoc />
+		public KnowledgeSourceConfiguration EnsureKnowledgeSource(
+			string alias,
+			KnowledgeSourceConfiguration source) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration canonical =
+				KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
+			KnowledgeSourceConfiguration persisted = null;
+			UpdateSettingsIfChanged(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration existingSource);
+				KeyValuePair<string, KnowledgeSourceConfiguration>? existingLibrary = settings.Knowledge.Sources
+					.Where(pair => string.Equals(
+						pair.Value.LibraryId,
+						canonical.LibraryId,
+						StringComparison.OrdinalIgnoreCase))
+					.Select(pair => (KeyValuePair<string, KnowledgeSourceConfiguration>?)pair)
+					.FirstOrDefault();
+				existingSource ??= existingLibrary?.Value;
+				bool enabled = existingSource?.Enabled ?? canonical.Enabled;
+				KnowledgeSourceConfiguration ensured =
+					KnowledgeSourceConfigurationValidator.ValidateAndClone(canonical);
+				ensured.Enabled = enabled;
+				settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration current);
+				bool alreadyCanonical = current is not null
+					&& settings.Knowledge.Sources.Count(pair =>
+					string.Equals(pair.Key, alias, StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(pair.Value.LibraryId, canonical.LibraryId, StringComparison.OrdinalIgnoreCase)) == 1
+					&& KnowledgeSourcesEqual(current, ensured);
+				if (alreadyCanonical) {
+					persisted = KnowledgeSourceConfigurationValidator.ValidateAndClone(current);
+					return false;
+				}
+				string[] conflicts = settings.Knowledge.Sources
+					.Where(pair => string.Equals(pair.Key, alias, StringComparison.OrdinalIgnoreCase)
+						|| string.Equals(pair.Value.LibraryId, canonical.LibraryId, StringComparison.OrdinalIgnoreCase))
+					.Select(pair => pair.Key)
+					.ToArray();
+				foreach (string conflict in conflicts) {
+					settings.Knowledge.Sources.Remove(conflict);
+				}
+				settings.Knowledge.Sources[alias] = ensured;
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(settings.Knowledge);
+				settings.LegacyKnowledgeRootPath = null;
+				persisted = KnowledgeSourceConfigurationValidator.ValidateAndClone(
+					settings.Knowledge.Sources[alias]);
+				return true;
+			});
+			return persisted;
+		}
+
+		/// <inheritdoc />
+		public bool RemoveKnowledgeSource(string alias) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			bool removed = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				removed = settings.Knowledge.Sources.Remove(alias);
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return removed;
+		}
+
+		/// <inheritdoc />
+		public bool TryRemoveKnowledgeSource(string alias, KnowledgeSourceConfiguration expected) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration snapshot = KnowledgeSourceConfigurationValidator.ValidateAndClone(expected);
+			bool removed = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration current)
+						&& KnowledgeSourcesEqual(current, snapshot)) {
+					removed = settings.Knowledge.Sources.Remove(alias);
+				}
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return removed;
+		}
+
+		/// <inheritdoc />
+		public bool TrySetKnowledgeSourceBranch(
+			string alias,
+			KnowledgeSourceConfiguration expected,
+			string branch) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration snapshot = KnowledgeSourceConfigurationValidator.ValidateAndClone(expected);
+			if (string.IsNullOrWhiteSpace(branch)) {
+				throw new ArgumentException("Knowledge Git branch cannot be empty.", nameof(branch));
+			}
+			bool updated = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration current)
+						&& KnowledgeSourcesEqual(current, snapshot)) {
+					current.Branch = branch.Trim();
+					updated = true;
+				}
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return updated;
+		}
+
+		/// <inheritdoc />
+		public void SetKnowledgeSourceEnabled(string alias, bool enabled) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (!settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration source)) {
+					throw new KeyNotFoundException($"Knowledge source '{alias}' is not configured.");
+				}
+				source.Enabled = enabled;
+				settings.LegacyKnowledgeRootPath = null;
+			});
+		}
+
+		private static bool KnowledgeSourcesEqual(
+			KnowledgeSourceConfiguration left,
+			KnowledgeSourceConfiguration right) =>
+			string.Equals(left.LibraryId, right.LibraryId, StringComparison.Ordinal)
+			&& left.Type == right.Type
+			&& string.Equals(left.Location, right.Location, StringComparison.Ordinal)
+			&& string.Equals(left.TrustedKeyId, right.TrustedKeyId, StringComparison.Ordinal)
+			&& string.Equals(left.TrustedPublicKeyPath, right.TrustedPublicKeyPath, StringComparison.Ordinal)
+			&& string.Equals(left.PackageId, right.PackageId, StringComparison.Ordinal)
+			&& string.Equals(left.Branch, right.Branch, StringComparison.Ordinal)
+			&& string.Equals(left.Tag, right.Tag, StringComparison.Ordinal)
+			&& string.Equals(left.Commit, right.Commit, StringComparison.Ordinal)
+			&& left.Enabled == right.Enabled
+			&& left.Priority == right.Priority
+			&& left.Participation == right.Participation;
+
+		private static string NormalizeKnowledgeRootPath(string path, string parameterName) {
+			if (string.IsNullOrWhiteSpace(path)) {
+				throw new ArgumentException("Knowledge root path cannot be empty.", parameterName);
+			}
+			if (!Path.IsPathFullyQualified(path)) {
+				throw new ArgumentException("Knowledge root path must be absolute.", parameterName);
+			}
+			return Path.GetFullPath(path);
 		}
 
 		/// <summary>
@@ -1184,6 +1684,43 @@ namespace Clio
 			UpdateSettings(settings =>
 				settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults);
 		}
+
+		public KnowledgeFeedbackSettings GetKnowledgeFeedbackSettings() {
+			return CloneKnowledgeFeedbackSettings(_settings.KnowledgeFeedback ?? new KnowledgeFeedbackSettings());
+		}
+
+		public void SetKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings) {
+			ArgumentNullException.ThrowIfNull(settings);
+			KnowledgeFeedbackSettings snapshot = CloneKnowledgeFeedbackSettings(settings);
+			UpdateSettings(current => current.KnowledgeFeedback = CloneKnowledgeFeedbackSettings(snapshot));
+		}
+
+		public KnowledgeFeedbackSettings UpdateKnowledgeFeedbackSettings(
+			Func<KnowledgeFeedbackSettings, KnowledgeFeedbackSettings> mutation) {
+			ArgumentNullException.ThrowIfNull(mutation);
+			KnowledgeFeedbackSettings persisted = null;
+			UpdateSettings(current => {
+				KnowledgeFeedbackSettings latest = CloneKnowledgeFeedbackSettings(
+					current.KnowledgeFeedback ?? new KnowledgeFeedbackSettings());
+				persisted = CloneKnowledgeFeedbackSettings(
+					mutation(latest) ?? throw new InvalidOperationException(
+						"Knowledge-feedback mutation returned no settings."));
+				current.KnowledgeFeedback = CloneKnowledgeFeedbackSettings(persisted);
+			});
+			return CloneKnowledgeFeedbackSettings(persisted);
+		}
+
+		private static KnowledgeFeedbackSettings CloneKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings) =>
+			new() {
+				Mode = settings.Mode,
+				Destination = settings.Destination,
+				ReportingScope = settings.ReportingScope,
+				StandingApproval = settings.StandingApproval is null
+					? null
+					: new KnowledgeFeedbackStandingApproval {
+						PolicyHash = settings.StandingApproval.PolicyHash
+					}
+			};
 
 		public string GetPinnedIisCertificateThumbprint() => _settings.IisCertificateThumbprint;
 

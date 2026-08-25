@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
-using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -194,21 +193,10 @@ public sealed class GetCreatioInfoToolTests {
 			because: "the description should point the agent at the field-catalogue guidance");
 		description.Description.Should().Contain("authentication failures",
 			because: "the tool contract should tell agents that required-probe failures are classified actionably");
+		description.Description.Should().Contain("GetSysInfo is probed directly",
+			because: "the MCP contract must not tell agents that package metadata can veto a working cliogate endpoint");
+		description.Description.Should().Contain("only to diagnose a failed capability probe",
+			because: "the MCP contract should explain when cliogate version metadata affects the warning");
 	}
 
-	[Test]
-	[Category("Unit")]
-	[Description("Keeps describe-environment guidance aligned with the command's classified and secret-safe base-probe failures.")]
-	public void Guide_ShouldDescribeClassifiedFailures_WhenReadByMcpAgent() {
-		// Act
-		string guidance = DescribeEnvironmentGuidanceResource.Guide.Text;
-
-		// Assert
-		guidance.Should().Contain("REQUIRED BASE PROBE FAILURES",
-			because: "agents need a dedicated section for interpreting exit-code-1 base-probe results");
-		guidance.Should().Contain("Authentication",
-			because: "authentication failures must remain distinguishable from non-Creatio targets");
-		guidance.Should().Contain("never contains raw HTML",
-			because: "the guidance must preserve the secret-safe error-envelope contract");
-	}
 }

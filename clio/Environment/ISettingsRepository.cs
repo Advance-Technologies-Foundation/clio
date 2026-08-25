@@ -1,15 +1,51 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using System;
 using Clio.Common.db;
 using Clio.Common.DbHub;
+using Clio.Command.McpServer.Knowledge;
 
 namespace Clio.UserEnvironment
 {
+	/// <summary>
+	/// Outcome of an explicit <see cref="ISettingsRepository.Reload"/> call.
+	/// </summary>
+	/// <param name="Reloaded">
+	/// <c>true</c> when the in-memory settings were replaced with the file content;
+	/// <c>false</c> when the file could not be read and the previously loaded settings remain in use.
+	/// </param>
+	/// <param name="Report">
+	/// The bootstrap report produced while reading the file, or <c>null</c> when reading threw.
+	/// Callers that need a fresh report should use this value instead of asking
+	/// <see cref="ISettingsBootstrapService"/> again — that would read the file a second time.
+	/// </param>
+	/// <param name="Warning">
+	/// A human- and agent-readable explanation of why the reload was skipped, or <c>null</c> on success.
+	/// </param>
+	public sealed record SettingsReloadResult(bool Reloaded, SettingsBootstrapReport? Report, string? Warning);
+
 	/// <summary>
 	/// Provides access to persisted clio settings and registered environment definitions.
 	/// </summary>
 	public interface ISettingsRepository
 	{
+		/// <summary>
+		/// Re-reads <c>appsettings.json</c> and replaces the in-memory settings snapshot taken when this
+		/// repository was constructed.
+		/// </summary>
+		/// <remarks>
+		/// Reads on this repository are served from the snapshot, so a long-lived host (the MCP server)
+		/// otherwise answers with the environment list as it was at process start. Reloading is an
+		/// EXPLICIT step rather than a side effect of every read: each reload takes the cross-process
+		/// settings file lock and deserializes the whole file, which must not be charged to every
+		/// settings getter of every command. Call it where a stale environment list is observable —
+		/// the <c>list-environments</c> tool and the MCP environment-resolution path.
+		/// A corrupt, unreadable or missing file never throws here: the previously loaded settings stay
+		/// in use and the reason is returned as <see cref="SettingsReloadResult.Warning"/>.
+		/// </remarks>
+		/// <returns>The reload outcome, including a warning when the file could not be read.</returns>
+		SettingsReloadResult Reload();
+
 		/// <summary>
 		/// Gets the path to the clio appsettings file.
 		/// </summary>
@@ -57,6 +93,11 @@ namespace Clio.UserEnvironment
 		/// <param name="name">Optional clio environment key.</param>
 		/// <returns>The matching environment settings, or <c>null</c>.</returns>
 		EnvironmentSettings? FindEnvironment(string name = null);
+
+		/// <summary>Reloads settings under the cross-process update lock and finds the current environment.</summary>
+		/// <param name="name">The clio environment key.</param>
+		/// <returns>The current environment settings, or <c>null</c>.</returns>
+		EnvironmentSettings? FindCurrentEnvironment(string name);
 			
 		/// <summary>
 		/// Marks the supplied environment as active.
@@ -76,6 +117,18 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <param name="name">The clio environment key to remove.</param>
 		void RemoveEnvironment(string name);
+
+		/// <summary>Atomically removes an environment only when its registered path still matches the expected path.</summary>
+		/// <param name="name">The clio environment key to remove.</param>
+		/// <param name="expectedEnvironmentPath">Canonical path that authorized the destructive operation.</param>
+		/// <returns><see langword="true"/> when the matching registration was removed; otherwise, <see langword="false"/>.</returns>
+		bool RemoveEnvironmentIfPathMatches(string name, string expectedEnvironmentPath);
+
+		/// <summary>Reads current settings under the update lock and compares the registered path.</summary>
+		/// <param name="name">The clio environment key to inspect.</param>
+		/// <param name="expectedEnvironmentPath">Canonical path that authorized the operation.</param>
+		/// <returns><see langword="true"/> only while the current registration still matches.</returns>
+		bool EnvironmentPathMatches(string name, string expectedEnvironmentPath);
 
 		/// <summary>
 		/// Writes settings to the supplied text writer.
@@ -114,6 +167,98 @@ namespace Clio.UserEnvironment
 		/// Gets the configured global workspaces root path.
 		/// </summary>
 		string GetWorkspacesRoot();
+
+		/// <summary>
+		/// Gets the explicitly configured root directory for installed Clio knowledge.
+		/// </summary>
+		/// <returns>The configured absolute path, or <c>null</c> when it has not been initialized.</returns>
+		string GetKnowledgeRootPath();
+
+		/// <summary>
+		/// Persists the root directory used for installed Clio knowledge.
+		/// </summary>
+		/// <param name="path">The absolute knowledge root path.</param>
+		void SetKnowledgeRootPath(string path);
+
+		/// <summary>
+		/// Returns the configured knowledge root or atomically persists the supplied default when absent.
+		/// </summary>
+		/// <param name="defaultPath">The absolute default path to persist when no value exists.</param>
+		/// <returns>The configured or newly persisted absolute path.</returns>
+		string GetOrCreateKnowledgeRootPath(string defaultPath);
+
+		/// <summary>
+		/// Gets a detached, validated snapshot of the multi-source knowledge configuration.
+		/// </summary>
+		/// <returns>The configured root, sources, and topic pins.</returns>
+		KnowledgeConfiguration GetKnowledgeConfiguration();
+
+		/// <summary>
+		/// Replaces the complete multi-source knowledge configuration atomically.
+		/// </summary>
+		/// <param name="configuration">The validated configuration to persist.</param>
+		void SetKnowledgeConfiguration(KnowledgeConfiguration configuration);
+
+		/// <summary>
+		/// Adds or replaces one knowledge source without overwriting concurrent changes to other settings.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="source">The trusted source configuration.</param>
+		void UpsertKnowledgeSource(string alias, KnowledgeSourceConfiguration source);
+
+		/// <summary>
+		/// Adds one knowledge source only when neither its alias nor stable library identity is configured.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="source">The trusted source configuration.</param>
+		/// <returns><c>true</c> when the source was added; otherwise, <c>false</c>.</returns>
+		bool TryAddKnowledgeSource(string alias, KnowledgeSourceConfiguration source);
+
+		/// <summary>
+		/// Atomically ensures one managed knowledge source uses the supplied canonical alias and configuration.
+		/// </summary>
+		/// <param name="alias">The canonical operator-facing source alias.</param>
+		/// <param name="source">The canonical source configuration.</param>
+		/// <returns>The persisted source configuration, with an existing enabled state preserved.</returns>
+		/// <remarks>
+		/// Any source that already uses either the canonical alias or the same stable library identity is
+		/// replaced in the same settings mutation. All canonical fields are restored while the existing
+		/// <see cref="KnowledgeSourceConfiguration.Enabled"/> value remains the operator-controlled kill switch.
+		/// </remarks>
+		KnowledgeSourceConfiguration EnsureKnowledgeSource(
+			string alias,
+			KnowledgeSourceConfiguration source);
+
+		/// <summary>
+		/// Removes one configured knowledge source while leaving its installed cache untouched.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <returns><c>true</c> when the source existed and was removed.</returns>
+		bool RemoveKnowledgeSource(string alias);
+
+		/// <summary>
+		/// Removes one configured knowledge source only when it still matches the supplied snapshot.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="expected">The exact source snapshot observed before the operation.</param>
+		/// <returns><c>true</c> when the unchanged source existed and was removed.</returns>
+		bool TryRemoveKnowledgeSource(string alias, KnowledgeSourceConfiguration expected);
+
+		/// <summary>
+		/// Persists a discovered Git branch only when the source still matches the supplied snapshot.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="expected">The exact source snapshot used for retrieval.</param>
+		/// <param name="branch">The verified remote default branch.</param>
+		/// <returns><c>true</c> when the branch was stored or already matched.</returns>
+		bool TrySetKnowledgeSourceBranch(string alias, KnowledgeSourceConfiguration expected, string branch);
+
+		/// <summary>
+		/// Enables or disables one configured knowledge source without deleting its installed cache.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="enabled">Whether the source should participate.</param>
+		void SetKnowledgeSourceEnabled(string alias, bool enabled);
 
 		/// <summary>
 		/// Gets the configured container image CLI used by build-docker-image.
@@ -178,6 +323,20 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <param name="defaults">The defaults to persist, or <c>null</c>/empty to clear them.</param>
 		void SetDeployCreatioDefaults(DeployCreatioDefaults defaults);
+
+		/// <summary>Gets a detached snapshot of the configured agent knowledge-feedback policy.</summary>
+		/// <returns>The configured policy, or safe ask/sanitized defaults when absent.</returns>
+		KnowledgeFeedbackSettings GetKnowledgeFeedbackSettings();
+
+		/// <summary>Atomically persists the agent knowledge-feedback policy and standing approval.</summary>
+		/// <param name="settings">The complete validated policy to persist.</param>
+		void SetKnowledgeFeedbackSettings(KnowledgeFeedbackSettings settings);
+
+		/// <summary>Atomically updates the latest knowledge-feedback policy under the settings lock.</summary>
+		/// <param name="mutation">Mutation applied to a detached latest snapshot.</param>
+		/// <returns>The persisted detached snapshot.</returns>
+		KnowledgeFeedbackSettings UpdateKnowledgeFeedbackSettings(
+			Func<KnowledgeFeedbackSettings, KnowledgeFeedbackSettings> mutation);
 
 		/// <summary>Gets the preferred LocalMachine/My certificate thumbprint for IIS HTTPS deployment.</summary>
 		/// <returns>The normalized thumbprint, or <c>null</c> when no preference is configured.</returns>

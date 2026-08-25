@@ -30,6 +30,28 @@ public static class SchemaValidationService
 	private const string ViewModelConfigPropertyName = "viewModelConfig";
 	private const string ModelConfigPropertyName = "modelConfig";
 	private const string PathPropertyName = "path";
+	private const string InsertOperationName = "insert";
+	private const string SetOperationName = "set";
+	private const string MergeOperationName = "merge";
+	private const string ParentNamePropertyName = "parentName";
+	private const string PropertyNamePropertyName = "propertyName";
+	private const string ScaffoldElementName = "Scaffold";
+	private const string ScaffoldActionsSlot = "actions";
+	private const string ScaffoldLeadingSlot = "leading";
+	private const string ScaffoldItemsSlot = "items";
+	private const int MaxMergeSlotDiagnosticsPerEntry = 10;
+	private const string ButtonComponentType = "crt.Button";
+
+	/// <summary>
+	/// The Scaffold slots a shipped template already populates, which is what makes a merge authoring into them the
+	/// discard case rather than the create case: <c>actions</c> carries the form templates' Save button,
+	/// <c>leading</c> their Close/Cancel, and <c>items</c> is the page body, which every non-blank template fills
+	/// with a MainContainer. Membership only matters when the merge targets the Scaffold itself, so an
+	/// <c>items</c> slot on any other container is unaffected.
+	/// </summary>
+	private static readonly HashSet<string> ScaffoldTemplatePopulatedSlots = new(StringComparer.Ordinal) {
+		ScaffoldActionsSlot, ScaffoldLeadingSlot, ScaffoldItemsSlot
+	};
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -160,6 +182,26 @@ public static class SchemaValidationService
 		"schema or the current body may legitimately provide the attribute and resource.";
 
 	/// <summary>
+	/// Canonical native-first custom-CSS policy (ENG-92541). Authored ONCE here and reused verbatim by
+	/// the <c>update-page</c> and <c>sync-pages</c> tool [Description]s so both state the identical rule
+	/// (no drift between two hand-written copies). The full STOP block lives in the
+	/// <c>page-modification-components</c> guidance sub-guide — the entry <c>page-modification</c> guide
+	/// stays within its per-response byte budget (ENG-91556), so this summary points agents straight at
+	/// the sub-guide that carries the detail, including the common "style an already-inserted component"
+	/// path (not only fresh inserts). Keep this a <c>const</c> so it stays usable inside
+	/// <c>[Description]</c> attributes (which only accept compile-time constant expressions).
+	/// </summary>
+	internal const string CustomCssPolicySummary =
+		"CUSTOM CSS IS A LAST RESORT: a visual-styling requirement (color, background, font/typeface, " +
+		"size, spacing, border, alignment) — whether on a fresh insert or an already-inserted component — " +
+		"must be met with a component's NATIVE inputs first (get-component-info). A custom `styles` object, " +
+		"a `classes`/CSS class, or an `extraStyles` hook (e.g. extraStyles.toggle/label with " +
+		"color/fill/font-family) is custom CSS that is NOT covered by platform-upgrade compatibility " +
+		"guarantees and can break on a future upgrade — apply it ONLY after telling the user no native " +
+		"option exists, warning about the upgrade-compatibility risk, and getting explicit confirmation; " +
+		"on decline, offer the nearest native alternative. See get-guidance name `page-modification-components`.";
+
+	/// <summary>
 	/// User-visible text properties on Freedom UI view-config nodes whose values must be authored as
 	/// localizable-string bindings, never as inline string literals. Enforced by
 	/// <see cref="ValidateLocalizableTextLiterals"/> (web) and
@@ -275,6 +317,17 @@ public static class SchemaValidationService
 
 		SchemaValidationResult structureResult = ValidateMobileViewConfigDiffStructure(body);
 		if (!structureResult.IsValid) errors.AddRange(structureResult.Errors);
+
+		SchemaValidationResult typePlacementResult = ValidateMobileInsertTypePlacement(body);
+		if (!typePlacementResult.IsValid) errors.AddRange(typePlacementResult.Errors);
+		warnings.AddRange(typePlacementResult.Warnings);
+
+		SchemaValidationResult buttonSlotResult = ValidateMobileButtonSlotPlacement(body);
+		warnings.AddRange(buttonSlotResult.Warnings);
+
+		SchemaValidationResult mergeSlotResult = ValidateMobileMergeSlotAuthoring(body);
+		if (!mergeSlotResult.IsValid) errors.AddRange(mergeSlotResult.Errors);
+		warnings.AddRange(mergeSlotResult.Warnings);
 
 		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
 		warnings.AddRange(componentResult.Warnings);
@@ -498,7 +551,11 @@ public static class SchemaValidationService
 			return result; // JSON errors reported by ValidateMobileBody
 		}
 		using (document) {
-			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
+			// Root-kind guard, same reason as ScanMobileViewConfigDiffEntries: TryGetProperty throws
+			// InvalidOperationException on a non-object element, and this validator runs unconditionally from
+			// ValidateMobilePage. It previously escaped only when allowedMobileTypes was empty.
+			if (document.RootElement.ValueKind != JsonValueKind.Object ||
+				!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
 				vcd.ValueKind != JsonValueKind.Array) {
 				return result;
 			}
@@ -531,30 +588,12 @@ public static class SchemaValidationService
 	/// A <see cref="SchemaValidationResult"/> that is invalid when entries are missing
 	/// required structural properties.
 	/// </returns>
-	public static SchemaValidationResult ValidateMobileViewConfigDiffStructure(string body) {
-		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrWhiteSpace(body)) {
-			return result;
-		}
-		JsonDocument document;
-		try {
-			document = JsonDocument.Parse(body);
-		} catch {
-			return result;
-		}
-		using (document) {
-			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
-				vcd.ValueKind != JsonValueKind.Array) {
-				return result;
-			}
-			int index = 0;
-			foreach (JsonElement entry in vcd.EnumerateArray()) {
-				ValidateViewConfigDiffEntry(entry, index, result);
-				index++;
-			}
-		}
-		return result;
-	}
+	public static SchemaValidationResult ValidateMobileViewConfigDiffStructure(string body) =>
+		// Routed through the shared scaffolding, which additionally guards the root kind: the previous inline copy
+		// called TryGetProperty straight on the root, and that throws InvalidOperationException on a non-object
+		// element — verified: a body such as `[1,2]` took down the whole ValidateMobilePage pass with "requires an
+		// element of type 'Object'" instead of returning the error ValidateMobileBody had already produced.
+		ScanMobileViewConfigDiffEntries(body, ValidateViewConfigDiffEntry);
 
 	private static void ValidateViewConfigDiffEntry(JsonElement entry, int index, SchemaValidationResult result) {
 		if (entry.ValueKind != JsonValueKind.Object) {
@@ -573,6 +612,532 @@ public static class SchemaValidationService
 			$"viewConfigDiff entry at index {index} is missing required " +
 			$"{(missing.Count == 1 ? "property" : "properties")}: {string.Join(", ", missing)}.");
 	}
+
+	/// <summary>
+	/// Validates that every element-authoring operation in a mobile page body's <c>viewConfigDiff</c> declares its
+	/// component type WHERE THE DIFFER READS IT — inside <c>values</c>.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <see cref="JsonDiffApplier"/> (the faithful clone of the Creatio client differ) builds the view element from
+	/// <c>config["values"]</c> alone, then stamps the alias (<c>name</c>) onto it. Every other key on the operation
+	/// object — <c>operation</c>, <c>parentName</c>, <c>propertyName</c>, <c>index</c> and <b><c>type</c></b> — is
+	/// differ metadata and never reaches the applied config; the applier does not read <c>"type"</c> at all. An
+	/// operation-level <c>type</c> is therefore silently discarded, and the page persists a TYPELESS view element the
+	/// mobile runtime cannot render: the write succeeds, the designer and the app show nothing, and the element's
+	/// request bindings stay intact — which makes the failure look like a slot-placement problem rather than a
+	/// malformed operation (ENG-95429).
+	/// </para>
+	/// <para>
+	/// Scope: TOP-LEVEL <c>viewConfigDiff</c> entries whose operation is <c>insert</c> or <c>set</c>. <c>set</c> is
+	/// included because it is not an independent operation — <c>JsonDiffApplier.Set</c> is <c>Remove</c> followed by
+	/// <c>Insert</c> on the SAME config, so it drops an operation-level type identically and additionally destroys the
+	/// element that did carry a valid type. <c>merge</c> patches an element that already has its type; <c>remove</c> /
+	/// <c>move</c> author no element. An entry with no <c>operation</c> is NOT treated as merge — the differ requires
+	/// the key (<c>CheckOperation</c>) and its operation switch has no default branch, so such an entry is rejected or
+	/// dropped, never merged; the structural validator owns that diagnostic.
+	/// </para>
+	/// <para>
+	/// Outcome per entry. BLOCKS: the hybrid (a <c>values</c> object present, no usable <c>type</c> inside it, and a
+	/// type on the operation object) and the FLAT <c>insert</c> (a type on the operation object, no <c>values</c>
+	/// object at all — <c>insert</c> declares no required parameters, so the differ silently persists a typeless
+	/// element). WARNS: no type anywhere while <c>values</c> carries element properties; two DIFFERENT types (the
+	/// element still renders, as the <c>values</c> copy); an operation whose CASE does not match the differ's
+	/// exact-case dispatch (discarded wholesale, so type advice would be useless). SILENT: two IDENTICAL types (the
+	/// operation-level copy is redundant, not harmful); an entry that authors nothing (absent or empty
+	/// <c>values</c>, no type); and a flat <c>set</c>, which the differ rejects itself for the missing required
+	/// <c>values</c>.
+	/// </para>
+	/// <para>
+	/// <see cref="ValidateMobileComponentTypes"/> cannot catch this: it resolves the type through
+	/// <c>GetMobileEntryType</c>, which deliberately accepts <c>entry.type</c> as a fallback, so a misplaced type
+	/// reads as a perfectly good mobile component and passes without so much as a warning. That leniency is correct
+	/// for the registry lookup (it must classify whatever type it can find) and is left alone here; this validator
+	/// owns the placement rule instead.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending entry; see the outcome list in
+	/// the remarks for which shapes block and which only warn.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileInsertTypePlacementEntry);
+
+	/// <summary>
+	/// Shared scaffolding for the per-entry <c>viewConfigDiff</c> rules: parse the body, locate the array, and hand
+	/// each entry with its position to <paramref name="inspectEntry"/>, which accumulates into the shared result.
+	/// </summary>
+	/// <remarks>
+	/// A body that is not parseable or is not a JSON object yields an empty valid result — both are reported by
+	/// <see cref="ValidateMobileBody"/>, and duplicating the diagnostic here would bury it. A body carrying no
+	/// <c>viewConfigDiff</c> array also yields an empty result, but because it is legitimately valid (the section is
+	/// optional), not because anything else reports it. The root-kind guard also matters mechanically: <c>JsonElement.TryGetProperty</c> throws
+	/// <see cref="InvalidOperationException"/> on a non-object element, so a body such as <c>[1,2]</c> would take the
+	/// whole validation pass down rather than return the malformed-body error.
+	/// </remarks>
+	private static SchemaValidationResult ScanMobileViewConfigDiffEntries(
+		string body, Action<JsonElement, int, SchemaValidationResult> inspectEntry) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException) {
+			// JsonException covers syntax and depth; the other two cover the UTF-16 transcode failure
+			// JsonDocument.Parse(string) raises on an unpaired surrogate. All are reported by ValidateMobileBody.
+			return result;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Object
+				|| !document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)
+				|| viewConfigDiff.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			int index = 0;
+			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+				inspectEntry(entry, index, result);
+				index++;
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Applies the type-placement rule to a single <c>viewConfigDiff</c> entry: dispatches to the case-mismatch,
+	/// flat-shape or values-shape reporter. See the caller's remarks for the operation scope and for which shapes
+	/// block (the hybrid, and the flat <c>insert</c>) versus which only warn.
+	/// </summary>
+	private static void ValidateMobileInsertTypePlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(entry, OperationPropertyName, out string operation)) {
+			return;
+		}
+		bool isInsert = string.Equals(operation, InsertOperationName, StringComparison.Ordinal);
+		if (!isInsert && !string.Equals(operation, SetOperationName, StringComparison.Ordinal)) {
+			ReportOperationCaseMismatch(entry, index, operation, result);
+			return;
+		}
+		bool hasEntryType = TryGetStringProperty(entry, TypePropertyName, out string entryType);
+		string subject = DescribeViewConfigDiffEntry(entry, index);
+		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) || values.ValueKind != JsonValueKind.Object) {
+			// `set` is excluded here: it requires `values`, so the differ rejects a flat `set` itself and
+			// MobileDiffApplyValidator surfaces that — reporting it here too would double-report one defect.
+			if (isInsert && hasEntryType) {
+				ReportFlatShapeTypePlacement(subject, entryType, result);
+			}
+			return;
+		}
+		ReportValuesShapeTypePlacement(subject, values, entryType, hasEntryType, result);
+	}
+
+	/// <summary>
+	/// Reports an operation that only case-insensitively matches <c>insert</c> / <c>set</c>. The differ dispatches on
+	/// an exact-case switch with no default branch, so such an entry is not "an insert with a bad type" — the WHOLE
+	/// operation is discarded and nothing is authored. Saying so beats type advice the author could follow without
+	/// changing the outcome.
+	/// </summary>
+	private static void ReportOperationCaseMismatch(
+		JsonElement entry, int index, string operation, SchemaValidationResult result) {
+		// A correctly-cased "merge" reaches this reporter too (only exact insert/set are filtered by the caller),
+		// so it must be let through before the case-insensitive match below treats it as mis-cased.
+		if (string.Equals(operation, MergeOperationName, StringComparison.Ordinal)) {
+			return;
+		}
+		if (!string.Equals(operation, InsertOperationName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(operation, SetOperationName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(operation, MergeOperationName, StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+		result.Warnings.Add(
+			$"{DescribeViewConfigDiffEntry(entry, index)} declares \"{OperationPropertyName}\": \"{Sanitize(operation)}\". The "
+			+ "Creatio differ dispatches operations case-sensitively, so this entry is silently discarded and "
+			+ $"authors nothing. Use the exact lowercase form (\"{Sanitize(operation).ToLowerInvariant()}\").");
+	}
+
+	/// <summary>
+	/// Reports the FLAT shape — everything at operation level, no <c>values</c> object. <c>insert</c> declares no
+	/// required parameters, so the differ does NOT reject it: it clones nothing, stamps the alias and persists a
+	/// typeless element, the same unrenderable outcome as the hybrid, so it blocks the same way. That two sibling
+	/// validators READ <c>entry.type</c> says only that they can classify the shape, not that the differ renders it.
+	/// <c>set</c> is excluded by the caller: it requires <c>values</c>, so the differ rejects a flat <c>set</c> itself
+	/// and <c>MobileDiffApplyValidator</c> surfaces that — reporting it here too would double-report one defect.
+	/// </summary>
+	private static void ReportFlatShapeTypePlacement(string subject, string entryType, SchemaValidationResult result) {
+		result.IsValid = false;
+		result.Errors.Add(
+			$"{subject} declares \"{TypePropertyName}\": \"{Sanitize(entryType)}\" on the operation object and carries no "
+			+ "\"values\" object. The Creatio differ builds the element from \"values\" only, so the type is discarded "
+			+ "and the element cannot render even though the write reports success. Move the component properties "
+			+ $"into \"values\": {{ \"{TypePropertyName}\": \"{Sanitize(entryType)}\", ... }}. If this entry came back "
+			+ "from get-page, the page already carries the defect — correct it in the body you send back.");
+	}
+
+	/// <summary>
+	/// Reports the three outcomes for an operation that DOES carry a <c>values</c> object: a usable type inside it
+	/// (renders — only a conflicting operation-level type is worth a warning), no usable type but one on the
+	/// operation object (the blocking hybrid), or no type anywhere (advisory).
+	/// </summary>
+	private static void ReportValuesShapeTypePlacement(
+		string subject, JsonElement values, string entryType, bool hasEntryType, SchemaValidationResult result) {
+		if (TryGetStringProperty(values, TypePropertyName, out string valuesType)) {
+			// The differ applies the `values` copy, so the element renders. A DIFFERENT operation-level type is still
+			// worth flagging: the author gets a component they did not ask for, silently.
+			if (hasEntryType && !string.Equals(entryType, valuesType, StringComparison.Ordinal)) {
+				result.Warnings.Add(
+					$"{subject} declares \"{TypePropertyName}\": \"{Sanitize(entryType)}\" on the operation object but "
+					+ $"\"{TypePropertyName}\": \"{Sanitize(valuesType)}\" inside \"values\". The Creatio differ applies the \"values\" "
+					+ $"copy and discards the other, so the element renders as '{Sanitize(valuesType)}'. Remove the operation-level "
+					+ "type so the intent is unambiguous.");
+			}
+			return;
+		}
+		if (hasEntryType) {
+			result.IsValid = false;
+			result.Errors.Add(
+				$"{subject} declares \"{TypePropertyName}\": \"{Sanitize(entryType)}\" on the operation object instead of inside "
+				+ "\"values\". The Creatio differ builds the element from \"values\" only, so the type is discarded and the "
+				+ "element cannot render even though the write reports success. Move it: "
+				+ $"\"values\": {{ \"{TypePropertyName}\": \"{Sanitize(entryType)}\", ... }}. If this entry came back from get-page, the "
+				+ "page already carries the defect — correct it in the body you send back.");
+			return;
+		}
+		// Type is absent everywhere. Only worth reporting when the operation actually authors an element; an empty
+		// `values` object carries nothing to render and is not worth the noise.
+		if (values.EnumerateObject().Any()) {
+			result.Warnings.Add(
+				$"{subject} declares no \"{TypePropertyName}\" inside \"values\", so the mobile runtime has no component to "
+				+ "render and the element stays invisible even though the write reports success. Add "
+				+ $"\"{TypePropertyName}\" to \"values\" (use get-component-info schema-type=mobile to pick the component).");
+		}
+	}
+
+	/// <summary>
+	/// Warns when a mobile page inserts a <c>crt.Button</c> into the Scaffold's <c>actions</c> slot — the placement
+	/// that saves successfully and then cannot be seen or edited on the mobile designer canvas (ENG-95429).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// This rule is EMPIRICAL, not derived from the differ, and its claim is deliberately narrow. What is verified:
+	/// a button inserted into <c>Scaffold</c>/<c>actions</c> does not appear on the Freedom UI mobile designer
+	/// canvas, so an author can neither see nor edit it there; a button added through the designer itself lands in a
+	/// page container's <c>items</c> with a <c>layoutConfig</c>; and with this warning in place a coding agent
+	/// re-running the ENG-95429 scenario moved its buttons to that container, after which the canvas-discovery check
+	/// passed. What is NOT claimed: that the slot fails to render at runtime. It is a legitimate runtime slot — the
+	/// merged Scaffold of a real mobile form page carries the platform's own <c>SaveButton</c> in <c>actions</c> and
+	/// <c>CloseButton</c>/<c>CancelButton</c> in <c>leading</c>, and the designer preview omits that whole navigation
+	/// bar, template buttons included. Saying "it never renders" would assert something nobody has checked in the
+	/// Creatio Mobile app.
+	/// </para>
+	/// <para>
+	/// A WARNING, not an error, for the same reason: the placement is not invalid, it is undiscoverable in the
+	/// designer, so steering the author is right and refusing the write is not. The catalog steers agents here —
+	/// it describes <c>actions</c> as "right-side action items (save button, search button)" and every template
+	/// declares the slot — which is why two independent models chose it unprompted and why a push-time signal is
+	/// worth more than a catalog fix alone. Scope is <c>insert</c> only: a <c>set</c> may legitimately patch an
+	/// element the template already owns in that slot, and nothing has been verified about that case.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is always valid and carries one warning per offending insert.</returns>
+	public static SchemaValidationResult ValidateMobileButtonSlotPlacement(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileButtonSlotPlacementEntry);
+
+	/// <summary>
+	/// Applies the button-slot rule to one <c>viewConfigDiff</c> entry. Every comparison — operation, parent alias,
+	/// slot key and component type — is <see cref="StringComparison.Ordinal"/>, matching the differ: it dispatches
+	/// operations on an exact-case switch, resolves the parent through an ordinal alias store, and reads the slot
+	/// through a Newtonsoft <c>JObject</c> indexer. A differently-cased spelling never reaches the slot at all, so
+	/// it is a different defect and not this rule's to report.
+	/// </summary>
+	private static void ValidateMobileButtonSlotPlacementEntry(JsonElement entry, int index, SchemaValidationResult result) {
+		// Exact-case operation, matching the differ's switch and the type-placement rule. Going through the
+		// case-INsensitive IsOperation here would contradict the sibling rule: a mis-cased operation is discarded
+		// wholesale, so telling its author where to move the button is advice that cannot change the outcome.
+		if (!IsExactOperation(entry, InsertOperationName)) {
+			return;
+		}
+		// The type is read from `values` ONLY — the copy the differ actually applies. Resolving it through the
+		// lenient GetMobileEntryType (which falls back to entry.type) would make this rule fire on the very body
+		// the type-placement rule already blocks, warning about the placement of a button the differ never creates.
+		// One defect, one diagnostic — and on the write path warnings are dropped when errors exist, so the
+		// duplicate would be invisible there anyway and would resurface only after the author fixed the type.
+		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values)
+			|| values.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(values, TypePropertyName, out string valuesType)
+			|| !string.Equals(valuesType, ButtonComponentType, StringComparison.Ordinal)) {
+			return;
+		}
+		if (!TryGetStringProperty(entry, ParentNamePropertyName, out string parentName)
+			|| !string.Equals(parentName, ScaffoldElementName, StringComparison.Ordinal)
+			|| !TryGetStringProperty(entry, PropertyNamePropertyName, out string slot)
+			|| !string.Equals(slot, ScaffoldActionsSlot, StringComparison.Ordinal)) {
+			return;
+		}
+		result.Warnings.Add(
+			$"{DescribeViewConfigDiffEntry(entry, index)} inserts a {ButtonComponentType} into "
+			+ $"\"{ParentNamePropertyName}\": \"{ScaffoldElementName}\", \"{PropertyNamePropertyName}\": \"{ScaffoldActionsSlot}\". "
+			+ "The save succeeds, but a button placed there does not appear on the Freedom UI mobile designer "
+			+ "canvas, so nobody can see or edit it there (ENG-95429). Place it as an item of a page container "
+			+ $"instead — \"{PropertyNamePropertyName}\": \"items\" on a container THIS page or its template "
+			+ "actually declares (confirm the name with get-page; inserting into a parent that does not exist is "
+			+ "silently dropped by the differ and fails the same way) — and give it a \"layoutConfig\", which is "
+			+ "what the designer itself emits.");
+	}
+
+	/// <summary>
+	/// Diagnoses a <c>merge</c> that authors CHILD ELEMENTS inside its <c>values</c> — an array (or a lone object)
+	/// of item configs placed on a container slot such as <c>actions</c>, <c>leading</c>, <c>items</c> or
+	/// <c>menuItems</c>. Blocking on the Scaffold navigation slots, advisory everywhere else.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Mechanism (<c>JsonDiffApplier.Merge</c>): before copying anything, the applier walks the properties of the
+	/// TARGET element and, for each one whose first child is an item config, strips the same-named property out of
+	/// the incoming <c>values</c> — the platform's <c>ItemWithItemsPropertyMergeException</c> warn-and-drop. So when
+	/// the target ALREADY holds elements in that slot the authored children are discarded outright: the write
+	/// reports success, the operation persists in the page's own body, and nothing reaches the merged config.
+	/// </para>
+	/// <para>
+	/// Verified on a stand for ENG-95429: a <c>merge</c> on <c>Scaffold</c> carrying a <c>crt.Button</c> in
+	/// <c>values.actions</c> saved successfully and left the merged <c>viewConfig</c> untouched — the button appeared
+	/// zero times in it while remaining in the saved body. That is the reported symptom exactly: saved, never rendered.
+	/// </para>
+	/// <para>
+	/// The OTHER outcome is not a defect. When the target slot is absent or an empty array the strip does not fire,
+	/// the property is copied wholesale, and the author gets exactly what they asked for. A <c>merge</c> is in fact
+	/// often the only single-operation route there, because an <c>insert</c> into a property the target does not
+	/// carry resolves its parent to <c>null</c> and throws <c>NotContainerItemInsertException</c>; the platform's own
+	/// idiom is two operations — a <c>merge</c> creating the slot as an empty array (which this rule deliberately
+	/// does not flag), then an <c>insert</c>/<c>move</c> per child, since the merge group runs first.
+	/// </para>
+	/// <para>
+	/// clio applies <c>viewConfigDiff</c> against an EMPTY base (<c>MobileDiffApplyValidator</c>; the pre-resolved
+	/// mobile base carries only <c>viewModelConfig</c>/<c>modelConfig</c>), so it cannot tell the two outcomes apart.
+	/// Severity is therefore split by target rather than by outcome: the Scaffold navigation slots are populated by
+	/// every form template that ships one (verified: <c>actions</c> holds the template's Save button, <c>leading</c>
+	/// its Close/Cancel), so authoring into them through a merge is the discard case and BLOCKS. Every other slot may
+	/// legitimately be absent — <c>menuItems</c> on a <c>crt.Button</c> or <c>crt.FloatingActionButton</c>,
+	/// <c>items</c> on <c>crt.QuickFilterGroup</c>, <c>crt.Sort</c> or <c>crt.Timeline</c> — so those only WARN.
+	/// </para>
+	/// <para>
+	/// RESIDUAL: <c>BlankMobilePageTemplate</c> ships a bare Scaffold with no content, so its navigation slots may be
+	/// empty and a merge into them would apply correctly yet still be refused. Narrow, and the cost of the opposite
+	/// error — letting the reported silent failure through again — is higher.
+	/// </para>
+	/// <para>
+	/// Scope is <c>merge</c> ONLY. For <c>insert</c> and <c>set</c> the whole <c>values</c> object BECOMES the
+	/// element, so children declared inside it are the documented way to author a container. The check is
+	/// slot-agnostic: EVERY property of <c>values</c> is examined, not a fixed slot list.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> carrying one diagnostic per offending slot, up to the per-entry
+	/// advisory bound described on <see cref="TryReserveAdvisoryDiagnostic"/>.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileMergeSlotAuthoring(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileMergeSlotAuthoringEntry);
+
+	/// <summary>
+	/// Per-entry half of <see cref="ValidateMobileMergeSlotAuthoring"/>; reports each offending slot on the entry
+	/// rather than stopping at the first, so one pass fixes the whole operation. Advisory diagnostics are bounded
+	/// per entry — see <see cref="TryReserveAdvisoryDiagnostic"/>; blocking ones never are.
+	/// </summary>
+	private static void ValidateMobileMergeSlotAuthoringEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		// Exact-case, matching the differ's switch and both sibling rules. A mis-cased operation is reported by
+		// ReportOperationCaseMismatch, whose allowlist includes merge for exactly this reason.
+		if (!IsExactOperation(entry, MergeOperationName)
+			|| !entry.TryGetProperty(ValuesPropertyName, out JsonElement values)
+			|| values.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		bool targetsScaffold = TryGetStringProperty(entry, "name", out string mergeTarget)
+			&& string.Equals(mergeTarget, ScaffoldElementName, StringComparison.Ordinal);
+		string subject = DescribeViewConfigDiffEntry(entry, index);
+		int advisoryReported = 0;
+		int blockingReported = 0;
+		bool advisoryCapNoted = false;
+		bool blockingCapNoted = false;
+		foreach (JsonProperty slot in values.EnumerateObject()) {
+			if (!TryGetAuthoredElementName(slot.Value, out string childName)) {
+				continue;
+			}
+			if (targetsScaffold && ScaffoldTemplatePopulatedSlots.Contains(slot.Name)) {
+				// Latched BEFORE the bound, so no slot ordering and no run of duplicate keys can talk the rule
+				// out of refusing (raised in review of PR #1124).
+				result.IsValid = false;
+				AddBoundedMergeSlotDiagnostic(
+					result, ref blockingReported, ref blockingCapNoted, subject, slot, childName, blocks: true);
+			} else {
+				AddBoundedMergeSlotDiagnostic(
+					result, ref advisoryReported, ref advisoryCapNoted, subject, slot, childName, blocks: false);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Adds one merge-slot diagnostic to <paramref name="sink"/>, or the "there were more" note once the per-entry
+	/// bound for that channel is reached.
+	/// </summary>
+	/// <remarks>
+	/// The channels are counted SEPARATELY. That is what makes bounding the blocking one safe: slots are
+	/// enumerated in document order, so a shared counter would let a body that lists enough advisory slots first
+	/// suppress the very defect the rule exists to refuse — and the caller latches <c>IsValid</c> before calling
+	/// in, so the refusal never depends on the bound. The bounds keep one entry from burying the agent's
+	/// transcript; on the error channel that also caps a real amplifier, since <c>JsonDocument</c> preserves
+	/// duplicate property names and the write tools flatten errors into a single <c>"; "</c>-joined string. The
+	/// diagnostic is built only when it will be used, so a flooding body does no work per suppressed slot.
+	/// A legitimate body never reaches either bound.
+	/// </remarks>
+	private static void AddBoundedMergeSlotDiagnostic(
+		SchemaValidationResult result, ref int reported, ref bool capNoted,
+		string subject, JsonProperty slot, string childName, bool blocks) {
+		// The sink and the label both follow from `blocks`; passing them in as well only widened the signature.
+		// The cap note always goes to the warnings, on either channel — it reports a truncation, not a defect.
+		if (reported >= MaxMergeSlotDiagnosticsPerEntry) {
+			if (!capNoted) {
+				capNoted = true;
+				string channel = blocks ? "blocking" : "advisory";
+				result.Warnings.Add(
+					$"{subject} authors child elements in further slots not listed here; only the first "
+					+ $"{MaxMergeSlotDiagnosticsPerEntry} {channel} slots are reported.");
+			}
+			return;
+		}
+		reported++;
+		List<string> sink = blocks ? result.Errors : result.Warnings;
+		sink.Add(DescribeMergeSlotAuthoring(
+			subject, slot.Name, childName, blocks, slot.Value.ValueKind == JsonValueKind.Object));
+	}
+
+	/// <summary>
+	/// Builds the merge-slot diagnostic. Both outcomes of the mechanism are stated because clio cannot tell which
+	/// one a given body is in; the remedy comes from <see cref="DescribeMergeSlotRemedy"/>.
+	/// </summary>
+	private static string DescribeMergeSlotAuthoring(
+		string subject, string rawSlotName, string childName, bool blocks, bool slotHoldsLoneObject) =>
+		$"{subject} is a \"{MergeOperationName}\" whose \"{ValuesPropertyName}\" authors child elements in "
+		+ $"\"{Sanitize(rawSlotName)}\" (starting with '{Sanitize(childName)}'). Where the target already holds "
+		+ "elements in that slot the differ strips the whole property out of the merge, so the write succeeds and "
+		+ "the children never reach the page (ENG-95429). Where the slot is absent or empty the merge does apply "
+		+ "— clio validates viewConfigDiff against an empty base and cannot tell the two apart. "
+		+ DescribeMergeSlotRemedy(blocks, slotHoldsLoneObject);
+
+	/// <summary>
+	/// The actionable half of the merge-slot diagnostic. It differs by severity and by the slot's shape: a Scaffold
+	/// slot the template fills is never the right destination, a single-element slot can only be reached by a
+	/// merge, and a collection slot the target lacks needs the platform's two-step idiom.
+	/// </summary>
+	private static string DescribeMergeSlotRemedy(bool blocks, bool slotHoldsLoneObject) {
+		if (blocks) {
+			return "Place the child in a page container instead: its own "
+				+ $"\"{InsertOperationName}\" with \"{PropertyNamePropertyName}\": \"items\" on a container "
+				+ "this page or its template declares, plus a \"layoutConfig\". A button in the Scaffold "
+				+ "navigation slots is not shown on the mobile designer canvas even when it does apply.";
+		}
+		if (slotHoldsLoneObject) {
+			return "This slot holds a single element rather than a collection, so a merge is the ONLY route to "
+				+ $"it: an \"{InsertOperationName}\" needs a container and throws on a property that is null or "
+				+ "absent. It applies when the target's slot is null or absent, and is discarded when the target "
+				+ "already holds an element there. Do NOT convert it to an array.";
+		}
+		return "To author into a collection slot the target genuinely lacks, use the platform's two-step idiom: "
+			+ $"a \"{MergeOperationName}\" that creates the slot as an empty array, then one "
+			+ $"\"{InsertOperationName}\" per child (the merge group runs first). Note that an "
+			+ $"\"{InsertOperationName}\" into a property the target does not carry throws.";
+	}
+
+
+	/// <summary>
+	/// Whether a merged-in property value authors view elements, and if so the alias of the first one — the entry is
+	/// named after the element being merged, not the child that goes missing, so the diagnostic needs both.
+	/// </summary>
+	/// <remarks>
+	/// Mirrors the applier's <c>isItemConfig</c> predicate (an object whose <c>name</c> is not empty, per its own
+	/// <c>IsEmpty</c> — which rejects a zero-length string, an empty array, and null, so whitespace and scalar
+	/// non-string names both count) and
+	/// its acceptance of a lone object where a collection is expected. It does NOT mirror WHERE the applier looks:
+	/// the applier tests the first child of the TARGET's property, while only the incoming payload is available
+	/// here. That makes this a proxy, so it scans EVERY item rather than just the first — a named child behind an
+	/// unnamed one is stripped exactly the same way.
+	/// </remarks>
+	private static bool TryGetAuthoredElementName(JsonElement value, out string firstChildName) {
+		firstChildName = null;
+		if (value.ValueKind == JsonValueKind.Object) {
+			return TryGetItemConfigName(value, out firstChildName);
+		}
+		if (value.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		foreach (JsonElement item in value.EnumerateArray()) {
+			if (item.ValueKind == JsonValueKind.Object && TryGetItemConfigName(item, out firstChildName)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// The applier's own item-config test: a <c>name</c> that is present and not empty. Deliberately looser than
+	/// <see cref="TryGetStringProperty"/>, which additionally rejects whitespace and non-string values — the applier
+	/// accepts both, and matching it is what keeps this rule from missing a shape the differ strips.
+	/// </summary>
+	private static bool TryGetItemConfigName(JsonElement item, out string name) {
+		name = null;
+		if (!item.TryGetProperty("name", out JsonElement nameElement)) {
+			return false;
+		}
+		switch (nameElement.ValueKind) {
+			case JsonValueKind.Null or JsonValueKind.Undefined:
+				return false;
+			// The applier's IsEmpty rejects an empty array too, so an empty-array name is not an item config.
+			case JsonValueKind.Array when nameElement.GetArrayLength() == 0:
+				return false;
+			case JsonValueKind.String:
+				name = nameElement.GetString();
+				return !string.IsNullOrEmpty(name);
+			default:
+				name = nameElement.ToString();
+				return !string.IsNullOrEmpty(name);
+		}
+	}
+
+	/// <summary>
+	/// Whether the entry declares exactly <paramref name="operationName"/>, compared ordinally to match the differ's
+	/// case-sensitive dispatch. Used by the rules that only need the yes/no answer; the type-placement rule keeps
+	/// its own comparison because it also needs the operation string itself for the case-mismatch diagnostic.
+	/// </summary>
+	private static bool IsExactOperation(JsonElement entry, string operationName) =>
+		entry.ValueKind == JsonValueKind.Object
+		&& TryGetStringProperty(entry, OperationPropertyName, out string operation)
+		&& string.Equals(operation, operationName, StringComparison.Ordinal);
+
+
+	/// <summary>
+	/// Names a <c>viewConfigDiff</c> entry for a diagnostic: quoted alias when it has one, otherwise the file's
+	/// established positional phrasing (see <see cref="ValidateViewConfigDiffEntry"/>) rather than a quoted phrase
+	/// that would read as an alias.
+	/// </summary>
+	private static string DescribeViewConfigDiffEntry(JsonElement entry, int index) =>
+		TryGetStringProperty(entry, "name", out string name)
+			? $"viewConfigDiff entry '{Sanitize(name)}'"
+			: $"viewConfigDiff entry at index {index}";
+
+	/// <summary>
+	/// Bounds a body-sourced value before it is echoed into a diagnostic: applies the file's existing
+	/// <see cref="Truncate"/> cap and collapses control characters. Both matter because these strings reach the MCP
+	/// transcript and the update-page log, and the write-path tools flatten several diagnostics with <c>"; "</c> —
+	/// an unbounded or newline-bearing value from a page authored elsewhere would otherwise forge message
+	/// boundaries in the operator's agent context.
+	/// </summary>
+	private static string Sanitize(string value) =>
+		string.IsNullOrEmpty(value)
+			? value
+			: Truncate(new string(value.Select(c => char.IsControl(c) ? ' ' : c).ToArray()));
 
 	/// <summary>
 	/// Validates that every <c>$AttributeName</c> binding in a mobile page body's
@@ -973,13 +1538,18 @@ public static class SchemaValidationService
 
 	private static void CollectAttributesFromArraySection(JsonElement section, HashSet<string> attributes) {
 		foreach (JsonElement entry in section.EnumerateArray()) {
-			if (entry.ValueKind != JsonValueKind.Object || !ShouldScanAsAttributesContainer(entry)) {
+			if (entry.ValueKind != JsonValueKind.Object) {
 				continue;
 			}
 			// Merge-into-attributes pattern: { "operation":"merge", "path":["attributes"], "values":{...} }
+			// and the targeted item-scope form whose path ends in a nested attributes map:
+			// { "operation":"merge", "path":["attributes","<collection>","viewModelConfig","attributes"], "values":{...} }
+			if (!ShouldScanAsAttributesContainer(entry) && !TargetsNestedAttributesMap(entry)) {
+				continue;
+			}
 			if (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) &&
 				values.ValueKind == JsonValueKind.Object) {
-				AddObjectPropertyNames(values, attributes);
+				AddAttributeNames(values, attributes);
 			}
 		}
 	}
@@ -987,14 +1557,67 @@ public static class SchemaValidationService
 	private static void CollectAttributesFromObjectSection(JsonElement section, HashSet<string> attributes) {
 		if (section.TryGetProperty(AttributesPropertyName, out JsonElement attrs) &&
 			attrs.ValueKind == JsonValueKind.Object) {
-			AddObjectPropertyNames(attrs, attributes);
+			AddAttributeNames(attrs, attributes);
 		}
 	}
 
-	private static void AddObjectPropertyNames(JsonElement obj, HashSet<string> attributes) {
+	/// <summary>
+	/// Adds every attribute name declared in <paramref name="obj"/> (an attributes map), including
+	/// item-scope attributes nested inside a collection attribute's <c>viewModelConfig.attributes</c>
+	/// (a list column bound from the list's <c>itemLayout</c>). Those resolve at runtime in the
+	/// collection's item scope, so a binding to them is declared — collecting only the top-level
+	/// names would falsely reject a correctly-nested list body and push its column attributes to be
+	/// re-declared at page root, where they duplicate the nested ones and break mobile-runtime saves.
+	/// </summary>
+	private static void AddAttributeNames(JsonElement obj, HashSet<string> attributes) {
 		foreach (JsonProperty attr in obj.EnumerateObject()) {
 			attributes.Add(attr.Name);
+			if (attr.Value.ValueKind == JsonValueKind.Object &&
+				attr.Value.TryGetProperty(ViewModelConfigPropertyName, out JsonElement itemViewModelConfig) &&
+				itemViewModelConfig.ValueKind == JsonValueKind.Object &&
+				itemViewModelConfig.TryGetProperty(AttributesPropertyName, out JsonElement itemAttributes) &&
+				itemAttributes.ValueKind == JsonValueKind.Object) {
+				AddAttributeNames(itemAttributes, attributes);
+			}
 		}
+	}
+
+	/// <summary>
+	/// True when a diff operation's path is an all-string array whose first segment is
+	/// <c>attributes</c> and whose last two segments are <c>viewModelConfig</c>, <c>attributes</c> —
+	/// then its <c>values</c> declare item-scope attribute names. The canonical shape is the
+	/// four-segment collection path <c>["attributes","SimilarLeadList","viewModelConfig","attributes"]</c>,
+	/// but the check is deliberately shape-only (first / penultimate / last segment, any length above
+	/// one): a shorter or deeper path that satisfies it also matches, which can only over-accept —
+	/// consistent with the validator's lenient posture. What must never match are paths carrying an
+	/// attribute's BODY, and they never do: ending in <c>attributes</c> through another sub-property
+	/// (<c>["attributes","X","modelConfig","attributes"]</c>) fails the penultimate check, drilling
+	/// into a sub-property (<c>["attributes","X","modelConfig"]</c>) or one level past the nested map
+	/// (<c>[...,"viewModelConfig","attributes","LeadName"]</c>) fails the last-segment check.
+	/// </summary>
+	private static bool TargetsNestedAttributesMap(JsonElement operation) {
+		if (!operation.TryGetProperty("path", out JsonElement pathElement) ||
+			pathElement.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		string? first = null;
+		string? beforeLast = null;
+		string? last = null;
+		int count = 0;
+		foreach (JsonElement segment in pathElement.EnumerateArray()) {
+			if (segment.ValueKind != JsonValueKind.String) {
+				return false;
+			}
+			string? value = segment.GetString();
+			first ??= value;
+			beforeLast = last;
+			last = value;
+			count++;
+		}
+		return count > 1 &&
+			string.Equals(first, AttributesPropertyName, StringComparison.OrdinalIgnoreCase) &&
+			string.Equals(beforeLast, ViewModelConfigPropertyName, StringComparison.OrdinalIgnoreCase) &&
+			string.Equals(last, AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static HashSet<string> CollectMobileViewBindings(JsonElement root) {
@@ -2101,12 +2724,19 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	private static bool IsInsertOperation(JsonElement entry) {
+	private static bool IsInsertOperation(JsonElement entry) => IsOperation(entry, InsertOperationName);
+
+	/// <summary>
+	/// True when <paramref name="entry"/>'s <c>operation</c> is <paramref name="operationName"/>. Single spelling of
+	/// the operation-name comparison so the literals stay in the consts above and cannot drift between validators.
+	/// The caller must have established that <paramref name="entry"/> is a JSON object.
+	/// </summary>
+	private static bool IsOperation(JsonElement entry, string operationName) {
 		if (!entry.TryGetProperty(OperationPropertyName, out JsonElement operation) ||
 		    operation.ValueKind != JsonValueKind.String) {
 			return false;
 		}
-		return string.Equals(operation.GetString(), "insert", StringComparison.OrdinalIgnoreCase);
+		return string.Equals(operation.GetString(), operationName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static void AppendBindingDeclarationError(
@@ -3158,7 +3788,7 @@ public static class SchemaValidationService
 
 	private static IReadOnlyDictionary<string, HashSet<string>> BuildValidatorParameterContracts(string jsBody) {
 		var contracts = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-		foreach ((string validatorType, string[] paramNames) in StandardValidatorContractParser.GetContracts()) {
+		foreach ((string validatorType, string[] paramNames) in StandardValidatorContracts.GetContracts()) {
 			contracts[validatorType] = new HashSet<string>(paramNames, StringComparer.OrdinalIgnoreCase);
 		}
 		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {

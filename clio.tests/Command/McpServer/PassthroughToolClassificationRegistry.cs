@@ -169,15 +169,15 @@ internal static class PassthroughToolClassificationRegistry {
 	/// One row per <c>[McpServerToolType]</c> tool name discovered in the current <c>clio</c> assembly
 	/// (verified against <see cref="Clio.Command.McpServer.McpFeatureToggleFilter.GetAttributedTypes"/>
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
-	/// <see cref="PassthroughToolClassificationGuardTests"/>). Buckets: <see cref="PassthroughClassification.Routed"/>,
-	/// <see cref="PassthroughClassification.Guarded"/>, <see cref="PassthroughClassification.NotEnvironmentSensitive"/>
-	/// (PRD's literal out-of-scope audit, matched to CURRENT tool names — several PRD names are stale, see the
-	/// inline notes below), and <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change
-	/// required). Per-bucket counts live on the section-header comments below, next to the rows they count —
-	/// prose totals here rotted twice (150→160 tools between 2026-07-11 and 2026-07-16) and were dropped.
+	/// <see cref="PassthroughToolClassificationGuardTests"/>). 162 tools at authoring time (2026-07-19):
+	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
+	/// 32 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit
+	/// plus global knowledge-source management, matched to CURRENT tool names), and 117
+	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
 	/// </summary>
 	internal static readonly IReadOnlyDictionary<string, PassthroughClassification> Classification =
 		new Dictionary<string, PassthroughClassification>(System.StringComparer.Ordinal) {
+			// --- Routed (12): audited class c1 (7) + c2 (1) + matrix (4), fixed in Stories 3-14 ---
 			["list-apps"] = PassthroughClassification.Routed,
 			["get-app-info"] = PassthroughClassification.Routed,
 			["create-app"] = PassthroughClassification.Routed,
@@ -191,25 +191,34 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-component-info"] = PassthroughClassification.Routed,
 			["get-request-info"] = PassthroughClassification.Routed,
 			["build-theme"] = PassthroughClassification.Routed,
+			// export-component-registry mirrors get-component-info exactly: version resolution routes the
+			// hasEnvironment branch through IToolCommandResolver.Resolve<EnvironmentSettings>, never
+			// ISettingsRepository directly (ADR export-component-registry D4/notes).
+			["export-component-registry"] = PassthroughClassification.Routed,
 
 			// --- Guarded (3): audited class c3, fail-fast under passthrough (Story 1) ---
 			["link-from-repository-by-environment"] = PassthroughClassification.Guarded,
 			["link-from-repository-by-env-package-path"] = PassthroughClassification.Guarded,
 			["link-from-repository-unlocked"] = PassthroughClassification.Guarded,
 
-			// --- NotEnvironmentSensitive (20): PRD "Out of scope" audit, matched to CURRENT tool names.
+			// --- NotEnvironmentSensitive (30): PRD "Out of scope" audit plus global knowledge-source
+			// management, matched to CURRENT tool names.
 			// Several PRD prose names are stale vs. the actual [McpServerTool(Name=...)]; the ACTUAL name
 			// is used as the dictionary key and the PRD's (older) name is noted inline for traceability:
 			["get-telemetry-consent"] = PassthroughClassification.NotEnvironmentSensitive,
 			["send-telemetry"] = PassthroughClassification.NotEnvironmentSensitive,
 			["withdraw-telemetry-consent"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-guidance"] = PassthroughClassification.NotEnvironmentSensitive,
+			["get-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
+			["configure-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-tool-contract"] = PassthroughClassification.NotEnvironmentSensitive,
 			["assert-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["show-passing-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments
 			["find-empty-iis-port"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-creatio-builds"] = PassthroughClassification.NotEnvironmentSensitive, // the exact false-positive FR-06 must not trip on
+			["list-db-templates"] = PassthroughClassification.NotEnvironmentSensitive,
+			["prune-db-templates"] = PassthroughClassification.NotEnvironmentSensitive,
 			["advise-theme-palette"] = PassthroughClassification.NotEnvironmentSensitive,
 			["reg-web-app"] = PassthroughClassification.NotEnvironmentSensitive,
 			["deploy-creatio"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "install-creatio" (InstallerCommandTool); actual tool name is deploy-creatio
@@ -220,10 +229,21 @@ internal static class PassthroughToolClassificationRegistry {
 			["add-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
+			["install-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["update-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["info-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["delete-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["add-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["remove-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["enable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["disable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
+			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
-			// --- NotApplicable (127): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (138): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
+			["add-custom-logging"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
 			["add-package-dependency"] = PassthroughClassification.NotApplicable,
 			["check-auth-code-flow"] = PassthroughClassification.NotApplicable,
@@ -273,6 +293,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-environment"] = PassthroughClassification.NotApplicable,
 			["execute-esq"] = PassthroughClassification.NotApplicable,
+			["export-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["experimental"] = PassthroughClassification.NotApplicable,
 			["find-app"] = PassthroughClassification.NotApplicable,
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,
@@ -280,6 +301,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["generate-process-model"] = PassthroughClassification.NotApplicable,
 			["generate-source-code"] = PassthroughClassification.NotApplicable,
 			["get-browser-session"] = PassthroughClassification.NotApplicable,
+			["get-classic-list-columns"] = PassthroughClassification.NotApplicable,
 			["get-classic-page-sources"] = PassthroughClassification.NotApplicable,
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
@@ -299,10 +321,13 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
+			["get-target-package"] = PassthroughClassification.NotApplicable,
 			["get-theme"] = PassthroughClassification.NotApplicable,
+			["import-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["install-application"] = PassthroughClassification.NotApplicable,
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
+			["install-process-builder"] = PassthroughClassification.NotApplicable,
 			["install-sql-schema"] = PassthroughClassification.NotApplicable,
 			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,
@@ -326,6 +351,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["pkg-to-file-system"] = PassthroughClassification.NotApplicable,
 			["push-workspace"] = PassthroughClassification.NotApplicable,
 			["read-entity-business-rules"] = PassthroughClassification.NotApplicable,
+			["read-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,
@@ -340,6 +366,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
+			["set-logo"] = PassthroughClassification.NotApplicable,
 			["set-record-rights"] = PassthroughClassification.NotApplicable,
 			["set-user-theme"] = PassthroughClassification.NotApplicable,
 			["upload-image"] = PassthroughClassification.NotApplicable,
@@ -402,6 +429,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-component-info"] = [Entry("outer")],
 			["get-request-info"] = [Entry("outer")],
 			["build-theme"] = [Entry("version")],
+			["export-component-registry"] = [Entry("outer")],
 
 			["link-from-repository-by-environment"] = [GuardedEntry("by-environment")],
 			["link-from-repository-by-env-package-path"] = [GuardedEntry("env-package-path-preparation")],
@@ -581,6 +609,14 @@ internal static class PassthroughToolClassificationRegistry {
 			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRejectMixedInput_BeforeNamedTenantProbe)),
 		new("get-request-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(RequestInfoToolTests),
 			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRouteEnvironmentProbeThroughCommandResolver_WhenEnvironmentNameProvided)),
+
+		// --- export-component-registry (outer) ---
+		new("export-component-registry", "outer", PassthroughScenario.HeaderOnly, typeof(ExportComponentRegistryToolTests),
+			nameof(ExportComponentRegistryToolTests.ExportComponentRegistry_ShouldNeverCallCommandResolver_WhenHeaderOnly)),
+		new("export-component-registry", "outer", PassthroughScenario.MixedInput, typeof(ExportComponentRegistryToolTests),
+			nameof(ExportComponentRegistryToolTests.ExportComponentRegistry_ShouldRejectMixedInput_BeforeNamedTenantProbe)),
+		new("export-component-registry", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(ExportComponentRegistryToolTests),
+			nameof(ExportComponentRegistryToolTests.ExportComponentRegistry_ShouldResolveVersion_ViaToolCommandResolver_ForEnvironmentName)),
 
 		// --- build-theme (version) ---
 		new("build-theme", "version", PassthroughScenario.HeaderOnly, typeof(BuildThemeToolTests),

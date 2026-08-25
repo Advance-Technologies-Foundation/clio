@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -16,6 +16,7 @@ using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Branding;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
@@ -55,6 +56,7 @@ internal class Program {
 		typeof(ConvertOptions),
 		typeof(ExecuteSqlScriptOptions),
 		typeof(InstallGateOptions),
+		typeof(InstallProcessBuilderOptions),
 		typeof(AddItemOptions),
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
@@ -79,6 +81,7 @@ internal class Program {
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
 		typeof(SetAutoupdateOptions),
+		typeof(ReadDataBindingDbOptions),
 		typeof(ExperimentalOptions),
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
@@ -90,7 +93,9 @@ internal class Program {
 		typeof(HealthCheckOptions),
 		typeof(ComponentRegistryRefreshOptions),
 		typeof(ComponentInfoCommandOptions),
+		typeof(ExportComponentRegistryOptions),
 		typeof(GetUserCultureCommandOptions),
+		typeof(AddCustomLoggingOptions),
 		typeof(AddPackageOptions),
 		typeof(CreateDataBindingOptions),
 		typeof(AddDataBindingRowOptions),
@@ -150,6 +155,7 @@ internal class Program {
 		typeof(ClientUnitSchemaUpdateOptions),
 		typeof(GetClientUnitSchemaOptions),
 		typeof(GetClassicPageSourcesOptions),
+		typeof(GetClassicListColumnsOptions),
 		typeof(ListEntityClientSchemasOptions),
 		typeof(SqlSchemaCreateOptions),
 		typeof(SqlSchemaGetOptions),
@@ -162,6 +168,16 @@ internal class Program {
 		typeof(InstallSkillsOptions),
 		typeof(UpdateSkillOptions),
 		typeof(DeleteSkillOptions),
+		typeof(InstallKnowledgeOptions),
+		typeof(UpdateKnowledgeOptions),
+		typeof(InfoKnowledgeOptions),
+		typeof(DeleteKnowledgeOptions),
+		typeof(AddKnowledgeSourceOptions),
+		typeof(RemoveKnowledgeSourceOptions),
+		typeof(EnableKnowledgeSourceOptions),
+		typeof(DisableKnowledgeSourceOptions),
+		typeof(ListKnowledgeSourcesOptions),
+		typeof(ListKnowledgeExamplesOptions),
 		typeof(DeployIdentityOptions),
 		typeof(GetIdentityServiceConfigOptions),
 		typeof(ResolveOAuthSystemUserOptions),
@@ -188,6 +204,7 @@ internal class Program {
 		typeof(DeployAppOptions),
 		typeof(ListInstalledAppsOptions),
 		typeof(RestoreDbCommandOptions),
+		typeof(PruneDbTemplatesOptions),
 		typeof(SetWebServiceUrlOptions),
 		typeof(ActivatePkgOptions),
 		typeof(PackageHotFixCommandOptions),
@@ -212,6 +229,8 @@ internal class Program {
 		typeof(CreateUserTaskOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
+		typeof(ExportSchemaOptions),
+		typeof(ImportSchemaOptions),
 		typeof(SetApplicationVersionOption),
 		typeof(SetApplicationIconOption),
 		typeof(RestartOptions),
@@ -231,6 +250,7 @@ internal class Program {
 		typeof(SetUserThemeOptions),
 		typeof(UploadImageOptions),
 		typeof(SetBackgroundImageOptions),
+		typeof(SetLogoOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(WatchCompilationOptions),
 		typeof(UploadLicenseCommandOptions),
@@ -431,6 +451,7 @@ internal class Program {
 			SetUserThemeOptions opts => Resolve<SetUserThemeCommand>(opts).Execute(opts),
 			UploadImageOptions opts => Resolve<UploadImageCommand>(opts).Execute(opts),
 			SetBackgroundImageOptions opts => Resolve<SetBackgroundImageCommand>(opts).Execute(opts),
+			SetLogoOptions opts => Resolve<SetLogoCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
@@ -464,6 +485,7 @@ internal class Program {
 			PullPkgOptions opts => DownloadZipPackages(opts),
 			ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
 			InstallGateOptions opts => Resolve<InstallGateCommand>(opts).Execute(opts),
+			InstallProcessBuilderOptions opts => Resolve<InstallProcessBuilderCommand>(opts).Execute(opts),
 			AddItemOptions opts => Resolve<AddItemCommand>(opts).Execute(opts),
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
@@ -489,6 +511,7 @@ internal class Program {
 			CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 			UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
 			SetAutoupdateOptions opts => Resolve<SetAutoupdateCommand>().Execute(opts),
+			ReadDataBindingDbOptions opts => Resolve<ReadDataBindingDbCommand>(opts).Execute(opts),
 			ExperimentalOptions opts => Resolve<ExperimentalCommand>().Execute(opts),
 			RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 			CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
@@ -500,7 +523,9 @@ internal class Program {
 			HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
 			ComponentRegistryRefreshOptions opts => Resolve<ComponentRegistryRefreshCommand>().Execute(opts),
 			ComponentInfoCommandOptions opts => Resolve<ComponentInfoCommand>().Execute(opts),
+			ExportComponentRegistryOptions opts => Resolve<ExportComponentRegistryCommand>().Execute(opts),
 			GetUserCultureCommandOptions opts => Resolve<GetUserCultureCommand>().Execute(opts),
+			AddCustomLoggingOptions opts => Resolve<AddCustomLoggingCommand>(opts).Execute(opts),
 			AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
 			CreateDataBindingOptions opts => Resolve<CreateDataBindingCommand>(opts).Execute(opts),
 			AddDataBindingRowOptions opts => Resolve<AddDataBindingRowCommand>().Execute(opts),
@@ -534,6 +559,16 @@ internal class Program {
 			InstallSkillsOptions opts => Resolve<InstallSkillsCommand>().Execute(opts),
 			UpdateSkillOptions opts => Resolve<UpdateSkillCommand>().Execute(opts),
 			DeleteSkillOptions opts => Resolve<DeleteSkillCommand>().Execute(opts),
+			InstallKnowledgeOptions opts => Resolve<InstallKnowledgeCommand>().Execute(opts),
+			UpdateKnowledgeOptions opts => Resolve<UpdateKnowledgeCommand>().Execute(opts),
+			InfoKnowledgeOptions opts => Resolve<InfoKnowledgeCommand>().Execute(opts),
+			DeleteKnowledgeOptions opts => Resolve<DeleteKnowledgeCommand>().Execute(opts),
+			AddKnowledgeSourceOptions opts => Resolve<AddKnowledgeSourceCommand>().Execute(opts),
+			RemoveKnowledgeSourceOptions opts => Resolve<RemoveKnowledgeSourceCommand>().Execute(opts),
+			EnableKnowledgeSourceOptions opts => Resolve<EnableKnowledgeSourceCommand>().Execute(opts),
+			DisableKnowledgeSourceOptions opts => Resolve<DisableKnowledgeSourceCommand>().Execute(opts),
+			ListKnowledgeSourcesOptions opts => Resolve<ListKnowledgeSourcesCommand>().Execute(opts),
+			ListKnowledgeExamplesOptions opts => Resolve<ListKnowledgeExamplesCommand>().Execute(opts),
 			DeployIdentityOptions opts => Resolve<DeployIdentityCommand>(opts).Execute(opts),
 			GetIdentityServiceConfigOptions opts => Resolve<GetIdentityServiceConfigCommand>(opts).Execute(opts),
 			ResolveOAuthSystemUserOptions opts => Resolve<ResolveOAuthSystemUserCommand>(opts).Execute(opts),
@@ -562,6 +597,7 @@ internal class Program {
 			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
 			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
 			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
+			PruneDbTemplatesOptions opts => Resolve<PruneDbTemplatesCommand>(opts).Execute(opts),
 			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
 			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
 			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
@@ -587,6 +623,8 @@ internal class Program {
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
 			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
+			ExportSchemaOptions opts => Resolve<ExportSchemaCommand>(opts).Execute(opts),
+			ImportSchemaOptions opts => Resolve<ImportSchemaCommand>(opts).Execute(opts),
 			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
 			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
 			WatchCompilationOptions opts => Resolve<WatchCompilationCommand>(opts).Execute(opts),
@@ -614,6 +652,7 @@ internal class Program {
 			ClientUnitSchemaUpdateOptions opts => Resolve<ClientUnitSchemaUpdateCommand>(opts).Execute(opts),
 			GetClientUnitSchemaOptions opts => Resolve<GetClientUnitSchemaCommand>(opts).Execute(opts),
 			GetClassicPageSourcesOptions opts => Resolve<GetClassicPageSourcesCommand>(opts).Execute(opts),
+			GetClassicListColumnsOptions opts => Resolve<GetClassicListColumnsCommand>(opts).Execute(opts),
 			ListEntityClientSchemasOptions opts => Resolve<ListEntityClientSchemasCommand>(opts).Execute(opts),
 			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
 			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
@@ -925,13 +964,12 @@ internal class Program {
 			}
 			else {
 				_creatioClientInstance.ExecutePostRequest(DeleteExistsPackagesZipUrl, string.Empty);
-				new Thread(() => {
-					try {
-						_creatioClientInstance.DownloadFile(GetZipPackageUrl, Path.GetTempFileName(), requestData,
-							2000);
-					}
-					catch { }
-				}).Start();
+				// The warm-up download's payload is discarded (the real download follows below), so its temp-file
+				// lifecycle - owner-private location, guaranteed cleanup, and the background-thread exception
+				// boundary - is owned by an injectable, regression-tested service instead of an inline thread.
+				CreatioClient warmUpClient = _creatioClientInstance;
+				Container.GetRequiredService<IWarmUpPackageDownloader>().StartWarmUpDownload(
+					tempFilePath => warmUpClient.DownloadFile(GetZipPackageUrl, tempFilePath, requestData, 2000));
 				bool again = false;
 				do {
 					Thread.Sleep(2000);
@@ -1719,7 +1757,7 @@ internal class Program {
 					};
 			}
 		}
-		if (logAndSettings) {
+		if (logAndSettings && settings != null) {
 			ConsoleLogger.Instance.WriteInfo(settings.Uri);
 		}
 		if (Container == null) {
@@ -1781,14 +1819,18 @@ internal class Program {
 		}
 		if (string.IsNullOrEmpty(optionsFromCommandLine.Environment)) {
 			EnvironmentNameOptions result = new();
-			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile.Uri;
-			result.Login = optionsFromCommandLine.Login ?? optionFromFile.Login;
-			result.Password = optionsFromCommandLine.Password ?? optionFromFile.Password;
-			result.AuthAppUri = optionsFromCommandLine.AuthAppUri ?? optionFromFile.AuthAppUri;
-			result.ClientId = optionsFromCommandLine.ClientId ?? optionFromFile.ClientId;
-			result.ClientSecret = optionsFromCommandLine.ClientSecret ?? optionFromFile.ClientSecret;
+			// optionFromFile can legitimately be null here: reaching this branch only requires
+			// optionsFromCommandLine to carry a Uri (IsEmpty() checks Uri alone) with no Environment name —
+			// e.g. a direct --uri/--login call with no environment file involved. Null-conditional access
+			// falls back to null instead of throwing when optionFromFile is absent.
+			result.Uri = optionsFromCommandLine.Uri ?? optionFromFile?.Uri;
+			result.Login = optionsFromCommandLine.Login ?? optionFromFile?.Login;
+			result.Password = optionsFromCommandLine.Password ?? optionFromFile?.Password;
+			result.AuthAppUri = optionsFromCommandLine.AuthAppUri ?? optionFromFile?.AuthAppUri;
+			result.ClientId = optionsFromCommandLine.ClientId ?? optionFromFile?.ClientId;
+			result.ClientSecret = optionsFromCommandLine.ClientSecret ?? optionFromFile?.ClientSecret;
 			result.IsNetCore = optionsFromCommandLine.IsNetCore.HasValue ? optionsFromCommandLine.IsNetCore
-				: optionFromFile.IsNetCore;
+				: optionFromFile?.IsNetCore;
 			return result;
 		}
 		return optionsFromCommandLine;
@@ -1838,5 +1880,4 @@ internal class Program {
 	#endregion
 
 }
-
 

@@ -65,6 +65,39 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("The sync-pages get-tool-contract description carries the ENG-92541 custom-CSS policy (native-first + upgrade-risk + explicit confirmation) and routes to page-modification-components, over the real MCP contract surface (AGENTS.md mandates e2e for a changed tool [Description], not only unit-level reflection).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages contract description carries the custom-CSS policy")]
+	[AllureDescription("Fetches the sync-pages contract via get-tool-contract over the real clio MCP server and asserts the served description carries the native-first custom-CSS policy and routes to page-modification-components.")]
+	public async Task PageSyncTool_Contract_Should_Carry_CustomCssPolicy() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		contract.Description.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "the real MCP contract surface for sync-pages must carry the native-first custom-CSS policy end to end, not only via the unit-level reflection test (AGENTS.md e2e mandate, N-1)");
+		contract.Description.Should().Contain("platform-upgrade compatibility",
+			because: "AC4: the upgrade-compatibility risk must be present on the served contract description");
+		contract.Description.Should().Contain("extraStyles",
+			because: "AC1/AC8: extraStyles must be named as custom CSS on the served contract description");
+		contract.Description.Should().Contain("page-modification-components",
+			because: "RC-3: the served contract must route the CSS policy to the sub-guide that carries the STOP block");
+	}
+
+	[Test]
 	[Description("Reports readable failures when sync-pages is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages reports invalid environment failures")]
@@ -521,11 +554,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Reads the seeded Freedom UI page ClioMcp_BlankPageToSave via get-page, sends the unchanged body back through sync-pages with validate=true, and verifies the no-op save succeeds.")]
+	[Description("Writes a unique reversible marker to the seeded Freedom UI page, reads it back immediately after sync-pages returns, and restores the original body.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages saves and verifies a real page with structured read-back")]
-	[AllureDescription("Uses the real clio MCP server to call get-page for the seeded page ClioMcp_BlankPageToSave in AutoTestClioMcp, then sends the unchanged body back through sync-pages with validate=true, and verifies the save succeeds without validation drift so the seed page's body remains stable across read-write cycles.")]
-	public async Task PageSyncTool_Should_Save_And_Verify_Real_Page_With_NoOp_Body() {
+	[AllureName("sync-pages makes a completed write immediately observable")]
+	[AllureDescription("Uses the real clio MCP server to append a unique JavaScript comment to ClioMcp_BlankPageToSave, immediately reads the page after sync-pages returns, verifies the marker is visible without a settling delay, and restores the original body in cleanup.")]
+	public async Task PageSyncTool_Should_Make_Completed_Write_Immediately_Observable() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -548,7 +581,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
 
 		getResult.IsError.Should().NotBeTrue(
-			because: $"get-page should return a structured payload for the seeded page '{SavePage}' before the no-op save can run");
+			because: $"get-page should return a structured payload for the seeded page '{SavePage}' before the reversible save can run");
 		getResponse.Success.Should().BeTrue(
 			because: $"get-page must succeed for the seeded page '{SavePage}'. Error: {getResponse.Error}");
 		getResponse.Files.Should().NotBeNull(
@@ -557,37 +590,110 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			because: "sync-pages needs a body-file path to read the raw body from disk");
 		string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
 		body.Should().NotBeNullOrWhiteSpace(
-			because: "the no-op save is only meaningful if get-page returns a non-empty body");
+			because: "the reversible visibility check requires a non-empty original body");
+		string marker = $"// clio-sync-visibility-{Guid.NewGuid():N}";
+		string changedBody = $"{body.TrimEnd()}{Environment.NewLine}{marker}{Environment.NewLine}";
 
-		// Act 2: sync-pages saves the unchanged body back with validation
-		CallToolResult syncResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["pages"] = new[] {
-						new Dictionary<string, object?> {
-							["schema-name"] = SavePage,
-							["body"] = body
-						}
-					},
-					["validate"] = true
-				}
-			},
-			context.CancellationTokenSource.Token);
-		PageSyncResponse syncResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+		try {
+			// Act 2: sync-pages saves a uniquely identifiable body with validation.
+			CallToolResult syncResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["pages"] = new[] {
+							new Dictionary<string, object?> {
+								["schema-name"] = SavePage,
+								["body"] = changedBody
+							}
+						},
+						["validate"] = true
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageSyncResponse syncResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
 
-		// Assert sync-pages save-and-verify succeeded
-		syncResult.IsError.Should().NotBeTrue(
-			because: "the no-op save should produce a structured sync-pages response instead of a transport-level error");
-		syncResponse.Success.Should().BeTrue(
-			because: $"sync-pages must accept and persist the body get-page produced for '{SavePage}'. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
-		syncResponse.Pages.Should().ContainSingle(
-			because: "one page was submitted for sync");
-		syncResponse.Pages[0].Success.Should().BeTrue(
-			because: $"per-page sync-pages result must succeed for '{SavePage}'. Error: {syncResponse.Pages[0].Error}");
-		syncResponse.Pages[0].Error.Should().BeNullOrWhiteSpace(
-			because: "a successful no-op save should not include an error payload");
+			// Assert sync-pages save succeeded.
+			syncResult.IsError.Should().NotBeTrue(
+				because: "the reversible save should produce a structured sync-pages response instead of a transport-level error");
+			syncResponse.Success.Should().BeTrue(
+				because: $"sync-pages must persist the uniquely marked body for '{SavePage}'. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
+			syncResponse.Pages.Should().ContainSingle(
+				because: "one page was submitted for sync");
+			syncResponse.Pages[0].Success.Should().BeTrue(
+				because: $"per-page sync-pages result must succeed for '{SavePage}'. Error: {syncResponse.Pages[0].Error}");
+
+			// Act 3: read immediately after sync-pages returns. This guards the removed fixed post-save delay:
+			// successful completion must itself be a sufficient sequencing boundary for the next MCP operation.
+			CallToolResult readBackResult = await context.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageGetResponse readBackResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readBackResult);
+
+			// Assert immediate read-back proves the new write, not merely the pre-existing body.
+			readBackResult.IsError.Should().NotBeTrue(
+				because: "the next MCP read must be safe immediately after sync-pages returns without a fixed settling pause");
+			readBackResponse.Success.Should().BeTrue(
+				because: $"get-page must observe '{SavePage}' immediately after the completed write");
+			readBackResponse.Files.Should().NotBeNull(
+				because: "a successful immediate read-back must materialize the saved page files");
+			string readBackBody = await File.ReadAllTextAsync(readBackResponse.Files!.BodyFile!);
+			readBackBody.Should().Contain(marker,
+				because: "observing the unique marker proves the completed write is immediately visible rather than returning the stale original body");
+		}
+		finally {
+			// Cleanup: always restore the shared seed page, even when the visibility assertion fails.
+			// Do not reuse the operation token: it may already be cancelled by the failure being tested.
+			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
+			CallToolResult restoreResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["pages"] = new[] {
+							new Dictionary<string, object?> {
+								["schema-name"] = SavePage,
+								["body"] = body,
+								["force"] = true
+							}
+						},
+						["validate"] = true
+					}
+				},
+				cleanupCts.Token);
+			PageSyncResponse restoreResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
+			restoreResult.IsError.Should().NotBeTrue(
+				because: "cleanup must restore the shared seed page through a structured sync-pages response");
+			restoreResponse.Success.Should().BeTrue(
+				because: $"cleanup must restore the original body for '{SavePage}'. Per-page error: {restoreResponse.Pages.FirstOrDefault()?.Error}");
+
+			CallToolResult restoredReadResult = await context.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = environmentName
+					}
+				},
+				cleanupCts.Token);
+			PageGetResponse restoredReadResponse =
+				EntitySchemaStructuredResultParser.Extract<PageGetResponse>(restoredReadResult);
+			restoredReadResult.IsError.Should().NotBeTrue(
+				because: "cleanup verification must read the restored shared seed page");
+			restoredReadResponse.Success.Should().BeTrue(
+				because: $"cleanup verification must find the restored page '{SavePage}'");
+			string restoredBody = await File.ReadAllTextAsync(restoredReadResponse.Files!.BodyFile!, cleanupCts.Token);
+			restoredBody.Should().Be(body,
+				because: "cleanup must leave the shared seed page exactly as it was before the visibility test");
+			restoredBody.Should().NotContain(marker,
+				because: "the unique visibility marker must not contaminate later E2E tests");
+		}
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
@@ -1227,6 +1333,51 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			}
 		}
 	}
+
+		[Test]
+		[Description("sync-pages pre-resolves the mobile apply-oracle base OFF the per-tenant lock for MULTIPLE mobile pages; when the base cannot be resolved the degraded validation surfaces as a per-page warning — proving PreResolveMobileBases runs end-to-end for a multi-page batch through the real MCP transport.")]
+		[AllureTag(ToolName)]
+		[AllureName("sync-pages pre-resolves mobile bases off-lock and surfaces degradation for a multi-page batch")]
+		[AllureDescription("Uses a reachable environment and submits TWO mobile pages whose viewModelConfigDiff inserts into a template-owned array (so each NEEDS an external base) for non-existent schemas. The off-lock pre-resolution therefore fails for both, and each page's result must carry the degraded-base warning through the real MCP server — confirming PreResolveMobileBases ran for every page and that a degraded validation is not reported as a clean pass.")]
+		public async Task PageSyncTool_Should_Surface_Degraded_MobileBase_For_MultiplePages() {
+			// Arrange
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			string environmentName = await ResolveReachableEnvironmentAsync(settings);
+			// A mobile body (plain JSON) whose viewModelConfigDiff inserts into a template-owned array with no inline
+			// base -> MobileDiffApplyValidator.NeedsResolvedBase is true, so sync-pages pre-resolves the base off the
+			// lock. The schema does not exist, so the pre-resolution read fails and the page degrades to the seeded base.
+			static string MobileBody() =>
+				"{ \"viewConfigDiff\": [], " +
+				"\"viewModelConfigDiff\": [ { \"operation\": \"insert\", \"path\": [\"attributes\",\"Items\",\"modelConfig\",\"filterAttributes\"], \"values\": { \"name\": \"QuickFilter\" } } ], " +
+				"\"modelConfigDiff\": [] }";
+
+			await using ArrangeContext context = await ArrangeAsync();
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["pages"] = new[] {
+							new Dictionary<string, object?> { ["schema-name"] = $"UsrMobileDegradedA_{Guid.NewGuid():N}", ["body"] = MobileBody() },
+							new Dictionary<string, object?> { ["schema-name"] = $"UsrMobileDegradedB_{Guid.NewGuid():N}", ["body"] = MobileBody() }
+						},
+						["validate"] = true
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "a degraded base resolution is a structured per-page outcome, not an MCP transport error");
+			response.Pages.Should().HaveCount(2,
+				because: "both submitted mobile pages must be processed off the lock by PreResolveMobileBases");
+			response.Pages.Should().OnlyContain(
+				p => p.Validation != null && p.Validation.Warnings != null
+					&& p.Validation.Warnings.Any(w => w.Contains("could not be resolved") && w.Contains("seeded base")),
+				because: "when the off-lock base pre-resolution fails, each page's result must carry the degraded-validation warning end-to-end through the real MCP server");
+		}
 
 	private new sealed record ArrangeContext(
 		string RootDirectory,

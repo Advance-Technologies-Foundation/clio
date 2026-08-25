@@ -10,7 +10,27 @@ DESCRIPTION
     This server exposes the same clio tools available in stdio mode to
     AI agents and platforms that connect over HTTP.
 
+    The endpoint uses hybrid protocol sessions. Discovery-first clients on
+    MCP 2026-07-28 or later are stateless and receive no Mcp-Session-Id.
+    Legacy initialize clients (2025-11-25 or earlier) keep a stateful session
+    on the same endpoint for backward-compatible server-to-client flows.
+
     The server runs until the process is terminated (Ctrl+C or SIGTERM).
+
+    Before accepting requests, Clio ensures the built-in creatio-curated knowledge
+    source is configured and installs the latest stable signed release asset
+    clio-knowledge-bundle.zip from Advance-Technologies-Foundation/clio-knowledge.
+    No Git CLI or branch is used. A valid local generation is reused without a
+    remote update check. A missing generation gets a five-second startup installation
+    budget before HTTP startup completes, so mandatory first-request guidance is available whenever that
+    bounded bootstrap succeeds. A cached activation marker whose installation or
+    last clean successful publisher check is more than 3 days old is logged as a warning
+    naming that marker's library version and the update call that checks for a newer
+    release; startup still proceeds. A clean successful check renews this freshness
+    timestamp even when the published generation has not changed; a rejected candidate does not.
+    The source
+    cannot be removed; use disable-knowledge-source --alias creatio-curated.
+    A failed or timed-out initial retrieval is logged as a warning and does not block HTTP startup.
 
 PREREQUISITES
     mcp-http hosts the MCP endpoint on ASP.NET Core, so clio requires the
@@ -64,14 +84,15 @@ OPTIONS
         https host is allowed.
 
     --session-idle-ttl <duration>
-        Idle time after which an unused per-session container is evicted.
+        Idle time after which an unused credential-scoped tenant container is
+        evicted. This cache is independent of the MCP transport session.
         Accepts '90s' / '5m' / '1h' / '1d', bare seconds ('300'), or a TimeSpan
         ('00:05:00').
         Default: 5m
 
     --max-sessions <count>
-        Maximum per-session containers kept in memory; the least-recently-used
-        one is evicted when exceeded.
+        Maximum credential-scoped tenant containers kept in memory; the
+        least-recently-used one is evicted when exceeded.
         Default: 50
 
     --credentials-header-name <name>

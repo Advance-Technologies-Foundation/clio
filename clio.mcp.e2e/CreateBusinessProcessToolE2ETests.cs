@@ -8,8 +8,10 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -83,6 +85,8 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain(processName,
 			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "a clio-built process is interpreted and needs no compile; the success result carries the compile-not-required note over the real MCP path so an agent does not force compile-creatio (ENG-95706)");
 
 		// Readback: describe the built process and confirm the structure is really there — a server that
 		// returned success but built nothing would be caught here, unlike the success-echo assertion above.
@@ -202,7 +206,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		});
 
 		// Assert — the pre-save platform interpretation-validation gate rejects the self-referential mapping.
-		// Requires a stand whose clioprocessbuilder package includes the pre-save validation gate.
+		// Requires a stand whose CrtProcessBuilder package includes the pre-save validation gate.
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		// Primary, culture-stable: the clio-authored prefix that ONLY the gate emits (ProcessSchemaValidator) — proves
 		// the gate fired regardless of the stand's profile culture (the platform's own message below is localizable).
@@ -364,6 +368,40 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "the Time-valued date-part round-trips on read-back (time-of-day comparison HourMinute(CreatedOn) = 14:30)");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a signalStart restricted to a tracked-change column (on:modified, changedColumns:[Name]), and describe-business-process reads the tracked column back (round-trip).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a column-restricted signal start and describe reads the tracked column back")]
+	public async Task CreateBusinessProcess_Should_BuildSignalStartTrackedColumns_AndReadThemBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSignalColsE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTrackedColumnsDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a signalStart restricted to specific changed columns must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: describe and confirm the tracked column round-tripped. Build resolves the column NAME to its column
+		// UId; describe decodes that UId back to the name — a drop on either side (package or clio DTO) is caught here,
+		// not merely that a signalStart exists. Asserted on the typed graph (not a substring of the serialized
+		// envelope), so a wrong or extra column cannot slip through on an incidental token match.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedSignal signal = graph.Elements.Single(element => element.Name == "SignalStart1").Signal;
+		signal.Should().NotBeNull(because: "describe reports the signal start's record trigger");
+		signal.On.Should().Be("modified", because: "the trigger type round-trips");
+		signal.ChangedColumns.Should().BeEquivalentTo(new[] { "Name" },
+			because: "exactly the requested tracked column round-trips: build resolves it to its column UId and describe decodes that UId back to the name");
+	}
+
 	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
 	// prove the filter round-tripped (build serialize -> describe decode) rather than just that a signalStart exists.
 	// Contact.Name is a base column present on every stand.
@@ -406,6 +444,310 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		          { "column": "CreatedOn", "comparison": "equal", "datePart": "Year", "value": "2026" },
 		          { "column": "CreatedOn", "comparison": "equal", "datePart": "HourMinute", "value": "14:30" }
 		        ] } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a signalStart with a DELETE trigger (on:deleted) and describe-business-process reads the trigger back as 'deleted' (round-trip of the third record-event type).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a delete-trigger signal start and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_BuildSignalStartDeleteTrigger_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSignalDelE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDeleteTriggerDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a signalStart with a record-deleted trigger must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: the delete trigger must survive save->reload and decode back to the canonical token. A change type
+		// dropped or coerced to the 'modified' default on either side is caught here.
+		// Asserted on the typed graph so the trigger token is checked exactly, not matched incidentally anywhere in the
+		// serialized envelope.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedSignal signal = graph.Elements.Single(element => element.Name == "SignalStart1").Signal;
+		signal.Should().NotBeNull(because: "describe reports the signal start's record trigger");
+		signal.On.Should().Be("deleted",
+			because: "the record-deleted trigger round-trips: it persists on save, is decoded back to the 'deleted' token, and is not coerced to the default 'modified'");
+		signal.ChangedColumns.Should().BeNull(because: "a delete trigger carries no tracked columns");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process honours the element-level useBackgroundMode override — false on a signalStart (whose kind default is true) and true on a plain userTask — and describe-business-process reports the flag per element.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process applies useBackgroundMode per element and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_ApplyElementBackgroundMode_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBgModeE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildBackgroundModeDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an element-level useBackgroundMode override must build without a transport error");
+		JsonSerializer.Serialize(callResult).Should().Contain(processName,
+			because: "a successful build reports the created schema name");
+
+		// Readback: the flag must persist per element — the signalStart override to false (against its own default of
+		// true) is the meaningful assertion; a dropped override would read back as true.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		graph.Elements.Single(element => element.Name == "SignalStart1").UseBackgroundMode.Should().BeFalse(
+			because: "an explicit useBackgroundMode:false must override the signal start's own background-mode default and survive the save");
+		graph.Elements.Single(element => element.Name == "task1").UseBackgroundMode.Should().BeTrue(
+			because: "the flag is element-level: an explicit true on a plain user task must persist too");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a sendEmail element with a custom-message HTML body, and describe-business-process reads the body back (round-trip): the element resolves to the sendEmail build type and its Body parameter carries the distinctive HTML verbatim.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a sendEmail HTML body and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_BuildSendEmailHtmlBody_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSendEmailE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSendEmailDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a sendEmail element with a custom-message HTML body must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		// The success LINE, not merely the name: the command logs "Building process '<name>'..." before it calls the
+		// server, so a name match alone also passes when the build then FAILS - which lets a rejected descriptor reach
+		// the describe parser and surface as an unrelated parse error instead of the real server message.
+		callResultJson.Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line (run against an environment with the ProcessDesignService package that supports the sendEmail element)");
+
+		// Readback proves the FULL macro round-trip on a real server: the author wrote [[param:ClioProbeParam]] in the
+		// body, the server RESOLVED it into a platform <img data-value="[#…#]"> token on build, and describe DECODES it
+		// back into the same [[param:…]] author form on read. describe echoes the decoded HTML on the email block's own
+		// `body` field (not just the hasBody flag, and not only via the value-bearing Body parameter) — so this asserts
+		// the [Description]/IProcessDescriber contract that `body` round-trips, which no unit test can verify end to end.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement sendEmail = graph.Elements.Single(element => element.Name == "SendEmail1");
+		sendEmail.BuildType.Should().Be("sendemail",
+			because: "a Send email element round-trips to the dedicated sendEmail build token, not the generic userTask");
+		sendEmail.Email.Should().NotBeNull(
+			because: "describe surfaces a Send email element's configuration in its own email block");
+		sendEmail.Email.HasBody.Should().BeTrue(
+			because: "hasBody is the email block's lightweight presence flag for a custom-message body");
+		sendEmail.Email.Body.Should().NotBeNullOrWhiteSpace(
+			because: "describe now echoes the decoded body HTML on the email block, not only the hasBody flag");
+		sendEmail.Email.Body.Should().Contain("ClioSendEmailProbe",
+			because: "the custom-message HTML body round-trips through build and describe");
+		sendEmail.Email.Body.Should().Contain("[[param:ClioProbeParam]]",
+			because: "the body macro was resolved into a platform token on build and DECODED back into its "
+				+ "[[param:…]] author form on describe — the full encode/decode round-trip on a real server");
+		sendEmail.Email.Body.Should().NotContain("data-value",
+			because: "a resolved body is decoded back to author form, so the raw <img data-value=\"[#…#]\"> token "
+				+ "must NOT leak into the read-back body");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a descriptor built to the FULL documented email contract - mode, subject, body/bodyFormat, all three recipient value sources, importance, ignoreErrors and a manual-mode performer - is accepted and every field reads back, so drift between the tool's [Description] prose and what the server actually accepts cannot ship undetected.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process accepts the full documented email contract and describe reads every field back")]
+	public async Task CreateBusinessProcess_Should_AcceptTheFullEmailContract_AndReadEveryFieldBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailContractE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFullEmailContractDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "every field the tool's email contract advertises must be accepted by the server it targets");
+		// Asserting the success LINE, not just the process name: the command logs "Building process '<name>'..."
+		// before it calls the server, so a name match alone passes even when the build then fails - which sent a
+		// rejected descriptor into the describe parser and surfaced as an unrelated "no matching element" error.
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line, so this is what proves the "
+				+ "whole email contract was accepted rather than merely transported");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(e => e.Name == "SendEmail1");
+		DescribedEmail email = element.Email!;
+		email.Should().NotBeNull(because: "the element must round-trip as a configured Send email element");
+		email.Mode.Should().Be("manual", because: "the send mode is part of the advertised contract");
+		email.Subject.Should().Be("Clio full-contract probe",
+			because: "a plain constant subject must survive verbatim");
+		email.HasBody.Should().BeTrue(because: "bodyFormat html + body must register as a custom message");
+		email.Importance.Should().Be("high", because: "the importance token must round-trip, not be normalised away");
+		email.IgnoreErrors.Should().BeTrue(because: "the ignore-errors flag is part of the contract");
+		email.Performer.Should().NotBeNull(
+			because: "a manual-mode performer is advertised and must be readable back");
+		email.Performer!.Type.Should().Be("user", because: "the performer assignment type must survive");
+
+		// All three recipient value sources, on the three separate address lines they were sent on. This is the part
+		// the prose could silently drift on: the value-source triple is documented in a [Description] string with no
+		// type-checked DTO behind it, so only a round trip proves the shapes the server accepts still match.
+		email.To.Should().NotBeNull().And.HaveCount(2,
+			because: "the To line carried a constant address AND a process-parameter recipient");
+		email.To!.Select(r => r.Source).Should().Contain("ConstValue",
+			because: "the constant address is stored inline on the element");
+		email.Cc.Should().NotBeNull().And.HaveCount(1, because: "the Cc line carried one constant address");
+		email.Bcc.Should().NotBeNull().And.HaveCount(1, because: "the Bcc line carried one formula recipient");
+		email.Bcc!.Single().Source.Should().Be("Script",
+			because: "an 'expression' recipient is stored as a formula, which is what makes it resolve at send time");
+	}
+
+	// Exercises EVERY field the create-business-process email contract advertises, in one element, so the write path
+	// has executable verification rather than only prose. `sender` is deliberately omitted: it needs a mailbox record
+	// (or an address configured on that specific environment), which would make this test depend on stand data rather
+	// than on the contract. The recipient triple is the point - a constant, a process parameter and a raw formula.
+	private static string BuildFullEmailContractDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Email Contract E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail", "caption": "Send email",
+		      "email": {
+		        "mode": "manual",
+		        "subject": "Clio full-contract probe",
+		        "body": "<html><body><p>ClioEmailContractProbe</p></body></html>",
+		        "bodyFormat": "html",
+		        "to": [ { "value": "to-const@example.com" }, { "processParameter": "RecipientAddress" } ],
+		        "cc": [ { "value": "cc-const@example.com" } ],
+		        "bcc": [ { "expression": "[#SysVariable.CurrentUserContact#]", "referenceSchema": "Contact" } ],
+		        "importance": "high",
+		        "ignoreErrors": true,
+		        "performer": { "type": "user", "showPage": true }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "RecipientAddress", "type": "Text", "direction": "In", "caption": "Recipient address" }
+		  ]
+		}
+		""";
+
+	// A sendEmail element carrying a custom-message HTML body with a distinctive probe token, so the describe read-back
+	// proves the body round-tripped (build stores it as a ConstValue on the Body parameter, describe decodes it) rather
+	// than just that a sendEmail element exists. StartEvent1 -> SendEmail1 -> EndEvent1 is a minimal valid graph.
+	private static string BuildSendEmailDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Send Email E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail",
+		      "email": { "bodyFormat": "html", "body": "<html><body><p>ClioSendEmailProbe for [[param:ClioProbeParam]]</p></body></html>" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "ClioProbeParam", "type": "ShortText", "direction": "In" }
+		  ]
+		}
+		""";
+
+	// Deserializes the described graph (the Info log-message value inside the clio command envelope) into the typed
+	// DescribeProcessResult, so a test can assert element fields directly instead of substring-matching the escaped
+	// envelope.
+	private static DescribeProcessResult ParseDescribeGraph(CallToolResult describeResult) {
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value) && value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		return JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+	}
+
+	// Exercises the element-level flag on TWO different element kinds at once: the signalStart is forced OFF (its kind
+	// default is background mode, so this proves the override wins) and the user task is forced ON.
+	private static string BuildBackgroundModeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Background Mode E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart", "useBackgroundMode": false,
+		      "signal": { "entity": "Contact", "on": "modified" } },
+		    { "name": "task1", "type": "performTask", "useBackgroundMode": true },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A signal-start firing on record DELETION — the one record-event type the other e2e descriptors never exercise
+	// (they use added / modified / save). No changedColumns: tracked columns are rejected for a delete trigger.
+	private static string BuildDeleteTriggerDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Signal Delete E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart",
+		      "signal": { "entity": "Contact", "on": "deleted" } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A signal-start restricted to a tracked-change column (on:modified, changedColumns:[Name]). Contact.Name is a base
+	// column on every stand, so build resolves the name->UId and describe decodes the UId->name — proving the tracked
+	// column round-trips through BOTH the package and the clio DTO, not merely that a signalStart exists.
+	private static string BuildTrackedColumnsDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Signal Cols E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart",
+		      "signal": { "entity": "Contact", "on": "modified", "changedColumns": ["Name"] } },
 		    { "name": "task1", "type": "performTask" },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
