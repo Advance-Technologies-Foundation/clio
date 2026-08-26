@@ -200,6 +200,26 @@ public sealed class JsonDiffApplierTests {
 		act.Should().NotThrow();
 	}
 
+	[Test]
+	[Description("A view-config insert carrying a path but no parentName (the retired tolerant applier's shape) is NOT routed by path in the client-faithful applier: path is ignored, the element lands at the root, and nothing throws — pinning the strict behavior the ported-tests comment describes.")]
+	public void Apply_ViewConfigInsertWithPathNoParentName_IgnoresPathAndInsertsAtRoot() {
+		var applier = new JsonDiffApplier();
+		JToken source = applier.Apply(new JArray(), Arr("""
+			[ { "operation": "insert", "name": "MainContainer", "values": { "type": "crt.FlexContainer", "items": [] } } ]
+			"""));
+
+		JToken result = applier.Apply(source, Arr("""
+			[ { "operation": "insert", "name": "Orphan", "path": ["MainContainer", "items"], "values": { "type": "crt.Input" } } ]
+			"""));
+
+		(result as JArray).Should().HaveCount(2,
+			because: "the base view-config applier targets by parentName+propertyName only, so a path-only op is applied at the root rather than routed by path");
+		result[1]!["name"]!.ToString().Should().Be("Orphan",
+			because: "with no parentName the element lands at the root level, its path array ignored");
+		(result[0]!["items"] as JArray).Should().BeEmpty(
+			because: "the path did not route the element into MainContainer.items");
+	}
+
 	private static JObject LoadFixtureCase(string group, int index) {
 		string path = Path.Combine(AppContext.BaseDirectory, "Command/McpServer/Fixtures/JsonDiffApplierMock.json");
 		var fixture = JObject.Parse(File.ReadAllText(path));
@@ -254,7 +274,9 @@ public sealed class JsonDiffApplierTests {
 	}
 
 	// ----- resolve-behavior coverage ported from the retired PageJsonDiffApplierTests (real parentName+propertyName
-	//       form; the retired tests' `path`-targeted view-config ops are not a real Creatio shape and are dropped) -----
+	//       form; the retired tests' `path`-targeted view-config ops are not a real Creatio shape — the strict
+	//       applier ignores the path and appends at the root, pinned by
+	//       Apply_ViewConfigInsertWithPathNoParentName_IgnoresPathAndInsertsAtRoot above) -----
 
 	private static JArray Diff(string json) => Arr(json);
 

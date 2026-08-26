@@ -441,6 +441,6 @@ public sealed class PageBundleBuilderTests {
 	}
 
 	private static IPageBundleBuilder CreateBuilder() {
-		return new PageBundleBuilder();
+		return new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier());
 	}
 }

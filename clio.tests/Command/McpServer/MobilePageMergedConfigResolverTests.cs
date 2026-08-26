@@ -72,7 +72,7 @@ public sealed class MobilePageMergedConfigResolverTests {
 		]);
 		return new PageGetCommand(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
 			hierarchyClient, new PageSchemaBodyParser(),
-			new PageBundleBuilder(),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			Substitute.For<IPageFileWriter>());
 	}
 
@@ -127,7 +127,7 @@ public sealed class MobilePageMergedConfigResolverTests {
 			.Returns("""{"success":true,"rows":[]}""");
 		PageGetCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
-			new PageBundleBuilder(),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			Substitute.For<IPageFileWriter>());
 		IToolCommandResolver resolver = ResolverReturning(command);
 		ILogger logger = Substitute.For<ILogger>();

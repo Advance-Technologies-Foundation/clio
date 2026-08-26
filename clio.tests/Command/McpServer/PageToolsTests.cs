@@ -3041,7 +3041,7 @@ public class PageToolsTests
 			logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			CreatePassthroughPageFileWriter());
 	}
 
@@ -3740,7 +3740,7 @@ public class PageToolsTests
 			}
 		});
 		// The real client-faithful applier resolves the parser's ViewConfigDiff into the container tree under test.
-		var builder = new PageBundleBuilder();
+		var builder = new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier());
 		var parts = new List<PageSchemaBundlePart> {
 			new(
 				new PageDesignerHierarchySchema { UId = "u", Name = "TestPage", PackageUId = "p", Body = "x" },
