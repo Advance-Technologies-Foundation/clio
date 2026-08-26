@@ -361,6 +361,18 @@ public sealed class ExcludedComponentFilterRule {
 	/// <summary>
 	/// Component type to remove wherever it is found within the matched scope (e.g.
 	/// <c>"crt.SearchFilter"</c>), at any nesting depth.
+	/// <para>
+	/// The two phases compare this value against DIFFERENT type domains, because they look at different data:
+	/// the entry-graph phase matches an element-map entry's RESOLVED <c>mobileType</c>, while the
+	/// verbatim-carry phase matches the raw <c>type</c> of a web node copied whole into a host property —
+	/// nothing resolved it, so it is still the WEB type. The two coincide for every type the conversion rules
+	/// carry over unchanged, which is every type any bundled rule targets today. They diverge only for a type
+	/// a <see cref="ComponentEquivalenceRule"/> or a view-config template RENAMES on the way to mobile, and a
+	/// filter naming such a type covers ONE phase only — the mobile name matches the entry graph, the web name
+	/// matches the verbatim carry. No reverse lookup is attempted: teaching this pass the equivalence map to
+	/// cover a case no rule has would buy a hypothetical at the cost of the coupling the whole pass avoids.
+	/// A future rule that needs both sides should ship as two filter entries, one per name.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }

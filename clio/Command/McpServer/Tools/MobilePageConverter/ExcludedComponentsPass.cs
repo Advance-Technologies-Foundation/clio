@@ -68,8 +68,27 @@ internal static class ExcludedComponentsPass {
 	/// No-op when the rules file carries no <c>excludedComponents</c> section (switched by data, not code).
 	/// Returns the removed elements' WEB names (for attribute-pruning reconciliation — removal is layout
 	/// cleanup, not attribute cleanup) and outputs their MOBILE names (for request-summary reconciliation),
-	/// mirroring the empty-container pass's two-name contract. Only PHASE A removals populate the sets: a
-	/// PHASE B node never had an entry of its own, so nothing downstream keyed on entry names refers to it.
+	/// mirroring the empty-container pass's two-name contract.
+	/// <para>
+	/// BOTH phases feed the WEB-name set, so one rule cannot behave two ways depending on which shape the
+	/// banned component happened to take. Today the symmetry changes no output, and the reason is worth
+	/// stating because it is invisible from here: <c>BuildMobileViewModelConfig</c> prunes an attribute only
+	/// when EVERY node that references it is dropped, and it attributes references using a consumer walk that
+	/// descends <c>items</c> ONLY. A PHASE B node is by construction NOT under <c>items</c> — an <c>items</c>
+	/// child is always walked into its own entry (PHASE A's shape) — so that walk never records it as a
+	/// consumer in its own name; the attributes it references are credited to the surviving host that carries
+	/// the slot, and survive on the host's account. Feed the set from both phases anyway: the day that
+	/// consumer walk learns to descend <c>tools</c>/<c>menuItems</c>, the asymmetry would start pruning
+	/// attributes silently, and the failure would surface as a missing access gate on a converted page rather
+	/// than as a test failure here.
+	/// </para>
+	/// <para>
+	/// Only PHASE A feeds the MOBILE-name set, and that is not the same kind of omission. A request binding is
+	/// recorded (see <c>WebToMobileAnalysisService.ProcessEventBindings</c>) only for an element the traversal
+	/// walked into its OWN entry, keyed on that entry's mobile name. A PHASE B node was never walked — it has
+	/// no mobile name at all — so there is no binding record naming it for <c>ReclassifyRemovedBindings</c> to
+	/// reclassify; its bindings were copied verbatim with the node and left the page with it.
+	/// </para>
 	/// </summary>
 	internal static HashSet<string> RemoveExcludedComponents(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules,
@@ -85,7 +104,7 @@ internal static class ExcludedComponentsPass {
 		}
 		RemoveExcludedEntries(elementMap, filters, removedWebNames, removedMobileNames);
 		DropOrphanedSubtrees(elementMap, removedWebNames, removedMobileNames);
-		StripVerbatimCarriedComponents(elementMap, BuildFiltersByParentType(filters));
+		StripVerbatimCarriedComponents(elementMap, BuildFiltersByParentType(filters), removedWebNames);
 		return removedWebNames;
 	}
 
@@ -107,6 +126,15 @@ internal static class ExcludedComponentsPass {
 	/// BEFORE any replacement: a candidate inside another removed element's subtree may still match through
 	/// the stale index, which is harmless — both paths converge on a drop (here, or in
 	/// <see cref="DropOrphanedSubtrees"/>), never on a phantom or a survivor.
+	/// <para>
+	/// Only <c>insert</c> entries are removal CANDIDATES, while an entry of any operation can be the HOST or
+	/// an ancestor on the climb (a template twin hosts too). The asymmetry is deliberate: an <c>insert</c> is
+	/// an element this converter creates, so replacing it with a <c>drop</c> genuinely keeps it off the page,
+	/// whereas a <c>merge</c> entry describes an element the MOBILE TEMPLATE already owns — a drop entry
+	/// cannot un-create it, and emitting one would report a removal that never happens. A banned type that
+	/// arrives as a template twin therefore survives this pass, silently by design; excluding template-owned
+	/// chrome is a different problem (the template, or a rule that edits it), not this pass's.
+	/// </para>
 	/// </summary>
 	private static void RemoveExcludedEntries(
 		List<ElementMapEntry> elementMap, List<ExcludedComponentFilterRule> filters,
@@ -271,10 +299,14 @@ internal static class ExcludedComponentsPass {
 	/// The original nested strip, over components the generic per-element copy carried verbatim inside an
 	/// entry's <c>mobileValues</c> (see PHASE B in the class remarks). Appends a synthetic drop entry per
 	/// removed node; entries PHASE A replaced carry no <c>mobileValues</c> and are skipped naturally.
+	/// Every appended drop's web name is recorded into <paramref name="removedWebNames"/> so a PHASE B removal
+	/// carries the same layout-cleanup exemption a PHASE A one does — see <see cref="RemoveExcludedComponents"/>
+	/// for why that costs nothing today and why it is still recorded.
 	/// </summary>
 	private static void StripVerbatimCarriedComponents(
 		List<ElementMapEntry> elementMap,
-		Dictionary<string, List<ExcludedComponentFilterRule>> filtersByParentType) {
+		Dictionary<string, List<ExcludedComponentFilterRule>> filtersByParentType,
+		HashSet<string> removedWebNames) {
 		if (filtersByParentType.Count == 0) {
 			return;
 		}
@@ -290,6 +322,11 @@ internal static class ExcludedComponentsPass {
 				ApplyFiltersToHost(hostValues, entry.MobileName, rootFilters, dropped);
 			}
 			FindNestedHosts(hostValues, filtersByParentType, entry.MobileName, dropped, depth: 0);
+		}
+		foreach (ElementMapEntry drop in dropped) {
+			if (drop.WebName is { Length: > 0 }) {
+				removedWebNames.Add(drop.WebName);
+			}
 		}
 		elementMap.AddRange(dropped);
 	}

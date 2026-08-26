@@ -6335,8 +6335,12 @@ public sealed class WebToMobileConversionServiceTests {
 		// fallback, or this test silently regresses into re-testing the other phase.
 		Element(guide, "ProductsToolsContainer").PropertyName.Should().Be("tools",
 			because: "the traversal must have walked the tools subtree into entries — the shape this test exists to cover");
-		(Element(guide, "ProductsExpansionPanel").MobileValues as JsonObject)!.ContainsKey("tools").Should().BeFalse(
-			because: "a walked child slot is not also carried verbatim, so the verbatim fallback has nothing to match here");
+		(Element(guide, "ProductsExpansionPanel").MobileValues as JsonObject)!["tools"]
+			.Should().BeOfType<JsonArray>(
+				because: "InitializeContainerChildSlots declares the slot the walked children insert into")
+			.Which.Should().BeEmpty(
+				because: "the declared slot is EMPTY — a walked child slot is never also carried verbatim, "
+					+ "so the verbatim fallback has nothing to match here");
 		ElementMapEntry dropped = Element(guide, "ProductsSearchFilter");
 		dropped.Operation.Should().Be("drop",
 			because: "the entry's ancestor chain enters the crt.ExpansionPanel host through its 'tools' edge");
@@ -6514,6 +6518,155 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.RequestConversions.DroppedRequests.Should().ContainSingle(r => r.ElementName == "SaveButton")
 			.Which.Reason.Should().Contain("excludedComponents",
 				because: "the reconciliation must name WHICH removal discarded the binding");
+	}
+
+	[Test]
+	[Description("Entry-graph phase, attribute policy: an excludedComponents removal is layout cleanup, not attribute cleanup — a viewModelConfig attribute the removed element referenced survives, exactly as it does for an empty-container removal.")]
+	public void Analyze_ShouldKeepAttributes_WhenOnlyAnExcludedEntryReferencedThem() {
+		// Arrange — the banned entry is the only place on the page that names $SearchOnly.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "ProductsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+			        { "name": "ProductsSearchFilter", "type": "crt.SearchFilter", "visible": "$SearchOnly" } ] } ],
+			    "items": [ { "name": "ProductsList", "type": "crt.List" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "SearchOnly": { "type": "Boolean" } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		Element(guide, "ProductsSearchFilter").Operation.Should().Be("drop",
+			because: "the fixture must actually exercise a removal, or the attribute assertion below is vacuous");
+		guide.ViewModelConfig!["attributes"]!.AsObject().ContainsKey("SearchOnly").Should().BeTrue(
+			because: "the pass removes layout, not attributes — the same policy the empty-container removal follows");
+	}
+
+	[Test]
+	[Description("Verbatim-carry phase, attribute policy: the SAME guarantee holds when the banned component never had an entry of its own and was stripped out of a host's carried property — one rule must not behave two ways depending on which shape the component took.")]
+	public void Analyze_ShouldKeepAttributes_WhenOnlyAVerbatimCarriedExcludedNodeReferencedThem() {
+		// Arrange — usr.Foo resolves to no mobile type, so the whole widgets subtree is carried verbatim.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "CustomHost", "type": "usr.Bar", "widgets": [
+			    { "name": "FooWidget", "type": "usr.Foo", "visible": "$FooOnly" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "FooOnly": { "type": "Boolean" } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		Element(guide, "FooWidget").Operation.Should().Be("drop",
+			because: "the fixture must actually exercise a verbatim-carry removal, or the assertion below is vacuous");
+		guide.ViewModelConfig!["attributes"]!.AsObject().ContainsKey("FooOnly").Should().BeTrue(
+			because: "attribute survival must not depend on which of the two shapes the banned component took");
+	}
+
+	[Test]
+	[Description("Only INSERT entries are removal candidates: a banned type the mobile template already owns arrives as a MERGE entry, survives the pass untouched and produces NO drop entry, while an insert twin of the same type under the same host IS removed — a drop cannot un-create a template-owned element, so reporting one would be a lie.")]
+	public void Analyze_ShouldKeepMergeEntryOfBannedType_AndStillRemoveTheInsertOne() {
+		// Arrange — one host, two children of the banned type through its 'tools' edge: one the template owns
+		// (merge), one the converter creates (insert). Built at the element-map level because the operation of
+		// an entry is what this test is about, and no page shape controls it directly.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "Panel", MobileName = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert"
+			},
+			new() {
+				WebName = "TemplateSearchFilter", MobileName = "TemplateSearchFilter",
+				MobileType = "crt.SearchFilter", Operation = "merge", ParentName = "Panel", PropertyName = "tools"
+			},
+			new() {
+				WebName = "ConvertedSearchFilter", MobileName = "ConvertedSearchFilter",
+				MobileType = "crt.SearchFilter", Operation = "insert", ParentName = "Panel", PropertyName = "tools"
+			}
+		};
+
+		// Act
+		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> _);
+
+		// Assert
+		elementMap.Single(e => e.WebName == "ConvertedSearchFilter").Operation.Should().Be("drop",
+			because: "a converter-created insert of the banned type is exactly what the pass exists to remove");
+		elementMap.Single(e => e.WebName == "TemplateSearchFilter").Operation.Should().Be("merge",
+			because: "a merge entry describes an element the mobile template already owns — a drop cannot un-create it");
+		elementMap.Should().NotContain(e => e.Operation == "drop" && e.WebName == "TemplateSearchFilter",
+			because: "reporting a removal that does not happen is worse than the survivor itself");
+		removedWebNames.Should().BeEquivalentTo(["ConvertedSearchFilter"],
+			because: "only the entry the pass actually removed may feed the downstream reconciliations");
+	}
+
+	[Test]
+	[Description("Both phases report through the SAME web-name channel: an entry-graph removal and a verbatim-carried node stripped from the same host both come back in the removed-web-name set, so the downstream layout-cleanup exemption cannot depend on which shape the banned component took. Only the entry-graph removal carries a MOBILE name — a verbatim-carried node never had one.")]
+	public void RemoveExcludedComponents_ShouldReportBothPhases_ThroughTheWebNameSet() {
+		// Arrange — one host carrying the banned type in both shapes at once: a walked child entry, and a node
+		// left verbatim inside the host's own 'tools' value.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "Panel", MobileName = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert",
+				MobileValues = JsonNode.Parse("""
+					{ "tools": [ { "name": "CarriedSearchFilter", "type": "crt.SearchFilter" } ] }
+					""")!.AsObject()
+			},
+			new() {
+				WebName = "WalkedSearchFilter", MobileName = "WalkedSearchFilter", MobileType = "crt.SearchFilter",
+				Operation = "insert", ParentName = "Panel", PropertyName = "tools"
+			}
+		};
+
+		// Act
+		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> removedMobileNames);
+
+		// Assert
+		removedWebNames.Should().BeEquivalentTo(["WalkedSearchFilter", "CarriedSearchFilter"],
+			because: "both shapes are the same rule doing the same thing, so both must reach the same reconciliation");
+		removedMobileNames.Should().BeEquivalentTo(["WalkedSearchFilter"],
+			because: "a verbatim-carried node was never walked into an entry, so it has no mobile name to report");
+		elementMap.Should().ContainSingle(e => e.Operation == "drop" && e.WebName == "CarriedSearchFilter",
+			because: "the verbatim strip stays visible in the report as a drop entry, never silent");
+	}
+
+	[Test]
+	[Description("Malformed parent graph: a parentName cycle around a banned-type entry must not hang the ancestor climb — the pass terminates and, finding no host on the (cyclic) path, leaves the candidate untouched.")]
+	public void Analyze_ShouldTerminate_WhenParentNameChainCycles() {
+		// Arrange — the cycle is built at the element-map level, the only place a parentName chain exists.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "A", MobileName = "A", MobileType = "crt.FlexContainer",
+				Operation = "insert", ParentName = "B", PropertyName = "items"
+			},
+			new() {
+				WebName = "B", MobileName = "B", MobileType = "crt.FlexContainer",
+				Operation = "insert", ParentName = "A", PropertyName = "items"
+			},
+			new() {
+				WebName = "CyclicSearchFilter", MobileName = "CyclicSearchFilter", MobileType = "crt.SearchFilter",
+				Operation = "insert", ParentName = "A", PropertyName = "items"
+			}
+		};
+
+		// Act
+		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> removedMobileNames);
+
+		// Assert
+		elementMap.Should().AllSatisfy(e => e.Operation.Should().Be("insert"),
+			because: "no ancestor on the cyclic path is a crt.ExpansionPanel, so nothing matches the filter");
+		removedWebNames.Should().BeEmpty(because: "an unmatched candidate is not a removal");
+		removedMobileNames.Should().BeEmpty(because: "an unmatched candidate is not a removal");
 	}
 
 	#endregion
