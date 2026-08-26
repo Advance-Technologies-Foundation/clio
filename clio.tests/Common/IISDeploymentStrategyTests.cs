@@ -105,4 +105,23 @@ public sealed class IISDeploymentStrategyTests : BaseClioModuleTests {
 			because: "the resolved certificate must be attached to the IIS HTTPS binding");
 		_sut.GetApplicationUrl(options).Should().StartWith("https://", because: "registration must use the deployed HTTPS scheme");
 	}
+
+	[Test]
+	[Description("Host preparation installs missing IIS features before deployment port validation.")]
+	public void PrepareHost_ShouldInstallEveryMissingWindowsFeature() {
+		// Arrange
+		_windowsFeatureManager.GetMissedComponents().Returns([
+			new WindowsFeature { Name = "IIS-WebServerRole" },
+			new WindowsFeature { Name = "IIS-ASPNET45" }
+		]);
+
+		// Act
+		_sut.PrepareHost();
+
+		// Assert
+		Received.InOrder(() => {
+			_windowsFeatureManager.InstallFeature("IIS-WebServerRole");
+			_windowsFeatureManager.InstallFeature("IIS-ASPNET45");
+		});
+	}
 }

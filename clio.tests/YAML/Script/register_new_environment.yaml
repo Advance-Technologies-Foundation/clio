@@ -1,0 +1,8 @@
+steps:
+- action: reg-web-app
+  description: register a new environment
+  options:
+    e: new-environment
+    u: "https://localhost:40001"
+    p: Supervisor
+    l: Supervisor

@@ -468,7 +468,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			context.Response.ContentType = "application/json";
 			// No secret (key or credentials) is echoed (FR-11).
 			await context.Response.WriteAsJsonAsync(
-				new { error = "Error: platform API key missing or invalid" });
+				new { error = "Error: platform API key missing or invalid" }, context.RequestAborted);
 			return;
 		}
 
@@ -529,7 +529,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			context.Response.StatusCode = StatusCodes.Status400BadRequest;
 			context.Response.ContentType = "application/json";
 			// error is defect-only and never carries a secret value (FR-11).
-			await context.Response.WriteAsJsonAsync(new { error = $"Error: {error}" });
+			await context.Response.WriteAsJsonAsync(new { error = $"Error: {error}" }, context.RequestAborted);
 			return;
 		}
 

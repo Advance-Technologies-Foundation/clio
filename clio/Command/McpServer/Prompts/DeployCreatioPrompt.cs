@@ -34,6 +34,9 @@ public static class DeployCreatioPrompt
 		 deployable choices and the recommended `dbServerName` and `redisServerName` values.
 		 If you are deploying locally to IIS, run `{FindEmptyIisPortTool.FindEmptyIisPortToolName}` to pick
 		 a safe `sitePort` between {FindEmptyIisPortTool.RangeStart} and {FindEmptyIisPortTool.RangeEnd}.
+		 The deploy command then reserves and revalidates that IIS port before changing the target, so a
+		 concurrent collision fails safely. It also serializes deploy and uninstall operations resolving to
+		 the same environment name or physical directory; separate names, ports, and target directories can deploy in parallel.
 		 The deployment preserves the build database's existing forced-password-change state and does not
 		 clear it automatically.
 		 After that preflight, call `{InstallerCommandTool.DeployCreatioToolName}` with site name `{siteName}`,

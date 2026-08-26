@@ -77,6 +77,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain(processName,
 			because: "a successful edit reports the edited schema name (run against an environment with the ProcessDesignService package)");
+		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "an edited process stays interpreted and needs no compile; the success result carries the compile-not-required note over the real MCP path so an agent does not force compile-creatio (ENG-95706)");
 
 		// Readback: describe the edited process and confirm the signal start really replaced the simple start —
 		// a server that returned success but applied nothing would be caught here, unlike the success echo above.

@@ -188,4 +188,18 @@ public void TestName()
 ## CI/CD
 - The CI/CD pipeline is configured in the `.github/workflows` directory.
 - Repository has runners that run on windows in the corporate infrastructure.
-- The CI/CD pipeline builds the solution, runs unit tests, and publishes the `clio
+- The CI/CD pipeline builds the solution, runs unit tests, and publishes the `clio`
+
+## Working on a GitHub issue
+
+- Use GitHub's existing visibility primitives only: assignee, the organization-level
+  `Mitigation stage` issue field, Development links, issue relationships, and draft pull requests.
+- When you start work, assign the issue to yourself, create the linked Development branch
+  `<github-login>/issue-<number>`, and set `Mitigation stage` to `Investigating`.
+- If another person is already assigned, do not take over the issue. Check whether their predictable
+  branch exists and report the mismatch if it does not.
+- If investigation shows the defect belongs in another `Advance-Technologies-Foundation`
+  repository, create or reuse the downstream issue there and mark the original Clio issue as
+  `blocked by` that work.
+- Open the draft pull request after the first meaningful investigation or repair artifact is
+  committed and the required pre-PR review has passed.

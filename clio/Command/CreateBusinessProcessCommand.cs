@@ -179,10 +179,21 @@ public class CreateBusinessProcessCommand(
 			return;
 		}
 
-		string? warning = EmailBlockExpectation.BuildWarning(
+		string? dropped = EmailBlockExpectation.BuildWarning(
 			EmailBlockExpectation.Missing(described.Value, expected));
-		if (warning is not null) {
-			logger.WriteWarning(warning);
+		if (dropped is not null) {
+			logger.WriteWarning(dropped);
+		}
+
+		// A package that predates the body-macro feature stores the [[…]] placeholders verbatim and still answers
+		// success, so the read-back is the only place the un-resolved body surfaces — the element reports a body but
+		// describe returns none (a healthy build decodes the tokens back into a non-null [[…]] body, so the presence
+		// of [[ in the read-back is NOT the signal). Reuses the description already pulled above.
+		string? unresolved = EmailBlockExpectation.BuildMacroWarning(
+			EmailBlockExpectation.UnresolvedBodyMacros(
+				described.Value, EmailBlockExpectation.MacroBodyElements(options.DescriptorJson)));
+		if (unresolved is not null) {
+			logger.WriteWarning(unresolved);
 		}
 	}
 }

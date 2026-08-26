@@ -1,0 +1,6 @@
+steps:
+- action: restart
+  description: restart a named OAuth environment
+  options:
+    Environment: stored-environment
+    auth-app-uri: "https://untrusted.invalid/connect/token"

@@ -89,8 +89,17 @@ public sealed class RequestRegistrySnapshotTests {
 			because: "root.references.baseParameters must surface as its own field");
 		detail.BaseParameters!.Should().ContainKey("$context",
 			because: "the platform-injected context is part of the published base surface");
+		detail.BaseParameters.Should().ContainKey("$initialEvent",
+			because: "the pinned producer snapshot publishes the deprecated initial event on BaseRequest");
+		detail.BaseParameters["$initialEvent"].GetProperty("deprecated").GetBoolean().Should().BeTrue(
+			because: "the detail response must preserve the producer's deprecation metadata");
+		detail.BaseParameters["$initialEvent"].GetProperty("deprecationReason").GetString().Should()
+			.Be("use event binding expression instead.",
+				because: "the pinned producer snapshot directs consumers to event binding expressions");
 		detail.Parameters.Should().NotContainKey("$context",
 			because: "platform-injected fields must never leak into the authorable parameters map");
+		detail.Parameters.Should().NotContainKey("$initialEvent",
+			because: "deprecated BaseRequest fields remain platform-injected rather than authorable parameters");
 
 		// Assert — wiring contract inlined via the closure seed.
 		detail.References.Should().NotBeNull(

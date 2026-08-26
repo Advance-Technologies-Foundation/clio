@@ -814,14 +814,24 @@ public sealed class ApplicationToolE2ETests {
 			iconId: "auto",
 			iconBackground: ApplicationIconBackground,
 			optionalTemplateDataJson: null);
+		// Diagnostic: dump the create payload before anything asserts on it, so a create that failed on the
+		// environment is visible in the run output even when the assertion below is the first thing to notice.
+		TestContext.Out.WriteLine($"[create payload] {DescribeCallResult(actResult.CallResult)}");
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
 			because: $"icon-id='auto' should resolve a usable icon before CreateApp is called. Actual result: {DescribeCallResult(actResult.CallResult)}");
+		// The envelope error and the raw payload are inlined in the reason on purpose: create-app reports WHY
+		// it failed in `error`, and without it this assertion reads only "found False" - which is exactly how
+		// this intermittent failure reached CI with nothing to diagnose (issue #1119, same gap #1101 closed
+		// for the canonical-main-entity assertion).
 		actResult.Result.Success.Should().BeTrue(
-			because: "auto icon resolution should still return the normal success envelope");
+			because: "auto icon resolution should still return the normal success envelope. "
+				+ $"Actual create-app error: '{actResult.Result.Error}'. "
+				+ $"Actual create-app payload: {DescribeCallResult(actResult.CallResult)}");
 		actResult.Result.PackageName.Should().NotBeNullOrWhiteSpace(
-			because: "the auto-icon create flow should still return structured application metadata");
+			because: "the auto-icon create flow should still return structured application metadata. "
+				+ $"Actual create-app payload: {DescribeCallResult(actResult.CallResult)}");
 	}
 
 	private static async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
