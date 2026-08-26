@@ -4264,12 +4264,16 @@ public static class WebToMobileAnalysisService {
 		return false;
 	}
 
+	/// <summary>Tolerance for the <see cref="JsonValueKind.Number"/> branch of <see cref="JsonValueEquals"/>.</summary>
+	private const double NumberComparisonTolerance = 1e-9;
+
 	/// <summary>
 	/// Deep JSON equality between an element's live value and a rule's filter value. Hand-written because
 	/// clio still targets net8.0, where <c>JsonNode.DeepEquals</c> does not exist; comparing raw text instead
 	/// is not an option either, since that would make key order and whitespace significant. Objects must
 	/// match key-for-key (a filter object is an exact description, not a subset) and arrays element-for-element
-	/// in order. Numbers compare by value, so 1 and 1.0 agree.
+	/// in order. Numbers compare within <see cref="NumberComparisonTolerance"/> rather than exactly, so 1 and
+	/// 1.0 agree.
 	/// </summary>
 	private static bool JsonValueEquals(JsonNode actual, JsonElement expected) {
 		switch (expected.ValueKind) {
@@ -4304,9 +4308,13 @@ public static class WebToMobileAnalysisService {
 				return actual is JsonValue text && text.TryGetValue(out string actualText)
 					&& string.Equals(actualText, expected.GetString(), StringComparison.Ordinal);
 			case JsonValueKind.Number:
+				// A rules file writes a token, not a computed float, so the values SHOULD land bit-identical —
+				// but comparing doubles for exact equality is still the wrong tool (NaN.Equals(NaN) is true,
+				// yet two doubles that reach the same decimal literal through different parses are not
+				// guaranteed bit-identical). Compare within a tolerance instead.
 				return actual is JsonValue number && number.TryGetValue(out double actualNumber)
 					&& expected.TryGetDouble(out double expectedNumber)
-					&& actualNumber.Equals(expectedNumber);
+					&& Math.Abs(actualNumber - expectedNumber) <= NumberComparisonTolerance;
 			case JsonValueKind.True:
 			case JsonValueKind.False:
 				return actual is JsonValue flag && flag.TryGetValue(out bool actualFlag)

@@ -4451,6 +4451,29 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "one differing nested key is enough to fail an exact-value match");
 	}
 
+	[Test]
+	[Description("A numeric filter value matches WITHIN a small tolerance rather than requiring bit-identical doubles — 1 and 1.0 agree — but still rejects a value that differs by more than the tolerance.")]
+	public void Analyze_OverrideFilters_ShouldCompareNumbersWithinTolerance() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "IntegerGrid", "type": "crt.GridContainer", "columns": 4, "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+			  { "name": "OtherGrid", "type": "crt.GridContainer", "columns": 5, "items": [
+				{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
+			""");
+		ComponentPropertyOverrideRule rule = Override("crt.GridContainer",
+			"""{ "borderRadius": "large" }""", """[{ "columns": 4.0 }]""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
+
+		// Assert
+		Element(guide, "IntegerGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "the integer 4 and the filter's 4.0 are the same numeric value");
+		Element(guide, "OtherGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+			because: "5 is outside the comparison tolerance of the filter's 4.0");
+	}
+
 	#endregion
 
 	#region Property normalization (ENG-94230)
