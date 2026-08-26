@@ -154,7 +154,7 @@ public class CreateBusinessProcessCommand(
 				options.Environment,
 				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
-			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
+			WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -162,12 +162,12 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
-	// A server that predates sendEmail DISCARDS an email block and still answers success:true, so a build can
-	// report a configured email element that is in fact empty. Read the saved process back and say so when the
-	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
-	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
-	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
-	private void WarnOnDiscardedEmailBlocks(CreateBusinessProcessOptions options, string? schemaName) {
+	// A server that predates sendEmail (or the Approval element) DISCARDS that configuration block and still
+	// answers success:true, so a build can report a configured element that is in fact empty. Read the saved
+	// process back and say so when a block did not land. Only runs when the descriptor carried one, so the
+	// ordinary path pays nothing; a failure to verify is never escalated, because an unreadable description is
+	// not evidence of a dropped block. See EmailBlockExpectation for why this is behavioural, not version-based.
+	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
 		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
 		// The Approval element has exactly the same silent-drop failure, so it is verified from the SAME read-back
 		// rather than a second one — the describe below is the expensive part, and one of the two blocks being

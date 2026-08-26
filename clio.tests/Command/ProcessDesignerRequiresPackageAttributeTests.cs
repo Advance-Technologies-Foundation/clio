@@ -68,7 +68,7 @@ namespace Clio.Tests
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
         [Description("Create and Modify declare a VERSIONED requirement, now pinned to the archive that introduced the approval block (the email block was the previous holder, at 1.2.0.1). An older server declares neither member and silently discards the block while answering success — presence alone cannot express that. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
-        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsTheEmailOperation(
+        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsAVersionedOperation(
             Type optionsType)
         {
             // Arrange & Act
