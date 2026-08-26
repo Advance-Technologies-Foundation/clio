@@ -76,7 +76,7 @@ as an orphan so a leftover or renamed key stays visible and manageable.
 reports the new state. Toggling a key that nothing references is allowed
 but prints a warning.
 - Some features print a one-time notice when ENABLED (never on disable). For
-example, enabling `mobile-page-converter` warns that it runs in Beta mode.
+example, enabling `mobile-page-converter` warns that it runs in BETA MODE.
 - A key does not have to gate a command or an MCP tool: some keys change internal
 behavior instead. `knowledge-allow-unsequenced` is one - it lets a Git knowledge
 source whose `bundle-source.json` omits `sequence` load by deriving the sequence
