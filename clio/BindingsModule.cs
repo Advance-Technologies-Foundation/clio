@@ -666,6 +666,12 @@ public class BindingsModule {
 				KnowledgeFeedbackPolicyTools.GetToolName,
 				KnowledgeManagementTools.ListKnowledgeExamplesToolName
 			}));
+		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
+		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
+		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
+		services.AddSingleton(provider => new KnowledgeUnsequencedGitOptions(
+			provider.GetRequiredService<IFeatureToggleService>()
+				.IsFeatureEnabled(KnowledgeUnsequencedGitOptions.FeatureName)));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
