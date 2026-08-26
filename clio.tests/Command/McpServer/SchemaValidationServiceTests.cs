@@ -10732,6 +10732,91 @@ public sealed class SchemaValidationServiceTests
 			because: "a get-guidance name that does not resolve dead-ends the agent the diagnostic was meant to help");
 	}
 
+	// Splices a layoutConfig alongside the gauge's type/config on the view element, where it really lives.
+	private static string GaugePageBodyWithLayout(string configJson, string layoutConfigJson) {
+		string viewConfigDiff =
+			"""[{"operation":"insert","name":"TestGauge","parentName":"Main","propertyName":"items","index":0,"values":{__LAYOUT__"type":"crt.GaugeWidget","config":__CONFIG__}}]"""
+				.Replace("__LAYOUT__", layoutConfigJson.Length == 0 ? "" : "\"layoutConfig\":" + layoutConfigJson + ",")
+				.Replace("__CONFIG__", configJson);
+		return BuildDiffBackedPageBody(viewConfigDiff, "[]");
+	}
+
+	[TestCase(1, TestName = "ValidateGaugeWidgetConfig_RowSpanOne_Warns")]
+	[TestCase(3, TestName = "ValidateGaugeWidgetConfig_RowSpanPlatformDefault_Warns")]
+	[Description("A rowSpan below the practical minimum warns — the platform default of 3 is the metric tile's card and clips the dial.")]
+	public void ValidateGaugeWidgetConfig_RowSpanBelowMinimum_WarnsButStaysValid(int rowSpan) {
+		// Arrange
+		string layout = """{"column":1,"row":1,"colSpan":3,"rowSpan":__R__}""".Replace("__R__", rowSpan.ToString());
+		string body = GaugePageBodyWithLayout(GaugeConfigJson(ValidScaleJson), layout);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a short gauge still renders, and 3 rows is legitimate on a desktop page — this must never block a save");
+		result.Warnings.Should().Contain(w => w.Contains("rowSpan") && w.Contains("clips the dial"),
+			because: "the agent needs telling that the dial is cut, since nothing in the platform reports it");
+	}
+
+	[TestCase(4, TestName = "ValidateGaugeWidgetConfig_RowSpanAtMinimum_DoesNotWarn")]
+	[TestCase(6, TestName = "ValidateGaugeWidgetConfig_RowSpanRecommended_DoesNotWarn")]
+	[Description("A rowSpan at or above the practical minimum raises no layout advisory.")]
+	public void ValidateGaugeWidgetConfig_RowSpanAtOrAboveMinimum_DoesNotWarn(int rowSpan) {
+		// Arrange
+		string layout = """{"column":1,"row":1,"colSpan":3,"rowSpan":__R__}""".Replace("__R__", rowSpan.ToString());
+		string body = GaugePageBodyWithLayout(GaugeConfigJson(ValidScaleJson), layout);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.Warnings.Should().NotContain(w => w.Contains("rowSpan"),
+			because: "4 is the documented floor, so advising against it would be noise");
+	}
+
+	[Test]
+	[Description("A gauge with no layoutConfig raises no layout advisory — the parent may supply it, so its absence is not evidence of a short card.")]
+	public void ValidateGaugeWidgetConfig_NoLayoutConfig_DoesNotWarnAboutRowSpan() {
+		// Arrange
+		string body = GaugePageBodyWithLayout(GaugeConfigJson(ValidScaleJson), string.Empty);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.Warnings.Should().NotContain(w => w.Contains("rowSpan"),
+			because: "guessing a clipped dial from an absent layoutConfig would fire on every flex-hosted gauge");
+	}
+
+	[Test]
+	[Description("A flex-hosted gauge sized with height instead of rowSpan raises no layout advisory.")]
+	public void ValidateGaugeWidgetConfig_FlexHeightInsteadOfRowSpan_DoesNotWarn() {
+		// Arrange — a crt.FlexContainer child carries FlexLayoutConfig, which has no rowSpan at all.
+		string body = GaugePageBodyWithLayout(GaugeConfigJson(ValidScaleJson), """{"height":260}""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.Warnings.Should().NotContain(w => w.Contains("rowSpan"),
+			because: "a flex child is sized in pixels, so a missing rowSpan says nothing about its height");
+	}
+
+	[Test]
+	[Description("A non-numeric rowSpan is ignored rather than throwing or mis-warning.")]
+	public void ValidateGaugeWidgetConfig_NonNumericRowSpan_DoesNotWarn() {
+		// Arrange
+		string body = GaugePageBodyWithLayout(GaugeConfigJson(ValidScaleJson), """{"rowSpan":"3"}""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.Warnings.Should().NotContain(w => w.Contains("rowSpan"),
+			because: "an unreadable value must degrade to 'not judged', never to a wrong advisory");
+	}
+
 	[Test]
 	[Description("An empty body is passed through without scanning.")]
 	public void ValidateGaugeWidgetConfig_EmptyBody_ReturnsValid() {

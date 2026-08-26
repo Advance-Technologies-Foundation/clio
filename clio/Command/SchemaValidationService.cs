@@ -2145,6 +2145,15 @@ public static class SchemaValidationService
 	private const int AggregationEvalTypeDistinct = 2;
 
 	/// <summary>
+	/// The <c>layoutConfig.rowSpan</c> below which a gauge's arc is visually clipped. The platform default
+	/// for <c>crt.GaugeWidget</c> is 3 — the metric TILE's card — which is too short for a dial, so the
+	/// default itself trips this check. Advisory only: 3 rows is legitimate on a DESKTOP page (a much taller
+	/// row track, and the desktop guidance explicitly replaces the dashboard floor), and this validator
+	/// cannot tell a desktop body from a dashboard one, so it must never block the save.
+	/// </summary>
+	private const int GaugeMinimumRowSpan = 4;
+
+	/// <summary>
 	/// Validation of <c>crt.GaugeWidget</c> inserts in the page's <c>viewConfigDiff</c>.
 	/// <para>
 	/// Reports as ERRORS the conditions that make a saved gauge structurally wrong — a missing or
@@ -2223,6 +2232,8 @@ public static class SchemaValidationService
 						ValidateGaugeScale(config, label, result);
 						ValidateGaugeAggregation(config, label, result);
 						ValidateGaugeUnsupportedFields(config, label, result);
+						// Layout lives on the view element, NOT in config — hence `node`, not `config`.
+						ValidateGaugeLayout(node, label, result);
 					} else {
 						// A gauge whose `config` is absent or not an object cannot be judged field by field, but it
 						// is NOT valid: min/max are mandatory. Skipping it here (as the chart walk can afford to,
@@ -2332,6 +2343,28 @@ public static class SchemaValidationService
 			result.Warnings.Add(
 				$"{label}.thresholds has no band starting at min ({FormatGaugeNumber(min)}), so values below the first band render with no zone color.");
 		}
+	}
+
+	/// <summary>
+	/// Warns when the view element's <c>layoutConfig.rowSpan</c> is below <see cref="GaugeMinimumRowSpan"/>.
+	/// Only an EXPLICIT numeric rowSpan is judged: a gauge in a <c>crt.FlexContainer</c> carries
+	/// <c>height</c> instead, and an absent <c>layoutConfig</c> may be supplied by the parent, so neither is
+	/// evidence of a short card. Advisory by design — see the constant.
+	/// </summary>
+	private static void ValidateGaugeLayout(JsonElement node, string label, SchemaValidationResult result) {
+		if (!node.TryGetProperty("layoutConfig", out JsonElement layoutConfig) ||
+		    layoutConfig.ValueKind != JsonValueKind.Object ||
+		    !layoutConfig.TryGetProperty("rowSpan", out JsonElement rowSpanElement) ||
+		    rowSpanElement.ValueKind != JsonValueKind.Number ||
+		    !rowSpanElement.TryGetInt32(out int rowSpan) ||
+		    rowSpan >= GaugeMinimumRowSpan) {
+			return;
+		}
+		result.Warnings.Add(
+			$"{label.Replace(" config", string.Empty)} has layoutConfig.rowSpan {rowSpan}, which clips the dial — " +
+			$"{GaugeMinimumRowSpan} is the practical minimum and 4-6 is the readable range on a dashboard. " +
+			"The platform default of 3 is the metric tile's card and is too short for a gauge. " +
+			"(On a desktop page 3 rows is fine — that surface has a much taller row track.)");
 	}
 
 	private static string NoThresholdsWarning(string label) =>

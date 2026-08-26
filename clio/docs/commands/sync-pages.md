@@ -32,9 +32,9 @@ When `validate` is `true` (the default), the body is checked client-side before 
   The widget itself validates none of this — it only shifts values by `min` — so an invalid scale
   would otherwise render a broken dial with no error anywhere. These rules need no component
   registry, so they apply even offline. Advisory findings (no threshold bands, no band starting at
-  `min`, an `aggregationEvalType` that does not match the aggregate function — `Distinct` outside `Count`, or a
-  non-`Distinct` `Count` — an inert `config.comparison`) are
-  reported as warnings by `validate-page` and never block a save. Call
+  `min`, an `aggregationEvalType` that does not match the aggregate function — `Distinct` outside `Count`, or
+  a non-`Distinct` `Count` — an inert `config.comparison`, and a `layoutConfig.rowSpan` below 4, which
+  clips the dial) are reported as warnings by `validate-page` and never block a save. Call
   `clio get-guidance --name gauge-widget` for the full contract.
 - **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
   WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
