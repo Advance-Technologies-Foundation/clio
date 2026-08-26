@@ -17,9 +17,9 @@ internal sealed record RunProcessEnvelope(
 internal static class RunProcessResultParser {
 
 	/// <summary>
-	/// Extracts the <c>run-process</c> envelope from an MCP result. The tool is destructive and lives on the
-	/// lazy surface, so a call always arrives through <c>clio-run</c>, whose payload nests the target tool's
-	/// own JSON inside the text content.
+	/// Extracts the <c>run-process</c> envelope from an MCP result. The tool lives on the lazy surface, so a
+	/// call arrives through <c>clio-run</c>, whose payload nests the target tool's own JSON inside the text
+	/// content.
 	/// </summary>
 	public static RunProcessEnvelope Extract(CallToolResult callResult) {
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent)
@@ -85,7 +85,7 @@ internal static class RunProcessResultParser {
 				element.GetRawText(),
 				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 			// A run-process envelope always carries either an outcome mode or a failure reason; anything
-			// without both is some other tool's payload (or clio-run's own wrapper).
+			// carrying neither is some other tool's payload (or clio-run's own wrapper).
 			if (item is null || (string.IsNullOrWhiteSpace(item.Mode) && string.IsNullOrWhiteSpace(item.Error))) {
 				envelope = null;
 				return false;

@@ -18,18 +18,16 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// <c>ProcessEngineService.svc/RunProcess</c> endpoint.
 /// </summary>
 /// <remarks>
-/// Deliberately NOT <c>[FeatureToggle("process-designer")]</c> and its options are deliberately NOT
-/// <c>[RequiresPackage]</c>-gated, unlike the rest of the process-designer suite — the same rationale
-/// recorded for <see cref="GetProcessSignatureTool"/>: the endpoint is built into every Creatio and never
-/// touches <c>ProcessDesignService</c>, and gating it would break consumers running on stands without the
+/// Deliberately NOT <c>[FeatureToggle("process-designer")]</c> and NOT <c>[RequiresPackage]</c>-gated,
+/// unlike the rest of the process-designer suite: the endpoint is built into every Creatio and never
+/// touches <c>ProcessDesignService</c>, so gating it would only break consumers on stands without the
 /// toggle or the server package. Both absences are pinned by tests.
 /// <para>
-/// The tool does NOT extend <see cref="BaseTool{T}"/>: its work can outlive the MCP response deadline, and
-/// <see cref="BaseTool{T}"/>'s typed-response path holds the broad per-tenant execution monitor for the
-/// whole call, which would stall every unrelated same-tenant tool behind work nobody is waiting for any
-/// more. It follows <see cref="CompileCreatioTool"/> instead, which takes no such lock. No narrow
-/// replacement lock is needed here: unlike compilation, the platform happily runs process instances
-/// concurrently.
+/// It returns a typed response yet its work can outlive the MCP response deadline, which is why it does not
+/// extend <see cref="BaseTool{T}"/>: that path would hold the broad per-tenant monitor for the whole call.
+/// Same shape as <see cref="CompileCreatioTool"/> — see the remarks on
+/// <c>BaseTool.InternalExecuteWithoutTenantLock</c> for the lock rationale. No narrow replacement lock is
+/// needed here: unlike compilation, the platform runs process instances concurrently.
 /// </para>
 /// </remarks>
 [McpServerToolType]
@@ -46,10 +44,7 @@ public sealed class RunProcessTool(
 	/// </summary>
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
-	/// <summary>
-	/// The answer returned when clio has to reply before Creatio does. Extracted as a pure function so its
-	/// wording is unit-testable without racing the real deadline timer.
-	/// </summary>
+	/// <summary>The answer returned when clio has to reply before Creatio does.</summary>
 	internal static string BuildStillRunningNote(string processName) =>
 		$"'{processName}' was launched and is still running server-side (the MCP response deadline was "
 		+ "reached first). This is NOT a failure and NOT a success — clio has no verdict. The platform "
@@ -67,20 +62,23 @@ public sealed class RunProcessTool(
 		"Run (launch) a Creatio business process on a registered environment. Resolve the parameter CODES with "
 		+ "get-process-signature FIRST and key `parameters` by those codes — the platform silently drops a value "
 		+ "keyed by a caption. "
-		+ "READ THE VERDICT FROM `mode`, NEVER FROM `success`: `success` only says clio executed the call, while the "
-		+ "platform itself returns success=true for a FAILED run unless one of its own feature flags is on. "
-		+ "`mode` is one of the platform statuses — completed | error | cancelled | running | cancelling | inactive — "
-		+ "or one of two NO-VERDICT outcomes. (1) `queued-background`: the process schema starts in background mode, "
-		+ "so the platform queued it fire-and-forget and returned NO process id, status or result — for such a process "
-		+ "the launch IS the whole outcome, and passing `result-parameters` is what forces it to run synchronously and "
-		+ "produce a verdict instead. (2) `accepted-still-running`: the run outlived the MCP response deadline; clio "
-		+ "answered first and has no verdict. In BOTH no-verdict cases do NOT re-run to find out — a second launch "
-		+ "duplicates the work; judge the outcome from the process's own effects. "
+		+ "READ THE OUTCOME FROM `mode`, not from `success`: `success` is false for a rejected call, a refused launch "
+		+ "and a failed run alike, so it cannot tell them apart. `mode` carries the outcome and is either the "
+		+ "platform's status scale lowercased (completed | error | cancelled | running | cancelling | inactive, or "
+		+ "unknown-status-<n> for a code this clio does not know) or one of three non-status outcomes. "
+		+ "(1) `refused`: the platform declined to start it and NOTHING ran — most often a process whose only start "
+		+ "events are automatic, which has no manual entry point at all, so no call can ever start it. "
+		+ "(2) `queued-background`: the schema starts in background mode, so the platform queued it fire-and-forget "
+		+ "and returned NO process id, status or result — for such a process the launch IS the whole outcome, and "
+		+ "passing `result-parameters` is what forces it to run synchronously and produce a verdict instead. "
+		+ "(3) `accepted-still-running`: the run outlived the MCP response deadline; clio answered first and has no "
+		+ "verdict. In the last two cases do NOT re-run to find out — a second launch duplicates the work; judge the "
+		+ "outcome from the process's own effects. `mode` is ABSENT when the call was rejected before launch — read "
+		+ "`error` then. "
 		+ "`mode: running` means the process suspended on something external (a user task, a timer, a signal) and its "
 		+ "`processId` is real — it is also the PRIMARY KEY of the run's SysProcessLog row, so poll it with odata-read "
 		+ "on SysProcessLog filtered by Id when you need to await completion. "
-		+ "This tool NEVER retries: a retry can duplicate work, because idempotency is a property of the specific "
-		+ "process and not of the transport. "
+		+ "This tool NEVER retries, and neither should you on a timeout: a second launch can duplicate the work. "
 		+ "A String parameter is passed through VERBATIM and never re-encoded — a serialized ESQ filter or other "
 		+ "structured text must be supplied exactly as the process expects it, since double-encoding it yields an "
 		+ "empty selection rather than an error. "
@@ -88,8 +86,7 @@ public sealed class RunProcessTool(
 		+ "are all rejected BEFORE any server call, listing the codes that are accepted. "
 		+ "Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public async Task<RunProcessResponse> RunProcess(
-		[Description("Parameters: process-name (required, the process CODE or its caption); parameters (code -> value); "
-			+ "result-parameters (codes to read back); timeout (seconds); environment-name preferred.")]
+		[Description("run-process parameters")]
 		[Required]
 		RunProcessArgs args,
 		global::ModelContextProtocol.Server.McpServer server = null,
@@ -197,7 +194,7 @@ public sealed record RunProcessArgs {
 	public string? EnvironmentName { get; init; }
 
 	[JsonPropertyName("uri")]
-	[Description("Creatio base URI (emergency fallback only; prefer environment-name)")]
+	[Description(McpToolDescriptions.Uri)]
 	public string? Uri { get; init; }
 
 	[JsonPropertyName("login")]

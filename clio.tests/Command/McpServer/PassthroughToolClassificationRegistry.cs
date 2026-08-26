@@ -359,11 +359,11 @@ internal static class PassthroughToolClassificationRegistry {
 			["restart-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restart-by-environment-name"] = PassthroughClassification.NotApplicable,
 			["restart-status"] = PassthroughClassification.NotApplicable, // ENG-91315 readiness-wait status poll; reads the in-memory RestartOperationRegistry only (mirrors compile-status), never makes a credential-passthrough Creatio call
-			["run-process"] = PassthroughClassification.NotApplicable, // ENG-95791 runtime process launch; resolves its command through IToolCommandResolver like the rest of the ProcessDesigner family (class a), not part of the ENG-93347 passthrough audit
 			["restore-db-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
+			["run-process"] = PassthroughClassification.NotApplicable, // ENG-95791 runtime process launch; resolves its command through IToolCommandResolver like the rest of the ProcessDesigner family (class a), not part of the ENG-93347 passthrough audit
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-logo"] = PassthroughClassification.NotApplicable,

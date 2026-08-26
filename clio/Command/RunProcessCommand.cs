@@ -10,9 +10,8 @@ using Clio.Command.StartProcess;
 using Clio.Common;
 using ErrorOr;
 using Newtonsoft.Json;
-// Both JSON stacks are needed here — the shared ProcessStartArgs/ProcessStartResponse DTOs are
-// System.Text.Json-shaped, while the response is logged through Newtonsoft like every sibling command —
-// and their JsonSerializer/JsonException type names collide, so the STJ ones are aliased.
+// JsonSerializer and JsonException exist in both stacks; the System.Text.Json ones are aliased because
+// the response is logged through Newtonsoft like every sibling command.
 using StjSerializer = System.Text.Json.JsonSerializer;
 using StjJsonException = System.Text.Json.JsonException;
 
@@ -20,11 +19,12 @@ using StjJsonException = System.Text.Json.JsonException;
 /// Options for launching a Creatio business process at runtime.
 /// Consumed by the MCP <c>run-process</c> tool, which sets these properties directly.
 /// </summary>
-// Deliberately NOT [RequiresPackage] and its MCP tool is deliberately NOT [FeatureToggle]-gated, for the
-// same reason recorded on GetProcessSignatureOptions: ProcessEngineService.svc/RunProcess is a built-in
-// endpoint present on every Creatio and never touches ProcessDesignService. Gating it would also break the
-// consumer, which must work on stands without the process-designer toggle or the server package.
-// There is no [Verb]: this is an MCP-only capability, matching the ENG-90883 decision for the family.
+// Deliberately NOT [RequiresPackage], and its MCP tool is deliberately NOT [FeatureToggle]-gated:
+// ProcessEngineService.svc/RunProcess is built into every Creatio and never calls ProcessDesignService, so
+// neither gate has anything to guard, and gating would break consumers on stands without the
+// process-designer toggle or the server package. (GetProcessSignatureOptions is ungated too, but for a
+// reason that does NOT transfer here — it has a public CLI verb its MCP surface must match; this one has
+// no [Verb] at all, like create-/modify-/describe-business-process and validate-process-graph.)
 public sealed class RunProcessOptions : EnvironmentOptions {
 
 	/// <summary>Process code (schema Name) or display caption.</summary>
@@ -46,19 +46,22 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 public sealed class RunProcessResponse {
 
 	/// <summary>
-	/// Whether clio executed the call: <c>false</c> means validation, resolution or transport failed and
-	/// nothing was launched. It is NOT the process verdict — read <see cref="Mode"/> for that.
+	/// <c>false</c> when clio refused the call, the platform refused the launch, or the run ended with the
+	/// Error status — it cannot tell those three apart, so read <see cref="Mode"/> for the outcome.
 	/// </summary>
 	[JsonProperty("success")]
 	[System.Text.Json.Serialization.JsonPropertyName("success")]
 	public bool Success { get; set; }
 
 	/// <summary>
-	/// The run outcome, and the ONLY field that carries it. One of the platform's own process statuses
-	/// (<c>inactive</c>, <c>running</c>, <c>completed</c>, <c>error</c>, <c>cancelled</c>, <c>cancelling</c>)
-	/// or one of the two no-verdict outcomes: <c>queued-background</c> (the schema starts in background mode,
-	/// so the platform returns no handle and no result) and <c>accepted-still-running</c> (clio answered at
-	/// the MCP response deadline before Creatio replied).
+	/// The run outcome, and the only field that carries it. Either the platform's status scale lowercased
+	/// (<c>inactive</c>, <c>running</c>, <c>completed</c> — the enum name is <c>Done</c> — <c>error</c>,
+	/// <c>cancelled</c>, <c>cancelling</c>, or <c>unknown-status-{n}</c> for a code this clio does not know),
+	/// or one of three non-status outcomes: <c>refused</c> (the platform declined to start it and nothing
+	/// ran), <c>queued-background</c> (the schema starts in background mode, so the platform returned no
+	/// handle and no result) and <c>accepted-still-running</c> (clio answered at the MCP response deadline
+	/// before Creatio replied). <see langword="null"/> when the call was rejected before launch — read
+	/// <see cref="Error"/> then.
 	/// </summary>
 	[JsonProperty("mode")]
 	[System.Text.Json.Serialization.JsonPropertyName("mode")]
@@ -77,7 +80,10 @@ public sealed class RunProcessResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("processId")]
 	public string ProcessId { get; set; }
 
-	/// <summary>Raw platform status code, or <c>null</c> when no response was observed.</summary>
+	/// <summary>
+	/// Raw platform status code, or <c>null</c> when the platform reported no run state — a refusal, a
+	/// background queueing, or a deadline answer.
+	/// </summary>
 	[JsonProperty("processStatus")]
 	[System.Text.Json.Serialization.JsonPropertyName("processStatus")]
 	public int? ProcessStatus { get; set; }
@@ -92,6 +98,10 @@ public sealed class RunProcessResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
 	public List<string> Warnings { get; set; } = [];
 
+	/// <summary>
+	/// Why the call failed, or <see langword="null"/> when it did not. The only populated field when the
+	/// call was rejected before launch.
+	/// </summary>
 	[JsonProperty("error")]
 	[System.Text.Json.Serialization.JsonPropertyName("error")]
 	public string Error { get; set; }
@@ -110,8 +120,9 @@ public class RunProcessCommand(
 	: Command<RunProcessOptions> {
 
 	/// <summary>
-	/// Platform status codes as declared by <c>Terrasoft.Core.Process.ProcessStatus</c>. The same scale is
-	/// stored in <c>SysProcessStatus.Value</c>, so a polled log row and this response agree.
+	/// <c>Terrasoft.Core.Process.ProcessStatus</c> codes rendered as mode names. The same scale is stored in
+	/// <c>SysProcessStatus.Value</c>, so a polled log row and this response agree. Code 2 is <c>Done</c> in
+	/// the enum and <c>Completed</c> in the lookup; it is surfaced as <c>completed</c>.
 	/// </summary>
 	private static readonly Dictionary<int, string> StatusNames = new() {
 		[0] = "inactive",
@@ -125,10 +136,7 @@ public class RunProcessCommand(
 	private const string QueuedBackgroundMode = "queued-background";
 	private const string RefusedMode = "refused";
 
-	/// <summary><c>ProcessStatus.Inactive</c>, the status carried by an empty descriptor.</summary>
 	private const int InactiveStatus = 0;
-
-	/// <summary><c>ProcessStatus.Error</c>.</summary>
 	private const int ErrorStatus = 3;
 
 	/// <summary>
@@ -137,10 +145,7 @@ public class RunProcessCommand(
 	/// </summary>
 	private const string ManualStartRefusedCode = "ProcessCannotBeManuallyStartedException";
 
-	/// <summary>
-	/// The note returned when the platform launched the process in background mode. Extracted so its
-	/// wording is directly unit-testable.
-	/// </summary>
+	/// <summary>The note returned when the platform queued the process in background mode.</summary>
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
 		+ "no status and no result parameters. This is not an error — for a fire-and-forget process the "
@@ -148,10 +153,7 @@ public class RunProcessCommand(
 		+ "own effects. Requesting result-parameters forces the same process to run synchronously instead, "
 		+ "which is the only way to get a verdict for it.";
 
-	/// <summary>
-	/// The message returned when the platform refused to start the process. Extracted so its wording is
-	/// directly unit-testable.
-	/// </summary>
+	/// <summary>The message returned when the platform refused to start the process.</summary>
 	internal static string BuildRefusalMessage(string processCode, string errorCode, string message) {
 		string detail = string.IsNullOrWhiteSpace(message) ? "the platform returned no details" : message;
 		if (string.Equals(errorCode, ManualStartRefusedCode, StringComparison.Ordinal)) {
@@ -167,7 +169,10 @@ public class RunProcessCommand(
 	/// <summary>
 	/// Launches the process and projects the platform response into <paramref name="response"/>.
 	/// </summary>
-	/// <returns><c>true</c> when the process was launched; otherwise <c>false</c>.</returns>
+	/// <returns>
+	/// <c>true</c> only for an accepted launch with no failure verdict; <c>false</c> for a rejected call, a
+	/// refused launch, and a run that ended with the Error status.
+	/// </returns>
 	public virtual bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
 		if (string.IsNullOrWhiteSpace(options.ProcessName)) {
 			response = Failure("process-name is required");
@@ -236,15 +241,11 @@ public class RunProcessCommand(
 	/// Maps the platform response onto the tool contract.
 	/// </summary>
 	/// <remarks>
-	/// Three different outcomes share the SAME empty-process-id + <c>Inactive</c>-status shape, and
-	/// <c>success</c> / <c>errorInfo</c> are the only things that tell them apart:
-	/// a STARTUP REFUSAL (<c>ProcessExecutor.CheckCanExecute</c> verifies a manual start event before
-	/// anything runs, so a process whose only start events are automatic answers <c>success:false</c> with
-	/// <c>ProcessCannotBeManuallyStartedException</c> and nothing started), a BACKGROUND QUEUEING (the
-	/// fire-and-forget branch sends the start command to the message bus and returns
-	/// <c>new ProcessDescriptor()</c> without waiting, so <c>success:true</c> with no handle), and a
-	/// genuinely inactive descriptor. Reading only the id and the status would report a refusal as a
-	/// successful background launch.
+	/// A startup refusal, a background queueing and an inactive descriptor all arrive with the SAME empty
+	/// process id and <c>Inactive</c> status; <c>success</c> and <c>errorInfo</c> are the only
+	/// discriminators, so reading the id alone would report a refusal as a successful background launch. Why
+	/// the platform behaves this way:
+	/// <c>docs/knowledge/platform/runprocess-success-flag-is-not-the-run-verdict.md</c>.
 	/// </remarks>
 	internal static RunProcessResponse Project(ProcessStartResponse platformResponse, string processCode) {
 		if (platformResponse is null) {
@@ -296,10 +297,8 @@ public class RunProcessCommand(
 	}
 
 	/// <summary>
-	/// Extracts the platform's <c>errorInfo</c> pair. The field is declared as <see cref="object"/> on the
-	/// shared DTO and arrives as a <see cref="JsonElement"/>, so it is read member by member rather than
-	/// re-serialized: a reflection-based serializer renders a <see cref="JsonElement"/> as
-	/// <c>{"ValueKind":...}</c> and loses the message entirely.
+	/// Extracts the platform's <c>errorInfo</c> pair member by member rather than re-serializing it — see
+	/// <c>docs/knowledge/platform/runprocess-errorinfo-arrives-as-a-jsonelement.md</c>.
 	/// </summary>
 	internal static (string ErrorCode, string Message) ReadErrorInfo(object errorInfo) {
 		if (errorInfo is not JsonElement element || element.ValueKind != JsonValueKind.Object) {

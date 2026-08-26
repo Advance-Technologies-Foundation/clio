@@ -11,7 +11,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// Stand-free end-to-end contract tests for the run-process MCP tool: discoverability, the destructive
-/// routing gate, and the failure envelope. None of these reach a Creatio instance.
+/// flag it is advertised with, and the failure envelope. None of these reach a Creatio instance.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -81,8 +81,8 @@ public sealed class RunProcessContractToolE2ETests : McpContractFixtureBase {
 	}
 
 	/// <summary>
-	/// Dispatches run-process through <c>clio-run</c>, which is the only route a destructive long-tail tool
-	/// can be called by (a direct call is refused — see the routing test above).
+	/// Dispatches run-process through <c>clio-run</c>. The tool is not advertised in <c>tools/list</c> (it is
+	/// long tail), so an executor is how a caller reaches it.
 	/// </summary>
 	internal static async Task<RunProcessEnvelope> ActAsync(
 		ArrangeContext arrangeContext,
