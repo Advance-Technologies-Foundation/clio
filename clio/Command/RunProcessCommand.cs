@@ -10,6 +10,11 @@ using Clio.Command.StartProcess;
 using Clio.Common;
 using ErrorOr;
 using Newtonsoft.Json;
+// Both JSON stacks are needed here — the shared ProcessStartArgs/ProcessStartResponse DTOs are
+// System.Text.Json-shaped, while the response is logged through Newtonsoft like every sibling command —
+// and their JsonSerializer/JsonException type names collide, so the STJ ones are aliased.
+using StjSerializer = System.Text.Json.JsonSerializer;
+using StjJsonException = System.Text.Json.JsonException;
 
 /// <summary>
 /// Options for launching a Creatio business process at runtime.
@@ -208,21 +213,23 @@ public class RunProcessCommand(
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
 		// maxAttempts stays 1: a retry can duplicate work, and idempotency is a property of the specific
 		// process rather than of this transport. The caller decides whether re-running is safe.
-		string rawResponse = applicationClient.ExecutePostRequest(url, System.Text.Json.JsonSerializer.Serialize(args),
+		string rawResponse = applicationClient.ExecutePostRequest(url, StjSerializer.Serialize(args),
 			ResolveRequestTimeout(options.TimeoutSeconds), maxAttempts: 1);
 
 		ProcessStartResponse platformResponse;
 		try {
-			platformResponse = System.Text.Json.JsonSerializer.Deserialize<ProcessStartResponse>(rawResponse);
+			platformResponse = StjSerializer.Deserialize<ProcessStartResponse>(rawResponse);
 		}
-		catch (System.Text.Json.JsonException e) {
+		catch (StjJsonException e) {
 			response = Failure($"RunProcess returned a response clio could not read: {e.Message}");
 			response.ResolvedProcessCode = model.Code;
 			return false;
 		}
 
 		response = Project(platformResponse, model.Code);
-		return true;
+		// The return value feeds Execute's exit code, so it must track the OUTCOME, not merely the fact that
+		// a request was sent: a refusal ("nothing was started") and a failed run would otherwise both exit 0.
+		return response.Success;
 	}
 
 	/// <summary>
@@ -318,9 +325,13 @@ public class RunProcessCommand(
 		StatusNames.TryGetValue(status, out string name) ? name : $"unknown-status-{status}";
 
 	// Timeout.Infinite is the IApplicationClient default and what a long synchronous process needs; a
-	// caller-supplied bound is converted to milliseconds.
+	// caller-supplied bound is converted to milliseconds. The conversion is clamped because
+	// int.MaxValue / 1000 is only about 24 days of seconds, past which the multiplication would wrap to a
+	// NEGATIVE timeout — i.e. an absurdly large bound would silently become a near-instant one.
 	private static int ResolveRequestTimeout(int timeoutSeconds) =>
-		timeoutSeconds <= 0 ? System.Threading.Timeout.Infinite : timeoutSeconds * 1000;
+		timeoutSeconds <= 0
+			? System.Threading.Timeout.Infinite
+			: (int)Math.Min((long)timeoutSeconds * 1000L, int.MaxValue);
 
 	private static bool TryBuildParameterValues(IReadOnlyDictionary<string, JsonElement> supplied,
 		List<ProcessParameter> signature, out ProcessStartArgs.ParameterValues[] values, out string error) {
@@ -341,6 +352,12 @@ public class RunProcessCommand(
 				error = $"'{code}' is an Output parameter and cannot be assigned through 'parameters'. "
 					+ "Read it back by listing it in 'result-parameters' instead.";
 				return false;
+			}
+			// An explicit JSON null means "leave this parameter unset", and the platform expresses unset by
+			// the value being ABSENT from parameterValues. Sending an empty string instead would assign a
+			// real value — Guid.Empty for a lookup, "" for text — which is a different thing entirely.
+			if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) {
+				continue;
 			}
 			if (!TryCoerce(parameter, value, out string serialized, out error)) {
 				return false;
@@ -418,11 +435,6 @@ public class RunProcessCommand(
 		Type clrType = parameter.DataValueTypeResolved;
 		bool isLookup = parameter.ReferenceSchemaUId.HasValue
 			&& parameter.ReferenceSchemaUId.Value != Guid.Empty;
-
-		if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) {
-			serialized = string.Empty;
-			return true;
-		}
 
 		if (clrType == typeof(string) && !isLookup) {
 			serialized = value.ValueKind == JsonValueKind.String

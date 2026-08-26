@@ -268,6 +268,48 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A null parameter value means 'leave unset' and is omitted from the payload. Sending an empty string instead would assign a real value — Guid.Empty for a lookup — which is a different thing.")]
+	public void TryRun_Should_Omit_A_Null_Parameter_Rather_Than_Send_An_Empty_Value() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+		RunProcessOptions options = new() {
+			ProcessName = ProcessCode,
+			Parameters = Values("""{"SysModulesSelectedId":null,"SysDashboardsSelectionStateFilter":"keep"}""")
+		};
+
+		// Act
+		harness.Command.TryRun(options, out RunProcessResponse response);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a null value is not an error, it is an absent value");
+		ProcessStartArgs posted = JsonSerializer.Deserialize<ProcessStartArgs>(harness.PostedBodies[0]);
+		posted.Values.Should().ContainSingle(
+			because: "only the parameter that carried a value may be posted — the platform expresses 'unset' "
+				+ "by the entry being absent, so an empty string would assign Guid.Empty instead")
+			.Which.Name.Should().Be("SysDashboardsSelectionStateFilter");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A timeout larger than int.MaxValue milliseconds is clamped, because the seconds-to-milliseconds multiplication would otherwise wrap to a NEGATIVE timeout and turn an absurdly large bound into a near-instant one.")]
+	public void TryRun_Should_Clamp_A_Timeout_That_Would_Overflow_Milliseconds() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+		RunProcessOptions options = new() { ProcessName = ProcessCode, TimeoutSeconds = int.MaxValue };
+
+		// Act
+		harness.Command.TryRun(options, out _);
+
+		// Assert
+		harness.PostedTimeouts.Should().AllSatisfy(timeout => timeout.Should().BePositive(
+			because: "an unclamped int.MaxValue seconds becomes a negative millisecond value, which would "
+				+ "cut the request instead of extending it"));
+		harness.PostedTimeouts.Should().AllBeEquivalentTo(int.MaxValue,
+			because: "the clamp saturates at the largest timeout the client can express");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("With no timeout supplied the request is unbounded, which is what a long synchronous process needs; a supplied timeout is converted from seconds to milliseconds.")]
 	public void TryRun_Should_Map_Timeout_Seconds_Onto_The_Request() {
 		// Arrange
@@ -283,6 +325,33 @@ public sealed class RunProcessToolTests {
 			because: "a synchronous process runs for as long as it runs; clio must not cut it short by default");
 		bounded.PostedTimeouts.Should().AllBeEquivalentTo(90_000,
 			because: "the argument is expressed in seconds and the client takes milliseconds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TryRun's return value tracks the run OUTCOME, not merely that a request was sent: a refusal and a failed run must not be reported as a launch, because the value feeds Execute's exit code.")]
+	public void TryRun_Should_Return_False_When_The_Platform_Refused_Or_The_Run_Failed() {
+		// Arrange
+		Harness refused = BuildHarness(MigratorSignature(),
+			"""
+			{"processId":"00000000-0000-0000-0000-000000000000","processStatus":0,"success":false,
+			 "errorInfo":{"errorCode":"ProcessCannotBeManuallyStartedException","message":"no manual start"}}
+			""");
+		Harness failed = BuildHarness(MigratorSignature(),
+			"""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":true}""");
+		Harness completed = BuildHarness(MigratorSignature());
+
+		// Act
+		bool refusedResult = refused.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
+		bool failedResult = failed.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
+		bool completedResult = completed.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
+
+		// Assert
+		refusedResult.Should().BeFalse(because: "nothing was started, so exiting 0 would misreport the run");
+		failedResult.Should().BeFalse(
+			because: "the run finished with the error status, which must not exit 0 just because the platform "
+				+ "answered success=true");
+		completedResult.Should().BeTrue(because: "a terminal successful run is the one case that exits 0");
 	}
 
 	#endregion

@@ -175,7 +175,8 @@ public sealed record RunProcessArgs {
 		+ "get-process-signature), never by caption. Values are coerced to the parameter's type; a String "
 		+ "parameter is passed through VERBATIM, so structured text such as a serialized ESQ filter must be "
 		+ "supplied exactly as the process expects it. A lookup parameter takes the record's Id, not its "
-		+ "display name. An Output parameter cannot be assigned here.")]
+		+ "display name. An Output parameter cannot be assigned here. A null value means 'leave unset' and "
+		+ "is simply not sent, which is what the platform treats as unset.")]
 	public Dictionary<string, JsonElement>? Parameters { get; init; }
 
 	[JsonPropertyName("result-parameters")]
