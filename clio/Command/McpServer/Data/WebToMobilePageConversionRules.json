@@ -191,7 +191,8 @@
         {
           "type": "crt.SearchFilter",
           "parentType": "crt.ExpansionPanel",
-          "propertiesContainerName": "tools"
+          "propertiesContainerName": "tools",
+          "note": "ENG-95081: the panel's tools strip is a compact icon-only header row on mobile, which a search field does not fit. Positional only - crt.SearchFilter elsewhere on the page converts normally."
         }
       ]
     }

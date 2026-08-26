@@ -404,6 +404,16 @@ public sealed class ExcludedComponentFilterRule {
 	[JsonPropertyName("propertiesContainerName")]
 	public string PropertiesContainerName { get; init; }
 
+	/// <summary>
+	/// Optional free-text annotation for whoever reads or edits the RULES FILE — why this exclusion exists.
+	/// Deliberately NOT surfaced in the conversion report, unlike <see cref="RequestMappingRule.Note"/>, which
+	/// becomes a drop reason: that note explains a platform fact true of the request everywhere, while this one
+	/// explains a product judgement about one position, and the drop reason is deliberately restricted to the
+	/// mechanical fact the pass can actually derive (see <c>ExcludedComponentsPass.BuildDropReason</c>). The
+	/// agent-facing "an excludedComponents drop is a positional exclusion, never conversion loss" contract is
+	/// owned by the shipped guidance article, which teaches the whole drop CLASS once rather than restating a
+	/// motivation per rule. Parsed so the rules file can carry the annotation without an unknown-member risk.
+	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }

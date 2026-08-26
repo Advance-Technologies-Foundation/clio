@@ -6025,16 +6025,19 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ElementMapEntry panel = Element(guide, "ProductsExpansionPanel");
-		panel.Operation.Should().Be("insert");
+		panel.Operation.Should().Be("insert",
+			because: "the HOST is never a removal candidate — only the banned type inside it is");
 		JsonArray toolsFlexItems = panel.MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
 		toolsFlexItems.Should().HaveCount(2, because: "the search filter was stripped, its two button siblings stay");
 		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(
 			["ProductsRefreshButton", "ProductsSettingsButton"],
 			because: "removal must not reorder or duplicate the surviving siblings");
 		ElementMapEntry dropped = Element(guide, "ProductsSearchFilter");
-		dropped.Operation.Should().Be("drop");
+		dropped.Operation.Should().Be("drop",
+			because: "a stripped component is reported as a drop entry, never removed silently");
 		dropped.WebType.Should().Be("crt.SearchFilter", because: "the report must still say what was removed");
-		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools");
+		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools",
+			because: "the reason must name the rule, the host type and the slot so the reader can trace it back to the rules file");
 	}
 
 	[Test]
@@ -6054,7 +6057,8 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry field = Element(guide, "ProfileSearchFilter");
 		field.Operation.Should().Be("insert",
 			because: "the exclusion is scoped by parentType — nothing here has that parent, so it is not a candidate");
-		field.MobileType.Should().Be("crt.SearchFilter");
+		field.MobileType.Should().Be("crt.SearchFilter",
+			because: "the surviving element is genuinely the banned TYPE — only its position spared it");
 	}
 
 	[Test]
@@ -6114,8 +6118,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
 			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter, FooInsideBarAnywhereFilter));
 
-		Element(guide, "ProductsSearchFilter").Operation.Should().Be("drop");
-		Element(guide, "Buried").Operation.Should().Be("drop");
+		Element(guide, "ProductsSearchFilter").Operation.Should().Be("drop",
+			because: "the first rule matches independently of the second");
+		Element(guide, "Buried").Operation.Should().Be("drop",
+			because: "the second rule matches independently of the first — two rules do not interfere");
 		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
 			.Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "ProductsRefreshButton",
 				because: "the second, unrelated rule (usr.Foo inside usr.Bar) must not affect the ExpansionPanel host");
@@ -6191,7 +6197,8 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		JsonNode host = Element(guide, "CustomHost").MobileValues!;
-		host["tools"]!.AsArray().Should().BeEmpty();
+		host["tools"]!.AsArray().Should().BeEmpty(
+			because: "with no named property the tools branch of the host is in scope");
 		host["widgets"]!.AsArray().Should().BeEmpty(
 			because: "with no named property every property of the host — tools and widgets alike — is in scope");
 		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().HaveCount(2,
@@ -6344,7 +6351,8 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry dropped = Element(guide, "ProductsSearchFilter");
 		dropped.Operation.Should().Be("drop",
 			because: "the entry's ancestor chain enters the crt.ExpansionPanel host through its 'tools' edge");
-		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools");
+		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools",
+			because: "the entry-graph phase must report the same traceable reason the verbatim phase reports");
 		Element(guide, "ProductsRefreshButton").Operation.Should().Be("insert",
 			because: "siblings of the banned component are untouched");
 		Element(guide, "ProductsSettingsButton").Operation.Should().Be("insert",
@@ -6440,7 +6448,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		Element(guide, "ProductsToolsFlexContainer").Operation.Should().Be("drop",
 			because: "the container itself is the banned type reached through the host's tools edge");
-		Element(guide, "ProductsToolsFlexContainer").Reason.Should().Contain("excludedComponents");
+		Element(guide, "ProductsToolsFlexContainer").Reason.Should().Contain("excludedComponents",
+			because: "the container was removed BY the rule, so its reason names the rule — unlike its orphaned children below");
 		foreach (string orphan in new[] { "ProductsRefreshButton", "ProductsSearchFilter", "ProductsSettingsButton" }) {
 			ElementMapEntry entry = Element(guide, orphan);
 			entry.Operation.Should().Be("drop",

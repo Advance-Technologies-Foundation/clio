@@ -300,6 +300,9 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 			because: "the defect is positional — crt.SearchFilter does not fit THIS host's tools strip, not unsupported everywhere");
 		filter.PropertiesContainerName.Should().Be("tools",
 			because: "the search is scoped to the panel's tools property, not its whole mobileValues subtree");
+		filter.Note.Should().NotBeNullOrWhiteSpace(
+			because: "the rules file is where the next rule author looks for WHY an exclusion exists — the drop "
+				+ "reason deliberately carries only the mechanical fact, so the motivation has to live here");
 	}
 
 	[Test]
