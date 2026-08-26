@@ -343,6 +343,103 @@ public sealed class PageBundleBuilderTests {
 			because: "args should come from the first current-page hierarchy item");
 	}
 
+	[Test]
+	[Description("Two sequential Build calls on the same builder do not leak alias state across chains: an alias declared in the first chain must not affect the second chain's merge, while the alias still carries across layers within its own chain.")]
+	public void Build_CalledTwice_DoesNotLeakAliasStateAcrossChains() {
+		// Arrange — first chain declares an alias 'Btn' (real element 'RealButton') whose excludeOperations drops a
+		// merge; a child layer then merges by that alias name. If the alias carries across layers within this chain
+		// (required), the merge is excluded and the caption stays 'base'.
+		IPageBundleBuilder builder = CreateBuilder();
+		List<PageSchemaBundlePart> aliasChain = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "alias-child-uid", Name = "UsrAlias_FormPage",
+					PackageUId = "alias-pkg-uid", PackageName = "UsrAlias", SchemaVersion = 1, Body = "child"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "merge",
+							["name"] = "Btn",
+							["values"] = new JObject { ["caption"] = "child" }
+						}
+					}
+				}),
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "alias-base-uid", Name = "BasePage",
+					PackageUId = "alias-base-pkg-uid", PackageName = "CrtBase", SchemaVersion = 1, Body = "base"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "MainContainer",
+							["values"] = new JObject { ["type"] = "crt.FlexContainer", ["items"] = new JArray() }
+						},
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "RealButton",
+							["parentName"] = "MainContainer",
+							["propertyName"] = "items",
+							["alias"] = new JObject { ["name"] = "Btn", ["excludeOperations"] = new JArray { "merge" } },
+							["values"] = new JObject { ["type"] = "crt.Button", ["caption"] = "base" }
+						}
+					}
+				})
+		];
+
+		// Second chain uses an element literally named 'Btn' (no alias) and merges it. If the first chain's alias had
+		// leaked into this Build, the merge would be excluded and the caption would stay 'x'.
+		List<PageSchemaBundlePart> plainChain = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "plain-child-uid", Name = "UsrPlain_FormPage",
+					PackageUId = "plain-pkg-uid", PackageName = "UsrPlain", SchemaVersion = 1, Body = "child"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "merge",
+							["name"] = "Btn",
+							["values"] = new JObject { ["caption"] = "merged" }
+						}
+					}
+				}),
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "plain-base-uid", Name = "BasePage",
+					PackageUId = "plain-base-pkg-uid", PackageName = "CrtBase", SchemaVersion = 1, Body = "base"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "MainContainer",
+							["values"] = new JObject { ["type"] = "crt.FlexContainer", ["items"] = new JArray() }
+						},
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "Btn",
+							["parentName"] = "MainContainer",
+							["propertyName"] = "items",
+							["values"] = new JObject { ["type"] = "crt.Button", ["caption"] = "x" }
+						}
+					}
+				})
+		];
+
+		// Act
+		PageBundleInfo aliasResult = builder.Build(aliasChain);
+		PageBundleInfo plainResult = builder.Build(plainChain);
+
+		// Assert
+		aliasResult.ViewConfig[0]!["items"]![0]!["caption"]!.ToString().Should().Be("base",
+			because: "within one chain the alias carries across layers, so its excludeOperations drops the child merge");
+		plainResult.ViewConfig[0]!["items"]![0]!["caption"]!.ToString().Should().Be("merged",
+			because: "each Build call uses a fresh applier, so the first chain's alias must not exclude the second chain's merge");
+	}
+
 	private static IPageBundleBuilder CreateBuilder() {
 		return new PageBundleBuilder();
 	}
