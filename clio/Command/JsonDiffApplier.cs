@@ -8,6 +8,24 @@ using System.Linq;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
+/// View-config diff applier abstraction (<c>viewConfigDiff</c>: <c>name</c> + <c>parentName</c> +
+/// <c>propertyName</c> targeting). Behavior-bearing, so it is resolved through DI rather than constructed
+/// with <c>new</c>. Callers that need a fresh, alias-isolated instance per diff chain inject a
+/// <c>Func&lt;IJsonDiffApplier&gt;</c> factory (see <c>BindingsModule</c>) — the applier retains per-chain
+/// alias state, so instances must not be shared across independent chains.
+/// </summary>
+public interface IJsonDiffApplier {
+	/// <summary>Applies one operation set to a source token (mirrors the client <c>apply</c>).</summary>
+	JToken Apply(JToken sourceObject, JArray operations, JsonApplierOperationsOptions operationsOptions = null);
+
+	/// <summary>Applies an ordered list of per-layer operation sets (mirrors the client <c>applyDiff</c>).</summary>
+	JToken ApplyDiff(
+		JArray sourceObject,
+		IReadOnlyList<JArray> operations,
+		IReadOnlyList<JsonApplierOperationsOptions> operationsOptions = null);
+}
+
+/// <summary>
 /// Faithful C# clone of the Creatio client-side <c>JsonApplierService</c>
 /// (<c>creatio-ui/.../services/json-applier/json-applier.service.ts</c>). It applies a Freedom UI
 /// <c>viewConfigDiff</c>-style operation set (merge / set / insert / move / remove) to a source items tree,
@@ -30,7 +48,7 @@ using Newtonsoft.Json.Linq;
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "1:1 clone of the client TS JsonApplierService — expression mirrors the reference.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "1:1 clone of the client TS JsonApplierService — explicit loops mirror the reference control flow.")]
 [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "1:1 clone of the client TS JsonApplierService — null returns mirror the reference semantics.")]
-public class JsonDiffApplier {
+public class JsonDiffApplier : IJsonDiffApplier {
 
 	private readonly bool _disableApplyMoveIfIndirectParentMoved;
 	private readonly Dictionary<string, ItemInfo> _memoryStore = new(StringComparer.Ordinal);

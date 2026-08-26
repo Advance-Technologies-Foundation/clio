@@ -45,7 +45,7 @@ public sealed class PageGetCommandFileWriterTests {
 		new(_applicationClient, _serviceUrlBuilder, _logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(_applicationClient, _serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			_writer);
 
 	[Test]
