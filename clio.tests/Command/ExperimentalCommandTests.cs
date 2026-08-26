@@ -147,7 +147,7 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 		result.Should().Be(0, because: "enabling a known feature succeeds");
 		_settingsRepository.Received(1).SetFeature("mobile-page-converter", true);
 		// enabling the mobile-page-converter feature must warn the user it activates Beta mode
-		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("Beta mode")));
+		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("BETA MODE")));
 	}
 
 	[Test]
@@ -163,7 +163,7 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 		result.Should().Be(0, because: "disabling a known feature succeeds");
 		_settingsRepository.Received(1).SetFeature("mobile-page-converter", false);
 		// the Beta-mode heads-up is shown only when the feature is turned on, never on disable
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("Beta mode")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("BETA MODE")));
 	}
 
 	[Test]
@@ -178,7 +178,7 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 		// Assert
 		result.Should().Be(0, because: "enabling any feature succeeds");
 		// only features with a registered enable notice emit the Beta-mode heads-up
-		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("Beta mode")));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("BETA MODE")));
 	}
 
 	[Test]
