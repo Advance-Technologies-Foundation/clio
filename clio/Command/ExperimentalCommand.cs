@@ -105,6 +105,11 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 		if (!keyIsKnown) {
 			_logger.WriteWarning($"No command or MCP tool currently references the feature key '{key}'.");
 		}
+		// Some features carry a one-time notice shown only at the moment they are ENABLED (e.g. a Beta-mode
+		// heads-up). Disabling never shows it, and it is keyed case-insensitively like every other key here.
+		if (enable && FeatureEnableNotices.TryGetValue(key, out string enableNotice)) {
+			_logger.WriteWarning(enableNotice);
+		}
 		return 0;
 	}
 
@@ -158,6 +163,16 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	// and `--enable/--disable` does not warn they are unknown. Compared case-insensitively.
 	// Currently empty: the mcp-lazy-tools profile toggle was removed — lazy is now the only tool surface.
 	internal static readonly string[] StandaloneFeatureKeys = [];
+
+	// One-time warnings shown only when a feature is ENABLED (never on disable/list). Keyed
+	// case-insensitively. TEMPORARY: the mobile-page-converter Beta heads-up — remove the entry when the
+	// converter graduates out of Beta.
+	internal static readonly IReadOnlyDictionary<string, string> FeatureEnableNotices =
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["mobile-page-converter"] =
+				"🔔 Heads up! Enabling this feature will activate the agent in **Beta mode**. "
+				+ "Please be aware that behavior may vary and improvements are ongoing.",
+		};
 
 	private static IEnumerable<string> GetKnownFeatureKeys() =>
 		GetGatedTypes()
