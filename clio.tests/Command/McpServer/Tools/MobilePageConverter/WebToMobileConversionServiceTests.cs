@@ -1562,6 +1562,77 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A header action retargeted into a FloatingActionButton that EXISTS on the mobile template is flagged parentExistsOnTemplate:true, so the caller inserts only the child and never recreates the FAB container.")]
+	public void Analyze_Fab_RetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the template retargets it into the FAB");
+		order.ParentExistsOnTemplate.Should().BeTrue(
+			because: "the FAB already exists on the mobile template, so only the child is inserted and the parent is never recreated");
+	}
+
+	[Test]
+	[Description("A header button whose NAME the mobile template already provides natively (e.g. SaveButton on the Scaffold) is DROPPED, not retargeted into the FAB (retargeting would duplicate the native element); a header action with no native equivalent still converts into FloatingActionButton.menuItems.")]
+	public void Analyze_Fab_SourceProvidedNativelyByTemplate_DroppedNotDuplicated() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveButton", "type": "crt.Button", "caption": "#ResourceString(SaveButton_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } },
+				{ "name": "SendForApprovalButton", "type": "crt.Button", "caption": "#ResourceString(SendForApprovalButton_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(
+				("FloatingActionButton", "crt.FloatingActionButton"), ("SaveButton", "crt.Button")));
+
+		// Assert
+		ElementMapEntry save = Element(guide, "SaveButton");
+		save.Operation.Should().Be("drop",
+			because: "the mobile template already provides SaveButton natively, so retargeting it into the FAB would duplicate it");
+		save.Reason.Should().Contain("already provided natively",
+			because: "the drop reason must state why the native-equivalent header button was not retargeted");
+		ElementMapEntry send = Element(guide, "SendForApprovalButton");
+		send.Operation.Should().Be("insert", because: "a header action with no native equivalent still converts");
+		send.ParentName.Should().Be("FloatingActionButton", because: "it is retargeted into the FAB");
+	}
+
+	[Test]
+	[Description("When elementMap retargets into a FloatingActionButton the mobile template already provides, guide.constraints carries an explicit instruction to insert only the children and NOT recreate the parent container.")]
+	public void Analyze_Fab_RetargetParentOnTemplate_ConstraintWarnsAgainstRecreatingParent() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		guide.Constraints.Should().Contain(c => c.Contains("FloatingActionButton") && c.Contains("parentExistsOnTemplate"),
+			because: "the caller must be told the retarget parent already exists and only its children should be inserted");
+	}
+
+	[Test]
 	[Description("A dropdown crt.Button with no clicked of its own is NOT itself a FAB entry, but its nested menuItems are still descended and flattened into FloatingActionButton.menuItems as siblings (no hierarchy) — proving any-depth scope + flatten + the container-without-clicked rule.")]
 	public void Analyze_Fab_DropdownButtonDropped_ItsMenuItemsFlattened() {
 		// Arrange
