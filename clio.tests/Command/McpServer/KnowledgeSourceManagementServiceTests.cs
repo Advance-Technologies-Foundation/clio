@@ -30,7 +30,6 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	private IKnowledgeGitRepositoryReader _gitReader = null!;
 	private MockFileSystem _fileSystem = null!;
 	private ServiceProvider _container = null!;
-	private ServiceProvider? _relaxedContainer;
 	private IKnowledgeSourceManagementService _service = null!;
 	private string _keyDirectory = null!;
 	private string _publicKeyPath = null!;
@@ -81,37 +80,14 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		services.AddSingleton(_gitTransport);
 		services.AddSingleton(_gitReader);
 		services.AddSingleton<System.IO.Abstractions.IFileSystem>(_fileSystem);
-		services.AddSingleton(new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: false));
 		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
 		_container = services.BuildServiceProvider();
 		_service = _container.GetRequiredService<IKnowledgeSourceManagementService>();
 	}
 
-	/// <summary>
-	/// A second service over the same substitutes whose only difference is that
-	/// knowledge-allow-unsequenced is ON, so the relaxed install arm can be exercised against the same
-	/// arrangement as the stock guard.
-	/// </summary>
-	private IKnowledgeSourceManagementService ServiceAllowingUnsequenced() {
-		ServiceCollection services = new();
-		services.AddSingleton(_settings);
-		services.AddSingleton(_store);
-		services.AddSingleton(_runtime);
-		services.AddSingleton<IKnowledgeArtifactTransport>(_transport);
-		services.AddSingleton(_gitTransport);
-		services.AddSingleton(_gitReader);
-		services.AddSingleton<System.IO.Abstractions.IFileSystem>(_fileSystem);
-		services.AddSingleton(new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: true));
-		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
-		_relaxedContainer = services.BuildServiceProvider();
-		return _relaxedContainer.GetRequiredService<IKnowledgeSourceManagementService>();
-	}
-
 	[TearDown]
 	public void TearDown() {
 		_container.Dispose();
-		_relaxedContainer?.Dispose();
-		_relaxedContainer = null;
 		if (Directory.Exists(_keyDirectory)) {
 			Directory.Delete(_keyDirectory, recursive: true);
 		}
@@ -1085,10 +1061,9 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
-	[Description("Flag on: a lower Git sequence is still rejected and rolled back, because anti-rollback is never relaxed.")]
-	public void Update_ShouldRollbackGitCheckout_WhenSequenceRegressesAndUnsequencedAllowed() {
+	[Description("A lower Git sequence is rejected and rolled back even when it was synthesized, because anti-rollback is never relaxed.")]
+	public void Update_ShouldRollbackGitCheckout_WhenSynthesizedSequenceRegresses() {
 		// Arrange
-		IKnowledgeSourceManagementService service = ServiceAllowingUnsequenced();
 		KnowledgeSourceConfiguration source = GitSource("com.example.git");
 		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
 		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
@@ -1120,21 +1095,20 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		});
 
 		// Act
-		KnowledgeSourceBatchResult result = service.Update("git-source");
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "the local-iteration flag relaxes equal-sequence content, never a downgrade");
+			because: "the local-iteration relaxation covers equal-sequence content, never a downgrade");
 		result.Sources.Single().Status.Should().Be("rejected",
 			because: "an accepted downgrade would silently swap the guidance corpus after an upstream force-push");
 		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
 	}
 
 	[Test]
-	[Description("Flag on: a synthesized-sequence Git checkout with edited content installs and reports the relaxation.")]
+	[Description("A synthesized-sequence Git checkout with edited content installs and reports the runtime relaxation advisory.")]
 	public void Update_ShouldInstallGitCheckout_WhenEqualSynthesizedSequenceHasEditedContent() {
 		// Arrange
-		IKnowledgeSourceManagementService service = ServiceAllowingUnsequenced();
 		const string advisory = "content-integrity checking is relaxed for this source.";
 		_runtime.ActivateGitRepository(
 			Arg.Any<string>(),
@@ -1177,7 +1151,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		});
 
 		// Act
-		KnowledgeSourceBatchResult result = service.Update("git-source");
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1188,10 +1162,64 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
-	[Description("Flag on: a producer-declared equal sequence with edited content is still rejected and rolled back.")]
+	[Description("A synthesized equal-sequence candidate the runtime refuses is still rolled back and reported as rejected.")]
+	public void Update_ShouldRollbackGitCheckout_WhenRuntimeRefusesSynthesizedEqualSequence() {
+		// Arrange — IsSequenceRegression waves this candidate through on the marker alone, so the
+		// knowledge-allow-unsequenced decision belongs entirely to the runtime. This pins the claim that
+		// a runtime refusal produces the same outcome the install-side guard would have produced.
+		_runtime.ActivateGitRepository(
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<KnowledgeSourceParticipation>(),
+			Arg.Any<KnowledgeGitRepositorySnapshot>()).Returns(new KnowledgeBundleActivationResult(
+				KnowledgeBundleActivationStatus.Rejected,
+				KnowledgeBundleRejectionCode.InvalidContent,
+				1013021,
+				1013021,
+				"Git candidate sequence 1013021 has different content than the active sequence."));
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		const string nextRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				nextRevision,
+				null,
+				repositoryPath,
+				ResolvedCommit: nextRevision));
+		int reads = 0;
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			reads++;
+			call[2] = GitSnapshot(source.LibraryId) with {
+				Sequence = 1013021,
+				ContentDigest = reads == 2 ? "edited" : "current",
+				SequenceSynthesized = true
+			};
+			call[3] = null;
+			return true;
+		});
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the runtime is the single authority on whether the relaxation applies");
+		result.Sources.Single().Status.Should().Be("rejected",
+			because: "a runtime refusal must be indistinguishable from an install-side refusal to the operator");
+		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
+	}
+
+	[Test]
+	[Description("A producer-declared equal sequence with edited content is rejected and rolled back, never relaxed.")]
 	public void Update_ShouldRollbackGitCheckout_WhenEqualDeclaredSequenceHasEditedContent() {
 		// Arrange
-		IKnowledgeSourceManagementService service = ServiceAllowingUnsequenced();
 		KnowledgeSourceConfiguration source = GitSource("com.example.git");
 		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
 		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
@@ -1220,11 +1248,11 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		});
 
 		// Act
-		KnowledgeSourceBatchResult result = service.Update("git-source");
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "the flag scopes its bypass to synthesized sequences; a declared generation stays immutable");
+			because: "the bypass is scoped to synthesized sequences; a declared generation stays immutable");
 		result.Sources.Single().Status.Should().Be("rejected",
 			because: "rewritten history under a declared sequence is a publisher-contract violation, not an iteration");
 		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);

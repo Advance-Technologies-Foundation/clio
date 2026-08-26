@@ -28,7 +28,6 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeArtifactTransport> _artifactTransports;
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeRepositoryTransport> _repositoryTransports;
 	private readonly IFileSystem _fileSystem;
-	private readonly KnowledgeUnsequencedGitOptions _unsequencedOptions;
 
 	public KnowledgeSourceManagementService(
 		ISettingsRepository settingsRepository,
@@ -37,8 +36,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		IKnowledgeGitRepositoryReader gitReader,
 		IEnumerable<IKnowledgeArtifactTransport> artifactTransports,
 		IEnumerable<IKnowledgeRepositoryTransport> repositoryTransports,
-		IFileSystem fileSystem,
-		KnowledgeUnsequencedGitOptions unsequencedOptions) {
+		IFileSystem fileSystem) {
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_store = store ?? throw new ArgumentNullException(nameof(store));
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -46,7 +44,6 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		_artifactTransports = IndexTransports(artifactTransports);
 		_repositoryTransports = IndexTransports(repositoryTransports);
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
-		_unsequencedOptions = unsequencedOptions ?? throw new ArgumentNullException(nameof(unsequencedOptions));
 	}
 
 	private static IReadOnlyDictionary<KnowledgeSourceType, TTransport> IndexTransports<TTransport>(
@@ -525,8 +522,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return FailedOperation(alias,
 				$"{diagnostic ?? "Git knowledge repository is invalid."} {rollback}".Trim());
 		}
-		if (previousSnapshot is not null && IsSequenceRegression(snapshot, previousSnapshot,
-				_unsequencedOptions.AllowUnsequencedGitBundles)) {
+		if (previousSnapshot is not null && IsSequenceRegression(snapshot, previousSnapshot)) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
 				$"Git knowledge source '{alias}' rejected sequence {snapshot.Sequence}; "
@@ -567,24 +563,30 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	/// <remarks>
 	/// A backwards sequence is a rollback (an upstream force-push to an older revision, say) and is
 	/// refused unconditionally so <c>RollbackRepository</c> restores the previous checkout. The
-	/// same-sequence/different-digest arm is the only one <c>knowledge-allow-unsequenced</c> relaxes,
-	/// and only for a candidate whose sequence this clio synthesized from <c>libraryVersion</c>: such a
-	/// sequence never identified a generation, so re-reading an edited local checkout under an
-	/// unchanged <c>libraryVersion</c> is a legitimate iteration rather than a broken publisher
-	/// contract. A producer-declared sequence keeps the stock guard at either flag setting.
+	/// same-sequence/different-digest arm is skipped only for a candidate carrying
+	/// <see cref="KnowledgeGitRepositorySnapshot.SequenceSynthesized"/>: such a sequence never identified
+	/// a generation, so re-reading an edited local checkout under an unchanged <c>libraryVersion</c> is a
+	/// legitimate iteration rather than a broken publisher contract. A producer-declared sequence keeps
+	/// the stock guard.
+	/// <para>
+	/// The <c>knowledge-allow-unsequenced</c> flag is deliberately NOT read here. The marker can only be
+	/// set by <see cref="KnowledgeGitRepositoryReader"/> under that flag, and
+	/// <see cref="IKnowledgeBundleRuntime.ActivateGitRepository"/> — which does read it — runs
+	/// immediately after this check and refuses the same candidate when the flag is off. That refusal
+	/// takes the activation-rejected branch below, which rolls the checkout back and reports the same
+	/// <c>rejected</c> status, so the flag stays authoritative in exactly one place.
+	/// </para>
 	/// </remarks>
 	/// <param name="snapshot">The freshly read candidate.</param>
 	/// <param name="previousSnapshot">The snapshot validated before synchronization.</param>
-	/// <param name="allowUnsequencedGitBundles">The <c>knowledge-allow-unsequenced</c> flag state.</param>
 	/// <returns><see langword="true"/> when the candidate must be refused and rolled back.</returns>
 	private static bool IsSequenceRegression(
 		KnowledgeGitRepositorySnapshot snapshot,
-		KnowledgeGitRepositorySnapshot previousSnapshot,
-		bool allowUnsequencedGitBundles) =>
+		KnowledgeGitRepositorySnapshot previousSnapshot) =>
 		snapshot.Sequence < previousSnapshot.Sequence
 		|| (snapshot.Sequence == previousSnapshot.Sequence
 			&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest, StringComparison.Ordinal)
-			&& !(allowUnsequencedGitBundles && snapshot.SequenceSynthesized));
+			&& !snapshot.SequenceSynthesized);
 
 	/// <summary>
 	/// Maps a Git synchronization outcome to the reported lifecycle status. A refused synchronization
