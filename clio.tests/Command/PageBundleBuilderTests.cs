@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -438,6 +440,64 @@ public sealed class PageBundleBuilderTests {
 			because: "within one chain the alias carries across layers, so its excludeOperations drops the child merge");
 		plainResult.ViewConfig[0]!["items"]![0]!["caption"]!.ToString().Should().Be("merged",
 			because: "each Build call uses a fresh applier, so the first chain's alias must not exclude the second chain's merge");
+	}
+
+	[Test]
+	[Description("Build surfaces a JsonDiffApplierException (not a bare InvalidCastException) when the view-config applier returns a non-array token, so the guarded cast keeps the failure inside the type the get-page / business-rule callers catch.")]
+	public void Build_WhenViewConfigApplierReturnsNonArray_ThrowsNamingExpectedType() {
+		// Arrange
+		IJsonDiffApplier viewApplier = Substitute.For<IJsonDiffApplier>();
+		viewApplier.ApplyDiff(Arg.Any<JArray>(), Arg.Any<IReadOnlyList<JArray>>(), Arg.Any<IReadOnlyList<JsonApplierOperationsOptions>>())
+			.Returns(new JObject());
+		IPageBundleBuilder builder = new PageBundleBuilder(() => viewApplier, () => Substitute.For<IJsonPathDiffApplier>());
+		List<PageSchemaBundlePart> parts = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "u", Name = "UsrPage", PackageUId = "p", PackageName = "UsrPage", SchemaVersion = 1, Body = "b"
+				},
+				new PageParsedSchemaBody())
+		];
+
+		// Act
+		Action act = () => builder.Build(parts);
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>()
+			.WithMessage("*view config*JArray*",
+				because: "an unexpected view-config token must surface as the handled exception type naming the expected shape, not a bare InvalidCastException");
+	}
+
+	[Test]
+	[Description("BuildConfig surfaces a JsonDiffApplierException when the path applier returns a non-object token for a config diff, keeping the guarded cast failure inside the handled type.")]
+	public void Build_WhenPathApplierReturnsNonObject_ThrowsNamingExpectedType() {
+		// Arrange — the view applier resolves fine (empty array) so execution reaches BuildConfig, where the path
+		// applier returns a non-object for a non-empty view-model diff.
+		IJsonDiffApplier viewApplier = Substitute.For<IJsonDiffApplier>();
+		viewApplier.ApplyDiff(Arg.Any<JArray>(), Arg.Any<IReadOnlyList<JArray>>(), Arg.Any<IReadOnlyList<JsonApplierOperationsOptions>>())
+			.Returns(new JArray());
+		IJsonPathDiffApplier pathApplier = Substitute.For<IJsonPathDiffApplier>();
+		pathApplier.Apply(Arg.Any<JToken>(), Arg.Any<JArray>(), Arg.Any<JsonApplierOperationsOptions>())
+			.Returns(new JArray());
+		IPageBundleBuilder builder = new PageBundleBuilder(() => viewApplier, () => pathApplier);
+		List<PageSchemaBundlePart> parts = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "u", Name = "UsrPage", PackageUId = "p", PackageName = "UsrPage", SchemaVersion = 1, Body = "b"
+				},
+				new PageParsedSchemaBody {
+					ViewModelConfigDiff = new JArray {
+						new JObject { ["operation"] = "merge", ["path"] = new JArray(), ["values"] = new JObject() }
+					}
+				})
+		];
+
+		// Act
+		Action act = () => builder.Build(parts);
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>()
+			.WithMessage("*config*JObject*",
+				because: "an unexpected config token must surface as the handled exception type naming the expected shape");
 	}
 
 	private static IPageBundleBuilder CreateBuilder() {
