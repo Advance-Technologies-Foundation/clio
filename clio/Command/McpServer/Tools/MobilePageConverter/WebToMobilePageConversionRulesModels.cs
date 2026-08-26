@@ -346,6 +346,11 @@ public sealed class EmptyContainerRemovalRule {
 /// another filter entry, never a code change.
 /// </summary>
 public sealed class ExcludedComponentGroup {
+	/// <summary>
+	/// The group's filters, applied in file order. A component is removed when ANY filter of ANY group matches
+	/// it, so grouping carries no matching semantics at all — it exists only so a rules file can keep related
+	/// exclusions together and annotate them as a set. A single group holding every filter behaves identically.
+	/// </summary>
 	[JsonPropertyName("filters")]
 	public IReadOnlyList<ExcludedComponentFilterRule> Filters { get; init; } = [];
 }

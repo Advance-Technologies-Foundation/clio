@@ -1491,14 +1491,16 @@ public static class WebToMobileAnalysisService {
 	/// Returns the source page's merged viewModelConfig filtered for mobile: an attribute is removed only
 	/// when EVERY component that references it (via a <c>$Attr</c> binding) was dropped from the mobile
 	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
-	/// consumer, are kept. A container the EMPTY-container pass removed (<paramref name="emptyRemovedNames"/>)
-	/// is deliberately NOT counted as dropped here: that removal is layout cleanup, and the agreed scope
-	/// keeps the attributes it referenced (e.g. a bound <c>visible</c>) untouched. All other
-	/// viewModelConfig sections are passed through unchanged.
+	/// consumer, are kept. An element either LAYOUT-CLEANUP pass removed
+	/// (<paramref name="layoutRemovedNames"/>) is deliberately NOT counted as dropped here — a container the
+	/// empty-container pass removed, or a component an <c>excludedComponents</c> rule banned from its host:
+	/// both are layout cleanup, and the agreed scope keeps the attributes they referenced (e.g. a bound
+	/// <c>visible</c>) untouched. Only a GENUINE drop — an unsupported type, an unsupported button request —
+	/// takes its attributes with it. All other viewModelConfig sections are passed through unchanged.
 	/// </summary>
 	private static JsonNode BuildMobileViewModelConfig(
 		PageBundleInfo bundle, JArray tree, List<ElementMapEntry> elementMap,
-		IReadOnlySet<string> emptyRemovedNames = null) {
+		IReadOnlySet<string> layoutRemovedNames = null) {
 		if (bundle.ViewModelConfig is not { Count: > 0 }) {
 			return null;
 		}
@@ -1515,8 +1517,8 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.WebName)
 					.Where(n => !string.IsNullOrEmpty(n)),
 				StringComparer.OrdinalIgnoreCase);
-			if (emptyRemovedNames is { Count: > 0 }) {
-				dropped.ExceptWith(emptyRemovedNames);
+			if (layoutRemovedNames is { Count: > 0 }) {
+				dropped.ExceptWith(layoutRemovedNames);
 			}
 			Dictionary<string, HashSet<string>> consumers = BuildAttrConsumers(tree);
 			// Attributes referenced by any SURVIVING element-map entry's prebuilt MobileValues are ALWAYS kept, even

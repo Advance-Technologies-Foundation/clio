@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -82,6 +84,10 @@ public sealed class WebToMobileRealPageRegressionTests {
 				+ "acceptance criterion by accident and hide the rule regressing");
 		searchFilters.Should().OnlyContain(e => e.Reason!.Contains("crt.ExpansionPanel") && e.Reason.Contains("tools"),
 			because: "the reason names the host and the slot so a reader can trace the drop back to the rules file");
+		VerbatimCarriersOfSearchFilter(guide).Should().BeEmpty(
+			because: "the acceptance criterion is about the CANVAS, not the report: a drop entry plus a verbatim "
+				+ "copy still inside a surviving host's mobileValues is exactly the shape that kept rendering the "
+				+ "search on mobile, so the artifact has to be checked and not only the verdict");
 	}
 
 	[Test]
@@ -93,7 +99,7 @@ public sealed class WebToMobileRealPageRegressionTests {
 
 		// Act
 		MobilePageConversionGuide withRule = Convert(fixture, mobileTypes, BundledRules());
-		MobilePageConversionGuide without = Convert(fixture, mobileTypes, WithoutExcludedComponents(BundledRules()));
+		MobilePageConversionGuide without = Convert(fixture, mobileTypes, WithoutExcludedComponents());
 
 		// Assert
 		IReadOnlyList<string> changed = OperationDifferences(without, withRule);
@@ -127,12 +133,9 @@ public sealed class WebToMobileRealPageRegressionTests {
 		// Assert
 		SearchFilterEntries(guide).Should().OnlyContain(e => e.Operation == "drop",
 			because: "an unsupported type is dropped by the converter regardless of any exclusion rule");
-		guide.ElementMap
-			.Where(e => e.MobileValues is not null
-				&& e.MobileValues.ToJsonString().Contains("crt.SearchFilter", StringComparison.Ordinal))
-			.Should().BeEmpty(
-				because: "a dropped component must not survive as a node carried verbatim inside a surviving "
-					+ "host's values — that is the shape that would still render it on the canvas");
+		VerbatimCarriersOfSearchFilter(guide).Should().BeEmpty(
+			because: "a dropped component must not survive as a node carried verbatim inside a surviving "
+				+ "host's values — that is the shape that would still render it on the canvas");
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -146,20 +149,44 @@ public sealed class WebToMobileRealPageRegressionTests {
 	private static WebToMobilePageConversionRules BundledRules() =>
 		WebToMobilePageConversionRulesCatalog.LoadBundled();
 
-	/// <summary>The same rules with only the <c>excludedComponents</c> section emptied, for the A/B comparison.</summary>
-	private static WebToMobilePageConversionRules WithoutExcludedComponents(WebToMobilePageConversionRules rules) =>
-		new() {
-			Version = rules.Version,
-			Components = rules.Components,
-			Requests = rules.Requests,
-			Templates = rules.Templates,
-			EmptyContainerRemoval = rules.EmptyContainerRemoval,
-			TabAreaLayers = rules.TabAreaLayers,
-			ComponentPropertyOverrides = rules.ComponentPropertyOverrides,
-			NonConvertingScopeContainers = rules.NonConvertingScopeContainers,
-			Extensions = rules.Extensions,
-			ExcludedComponents = []
-		};
+	/// <summary>
+	/// The bundled rules with ONLY the <c>excludedComponents</c> section emptied, for the A/B baseline.
+	/// Built by editing the bundled JSON and re-parsing it through the production parser, deliberately NOT by
+	/// copying properties onto a new <see cref="WebToMobilePageConversionRules"/>: a hand-copied baseline
+	/// silently loses any property added to that class later, and the A/B would then compare two rule sets
+	/// that differ in more than the one section under test — while staying green, which is the worst kind of
+	/// wrong. Re-parsing is immune by construction, because the parser is the same one production uses.
+	/// </summary>
+	private static WebToMobilePageConversionRules WithoutExcludedComponents() {
+		JsonObject rules = JsonNode.Parse(BundledRulesJson())!.AsObject();
+		rules.ContainsKey("excludedComponents").Should().BeTrue(
+			because: "the baseline is defined as 'the shipped rules minus this section' — if the section is not "
+				+ "there under this name, the A/B below compares a rule set against itself and proves nothing");
+		rules["excludedComponents"] = new JsonArray();
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(rules.ToJsonString()));
+		WebToMobilePageConversionRules parsed = WebToMobilePageConversionRulesCatalog.ParseStream(stream);
+		parsed.ExcludedComponents.Should().BeEmpty(
+			because: "the baseline must genuinely carry no exclusion, or the comparison is between two identical runs");
+		return parsed;
+	}
+
+	/// <summary>The bundled rules file as shipped, read from the assembly the production catalog reads it from.</summary>
+	private static string BundledRulesJson() {
+		Assembly assembly = typeof(WebToMobileAnalysisService).Assembly;
+		string resourceName = assembly.GetManifestResourceNames()
+			.Single(name => name.EndsWith("WebToMobilePageConversionRules.json", StringComparison.OrdinalIgnoreCase));
+		using Stream stream = assembly.GetManifestResourceStream(resourceName)!;
+		using var reader = new StreamReader(stream, Encoding.UTF8);
+		return reader.ReadToEnd();
+	}
+
+	/// <summary>Surviving entries whose prebuilt <c>mobileValues</c> still carry a <c>crt.SearchFilter</c> node.</summary>
+	private static IReadOnlyList<string> VerbatimCarriersOfSearchFilter(MobilePageConversionGuide guide) =>
+		guide.ElementMap
+			.Where(e => e.MobileValues is not null
+				&& e.MobileValues.ToJsonString().Contains("crt.SearchFilter", StringComparison.Ordinal))
+			.Select(e => e.MobileName ?? e.WebName ?? "<unnamed>")
+			.ToList();
 
 	private static MobilePageConversionGuide Convert(
 		JsonObject fixture, IReadOnlySet<string> mobileTypes, WebToMobilePageConversionRules rules) {

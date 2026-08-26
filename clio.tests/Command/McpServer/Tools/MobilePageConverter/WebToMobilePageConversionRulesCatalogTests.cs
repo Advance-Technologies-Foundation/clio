@@ -263,9 +263,12 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(JsonStream(json));
 
 		ExcludedComponentFilterRule filter = rules.ExcludedComponents.Single().Filters.Single();
-		filter.Type.Should().Be("crt.SearchFilter");
-		filter.ParentType.Should().Be("crt.ExpansionPanel");
-		filter.PropertiesContainerName.Should().Be("tools");
+		filter.Type.Should().Be("crt.SearchFilter",
+			because: "the banned type must survive parsing verbatim — the pass matches on this string");
+		filter.ParentType.Should().Be("crt.ExpansionPanel",
+			because: "the host type is what scopes the search; losing it would widen the ban to the whole page");
+		filter.PropertiesContainerName.Should().Be("tools",
+			because: "the optional slot must bind when present — dropping it would widen the ban to the host's other properties");
 	}
 
 	[Test]
