@@ -14,11 +14,15 @@ namespace Clio.Command;
 /// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states what THIS command's code needs: the email block shipped in 1.2.0.1 and the
-// approval block in the 1.4.0.0 bundle, and an older server has no such member — it silently discards
-// the block while answering success. Presence alone cannot express that. The guard fixture asserts
-// the shipped archive satisfies this literal, so clio can never demand a version it does not carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.0",
+// The version literal states the FLOOR this command cannot work below at all — the email block, which
+// shipped in 1.2.0.1. It deliberately does NOT track every later block: a class-level requirement is
+// enforced on EVERY invocation, so raising it would refuse create/modify outright on an environment one
+// version behind, even for a descriptor that uses none of the newer blocks. changeData (1.3.0.0) and the
+// approval block (1.4.0.0) therefore leave it alone and rely on the behavioural guards
+// (EmailBlockExpectation / ApprovalBlockExpectation), which detect a silently discarded block from the
+// read-back and warn, instead of locking everyone out. The guard fixture asserts the shipped archive
+// satisfies this literal, so clio can never demand a version it does not carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
