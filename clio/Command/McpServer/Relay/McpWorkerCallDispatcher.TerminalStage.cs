@@ -109,6 +109,71 @@ public sealed partial class McpWorkerCallDispatcher {
 		return DefaultStageEventSilenceBound;
 	}
 
+	// Spawns the contained worker for the terminal-stage protocol, translating a saturated queue or a
+	// spawn-time failure into the same named-error envelopes the ordinary per-call path uses. Returns the
+	// lease with a null result on success, or a null lease with the result to return on failure — nothing
+	// was spawned in the failure case, so there is nothing for the caller to kill or dispose.
+	private async Task<(IWorkerLease Lease, CallToolResult Failure)> SpawnLeaseAsync(
+		string toolName, WorkerSpawnRequest spawnRequest, CancellationToken cancellationToken) {
+		try {
+			IWorkerLease lease =
+				await _supervisor.SpawnContainedAsync(spawnRequest, cancellationToken).ConfigureAwait(false);
+			return (lease, null);
+		}
+		catch (OperationCanceledException) {
+			throw;
+		}
+		catch (WorkerQueueWaitExpiredException exception) {
+			// Saturation, not a defect. Same reasoning as the per-call path: "the worker process could not
+			// be started" sends an agent hunting a clio bug when the host is simply at its cap, and throws
+			// away the numbers R-10 promises. Round 4 fixed only the per-call branch; this is the rest of
+			// the same fix.
+			_logger.WriteWarning($"MCP worker for '{toolName}' was not started: {exception.Message}");
+			return (null, WorkerSaturationResult(toolName, exception));
+		}
+		catch (Exception exception) {
+			// Nothing was spawned, so nothing was deployed: this is a plain relay failure and must NOT be
+			// reported as indeterminate, which would send an operator to inspect an environment clio never
+			// touched.
+			_logger.WriteWarning(
+				$"MCP worker for '{toolName}' could not be started: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			return (null,
+				RelayFailureResult(toolName, "the worker process could not be started", exception.Message, null));
+		}
+	}
+
+	// The HANDSHAKE is bounded, and it is the only part of the call that is. A child that never completes
+	// `initialize` has not started the operation, so bounding it cannot half-install anything; leaving it
+	// unbounded would hang the call before the stage stream exists to bound it. Returns the open session
+	// with a null result on success, or a null session with the result to return on failure — the worker
+	// has already been killed in the failure case.
+	private async Task<(WorkerRelaySession Session, CallToolResult Failure)> OpenRelaySessionAsync(
+		string toolName, IWorkerLease lease, IParentMcpSession parentSession, WorkerRelayOptions relayOptions,
+		WorkerStandardErrorDrain standardError, CancellationToken cancellationToken) {
+		try {
+			using CancellationTokenSource handshakeSource =
+				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			handshakeSource.CancelAfter(_stageEventSilenceBound);
+			ITransport childTransport = await _transportOwner
+				.ConnectAsync(lease.StandardInput, lease.StandardOutput, handshakeSource.Token)
+				.ConfigureAwait(false);
+			WorkerRelaySession session = await _relay
+				.OpenAsync(childTransport, parentSession, relayOptions, handshakeSource.Token)
+				.ConfigureAwait(false);
+			return (session, null);
+		}
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+			KillQuietly(lease, toolName);
+			_logger.WriteWarning(
+				$"MCP worker for '{toolName}' (pid {lease.ProcessId}) did not complete its handshake within "
+				+ $"{FormatSeconds(_stageEventSilenceBound)} s and was killed before the operation started.");
+			return (null, RelayFailureResult(toolName,
+				"the worker did not complete its MCP handshake, so the operation never started",
+				detail: null, standardError.Tail()));
+		}
+	}
+
 	/// <summary>
 	/// Runs one call of the deploy/uninstall family in a worker, bounded by ADR §3.3 rather than by the
 	/// ordinary kill budget.
@@ -133,29 +198,10 @@ public sealed partial class McpWorkerCallDispatcher {
 		// bounds the live-locked case instead.
 		WorkerSpawnRequest spawnRequest = ComposeSpawnRequest(childEnvironment, _stageEventSilenceBound);
 
-		IWorkerLease lease;
-		try {
-			lease = await _supervisor.SpawnContainedAsync(spawnRequest, cancellationToken).ConfigureAwait(false);
-		}
-		catch (OperationCanceledException) {
-			throw;
-		}
-		catch (WorkerQueueWaitExpiredException exception) {
-			// Saturation, not a defect. Same reasoning as the per-call path: "the worker process could not
-			// be started" sends an agent hunting a clio bug when the host is simply at its cap, and throws
-			// away the numbers R-10 promises. Round 4 fixed only the per-call branch; this is the rest of
-			// the same fix.
-			_logger.WriteWarning($"MCP worker for '{toolName}' was not started: {exception.Message}");
-			return WorkerSaturationResult(toolName, exception);
-		}
-		catch (Exception exception) {
-			// Nothing was spawned, so nothing was deployed: this is a plain relay failure and must NOT be
-			// reported as indeterminate, which would send an operator to inspect an environment clio never
-			// touched.
-			_logger.WriteWarning(
-				$"MCP worker for '{toolName}' could not be started: "
-				+ SensitiveErrorTextRedactor.Redact(exception.Message));
-			return RelayFailureResult(toolName, "the worker process could not be started", exception.Message, null);
+		(IWorkerLease lease, CallToolResult spawnFailure) =
+			await SpawnLeaseAsync(toolName, spawnRequest, cancellationToken).ConfigureAwait(false);
+		if (spawnFailure is not null) {
+			return spawnFailure;
 		}
 
 		WorkerStandardErrorDrain standardError = new(lease.StandardError, StandardErrorTailLimit);
@@ -178,28 +224,11 @@ public sealed partial class McpWorkerCallDispatcher {
 		Task<CallToolResult> call = null;
 		CancellationTokenSource callSource = null;
 		try {
-			try {
-				// The HANDSHAKE is bounded, and it is the only part of this call that is. A child that never
-				// completes `initialize` has not started the operation, so bounding it cannot half-install
-				// anything; leaving it unbounded would hang the call before the stage stream exists to bound it.
-				using CancellationTokenSource handshakeSource =
-					CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-				handshakeSource.CancelAfter(_stageEventSilenceBound);
-				ITransport childTransport = await _transportOwner
-					.ConnectAsync(lease.StandardInput, lease.StandardOutput, handshakeSource.Token)
-					.ConfigureAwait(false);
-				session = await _relay
-					.OpenAsync(childTransport, parentSession, relayOptions, handshakeSource.Token)
-					.ConfigureAwait(false);
-			}
-			catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-				KillQuietly(lease, toolName);
-				_logger.WriteWarning(
-					$"MCP worker for '{toolName}' (pid {lease.ProcessId}) did not complete its handshake within "
-					+ $"{FormatSeconds(_stageEventSilenceBound)} s and was killed before the operation started.");
-				return RelayFailureResult(toolName,
-					"the worker did not complete its MCP handshake, so the operation never started",
-					detail: null, standardError.Tail());
+			CallToolResult handshakeFailure;
+			(session, handshakeFailure) = await OpenRelaySessionAsync(
+				toolName, lease, parentSession, relayOptions, standardError, cancellationToken).ConfigureAwait(false);
+			if (handshakeFailure is not null) {
+				return handshakeFailure;
 			}
 
 			CallToolRequestParams childParameters = WithoutParentSessionMetadata(parameters);
@@ -402,27 +431,34 @@ public sealed partial class McpWorkerCallDispatcher {
 					? TerminalStageWaitOutcome.ExitGraceExpired
 					: TerminalStageWaitOutcome.SilenceExpired;
 			}
-			using CancellationTokenSource interval =
-				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-			Task expiry = Task.Delay(remaining, interval.Token);
-			Task finished = terminalObserved
-				? await Task.WhenAny(call, expiry).ConfigureAwait(false)
-				: await Task.WhenAny(call, expiry, watch.TerminalReached).ConfigureAwait(false);
-			// The timer is cancelled and then OBSERVED rather than left to expire: one live timer per
-			// iteration of a 300 s wait is a leak in a path that may run for an hour.
-			await interval.CancelAsync().ConfigureAwait(false);
-			try {
-				await expiry.ConfigureAwait(false);
-			}
-			catch (OperationCanceledException) {
-				// Cancelling the interval is how it is stopped; awaiting it here is only how that is observed.
-			}
-			if (ReferenceEquals(finished, call)) {
+			if (await WaitForCallOrSignalAsync(call, watch, terminalObserved, remaining, cancellationToken)
+				.ConfigureAwait(false)) {
 				return TerminalStageWaitOutcome.Answered;
 			}
 			// Either the interval expired — and a stage event may have moved the deadline out since it was
 			// computed — or the terminal event just arrived. Both are answered by recomputing.
 		}
+	}
+
+	// Waits for the call to answer, the computed interval to expire, or (before the terminal event) the
+	// watch's terminal-reached signal — whichever comes first — and returns whether the CALL was the one
+	// that finished. The interval timer is cancelled and then OBSERVED rather than left to expire: one
+	// live timer per iteration of a 300 s wait is a leak in a path that may run for an hour.
+	private static async Task<bool> WaitForCallOrSignalAsync(Task<CallToolResult> call, TerminalStageWatch watch,
+		bool terminalObserved, TimeSpan remaining, CancellationToken cancellationToken) {
+		using CancellationTokenSource interval = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		Task expiry = Task.Delay(remaining, interval.Token);
+		Task finished = terminalObserved
+			? await Task.WhenAny(call, expiry).ConfigureAwait(false)
+			: await Task.WhenAny(call, expiry, watch.TerminalReached).ConfigureAwait(false);
+		await interval.CancelAsync().ConfigureAwait(false);
+		try {
+			await expiry.ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) {
+			// Cancelling the interval is how it is stopped; awaiting it here is only how that is observed.
+		}
+		return ReferenceEquals(finished, call);
 	}
 
 	/// <summary>
