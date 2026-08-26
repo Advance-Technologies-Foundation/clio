@@ -523,6 +523,409 @@ public sealed class McpToolErrorFilterTests
 		return context;
 	}
 
+	// ---------------------------------------------------------------------------------------------
+	// ENG-95885 — flat-argument classification matrix.
+	// Every branch of the classifier has a case here, and the two ways this change can go wrong are
+	// both pinned: (a) a canonical flat payload that never reaches the tool, and (b) a normalizer that
+	// turns a validation error into a plausible-but-wrong success, or fights clio-run for the payload.
+	// ---------------------------------------------------------------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("T1: a canonical flat payload on a single-composite-args tool is rewritten to the wrapped shape and forwarded, with EVERY top-level key moved inside the wrapper (ENG-95885 R1).")]
+	public async Task Normalization_ShouldWrapAllTopLevelKeys_WhenPayloadIsCanonicalFlat() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonSerializer.SerializeToElement("local"),
+				["filter"] = JsonSerializer.SerializeToElement("some-filter")
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "a canonical flat payload is a valid call, not a caller error");
+		forwardedParams.Should().NotBeNull(because: "the call must reach the next handler, not be short-circuited");
+		forwardedParams!.Arguments.Should().ContainSingle(because: "the whole payload collapses into one wrapper key")
+			.Which.Key.Should().Be("args");
+		JsonElement wrapped = forwardedParams.Arguments!["args"];
+		wrapped.ValueKind.Should().Be(JsonValueKind.Object);
+		wrapped.GetProperty("environment-name").GetString().Should().Be("local");
+		wrapped.GetProperty("filter").GetString().Should().Be("some-filter",
+			because: "every top-level key moves into the wrapper — cherry-picking only the matched keys would "
+				+ "silently drop a co-present field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T2: an already-wrapped payload passes through the filter unchanged — no rewrite, no hint, no error (ENG-95885 R1).")]
+	public async Task Normalization_ShouldLeavePayloadUntouched_WhenAlreadyWrapped() {
+		// Arrange
+		JsonElement originalWrapper = JsonSerializer.SerializeToElement(
+			new Dictionary<string, string> { ["environment-name"] = "local" });
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> { ["args"] = originalWrapper });
+		context.MatchedPrimitive = CreateRealTool();
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		forwardedParams!.Arguments.Should().ContainSingle().Which.Key.Should().Be("args");
+		forwardedParams.Arguments!["args"].GetProperty("environment-name").GetString().Should().Be("local",
+			because: "the working wrapped shape must stay byte-compatible — it must not be re-wrapped or rebuilt");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T3: an unknown-only payload against an args record with no [JsonExtensionData] overflow bag is refused with the canonical field list, and never reaches the tool with a defaulted record (ENG-95885 R2).")]
+	public async Task Normalization_ShouldRefuseUnknownOnlyPayload_WhenArgsRecordHasNoOverflowBucket() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["enviroment"] = JsonSerializer.SerializeToElement("local")
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		bool reachedTool = false;
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => {
+				reachedTool = true;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		reachedTool.Should().BeFalse(
+			because: "wrapping an unknown-only payload into a record with no overflow bag would materialize "
+				+ "defaults and let the tool answer a validation mistake with a plausible list/default success");
+		result.IsError.Should().BeTrue();
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("enviroment", because: "the offending key must be named");
+		text.Should().Contain("\"environment-name\"", because: "the canonical field list must be offered");
+		text.Should().Contain("\"filter\"", because: "every valid field is listed, not only the nearest match");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T4: a hybrid payload carrying both a wrapper object and a conflicting top-level key is refused as an ambiguous shape, with no silent precedence in either direction (ENG-95885 R4).")]
+	public async Task Normalization_ShouldRefuseHybridPayload_WhenWrapperAndTopLevelKeyBothPresent() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["args"] = JsonSerializer.SerializeToElement(
+					new Dictionary<string, string> { ["environment-name"] = "from-wrapper" }),
+				["environment-name"] = JsonSerializer.SerializeToElement("from-top-level")
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		bool reachedTool = false;
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => {
+				reachedTool = true;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		reachedTool.Should().BeFalse(because: "an ambiguous shape must be refused, not resolved by guessing");
+		result.IsError.Should().BeTrue();
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("ambiguous");
+		text.Should().NotContain("from-wrapper", because: "neither candidate value may be silently chosen");
+		text.Should().NotContain("from-top-level", because: "neither candidate value may be silently chosen");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T5a: a multi-parameter tool (the clio-run shape: command plus args) is excluded from normalization, so ClioRunExecutor.RecoverWrappedCall keeps sole ownership of clio-run recovery (ENG-95885 R4).")]
+	public async Task Normalization_ShouldNotFire_WhenToolHasMultipleBindableParameters() {
+		// Arrange
+		Dictionary<string, JsonElement> arguments = new() {
+			["command"] = JsonSerializer.SerializeToElement("sync-schemas"),
+			["environment-name"] = JsonSerializer.SerializeToElement("local")
+		};
+		RequestContext<CallToolRequestParams> context = CreateContext("clio-run", arguments);
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeMultiParameterTool).GetMethod(
+				nameof(FakeMultiParameterTool.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeMultiParameterTool());
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		forwardedParams!.Arguments.Should().BeSameAs(arguments,
+			because: "a multi-parameter tool binds top-level keys BY PARAMETER NAME, so its payload must "
+				+ "never be rewritten — two mechanisms fighting over the same object is the failure mode here");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T5b: a single-SCALAR-parameter tool is excluded from normalization, because its top-level key is already the parameter name (ENG-95885 R4).")]
+	public async Task Normalization_ShouldNotFire_WhenSingleParameterIsScalar() {
+		// Arrange
+		Dictionary<string, JsonElement> arguments = new() {
+			["value"] = JsonSerializer.SerializeToElement("plain")
+		};
+		RequestContext<CallToolRequestParams> context = CreateContext("scalar-tool", arguments);
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithStringArg).GetMethod(
+				nameof(FakeToolWithStringArg.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithStringArg());
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		forwardedParams!.Arguments.Should().BeSameAs(arguments,
+			because: "a scalar parameter is bound by name from the top level, so there is nothing to wrap");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T6a: an empty payload is accepted for a tool that has declared no-arguments capability — the empty wrapper is synthesized so the SDK can bind the record (ENG-95885 R3).")]
+	public async Task Normalization_ShouldSynthesizeEmptyWrapper_WhenToolDeclaresNoArgumentsCapability() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-no-args-tool", new Dictionary<string, JsonElement>());
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeNoArgumentsTool).GetMethod(
+				nameof(FakeNoArgumentsTool.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeNoArgumentsTool());
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		forwardedParams!.Arguments.Should().ContainSingle().Which.Key.Should().Be("args");
+		forwardedParams.Arguments!["args"].ValueKind.Should().Be(JsonValueKind.Object,
+			because: "an empty args object is what the SDK needs to bind the record for a no-arguments call");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T6b: an empty payload is left exactly as it is for a tool that has NOT declared no-arguments capability, so today's missing-parameter error is preserved — the capability is fail-closed (ENG-95885 R3).")]
+	public async Task Normalization_ShouldLeaveEmptyPayloadUntouched_WhenToolDidNotDeclareCapability() {
+		// Arrange
+		Dictionary<string, JsonElement> arguments = new();
+		RequestContext<CallToolRequestParams> context = CreateContext("list-apps", arguments);
+		context.MatchedPrimitive = CreateRealTool();
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		forwardedParams!.Arguments.Should().BeSameAs(arguments,
+			because: "capability is declared explicitly, never inferred — an undeclared tool keeps its current "
+				+ "missing-parameter behavior");
+		forwardedParams.Arguments.Should().BeEmpty();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T7: a canonical flat payload carrying a wrong JSON value type still returns the precise per-argument deserialization error after normalization, rather than falling into the generic exception handler (ENG-95885 R6).")]
+	public async Task Normalization_ShouldStillYieldPreciseDeserializationError_WhenFlatValueHasWrongType() {
+		// Arrange — 'count' is a canonical property, but an int cannot bind from a string
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"typed-tool", new Dictionary<string, JsonElement> {
+				["count"] = JsonSerializer.SerializeToElement("not-a-number")
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithTypedArgs).GetMethod(
+				nameof(FakeToolWithTypedArgs.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithTypedArgs());
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue();
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("invalid-parameter-type",
+			because: "the deserialization preflight must run over the REWRITTEN arguments, so the "
+				+ "contracted per-argument diagnostic survives normalization");
+		text.Should().Contain("'count'",
+			because: "the preflight binds the rewritten wrapper, so it names the flat key that could not "
+				+ "bind rather than reporting the wrapper generically");
+		text.Should().NotContain("failed:",
+			because: "a binding problem must not degrade into the generic tool-failure message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("T8: normalization replaces Arguments on the SAME Params instance, so Params identity, _meta and the progress token survive — building a new CallToolRequestParams would break notifications/progress and the _meta.clioStageEvent stream (ENG-95885 R6).")]
+	public async Task Normalization_ShouldPreserveParamsIdentityAndTransportMetadata_WhenRewritingArguments() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"list-apps", new Dictionary<string, JsonElement> {
+				["environment-name"] = JsonSerializer.SerializeToElement("local")
+			});
+		context.MatchedPrimitive = CreateRealTool();
+		CallToolRequestParams originalParams = context.Params!;
+		// ProgressToken is a projection of _meta, so seeding _meta covers both: if normalization rebuilt
+		// the params object, the token and the stage-event marker would both vanish.
+		originalParams.Meta = new System.Text.Json.Nodes.JsonObject {
+			["progressToken"] = "progress-123",
+			["clioStageEvent"] = "stage-marker"
+		};
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		await handler(context, CancellationToken.None);
+
+		// Assert
+		forwardedParams.Should().BeSameAs(originalParams,
+			because: "Arguments is replaced on the existing instance; a fresh params object would drop transport metadata");
+		forwardedParams!.ProgressToken.Should().NotBeNull(
+			because: "a long-running tool still has to emit notifications/progress after normalization");
+		forwardedParams.ProgressToken.ToString().Should().Contain("progress-123");
+		forwardedParams.Meta.Should().NotBeNull(because: "_meta carries the clioStageEvent stream ClioRing consumes");
+		forwardedParams.Meta!["clioStageEvent"]!.GetValue<string>().Should().Be("stage-marker");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unknown-only payload IS forwarded when the tool has explicitly declared that it recovers unknown arguments itself, so get-tool-contract's flat name-only call reaches its own recovery instead of being refused (ENG-95885 R2).")]
+	public async Task Normalization_ShouldForwardUnknownOnlyPayload_WhenToolDeclaresRecovery() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"fake-recovering-tool", new Dictionary<string, JsonElement> {
+				["some-alias"] = JsonSerializer.SerializeToElement("value")
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeUnknownRecoveringTool).GetMethod(
+				nameof(FakeUnknownRecoveringTool.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeUnknownRecoveringTool());
+		CallToolRequestParams? forwardedParams = null;
+		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
+		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
+		// too — exactly as a real host does.
+		context = WithRoutingAuthority(context);
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
+				forwardedParams = forwardedContext.Params;
+				return ValueTask.FromResult(new CallToolResult { IsError = false });
+			});
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeFalse();
+		forwardedParams!.Arguments.Should().ContainSingle().Which.Key.Should().Be("args");
+		forwardedParams.Arguments!["args"].GetProperty("some-alias").GetString().Should().Be("value",
+			because: "the unknown key must travel INTO the tool's own overflow bag, where the tool diagnoses it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An argument the tool expects as a JSON object is refused with one precise shape-naming error when it arrives as a JSON string, replacing the raw 'BytePositionInLine' deserializer text (ENG-95885 R5).")]
+	public async Task JsonEncodedObjectArgument_ShouldReturnPreciseShapeError_InsteadOfRawSerializerText() {
+		// Arrange — the clio-run shape: args sent as a string containing JSON text
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"clio-run", new Dictionary<string, JsonElement> {
+				["command"] = JsonSerializer.SerializeToElement("sync-schemas"),
+				["args"] = JsonSerializer.SerializeToElement("{\"environment-name\":\"local\"}")
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeMultiParameterTool).GetMethod(
+				nameof(FakeMultiParameterTool.Execute), BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeMultiParameterTool());
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors(
+				(_, _) => ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue();
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("must be a JSON object",
+			because: "the error must name the required shape so the agent can fix the call in one attempt");
+		text.Should().NotContain("BytePositionInLine",
+			because: "the raw deserializer text tells an agent nothing about the required shape");
+		text.Should().Contain("not parsed",
+			because: "the value is deliberately refused rather than decoded — the accepted input set stays narrow");
+	}
+
 	private static McpServerTool CreateRetrySafeTool() =>
 		McpServerTool.Create(
 			typeof(FakeRetrySafeTool).GetMethod(
@@ -736,6 +1139,36 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithStringArg {
 		public string Execute(string value) => value;
+	}
+
+	// --- ENG-95885 fixtures ---
+
+	// The clio-run shape: TWO bindable parameters, so top-level keys bind BY PARAMETER NAME and the
+	// normalizer must never touch the payload.
+	public sealed class FakeMultiParameterTool {
+		public string Execute(string? command = null, Dictionary<string, JsonElement>? args = null) => "ok";
+	}
+
+	// Declares a natural no-arguments operation, so an empty {} payload is a legitimate call.
+	public sealed class FakeNoArgumentsTool {
+		[Clio.Command.McpServer.Tools.McpAcceptsEmptyArguments]
+		public string Execute(FakeCompositeArgs args) => "ok";
+	}
+
+	// Declares that it validates/recovers unknown keys itself (the get-tool-contract pattern), so an
+	// unknown-only payload is forwarded into its overflow bag instead of being refused by the filter.
+	public sealed class FakeUnknownRecoveringTool {
+		[Clio.Command.McpServer.Tools.McpRecoversUnknownArguments]
+		public string Execute(FakeArgsWithNonContractProperties args) => "ok";
+	}
+
+	public sealed record FakeTypedArgs(
+		[property: JsonPropertyName("count")]
+		int Count = 0
+	);
+
+	public sealed class FakeToolWithTypedArgs {
+		public string Execute(FakeTypedArgs args) => "ok";
 	}
 
 	// A retry-safe tool: ReadOnly + Idempotent + non-Destructive, so its SDK-built annotations satisfy

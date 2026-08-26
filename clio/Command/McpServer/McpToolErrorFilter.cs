@@ -2,12 +2,14 @@
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Tools;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -52,6 +54,15 @@ public static class McpToolErrorFilter
 		McpRequestHandler<CallToolRequestParams, CallToolResult> next,
 		RequestContext<CallToolRequestParams> context,
 		CancellationToken cancellationToken) {
+		// ENG-95885: classify and (where unambiguous) normalize the caller's argument shape BEFORE every
+		// other preflight, so the deserialization diagnostics below run over the REWRITTEN arguments and
+		// a flat payload carrying a wrong JSON value type still yields the precise per-argument error
+		// instead of falling into the generic catch. It also runs ahead of the ENG-95262 matched-route
+		// dispatch below, so a relayed call reaches the worker already normalized. A returned result means
+		// the shape was REFUSED.
+		if (TryNormalizeCallArguments(context, out CallToolResult? normalizationErrorResult)) {
+			return normalizationErrorResult!;
+		}
 		if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
 			return argumentErrorResult;
 		}
@@ -314,6 +325,165 @@ public static class McpToolErrorFilter
 	private static string GetSurfacedMessage(Exception exception) =>
 		Clio.Common.SurfacedExceptionMessage.Resolve(exception);
 
+	/// <summary>
+	/// ENG-95885. Classifies the pre-binding argument payload of a MATCHED tool that takes exactly one
+	/// bindable composite <c>args</c> parameter, and rewrites it into the wrapped shape when — and only
+	/// when — the flat shape is unambiguous:
+	/// <list type="bullet">
+	/// <item><description><b>already wrapped</b> (only the wrapper key) — untouched.</description></item>
+	/// <item><description><b>canonical-flat</b> (at least one top-level key is a wire property of the args
+	/// record) — EVERY top-level key is moved inside the wrapper, so a co-present typo travels with the
+	/// call instead of being silently dropped by the normalizer.</description></item>
+	/// <item><description><b>unknown-only</b> (no top-level key is a wire property) — refused with the
+	/// canonical field list. This branch is why the payload is classified instead of wrapped blindly: most
+	/// resident args records have no <c>[JsonExtensionData]</c> overflow bag, so a wrapped typo is dropped
+	/// by the serializer, the record materializes with defaults, and the tool can answer a validation
+	/// mistake with a plausible-but-wrong list/default SUCCESS — strictly worse for an agent than a hard
+	/// failure.</description></item>
+	/// <item><description><b>hybrid</b> (wrapper object plus extra top-level keys) — refused as ambiguous,
+	/// with no silent precedence in either direction.</description></item>
+	/// </list>
+	/// </summary>
+	/// <returns><c>true</c> when the call must be refused (<paramref name="result"/> carries the error);
+	/// <c>false</c> when the call proceeds — either untouched or with normalized arguments.</returns>
+	internal static bool TryNormalizeCallArguments(
+		RequestContext<CallToolRequestParams> context,
+		out CallToolResult? result) {
+		result = null;
+		if (context.Params is not { } parameters) {
+			return false;
+		}
+
+		// MatchedPrimitive is null for a tool that is not advertised in tools/list, so the DURABLE
+		// long-tail path (McpDurableCallToolHandler / IClioRunExecutor.InvokeResolvedAsync) is
+		// intentionally NOT normalized: there is no MethodInfo here to reflect a parameter contract from.
+		// A long-tail tool is reached through clio-run, which owns its own wrapped/flat recovery
+		// (ClioRunExecutor.RecoverWrappedCall). The measured ENG-95885 run contains zero durable-handler
+		// outcomes of this error class, so widening the scope would add risk with nothing to fix.
+		if (!TryGetToolMethod(context, out MethodInfo? method)) {
+			return false;
+		}
+
+		return TryNormalizeArguments(parameters, method, out result);
+	}
+
+	/// <summary>
+	/// The reflection-only core of <see cref="TryNormalizeCallArguments"/>: classifies (and where
+	/// unambiguous, rewrites) <paramref name="parameters"/> against the contract of
+	/// <paramref name="method"/>. Split out from the context-bound entry point so a completeness test can
+	/// drive it across every resident tool method without constructing MCP primitives.
+	/// </summary>
+	internal static bool TryNormalizeArguments(
+		CallToolRequestParams parameters,
+		MethodInfo method,
+		out CallToolResult? result) {
+		result = null;
+
+		// The trigger gate, shared with clio-run by construction (see
+		// McpToolArgumentSupport.TryGetSingleCompositeParameter): a multi-parameter tool such as
+		// clio-run (command + args) or a single-scalar tool binds top-level keys BY PARAMETER NAME, so
+		// its payload is already meaningful flat and must never be rewritten.
+		if (!McpToolArgumentSupport.TryGetSingleCompositeParameter(method, out ParameterInfo? wrapper)) {
+			return false;
+		}
+
+		string wrapperName = GetArgumentName(wrapper);
+		if (string.IsNullOrEmpty(wrapperName)) {
+			return false;
+		}
+
+		List<string> canonicalNames = GetJsonPropertyNames(wrapper.ParameterType);
+		if (canonicalNames.Count == 0) {
+			return false;
+		}
+
+		IDictionary<string, JsonElement>? arguments = parameters.Arguments;
+		if (arguments is null || arguments.Count == 0) {
+			// Fail-closed: only a tool that has EXPLICITLY declared a natural no-arguments operation gets
+			// the empty wrapper synthesized for it. Every other tool keeps today's missing-parameter error.
+			if (method.GetCustomAttribute<McpAcceptsEmptyArgumentsAttribute>() is null) {
+				return false;
+			}
+			parameters.Arguments = BuildWrappedArguments(wrapperName, []);
+			return false;
+		}
+
+		if (arguments.ContainsKey(wrapperName)) {
+			if (arguments.Count == 1) {
+				// The already-working wrapped shape — byte-compatible pass-through.
+				return false;
+			}
+			result = CreateJsonErrorResult(BuildAmbiguousShapeMessage(
+				parameters.Name,
+				wrapperName,
+				arguments.Keys.Where(key => !string.Equals(key, wrapperName, StringComparison.Ordinal))));
+			return true;
+		}
+
+		HashSet<string> canonicalNameSet = new(canonicalNames, StringComparer.Ordinal);
+		List<string> unknownKeys = arguments.Keys
+			.Where(key => !canonicalNameSet.Contains(key))
+			.ToList();
+		if (unknownKeys.Count == arguments.Count) {
+			// A tool that owns unknown-key handling (declared, never inferred) gets the payload forwarded so
+			// its own alias-rename / flat-recovery diagnosis wins; everything else is refused here, because
+			// an args record with no overflow bag would otherwise materialize with defaults and answer a
+			// validation mistake with a plausible-but-wrong success.
+			if (method.GetCustomAttribute<McpRecoversUnknownArgumentsAttribute>() is null) {
+				result = CreateJsonErrorResult(BuildUnknownArgumentsMessage(
+					parameters.Name, wrapperName, canonicalNames, unknownKeys));
+				return true;
+			}
+		}
+
+		parameters.Arguments = BuildWrappedArguments(wrapperName, arguments);
+		return false;
+	}
+
+	/// <summary>
+	/// Moves EVERY top-level key of <paramref name="arguments"/> into a single wrapper object. Replacing
+	/// only <see cref="CallToolRequestParams.Arguments"/> on the EXISTING params instance is load-bearing:
+	/// building a new <see cref="CallToolRequestParams"/> would drop <c>_meta</c>, the progress token and
+	/// task metadata, breaking <c>notifications/progress</c> on long-running tools and the
+	/// <c>_meta.clioStageEvent</c> stream ClioRing consumes.
+	/// </summary>
+	private static Dictionary<string, JsonElement> BuildWrappedArguments(
+		string wrapperName, IEnumerable<KeyValuePair<string, JsonElement>> arguments) {
+		Dictionary<string, JsonElement> wrapped = new(StringComparer.Ordinal);
+		using MemoryStream buffer = new();
+		using (Utf8JsonWriter writer = new(buffer)) {
+			writer.WriteStartObject();
+			foreach (KeyValuePair<string, JsonElement> argument in arguments) {
+				writer.WritePropertyName(argument.Key);
+				argument.Value.WriteTo(writer);
+			}
+			writer.WriteEndObject();
+		}
+		using JsonDocument document = JsonDocument.Parse(buffer.ToArray());
+		wrapped[wrapperName] = document.RootElement.Clone();
+		return wrapped;
+	}
+
+	private static string BuildUnknownArgumentsMessage(
+		string? toolName, string wrapperName, List<string> canonicalNames, List<string> unknownKeys) {
+		string unknownDisplay = string.Join(", ", unknownKeys.Select(key => $"\"{key}\""));
+		string validDisplay = string.Join(", ", canonicalNames.Select(key => $"\"{key}\""));
+		return $"Tool '{toolName ?? UnknownToolName}' received unknown argument(s) {unknownDisplay}. "
+			+ $"Valid arguments: {validDisplay}. "
+			+ $"Use exactly those names, either flat at the top level or wrapped in \"{wrapperName}\" "
+			+ $"({{\"{wrapperName}\": {{...}}}}). Nothing ran: the call was refused rather than executed "
+			+ "with default values.";
+	}
+
+	private static string BuildAmbiguousShapeMessage(
+		string? toolName, string wrapperName, IEnumerable<string> extraKeys) {
+		string extraDisplay = string.Join(", ", extraKeys.Select(key => $"\"{key}\""));
+		return $"Tool '{toolName ?? UnknownToolName}' received an ambiguous argument shape: "
+			+ $"a \"{wrapperName}\" object AND top-level key(s) {extraDisplay}. "
+			+ $"Send exactly one shape — wrapped {{\"{wrapperName}\": {{...}}}} or flat {{...}} — "
+			+ "so there is no doubt which value wins.";
+	}
+
 	internal static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
 		out CallToolResult? result) {
@@ -340,6 +510,16 @@ public static class McpToolErrorFilter
 			if (argumentValue.ValueKind == JsonValueKind.Null && IsRequiredNonNullable(parameter)) {
 				result = CreateJsonErrorResult(BuildNullArgumentErrorMessage(
 					context.Params.Name, parameter.ParameterType, argumentName));
+				return true;
+			}
+			// ENG-95885: a JSON-ENCODED argument (the object sent as a quoted string, e.g.
+			// clio-run's args: "{\"environment-name\":\"dev\"}") is by far the most common value-kind
+			// mistake and its raw serializer text ("... LineNumber: 0 | BytePositionInLine: 31") tells an
+			// agent nothing about the required shape. Name the shape once, precisely, before the generic
+			// deserialization path can produce that text. The value is deliberately NOT parsed — accepting
+			// a stringified object would widen the accepted contract permanently for no benefit.
+			if (TryCreateJsonEncodedObjectError(
+				context.Params.Name, argumentName, parameter.ParameterType, argumentValue, out result)) {
 				return true;
 			}
 			try {
@@ -379,6 +559,48 @@ public static class McpToolErrorFilter
 		$"invalid-parameter-type: argument '{argumentName}' for MCP tool '{toolName}' must be "
 		+ $"{GetExpectedJsonType(parameterType, argumentName)}. Received a JSON null, and the argument "
 		+ "is required.";
+
+	/// <summary>
+	/// ENG-95885. Produces one precise, shape-naming error when an argument the tool expects as a JSON
+	/// OBJECT arrives as a JSON string. Returns <c>false</c> for every other combination so the ordinary
+	/// per-argument deserialization diagnostics stay unchanged.
+	/// </summary>
+	private static bool TryCreateJsonEncodedObjectError(
+		string? toolName,
+		string argumentName,
+		Type parameterType,
+		JsonElement argumentValue,
+		out CallToolResult? result) {
+		result = null;
+		if (argumentValue.ValueKind != JsonValueKind.String || !ExpectsJsonObject(parameterType)) {
+			return false;
+		}
+		result = CreateJsonErrorResult(
+			$"invalid-parameter-type: argument '{argumentName}' for MCP tool "
+			+ $"'{toolName ?? UnknownToolName}' must be a JSON object, "
+			+ "not a JSON string. Send the object itself — for example "
+			+ $"{{\"{argumentName}\": {{\"<argument-name>\": \"<value>\"}}}} — not a string containing "
+			+ "JSON text. The value was not parsed: a JSON-encoded object is refused rather than "
+			+ "silently decoded.");
+		return true;
+	}
+
+	/// <summary>
+	/// True when the parameter's declared type can only be bound from a JSON object — a dictionary or a
+	/// composite record. <see cref="JsonElement"/> and other permissive types are excluded: they legally
+	/// accept a string value, so a string there is not a caller mistake.
+	/// </summary>
+	private static bool ExpectsJsonObject(Type parameterType) {
+		Type type = Nullable.GetUnderlyingType(parameterType) ?? parameterType;
+		if (type == typeof(JsonElement) || type == typeof(JsonDocument) || type == typeof(object)) {
+			return false;
+		}
+		if (IsJsonObjectContract(type)) {
+			return true;
+		}
+		return McpToolArgumentSupport.IsCompositeArgsParameter(type)
+			&& GetJsonPropertyNames(type).Count > 0;
+	}
 
 	private static CallToolResult CreateJsonErrorResult(string message) {
 		return new CallToolResult {

@@ -94,6 +94,10 @@ public sealed class RequestInfoTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	// ENG-95885: returning the whole request catalog is the documented no-arguments operation of this tool
+	// (the description itself tells the agent to omit request-type), so an empty {} payload is a legitimate
+	// call and the normalizer synthesizes the empty args wrapper for it.
+	[McpAcceptsEmptyArguments]
 	[Description("Get curated Freedom UI request metadata (crt.*Request types wired through request bindings such as a button's clicked) by request type, or list all cataloged requests. " +
 		"PROACTIVELY list the catalog (omit request-type, or pass 'list') before wiring a button/menu action to a platform request, " +
 		"so the request name and its params come from the catalog instead of memory. " +
