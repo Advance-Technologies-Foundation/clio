@@ -4274,6 +4274,185 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
+	#region Narrowed overrides (componentPropertyOverrides filters)
+
+	/// <summary>Builds one override rule; a null <paramref name="filtersJson"/> leaves it unconditional.</summary>
+	private static ComponentPropertyOverrideRule Override(string type, string valuesJson, string filtersJson = null) =>
+		new() {
+			Type = type,
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(valuesJson),
+			Filters = filtersJson is null
+				? []
+				: JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filtersJson)
+					.Cast<IReadOnlyDictionary<string, JsonElement>>().ToList()
+		};
+
+	private static MobilePageConversionGuide AnalyzeOverrides(PageBundleInfo bundle,
+		params ComponentPropertyOverrideRule[] overrides) =>
+		AnalyzeSpacing(bundle, new WebToMobilePageConversionRules { ComponentPropertyOverrides = overrides });
+
+	/// <summary>Two grids: one already showing a Medium radius, one carrying none.</summary>
+	private static PageBundleInfo RadiusBundle() => Bundle("""
+		[ { "name": "CardGrid", "type": "crt.GridContainer", "borderRadius": "medium", "items": [
+			{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+		  { "name": "PlainGrid", "type": "crt.GridContainer", "items": [
+			{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
+		""");
+
+	[Test]
+	[Description("A rule narrowed by filters is stamped only onto the inserts whose own values match it — the grid showing a Medium radius is promoted to Large, the grid carrying no radius is left untouched and is absent from the report.")]
+	public void Analyze_OverrideFilters_ShouldApplyOnlyToMatchingElements() {
+		// Arrange
+		PageBundleInfo bundle = RadiusBundle();
+		ComponentPropertyOverrideRule rule = Override("crt.GridContainer",
+			"""{ "borderRadius": "large" }""", """[{ "borderRadius": "medium" }]""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
+
+		// Assert
+		Element(guide, "CardGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "the element matches the filter, so the narrowed standard applies to it");
+		Element(guide, "PlainGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+			because: "an ABSENT property never matches an exact-value filter, and a non-matching rule adds nothing");
+		guide.Normalizations!["spacing"].Normalized.Select(n => n.Name).Should().Equal(["CardGrid"],
+			because: "only the element a rule actually wrote is reported");
+	}
+
+	[Test]
+	[Description("A filter matches on the exact value: a grid whose radius is already Large is not re-stamped by a rule narrowed to Medium, so it is absent from the report rather than reported as normalized.")]
+	public void Analyze_OverrideFilters_ShouldNotMatchDifferentValue() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "RoundGrid", "type": "crt.GridContainer", "borderRadius": "large", "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+		ComponentPropertyOverrideRule rule = Override("crt.GridContainer",
+			"""{ "borderRadius": "large" }""", """[{ "borderRadius": "medium" }]""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
+
+		// Assert
+		Element(guide, "RoundGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "the web value is carried through untouched — the rule did not match it");
+		guide.Normalizations.Should().BeNull(
+			because: "nothing was written, so the section is omitted rather than listing an untouched element");
+	}
+
+	[Test]
+	[Description("The filter bags are OR-ed: listing every non-zero radius token in its own bag is how the narrowed standard is widened without new matcher syntax.")]
+	public void Analyze_OverrideFilters_ShouldOrTheBags() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "SmallGrid", "type": "crt.GridContainer", "borderRadius": "small", "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+			  { "name": "PlainGrid", "type": "crt.GridContainer", "items": [
+				{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
+			""");
+		ComponentPropertyOverrideRule rule = Override("crt.GridContainer",
+			"""{ "borderRadius": "large" }""",
+			"""[{ "borderRadius": "small" }, { "borderRadius": "medium" }]""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
+
+		// Assert
+		Element(guide, "SmallGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "matching ANY bag is enough");
+		Element(guide, "PlainGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+			because: "matching no bag at all still means the rule does not apply");
+	}
+
+	[Test]
+	[Description("Every rule of a type is matched against the element as it ENTERED the pass, so a rule declared EARLIER cannot disable a later narrowed rule by overwriting the very property that rule filters on.")]
+	public void Analyze_OverrideFilters_ShouldMatchAgainstThePrePassState() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CardGrid", "type": "crt.GridContainer", "borderRadius": "medium", "items": [
+				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
+			""");
+		ComponentPropertyOverrideRule clobbers = Override("crt.GridContainer", """{ "borderRadius": "small" }""");
+		ComponentPropertyOverrideRule narrowed = Override("crt.GridContainer",
+			"""{ "color": "primary" }""", """[{ "borderRadius": "medium" }]""");
+
+		// Act — the clobbering rule is declared FIRST, so a lazily evaluated filter would never match
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, clobbers, narrowed);
+
+		// Assert
+		JsonObject values = Element(guide, "CardGrid").MobileValues!.AsObject();
+		values["color"]!.GetValue<string>().Should().Be("primary",
+			because: "the filter is decided before any rule writes, so the earlier rule cannot disable this one");
+		values["borderRadius"]!.GetValue<string>().Should().Be("small",
+			because: "the WRITING still follows declaration order — only the matching is snapshot-based");
+	}
+
+	[Test]
+	[Description("Two matching rules for one type both apply — the type is no longer limited to a single rule — and the element is reported ONCE, listing every property the rules wrote between them.")]
+	public void Analyze_OverrideFilters_ShouldApplyEveryMatchingRuleAndReportTheElementOnce() {
+		// Arrange
+		PageBundleInfo bundle = RadiusBundle();
+		ComponentPropertyOverrideRule spacing = Override("crt.GridContainer",
+			"""{ "gap": { "rowGap": "medium", "columnGap": "medium" } }""");
+		ComponentPropertyOverrideRule radius = Override("crt.GridContainer",
+			"""{ "borderRadius": "large" }""", """[{ "borderRadius": "medium" }]""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, spacing, radius);
+
+		// Assert
+		JsonObject card = Element(guide, "CardGrid").MobileValues!.AsObject();
+		card["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium",
+			because: "the unconditional rule is no longer shadowed by the narrowed one declared after it");
+		card["borderRadius"]!.GetValue<string>().Should().Be("large");
+		NormalizationEntry entry = guide.Normalizations!["spacing"].Normalized.Single(n => n.Name == "CardGrid");
+		entry.Properties.Should().Equal(["gap", "borderRadius"],
+			because: "one element is one report entry, listing the properties in the order they were written");
+		Element(guide, "PlainGrid").MobileValues!["gap"]!["rowGap"]!.GetValue<string>().Should().Be("medium",
+			because: "the unconditional rule still covers the element the narrowed one skipped");
+	}
+
+	[Test]
+	[Description("An EMPTY filter bag matches nothing rather than everything — a rules-file mistake must not silently widen a rule that was written to be narrow.")]
+	public void Analyze_OverrideFilters_ShouldTreatAnEmptyBagAsMatchingNothing() {
+		// Arrange
+		PageBundleInfo bundle = RadiusBundle();
+		ComponentPropertyOverrideRule rule = Override("crt.GridContainer", """{ "borderRadius": "large" }""", """[{}]""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
+
+		// Assert
+		Element(guide, "CardGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("medium",
+			because: "an empty bag must not be read as an unconditional rule");
+		guide.Normalizations.Should().BeNull(because: "nothing matched, so nothing was written");
+	}
+
+	[Test]
+	[Description("A filter value that is an OBJECT matches only on deep equality — a partially equal object is not a match, so a rule cannot fire on a subset of the element's value.")]
+	public void Analyze_OverrideFilters_ShouldCompareObjectValuesDeeply() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "EvenGrid", "type": "crt.GridContainer", "gap": { "rowGap": "small", "columnGap": "small" },
+			    "items": [ { "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+			  { "name": "OddGrid", "type": "crt.GridContainer", "gap": { "rowGap": "small", "columnGap": "large" },
+			    "items": [ { "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
+			""");
+		ComponentPropertyOverrideRule rule = Override("crt.GridContainer",
+			"""{ "borderRadius": "large" }""", """[{ "gap": { "rowGap": "small", "columnGap": "small" } }]""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
+
+		// Assert
+		Element(guide, "EvenGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "every key of the filter object matches the element's own, key for key");
+		Element(guide, "OddGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+			because: "one differing nested key is enough to fail an exact-value match");
+	}
+
+	#endregion
+
 	#region Property normalization (ENG-94230)
 
 	private static readonly IReadOnlySet<string> MetricMobileTypes =

@@ -4158,8 +4158,10 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT, stamping each mobile
-	/// standard the rules file declares (container spacing, metric style). For each entry whose
-	/// <c>mobileType</c> matches an override rule, the listed properties are SET on the prebuilt
+	/// standard the rules file declares (container spacing, metric style). An entry is matched by
+	/// <c>mobileType</c>, then narrowed by the rule's optional <c>filters</c> (see
+	/// <see cref="MatchesFilters"/>); a type may carry several rules and EVERY matching one is applied, in
+	/// the order the rules file declares them. For each match the listed properties are SET on the prebuilt
 	/// <c>mobileValues</c> — by default REPLACING whatever the web page carried (any shape: token, px
 	/// number, CSS string, per-axis object; the web value is discarded, never translated) and ADDED when
 	/// the web page carried none, so the converted body is self-describing instead of leaning on the
@@ -4169,8 +4171,10 @@ public static class WebToMobileAnalysisService {
 	/// overwritten, and for why an ABSENT branch is created. Covers converted and synthesized inserts alike (run it after the tab-area pass);
 	/// merge twins, drops and relocate hints are never touched, and the element identity keys
 	/// (<c>name</c>/<c>type</c>) can never be overridden. Switched by DATA: an absent/empty group is a
-	/// no-op. Returns one advisory entry per normalized element, bucketed into the report section its rule
-	/// declared via <c>reportGroup</c>.
+	/// no-op. Returns one advisory entry per normalized element — ONE per element, whatever the number of
+	/// rules that wrote it — bucketed into the report section <see cref="ResolveReportGroup"/> derives from
+	/// the component TYPE. The section is therefore per-type, not per-rule: two standards targeting the same
+	/// type report into the same section.
 	/// </summary>
 	private static ComponentPropertyOverrideResult ApplyComponentPropertyOverrides(
 		List<ElementMapEntry> elementMap, WebToMobilePageConversionRules rules) {
@@ -4179,14 +4183,21 @@ public static class WebToMobileAnalysisService {
 		if (overrides is not { Count: > 0 }) {
 			return result;
 		}
-		// One rule per mobile type: a duplicate `type` in the rules file LAST-WINS, silently. That also means
-		// a type cannot carry two rules (e.g. replace one key, merge another) — a limit to lift here, in the
-		// pass, if a standard ever needs it, rather than by loosening the per-rule merge flag.
-		var byType = new Dictionary<string, ComponentPropertyOverrideRule>(StringComparer.OrdinalIgnoreCase);
+		// A mobile type may carry SEVERAL rules — an unconditional standard plus any number narrowed by
+		// `filters` — so the index keeps every rule of a type in DECLARATION order instead of last-wins.
+		// Order is the rules file's to decide: two matching rules that write the same key resolve
+		// last-declared-wins per KEY, which is also how one type mixes replace and merge semantics without
+		// loosening the per-rule merge flag.
+		var byType = new Dictionary<string, List<ComponentPropertyOverrideRule>>(StringComparer.OrdinalIgnoreCase);
 		foreach (ComponentPropertyOverrideRule rule in overrides) {
-			if (!string.IsNullOrWhiteSpace(rule?.Type) && rule.Values is { Count: > 0 }) {
-				byType[rule.Type] = rule;
+			if (string.IsNullOrWhiteSpace(rule?.Type) || rule.Values is not { Count: > 0 }) {
+				continue;
 			}
+			if (!byType.TryGetValue(rule.Type, out List<ComponentPropertyOverrideRule> declared)) {
+				declared = [];
+				byType[rule.Type] = declared;
+			}
+			declared.Add(rule);
 		}
 		if (byType.Count == 0) {
 			return result;
@@ -4195,26 +4206,115 @@ public static class WebToMobileAnalysisService {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
 				|| entry.MobileValues is not JsonObject values
-				|| !byType.TryGetValue(entry.MobileType, out ComponentPropertyOverrideRule rule)) {
+				|| !byType.TryGetValue(entry.MobileType, out List<ComponentPropertyOverrideRule> typeRules)) {
 				continue;
 			}
+			// Which rules apply is decided against the element as it ENTERED the pass — every filter is
+			// evaluated BEFORE the first value is stamped. Evaluating them lazily would let an earlier rule
+			// silently enable or disable a later one (a rule stamping borderRadius Large would stop a rule
+			// filtered on borderRadius Medium from ever matching), making the outcome depend on the order the
+			// file happens to list them in. Only the WRITING follows declaration order.
+			List<ComponentPropertyOverrideRule> matched =
+				[.. typeRules.Where(rule => MatchesFilters(values, rule.Filters))];
 			var properties = new List<string>();
 			var skippedPaths = new List<string>();
-			foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
-				if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
-					|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
-					continue; // element identity is never overridable, whatever the rules file says
+			foreach (ComponentPropertyOverrideRule rule in matched) {
+				foreach (KeyValuePair<string, JsonElement> pair in rule.Values) {
+					if (string.Equals(pair.Key, "name", StringComparison.OrdinalIgnoreCase)
+						|| string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)) {
+						continue; // element identity is never overridable, whatever the rules file says
+					}
+					StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
 				}
-				StampOverrideValue(values, pair.Key, pair.Value, rule.MergeNestedObjects, properties, skippedPaths);
 			}
 			// An element that was only partly normalized (or not at all) is still reported — as a skip entry —
-			// so a caller can tell "nothing to normalize" from "could not normalize".
+			// so a caller can tell "nothing to normalize" from "could not normalize". The paths are
+			// de-duplicated: an element two rules both wrote is ONE normalized element, not two, and a key
+			// they both touched is one property.
 			if (properties.Count > 0 || skippedPaths.Count > 0) {
 				result.Add(ResolveReportGroup(entry.MobileType), entry.MobileName, entry.MobileType,
-					properties, skippedPaths);
+					[.. properties.Distinct(StringComparer.Ordinal)],
+					[.. skippedPaths.Distinct(StringComparer.Ordinal)]);
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Whether an override rule applies to the element carrying <paramref name="values"/>. A rule with no
+	/// filters applies to every insert of its type — the long-standing behavior. Otherwise the bags are
+	/// OR-ed and the keys inside one bag are AND-ed, and a key matches only when the element's own value is
+	/// DEEP-equal to the filter's, so an ABSENT property never matches. An EMPTY bag matches NOTHING: it is
+	/// a rules-file mistake, and treating it as "matches everything" would silently widen a rule written to
+	/// be narrow. The element's values are only READ here — see the caller for why every rule of a type is
+	/// matched before any of them writes.
+	/// </summary>
+	private static bool MatchesFilters(JsonObject values,
+		IReadOnlyList<IReadOnlyDictionary<string, JsonElement>> filters) {
+		if (filters is not { Count: > 0 }) {
+			return true;
+		}
+		foreach (IReadOnlyDictionary<string, JsonElement> filter in filters) {
+			if (filter is { Count: > 0 } && filter.All(pair =>
+					values.TryGetPropertyValue(pair.Key, out JsonNode actual)
+					&& JsonValueEquals(actual, pair.Value))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// Deep JSON equality between an element's live value and a rule's filter value. Hand-written because
+	/// clio still targets net8.0, where <c>JsonNode.DeepEquals</c> does not exist; comparing raw text instead
+	/// is not an option either, since that would make key order and whitespace significant. Objects must
+	/// match key-for-key (a filter object is an exact description, not a subset) and arrays element-for-element
+	/// in order. Numbers compare by value, so 1 and 1.0 agree.
+	/// </summary>
+	private static bool JsonValueEquals(JsonNode actual, JsonElement expected) {
+		switch (expected.ValueKind) {
+			case JsonValueKind.Object: {
+				if (actual is not JsonObject actualObject) {
+					return false;
+				}
+				int declared = 0;
+				foreach (JsonProperty property in expected.EnumerateObject()) {
+					declared++;
+					if (!actualObject.TryGetPropertyValue(property.Name, out JsonNode child)
+						|| !JsonValueEquals(child, property.Value)) {
+						return false;
+					}
+				}
+				return actualObject.Count == declared;
+			}
+			case JsonValueKind.Array: {
+				if (actual is not JsonArray actualArray) {
+					return false;
+				}
+				int index = 0;
+				foreach (JsonElement item in expected.EnumerateArray()) {
+					if (index >= actualArray.Count || !JsonValueEquals(actualArray[index], item)) {
+						return false;
+					}
+					index++;
+				}
+				return actualArray.Count == index;
+			}
+			case JsonValueKind.String:
+				return actual is JsonValue text && text.TryGetValue(out string actualText)
+					&& string.Equals(actualText, expected.GetString(), StringComparison.Ordinal);
+			case JsonValueKind.Number:
+				return actual is JsonValue number && number.TryGetValue(out double actualNumber)
+					&& expected.TryGetDouble(out double expectedNumber)
+					&& actualNumber.Equals(expectedNumber);
+			case JsonValueKind.True:
+			case JsonValueKind.False:
+				return actual is JsonValue flag && flag.TryGetValue(out bool actualFlag)
+					&& actualFlag == (expected.ValueKind == JsonValueKind.True);
+			default:
+				// Null / Undefined: an explicit JSON null in the element map is a null node.
+				return actual is null;
+		}
 	}
 
 	/// <summary>

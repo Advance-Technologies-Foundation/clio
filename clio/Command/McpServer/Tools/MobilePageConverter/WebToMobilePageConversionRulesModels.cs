@@ -251,6 +251,33 @@ public sealed class ComponentPropertyOverrideRule {
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
 
+	/// <summary>
+	/// Optional value filters that NARROW which inserted elements of <see cref="Type"/> the rule applies to.
+	/// Empty or absent (the default) = the rule applies to EVERY insert of that type — the long-standing
+	/// behavior every unconditional standard relies on.
+	/// <para>
+	/// Each entry is a bag of property name → expected value matched against the element's mobile values:
+	/// the keys inside one bag are AND-ed, the bags themselves are OR-ed (the same convention as
+	/// <see cref="ComponentEquivalenceRule.Filters"/>, which is closed to <c>type</c> and cannot express a
+	/// value match — hence a separate shape here rather than a widened <see cref="ElementFilterRule"/>).
+	/// A key matches only on DEEP equality, so an ABSENT property never matches and neither does a value
+	/// that merely has the right shape. An EMPTY bag matches NOTHING: it is a rules-file mistake, and
+	/// reading it as "matches everything" would silently widen a rule that was meant to be narrowed.
+	/// </para>
+	/// <para>
+	/// Declaring <c>type</c> inside a bag is pointless and dangerous, not merely redundant: the pass has
+	/// already selected the rule by <see cref="Type"/> before any filter is read, so the key can only be a
+	/// tautology or — with a different value — a contradiction that makes the rule NEVER fire, silently.
+	/// </para>
+	/// <para>
+	/// Every rule's filters are evaluated against the element as it ENTERED the pass, before the first value
+	/// is stamped, so no rule can be enabled or disabled by what an earlier rule wrote. What DOES follow the
+	/// declaration order is the writing: see <c>WebToMobileAnalysisService.ApplyComponentPropertyOverrides</c>.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("filters")]
+	public IReadOnlyList<IReadOnlyDictionary<string, JsonElement>> Filters { get; init; } = [];
+
 	/// <summary>Property name → value stamped onto the inserted element's mobile values.</summary>
 	[JsonPropertyName("values")]
 	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();

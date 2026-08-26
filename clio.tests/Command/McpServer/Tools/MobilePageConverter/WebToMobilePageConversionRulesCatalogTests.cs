@@ -158,9 +158,17 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		rules.ComponentPropertyOverrides.Should().OnlyContain(
 			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
 			because: "a rule without a type or values cannot stamp anything");
-		rules.ComponentPropertyOverrides.Select(o => o.Type).Should().OnlyHaveUniqueItems(
-			because: "the pass indexes by type and silently LAST-WINS, so a duplicate would ship a rule that "
-				+ "never fires — cheap to catch here for the bundled file");
+		rules.ComponentPropertyOverrides
+			.Where(o => o.Filters.Count == 0)
+			.Select(o => o.Type)
+			.Should().OnlyHaveUniqueItems(
+				because: "an UNFILTERED rule already applies to every insert of its type, so a second one for "
+					+ "the same type is always a duplicate — a narrowed rule is what a further entry per type is for");
+		rules.ComponentPropertyOverrides
+			.SelectMany(o => o.Filters)
+			.Should().OnlyContain(f => !f.ContainsKey("type"),
+				because: "the pass selects the rule by its own `type` BEFORE reading filters, so the key can only "
+					+ "be a tautology or — with another value — a contradiction that makes the rule never fire");
 	}
 
 	[Test]
@@ -172,9 +180,28 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		// Assert
 		rules.ComponentPropertyOverrides
 			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
-			.Should().HaveCount(2)
+			.Should().HaveCount(3)
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale");
+	}
+
+	[Test]
+	[Description("The bundled rules carry the NARROWED corner-radius standard: only a grid container that already shows a Medium radius is promoted to Large, so a plain layout grid that carries no radius is left alone.")]
+	public void LoadBundled_ReturnsSeededFilteredCornerRadiusOverride() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentPropertyOverrideRule radius = rules.ComponentPropertyOverrides
+			.Single(o => o.Type == "crt.GridContainer" && o.Filters.Count > 0);
+		radius.Values.Should().ContainKey("borderRadius", because: "the rule exists to promote the radius");
+		radius.Values["borderRadius"].GetString().Should().Be("large");
+		radius.MergeNestedObjects.Should().BeFalse(
+			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
+		IReadOnlyDictionary<string, JsonElement> filter = radius.Filters.Single();
+		filter.Should().HaveCount(1, because: "the rule is already selected by type — only the discriminating property belongs here");
+		filter["borderRadius"].GetString().Should().Be("medium",
+			because: "the first iteration deliberately narrows to the Medium radius rather than to any non-zero one");
 	}
 
 	[Test]

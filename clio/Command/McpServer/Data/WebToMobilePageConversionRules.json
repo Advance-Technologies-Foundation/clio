@@ -161,6 +161,11 @@
       "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } }
     },
     {
+      "type": "crt.GridContainer",
+      "filters": [{ "borderRadius": "medium" }],
+      "values": { "borderRadius": "large" }
+    },
+    {
       "type": "crt.FlexContainer",
       "values": { "gap": "medium" }
     },
