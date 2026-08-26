@@ -75,6 +75,8 @@ as an orphan so a leftover or renamed key stays visible and manageable.
 - With --name plus exactly one of --enable/--disable, persists the change and
 reports the new state. Toggling a key that nothing references is allowed
 but prints a warning.
+- Some features print a one-time notice when ENABLED (never on disable). For
+example, enabling `mobile-page-converter` warns that it runs in Beta mode.
 
 ## Exit Codes
 

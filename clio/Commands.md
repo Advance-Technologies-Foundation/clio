@@ -350,6 +350,12 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
 <a id="delete-schema"></a>
 - [`delete-schema`](docs/commands/delete-schema.md) - Delete a schema from a workspace package
+<a id="export-schema"></a>
+<a id="schema-export"></a>
+- [`export-schema`](docs/commands/export-schema.md) - Export a single schema into a reviewable bundle folder, `schema-export`
+<a id="import-schema"></a>
+<a id="schema-import"></a>
+- [`import-schema`](docs/commands/import-schema.md) - Import a schema bundle into a package of a Creatio environment, `schema-import`
 <a id="download-configuration"></a>
 <a id="dconf"></a>
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`

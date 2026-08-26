@@ -1,4 +1,4 @@
-#pragma warning disable CLIO001 // This is DI class, warning not applicable
+﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -10,6 +10,7 @@ using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.SchemaTransfer;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
@@ -413,6 +414,8 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<ISchemaTransferClient, SchemaTransferClient>();
+		services.AddTransient<ISchemaBundleStore, SchemaBundleStore>();
 		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
 		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
@@ -624,6 +627,8 @@ public class BindingsModule {
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
 		services.AddTransient<DeleteSchemaTool>();
+		services.AddTransient<ExportSchemaTool>();
+		services.AddTransient<ImportSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<MobilePageConversionGuideTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
@@ -1012,6 +1017,8 @@ public class BindingsModule {
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
+		services.AddTransient<ExportSchemaCommand>();
+		services.AddTransient<ImportSchemaCommand>();
 		services.AddTransient<CreatioInstallerService>();
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();

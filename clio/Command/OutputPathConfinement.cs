@@ -43,7 +43,9 @@ internal static class OutputPathConfinement {
 	internal static (string path, string error) Resolve(IoFileSystem fileSystem, string outputFile) {
 		// H1: reading the process-global cwd (for the anchor) must serialize against the MCP workspace tools that
 		// PIN cwd. In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
-		// is uncontended. lock is reentrant, so a caller already holding it (the bundle command) is unaffected.
+		// is uncontended. Callers that resolve a tool-owned DEFAULT anchor instead go through
+		// PageOutputDirectoryResolver.ResolveDefaultAnchor, which takes the same lock — the two are alternative
+		// branches of one decision (explicit path vs default), so they never nest.
 		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
 			string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 			string anchor = PageOutputDirectoryResolver.ResolveAnchor(
