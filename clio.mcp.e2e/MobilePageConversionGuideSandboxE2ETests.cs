@@ -158,7 +158,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("Non-vacuous excludedComponents guard (ENG-95081): converts real seeded pages until one carries a component of a bundled-rule-banned type, then asserts NO surviving insert of a banned type reaches the banned host through the banned slot on the entry graph — the regression where crt.SearchFilter survived inside crt.ExpansionPanel's tools because the pass searched only verbatim-carried values. Any candidate that fails to convert fails the test immediately (a runtime regression, never a seed gap); when no seeded page carries any banned type it IGNORES with an explicit reason instead of passing silently.")]
+	[Description("Non-vacuous excludedComponents TRANSPORT guard (ENG-95081): converts real seeded pages until one carries a component of a bundled-rule-banned type, then asserts NO surviving insert of a banned type reaches the banned host through the banned slot on the entry graph — the regression where crt.SearchFilter survived inside crt.ExpansionPanel's tools because the pass searched only verbatim-carried values. Any candidate that fails to convert fails the test immediately (a runtime regression, never a seed gap); when no seeded page carries any banned type it IGNORES with an explicit reason instead of passing silently. The rule's own acceptance criterion does not depend on this test — WebToMobileRealPageRegressionTests enforces it hermetically on the pinned OOTB Leads_FormPage — so what this one adds is the verdict travelling through the real clio mcp-server process.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide honors bundled excludedComponents rules on the entry graph")]
 	[AllureDescription("Loads the bundled conversion rules' excludedComponents filters, iterates the seeded application's pages through the real clio MCP server, and on the first page whose element map mentions a banned type at all asserts that every surviving insert of a banned type has NO ancestor-entry chain reaching the banned host through the banned slot; a conversion failure fails the test, and a seed set with no banned type degrades to Ignore (never a vacuous pass).")]
@@ -218,8 +218,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		if (!bannedTypeExercised) {
 			Assert.Ignore(
 				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
-				+ "carries a component of any excludedComponents-banned type, so the exclusion could not be exercised end "
-				+ "to end. Add a seeded page with e.g. a crt.SearchFilter inside a crt.ExpansionPanel's tools to guard this integration.");
+				+ "carries a component of any excludedComponents-banned type, so the TRANSPORT path could not be exercised "
+				+ "end to end. This skip is not a coverage gap for the rule itself: the acceptance criterion is enforced "
+				+ "hermetically on production-shaped metadata by WebToMobileRealPageRegressionTests (the pinned OOTB "
+				+ "Leads_FormPage), which runs on every build. What is NOT covered while this skips is the rule reaching "
+				+ "the same verdict through the real clio mcp-server process. To close that, add a seeded page with a "
+				+ "crt.SearchFilter inside a crt.ExpansionPanel's tools to the seed application.");
 		}
 		bannedTypeExercised.Should().BeTrue(
 			because: $"the seeded page '{convertedSchemaName}' mentions a banned type, so the invariant was actually asserted");
