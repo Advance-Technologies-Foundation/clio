@@ -44,6 +44,10 @@ public class PackageInstallOptions
 				ExecuteValidateActions == obj.ExecuteValidateActions);
 	}
 
+	public override int GetHashCode() =>
+		HashCode.Combine(InstallSqlScript, InstallPackageData, ContinueIfError, SkipConstraints,
+			SkipValidateActions, ExecuteValidateActions);
+
 	public static bool operator ==(PackageInstallOptions v1, PackageInstallOptions v2) =>
 		v1?.Equals(v2) ?? object.ReferenceEquals(v2, null);
 		

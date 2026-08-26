@@ -114,6 +114,81 @@ public class GetClassicListColumnsToolTests {
 			because: "an unresolvable environment must never silently fall back to the startup command");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Resolve forwards ignore-profile to the command so the caller can ask for the statically declared set only.")]
+	public void Resolve_ShouldForwardIgnoreProfile_WhenTheArgumentIsSet() {
+		// Arrange
+		FakeGetClassicListColumnsCommand resolvedCommand = CreateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetClassicListColumnsCommand>(Arg.Any<GetClassicListColumnsOptions>())
+			.Returns(resolvedCommand);
+		GetClassicListColumnsTool tool = new(CreateCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		GetClassicListColumnsResponse response = tool.Resolve(
+			new GetClassicListColumnsArgs("AccountSectionV2", true) { EnvironmentName = "dev" });
+
+		// Assert
+		response.Success.Should().BeTrue(because: "forwarding a flag must not disturb the response envelope");
+		resolvedCommand.CapturedOptions.IgnoreProfile.Should().BeTrue(
+			because: "without forwarding, the tool would silently answer the profile-first question instead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolve reads the saved profile by default when ignore-profile is omitted from the MCP arguments.")]
+	public void Resolve_ShouldDefaultToReadingTheProfile_WhenIgnoreProfileIsOmitted() {
+		// Arrange — the argument is nullable so it stays optional in the tool schema; the default has to be the
+		// profile-first answer, because that is the set the Classic list actually renders.
+		FakeGetClassicListColumnsCommand resolvedCommand = CreateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetClassicListColumnsCommand>(Arg.Any<GetClassicListColumnsOptions>())
+			.Returns(resolvedCommand);
+		GetClassicListColumnsTool tool = new(CreateCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.Resolve(new GetClassicListColumnsArgs("AccountSectionV2") { EnvironmentName = "dev" });
+
+		// Assert
+		resolvedCommand.CapturedOptions.IgnoreProfile.Should().BeFalse(
+			because: "an omitted argument must not be mapped as if the caller had opted out of the profile");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolve returns the profile provenance fields so a consumer can tell a shared default from a personal layout.")]
+	public void Resolve_ShouldReturnProfileProvenance_WhenTheCommandResolvesFromAProfile() {
+		// Arrange
+		GetClassicListColumnsResponse profileResponse = new() {
+			Success = true,
+			SectionSchema = "AccountSectionV2",
+			Entity = "Account",
+			Source = "profile",
+			View = "GridDataView",
+			ViewType = "listed",
+			ProfileScope = "shared",
+			Columns = [new ClassicListColumnInfo("Name", "Name")]
+		};
+		FakeGetClassicListColumnsCommand resolvedCommand = CreateCommand(profileResponse);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetClassicListColumnsCommand>(Arg.Any<GetClassicListColumnsOptions>())
+			.Returns(resolvedCommand);
+		GetClassicListColumnsTool tool = new(CreateCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		GetClassicListColumnsResponse response = tool.Resolve(
+			new GetClassicListColumnsArgs("AccountSectionV2") { EnvironmentName = "dev" });
+
+		// Assert
+		response.Source.Should().Be("profile", because: "the source discriminator is the load-bearing contract");
+		response.View.Should().Be("GridDataView", because: "the consumer needs the view the answer came from");
+		response.ViewType.Should().Be("listed",
+			because: "a grid stores two configurations, so the reported one has to be named");
+		response.ProfileScope.Should().Be("shared",
+			because: "this is what keeps a personal layout from being read as the section's canonical set");
+	}
+
 	private static FakeGetClassicListColumnsCommand CreateCommand(
 		GetClassicListColumnsResponse response = null) => new(response);
 

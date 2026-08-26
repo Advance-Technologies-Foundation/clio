@@ -132,6 +132,7 @@ internal sealed class CommandHelpCatalog {
 			["remove-data-binding-row-db"] = "Remove a row from a DB-first package data binding",
 			["restore-configuration"] = "Restore the configuration from the last backup",
 			["restore-db"] = "Restore a database backup",
+			["prune-db-templates"] = "Interactively prune managed PostgreSQL templates",
 			["set-webservice-url"] = "Set a base URL for a registered web service",
 			["set-dev-mode"] = "Toggle developer mode for a Creatio environment",
 			["get-webservice-url"] = "Show the configured base URL for a web service",
@@ -227,6 +228,7 @@ internal sealed class CommandHelpCatalog {
 			"CustomizeDataProtection",
 			"hosts",
 			"last-compilation-log",
+			"prune-db-templates",
 			"restart-web-app",
 			"set-fsm-config",
 			"start",
@@ -328,6 +330,7 @@ internal sealed class CommandHelpCatalog {
 	private static readonly HashSet<string> PackageCommands =
 		[
 			"activate-pkg",
+			"add-custom-logging",
 			"add-package",
 			"check-nuget-update",
 			"compile-configuration",

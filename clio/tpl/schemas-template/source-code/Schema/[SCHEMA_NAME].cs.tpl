@@ -1,9 +1,9 @@
 using System;
 
-namespace [MAINTAINER].[PACKAGE_NAME]
+namespace [NAMESPACE]
 {
 
-	public class [SCHEMA_NAME]
+[CLASS_DOCUMENTATION]	public class [SCHEMA_NAME]
 	{
 	}
 }
