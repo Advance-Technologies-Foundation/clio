@@ -21,6 +21,7 @@ public sealed class PageValidateTool(
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed constructs, diff-apply, and placement checks for mobile — `type` must sit inside `values`, a `merge` must not author child elements in a Scaffold slot the template already fills, and a button in the Scaffold `actions` slot is flagged). " +
+		"An inserted crt.GaugeWidget is also checked against its scale contract (config.min/config.max present and min < max, every config.thresholds key numeric and inside that range, no Sum/Avg/Min/Max over Id); those rules need no component registry and run offline — see get-guidance `gauge-widget`. " +
 		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` / `mobile-page-modification` for the contracts it enforces.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
@@ -47,7 +48,15 @@ public sealed class PageValidateTool(
 		SchemaValidationResult chartResult =
 			await ChartWidgetValidation.ValidateAsync(args.Body, webComponentCatalog, args.Version, cancellationToken).ConfigureAwait(false);
 		if (!chartResult.IsValid) {
-			result = FoldInChartErrors(result, chartResult);
+			result = FoldInWidgetFindings(result, chartResult);
+		}
+		// Gauge widgets: the same registry walk plus the registry-independent scale rules. Unlike the
+		// chart check this also produces WARNINGS (an inert comparison, a missing band at min), which
+		// validate-page — the advisory surface — surfaces alongside the errors.
+		SchemaValidationResult gaugeResult =
+			await GaugeWidgetValidation.ValidateAsync(args.Body, webComponentCatalog, args.Version, cancellationToken).ConfigureAwait(false);
+		if (!gaugeResult.IsValid || gaugeResult.Warnings.Count > 0) {
+			result = FoldInWidgetFindings(result, gaugeResult);
 		}
 		return new PageValidateResponse {
 			Valid = result.MarkersOk && result.JsSyntaxOk && result.ContentOk,
@@ -55,16 +64,23 @@ public sealed class PageValidateTool(
 		};
 	}
 
-	private static PageSyncValidationResult FoldInChartErrors(
-		PageSyncValidationResult result, SchemaValidationResult chartResult) {
+	/// <summary>
+	/// Folds a widget validator's errors AND warnings into the page result. Warnings alone do not clear
+	/// <c>ContentOk</c> — an inert field or a missing band at <c>min</c> is advisory, not a broken page —
+	/// so the flag drops only when the validator actually reported an error.
+	/// </summary>
+	private static PageSyncValidationResult FoldInWidgetFindings(
+		PageSyncValidationResult result, SchemaValidationResult widgetResult) {
 		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);
-		mergedErrors.AddRange(chartResult.Errors);
+		mergedErrors.AddRange(widgetResult.Errors);
+		List<string> mergedWarnings = result.Warnings is null ? new List<string>() : new List<string>(result.Warnings);
+		mergedWarnings.AddRange(widgetResult.Warnings);
 		return new PageSyncValidationResult {
 			MarkersOk = result.MarkersOk,
 			JsSyntaxOk = result.JsSyntaxOk,
-			ContentOk = false,
+			ContentOk = result.ContentOk && widgetResult.IsValid,
 			Errors = mergedErrors.Count > 0 ? mergedErrors : null,
-			Warnings = result.Warnings
+			Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null
 		};
 	}
 
@@ -252,7 +268,7 @@ public sealed record PageValidateArgs(
 	string? Resources = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Optional explicit platform version (3-part semver, e.g. '8.3.3') that scopes the registry-driven chart-widget (crt.ChartWidget) validation to the target environment's component set. PREFER passing the resolvedTargetVersion you already got from get-component-info for the same environment, so this pre-flight check matches what update-page / sync-pages will enforce on save. When omitted, validation uses the 'latest' catalog (a superset of all GA versions). If no registry is published for the given version, the catalog automatically falls back to 'latest'.")]
+	[property: Description("Optional explicit platform version (3-part semver, e.g. '8.3.3') that scopes the registry-driven analytics-widget validation (crt.ChartWidget and crt.GaugeWidget) to the target environment's component set. PREFER passing the resolvedTargetVersion you already got from get-component-info for the same environment, so this pre-flight check matches what update-page / sync-pages will enforce on save. When omitted, validation uses the 'latest' catalog (a superset of all GA versions). If no registry is published for the given version, the catalog automatically falls back to 'latest'. Note that the crt.GaugeWidget SCALE rules (min/max and threshold bands) need no registry and are enforced regardless of this argument.")]
 	string? Version = null
 );
 

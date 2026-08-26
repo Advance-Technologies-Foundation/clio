@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Clio.Command;
 using FluentAssertions;
@@ -10008,6 +10010,738 @@ public sealed class SchemaValidationServiceTests
 
 		result.IsValid.Should().BeTrue("because the validator only inspects crt.ChartWidget nodes");
 		result.Errors.Should().BeEmpty();
+	}
+
+	#endregion
+
+	#region ValidateGaugeWidgetConfig
+
+	// Minimal merged typeDefinitions for the gauge walk: GaugeWidgetConfig (per-component) -> data
+	// (WidgetDataConfig<WidgetDataProvidingConfig, ...>) -> WidgetDataProvidingConfig -> aggregation.column.
+	// Reuses the same WidgetDataConfig/WidgetDataProvidingConfig shapes as the chart fixture, because the
+	// gauge shares those document-level types.
+	private const string GaugeTypeDefinitionsJson =
+		"""
+		{
+		  "typeDefinitions": {
+		    "GaugeWidgetConfig": { "fields": {
+		      "title": { "type": "string", "required": true },
+		      "data": { "type": "WidgetDataConfig<WidgetDataProvidingConfig, NumberFormat | DateTimeFormat | StringFormat>", "required": true },
+		      "min": { "type": "number", "required": true },
+		      "max": { "type": "number", "required": true },
+		      "thresholds": { "type": "object" },
+		      "theme": { "type": "string" }
+		    }},
+		    "WidgetDataConfig": { "fields": {
+		      "providing": { "type": "TProvidingConfig", "required": true },
+		      "formatting": { "type": "TFormat", "required": true }
+		    }},
+		    "WidgetDataProvidingConfig": { "fields": {
+		      "attribute": { "type": "string", "required": true },
+		      "schemaName": { "type": "string", "required": true },
+		      "aggregation": { "type": "object", "required": true, "shape": {
+		        "column": { "type": "AggregationFunctionColumn", "required": true }
+		      }}
+		    }}
+		  }
+		}
+		""";
+
+	private static IReadOnlyDictionary<string, JsonElement> GaugeTypeDefs() {
+		using JsonDocument document = JsonDocument.Parse(GaugeTypeDefinitionsJson);
+		var map = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+		foreach (JsonProperty property in document.RootElement.GetProperty("typeDefinitions").EnumerateObject()) {
+			map[property.Name] = property.Value.Clone();
+		}
+		return map;
+	}
+
+	// COUNT(Id) with the eval type the designer emits for Count (Distinct = 2).
+	private const string CountIdAggregation =
+		"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"Id"},"functionType":2,"aggregationType":1,"aggregationEvalType":2}}}""";
+
+	private static string GaugeConfigJson(
+		string scaleJson,
+		string aggregationJson = CountIdAggregation,
+		string extraConfigJson = "") =>
+		"""{"title":"#ResourceString(TestGauge_title)#","data":{"providing":{"attribute":"TestGauge_Data","schemaName":"Case","aggregation":__AGG__},"formatting":{"type":"number"}}__EXTRA__,__SCALE__}"""
+			.Replace("__AGG__", aggregationJson)
+			.Replace("__EXTRA__", extraConfigJson)
+			.Replace("__SCALE__", scaleJson);
+
+	private static string GaugePageBody(string configJson, string operation = "insert") {
+		string viewConfigDiff =
+			"""[{"operation":"__OP__","name":"TestGauge","parentName":"Main","propertyName":"items","index":0,"values":{"type":"crt.GaugeWidget","config":__CONFIG__}}]"""
+				.Replace("__OP__", operation)
+				.Replace("__CONFIG__", configJson);
+		return BuildDiffBackedPageBody(viewConfigDiff, "[]");
+	}
+
+	// A scale that satisfies every rule: bounds present, min < max, one band starting exactly at min.
+	private const string ValidScaleJson = """ "min":0,"max":500,"thresholds":{"0":{"color":"#20A959"},"200":{"color":"#FFAC07"}}""";
+
+	[Test]
+	[Description("A gauge with valid bounds, in-range thresholds and a band at min passes with no findings.")]
+	public void ValidateGaugeWidgetConfig_WellFormedGauge_ReturnsValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "every scale rule and required field is satisfied");
+		result.Errors.Should().BeEmpty(because: "a canonical gauge must not be reported at all");
+		result.Warnings.Should().BeEmpty(because: "a band starting at min leaves no advisory to raise");
+	}
+
+	[Test]
+	[Description("min greater than or equal to max fails — the widget never reports it, so the save must.")]
+	public void ValidateGaugeWidgetConfig_MinNotBelowMax_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":10,"max":5"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "an inverted scale renders a broken dial");
+		result.Errors.Should().Contain(e => e.Contains("TestGauge") && e.Contains("must be less than max"),
+			because: "the diagnostic must name the widget and the violated rule");
+	}
+
+	[Test]
+	[Description("Equal bounds fail too — the range is empty, not merely degenerate.")]
+	public void ValidateGaugeWidgetConfig_MinEqualsMax_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":5,"max":5"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "min == max leaves the gauge no axis to render on");
+	}
+
+	[Test]
+	[Description("A missing min fails with a diagnostic naming the absent bound, because a gauge has no default scale.")]
+	public void ValidateGaugeWidgetConfig_MissingMin_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "max":500"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "min is required — there is no sensible default bound");
+		result.Errors.Should().Contain(e => e.Contains(".min") && e.Contains("required"),
+			because: "the diagnostic must point at the missing bound by name");
+	}
+
+	[Test]
+	[Description("A missing max fails for the same reason as a missing min.")]
+	public void ValidateGaugeWidgetConfig_MissingMax_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":0"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "max is required — there is no sensible default bound");
+		result.Errors.Should().Contain(e => e.Contains(".max") && e.Contains("required"),
+			because: "the diagnostic must point at the missing bound by name");
+	}
+
+	[Test]
+	[Description("A non-numeric bound fails rather than being silently coerced.")]
+	public void ValidateGaugeWidgetConfig_NonNumericBound_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":"low","max":500"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "a non-numeric bound cannot define a scale");
+		result.Errors.Should().Contain(e => e.Contains(".min") && e.Contains("must be a finite number"),
+			because: "the diagnostic must say the bound is not a usable number");
+	}
+
+	[Test]
+	[Description("A bound written as a numeric string is accepted — it still describes a usable scale.")]
+	public void ValidateGaugeWidgetConfig_NumericStringBounds_ReturnsValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":"0","max":"500","thresholds":{"0":{"color":"#20A959"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the runtime coerces a numeric string, so rejecting it would fail a payload that renders correctly");
+	}
+
+	[Test]
+	[Description("A threshold key above max fails — the band is invisible and the key still renders as a stray scale label.")]
+	public void ValidateGaugeWidgetConfig_ThresholdAboveMax_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(
+			""" "min":0,"max":5,"thresholds":{"0":{"color":"#20A959"},"9":{"color":"#FF4013"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "a threshold outside [min, max] is unreachable");
+		result.Errors.Should().Contain(e => e.Contains("'9'") && e.Contains("outside the scale"),
+			because: "the diagnostic must quote the offending key and the scale it falls outside of");
+	}
+
+	[Test]
+	[Description("A threshold key below min fails as well, not only one above max.")]
+	public void ValidateGaugeWidgetConfig_ThresholdBelowMin_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(
+			""" "min":10,"max":50,"thresholds":{"5":{"color":"#20A959"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the range check is two-sided");
+		result.Errors.Should().Contain(e => e.Contains("'5'") && e.Contains("outside the scale"),
+			because: "a key under min is as unreachable as one over max");
+	}
+
+	[Test]
+	[Description("A threshold key at exactly min or max is in range — the bounds are inclusive.")]
+	public void ValidateGaugeWidgetConfig_ThresholdsOnBounds_ReturnsValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(
+			""" "min":0,"max":15,"thresholds":{"0":{"color":"#20A959"},"15":{"color":"#FF4013"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the designer itself emits a band at max, so an inclusive check is what matches real payloads");
+	}
+
+	[Test]
+	[Description("A non-numeric threshold key fails, because keys are band start values written as numeric strings.")]
+	public void ValidateGaugeWidgetConfig_NonNumericThresholdKey_ReturnsInvalid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(
+			""" "min":0,"max":10,"thresholds":{"low":{"color":"#20A959"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "a non-numeric key cannot position a band on the scale");
+		result.Errors.Should().Contain(e => e.Contains("non-numeric key") && e.Contains("low"),
+			because: "the diagnostic must quote the offending key");
+	}
+
+	[Test]
+	[Description("Thresholds absent is a warning, not a failure — the dial still renders on its default band.")]
+	public void ValidateGaugeWidgetConfig_NoThresholds_WarnsButStaysValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":0,"max":500"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "a gauge with no zones is legal, merely less useful");
+		result.Warnings.Should().Contain(w => w.Contains("no thresholds"),
+			because: "the agent should be told the requested color zones are absent");
+	}
+
+	[Test]
+	[Description("A first band above min is a warning — values below it render with no zone color.")]
+	public void ValidateGaugeWidgetConfig_NoBandAtMin_WarnsButStaysValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(
+			""" "min":0,"max":10,"thresholds":{"4":{"color":"#FF4013"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "the gap is a presentation flaw, not an invalid scale");
+		result.Warnings.Should().Contain(w => w.Contains("no band starting at min"),
+			because: "the uncolored low range is worth surfacing to the agent");
+	}
+
+	[Test]
+	[Description("Sum over the Id column fails — the statically decidable half of aggregate/column compatibility.")]
+	public void ValidateGaugeWidgetConfig_SumOverIdColumn_ReturnsInvalid() {
+		// Arrange
+		string sumOverId =
+			"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"Id"},"functionType":2,"aggregationType":2,"aggregationEvalType":0}}}""";
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, sumOverId));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "identifiers cannot be summed into a measurable value");
+		result.Errors.Should().Contain(e => e.Contains("'Sum'") && e.Contains("Id column"),
+			because: "the diagnostic must name both the function and the offending column");
+	}
+
+	[Test]
+	[Description("Count over the Id column is correct and must not be flagged.")]
+	public void ValidateGaugeWidgetConfig_CountOverIdColumn_ReturnsValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "Count is the one aggregate that belongs on Id");
+	}
+
+	[Test]
+	[Description("Avg over a business column passes — only Id is rejected for arithmetic aggregates.")]
+	public void ValidateGaugeWidgetConfig_AvgOverBusinessColumn_ReturnsValid() {
+		// Arrange
+		string avgOverColumn =
+			"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"ResolutionTimeDays"},"functionType":2,"aggregationType":3,"aggregationEvalType":0}}}""";
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, avgOverColumn));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "an averaged business column is exactly the intended usage");
+		result.Errors.Should().BeEmpty(because: "the column-type check must not fire on a legitimate measure");
+	}
+
+	[Test]
+	[Description("Distinct eval type on a non-Count aggregate warns, because it silently aggregates unique values only.")]
+	public void ValidateGaugeWidgetConfig_DistinctEvalTypeOnSum_WarnsButStaysValid() {
+		// Arrange
+		string sumDistinct =
+			"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"Amount"},"functionType":2,"aggregationType":2,"aggregationEvalType":2}}}""";
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, sumDistinct));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "the platform accepts it — the number is just quietly wrong");
+		result.Warnings.Should().Contain(w => w.Contains("aggregationEvalType"),
+			because: "under-reporting from Distinct on a Sum is exactly what the agent needs told");
+	}
+
+	[Test]
+	[Description("An inert config.comparison warns, because the gauge inherits the field but renders no trend badge.")]
+	public void ValidateGaugeWidgetConfig_ComparisonPresent_WarnsButStaysValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, CountIdAggregation, ""","comparison":{"type":"previous-period"}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "an inert field does not break the page");
+		result.Warnings.Should().Contain(w => w.Contains("comparison"),
+			because: "shipping config with no visible effect should be surfaced, not silently accepted");
+	}
+
+	[Test]
+	[Description("The scale rules run without any registry, so an offline save is still protected.")]
+	public void ValidateGaugeWidgetConfig_NullTypeDefinitions_StillEnforcesScale() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":10,"max":5"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, null);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "unlike the chart walk, the scale check needs no type definitions and must not fail open");
+	}
+
+	[Test]
+	[Description("Registry-driven: a gauge whose providing has no aggregation fails via the registry's required flag.")]
+	public void ValidateGaugeWidgetConfig_AggregationMissingEntirely_ReturnsInvalid() {
+		// Arrange
+		string config =
+			"""{"title":"T","data":{"providing":{"attribute":"A","schemaName":"Case"},"formatting":{"type":"number"}},"min":0,"max":10,"thresholds":{"0":{"color":"#20A959"}}}""";
+		string body = GaugePageBody(config);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the registry marks aggregation required on the providing type");
+		result.Errors.Should().Contain(e => e.Contains("TestGauge") && e.Contains("aggregation"),
+			because: "the diagnostic must name the widget and the missing block");
+	}
+
+	[Test]
+	[Description("Registry-driven errors point the agent at the gauge-widget guide, not the chart one.")]
+	public void ValidateGaugeWidgetConfig_RegistryError_PointsAtGaugeGuidance() {
+		// Arrange
+		string config =
+			"""{"title":"T","data":{"providing":{"attribute":"A","schemaName":"Case"},"formatting":{"type":"number"}},"min":0,"max":10,"thresholds":{"0":{"color":"#20A959"}}}""";
+		string body = GaugePageBody(config);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.Errors.Should().Contain(e => e.Contains("name 'gauge-widget'"),
+			because: "a diagnostic that names the wrong guide sends the agent to the wrong contract");
+	}
+
+	[Test]
+	[Description("A merge operation is skipped — it legitimately omits fields the base schema supplies.")]
+	public void ValidateGaugeWidgetConfig_MergeOperation_IsSkipped() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":10,"max":5"""), operation: "merge");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "only a freshly inserted gauge is self-contained enough to judge");
+	}
+
+	[Test]
+	[Description("A page with no gauge widget is untouched, so the validator never fires on unrelated components.")]
+	public void ValidateGaugeWidgetConfig_NoGaugeWidget_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff =
+			"""[{"operation":"insert","name":"Label1","parentName":"Main","propertyName":"items","index":0,"values":{"type":"crt.Label","config":{"caption":"x"}}}]""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "the validator only inspects crt.GaugeWidget nodes");
+		result.Errors.Should().BeEmpty(because: "an unrelated component must produce no findings");
+	}
+
+	[Test]
+	[Description("A gauge insert with no config block is reported, not skipped — min/max are mandatory, so a half-built widget cannot pass.")]
+	public void ValidateGaugeWidgetConfig_MissingConfigBlock_ReturnsInvalid() {
+		// Arrange — properties hoisted onto values instead of into config, the commonest half-built payload.
+		string viewConfigDiff =
+			"""[{"operation":"insert","name":"TestGauge","parentName":"Main","propertyName":"items","index":0,"values":{"type":"crt.GaugeWidget","min":0,"max":100}}]""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a gauge with no config carries no scale at all and must not save clean");
+		result.Errors.Should().Contain(e => e.Contains("TestGauge") && e.Contains("'config' object"),
+			because: "the diagnostic must name the widget and the missing block");
+	}
+
+	[TestCase("\"x\"", TestName = "ValidateGaugeWidgetConfig_NonObjectConfig_String_ReturnsInvalid")]
+	[TestCase("[]", TestName = "ValidateGaugeWidgetConfig_NonObjectConfig_Array_ReturnsInvalid")]
+	[TestCase("null", TestName = "ValidateGaugeWidgetConfig_NonObjectConfig_Null_ReturnsInvalid")]
+	[Description("A gauge whose config is not an object is reported rather than silently skipped.")]
+	public void ValidateGaugeWidgetConfig_NonObjectConfig_ReturnsInvalid(string configJson) {
+		// Arrange
+		string body = GaugePageBody(configJson);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a non-object config cannot carry a scale, so skipping it would hide an unusable widget");
+	}
+
+	[TestCase("[]", TestName = "ValidateGaugeWidgetConfig_ThresholdsArray_ReturnsInvalid")]
+	[TestCase("\"0\"", TestName = "ValidateGaugeWidgetConfig_ThresholdsString_ReturnsInvalid")]
+	[TestCase("null", TestName = "ValidateGaugeWidgetConfig_ThresholdsNull_ReturnsInvalid")]
+	[Description("A wrong-typed thresholds is an error, not the advisory used for an absent one — the registry walk cannot catch it either.")]
+	public void ValidateGaugeWidgetConfig_WrongTypedThresholds_ReturnsInvalid(string thresholdsJson) {
+		// Arrange
+		string scale = """ "min":0,"max":100,"thresholds":__T__""".Replace("__T__", thresholdsJson);
+		string body = GaugePageBody(GaugeConfigJson(scale));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "thresholds is a keyed object, so any other shape describes no bands at all");
+		result.Errors.Should().Contain(e => e.Contains("thresholds") && e.Contains("must be an object"),
+			because: "the diagnostic must say what shape is expected");
+	}
+
+	[Test]
+	[Description("An empty thresholds object produces the same advisory as an absent one and still saves.")]
+	public void ValidateGaugeWidgetConfig_EmptyThresholdsObject_WarnsButStaysValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":0,"max":100,"thresholds":{}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "an empty zone map renders the default band, it does not break the dial");
+		result.Warnings.Should().Contain(w => w.Contains("no thresholds"),
+			because: "an empty map leaves the requested zones absent just as a missing key does");
+	}
+
+	[TestCase("\"NaN\"", TestName = "ValidateGaugeWidgetConfig_NaNBound_ReturnsInvalid")]
+	[TestCase("\"-Infinity\"", TestName = "ValidateGaugeWidgetConfig_InfiniteBound_ReturnsInvalid")]
+	[Description("A non-finite bound is rejected — NaN would pass every downstream comparison and save an undefined scale.")]
+	public void ValidateGaugeWidgetConfig_NonFiniteBound_ReturnsInvalid(string minJson) {
+		// Arrange
+		string scale = """ "min":__MIN__,"max":500""".Replace("__MIN__", minJson);
+		string body = GaugePageBody(GaugeConfigJson(scale));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "every comparison against NaN is false, so an unguarded non-finite bound would slip through silently");
+		result.Errors.Should().Contain(e => e.Contains(".min") && e.Contains("finite"),
+			because: "the diagnostic must say the bound is not a finite number");
+	}
+
+	[TestCase(2, "Sum", TestName = "ValidateGaugeWidgetConfig_SumOverId_ReturnsInvalid")]
+	[TestCase(3, "Avg", TestName = "ValidateGaugeWidgetConfig_AvgOverId_ReturnsInvalid")]
+	[TestCase(4, "Min", TestName = "ValidateGaugeWidgetConfig_MinOverId_ReturnsInvalid")]
+	[TestCase(5, "Max", TestName = "ValidateGaugeWidgetConfig_MaxOverId_ReturnsInvalid")]
+	[Description("Every arithmetic aggregate over Id is rejected, not only Sum.")]
+	public void ValidateGaugeWidgetConfig_ArithmeticAggregateOverId_ReturnsInvalid(int aggregationType, string expectedName) {
+		// Arrange
+		string aggregation =
+			"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"Id"},"functionType":2,"aggregationType":__T__,"aggregationEvalType":0}}}"""
+				.Replace("__T__", aggregationType.ToString());
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, aggregation));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "identifiers carry no measurable value for any arithmetic aggregate");
+		result.Errors.Should().Contain(e => e.Contains(expectedName) && e.Contains("Id column"),
+			because: "the diagnostic must name the aggregate function that was misapplied");
+	}
+
+	[Test]
+	[Description("The Id check is case-insensitive, so a lowercase column path is caught too.")]
+	public void ValidateGaugeWidgetConfig_SumOverLowercaseId_ReturnsInvalid() {
+		// Arrange
+		string aggregation =
+			"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"id"},"functionType":2,"aggregationType":2,"aggregationEvalType":0}}}""";
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, aggregation));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "column paths are compared case-insensitively across clio");
+	}
+
+	[Test]
+	[Description("A non-numeric aggregationType is ignored rather than throwing — JsonElement.TryGetInt32 throws on a non-Number token.")]
+	public void ValidateGaugeWidgetConfig_StringAggregationType_DoesNotThrow() {
+		// Arrange — the registry spells the enum as a string in places, so an agent may copy that form.
+		string aggregation =
+			"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"Id"},"functionType":2,"aggregationType":"COUNT","aggregationEvalType":2}}}""";
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, aggregation));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "an unreadable aggregation must degrade to 'not checked', never take the whole batch down with an exception");
+	}
+
+	[Test]
+	[Description("A Count aggregate missing Distinct warns with the Count-direction explanation, not the Sum one.")]
+	public void ValidateGaugeWidgetConfig_CountWithoutDistinct_WarnsInTheCountDirection() {
+		// Arrange
+		string aggregation =
+			"""{"column":{"expression":{"expressionType":1,"functionArgument":{"expressionType":0,"columnPath":"Id"},"functionType":2,"aggregationType":1,"aggregationEvalType":0}}}""";
+		string body = GaugePageBody(GaugeConfigJson(ValidScaleJson, aggregation));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "an eval-type mismatch is advisory, the platform still accepts it");
+		result.Warnings.Should().Contain(w => w.Contains("Count is the one aggregate"),
+			because: "pointing a Count mismatch at the Sum under-reporting explanation would name the wrong correction");
+	}
+
+	[Test]
+	[Description("A rejected threshold key suppresses the band-at-min advisory — advice about a map that is being refused wholesale is noise.")]
+	public void ValidateGaugeWidgetConfig_RejectedThresholdKey_SuppressesBandAtMinWarning() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":0,"max":10,"thresholds":{"low":{"color":"#20A959"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the non-numeric key is still an error");
+		result.Warnings.Should().NotContain(w => w.Contains("no band starting at min"),
+			because: "the map was refused wholesale, so telling the agent to add a band to it is misdirection");
+	}
+
+	[Test]
+	[Description("A negative minimum is a valid scale — the widget shifts by min, and the runtime has a dedicated branch for it.")]
+	public void ValidateGaugeWidgetConfig_NegativeMin_ReturnsValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":-50,"max":50,"thresholds":{"-50":{"color":"#20A959"},"0":{"color":"#FFAC07"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "a negative lower bound is legal and the runtime shifts the axis for it");
+		result.Warnings.Should().BeEmpty(because: "the first band starts exactly at min, so nothing is advisory here");
+	}
+
+	[Test]
+	[Description("A fractional threshold key is accepted, matching the example the diagnostic itself advertises.")]
+	public void ValidateGaugeWidgetConfig_FractionalThresholdKey_ReturnsValid() {
+		// Arrange
+		string body = GaugePageBody(GaugeConfigJson(""" "min":0,"max":5,"thresholds":{"0":{"color":"#20A959"},"2.5":{"color":"#FF4013"}}"""));
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "band starts are real numbers, not integers");
+	}
+
+	[Test]
+	[Description("Two gauges on one page are judged independently and the diagnostic names the offending one.")]
+	public void ValidateGaugeWidgetConfig_TwoGaugesOnePageOneBroken_ReportsOnlyTheBrokenOne() {
+		// Arrange
+		string good = """{"operation":"insert","name":"GoodGauge","parentName":"Main","propertyName":"items","index":0,"values":{"type":"crt.GaugeWidget","config":{"min":0,"max":10,"thresholds":{"0":{"color":"#20A959"}}}}}""";
+		string bad = """{"operation":"insert","name":"BadGauge","parentName":"Main","propertyName":"items","index":1,"values":{"type":"crt.GaugeWidget","config":{"min":10,"max":5}}}""";
+		string body = BuildDiffBackedPageBody("[" + good + "," + bad + "]", "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "one broken gauge invalidates the body");
+		result.Errors.Should().Contain(e => e.Contains("BadGauge"),
+			because: "the diagnostic must identify which widget is wrong");
+		result.Errors.Should().NotContain(e => e.Contains("GoodGauge"),
+			because: "a valid sibling must not be reported");
+	}
+
+	[Test]
+	[Description("A gauge nested inside a container's items array is found — dashboards nest their widgets.")]
+	public void ValidateGaugeWidgetConfig_GaugeNestedInContainerItems_IsFound() {
+		// Arrange
+		string viewConfigDiff =
+			"""[{"operation":"insert","name":"Grid","parentName":"Main","propertyName":"items","index":0,"values":{"type":"crt.GridContainer","items":[{"name":"NestedGauge","type":"crt.GaugeWidget","config":{"min":10,"max":5}}]}}]""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "the walk must descend into container item arrays, not only the operation root");
+		result.Errors.Should().Contain(e => e.Contains("NestedGauge"),
+			because: "the nested widget's own name must be used, not the container's");
+	}
+
+	[Test]
+	[Description("The widget type is matched case-insensitively.")]
+	public void ValidateGaugeWidgetConfig_UppercasedWidgetType_IsStillChecked() {
+		// Arrange
+		string viewConfigDiff =
+			"""[{"operation":"insert","name":"TestGauge","parentName":"Main","propertyName":"items","index":0,"values":{"type":"CRT.GAUGEWIDGET","config":{"min":10,"max":5}}}]""";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(body, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "component types are compared case-insensitively across clio");
+	}
+
+	// Matches the guidance name a validator quotes in a registry diagnostic: "... name 'chart-widget' ...".
+	private static readonly Regex QuotedGuidanceName = new(@"name '([a-z][a-z0-9-]*)'", RegexOptions.Compiled);
+
+	private static IReadOnlySet<string> CuratedGuidanceNames() {
+		string path = Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json");
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(path));
+		return document.RootElement.GetProperty("availableNames")
+			.EnumerateArray()
+			.Select(name => name.GetString()!)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+	}
+
+	[Test]
+	[Description("Registry-driven chart errors point the agent at the chart-widget guide — the gauge side pins its own, and this closes the same hole on the chart path.")]
+	public void ValidateChartWidgetConfig_RegistryError_PointsAtChartGuidance() {
+		// Arrange
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		// Assert
+		result.Errors.Should().Contain(e => e.Contains("name 'chart-widget'"),
+			because: "a diagnostic that names a guide which does not resolve sends the agent to a dead end");
+	}
+
+	[Test]
+	[Description("Every guidance name a widget validator emits resolves in the curated knowledge library — the oracle whose absence let the chart diagnostic point at a non-existent 'chart-widget-guidance' guide.")]
+	public void WidgetValidators_ShouldQuoteOnlyResolvableGuidanceNames_InTheirDiagnostics() {
+		// Arrange — one body per validator, each shaped to trigger a diagnostic that quotes a guide.
+		string chartProviding = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string chartBody = ChartPageBody("[" + DoughnutSeries(chartProviding) + "]");
+		string gaugeBody = GaugePageBody(GaugeConfigJson(""" "max":500"""));
+		IReadOnlySet<string> curated = CuratedGuidanceNames();
+
+		// Act
+		SchemaValidationResult chartResult = SchemaValidationService.ValidateChartWidgetConfig(chartBody, ChartTypeDefs());
+		SchemaValidationResult gaugeResult = SchemaValidationService.ValidateGaugeWidgetConfig(gaugeBody, GaugeTypeDefs());
+		List<string> quoted = chartResult.Errors.Concat(gaugeResult.Errors).Concat(gaugeResult.Warnings)
+			.SelectMany(message => QuotedGuidanceName.Matches(message).Select(match => match.Groups[1].Value))
+			.Distinct()
+			.ToList();
+
+		// Assert
+		quoted.Should().NotBeEmpty(
+			because: "the fixtures must actually produce guide-quoting diagnostics, or this oracle checks nothing");
+		quoted.Should().OnlyContain(name => curated.Contains(name),
+			because: "a get-guidance name that does not resolve dead-ends the agent the diagnostic was meant to help");
+	}
+
+	[Test]
+	[Description("An empty body is passed through without scanning.")]
+	public void ValidateGaugeWidgetConfig_EmptyBody_ReturnsValid() {
+		// Arrange
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateGaugeWidgetConfig(string.Empty, GaugeTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "there is nothing to validate in an empty body");
 	}
 
 	#endregion

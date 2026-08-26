@@ -51,6 +51,7 @@ public sealed class PageSyncTool(
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
+	             "It also checks an inserted crt.GaugeWidget against its scale contract (config.min/config.max present and min < max, every config.thresholds key numeric and inside that range, no Sum/Avg/Min/Max over Id) and fails that page — the rules need no component registry, so they apply offline; see get-guidance `gauge-widget`. " +
 	             "On MOBILE bodies it additionally rejects a viewConfigDiff insert/set whose component `type` sits on the operation object instead of inside `values` (the differ discards it and the element never renders), and a `merge` whose `values` authors child elements on `Scaffold`'s `actions`, `leading` or `items` (every shipped form template populates those, so the differ strips the property and nothing is created; use one `insert` per child into a page container — clio validates against an empty base, so a bare Scaffold whose slots are empty is refused too), warns on the same authoring in any other slot, and warns when a `crt.Button` is inserted into `Scaffold`/`actions` (it saves but does not appear on the mobile designer canvas — use a page container's `items` with a `layoutConfig`); see get-guidance `mobile-page-modification`. " +
 	             "Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 	             "For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or valur from other field (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
@@ -74,7 +75,7 @@ public sealed class PageSyncTool(
 		PageSyncPrePassResults prePass = BuildPrePassResults(pages);
 		IReadOnlyList<PageSamplingReview?> samplingResults = await RunSamplingPrePassAsync(
 			server, args, pages, prePass, cancellationToken);
-		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Scope it to the
+		// Registry-driven analytics-widget validation needs the async, version-scoped catalog. Scope it to the
 		// target environment's platform version (probed the same way get-component-info resolves it) so the
 		// batch validates against the component set the environment actually ships, not the broader 'latest'.
 		// Resolve the merged type definitions once here on the async entry, then reuse them across the
@@ -82,12 +83,19 @@ public sealed class PageSyncTool(
 		// validation is disabled — the definitions would never be consumed. Null when validation is off or
 		// the registry/version is unavailable (fail-open).
 		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions = null;
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? gaugeTypeDefinitions = null;
 		if (args.Validate ?? true) {
 			string? platformVersion = await ResolvePlatformVersionAsync(args.EnvironmentName, cancellationToken).ConfigureAwait(false);
 			chartTypeDefinitions = await ChartWidgetValidation
 				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
+			// Each widget keeps its own merged bag: the per-component entries win on conflict, so folding
+			// both components into one dictionary could let one widget's type shadow the other's. The
+			// catalog is cached, so the second resolve costs no extra network call.
+			gaugeTypeDefinitions = await GaugeWidgetValidation
+				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
 		}
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults, chartTypeDefinitions);
+		List<PageSyncPageResult> results = ExecuteSyncBatch(
+			args, pages, prePass, samplingResults, chartTypeDefinitions, gaugeTypeDefinitions);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
@@ -95,7 +103,7 @@ public sealed class PageSyncTool(
 	}
 
 	/// <summary>
-	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
+	/// Resolves the target environment's platform version so the analytics-widget validation catalogs are scoped
 	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
 	/// The guard below only checks for an ABSENT resolver dependency (e.g. a unit test that did not supply
 	/// one) — NOT a blank environment name. A blank name is a legitimate, expected shape under authorized
@@ -110,7 +118,7 @@ public sealed class PageSyncTool(
 	/// enforced for the actual page save later in the batch.
 	/// Fail-soft: any probe failure (including the resolver's own rejection, e.g. an unresolvable
 	/// environment or a mixed-input rejection) yields <see langword="null"/>, which
-	/// <see cref="ChartWidgetValidation"/> maps to the safe <c>latest</c> superset — version resolution
+	/// <see cref="WidgetRegistryTypeDefinitions"/> maps to the safe <c>latest</c> superset — version resolution
 	/// must never block a save.
 	/// </summary>
 	private async Task<string?> ResolvePlatformVersionAsync(string? environmentName, CancellationToken cancellationToken) {
@@ -129,7 +137,7 @@ public sealed class PageSyncTool(
 			throw;
 		} catch (Exception) {
 			// Fail-soft: a bad/unreachable environment, or the resolver's own passthrough/mixed-input
-			// rejection, must not break a save. The catalog stays on 'latest' (ChartWidgetValidation maps
+			// rejection, must not break a save. The catalog stays on 'latest' (WidgetRegistryTypeDefinitions maps
 			// null -> latest), matching get-component-info's soft degrade.
 			return null;
 		}
@@ -212,7 +220,8 @@ public sealed class PageSyncTool(
 		IReadOnlyList<PageSyncPageInput> pages,
 		PageSyncPrePassResults prePass,
 		IReadOnlyList<PageSamplingReview?> samplingResults,
-		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? gaugeTypeDefinitions) {
 		var results = new List<PageSyncPageResult>(pages.Count);
 		var pendingIndices = new List<int>();
 		// Step 1: Materialise EVERY deterministic failure (syntax, regex
@@ -248,6 +257,11 @@ public sealed class PageSyncTool(
 			PageSyncPageResult chartFailure = TryMaterialiseChartWidgetFailure(page, validate, chartTypeDefinitions);
 			if (chartFailure != null) {
 				results.Add(chartFailure);
+				continue;
+			}
+			PageSyncPageResult gaugeFailure = TryMaterialiseGaugeWidgetFailure(page, validate, gaugeTypeDefinitions);
+			if (gaugeFailure != null) {
+				results.Add(gaugeFailure);
 				continue;
 			}
 			results.Add(null);
@@ -431,6 +445,37 @@ public sealed class PageSyncTool(
 				Errors = chartResult.Errors
 			},
 			Error = "Client-side validation failed: " + string.Join("; ", chartResult.Errors)
+		};
+	}
+
+	// Gauge-widget check, materialised into the same per-page failure shape. Web-only, and — unlike the
+	// chart check — it runs even when the registry was unavailable (gaugeTypeDefinitions == null): the
+	// scale rules (min/max, threshold bands) are decidable from the body alone, so only the registry's
+	// required-field walk is skipped. `validate: false` still turns the whole check off. The validator's
+	// WARNINGS are deliberately dropped here: a batch save fails on errors only, and validate-page is the
+	// surface that reports advisories.
+	private static PageSyncPageResult TryMaterialiseGaugeWidgetFailure(
+		PageSyncPageInput page,
+		bool validate,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? gaugeTypeDefinitions) {
+		if (!validate || PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+			return null;
+		}
+		SchemaValidationResult gaugeResult =
+			SchemaValidationService.ValidateGaugeWidgetConfig(page.Body, gaugeTypeDefinitions);
+		if (gaugeResult.IsValid) {
+			return null;
+		}
+		return new PageSyncPageResult {
+			SchemaName = page.SchemaName,
+			Success = false,
+			Validation = new PageSyncValidationResult {
+				MarkersOk = true,
+				JsSyntaxOk = true,
+				ContentOk = false,
+				Errors = gaugeResult.Errors
+			},
+			Error = "Client-side validation failed: " + string.Join("; ", gaugeResult.Errors)
 		};
 	}
 

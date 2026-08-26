@@ -3,6 +3,7 @@ namespace Clio.Command;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -1823,6 +1824,12 @@ public static class SchemaValidationService
 	private const string ChartWidgetRootType = "ChartWidgetConfig";
 
 	/// <summary>
+	/// The <c>get-guidance</c> article a chart-widget registry error points at. It is the guidance ITEM ID
+	/// published by clio-knowledge (<c>chart-widget</c>) — a name that does not resolve dead-ends the agent.
+	/// </summary>
+	private const string ChartWidgetGuidanceName = "chart-widget";
+
+	/// <summary>
 	/// TODO(ENG-92174, registry-bridge-1): remove once the producer emits the real key. The registry references the
 	/// chart series type as "SeriesConfig", but the typeDefinitions dictionary defines it under
 	/// "ChartSeriesConfig"; without this alias the walk dead-ends at the series and never reaches the
@@ -1849,11 +1856,16 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// The data-providing type whose subtree the validator actually checks. The walk navigates from the
-	/// chart config down to here (through the bridges), but only reports a missing required field once it
+	/// widget config down to here (through the bridges), but only reports a missing required field once it
 	/// has entered this type — so it validates the data structure (aggregation / schemaName / column) and
 	/// leaves the cosmetic fields above it (color, formatting, legend, title) alone.
+	/// <para>
+	/// The gate lives on the TYPE rather than on the widget because every analytics widget reaches the same
+	/// <c>WidgetDataProvidingConfig</c> — <c>crt.ChartWidget</c> per series, <c>crt.GaugeWidget</c> once — so
+	/// one constant serves both walks.
+	/// </para>
 	/// </summary>
-	private const string ChartDataProvidingType = "WidgetDataProvidingConfig";
+	private const string WidgetDataProvidingTypeName = "WidgetDataProvidingConfig";
 
 	private static readonly IReadOnlyDictionary<string, string> EmptyTypeSubstitution =
 		new Dictionary<string, string>(StringComparer.Ordinal);
@@ -1916,7 +1928,9 @@ public static class SchemaValidationService
 					string label = string.IsNullOrWhiteSpace(currentName)
 						? "a crt.ChartWidget config"
 						: $"chart widget '{currentName}' config";
-					ValidateValueAgainstType(config, ChartWidgetRootType, EmptyTypeSubstitution, typeDefinitions, label, result, report: false);
+					ValidateValueAgainstType(
+						config, ChartWidgetRootType, EmptyTypeSubstitution, typeDefinitions, label, result,
+						report: false, guidanceName: ChartWidgetGuidanceName);
 				}
 				foreach (JsonProperty property in node.EnumerateObject()) {
 					ScanInsertedChartWidgets(property.Value, currentName, typeDefinitions, result);
@@ -1952,11 +1966,16 @@ public static class SchemaValidationService
 	/// registry does not describe, so nothing deeper can be checked. Recursion is bounded by the (finite)
 	/// page-body value tree: it only descends into fields the value actually carries.
 	/// </summary>
+	/// <param name="guidanceName">
+	/// The <c>get-guidance</c> article a reported error points the agent at — <c>chart-widget</c> or
+	/// <c>gauge-widget</c>, depending on which widget's walk this is. Threaded through rather than
+	/// hardcoded because the walk itself is shared by both.
+	/// </param>
 	private static void ValidateValueAgainstType(
 		JsonElement value, string typeName,
 		IReadOnlyDictionary<string, string> substitution,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
-		string path, SchemaValidationResult result, bool report) {
+		string path, SchemaValidationResult result, bool report, string guidanceName) {
 		string resolvedName = ResolveTypeAlias(typeName, typeDefinitions);
 		if (!typeDefinitions.TryGetValue(resolvedName, out JsonElement definition) ||
 		    !definition.TryGetProperty("fields", out JsonElement fields) ||
@@ -1965,15 +1984,15 @@ public static class SchemaValidationService
 		}
 		// Begin reporting once we enter the data-providing block; before that we only navigate, so the
 		// cosmetic fields higher up (color/formatting/legend/title) are never flagged.
-		bool reportHere = report || string.Equals(resolvedName, ChartDataProvidingType, StringComparison.Ordinal);
-		ValidateFieldsMap(value, fields, substitution, typeDefinitions, path, result, reportHere);
+		bool reportHere = report || string.Equals(resolvedName, WidgetDataProvidingTypeName, StringComparison.Ordinal);
+		ValidateFieldsMap(value, fields, substitution, typeDefinitions, path, result, reportHere, guidanceName);
 	}
 
 	private static void ValidateFieldsMap(
 		JsonElement value, JsonElement fields,
 		IReadOnlyDictionary<string, string> substitution,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
-		string path, SchemaValidationResult result, bool report) {
+		string path, SchemaValidationResult result, bool report, string guidanceName) {
 		if (value.ValueKind != JsonValueKind.Object) {
 			return;
 		}
@@ -1986,11 +2005,12 @@ public static class SchemaValidationService
 				if (report && required) {
 					result.Errors.Add(
 						$"{path}.{field.Name} is required by the component registry but is missing. " +
-						"Call get-guidance with name 'chart-widget-guidance' for the full contract.");
+						$"Call get-guidance with name '{guidanceName}' for the full contract.");
 				}
 				continue;
 			}
-			RecurseIntoFieldValue(fieldValue, field.Value, substitution, typeDefinitions, $"{path}.{field.Name}", result, report);
+			RecurseIntoFieldValue(
+				fieldValue, field.Value, substitution, typeDefinitions, $"{path}.{field.Name}", result, report, guidanceName);
 		}
 	}
 
@@ -1998,10 +2018,10 @@ public static class SchemaValidationService
 		JsonElement value, JsonElement fieldDefinition,
 		IReadOnlyDictionary<string, string> substitution,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
-		string path, SchemaValidationResult result, bool report) {
+		string path, SchemaValidationResult result, bool report, string guidanceName) {
 		// Inline object shape (e.g. aggregation: { column: { required } }).
 		if (fieldDefinition.TryGetProperty("shape", out JsonElement shape) && shape.ValueKind == JsonValueKind.Object) {
-			ValidateFieldsMap(value, shape, substitution, typeDefinitions, path, result, report);
+			ValidateFieldsMap(value, shape, substitution, typeDefinitions, path, result, report, guidanceName);
 			return;
 		}
 		if (!fieldDefinition.TryGetProperty("type", out JsonElement typeElement) ||
@@ -2015,7 +2035,8 @@ public static class SchemaValidationService
 			    fieldDefinition.TryGetProperty("items", out JsonElement items)) {
 				int index = 0;
 				foreach (JsonElement element in value.EnumerateArray()) {
-					RecurseIntoFieldValue(element, items, substitution, typeDefinitions, $"{path}[{index}]", result, report);
+					RecurseIntoFieldValue(
+						element, items, substitution, typeDefinitions, $"{path}[{index}]", result, report, guidanceName);
 					index++;
 				}
 			}
@@ -2027,14 +2048,15 @@ public static class SchemaValidationService
 		if (TryParseGenericType(typeExpression, out string genericName, out string[] genericArguments)) {
 			ValidateValueAgainstType(
 				value, genericName, BuildGenericSubstitution(genericName, genericArguments),
-				typeDefinitions, path, result, report);
+				typeDefinitions, path, result, report, guidanceName);
 			return;
 		}
 		// Union ("A | B | C"): cannot pick a branch deterministically — stop rather than false-positive.
 		if (typeExpression.Contains('|')) {
 			return;
 		}
-		ValidateValueAgainstType(value, typeExpression, EmptyTypeSubstitution, typeDefinitions, path, result, report);
+		ValidateValueAgainstType(
+			value, typeExpression, EmptyTypeSubstitution, typeDefinitions, path, result, report, guidanceName);
 	}
 
 	private static string ResolveTypeAlias(string typeName, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
@@ -2094,6 +2116,345 @@ public static class SchemaValidationService
 		parts.Add(inner.Substring(start).Trim());
 		return parts.ToArray();
 	}
+
+	#endregion
+
+	#region Gauge-widget scale validation
+	// Two independent layers for each inserted crt.GaugeWidget:
+	//  1. the SAME registry-driven required-field walk the chart uses, rooted at GaugeWidgetConfig
+	//     (skipped, fail-open, when the registry is unavailable);
+	//  2. gauge-specific SCALE semantics — min/max and the threshold bands — which need no registry and
+	//     therefore run unconditionally. The widget itself validates none of this: it only shifts values
+	//     by `min`, so an invalid scale renders a broken dial with no error anywhere. See ENG-95576.
+
+	private const string GaugeWidgetType = "crt.GaugeWidget";
+	private const string GaugeWidgetRootType = "GaugeWidgetConfig";
+	private const string GaugeWidgetGuidanceName = "gauge-widget";
+
+	// Terrasoft.Nui.ServiceModel.DataContract AggregationType, as it appears on the wire in
+	// config.data.providing.aggregation.column.expression.aggregationType.
+	private const int AggregationTypeCount = 1;
+	private const int AggregationTypeSum = 2;
+	private const int AggregationTypeAvg = 3;
+	private const int AggregationTypeMin = 4;
+	private const int AggregationTypeMax = 5;
+
+	// AggregationEvalType: None = 0, All = 1, Distinct = 2. The designer emits Distinct for Count and
+	// None for every other function (indicator-widget-providing-settings.component.ts).
+	private const int AggregationEvalTypeNone = 0;
+	private const int AggregationEvalTypeDistinct = 2;
+
+	/// <summary>
+	/// Validation of <c>crt.GaugeWidget</c> inserts in the page's <c>viewConfigDiff</c>.
+	/// <para>
+	/// Reports as ERRORS the conditions that make a saved gauge structurally wrong — a missing or
+	/// non-numeric <c>config.min</c>/<c>config.max</c>, <c>min &gt;= max</c>, a non-numeric
+	/// <c>config.thresholds</c> key, a threshold key outside <c>[min, max]</c>, and an arithmetic
+	/// aggregate (<c>Sum</c>/<c>Avg</c>/<c>Min</c>/<c>Max</c>) applied to the <c>Id</c> column — plus the
+	/// registry's own required-field check inside the data-providing block.
+	/// </para>
+	/// <para>
+	/// Reports as WARNINGS the conditions that render but mislead: no threshold bands at all, no band
+	/// starting at or below <c>min</c>, an <c>aggregationEvalType</c> that contradicts the aggregate
+	/// function, and an inert <c>config.comparison</c> (inherited from the metric tile, never rendered by
+	/// the gauge).
+	/// </para>
+	/// <para>
+	/// Scope: only <c>operation:"insert"</c> entries are checked (a <c>merge</c> legitimately omits fields
+	/// supplied by the base schema). The scale layer needs no registry, so it still runs when
+	/// <paramref name="typeDefinitions"/> is null/empty; only the registry walk is skipped. An unparseable
+	/// body or a missing section yields a passing result.
+	/// </para>
+	/// <para>
+	/// NOT checked here: whether the aggregated column's DATA TYPE suits the function beyond the
+	/// statically decidable <c>Id</c> case — that needs the target entity schema, which this synchronous,
+	/// body-only validator has no access to. The <c>gauge-widget</c> guidance makes resolving the column
+	/// type the agent's obligation.
+	/// </para>
+	/// </summary>
+	public static SchemaValidationResult ValidateGaugeWidgetConfig(
+		string jsBody,
+		IReadOnlyDictionary<string, JsonElement>? typeDefinitions) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			if (vcdDoc.RootElement.ValueKind == JsonValueKind.Array) {
+				foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+					// Only freshly-inserted gauges are self-contained; merges/removes legitimately omit
+					// fields and are skipped.
+					if (IsInsertOperation(entry)) {
+						ScanInsertedGaugeWidgets(entry, string.Empty, typeDefinitions, result);
+					}
+				}
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanInsertedGaugeWidgets(
+		JsonElement node, string ownerName,
+		IReadOnlyDictionary<string, JsonElement>? typeDefinitions, SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				if (IsGaugeWidgetNode(node)) {
+					string label = string.IsNullOrWhiteSpace(currentName)
+						? "a crt.GaugeWidget config"
+						: $"gauge widget '{currentName}' config";
+					if (TryGetGaugeConfig(node, out JsonElement config)) {
+						// Registry layer — fail-open when the catalog could not be loaded.
+						if (typeDefinitions is { Count: > 0 }) {
+							ValidateValueAgainstType(
+								config, GaugeWidgetRootType, EmptyTypeSubstitution, typeDefinitions, label, result,
+								report: false, guidanceName: GaugeWidgetGuidanceName);
+						}
+						// Scale layer — registry-independent.
+						ValidateGaugeScale(config, label, result);
+						ValidateGaugeAggregation(config, label, result);
+						ValidateGaugeUnsupportedFields(config, label, result);
+					} else {
+						// A gauge whose `config` is absent or not an object cannot be judged field by field, but it
+						// is NOT valid: min/max are mandatory. Skipping it here (as the chart walk can afford to,
+						// being fail-open by design) would let the commonest half-built payload — properties hoisted
+						// onto `values` instead of into `config` — save clean.
+						result.Errors.Add(
+							$"{label} is missing: a crt.GaugeWidget insert must carry a 'config' object with at least " +
+							$"'min' and 'max'. Call get-guidance with name '{GaugeWidgetGuidanceName}' for the scale contract.");
+					}
+				}
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					ScanInsertedGaugeWidgets(property.Value, currentName, typeDefinitions, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanInsertedGaugeWidgets(item, ownerName, typeDefinitions, result);
+				}
+				break;
+		}
+	}
+
+	private static bool IsGaugeWidgetNode(JsonElement node) =>
+		node.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
+		typeElement.ValueKind == JsonValueKind.String &&
+		string.Equals(typeElement.GetString(), GaugeWidgetType, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Splits "is this a gauge" from "does it carry a usable config" so a gauge with a missing or
+	/// non-object <c>config</c> is REPORTED rather than skipped — see the caller.
+	/// </summary>
+	private static bool TryGetGaugeConfig(JsonElement node, out JsonElement config) {
+		config = default;
+		if (!node.TryGetProperty("config", out JsonElement configElement) ||
+		    configElement.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		config = configElement;
+		return true;
+	}
+
+	/// <summary>
+	/// Enforces the scale contract: both bounds present and numeric, <c>min &lt; max</c>, and every
+	/// <c>thresholds</c> key a number inside <c>[min, max]</c>. Threshold keys double as the dial's scale
+	/// labels, so an out-of-range key is both an invisible band and a stray label.
+	/// </summary>
+	private static void ValidateGaugeScale(JsonElement config, string label, SchemaValidationResult result) {
+		bool hasMin = TryGetGaugeBound(config, "min", out double min, out string minError);
+		bool hasMax = TryGetGaugeBound(config, "max", out double max, out string maxError);
+		if (!hasMin) {
+			result.Errors.Add($"{label}.min {minError} Call get-guidance with name '{GaugeWidgetGuidanceName}' for the scale contract.");
+		}
+		if (!hasMax) {
+			result.Errors.Add($"{label}.max {maxError} Call get-guidance with name '{GaugeWidgetGuidanceName}' for the scale contract.");
+		}
+		if (!hasMin || !hasMax) {
+			return;
+		}
+		if (min >= max) {
+			result.Errors.Add(
+				$"{label} has an invalid scale: min ({FormatGaugeNumber(min)}) must be less than max ({FormatGaugeNumber(max)}).");
+			return;
+		}
+		if (!config.TryGetProperty("thresholds", out JsonElement thresholds)) {
+			result.Warnings.Add(NoThresholdsWarning(label));
+			return;
+		}
+		// A WRONG-TYPED thresholds (array, string, null) is a different thing from an absent one: the
+		// registry types it Record<`${number}`, object>, and the required-field walk cannot catch it (a
+		// Record carries no `fields` block), so it would otherwise save as a mere advisory.
+		if (thresholds.ValueKind != JsonValueKind.Object) {
+			result.Errors.Add(
+				$"{label}.thresholds must be an object keyed by band START values, for example {{\"0\": {{\"color\": \"#20A959\"}}}}. " +
+				$"Call get-guidance with name '{GaugeWidgetGuidanceName}' for the scale contract.");
+			return;
+		}
+		bool anyBand = false;
+		bool anyRejectedBand = false;
+		bool bandAtOrBelowMin = false;
+		foreach (JsonProperty threshold in thresholds.EnumerateObject()) {
+			anyBand = true;
+			if (!double.TryParse(threshold.Name, NumberStyles.Float, CultureInfo.InvariantCulture, out double start) ||
+			    !double.IsFinite(start)) {
+				anyRejectedBand = true;
+				result.Errors.Add(
+					$"{label}.thresholds has a non-numeric key '{threshold.Name}'. Threshold keys are band START values written as numeric strings, for example \"0\" or \"2.5\".");
+				continue;
+			}
+			if (start < min || start > max) {
+				anyRejectedBand = true;
+				result.Errors.Add(
+					$"{label}.thresholds key '{threshold.Name}' is outside the scale [{FormatGaugeNumber(min)}, {FormatGaugeNumber(max)}]. " +
+					"The widget does not clamp it — the band is invisible and the key still renders as a stray scale label.");
+				continue;
+			}
+			if (start <= min) {
+				bandAtOrBelowMin = true;
+			}
+		}
+		if (!anyBand) {
+			result.Warnings.Add(NoThresholdsWarning(label));
+			return;
+		}
+		// Suppress the advisory when a key was already rejected: telling the agent to add a band at min
+		// while the map it wrote is being refused wholesale is advice about a payload that cannot be saved.
+		if (!bandAtOrBelowMin && !anyRejectedBand) {
+			result.Warnings.Add(
+				$"{label}.thresholds has no band starting at min ({FormatGaugeNumber(min)}), so values below the first band render with no zone color.");
+		}
+	}
+
+	private static string NoThresholdsWarning(string label) =>
+		$"{label} declares no thresholds, so the dial renders a single default band and the color zones the user asked for are absent.";
+
+	/// <summary>
+	/// The statically decidable slice of "aggregate function and calculation column must be compatible":
+	/// <c>Sum</c>/<c>Avg</c>/<c>Min</c>/<c>Max</c> over the primary key produce no meaningful number, and
+	/// <c>aggregationEvalType</c> must match the function (Distinct belongs to <c>Count</c> alone —
+	/// Distinct on a <c>Sum</c> silently sums unique values and under-reports).
+	/// </summary>
+	private static void ValidateGaugeAggregation(JsonElement config, string label, SchemaValidationResult result) {
+		if (!TryGetGaugeAggregationExpression(config, out JsonElement expression)) {
+			return;
+		}
+		// ValueKind must be checked FIRST: JsonElement.TryGetInt32 returns false only for a Number that
+		// does not fit an Int32 — on any other token kind it THROWS. The registry spells aggregationType
+		// as a string enum in places, so an agent copying that spelling would otherwise take the whole
+		// batch down with an opaque tool error instead of getting a validation message.
+		if (!expression.TryGetProperty("aggregationType", out JsonElement aggregationTypeElement) ||
+		    aggregationTypeElement.ValueKind != JsonValueKind.Number ||
+		    !aggregationTypeElement.TryGetInt32(out int aggregationType)) {
+			return;
+		}
+		string columnPath = expression.TryGetProperty("functionArgument", out JsonElement functionArgument) &&
+			functionArgument.ValueKind == JsonValueKind.Object &&
+			functionArgument.TryGetProperty("columnPath", out JsonElement columnPathElement) &&
+			columnPathElement.ValueKind == JsonValueKind.String
+				? columnPathElement.GetString()
+				: null;
+		bool isArithmetic = aggregationType is AggregationTypeSum or AggregationTypeAvg
+			or AggregationTypeMin or AggregationTypeMax;
+		if (isArithmetic && string.Equals(columnPath, "Id", StringComparison.OrdinalIgnoreCase)) {
+			result.Errors.Add(
+				$"{label} aggregates '{GaugeAggregationName(aggregationType)}' over the Id column, which holds identifiers rather than a measurable value. " +
+				"Only Count aggregates Id; Sum, Avg, Min and Max need the business column being measured.");
+		}
+		if (!expression.TryGetProperty("aggregationEvalType", out JsonElement evalElement) ||
+		    evalElement.ValueKind != JsonValueKind.Number ||
+		    !evalElement.TryGetInt32(out int evalType)) {
+			return;
+		}
+		int expectedEvalType = aggregationType == AggregationTypeCount
+			? AggregationEvalTypeDistinct
+			: AggregationEvalTypeNone;
+		if (evalType == expectedEvalType) {
+			return;
+		}
+		// The tail has to follow the DIRECTION of the mismatch: telling an agent that "Distinct
+		// under-reports a Sum" when its Count is merely missing Distinct points at the wrong correction.
+		string consequence = evalType == AggregationEvalTypeDistinct
+			? "Distinct belongs to Count alone — on Sum, Avg, Min or Max it aggregates unique values only and under-reports."
+			: "Count is the one aggregate the platform evaluates over distinct values.";
+		result.Warnings.Add(
+			$"{label} sets aggregationEvalType {GaugeEvalTypeName(evalType)} for a '{GaugeAggregationName(aggregationType)}' aggregate; " +
+			$"the platform emits {GaugeEvalTypeName(expectedEvalType)}. {consequence}");
+	}
+
+	/// <summary>
+	/// Flags config the gauge inherits from the metric tile but never renders, so an agent does not ship a
+	/// payload whose visible effect is nothing.
+	/// </summary>
+	private static void ValidateGaugeUnsupportedFields(JsonElement config, string label, SchemaValidationResult result) {
+		if (config.TryGetProperty("comparison", out JsonElement comparison) &&
+		    comparison.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)) {
+			result.Warnings.Add(
+				$"{label} sets 'comparison', which crt.GaugeWidget inherits from crt.IndicatorWidget but never renders — the gauge draws no trend badge. " +
+				"Use a metric tile when the value needs a comparison.");
+		}
+	}
+
+	private static bool TryGetGaugeAggregationExpression(JsonElement config, out JsonElement expression) {
+		expression = default;
+		return config.TryGetProperty("data", out JsonElement data) && data.ValueKind == JsonValueKind.Object &&
+			data.TryGetProperty("providing", out JsonElement providing) && providing.ValueKind == JsonValueKind.Object &&
+			providing.TryGetProperty("aggregation", out JsonElement aggregation) && aggregation.ValueKind == JsonValueKind.Object &&
+			aggregation.TryGetProperty("column", out JsonElement column) && column.ValueKind == JsonValueKind.Object &&
+			column.TryGetProperty("expression", out expression) && expression.ValueKind == JsonValueKind.Object;
+	}
+
+	private static bool TryGetGaugeBound(JsonElement config, string name, out double value, out string error) {
+		value = 0;
+		if (!config.TryGetProperty(name, out JsonElement element)) {
+			error = "is required — a gauge renders on a fixed scale and has no default bound.";
+			return false;
+		}
+		// IsFinite rejects NaN and ±Infinity, which double.TryParse accepts by name ("NaN", "-Infinity")
+		// and TryGetDouble yields for an overflowing JSON number. A NaN bound would pass EVERY downstream
+		// comparison — `min >= max` and both range checks are false against NaN — so an entirely undefined
+		// scale would save clean.
+		if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out value) && double.IsFinite(value)) {
+			error = null;
+			return true;
+		}
+		// A bound written as a numeric string still describes a usable scale; accept it rather than
+		// rejecting a payload the runtime would coerce.
+		if (element.ValueKind == JsonValueKind.String &&
+		    double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+		    double.IsFinite(value)) {
+			error = null;
+			return true;
+		}
+		value = 0;
+		error = "must be a finite number.";
+		return false;
+	}
+
+	private static string GaugeEvalTypeName(int evalType) => evalType switch {
+		AggregationEvalTypeNone => "None (0)",
+		AggregationEvalTypeDistinct => "Distinct (2)",
+		_ => evalType.ToString(CultureInfo.InvariantCulture)
+	};
+
+	private static string GaugeAggregationName(int aggregationType) => aggregationType switch {
+		AggregationTypeCount => "Count",
+		AggregationTypeSum => "Sum",
+		AggregationTypeAvg => "Avg",
+		AggregationTypeMin => "Min",
+		AggregationTypeMax => "Max",
+		_ => aggregationType.ToString(CultureInfo.InvariantCulture)
+	};
+
+	private static string FormatGaugeNumber(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
 
 	#endregion
 

@@ -133,11 +133,14 @@ public sealed class PageUpdateToolBaselineTests
 		await _tool.UpdatePage(args, null);
 
 		// Assert
-		string requestedVersion = (string)_webComponentCatalog.ReceivedCalls()
-			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
-			.GetArguments()[0];
-		requestedVersion.Should().Be("8.3.4",
-			because: "update-page must scope its save-time chart-widget validation to the version resolved from the target environment");
+		string[] requestedVersions = _webComponentCatalog.ReceivedCalls()
+			.Where(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.Select(c => (string)c.GetArguments()[0])
+			.ToArray();
+		requestedVersions.Should().NotBeEmpty(
+			because: "update-page must consult the component catalog to validate analytics widgets");
+		requestedVersions.Should().AllBe("8.3.4",
+			because: "update-page must scope its save-time widget validation to the version resolved from the target environment");
 	}
 
 	[Test]

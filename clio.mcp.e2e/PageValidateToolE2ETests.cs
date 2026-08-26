@@ -1103,4 +1103,61 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the 'validators' key is disallowed in mobile page bodies");
 	}
 
+	// A web page carrying one inserted crt.GaugeWidget whose config is spliced in, so a gauge scale can be
+	// exercised through the real MCP transport.
+	private static string GaugePageBody(string configJson) =>
+		ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"GaugeWidget_a\"," +
+			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0," +
+			"\"values\":{\"type\":\"crt.GaugeWidget\",\"config\":" + configJson + "}}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+
+	[Test]
+	[Description("Returns valid: false for a gauge whose scale is inverted (min >= max), proving the registry-independent gauge scale rules reach the caller through the real MCP transport with no environment behind them.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects an inverted gauge scale")]
+	[AllureDescription("Sends a page body containing a crt.GaugeWidget with min greater than max through the real MCP server and verifies validation fails with the scale rule named.")]
+	public async Task PageValidateTool_Should_Reject_Inverted_Gauge_Scale() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			GaugePageBody("{\"min\":10,\"max\":5}"));
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "an inverted gauge scale is decidable from the body alone, so no environment or registry is needed to reject it");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "an invalid scale is a content-level defect");
+		response.Validation.Errors.Should().Contain(e => e.Contains("must be less than max"),
+			because: "the caller must receive the violated scale rule, not a generic failure");
+	}
+
+	[Test]
+	[Description("Returns valid: true with a warning for a gauge that declares no threshold bands, proving gauge advisories survive the MCP round trip without failing the page.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about a gauge with no threshold bands")]
+	[AllureDescription("Sends a page body containing a crt.GaugeWidget with a valid scale but no thresholds through the real MCP server and verifies the response carries a warning while staying valid.")]
+	public async Task PageValidateTool_Should_Warn_About_Gauge_Without_Thresholds() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			GaugePageBody("{\"min\":0,\"max\":500}"));
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a gauge with no color zones still renders — the finding is advisory");
+		response.Validation!.Warnings.Should().Contain(w => w.Contains("no thresholds"),
+			because: "the advisory must reach the caller so the requested zones can be added before saving");
+	}
+
 }

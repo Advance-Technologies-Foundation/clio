@@ -183,6 +183,61 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Fails the page whose inserted crt.GaugeWidget has an inverted scale (min >= max), proving the registry-independent gauge rules reach the batch triage through the real MCP transport and block the save.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects a gauge with an inverted scale")]
+	[AllureDescription("Sends a marker-valid page body carrying a crt.GaugeWidget whose min is greater than its max through sync-pages with validation enabled, and verifies the page is failed with the scale rule named — no remote save required.")]
+	public async Task PageSyncTool_Should_Reject_Inverted_Gauge_Scale_When_Validation_Is_Enabled() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string invertedGaugeBody =
+			"define('GaugePage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"GaugeWidget_a\"," +
+			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0," +
+			"\"values\":{\"type\":\"crt.GaugeWidget\",\"config\":{\"min\":10,\"max\":5}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		await using ArrangeContext context = await ArrangeAsync();
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrGaugeScale_{Guid.NewGuid():N}",
+							["body"] = invertedGaugeBody
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "a gauge scale failure must be a structured tool result, not a protocol-level error");
+		response.Success.Should().BeFalse(
+			because: "a batch containing a structurally broken gauge must not report success");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the offending page is the one that must be marked failed");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details must accompany a validation failure");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "an invalid scale is a content defect, not a marker or syntax one");
+		response.Pages[0].Error.Should().Contain("must be less than max",
+			because: "the per-page error must name the violated scale rule so the agent can correct it");
+	}
+
+	[Test]
 	[Description("Rejects a marker-valid page body that sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding, before any remote save is attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects inline placeholder literal during client-side validation")]

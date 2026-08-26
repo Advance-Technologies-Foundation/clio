@@ -58,6 +58,68 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Fails a page whose gauge scale is inverted, even with an empty component catalog — the scale rules need no registry, so the batch must not fail open on them.")]
+	public async Task SyncPages_Should_Fail_Page_With_Invalid_Gauge_Scale() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", InvertedGaugeScalePageBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a batch containing a structurally broken gauge must not report success");
+		response.Pages.Should().ContainSingle(because: "one page was requested");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the offending page is the one that must be marked failed");
+		response.Pages[0].Validation.ContentOk.Should().BeFalse(
+			because: "an invalid scale is a content defect, not a marker or syntax one");
+		response.Pages[0].Error.Should().Contain("must be less than max",
+			because: "the per-page error must name the violated scale rule");
+		commandResolver.DidNotReceive().Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Skips gauge validation when validation is disabled, so `validate: false` still means no client-side checks at all.")]
+	public async Task SyncPages_Should_Skip_Gauge_Validation_When_Validation_Disabled() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			webCatalog, Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", InvertedGaugeScalePageBody)],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "opting out of validation must bypass the gauge scale rules along with every other check");
+		await webCatalog.DidNotReceive().LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Successfully updates a single page when Creatio responds with success")]
 	public async Task SyncPages_Should_Succeed_For_Valid_Page() {
 		// Arrange
@@ -121,11 +183,16 @@ public sealed class PageSyncToolTests {
 
 		// Assert — the merged chart type definitions are resolved once per batch on the async entry,
 		// so the catalog must be loaded against the version resolved from the environment, not 'latest'.
-		string requestedVersion = (string)webCatalog.ReceivedCalls()
-			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
-			.GetArguments()[0];
-		requestedVersion.Should().Be("8.2.1",
-			because: "sync-pages must scope its chart-widget batch validation to the version resolved from the target environment");
+		// Both analytics-widget validators (chart and gauge) resolve their own merged type definitions,
+		// so the catalog is loaded once per widget — every load must carry the same resolved version.
+		string[] requestedVersions = webCatalog.ReceivedCalls()
+			.Where(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.Select(c => (string)c.GetArguments()[0])
+			.ToArray();
+		requestedVersions.Should().NotBeEmpty(
+			because: "sync-pages must consult the component catalog to validate analytics widgets");
+		requestedVersions.Should().AllBe("8.2.1",
+			because: "sync-pages must scope its widget batch validation to the version resolved from the target environment");
 	}
 
 	[Test]
@@ -873,6 +940,19 @@ public sealed class PageSyncToolTests {
 		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
 	}
 
+	// The same skeleton as ValidPageBody but carrying one inserted crt.GaugeWidget with an INVERTED scale
+	// (min >= max) — the defect the widget itself never reports, so the batch must catch it.
+	private const string InvertedGaugeScalePageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"GaugeWidget_a\"," +
+		"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0," +
+		"\"values\":{\"type\":\"crt.GaugeWidget\",\"config\":{\"min\":10,\"max\":5}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -1281,10 +1361,13 @@ public sealed class PageSyncToolTests {
 		commandResolver.Received(1).Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
 		response.Success.Should().BeTrue(
 			because: "the header-selected tenant resolves settings successfully so the batch save must proceed normally");
-		string requestedVersion = (string)webCatalog.ReceivedCalls()
-			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
-			.GetArguments()[0];
-		requestedVersion.Should().Be("8.2.1",
+		string[] requestedVersions = webCatalog.ReceivedCalls()
+			.Where(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.Select(c => (string)c.GetArguments()[0])
+			.ToArray();
+		requestedVersions.Should().NotBeEmpty(
+			because: "the probe must reach the component catalog at all");
+		requestedVersions.Should().AllBe("8.2.1",
 			because: "the probe must resolve against the header tenant's platform version, not silently fall back to latest without ever consulting the credential context");
 	}
 

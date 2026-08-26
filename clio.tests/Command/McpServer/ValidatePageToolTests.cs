@@ -293,10 +293,62 @@ public sealed class ValidatePageToolTests {
 		await tool.ValidatePage(args);
 
 		// Assert
-		string requestedVersion = (string)webCatalog.ReceivedCalls()
-			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
-			.GetArguments()[0];
-		requestedVersion.Should().Be("8.1.5",
-			because: "validate-page must scope its chart-widget pre-flight check to the version the agent passed");
+		string[] requestedVersions = webCatalog.ReceivedCalls()
+			.Where(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.Select(c => (string)c.GetArguments()[0])
+			.ToArray();
+		requestedVersions.Should().NotBeEmpty(
+			because: "validate-page must consult the component catalog for its widget pre-flight checks");
+		requestedVersions.Should().AllBe("8.1.5",
+			because: "validate-page must scope its widget pre-flight checks to the version the agent passed");
+	}
+
+	// A web AMD page carrying one inserted crt.GaugeWidget whose config is spliced in.
+	private static string GaugePageBody(string configJson) =>
+		"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"GaugeWidget_a\"," +
+		"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0," +
+		"\"values\":{\"type\":\"crt.GaugeWidget\",\"config\":" + configJson + "}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	[Test]
+	[Description("Web path: an invalid gauge scale is reported even though the substituted catalog yields no type definitions — unlike the chart walk, the scale rules do not fail open.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenGaugeScaleIsInverted_ReturnsInvalidWithoutRegistry() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		PageValidateArgs args = new(GaugePageBody("{\"min\":10,\"max\":5}"), null);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "min >= max is decidable from the body alone, so an empty catalog must not suppress it");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "an invalid scale is a content-level defect, not a marker or syntax one");
+		response.Validation.Errors.Should().Contain(e => e.Contains("must be less than max"),
+			because: "the agent needs the violated scale rule named in the response");
+	}
+
+	[Test]
+	[Description("Web path: gauge advisories reach validate-page as warnings and leave the page valid, because validate-page is the advisory surface.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenGaugeHasNoThresholds_ReturnsWarningButStaysValid() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		PageValidateArgs args = new(GaugePageBody("{\"min\":0,\"max\":500}"), null);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a gauge with no color zones still renders — the finding is advisory, not blocking");
+		response.Validation.Warnings.Should().Contain(w => w.Contains("no thresholds"),
+			because: "validate-page must surface the missing zones so the agent can add them before saving");
 	}
 }

@@ -26,6 +26,16 @@ When `validate` is `true` (the default), the body is checked client-side before 
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **Gauge widget scale** (`crt.GaugeWidget`). An inserted gauge is rejected when `config.min` or
+  `config.max` is missing or non-numeric, when `min >= max`, when a `config.thresholds` key is not a
+  number or falls outside `[min, max]`, or when `Sum`/`Avg`/`Min`/`Max` aggregates the `Id` column.
+  The widget itself validates none of this — it only shifts values by `min` — so an invalid scale
+  would otherwise render a broken dial with no error anywhere. These rules need no component
+  registry, so they apply even offline. Advisory findings (no threshold bands, no band starting at
+  `min`, an `aggregationEvalType` that does not match the aggregate function — `Distinct` outside `Count`, or a
+  non-`Distinct` `Count` — an inert `config.comparison`) are
+  reported as warnings by `validate-page` and never block a save. Call
+  `clio get-guidance --name gauge-widget` for the full contract.
 - **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
   WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
   - **Rejected** — an `operation:"insert"`/`"set"` whose `values` object carries no usable `"type"` while a

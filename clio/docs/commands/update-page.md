@@ -52,6 +52,16 @@ name instead of trying to edit a non-existent local `insert`.
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **Gauge widget scale** (`crt.GaugeWidget`). An inserted gauge is rejected when `config.min` or
+  `config.max` is missing or non-numeric, when `min >= max`, when a `config.thresholds` key is not a
+  number or falls outside `[min, max]`, or when `Sum`/`Avg`/`Min`/`Max` aggregates the `Id` column.
+  The widget itself validates none of this — it only shifts values by `min` — so an invalid scale
+  would otherwise render a broken dial with no error anywhere. These rules need no component
+  registry, so they apply even offline. Advisory findings (no threshold bands, no band starting at
+  `min`, an `aggregationEvalType` that does not match the aggregate function — `Distinct` outside `Count`, or a
+  non-`Distinct` `Count` — an inert `config.comparison`) are
+  reported as warnings by `validate-page` and never block a save. Call
+  `clio get-guidance --name gauge-widget` for the full contract.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.

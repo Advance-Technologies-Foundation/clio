@@ -94,10 +94,19 @@ public sealed class PageUpdateToolTests {
 	private static PageUpdateArgs CreateArgs(string environmentName) =>
 		new(SchemaName, ValidBody, null, null, environmentName, null, null, null, SkipSampling: true);
 
-	private string ReceivedChartValidationVersion() =>
-		(string)_webComponentCatalog.ReceivedCalls()
-			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
-			.GetArguments()[0];
+	// Both analytics-widget validators (chart and gauge) resolve their own merged type definitions, so the
+	// catalog is loaded once per widget. Every load must carry the SAME resolved version, which is what this
+	// helper asserts before handing that version back.
+	private string ReceivedWidgetValidationVersion() {
+		string[] versions = _webComponentCatalog.ReceivedCalls()
+			.Where(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.Select(c => (string)c.GetArguments()[0])
+			.Distinct()
+			.ToArray();
+		versions.Should().ContainSingle(
+			because: "chart and gauge validation must be scoped to one and the same resolved platform version");
+		return versions[0];
+	}
 
 	[Test]
 	[Description("AC-01/AC-02: a header-only passthrough call (no environment-name) reaches commandResolver.Resolve<EnvironmentSettings> inside ResolvePlatformVersionAsync and scopes chart-widget validation to the header tenant's resolved platform version, instead of silently falling back to an active/registered environment.")]
@@ -119,7 +128,7 @@ public sealed class PageUpdateToolTests {
 		// Assert
 		_commandResolver.Received(1).Resolve<EnvironmentSettings>(
 			Arg.Is<EnvironmentOptions>(options => string.IsNullOrWhiteSpace(options.Environment)));
-		ReceivedChartValidationVersion().Should().Be("9.9.9",
+		ReceivedWidgetValidationVersion().Should().Be("9.9.9",
 			because: "the version probe must resolve against the header tenant's settings, not a silent active-environment fallback");
 	}
 
@@ -139,7 +148,7 @@ public sealed class PageUpdateToolTests {
 		response.Success.Should().BeTrue(
 			because: "the version probe is fail-soft and must never block the write when the resolver rejects mixed input");
 		_resolverFactory.DidNotReceiveWithAnyArgs().Create(default);
-		ReceivedChartValidationVersion().Should().Be(ComponentRegistryClient.LatestVersion,
+		ReceivedWidgetValidationVersion().Should().Be(ComponentRegistryClient.LatestVersion,
 			because: "a rejected probe must degrade to the 'latest' superset instead of ever reaching a named-tenant lookup with stored credentials");
 	}
 
@@ -167,7 +176,7 @@ public sealed class PageUpdateToolTests {
 			Arg.Is<PageUpdateOptions>(options => options.Environment == "sandbox"));
 		_commandResolver.Received(1).Resolve<EnvironmentSettings>(
 			Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"));
-		ReceivedChartValidationVersion().Should().Be("8.3.4",
+		ReceivedWidgetValidationVersion().Should().Be("8.3.4",
 			because: "the write path and the version probe must resolve the SAME registered environment identically to the pre-change baseline");
 	}
 
@@ -238,5 +247,57 @@ public sealed class PageUpdateToolTests {
 			because: "a null mode defaults to replace, so the base must still exclude the own body");
 		(await CaptureExcludeOwnBodyForModeAsync("append")).Should().BeFalse(
 			because: "append mode keeps the current own body, so the base must NOT exclude it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a save whose inserted gauge has an inverted scale, with no component catalog behind it — the scale rules are body-only and must block the write.")]
+	public async Task UpdatePage_ShouldRejectSave_WhenGaugeScaleIsInverted() {
+		// Arrange
+		string invertedGaugeBody =
+			"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"GaugeWidget_a\"," +
+			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0," +
+			"\"values\":{\"type\":\"crt.GaugeWidget\",\"config\":{\"min\":10,\"max\":5}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageUpdateArgs args = new(SchemaName, invertedGaugeBody, null, null, "dev", null, null, null, SkipSampling: true);
+
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an inverted gauge scale must stop the save rather than persist a broken dial");
+		response.Error.Should().Contain("must be less than max",
+			because: "the failure must name the violated scale rule so the agent can correct it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A gauge advisory alone does not fail the save — warnings are validate-page's surface, not update-page's.")]
+	public async Task UpdatePage_ShouldSucceed_WhenGaugeOnlyRaisesWarnings() {
+		// Arrange — a valid scale with no thresholds: the validator warns, but nothing is broken.
+		string noThresholdsGaugeBody =
+			"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"GaugeWidget_a\"," +
+			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0," +
+			"\"values\":{\"type\":\"crt.GaugeWidget\",\"config\":{\"min\":0,\"max\":500}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageUpdateArgs args = new(SchemaName, noThresholdsGaugeBody, null, null, "dev", null, null, null, SkipSampling: true);
+
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a gauge with no color zones still renders, so an advisory must not block the write");
 	}
 }

@@ -55,7 +55,7 @@ public sealed class PageUpdateTool(
 		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
 		SchemaValidationService.CustomCssPolicySummary + " " +
 		"MOBILE: a viewConfigDiff insert/set must carry its component `type` INSIDE `values` — the differ builds the element from `values` alone, so a type on the operation object is discarded and the save persists an element that never renders; this is rejected. A `merge` whose `values` authors child elements on `Scaffold`'s `actions`/`leading`/`items` is also rejected — every shipped form template populates those slots, so the differ strips the property out of the merge and nothing is created even though the write succeeds; author each child with its own `insert` into a page container. clio cannot see the target (it validates against an empty base), so a bare Scaffold whose slots really are empty is refused too. The same authoring in any other slot only warns, because there the target may legitimately lack the slot and the merge then creates it. A `crt.Button` inserted into `Scaffold`/`actions` is warned about: it saves but does not appear on the mobile designer canvas — place buttons in a page container's `items` with a `layoutConfig`. See get-guidance `mobile-page-modification`. " +
-		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
+		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary + " An inserted crt.GaugeWidget is additionally checked against its scale contract (config.min/config.max present and min < max, every config.thresholds key numeric and inside that range, and no Sum/Avg/Min/Max over Id) — these rules need no component registry and are enforced offline; see get-guidance `gauge-widget`.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only. " +
 			"Optional under credential passthrough — omit environment-name/uri/login/password so the header-supplied tenant is used; supplying any of them together with an active passthrough header is rejected, not silently honored.")]
@@ -300,10 +300,10 @@ public sealed class PageUpdateTool(
 	}
 
 	/// <summary>
-	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
+	/// Resolves the target environment's platform version so the analytics-widget validation catalogs are scoped
 	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
 	/// Returns <see langword="null"/> for mobile bodies (chart validation is web-only — no probe needed) and
-	/// fail-soft on any resolution failure or absent resolver dependencies; <see cref="ChartWidgetValidation"/>
+	/// fail-soft on any resolution failure or absent resolver dependencies; <see cref="WidgetRegistryTypeDefinitions"/>
 	/// maps <see langword="null"/> to the safe <c>latest</c> superset so version resolution never blocks a save.
 	/// </summary>
 	private async Task<string?> ResolvePlatformVersionAsync(PageUpdateOptions options, CancellationToken cancellationToken) {
@@ -385,7 +385,7 @@ public sealed class PageUpdateTool(
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
 		}
-		// Registry-driven chart-widget validation needs the async, version-scoped component catalog.
+		// Registry-driven analytics-widget validation needs the async, version-scoped component catalog.
 		// Sync-over-async is deadlock-free here under the McpToolExecutionLock (no SynchronizationContext),
 		// the same pattern the mobile branch above uses. Fail-open inside when the registry is unavailable.
 		// requestedVersion scopes the catalog to the target environment's resolved platform version
@@ -397,6 +397,18 @@ public sealed class PageUpdateTool(
 			return (new PageUpdateResponse {
 				Success = false,
 				Error = "Validation failed: " + string.Join("; ", chartResult.Errors)
+			}, null);
+		}
+		// Gauge widgets: same bridge, plus the registry-independent scale rules. Only ERRORS block the
+		// save; the validator's warnings are advisory and are surfaced by validate-page instead of here,
+		// so a merely-suboptimal gauge is not a failed update.
+		SchemaValidationResult gaugeResult = GaugeWidgetValidation
+			.ValidateAsync(options.Body, webComponentCatalog, requestedVersion, CancellationToken.None)
+			.GetAwaiter().GetResult();
+		if (!gaugeResult.IsValid) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Validation failed: " + string.Join("; ", gaugeResult.Errors)
 			}, null);
 		}
 		return (null, webWarnings);
