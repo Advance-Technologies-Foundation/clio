@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Net;
+using System.Net.Sockets;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Progress;
@@ -22,8 +24,8 @@ namespace Clio.Mcp.E2E;
 /// <remarks>
 /// This fixture is deliberately non-destructive:
 /// deploy-creatio is invoked with an existing but corrupt archive so the run fails at the <c>unzip</c> stage and
-/// creates nothing. Uninstall is invoked for a fixture-only environment whose URI does not match an IIS site,
-/// proving the target-resolution failure contract without deleting an application, database, or files.
+/// creates nothing. Uninstall is invoked for a fixture-only environment with no registered EnvironmentPath,
+/// proving the named-target validation contract without deleting an application, database, or files.
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -34,14 +36,15 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	private const string ToolName = InstallerCommandTool.DeployCreatioToolName;
 	private const string UninstallToolName = UninstallCreatioTool.UninstallCreatioToolName;
 	private const string MissingEnvironmentName = "mcp-e2e-missing-uninstall-target";
+	private string _iisRoot = null!;
 
 	/// <inheritdoc />
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
-		string iisRoot = CreateFixtureDirectory("deploy-progress-iis-root");
+		_iisRoot = CreateFixtureDirectory("deploy-progress-iis-root");
 		string dbHubConfig = Path.Combine(CreateFixtureDirectory("deploy-progress-dbhub"), "dbhub.toml");
 		JsonObject appSettings = new() {
 			["Autoupdate"] = false,
-			["iis-clio-root-path"] = iisRoot,
+			["iis-clio-root-path"] = _iisRoot,
 			["dbhub"] = new JsonObject {
 				["enabled"] = true,
 				["config-path"] = dbHubConfig,
@@ -116,6 +119,66 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Invokes deploy-creatio while a real TCP listener owns the requested port and verifies the command fails before creating the deployment directory.")]
+	[AllureTag(ToolName)]
+	[AllureName("Deploy creatio rejects an occupied port before mutation")]
+	public async Task DeployCreatio_Should_Fail_Before_Mutation_When_Port_Is_Occupied() {
+		// Arrange
+		if (!OperatingSystem.IsWindows()) {
+			Assert.Ignore("IIS deployment and its machine-wide port reservation are Windows-specific.");
+		}
+		await using ArrangeContext arrangeContext = Arrange();
+		arrangeContext.Session.StartCapturingProgressNotifications();
+		ProgressToken progressToken = new($"clio-mcp-e2e-{Guid.NewGuid():N}");
+		using TcpListener listener = new(IPAddress.Loopback, 0);
+		listener.Start();
+		int occupiedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+		string siteName = $"occupied-port-{Guid.NewGuid():N}";
+		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
+		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive",
+			arrangeContext.CancellationTokenSource.Token);
+
+		try {
+			// Act
+			CallToolResult callResult = await arrangeContext.Session.CallToolWithRawProgressAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["siteName"] = siteName,
+						["zipFile"] = corruptZipFile,
+						["sitePort"] = occupiedPort,
+						["dbServerName"] = "e2e-unused-before-port-rejection"
+					}
+				},
+				progressToken,
+				arrangeContext.CancellationTokenSource.Token);
+
+			// Assert
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+			execution.ExitCode.Should().NotBe(0,
+				because: "an occupied requested IIS port must reject the deployment");
+			execution.Output.Should().Contain(message => message.Value != null
+				&& message.Value.Contains("not available", StringComparison.OrdinalIgnoreCase),
+				because: "the caller needs an actionable collision instead of a later IIS error");
+			Directory.Exists(Path.Combine(_iisRoot, siteName)).Should().BeFalse(
+				because: "port validation must complete before unzip, database, file, or IIS mutation");
+			IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
+				progressToken,
+				HasCompleteTerminalStream,
+				TimeSpan.FromSeconds(30),
+				arrangeContext.CancellationTokenSource.Token);
+			IReadOnlyList<ClioStageEvent> events = ExtractStageEvents(rawParams);
+			events[0].EventType.Should().Be(ClioStageEventContract.EventTypes.Manifest,
+				because: "pre-mutation port collisions must still publish the deploy manifest");
+			events[^1].RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+				because: "the occupied port must terminate the typed progress stream as failure");
+		}
+		finally {
+			File.Delete(corruptZipFile);
+		}
+	}
+
+	[Test]
 	[Description("Reports safe typed-event diagnostics when a captured MCP progress condition times out.")]
 	[AllureTag(ToolName)]
 	[AllureName("Progress capture timeout reports the observed typed event sequence")]
@@ -163,11 +226,11 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Invokes uninstall-creatio for a fixture-only environment with no matching IIS site and verifies the MCP result fails with a typed terminal failure event without deleting anything.")]
+	[Description("Invokes uninstall-creatio for a fixture-only environment with no EnvironmentPath and verifies the MCP result fails with a typed terminal failure event without deleting anything.")]
 	[AllureTag(UninstallToolName)]
-	[AllureName("Uninstall creatio rejects an unresolved IIS target")]
-	[AllureDescription("Calls uninstall-creatio over the real MCP server for an isolated environment whose URI cannot correlate to an IIS site, then verifies exit code 1 and manifest-to-terminal-failure progress without touching a real instance.")]
-	public async Task UninstallCreatio_Should_Fail_Without_Deleting_When_Iis_Target_Cannot_Be_Resolved() {
+	[AllureName("Uninstall creatio rejects a missing registered EnvironmentPath")]
+	[AllureDescription("Calls uninstall-creatio over the real MCP server for an isolated environment without EnvironmentPath, then verifies exit code 1 and manifest-to-terminal-failure progress without touching a real instance.")]
+	public async Task UninstallCreatio_Should_Fail_Without_Deleting_When_EnvironmentPath_Is_Missing() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 		arrangeContext.Session.StartCapturingProgressNotifications();
@@ -187,12 +250,12 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		// Assert
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		execution.ExitCode.Should().Be(1,
-			because: "an uninstall whose environment URI cannot resolve to an IIS site must fail instead of reporting a false success");
+			because: "a named uninstall without EnvironmentPath must fail instead of guessing a destructive target");
 		execution.Output.Should().Contain(message =>
 			message.MessageType == LogDecoratorType.Error &&
 			message.Value != null &&
-			message.Value.Contains("Could not correlate", StringComparison.OrdinalIgnoreCase),
-			because: "the caller must receive an actionable target-resolution error");
+			message.Value.Contains("EnvironmentPath", StringComparison.OrdinalIgnoreCase),
+			because: "the caller must receive an actionable registered-path error");
 
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
 			progressToken,
@@ -203,7 +266,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		events[0].EventType.Should().Be(ClioStageEventContract.EventTypes.Manifest,
 			because: "target validation failures must still begin with the uninstall manifest");
 		events[^1].RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
-			because: "the unresolved target must terminate the typed progress stream as a failure");
+			because: "the missing registered path must terminate the typed progress stream as a failure");
 		events[^1].RunCompleted!.ErrorCode.Should().Be("uninstall-target-not-found",
 			because: "Ring and other MCP consumers need a stable machine-readable failure classification");
 	}

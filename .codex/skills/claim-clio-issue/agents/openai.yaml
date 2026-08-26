@@ -1,0 +1,4 @@
+interface:
+  display_name: "Claim Clio Issue"
+  short_description: "Claim and link a Clio issue branch"
+  default_prompt: "Use $claim-clio-issue to claim this Clio issue before work starts."

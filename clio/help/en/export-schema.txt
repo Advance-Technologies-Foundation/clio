@@ -1,0 +1,76 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    export-schema - Export a single schema from a Creatio environment into a reviewable bundle folder
+
+ALIASES
+    schema-export
+
+SYNOPSIS
+    clio export-schema <SchemaName> [--package-name <Package>] -e <Environment> [-d <Folder>]
+
+DESCRIPTION
+    Exports exactly one schema and writes it to a local bundle folder that
+    'clio import-schema' can apply to another environment.
+
+    Use this instead of 'pull-pkg' when a fix is confined to one schema. A package
+    carries every customization it holds, so installing one to deliver a one-schema
+    fix can overwrite unrelated work that exists only on the target environment.
+
+    The export goes through the platform schema exporter, so it covers every schema
+    kind the platform supports - including addon schemas (business rules, related
+    pages), which have no other read surface in clio.
+
+    A schema name is unique only per package. When the name exists in several
+    packages the command fails and lists them, so the caller can retry with
+    --package-name; it never picks a layer on its own.
+
+    This command is read-only against the environment. It writes only local files.
+
+OPTIONS
+    <SchemaName>                       Name of the schema to export (required)
+
+    --package-name                     Package that owns the schema layer to export.
+                                       Required when the name is ambiguous.
+                                       (No -p short form: -p is --password.)
+
+    --manager-name                     Schema manager to narrow the lookup to,
+                                       for example AddonSchemaManager
+
+    -d, --destination                  Directory that will receive the bundle folder.
+                                       Default: the current directory. Must resolve
+                                       inside the workspace/current directory or the
+                                       OS temp directory - the command is MCP-callable,
+                                       so the write path is confined.
+
+    -e, --environment                  Environment name
+
+BUNDLE LAYOUT
+
+    <SchemaName>/
+      descriptor.json      provenance: schema name, UId, manager, source package,
+                           source environment, export timestamp, clio version
+      schema-data.json     the verbatim platform payload - the only file import reads
+      metadata.json        projection of the payload's MetaData, expanded for reading
+      properties.json      projection of the payload's Properties
+      resources/           projection of the payload's LocalizableValues, per culture
+
+    Only schema-data.json is authoritative. The projections exist so a reviewer can
+    read what is being shipped; editing one changes nothing about what import applies.
+
+    Export never overwrites an existing bundle folder.
+
+REQUIREMENTS
+    cliogate 2.0.0.46 or newer must be installed on the environment.
+    Install or update it with: clio install-gate -e <environment>
+
+EXAMPLES
+    Export an addon schema, disambiguated by package:
+        clio export-schema Leads_FormPageBusinessRule --package-name UsrCustomerApp -e dev
+
+    Export into a specific folder:
+        clio export-schema UsrMyService --package-name UsrCustomerApp -e dev -d ./handover
+
+SEE ALSO
+    import-schema, delete-schema, pull-pkg, push-pkg

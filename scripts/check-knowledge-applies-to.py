@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""Advisory checks for the docs/knowledge/ knowledge base.
+
+Two reports, both advisory - this script never fails a pull request:
+
+1. *Touched records*: records whose ``applies-to`` intersects the diff, so the author is told a
+   recorded fact covers code they just changed and has to be updated or deleted (AGENTS.md,
+   "Knowledge base").
+2. *Dead paths*: records whose ``applies-to`` points at a path that no longer exists on disk. This
+   is the check whose absence let the retired workspace diary accumulate 365 dead references.
+
+Usage::
+
+    python3 scripts/check-knowledge-applies-to.py --base origin/master
+    python3 scripts/check-knowledge-applies-to.py --dead-only
+    python3 scripts/check-knowledge-applies-to.py --base <sha> --markdown report.md
+
+``applies-to`` entries are literal repository-relative paths, or directory prefixes ending in
+``/``. Globs are not expanded on purpose: a literal path either exists or it does not, which is
+what makes the dead-path report trustworthy.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from dataclasses import dataclass, field
+
+KNOWLEDGE_DIR = "docs/knowledge"
+MARKER = "<!-- knowledge-applies-to-check -->"
+
+
+@dataclass
+class Record:
+    path: str
+    description: str = ""
+    ticket: str = ""
+    date: str = ""
+    applies_to: list[str] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)
+
+
+def repo_root() -> str:
+    out = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True, text=True, check=True,
+    )
+    return out.stdout.strip()
+
+
+def _front_matter_body(lines: list[str]) -> tuple[list[str] | None, list[str]]:
+    """The lines between the opening and closing ``---``, or ``None`` plus the reason why not."""
+    if not lines or lines[0].strip() != "---":
+        return None, ["no YAML front matter (the file must start with '---')"]
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
+        return None, ["front matter is never closed with '---'"]
+    return lines[1:end], []
+
+
+def _append_list_item(data: dict[str, object], key: str, raw: str) -> None:
+    """Append a ``- item`` line to ``key``, coercing a previously scalar value to a list."""
+    if not isinstance(data.get(key), list):
+        # A key written as a scalar and then continued as a list keeps the scalar as the first
+        # entry - dropping it would lose a path silently, with no schema problem to show for it.
+        existing = data.get(key)
+        data[key] = [existing] if existing else []
+    data[key].append(raw.split("- ", 1)[1].strip().strip("'\""))
+
+
+def _assign_key(
+    data: dict[str, object], seen: set[str], problems: list[str], raw: str,
+) -> str | None:
+    """Record a ``key: value`` line and return the key that later ``- item`` lines belong to."""
+    if ":" not in raw:
+        problems.append(f"unparsable front-matter line: {raw.strip()}")
+        return None
+    key, _, value = raw.partition(":")
+    key = key.strip()
+    value = value.strip().strip("'\"")
+    # A repeated key overwrites the earlier one, so the first value disappears with nothing to
+    # show for it - report it rather than let half the front matter go missing quietly.
+    if key in seen:
+        problems.append(f"duplicate front-matter key (the later value wins): {key}")
+    seen.add(key)
+    data[key] = value if value else []
+    return key
+
+
+def parse_front_matter(text: str) -> tuple[dict[str, object], list[str]]:
+    """Minimal YAML front-matter reader: scalars and ``- item`` lists only.
+
+    Deliberately not PyYAML: the workflow runs on a bare runner with no pip install step, and the
+    schema in docs/knowledge/README.md is small enough that a real YAML parser buys nothing.
+    """
+    body, problems = _front_matter_body(text.splitlines())
+    if body is None:
+        return {}, problems
+
+    data: dict[str, object] = {}
+    seen: set[str] = set()
+    key: str | None = None
+    for raw in body:
+        stripped = raw.lstrip()
+        if not raw.strip() or stripped.startswith("#"):
+            continue
+        if stripped.startswith("- "):
+            if key is None:
+                problems.append(f"list item outside of any key: {raw.strip()}")
+            else:
+                _append_list_item(data, key, raw)
+            continue
+        key = _assign_key(data, seen, problems, raw) or key
+    return data, problems
+
+
+def scalar(value: object) -> str:
+    """Front-matter scalar as a string; an empty or list-valued key reads as absent."""
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _applies_to_list(value: object) -> list[str]:
+    """``applies-to`` as a list of non-empty entries, whatever shape the front matter had."""
+    if isinstance(value, str):
+        return [value] if value else []
+    return [entry for entry in (value or []) if entry]
+
+
+def _schema_problems(record: Record) -> list[str]:
+    """Everything the schema in docs/knowledge/README.md requires but this record lacks."""
+    problems: list[str] = []
+    if not record.description:
+        problems.append("missing 'description'")
+    if not record.applies_to:
+        problems.append("missing 'applies-to' (at least one path is required)")
+    if not record.date:
+        problems.append("missing 'date'")
+    for entry in record.applies_to:
+        if entry.startswith("/") or (len(entry) > 1 and entry[1] == ":"):
+            problems.append(f"absolute path in applies-to: {entry}")
+        if any(ch in entry for ch in "*?["):
+            problems.append(f"glob in applies-to (literal paths only): {entry}")
+    return problems
+
+
+def _directory_entry_problems(record: Record, root: str) -> list[str]:
+    """Directory entries that lack the trailing ``/`` the schema requires.
+
+    Without it ``matches`` compares for equality, so the entry can never intersect a changed file,
+    while ``dead_paths`` still sees the directory on disk and stays quiet - the record silently
+    covers nothing at all. Naming it is the only way it ever gets noticed. Entries that escape the
+    tree never reach the filesystem here either - ``dead_paths`` already reports those.
+    """
+    return [
+        f"directory in applies-to needs a trailing '/': {entry}"
+        for entry in record.applies_to
+        if not entry.endswith("/")
+        and _within_root(root, entry)
+        and os.path.isdir(os.path.join(root, entry))
+    ]
+
+
+def _read_record(abs_path: str, root: str) -> Record:
+    rel = os.path.relpath(abs_path, root).replace(os.sep, "/")
+    with open(abs_path, encoding="utf-8") as handle:
+        data, problems = parse_front_matter(handle.read())
+    record = Record(
+        path=rel,
+        # A key present but empty parses as [] (see parse_front_matter), which must read as
+        # absent rather than as the string "[]".
+        description=scalar(data.get("description")),
+        ticket=scalar(data.get("ticket")),
+        date=scalar(data.get("date")),
+        applies_to=_applies_to_list(data.get("applies-to")),
+        problems=problems,
+    )
+    record.problems.extend(_schema_problems(record))
+    record.problems.extend(_directory_entry_problems(record, root))
+    return record
+
+
+def load_records(root: str) -> list[Record]:
+    base = os.path.join(root, KNOWLEDGE_DIR)
+    records: list[Record] = []
+    for dirpath, _dirnames, filenames in os.walk(base):
+        for name in sorted(filenames):
+            if not name.endswith(".md") or name.upper() == "README.MD":
+                continue
+            records.append(_read_record(os.path.join(dirpath, name), root))
+    return sorted(records, key=lambda r: r.path)
+
+
+def changed_files(base: str) -> tuple[list[str], str | None]:
+    """Files changed against ``base``. Returns (files, error)."""
+    merge_base = subprocess.run(
+        ["git", "merge-base", base, "HEAD"], capture_output=True, text=True,
+    )
+    if merge_base.returncode != 0:
+        return [], (
+            f"cannot resolve a merge base with '{base}': {merge_base.stderr.strip()} "
+            "(a shallow clone is the usual cause - fetch with depth 0)"
+        )
+    diff = subprocess.run(
+        ["git", "diff", "--name-only", f"{merge_base.stdout.strip()}...HEAD"],
+        capture_output=True, text=True,
+    )
+    if diff.returncode != 0:
+        return [], f"git diff failed: {diff.stderr.strip()}"
+    files = {line for line in diff.stdout.splitlines() if line.strip()}
+    # Uncommitted work counts too, so that a local run before the commit reports the same records
+    # the pull request will. On a CI checkout the working tree is clean, so this adds nothing.
+    for extra in (["git", "diff", "--name-only", "HEAD"],
+                  ["git", "diff", "--name-only", "--cached", "HEAD"],
+                  ["git", "ls-files", "--others", "--exclude-standard"]):
+        result = subprocess.run(extra, capture_output=True, text=True)
+        if result.returncode == 0:
+            files.update(line for line in result.stdout.splitlines() if line.strip())
+    return sorted(files), None
+
+
+def matches(entry: str, changed: list[str]) -> list[str]:
+    if entry.endswith("/"):
+        return [c for c in changed if c.startswith(entry)]
+    return [c for c in changed if c == entry]
+
+
+def _within_root(root: str, entry: str) -> bool:
+    """Whether ``entry`` stays inside ``root`` once joined.
+
+    ``os.path.join(root, "/etc/passwd")`` returns ``/etc/passwd`` - an absolute component wins - and
+    ``..`` climbs out, so an entry that escapes the tree must never reach ``os.path.exists``.
+    """
+    resolved = os.path.realpath(os.path.join(root, entry))
+    anchor = os.path.realpath(root)
+    # Not os.path.commonpath: it raises ValueError when the two paths sit on different Windows
+    # drives, and an entry like `C:/Windows/win.ini` reaches here (the schema flags it, it is not
+    # dropped). A prefix comparison cannot throw.
+    return resolved == anchor or resolved.startswith(anchor + os.sep)
+
+
+def dead_paths(root: str, record: Record) -> list[str]:
+    return [
+        entry for entry in record.applies_to
+        if not _within_root(root, entry) or not os.path.exists(os.path.join(root, entry))
+    ]
+
+
+def _touched_section(records: list[Record], base: str) -> tuple[list[str], int]:
+    """The diff-intersection section and how many records the diff touched."""
+    changed, error = changed_files(base)
+    if error:
+        return [f"> Diff intersection skipped: {error}", ""], 0
+
+    hits: list[tuple[Record, list[str]]] = []
+    for record in records:
+        touched = sorted({m for entry in record.applies_to for m in matches(entry, changed)})
+        if touched:
+            hits.append((record, touched))
+    if not hits:
+        return ["No knowledge record covers the files changed in this pull request.", ""], 0
+
+    lines = [
+        f"This pull request touches code covered by **{len(hits)}** knowledge record(s).",
+        "Update or delete each one in this pull request if the fact changed"
+        " - and if nothing changed, no action is needed.",
+        "",
+    ]
+    for record, touched in hits:
+        lines.append(f"- [`{record.path}`]({record.path}) - {record.description}")
+        lines.extend(f"  - touched: `{f}`" for f in touched)
+    lines.append("")
+    return lines, len(hits)
+
+
+def _dead_section(root: str, records: list[Record]) -> list[str]:
+    dead = [(r, d) for r in records if (d := dead_paths(root, r))]
+    if not dead:
+        return []
+    lines = [
+        f"### Records pointing at paths that no longer exist ({len(dead)})",
+        "",
+        "Either the path moved (fix `applies-to`) or the fact is gone (delete the record).",
+        "",
+    ]
+    for record, missing in dead:
+        lines.append(f"- [`{record.path}`]({record.path})")
+        lines.extend(f"  - missing: `{entry}`" for entry in missing)
+    lines.append("")
+    return lines
+
+
+def _malformed_section(records: list[Record]) -> list[str]:
+    malformed = [r for r in records if r.problems]
+    if not malformed:
+        return []
+    lines = [f"### Records that do not match the schema ({len(malformed)})", ""]
+    for record in malformed:
+        lines.append(f"- [`{record.path}`]({record.path})")
+        lines.extend(f"  - {problem}" for problem in record.problems)
+    lines.append("")
+    return lines
+
+
+def build_report(root: str, records: list[Record], base: str | None, dead_only: bool) -> tuple[str, int]:
+    lines: list[str] = [MARKER, "## Knowledge base check", ""]
+    touched_count = 0
+
+    if not records:
+        lines += [
+            f"No records under `{KNOWLEDGE_DIR}/` yet, so there is nothing to intersect with this diff.",
+            "",
+        ]
+
+    if not dead_only and base and records:
+        section, touched_count = _touched_section(records, base)
+        lines += section
+
+    dead = _dead_section(root, records)
+    malformed = _malformed_section(records)
+    lines += dead + malformed
+
+    if records and not dead and not malformed and (dead_only or not base):
+        lines += [f"All {len(records)} record(s) resolve and match the schema.", ""]
+
+    lines += [
+        "<sub>Advisory only - this check never fails the build. See "
+        "[`docs/knowledge/README.md`](docs/knowledge/README.md).</sub>",
+    ]
+    return "\n".join(lines), touched_count
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base", help="base ref to diff against, e.g. origin/master")
+    parser.add_argument("--dead-only", action="store_true", help="skip the diff intersection")
+    parser.add_argument("--markdown", help="also write the report to this file")
+    args = parser.parse_args()
+
+    root = repo_root()
+    records = load_records(root)
+    report, _touched = build_report(root, records, args.base, args.dead_only)
+    print(report)
+    if args.markdown:
+        with open(args.markdown, "w", encoding="utf-8") as handle:
+            handle.write(report + "\n")
+    return 0  # advisory by contract: never fail the caller
+
+
+if __name__ == "__main__":
+    sys.exit(main())

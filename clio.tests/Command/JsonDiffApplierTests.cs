@@ -374,4 +374,32 @@ public sealed class JsonDiffApplierTests {
 		rootItems![0]!["name"]!.ToString().Should().Be("Mid");
 		(rootItems[0]!["items"] as JArray)![0]!["name"]!.ToString().Should().Be("Leaf");
 	}
+
+	[Test]
+	[Description("A null-name item reached mid-iteration (after a valid first sibling) is skipped by the lookup cache rather than cached under a null key, so a named item after it still resolves and merges — exercises the FindItemInfo null-name guard")]
+	public void ApplyDiff_WhenNullNameItemAppearsMidIteration_IsNotCachedAndNamedSiblingStillResolves() {
+		// Arrange - the first sibling is a valid item-config (so iteration proceeds); the null-name middle sibling
+		// must be walked past without a cache write, letting the trailing named sibling resolve.
+		var applier = new JsonDiffApplier();
+		JArray source = Arr("""
+			[
+				{ "name": "First", "items": [] },
+				{ "name": null, "caption": "Ignored" },
+				{ "name": "Container", "caption": "Base" }
+			]
+			""");
+		JArray operations = Diff("""
+			[ { "operation": "merge", "name": "Container", "values": { "caption": "Updated" } } ]
+			""");
+
+		// Act
+		Action act = () => applier.ApplyDiff(source, [operations]);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a null-name item reached during lookup must be skipped, not cached under a null key or throw");
+		JArray result = applier.ApplyDiff(source, [operations]) as JArray;
+		result![2]!["caption"]!.ToString().Should().Be("Updated",
+			because: "a named item after a null-name sibling must still be found and merged");
+	}
 }

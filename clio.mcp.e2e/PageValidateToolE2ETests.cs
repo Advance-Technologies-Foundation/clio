@@ -599,6 +599,36 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("validate-page does NOT warn about entity-data-source-static-filters when a generated Dashboard's `_designOptions` block carries both entitySchemaName and a filters array — `_designOptions` is designer-owned dashboard metadata, not a crt.EntityDataSource config, even though it shares the same co-located-key signature (GH-1125). Proves the false-positive carve-out reaches the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page does not warn about a Dashboard's _designOptions.filters")]
+	[AllureDescription("Sends a body whose viewConfigDiff registers a Dashboards entry with a _designOptions block carrying entitySchemaName + filters and verifies validate-page returns valid=true with no entity-data-source-static-filters warning — the block is designer-generated dashboard metadata, not a crt.EntityDataSource config.")]
+	public async Task PageValidateTool_Should_Not_Warn_On_Dashboard_DesignOptions_Filters() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyWithDashboardDesignOptions = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"merge\",\"name\":\"Dashboards\",\"values\":{" +
+				"\"_designOptions\":{\"entitySchemaName\":\"UsrExample\",\"dependencies\":[],\"filters\":[]}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithDashboardDesignOptions);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the Dashboard's generated _designOptions block is a legitimate shape, not a lint violation of any kind");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Warnings.Should().BeNullOrEmpty(
+			because: "the _designOptions.filters array is designer-generated dashboard metadata, not a crt.EntityDataSource config key — warning about it as an ignored EntityDataSource filter would misdirect the agent toward a non-existent fix");
+	}
+
+	[Test]
 	[Description("validate-page returns a WARNING (not a hard failure) when a crt.HandleViewModelAttributeChangeRequest handler is not scoped to an attribute but writes a view-model attribute via $context.set(...) — the unscoped handler re-fires on its own write and clears the field at runtime (ENG-95557). Proves the handler-attribute-change-unscoped-write lint rule surfaces through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page warns about an unscoped attribute-change handler that writes an attribute")]
@@ -887,6 +917,97 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the everyday designer-emitted merge must reach the save path with nothing to fix");
 		response.Validation.Warnings.Should().BeNullOrEmpty(
 			because: "a warning on the everyday designer-emitted merge would still push the agent to rewrite correct code");
+	}
+
+	[Test]
+	[Description("ENG-95347: returns valid=true for a mobile list body whose item-scope attributes are declared ONLY inside the collection attribute's nested viewModelConfig.attributes map and bound from the list's itemLayout. Before this fix the binding validator collected only top-level attribute names, rejected this body as undeclared, and pushed authors to re-declare the attributes at page root — creating the duplicate declarations that break mobile-runtime saves.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts itemLayout bindings to nested item-scope attributes")]
+	[AllureDescription("Sends a mobile list body where the itemLayout binds to an attribute declared only in the collection attribute's viewModelConfig.attributes, and verifies validate-page returns valid=true end-to-end with no undeclared-binding error.")]
+	public async Task PageValidateTool_Should_Accept_ItemLayout_Binding_To_Nested_Collection_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithNestedItemScopeAttributes = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_LeadName" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithNestedItemScopeAttributes);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "SimilarLeadListDS_LeadName is declared in the collection attribute's nested viewModelConfig.attributes — the item scope the itemLayout binding resolves against at mobile runtime — so no root-level duplicate declaration is required");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "a correctly-nested item-scope declaration must not be reported as an undeclared binding");
+	}
+
+	[Test]
+	[Description("ENG-95347 counterpart guard: returns valid=false when the itemLayout binds to a name absent from BOTH the root attributes map and the collection attribute's nested viewModelConfig.attributes — accepting nested declarations must not turn the undeclared-binding check off.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page still rejects an itemLayout binding to an undeclared attribute")]
+	[AllureDescription("Sends the same nested-declaration mobile list body but binds the itemLayout title to a name declared nowhere, and verifies validate-page returns valid=false with the undeclared-binding error naming it.")]
+	public async Task PageValidateTool_Should_Reject_ItemLayout_Binding_To_Undeclared_Nested_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithUndeclaredNestedBinding = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "SimilarLeadList",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$SimilarLeadList",
+			                  "itemLayout": { "type": "crt.ListItem", "title": "$SimilarLeadListDS_NotDeclared" } } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"],
+			      "values": {
+			        "SimilarLeadList": {
+			          "type": "crt.CollectionDataSource",
+			          "viewModelConfig": {
+			            "attributes": {
+			              "SimilarLeadListDS_LeadName": { "modelConfig": { "path": "LeadName" } }
+			            }
+			          }
+			        }
+			      } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithUndeclaredNestedBinding);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "SimilarLeadListDS_NotDeclared is declared neither at the root attributes map nor in the nested item-scope attributes, so the binding cannot resolve at mobile runtime");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("SimilarLeadListDS_NotDeclared"),
+			because: "the undeclared-binding error must name the attribute so the agent can fix the declaration before writing");
 	}
 
 	[Test]

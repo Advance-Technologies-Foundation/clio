@@ -31,6 +31,7 @@ public class ScenarioRunnerCommandTests
 		IScenario script = new Scenario(_deserializer);
 		ILogger logger = Substitute.For<ILogger>();
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.Reload().Returns(new SettingsReloadResult(true, null, null));
 		settingsRepository.FindEnvironment(Arg.Any<string>()).Returns(new EnvironmentSettings {
 			Uri = "http://localhost",
 			Login = "Supervisor",

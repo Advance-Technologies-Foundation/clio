@@ -107,7 +107,7 @@ public sealed class GetCreatioInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Exposes describe-environment via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]
+	[Description("Exposes describe-environment through get-tool-contract with a non-destructive safety flag and capability-first cliogate guidance.")]
 	[AllureTag(GetCreatioInfoTool.ToolName)]
 	[AllureName("describe-environment MCP tool is discoverable on the lazy surface")]
 	public async Task DescribeEnvironment_Should_Be_Advertised() {
@@ -117,6 +117,16 @@ public sealed class GetCreatioInfoToolE2ETests : McpContractFixtureBase {
 		// Act
 		IReadOnlyList<ToolContractIndexEntry> index = await arrangeContext.Session.GetToolContractIndexAsync(
 			arrangeContext.CancellationTokenSource.Token);
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { GetCreatioInfoTool.ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 
 		// Assert
 		// The lazy surface exposes hidden tools only through the compact discovery index, which carries the
@@ -126,6 +136,11 @@ public sealed class GetCreatioInfoToolE2ETests : McpContractFixtureBase {
 			.Which;
 		entry.Destructive.Should().NotBe(true,
 			because: "describe-environment only reads instance metadata and must not be flagged destructive");
+		ToolContractDefinition contract = contracts.Tools.Should().ContainSingle(
+			definition => definition.Name == GetCreatioInfoTool.ToolName,
+			because: "the full served describe-environment contract must be available on the lazy surface").Which;
+		contract.Description.Should().Contain("GetSysInfo is probed directly",
+			because: "the served MCP contract must preserve capability-first cliogate diagnosis end to end");
 	}
 
 	[Test]

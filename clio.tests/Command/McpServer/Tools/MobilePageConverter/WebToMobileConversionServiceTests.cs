@@ -1340,8 +1340,10 @@ public sealed class WebToMobileConversionServiceTests {
 		menuItem.MobileType.Should().Be("crt.MenuItem",
 			because: "the child is registry-supported on mobile and kept as its own type");
 		ElementMapEntry button = Element(guide, "OrderButton");
-		button.MobileValues!.AsObject().ContainsKey("menuItems").Should().BeFalse(
-			because: "menuItems is emitted as its own child entries, never carried verbatim on the button");
+		button.MobileValues!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
+			because: "menuItems is emitted as its own child entries, never carried verbatim on the button — the "
+				+ "button keeps only the EMPTY slot InitializeContainerChildSlots declares, which is what lets the "
+				+ "differ append the item instead of refusing the insert");
 	}
 
 	[Test]
@@ -1372,10 +1374,14 @@ public sealed class WebToMobileConversionServiceTests {
 		addButton.PropertyName.Should().Be("tools",
 			because: "the second container is walked into its own slot, kept distinct from items");
 		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
-		panelValues.ContainsKey("items").Should().BeFalse(
-			because: "both child arrays are emitted as their own entries, neither carried as a value");
-		panelValues.ContainsKey("tools").Should().BeFalse(
-			because: "both child arrays are emitted as their own entries, neither carried as a value");
+		panelValues["items"]!.AsArray().Should().BeEmpty(
+			because: "Panel is occupied via an items child (Amount), so InitializeContainerChildSlots declares the "
+				+ "slot the differ requires — the array itself is never carried as a value, only the empty slot");
+		panelValues["tools"]!.AsArray().Should().BeEmpty(
+			because: "the pass keys on the slot the CHILD declares, never on a slot-name list, so the 'tools' slot "
+				+ "AddButton targets is declared exactly like the 'items' slot Amount targets — the differ refuses "
+				+ "an insert into an undeclared slot whatever it is called; both child arrays are still emitted as "
+				+ "their own entries, never carried as a value");
 	}
 
 	[Test]
@@ -5816,8 +5822,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
 		panel.Operation.Should().Be("insert",
 			because: "a surviving converted child (the tools button) occupies the panel, so it is no longer judged empty on items alone");
-		panel.MobileValues!.AsObject().ContainsKey("tools").Should().BeFalse(
-			because: "the tools array is emitted as its own child entries, never carried as a value on the parent");
+		panel.MobileValues!.AsObject()["tools"]!.AsArray().Should().BeEmpty(
+			because: "the tools array is emitted as its own child entries, never carried as a value on the parent — "
+				+ "only the empty slot itself is declared, which is exactly what the differ needs to append the button");
 	}
 
 	[Test]
@@ -6128,6 +6135,320 @@ public sealed class WebToMobileConversionServiceTests {
 		sales.ParentName.Should().Be("Tabs");
 		sales.Index.Should().Be(1,
 			because: "the tab index is assigned AFTER the compaction — rebased to 0 it would land before the template's general tab");
+	}
+
+	#endregion
+
+	#region InitializeContainerChildSlots — the child-collection slot on a container the differ requires
+
+	/// <summary>Builds a viewConfigDiff body from the guide's own elementMap exactly as the conversion guide
+	/// instructs a caller to: mobileValues pasted verbatim into each insert operation, nothing hand-patched.
+	/// Merge/drop/relocate-children entries never carry a viewConfigDiff operation of their own.</summary>
+	private static string BuildViewConfigDiffBody(MobilePageConversionGuide guide) {
+		var operations = new JsonArray();
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)) {
+				continue;
+			}
+			var operation = new JsonObject {
+				["operation"] = "insert",
+				["name"] = entry.MobileName,
+				["values"] = entry.MobileValues?.DeepClone() ?? new JsonObject()
+			};
+			if (entry.ParentName is { Length: > 0 }) {
+				operation["parentName"] = entry.ParentName;
+				operation["propertyName"] = entry.PropertyName is { Length: > 0 } ? entry.PropertyName : "items";
+			}
+			if (entry.Index is { } index) {
+				operation["index"] = index;
+			}
+			operations.Add(operation);
+		}
+		return new JsonObject { ["viewConfigDiff"] = operations }.ToJsonString();
+	}
+
+	[Test]
+	[Description("The core fix: a web-sourced container that survives conversion with a surviving items child gets an empty 'items' array initialized on its OWN mobileValues, across every mobile-supported container type BuildMobileValues drops the array for — a GridContainer, FlexContainer, ExpansionPanel and a converted TabContainer alike. Before the fix none of these carried 'items' at all.")]
+	public void Analyze_ContainerInsert_GetsItemsSlot_WhenChildSurvives_AcrossContainerTypes() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "FlexBox", "type": "crt.FlexContainer", "items": [ { "name": "FlexField", "type": "crt.Input" } ] },
+			  { "name": "GridBox", "type": "crt.GridContainer", "items": [ { "name": "GridField", "type": "crt.Input" } ] },
+			  { "name": "Panel", "type": "crt.ExpansionPanel", "items": [ { "name": "PanelField", "type": "crt.Input" } ] },
+			  { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			      { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "TabField", "type": "crt.Input" } ] } ] }
+			]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		foreach (string boxName in new[] { "FlexBox", "GridBox", "Panel", "OverviewTab" }) {
+			Element(guide, boxName).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+				because: $"{boxName} has a surviving items child, so the Creatio differ requires the slot to be physically declared — without it the child insert throws 'is not a container for other items'");
+		}
+	}
+
+	[Test]
+	[Description("crt.Timeline is NOT in emptyContainerRemoval.removableTypes, yet the slot-initialization pass is keyed on \"used as parent\", never on a container-type list — so a Timeline with a surviving child gets its items slot exactly like a rules-listed container. This is the exact type the original bug report's two repros both flagged as affected.")]
+	public void Analyze_TimelineContainer_GetsItemsSlot_WhenChildSurvives() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Timeline", "type": "crt.Timeline", "items": [
+				{ "name": "CallTile", "type": "crt.Input" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline", "crt.Input" };
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline" },
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules: RulesWithEmptyRemoval(), templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: TabbedContainerMap);
+
+		// Assert
+		Element(guide, "Timeline").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the pass keys on \"used as parent\", not a removableTypes list, so a type absent from that list still gets its slot");
+	}
+
+	[Test]
+	[Description("Regression guard for the pass-order constraint, genuinely sensitive to it (unlike a flat container whose only child is dropped before ever becoming an insert entry, which cascades identically regardless of ordering): Outer's only child Inner IS a surviving insert at snapshot time, so Outer is 'occupied via items' from the very first round. If InitializeContainerChildSlots ran BEFORE RemoveEmptyContainers, Outer's items would already be seeded to a non-null empty array by the time Inner itself drops (its own only child, Timeline, is unsupported) — IsEmptyRemovalCandidate reads items-ABSENCE, so a pre-seeded array would make Outer look non-empty forever and the cascade would stop one level too early. Running the pass strictly after RemoveEmptyContainers (as implemented) lets Outer's true emptiness show through and both containers cascade to drop.")]
+	public void Analyze_ShouldCascadeBothLevelsToDrop_WhenItemsSlotPassRunsAfterRemoval() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Outer", "type": "crt.GridContainer", "items": [
+				{ "name": "Inner", "type": "crt.GridContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		Element(guide, "Inner").Operation.Should().Be("drop",
+			because: "Inner's only child (Timeline) is unsupported and never becomes an insert, so Inner is never occupied and RemoveEmptyContainers drops it in round 1");
+		Element(guide, "Outer").Operation.Should().Be("drop",
+			because: "once Inner is a drop, Outer's true occupancy is empty too — this only cascades correctly if Outer's items slot was NOT pre-seeded by a too-early InitializeContainerChildSlots call");
+	}
+
+	[Test]
+	[Description("A merge twin the mobile template provides (Tabs) is used as parentName by every converted tab — it IS \"occupied\" by the same definition the pass uses — yet the pass must never fabricate a mobileValues object on it: its child-collection slot is the template's own concern, not the converter's.")]
+	public void Analyze_MergeTwinUsedAsParent_IsNeverGivenAnItemsSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		ElementMapEntry tabs = Element(guide, "Tabs");
+		tabs.Operation.Should().Be("merge", because: "Tabs is the mobile template's own twin, matched by name via the container map");
+		tabs.MobileValues.Should().BeNull(
+			because: "a merge twin carries no converter-owned mobileValues here — the pass only ever writes into an INSERT entry's own JsonObject, so SalesTab using Tabs as parentName must not fabricate one");
+	}
+
+	[Test]
+	[Description("Synthesized tab-area layers (MainTabContainer_*/Area_*, created by BuildTabAreaLayers with no webName) get their items slot from THIS SAME pass now that SynthesizedLayerEntry no longer seeds it inline — proving the pass genuinely runs AFTER BuildTabAreaLayers rather than only covering the web-sourced containers built earlier in the pipeline.")]
+	public void Analyze_SynthesizedTabAreaLayers_StillGetItemsSlot_ViaSharedPass() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		// Assert
+		(string main, string area) = LayerNames("OverviewTab");
+		Synthesized(guide, main).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the tab body layer is occupied by the Area card, and must get its slot from InitializeContainerChildSlots, not from a now-removed inline compensation in SynthesizedLayerEntry");
+		Synthesized(guide, area).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the Area card is occupied by the tab's moved content (LeadName), for the same reason");
+	}
+
+	[Test]
+	[Description("Integration-level reproduction of the bug report's repro B: a body built literally from the elementMap (mobileValues pasted verbatim, per the guide's own instructions, no hand-patched workaround) applies cleanly through the REAL differ clone (MobileDiffApplyValidator) for a nested Tabs -> TabContainer -> ExpansionPanel -> GridContainer chain. Before the fix this reproduced the exact reported error: 'Item \"SalesTab\" is not a container for other items'.")]
+	public void Analyze_ElementMapAsBuiltBody_AppliesCleanlyThroughRealDiffer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel", "items": [
+						{ "name": "ProductsListContainer", "type": "crt.GridContainer", "items": [
+							{ "name": "Budget", "type": "crt.Input" } ] } ] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		string body = BuildViewConfigDiffBody(guide);
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: $"every container insert in the chain must physically declare the items slot its own child targets; validator errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("The slot the pass declares is the slot the CHILD targets, not a hardcoded 'items': an ExpansionPanel whose header button is emitted into its 'tools' slot (RecurseChildArrays walks tools exactly like items) gets 'tools' declared too, and the body built from the element map applies cleanly through the REAL differ clone. JsonDiffApplier resolves the parent collection generically as itemInfo.Item[propertyName] and throws 'is not a container for other items' for ANY slot it cannot find there, so a tools-parented survivor reproduced the reported bug identically — an items-only pass left it broken.")]
+	public void Analyze_ToolsSlotParent_GetsItsOwnSlot_AndAppliesThroughRealDiffer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Panel", "type": "crt.ExpansionPanel",
+			    "items": [ { "name": "Amount", "type": "crt.Input" } ],
+			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(BuildViewConfigDiffBody(guide));
+
+		// Assert
+		Element(guide, "AddButton").PropertyName.Should().Be("tools",
+			because: "the header button is emitted as its own entry in the panel's tools slot, which is the slot its insert resolves against");
+		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
+		panelValues["tools"]!.AsArray().Should().BeEmpty(
+			because: "the panel must physically declare the tools collection its own child inserts into — an undeclared tools slot is refused by the differ exactly like an undeclared items slot");
+		panelValues["items"]!.AsArray().Should().BeEmpty(
+			because: "the items child (Amount) still gets its own declared slot — generalizing the pass to every targeted slot must not lose the items case");
+		result.IsValid.Should().BeTrue(
+			because: $"the body built verbatim from the element map must survive the Creatio differ clones for a tools-parented child too; validator errors: {string.Join("; ", result.Errors)}");
+		panelValues.Select(pair => pair.Key).Where(key => key is "items" or "tools").Should().Equal(["items", "tools"],
+			because: "a container targeted through two slots must emit them in one stable order (items first, then alphabetically) — the emitted guide is compared verbatim by callers and tests, so a set-iteration-ordered emission would make it non-deterministic");
+	}
+
+	[Test]
+	[Description("The registry shape guard: a slot the mobile registry positively declares as a SINGLE OBJECT is never declared as an empty array, even when a child insert targets the parent through it. The differ ASSIGNS into an object slot instead of appending, so an array there would be wrong for the component. Reachable only through the generic items walk, which — unlike RecurseChildArrays/IsChildElementArray — descends without asking the registry about the slot's shape, so this branch has no other guard in front of it.")]
+	public void Analyze_ObjectShapedSlot_IsNeverDeclaredAsAnArray() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ObjectBox", "type": "crt.ObjectItemsContainer", "items": [
+				{ "name": "BoxField", "type": "crt.Input" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ObjectItemsContainer", "crt.Input"
+		};
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.ObjectItemsContainer"] = new ComponentRegistryEntry {
+				ComponentType = "crt.ObjectItemsContainer",
+				Container = true,
+				Inputs = new Dictionary<string, JsonElement> {
+					["items"] = JsonSerializer.SerializeToElement(new { type = "object" })
+				}
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileByType: mobileByType, mobileTypes: mobileTypes);
+
+		// Assert
+		ElementMapEntry field = Element(guide, "BoxField");
+		field.ParentName.Should().Be("ObjectBox",
+			because: "the generic items walk descends without a registry shape check, so the child insert targeting this parent is what makes the guard reachable at all");
+		Element(guide, "ObjectBox").MobileValues!.AsObject().ContainsKey("items").Should().BeFalse(
+			because: "the registry declares this component's items as a single object, so the pass leaves the slot "
+				+ "untouched rather than hand the differ — and the mobile designer — an array the component does not "
+				+ "accept. The deliberate consequence: such a child insert is still refused by the differ, so a rule "
+				+ "that ever retargets a child into an object slot has to provide the placeholder itself");
+	}
+
+	[Test]
+	[Description("A crt.Button whose menuItems children survive gets its 'menuItems' collection declared and the assembled body applies through the real differ clone — the third structural slot the walk emits (after items and tools), proving the pass is keyed on the child's own slot rather than on a slot-name allowlist that would have to grow with the registry.")]
+	public void Analyze_MenuItemsSlotParent_GetsItsOwnSlot_AndAppliesThroughRealDiffer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
+			    { "name": "OrderButton", "type": "crt.Button", "menuItems": [
+			        { "name": "PrintItem", "type": "crt.MenuItem" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(BuildViewConfigDiffBody(guide));
+
+		// Assert
+		Element(guide, "PrintItem").PropertyName.Should().Be("menuItems",
+			because: "the nested menu item is emitted into the button's menuItems slot, so that is the slot its insert resolves against");
+		Element(guide, "OrderButton").MobileValues!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
+			because: "the button must declare the menuItems collection its own child inserts into, and only the empty slot — never the child itself — is carried as a value");
+		result.IsValid.Should().BeTrue(
+			because: $"a menuItems-parented child must apply through the differ clones like any other slot; validator errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("Type-list independence proven WITHOUT any stand or seed data: crt.ButtonToggleGroup (a real mobile container the rules' emptyContainerRemoval.removableTypes never lists) and an entirely INVENTED usr.MysteryContainer both get their items slot declared. A regression that re-keyed the pass on a container-type list — the exact design this fix replaced — would leave both slotless, so this test fails on it deterministically on every unit run.")]
+	public void Analyze_ContainerTypesOutsideEveryList_StillGetItemsSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "Toggles", "type": "crt.ButtonToggleGroup", "items": [
+			      { "name": "AllToggle", "type": "crt.ButtonToggleGroupItem" } ] },
+			  { "name": "Mystery", "type": "usr.MysteryContainer", "items": [
+			      { "name": "MysteryField", "type": "crt.Input" } ] }
+			]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ButtonToggleGroup", "crt.ButtonToggleGroupItem", "usr.MysteryContainer", "crt.Input"
+		};
+		IReadOnlySet<string> removableTypes = new HashSet<string>(
+			RulesWithEmptyRemoval().EmptyContainerRemoval!.RemovableTypes, StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: RulesWithEmptyRemoval());
+
+		// Assert
+		removableTypes.Should().NotContain("crt.ButtonToggleGroup",
+			because: "the test is only meaningful while this type stays outside the removable-type list the pass must not depend on");
+		Element(guide, "Toggles").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the pass keys on 'targeted as a parent', so a registry container absent from every rules list still declares the slot its child needs");
+		Element(guide, "Mystery").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "even a type no list anywhere could know about gets its slot — that is what makes the seeding independent of any type list");
+	}
+
+	[Test]
+	[Description("Locks the invariant the pass's defensive 'MobileValues is JsonObject' guard depends on: by the time the pass runs, EVERY insert entry another surviving insert targets as parentName carries a materialized JsonObject mobileValues. The guard is therefore a no-op today; if a future insert-producing path ever breaks the invariant, the container would silently ship without its declared slot, so the breakage must fail here instead.")]
+	public void Analyze_EveryTargetedParentInsert_CarriesJsonObjectMobileValues() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			    { "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+			        { "name": "Panel", "type": "crt.ExpansionPanel",
+			          "items": [ { "name": "Amount", "type": "crt.Input" } ],
+			          "tools": [ { "name": "AddButton", "type": "crt.Button" } ] },
+			        { "name": "Box", "type": "crt.GridContainer", "items": [
+			            { "name": "Stage", "type": "crt.ComboBox" } ] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithEmptyRemovalAndTabLayers());
+		HashSet<string> targetedParents = new(
+			guide.ElementMap
+				.Where(e => e.Operation == "insert" && e.ParentName is { Length: > 0 })
+				.Select(e => e.ParentName!),
+			StringComparer.OrdinalIgnoreCase);
+		List<ElementMapEntry> targetedParentInserts = guide.ElementMap
+			.Where(e => e.Operation == "insert" && e.MobileName is { Length: > 0 }
+				&& targetedParents.Contains(e.MobileName!))
+			.ToList();
+
+		// Assert
+		targetedParentInserts.Should().NotBeEmpty(
+			because: "the page nests containers inside tabs, so the invariant is exercised rather than asserted over an empty set");
+		foreach (ElementMapEntry parent in targetedParentInserts) {
+			parent.MobileValues.Should().BeOfType<JsonObject>(
+				because: $"'{parent.MobileName}' is targeted as a parent, so the pass must have a JsonObject to declare the slot on — anything else means the defensive guard silently skipped a container the differ then refuses");
+		}
 	}
 
 	#endregion

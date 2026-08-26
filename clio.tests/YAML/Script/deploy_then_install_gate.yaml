@@ -1,0 +1,11 @@
+steps:
+- action: deploy-creatio
+  description: deploy a fresh environment
+  options:
+    site-name: fresh-environment
+    silent: true
+
+- action: install-gate
+  description: install cliogate into the fresh environment
+  options:
+    Environment: fresh-environment

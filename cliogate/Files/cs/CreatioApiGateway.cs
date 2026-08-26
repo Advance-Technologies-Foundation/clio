@@ -2,10 +2,12 @@
 using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.ServiceModel;
@@ -377,6 +379,470 @@ namespace cliogate.Files.cs
 			PackageExplorer packageExplorer = new PackageExplorer(packageName);
 			return packageExplorer.GetPackageFilesDirectoryContent();
 		}
+
+		#region Methods: Schema transfer
+
+		/// <summary>
+		/// Reads every <c>SysSchema</c> row whose name matches, optionally narrowed to one package and/or one schema
+		/// manager.
+		/// </summary>
+		/// <remarks>
+		/// Uses <see cref="Select"/> rather than an ESQ on purpose: <c>SysSchema</c> carries restricted NUI security,
+		/// and a name lookup that silently returns nothing because of permissions would be indistinguishable from a
+		/// schema that does not exist.
+		/// </remarks>
+		private List<SchemaLayerInfo> FindSchemaLayersInternal(string schemaName, string packageName,
+			string managerName){
+			List<SchemaLayerInfo> layers = new List<SchemaLayerInfo>();
+			Select select = new Select(_userConnection)
+				.Column("s", "Id")
+				.Column("s", "UId")
+				.Column("s", "Name")
+				.Column("s", "Caption")
+				.Column("s", "ManagerName")
+				.Column("p", "Name").As("PackageName")
+				.Column("p", "UId").As("PackageUId")
+				.From("SysSchema").As("s")
+				.InnerJoin("SysPackage").As("p").On("p", "Id").IsEqual("s", "SysPackageId")
+				.Where("s", "Name").IsEqual(Column.Parameter(schemaName)) as Select;
+			if (!string.IsNullOrWhiteSpace(packageName)) {
+				select = select.And("p", "Name").IsEqual(Column.Parameter(packageName.Trim())) as Select;
+			}
+			if (!string.IsNullOrWhiteSpace(managerName)) {
+				select = select.And("s", "ManagerName").IsEqual(Column.Parameter(managerName.Trim())) as Select;
+			}
+			select = select.OrderByAsc("p", "Name") as Select;
+			using (DBExecutor dbExecutor = _userConnection.EnsureDBConnection()) {
+				using (IDataReader reader = select.ExecuteReader(dbExecutor)) {
+					while (reader.Read()) {
+						layers.Add(new SchemaLayerInfo {
+							SchemaId = reader.GetColumnValue<Guid>("Id").ToString(),
+							SchemaUId = reader.GetColumnValue<Guid>("UId").ToString(),
+							SchemaName = reader.GetColumnValue<string>("Name"),
+							Caption = reader.GetColumnValue<string>("Caption"),
+							ManagerName = reader.GetColumnValue<string>("ManagerName"),
+							PackageName = reader.GetColumnValue<string>("PackageName"),
+							PackageUId = reader.GetColumnValue<Guid>("PackageUId").ToString()
+						});
+					}
+				}
+			}
+			return layers;
+		}
+
+		/// <summary>
+		/// Builds the error payload for a failed schema-transfer call.
+		/// </summary>
+		/// <remarks>
+		/// Unwraps <see cref="TargetInvocationException"/> first. The platform importer/exporter is invoked by
+		/// reflection (see <see cref="InvokeSchemaImporter"/>), and reflection replaces the real failure with the
+		/// useless "Exception has been thrown by the target of an invocation." — which would hide exactly the
+		/// message the caller needs, such as a locked target package.
+		/// </remarks>
+		private static ErrorInfo BuildErrorInfo(Exception exception){
+			Exception root = exception;
+			while (root is TargetInvocationException && root.InnerException != null) {
+				root = root.InnerException;
+			}
+			return new ErrorInfo {
+				Message = root.Message,
+				StackTrace = root.StackTrace
+			};
+		}
+
+		private static ErrorInfo BuildErrorInfo(string message) => new ErrorInfo { Message = message };
+
+		// /rest/CreatioApiGateway/FindSchemaLayers
+		/// <summary>
+		/// Lists every package layer that carries a schema with the requested name.
+		/// </summary>
+		/// <param name="schemaName">Schema name to look up. Required.</param>
+		/// <param name="managerName">Optional schema manager to narrow the lookup to, for example
+		/// <c>AddonSchemaManager</c>.</param>
+		/// <returns>The matching layers; an empty list when the schema does not exist.</returns>
+		/// <remarks>
+		/// Read-only. It exists so a caller can decide create-versus-replace, and detect a same-name schema owned by
+		/// a different package, BEFORE an import writes anything.
+		/// </remarks>
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "FindSchemaLayers", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public FindSchemaLayersResponse FindSchemaLayers(string schemaName, string managerName = null){
+			CheckCanManageSolution();
+			FindSchemaLayersResponse response = new FindSchemaLayersResponse();
+			try {
+				if (string.IsNullOrWhiteSpace(schemaName)) {
+					response.Success = false;
+					response.ErrorInfo = BuildErrorInfo("schemaName is required");
+					return response;
+				}
+				response.Layers = FindSchemaLayersInternal(schemaName.Trim(), null, managerName);
+				response.Success = true;
+			} catch (Exception exception) {
+				_log.Error($"FindSchemaLayers failed for schema '{schemaName}'", exception);
+				response.Success = false;
+				response.ErrorInfo = BuildErrorInfo(exception);
+			}
+			return response;
+		}
+
+		// /rest/CreatioApiGateway/ExportSchema
+		/// <summary>
+		/// Exports a single schema using the platform schema exporter, returning the payload that
+		/// <see cref="ImportSchema"/> consumes.
+		/// </summary>
+		/// <param name="schemaName">Schema name. Required.</param>
+		/// <param name="packageName">Package that owns the layer to export. Required when the name matches more than
+		/// one layer.</param>
+		/// <param name="managerName">Optional schema manager, to narrow an ambiguous name further.</param>
+		/// <returns>
+		/// The exported payload and the identity of the layer it came from. When the name does not resolve to exactly
+		/// one layer the call fails and returns the matching layers in <c>candidates</c> instead of guessing.
+		/// </returns>
+		/// <remarks>
+		/// The platform exporter is type-agnostic — it serialises the schema metadata, its properties and its
+		/// localizable resources for whichever manager owns the schema — so this endpoint covers every schema kind
+		/// rather than one designer contract at a time.
+		/// </remarks>
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "ExportSchema", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public ExportSchemaResponse ExportSchema(string schemaName, string packageName = null,
+			string managerName = null){
+			CheckCanManageSolution();
+			ExportSchemaResponse response = new ExportSchemaResponse();
+			try {
+				if (string.IsNullOrWhiteSpace(schemaName)) {
+					response.Success = false;
+					response.ErrorInfo = BuildErrorInfo("schemaName is required");
+					return response;
+				}
+				List<SchemaLayerInfo> layers = FindSchemaLayersInternal(schemaName.Trim(), packageName, managerName);
+				if (layers.Count == 0) {
+					response.Success = false;
+					response.ErrorInfo = BuildErrorInfo(
+						$"Schema '{schemaName}' was not found in this environment" +
+						(string.IsNullOrWhiteSpace(packageName) ? "." : $" in package '{packageName}'."));
+					return response;
+				}
+				if (layers.Count > 1) {
+					response.Success = false;
+					response.Candidates = layers;
+					response.ErrorInfo = BuildErrorInfo(DescribeAmbiguity(schemaName, layers));
+					return response;
+				}
+				SchemaLayerInfo schema = layers[0];
+				response.SchemaData = InvokeSchemaExport(Guid.Parse(schema.SchemaId));
+				response.Schema = schema;
+				response.Success = true;
+			} catch (Exception exception) {
+				_log.Error($"ExportSchema failed for schema '{schemaName}'", exception);
+				response.Success = false;
+				response.ErrorInfo = BuildErrorInfo(exception);
+			}
+			return response;
+		}
+
+		// /rest/CreatioApiGateway/ImportSchema
+		/// <summary>
+		/// Imports a schema payload produced by <see cref="ExportSchema"/> into the named package.
+		/// </summary>
+		/// <param name="schemaData">Verbatim payload from <see cref="ExportSchema"/>. Required.</param>
+		/// <param name="packageName">Target package name. Required, and must be an unlocked package of this
+		/// environment.</param>
+		/// <returns>The target package identity and the platform importer's own diagnostic string.</returns>
+		/// <remarks>
+		/// Writes through the platform schema importer, so schema properties, localizable resources, the
+		/// extending-versus-standalone decision and the duplicate-name check are the platform's own — this endpoint
+		/// does not reimplement them.
+		/// </remarks>
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "ImportSchema", BodyStyle = WebMessageBodyStyle.WrappedRequest,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public ImportSchemaResponse ImportSchema(string schemaData, string packageName){
+			CheckCanManageSolution();
+			ImportSchemaResponse response = new ImportSchemaResponse();
+			try {
+				if (string.IsNullOrWhiteSpace(schemaData)) {
+					response.Success = false;
+					response.ErrorInfo = BuildErrorInfo("schemaData is required");
+					return response;
+				}
+				if (string.IsNullOrWhiteSpace(packageName)) {
+					response.Success = false;
+					response.ErrorInfo = BuildErrorInfo("packageName is required");
+					return response;
+				}
+				string targetPackageName = packageName.Trim();
+				Guid packageUId = GetPackageUIdByName(targetPackageName);
+				if (packageUId == Guid.Empty) {
+					response.Success = false;
+					response.ErrorInfo = BuildErrorInfo($"Package '{targetPackageName}' was not found in this environment.");
+					return response;
+				}
+				response.ImportResult = InvokeSchemaImport(schemaData, packageUId);
+				response.PackageName = targetPackageName;
+				response.PackageUId = packageUId.ToString();
+				response.Success = true;
+			} catch (Exception exception) {
+				_log.Error($"ImportSchema failed for package '{packageName}'", exception);
+				response.Success = false;
+				response.ErrorInfo = BuildErrorInfo(exception);
+			}
+			return response;
+		}
+
+		/// <summary>
+		/// Builds the refusal message for a schema name that resolved to more than one layer.
+		/// </summary>
+		/// <param name="schemaName">The requested schema name.</param>
+		/// <param name="layers">The layers that matched. Always more than one.</param>
+		/// <returns>A message naming every candidate and the option that can actually narrow it down.</returns>
+		/// <remarks>
+		/// The uniqueness constraint behind this feature is <c>IU_Name_Manager_Package</c>, so the same name can
+		/// legitimately live in the same package under two different managers. Naming only the packages would then
+		/// print the same package twice and advise <c>--package-name</c>, which cannot reduce the match — a dead-end
+		/// refusal loop. Each candidate is therefore described by BOTH dimensions, the list is deduplicated, the
+		/// count is a count of LAYERS (which is what matched), and the remedy is chosen from what actually
+		/// distinguishes the candidates.
+		/// </remarks>
+		internal static string DescribeAmbiguity(string schemaName, List<SchemaLayerInfo> layers){
+			List<string> candidates = new List<string>();
+			foreach (SchemaLayerInfo layer in layers) {
+				string candidate = string.IsNullOrWhiteSpace(layer.ManagerName)
+					? $"'{layer.PackageName}'"
+					: $"'{layer.PackageName}' ({layer.ManagerName})";
+				if (!candidates.Contains(candidate)) {
+					candidates.Add(candidate);
+				}
+			}
+			bool sharesOnePackage = layers
+				.Select(layer => layer.PackageName)
+				.Distinct(StringComparer.OrdinalIgnoreCase)
+				.Count() == 1;
+			string remedy = sharesOnePackage
+				? "They all live in the same package, so specify the manager (--manager-name) to disambiguate."
+				: "Specify the package (--package-name) to export, and the manager (--manager-name) when one "
+					+ "package still carries more than one.";
+			return $"Schema '{schemaName}' matches {layers.Count} layers: " +
+				string.Join(", ", candidates.ToArray()) + ". " + remedy;
+		}
+
+		/// <summary>
+		/// Calls the platform schema exporter.
+		/// </summary>
+		/// <param name="schemaId">Value of <c>SysSchema.Id</c> for the layer to export.</param>
+		/// <returns>The platform export payload.</returns>
+		/// <remarks>See <see cref="InvokeSchemaImporter"/> for why the call is late-bound and isolated.</remarks>
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private string InvokeSchemaExport(Guid schemaId) =>
+			InvokeSchemaImporter(
+				"ExportSchema", new object[] {schemaId, GetSystemUserConnection()},
+				"ExportSchema", new object[] {schemaId});
+
+		/// <summary>
+		/// Calls the platform schema importer.
+		/// </summary>
+		/// <param name="schemaData">Payload previously produced by the exporter.</param>
+		/// <param name="packageUId">UId of the package that will own the schema.</param>
+		/// <returns>The platform importer's own diagnostic string.</returns>
+		/// <remarks>See <see cref="InvokeSchemaImporter"/> for why the call is late-bound and isolated.</remarks>
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private string InvokeSchemaImport(string schemaData, Guid packageUId) =>
+			InvokeSchemaImporter(
+				"ImportSchemaToWorkspace", new object[] {schemaData, packageUId, _userConnection},
+				"ImportSchema", new object[] {schemaData, packageUId});
+
+		/// <summary>
+		/// Calls the platform schema importer/exporter, trying the static entry point first and falling back to the
+		/// <c>ISchemaImporter</c> instance one.
+		/// </summary>
+		/// <param name="staticMethodName">Name of the static <c>SchemaImporter</c> method to try first.</param>
+		/// <param name="staticArguments">Arguments for the static call, in declaration order.</param>
+		/// <param name="interfaceMethodName">Name of the <c>ISchemaImporter</c> method to fall back to.</param>
+		/// <param name="interfaceArguments">Arguments for the interface call, in declaration order.</param>
+		/// <returns>The value the platform method returned.</returns>
+		/// <exception cref="InvalidOperationException">
+		/// Thrown when neither entry point is available on the running core. The message lists what the class does
+		/// expose under that name, so the mismatch is diagnosable from the response alone.
+		/// </exception>
+		/// <remarks>
+		/// Late-bound on purpose, and BOTH shapes are genuinely needed. cliogate is compiled against one CreatioSDK
+		/// but installed on environments running many different cores, and this API is not stable between them —
+		/// verified, not assumed:
+		/// <list type="bullet">
+		/// <item><description>
+		/// The 8.1 SDK exposes <c>SchemaImporter.ImportSchemaToWorkspace(string, Guid, UserConnection)</c> as a
+		/// public static; a 10.1 stand has no public static of that name at all.
+		/// </description></item>
+		/// <item><description>
+		/// On that 10.1 stand the operation is served only by the explicit implementation of
+		/// <c>ISchemaImporter.ImportSchema(string, Guid)</c>, and <c>ISchemaImporter</c> is not accessible outside
+		/// the core assembly — so it cannot be called early-bound either, and the interface type has to be recovered
+		/// from <c>SchemaImporter</c>'s own interface list.
+		/// </description></item>
+		/// <item><description>
+		/// <c>ExportSchema</c>, by contrast, is still a public static on both — hence static-first rather than
+		/// interface-first.
+		/// </description></item>
+		/// </list>
+		/// <para>
+		/// A missing member is raised while the CALLING method is jitted, so an in-method try/catch never sees it and
+		/// WCF answers with an opaque "Request Error". That is why each call site is a separate
+		/// <see cref="MethodImplOptions.NoInlining"/> method rather than an inline call.
+		/// </para>
+		/// </remarks>
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private static string InvokeSchemaImporter(string staticMethodName, object[] staticArguments,
+			string interfaceMethodName, object[] interfaceArguments){
+			MethodInfo[] staticCandidates = typeof(SchemaImporter)
+				.GetMethods(BindingFlags.Public | BindingFlags.Static)
+				.Where(method => method.Name == staticMethodName)
+				.ToArray();
+			foreach (MethodInfo candidate in staticCandidates) {
+				object[] callArguments = MatchArguments(candidate, staticArguments);
+				if (callArguments != null) {
+					return (string)candidate.Invoke(null, callArguments);
+				}
+			}
+			Type importerInterface = typeof(SchemaImporter).GetInterfaces()
+				.FirstOrDefault(contract => contract.Name == "ISchemaImporter");
+			// Public only: the TYPE is internal to the core assembly, but interface MEMBERS are always public,
+			// so no accessibility has to be bypassed to find the method on the contract itself.
+			MethodInfo interfaceMethod = importerInterface?.GetMethod(interfaceMethodName,
+				BindingFlags.Public | BindingFlags.Instance);
+			if (interfaceMethod != null) {
+				object[] callArguments = MatchArguments(interfaceMethod, interfaceArguments);
+				if (callArguments != null) {
+					return (string)interfaceMethod.Invoke(ResolveSchemaImporter(importerInterface), callArguments);
+				}
+			}
+			throw new InvalidOperationException(
+				$"This Creatio version exposes neither a compatible static " +
+				$"Terrasoft.Core.SchemaImporter.{staticMethodName} overload nor " +
+				$"Terrasoft.Core.ISchemaImporter.{interfaceMethodName}. Static overloads found: " +
+				$"{DescribeOverloads(staticMethodName, staticCandidates)}.");
+		}
+
+		/// <summary>
+		/// Builds the platform schema importer instance whose interface method is invoked by reflection.
+		/// </summary>
+		/// <param name="importerInterface">The <c>ISchemaImporter</c> contract, recovered at runtime.</param>
+		/// <returns>An importer instance.</returns>
+		/// <exception cref="InvalidOperationException">
+		/// Thrown when none of the resolution strategies produced an instance; the message carries what each one
+		/// reported, because a failure here is a container-configuration difference between Creatio versions and is
+		/// not otherwise diagnosable from the response.
+		/// </exception>
+		/// <remarks>
+		/// Three strategies, in decreasing order of fidelity, because which one works depends on the target core:
+		/// the container binding for the interface, the container binding for the concrete class, then a direct
+		/// construction. All three go through the GENERIC <c>ClassFactory.Get&lt;T&gt;</c> where the container is
+		/// used at all — the non-generic <c>ClassFactory.Get(Type)</c> routes through <c>GetInstance&lt;T&gt;</c>
+		/// with <c>T</c> bound to <see cref="object"/> and fails with
+		/// <c>Error creating an instance of the "System.Object" class</c>.
+		/// </remarks>
+		private static object ResolveSchemaImporter(Type importerInterface){
+			List<string> failures = new List<string>();
+			object instance = TryResolveFromClassFactory(importerInterface, failures)
+				?? TryResolveFromClassFactory(typeof(SchemaImporter), failures)
+				?? TryCreateDirectly(failures);
+			if (instance == null) {
+				throw new InvalidOperationException(
+					"Could not obtain a Terrasoft.Core.SchemaImporter instance: " + string.Join("; ", failures.ToArray()));
+			}
+			return instance;
+		}
+
+		private static object TryResolveFromClassFactory(Type serviceType, List<string> failures){
+			try {
+				MethodInfo get = typeof(ClassFactory)
+					.GetMethods(BindingFlags.Public | BindingFlags.Static)
+					.First(method => method.Name == "Get"
+						&& method.IsGenericMethodDefinition
+						&& method.GetParameters().Length == 1
+						&& method.GetParameters()[0].ParameterType == typeof(ConstructorArgument[]));
+				return get.MakeGenericMethod(serviceType).Invoke(null, new object[] {new ConstructorArgument[0]});
+			} catch (Exception exception) {
+				Exception root = exception;
+				while (root is TargetInvocationException && root.InnerException != null) {
+					root = root.InnerException;
+				}
+				failures.Add($"ClassFactory.Get<{serviceType.Name}> -> {root.Message}");
+				return null;
+			}
+		}
+
+		private static object TryCreateDirectly(List<string> failures){
+			try {
+				return Activator.CreateInstance(typeof(SchemaImporter));
+			} catch (Exception exception) {
+				failures.Add($"new SchemaImporter() -> {exception.Message}");
+				return null;
+			}
+		}
+
+		private static string DescribeOverloads(string methodName, MethodInfo[] candidates) =>
+			candidates.Length == 0
+				? "none"
+				: string.Join("; ", candidates
+					.Select(method => methodName + "(" + string.Join(", ", method.GetParameters()
+						.Select(parameter => parameter.ParameterType.Name).ToArray()) + ")")
+					.ToArray());
+
+		/// <summary>
+		/// Binds the supplied arguments to a candidate method, dropping trailing arguments it does not declare.
+		/// </summary>
+		/// <param name="candidate">Method being considered.</param>
+		/// <param name="arguments">Arguments available to pass, in declaration order.</param>
+		/// <returns>The argument array to invoke with, or <c>null</c> when the method does not match.</returns>
+		[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+			Justification = "null means 'this candidate does not match'; an empty array is the legitimate call "
+				+ "argument list of a parameterless overload, so collapsing the two would invoke the wrong method.")]
+		private static object[] MatchArguments(MethodInfo candidate, object[] arguments){
+			ParameterInfo[] parameters = candidate.GetParameters();
+			if (parameters.Length > arguments.Length) {
+				return null;
+			}
+			for (int i = 0; i < parameters.Length; i++) {
+				object argument = arguments[i];
+				if (argument == null || !parameters[i].ParameterType.IsInstanceOfType(argument)) {
+					return null;
+				}
+			}
+			object[] callArguments = new object[parameters.Length];
+			Array.Copy(arguments, callArguments, parameters.Length);
+			return callArguments;
+		}
+
+		/// <summary>
+		/// Returns the application's system user connection, which the platform schema exporter requires because it
+		/// reads rows (localizable values, schema properties) the calling user may not be permitted to select.
+		/// </summary>
+		/// <remarks>
+		/// <c>AppConnection.SystemUserConnection</c> is typed as the base <see cref="UserConnection"/>, so the cast is
+		/// checked explicitly rather than done blindly: a wrong type here would otherwise surface as a
+		/// <c>NullReferenceException</c> deep inside the exporter.
+		/// </remarks>
+		private SystemUserConnection GetSystemUserConnection(){
+			SystemUserConnection systemUserConnection =
+				_userConnection.AppConnection.SystemUserConnection as SystemUserConnection;
+			if (systemUserConnection == null) {
+				throw new InvalidOperationException(
+					"The application does not expose a system user connection, which schema export requires.");
+			}
+			return systemUserConnection;
+		}
+
+		private Guid GetPackageUIdByName(string packageName){
+			Select select = new Select(_userConnection)
+				.Column("UId")
+				.From("SysPackage").WithHints(new NoLockHint())
+				.Where("Name").IsEqual(Column.Parameter(packageName)) as Select;
+			return select.ExecuteScalar<Guid>();
+		}
+
+		#endregion
 
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "GetPackages", BodyStyle = WebMessageBodyStyle.WrappedRequest,

@@ -1,11 +1,14 @@
 ﻿using System;
+using System.Collections.Generic;
 using FluentValidation;
 using OneOf;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common.IIS;
+using Clio.Requests;
 
 namespace Clio.Common.ScenarioHandlers {
 
@@ -49,8 +52,8 @@ namespace Clio.Common.ScenarioHandlers {
                 })
                 .Custom((options, context) => {
                     var siteName = options["siteName"];
-                    if (string.IsNullOrWhiteSpace(siteName)) {
-                        context.AddFailure($"siteName cannot be empty");
+					if (!IisSiteName.IsSafeLeaf(siteName)) {
+						context.AddFailure("siteName must be a single safe IIS name");
                     }
                 })
                 .Custom((options, context) => {
@@ -121,6 +124,7 @@ namespace Clio.Common.ScenarioHandlers {
         private readonly IValidator<CreateIISSiteRequest> _validator;
         private readonly INetFrameworkHttpsConfigurator _netFrameworkHttpsConfigurator;
         private readonly IIisCertificateBindingService _certificateBindingService;
+		private readonly IIisScanner _iisScanner;
 
         /// <summary>Initializes the IIS site scenario handler.</summary>
         /// <param name="processExecutor">Executes AppCmd operations.</param>
@@ -128,14 +132,17 @@ namespace Clio.Common.ScenarioHandlers {
         /// <param name="validator">Validates scenario arguments before mutation.</param>
         /// <param name="netFrameworkHttpsConfigurator">Applies .NET Framework HTTPS configuration.</param>
         /// <param name="certificateBindingService">Attaches a machine certificate to an HTTPS binding.</param>
+		/// <param name="iisScanner">Revalidates and rolls back IIS objects after partial creation failures.</param>
         public CreateIISSiteRequestHandler(IProcessExecutor processExecutor, ILogger logger, IValidator<CreateIISSiteRequest> validator,
             INetFrameworkHttpsConfigurator netFrameworkHttpsConfigurator,
-            IIisCertificateBindingService certificateBindingService) {
+            IIisCertificateBindingService certificateBindingService,
+			IIisScanner iisScanner) {
             _processExecutor = processExecutor;
             _logger = logger;
             _validator = validator;
             _netFrameworkHttpsConfigurator = netFrameworkHttpsConfigurator;
             _certificateBindingService = certificateBindingService;
+			_iisScanner = iisScanner;
         }
 
 
@@ -153,6 +160,13 @@ namespace Clio.Common.ScenarioHandlers {
             string hostName = request.GetRequired("hostName");
             request.Arguments.TryGetValue("certificateThumbprint", out string certificateThumbprint);
             certificateThumbprint ??= string.Empty;
+			if (!_iisScanner.TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> existingTargets)
+				|| existingTargets.Any(target => string.Equals(target.siteBinding.name, siteName,
+					StringComparison.OrdinalIgnoreCase))
+				|| !_iisScanner.IsAppPoolAbsent(siteName)) {
+				throw new InvalidOperationException(
+					$"IIS site and application-pool names for '{siteName}' must be verifiably unused before deployment.");
+			}
             
             StringBuilder sb = new();
 
@@ -171,16 +185,34 @@ namespace Clio.Common.ScenarioHandlers {
                 sb.AppendLine("Configured .NET Framework HTTPS settings.");
             }
 
-            sb.Append(CreateAppPool(siteName, isNetFramework));
-            sb.Append(CreateWebSite(siteName, sitePort, destinationFolder, protocol, hostName));
-            if (protocol == "https") {
-                _certificateBindingService.Attach(siteName, certificateThumbprint);
-                sb.AppendLine($"Attached HTTPS certificate {certificateThumbprint} from LocalMachine/My.");
-            }
-            if(isNetFramework) {
-                sb.Append(CreateWebApplication(siteName, Path.Combine(destinationFolder, "Terrasoft.WebApp")));
-            }
-            sb.Append("EnableWindowsAuthentication: ").AppendLine(EnableWindowsAuthentication(siteName));
+            bool appPoolCreated = false;
+			bool siteCreated = false;
+			string currentMutation = null;
+			try {
+				currentMutation = "app-pool";
+				sb.Append(await CreateAppPool(siteName, isNetFramework));
+				appPoolCreated = true;
+				currentMutation = "site";
+				sb.Append(await CreateWebSite(siteName, sitePort, destinationFolder, protocol, hostName));
+				siteCreated = true;
+				sb.Append("EnableBasicAuthentication: ").AppendLine(EnableBasicAuthentication(siteName));
+				if (protocol == "https") {
+					_certificateBindingService.Attach(siteName, certificateThumbprint);
+					sb.AppendLine($"Attached HTTPS certificate {certificateThumbprint} from LocalMachine/My.");
+				}
+				if(isNetFramework) {
+					currentMutation = "application";
+					sb.Append(await CreateWebApplication(siteName, Path.Combine(destinationFolder, "Terrasoft.WebApp")));
+				}
+				sb.Append("EnableWindowsAuthentication: ").AppendLine(EnableWindowsAuthentication(siteName));
+			}
+			catch (Exception exception) {
+				bool uncertainMutation = exception is RequiredAppCmdException { MayHaveCompleted: true };
+				RollbackPartialIisCreation(siteName, destinationFolder,
+					siteCreated || uncertainMutation && (currentMutation is "site" or "application"),
+					appPoolCreated || uncertainMutation && currentMutation == "app-pool");
+				throw;
+			}
 
             return new CreateIISSiteResponse {
                 Status = BaseHandlerResponse.CompletionStatus.Success,
@@ -188,34 +220,56 @@ namespace Clio.Common.ScenarioHandlers {
             };
         }
 
-        private string CreateAppPool(string poolName, bool isNetFramework = true) {
-            string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
+        private Task<string> CreateAppPool(string poolName, bool isNetFramework = true) {
+            string appcmdPath = AppCmdPath.Resolve();
             string command;
             if (isNetFramework) {
-                command = $"add apppool /name:{poolName}";
+                command = $"add apppool /name:\"{poolName}\"";
             }
             else {
-                command = $"add apppool /name:{poolName} /managedRuntimeVersion:\"\" /managedPipelineMode:\"Integrated\"";
+                command = $"add apppool /name:\"{poolName}\" /managedRuntimeVersion:\"\" /managedPipelineMode:\"Integrated\"";
             }
-            string result = _processExecutor.Execute(appcmdPath, command, true);
-            return result;
+            return ExecuteRequiredAppCmd(appcmdPath, command, $"Create IIS application pool '{poolName}'");
         }
 
-        private string CreateWebSite(string siteName, int port, string destinationFolder, string protocol, string hostName) {
-            string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
+		private void RollbackPartialIisCreation(string siteName, string destinationFolder,
+			bool siteCreated, bool appPoolCreated) {
+			if (siteCreated) {
+				try {
+					if (!_iisScanner.TryDeleteIisTarget(siteName, destinationFolder, siteName)) {
+						_logger.WriteWarning($"Partial IIS creation rollback could not remove site '{siteName}'.");
+					}
+				}
+				catch (Exception exception) {
+					_logger.WriteWarning(
+						$"Partial IIS site rollback for '{siteName}' failed: {exception.Message}");
+				}
+			}
+			if (appPoolCreated) {
+				try {
+					IisAppPoolMutationResult result = _iisScanner.DeleteAppPoolIfUnused(siteName);
+					if (result != IisAppPoolMutationResult.Completed) {
+						_logger.WriteWarning(
+							$"Partial IIS creation rollback did not remove application pool '{siteName}' ({result}).");
+					}
+				}
+				catch (Exception exception) {
+					_logger.WriteWarning(
+						$"Partial IIS application-pool rollback for '{siteName}' failed: {exception.Message}");
+				}
+			}
+		}
+
+        private async Task<string> CreateWebSite(string siteName, int port, string destinationFolder, string protocol, string hostName) {
+            string appcmdPath = AppCmdPath.Resolve();
             string command = $"add site /name:\"{siteName}\" /bindings:\"{protocol}/*:{port}:{hostName}\" /physicalPath:\"{destinationFolder}\" /applicationDefaults.applicationPool:\"{siteName}\"";
-            
-            var result =  _processExecutor.Execute(appcmdPath, command, true);
 
-            // Enable Basic Authentication for the created site (moved to helper)
-            var basicResult = EnableBasicAuthentication(siteName);
-
-            // Return combined output so caller sees both results
-            return result + Environment.NewLine + "EnableBasicAuthentication: " + basicResult;
+            string result = await ExecuteRequiredAppCmd(appcmdPath, command, $"Create IIS site '{siteName}'");
+			return result;
         }
 
         private string EnableBasicAuthentication(string siteName) {
-            string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
+            string appcmdPath = AppCmdPath.Resolve();
             // appcmd syntax: set config "<siteName>" -section:system.webServer/security/authentication/basicAuthentication /enabled:true
             string section = "system.webServer/security/authentication/basicAuthentication";
 
@@ -235,7 +289,7 @@ namespace Clio.Common.ScenarioHandlers {
             // Best-effort: a failure here (missing appcmd, permission denied) must not fail
             // deploy-creatio. Required IIS modules are ensured upfront by IISDeploymentStrategy.
             try {
-                string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
+            string appcmdPath = AppCmdPath.Resolve();
                 string section = "system.webServer/security/authentication/windowsAuthentication";
 
                 string unlockCmd = $"unlock config -section:{section}";
@@ -254,12 +308,31 @@ namespace Clio.Common.ScenarioHandlers {
             }
         }
 
-        private string CreateWebApplication(string siteName, string physicalPath) {
-            string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
+        private Task<string> CreateWebApplication(string siteName, string physicalPath) {
+            string appcmdPath = AppCmdPath.Resolve();
             string command = $"add app /site.name:\"{siteName}\" /path:\"/0\" /physicalPath:\"{physicalPath}\" /applicationPool:\"{siteName}\"";
-            string result =  _processExecutor.Execute(appcmdPath, command, true);
-            return result;
+            return ExecuteRequiredAppCmd(appcmdPath, command, $"Create IIS application '{siteName}/0'");
         }
+
+        private async Task<string> ExecuteRequiredAppCmd(string appcmdPath, string command, string operation) {
+            ProcessExecutionResult result = await _processExecutor.ExecuteAndCaptureAsync(
+                new ProcessExecutionOptions(appcmdPath, command));
+            string output = string.Join(Environment.NewLine,
+                new[] { result.StandardOutput, result.StandardError }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+			if (result is not { Started: true, ExitCode: 0, TimedOut: false, Canceled: false,
+				ResourceLimitExceeded: false }) {
+                string detail = string.IsNullOrWhiteSpace(output) ? "AppCmd returned no diagnostic output." : output;
+				throw new RequiredAppCmdException($"{operation} failed. {detail}",
+					result.Started && (result.TimedOut || result.Canceled || result.ResourceLimitExceeded));
+            }
+            return output;
+        }
+
+		private sealed class RequiredAppCmdException(string message, bool mayHaveCompleted)
+			: InvalidOperationException(message) {
+			internal bool MayHaveCompleted { get; } = mayHaveCompleted;
+		}
         
         private static void CopyFiles(string sourceDirectory, string destinationDirectory) {
             DirectoryInfo diSource = new(sourceDirectory);

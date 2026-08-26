@@ -68,12 +68,13 @@ public sealed class SafeEnvironmentFillTests {
 		result.Should().BeTrue("because the user explicitly confirmed with 'y'");
 	}
 
-	[Test]
-	[Description("RealInteractiveConsole.Prompt returns false when stdin is a terminal and the user presses a key other than 'y'.")]
-	public void Prompt_ShouldReturnFalse_WhenInteractiveAndUserDeclines() {
+	[TestCase('n')]
+	[TestCase('\u001b')]
+	[Description("RealInteractiveConsole.Prompt returns false when stdin is a terminal and the user declines or presses Escape.")]
+	public void Prompt_ShouldReturnFalse_WhenInteractiveAndUserDoesNotConfirm(char answer) {
 		// Arrange — use TextWriter.Null to avoid writing to the global Console.Out, which other
 		// test fixtures running in parallel may have redirected to a StringWriter that gets disposed.
-		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'n',
+		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => answer,
 			output: TextWriter.Null);
 
 		// Act

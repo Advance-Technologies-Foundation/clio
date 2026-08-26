@@ -28,12 +28,12 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 
 		PageSchemaBundlePart currentPart = parts[0];
 		List<PageSchemaBundlePart> mergeOrder = parts.Reverse().ToList();
-		JArray viewConfig = new JsonDiffApplier().ApplyDiff(
+		JArray viewConfig = (JArray)new JsonDiffApplier().ApplyDiff(
 			new JArray(),
 			mergeOrder.Select(part => part.ParsedBody.ViewConfigDiff as JArray ?? new JArray()).ToList(),
 			mergeOrder.Select(part => new JsonApplierOperationsOptions {
 				ApplyMoveIfIndirectParentMoved = part.Schema.SchemaVersion >= 1
-			}).ToList()) as JArray ?? new JArray();
+			}).ToList());
 		JObject viewModelConfig = BuildConfig(
 			mergeOrder,
 			part => part.ParsedBody.ViewModelConfig as JObject ?? new JObject(),
@@ -96,15 +96,19 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 		}
 	}
 
-	private JObject BuildConfig(
+	private static JObject BuildConfig(
 		IReadOnlyList<PageSchemaBundlePart> parts,
 		Func<PageSchemaBundlePart, JObject> configSelector,
 		Func<PageSchemaBundlePart, JArray> diffSelector) {
 		JObject result = new();
+		// One applier per config chain: the base applier carries aliases across layers (it only resets them on an
+		// empty source), so a fresh instance per part would drop an alias declared in an ancestor's diff. Scoping it
+		// to this chain also keeps view-model and model alias state from leaking into each other.
+		var applier = new JsonPathDiffApplier();
 		foreach (PageSchemaBundlePart part in parts) {
 			JArray diff = diffSelector(part);
 			result = diff.Count > 0
-				? new JsonPathDiffApplier().Apply(result, diff) as JObject ?? new JObject()
+				? (JObject)applier.Apply(result, diff)
 				: PageBundleMergeHelpers.DeepMerge(result, configSelector(part));
 		}
 

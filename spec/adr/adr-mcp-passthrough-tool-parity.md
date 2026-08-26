@@ -718,4 +718,4 @@ cases run manually until the harness is promoted, same caveat as ENG-93208.
 - [ ] Existing MCP unit + e2e suites identified and kept green; targeted `Category=Unit&Module=McpServer`
       filter run after EVERY slice, not deferred to the end
 - [ ] MCP surface + docs updated per FR-09 — or explicitly stated as "reviewed, no update required"
-- [ ] Workspace diary entry appended after completion (`.codex/workspace-diary.md`)
+- [ ] Knowledge record added for anything the code does not say (`docs/knowledge/`, see its README)

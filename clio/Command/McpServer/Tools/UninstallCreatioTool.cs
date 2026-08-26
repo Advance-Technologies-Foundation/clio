@@ -38,6 +38,15 @@ public class UninstallCreatioTool(
 				 and before unregistering; an offline or failed dbHub verification is also a
 				 non-fatal warning with success-with-warnings completion.
 				 A shared application pool and its profile are preserved.
+				 The registered EnvironmentPath is the authoritative target identity. A complete,
+				 unfiltered IIS inventory is required before every safely validated site or application
+				 with the same physical directory identity is stopped and removed, including classic /0
+				 applications and existing filesystem aliases. Every assigned pool is handled,
+				 while pools shared with unrelated applications are preserved. The environment URI is
+				 not used for target discovery. Incomplete IIS discovery aborts before database or file
+				 deletion; a complete inventory with no matching target permits local non-IIS removal.
+				 Deploy and uninstall serialize on the target directory, and unregister only removes an
+				 environment whose registered path still matches the path that authorized cleanup.
 
 				 The command reads the database connection string from ConnectionStrings.config
 				 in the Creatio installation directory and uses it to connect and drop the
@@ -71,5 +80,5 @@ public class UninstallCreatioTool(
 }
 
 public record UninstallCreatioArgs(
-	[property:JsonPropertyName("environment-name")][Description("Creatio environment name to uninstall")] [Required] string EnvironmentName
+	[property:JsonPropertyName("environment-name")][Description("Registered Creatio environment name whose EnvironmentPath will be removed")] [Required] string EnvironmentName
 );

@@ -75,6 +75,16 @@ as an orphan so a leftover or renamed key stays visible and manageable.
 - With --name plus exactly one of --enable/--disable, persists the change and
 reports the new state. Toggling a key that nothing references is allowed
 but prints a warning.
+- Some features print a one-time notice when ENABLED (never on disable). For
+example, enabling `mobile-page-converter` warns that it runs in Beta mode.
+- A key does not have to gate a command or an MCP tool: some keys change internal
+behavior instead. `knowledge-allow-unsequenced` is one - it lets a Git knowledge
+source whose `bundle-source.json` omits `sequence` load by deriving the sequence
+from `libraryVersion`, and lets such a bundle replace the active generation under
+the same derived sequence when its content changed. It exists for iterating on a
+local `clio-knowledge` branch. While it is on, the content-integrity check that
+detects a swapped guidance corpus does not apply to that source; a rollback to a
+lower sequence is still refused. The flag is persistent, so disable it when done.
 
 ## Exit Codes
 
