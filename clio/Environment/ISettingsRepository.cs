@@ -93,6 +93,11 @@ namespace Clio.UserEnvironment
 		/// <param name="name">Optional clio environment key.</param>
 		/// <returns>The matching environment settings, or <c>null</c>.</returns>
 		EnvironmentSettings? FindEnvironment(string name = null);
+
+		/// <summary>Reloads settings under the cross-process update lock and finds the current environment.</summary>
+		/// <param name="name">The clio environment key.</param>
+		/// <returns>The current environment settings, or <c>null</c>.</returns>
+		EnvironmentSettings? FindCurrentEnvironment(string name);
 			
 		/// <summary>
 		/// Marks the supplied environment as active.
@@ -112,6 +117,18 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <param name="name">The clio environment key to remove.</param>
 		void RemoveEnvironment(string name);
+
+		/// <summary>Atomically removes an environment only when its registered path still matches the expected path.</summary>
+		/// <param name="name">The clio environment key to remove.</param>
+		/// <param name="expectedEnvironmentPath">Canonical path that authorized the destructive operation.</param>
+		/// <returns><see langword="true"/> when the matching registration was removed; otherwise, <see langword="false"/>.</returns>
+		bool RemoveEnvironmentIfPathMatches(string name, string expectedEnvironmentPath);
+
+		/// <summary>Reads current settings under the update lock and compares the registered path.</summary>
+		/// <param name="name">The clio environment key to inspect.</param>
+		/// <param name="expectedEnvironmentPath">Canonical path that authorized the operation.</param>
+		/// <returns><see langword="true"/> only while the current registration still matches.</returns>
+		bool EnvironmentPathMatches(string name, string expectedEnvironmentPath);
 
 		/// <summary>
 		/// Writes settings to the supplied text writer.

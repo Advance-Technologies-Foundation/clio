@@ -62,8 +62,13 @@ namespace Clio.Project.NuGet
 
 		#region Methods: Public
 
-		public Version FindLatestSdkVersion(Version applicationVersion) => _versions
-			.LastOrDefault(sdkVersion => sdkVersion >= applicationVersion) ?? LastVersion;
+		public Version FindLatestSdkVersion(Version applicationVersion) => applicationVersion == null
+			// A workspace created while api.nuget.org was unreachable records no application version, so the
+			// argument can legitimately be null. Without this guard `sdkVersion >= null` is true for every
+			// element and LastOrDefault over a newest-first list returns the OLDEST SDK - no exception, no
+			// warning, an unbuildable workspace (issue #1119).
+			? LastVersion
+			: _versions.LastOrDefault(sdkVersion => sdkVersion >= applicationVersion) ?? LastVersion;
 
 		#endregion
 

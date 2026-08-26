@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -6,6 +7,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -54,7 +56,8 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	  ],
 	  "references": {
 	    "baseParameters": {
-	      "$context": { "type": "ViewModelContext", "description": "Platform-injected view-model context." }
+	      "$context": { "type": "ViewModelContext", "description": "Platform-injected view-model context." },
+	      "$initialEvent": { "type": "unknown", "description": "The original UI event.", "deprecated": true, "deprecationReason": "use event binding expression instead." }
 	    },
 	    "typeDefinitions": {
 	      "RequestBindingConfig": {
@@ -145,21 +148,36 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("get-request-info is registered as a resident core tool and reachable on the MCP surface of a default install.")]
+	[Description("tools/list publishes get-request-info as a resident core tool with producer-driven BaseRequest and deprecation guidance.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-request-info is reachable on the default MCP surface")]
-	[AllureDescription("Starts the real clio MCP server and verifies get-request-info is reachable.")]
-	public async Task RequestInfoTool_Should_Be_Reachable() {
+	[AllureName("get-request-info is resident with producer-driven discovery guidance")]
+	[AllureDescription("Starts the real clio MCP server and verifies tools/list publishes get-request-info plus producer-driven BaseRequest and deprecation metadata guidance without the stale fixed field list.")]
+	public async Task RequestInfoTool_Should_Be_Reachable_With_Producer_Driven_Description_When_Tools_Are_Listed() {
 		// Arrange
-		await using var context = Arrange();
+		await using var context = AllureApi.Step("Arrange a real MCP server session", () => Arrange());
 
 		// Act
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		IList<McpClientTool> tools = await AllureApi.Step(
+			"Act by listing native MCP tools",
+			async () => await context.Session.ListToolsAsync(context.CancellationTokenSource.Token));
 
 		// Assert
-		toolNames.Should().Contain(ToolName,
-			because: "the request catalog is a resident core tool and must always register on the MCP surface");
+		AllureApi.Step("Assert get-request-info is resident", () =>
+			tools.Select(item => item.Name).Should().Contain(ToolName,
+				because: "the request catalog is a resident core tool and must always register on the MCP surface"));
+		McpClientTool tool = AllureApi.Step(
+			"Select the native get-request-info definition",
+			() => tools.Single(item => item.Name == ToolName));
+		AllureApi.Step("Assert native discovery describes producer-driven base parameters", () =>
+			tool.Description.Should().Contain(
+				"'baseParameters' publishes the current BaseRequest fields and their producer metadata",
+				because: "the live MCP description must follow the producer catalog instead of a fixed field list"));
+		AllureApi.Step("Assert native discovery explains producer deprecation metadata", () =>
+			tool.Description.Should().Contain("deprecated/deprecationReason",
+				because: "agents must know how to recognize and honor deprecation metadata on published base parameters"));
+		AllureApi.Step("Assert native discovery omits the stale BaseRequest field list", () =>
+			tool.Description.Should().NotContain("($context, scopes, type)",
+				because: "the actual tools/list surface must not reintroduce the stale fixed enumeration"));
 	}
 
 	[Test]
@@ -284,41 +302,65 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Detail mode over the wire surfaces the authorable parameters map (explicitly empty for the parameterless pilot request) and keeps the platform-injected baseParameters separate, with the RequestBindingConfig wiring contract inlined.")]
+	[Description("Detail mode over the wire surfaces the explicitly empty authorable parameters map, keeps producer-defined baseParameters separate, preserves their deprecation metadata, and inlines the RequestBindingConfig wiring contract.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-request-info returns a detail with separate baseParameters over the wire")]
-	[AllureDescription("Requests crt.ClosePageRequest detail against the local registry fixture and verifies the empty parameters map, the separate baseParameters block, and the inlined wiring type definition.")]
+	[AllureDescription("Requests crt.ClosePageRequest detail against the local registry fixture and verifies the empty parameters map, separate producer-defined baseParameters with deprecation metadata, and the inlined wiring type definition.")]
 	public async Task RequestInfoTool_Should_Return_Detail_With_Separate_BaseParameters_When_Type_Is_Known() {
 		// Arrange
-		await using var context = Arrange();
+		await using var context = AllureApi.Step("Arrange a request-registry MCP session", () => Arrange());
 
 		// Act
-		RequestInfoResponse response = await CallRequestInfoAsync(
-			context.Session,
-			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["request-type"] = "crt.ClosePageRequest" });
+		RequestInfoResponse response = await AllureApi.Step(
+			"Act by requesting crt.ClosePageRequest detail",
+			async () => await CallRequestInfoAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["request-type"] = "crt.ClosePageRequest" }));
 
 		// Assert
-		response.Success.Should().BeTrue(
-			because: "crt.ClosePageRequest exists in the fixture registry");
-		response.Mode.Should().Be("detail",
-			because: "a known request type selects detail mode");
-		response.RequestType.Should().Be("crt.ClosePageRequest",
-			because: "the detail response echoes the requested type");
-		response.Parameters.Should().NotBeNull(
-			because: "the explicitly empty parameters map must survive the wire — it means 'accepts no parameters'");
-		response.Parameters.Should().BeEmpty(
-			because: "crt.ClosePageRequest accepts no authorable parameters");
-		response.BaseParameters.Should().NotBeNull(
-			because: "the registry publishes root references.baseParameters");
-		response.BaseParameters!.Should().ContainKey("$context",
-			because: "the platform-injected context field is part of the published base surface");
-		response.Parameters.Should().NotContainKey("$context",
-			because: "baseParameters must never merge into the authorable parameters map");
-		response.References.Should().NotBeNull(
-			because: "the wiring contract is reachable from the closure seed");
-		response.References!.TypeDefinitions.Should().ContainKey("RequestBindingConfig",
-			because: "every request is wired through RequestBindingConfig, so the detail inlines its schema");
+		AllureApi.Step("Assert the request detail succeeded", () =>
+			response.Success.Should().BeTrue(
+				because: "crt.ClosePageRequest exists in the fixture registry"));
+		AllureApi.Step("Assert the response is detail mode", () =>
+			response.Mode.Should().Be("detail", because: "a known request type selects detail mode"));
+		AllureApi.Step("Assert the requested type is echoed", () =>
+			response.RequestType.Should().Be("crt.ClosePageRequest",
+				because: "the detail response echoes the requested type"));
+		AllureApi.Step("Assert the authorable parameters map is present", () =>
+			response.Parameters.Should().NotBeNull(
+				because: "the explicitly empty parameters map must survive the wire — it means 'accepts no parameters'"));
+		AllureApi.Step("Assert the request has no authorable parameters", () =>
+			response.Parameters.Should().BeEmpty(
+				because: "crt.ClosePageRequest accepts no authorable parameters"));
+		AllureApi.Step("Assert producer base parameters are separate", () =>
+			response.BaseParameters.Should().NotBeNull(
+				because: "the registry publishes root references.baseParameters"));
+		AllureApi.Step("Assert the context base parameter is published", () =>
+			response.BaseParameters!.Should().ContainKey("$context",
+				because: "the platform-injected context field is part of the published base surface"));
+		AllureApi.Step("Assert the initial-event base parameter is published", () =>
+			response.BaseParameters!.Should().ContainKey("$initialEvent",
+				because: "the MCP response must carry newly published BaseRequest fields without a Clio code change"));
+		AllureApi.Step("Assert initial-event deprecation metadata survives the wire", () =>
+			response.BaseParameters!["$initialEvent"].GetProperty("deprecated").GetBoolean().Should().BeTrue(
+				because: "producer deprecation metadata must survive the MCP wire format"));
+		AllureApi.Step("Assert the producer's initial-event replacement guidance survives the wire", () =>
+			response.BaseParameters!["$initialEvent"].GetProperty("deprecationReason").GetString().Should()
+				.Be("use event binding expression instead.",
+					because: "the MCP response must retain the producer's replacement guidance"));
+		AllureApi.Step("Assert context does not become authorable", () =>
+			response.Parameters.Should().NotContainKey("$context",
+				because: "baseParameters must never merge into the authorable parameters map"));
+		AllureApi.Step("Assert deprecated initial event does not become authorable", () =>
+			response.Parameters.Should().NotContainKey("$initialEvent",
+				because: "deprecated BaseRequest fields are still platform-injected rather than authorable params"));
+		AllureApi.Step("Assert wiring references are included", () =>
+			response.References.Should().NotBeNull(
+				because: "the wiring contract is reachable from the closure seed"));
+		AllureApi.Step("Assert RequestBindingConfig is inlined", () =>
+			response.References!.TypeDefinitions.Should().ContainKey("RequestBindingConfig",
+				because: "every request is wired through RequestBindingConfig, so the detail inlines its schema"));
 	}
 
 	[Test]

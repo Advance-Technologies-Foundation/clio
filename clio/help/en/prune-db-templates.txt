@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Local Instance Management
+
+NAME
+    prune-db-templates - Interactively prune clio-managed PostgreSQL templates
+
+DESCRIPTION
+    Lists valid clio-managed PostgreSQL template databases on a configured local
+    server, lets you select individual templates by source ordered by Creatio
+    version (oldest first), reviews the selection, and requires final
+    confirmation before deletion.
+
+    Press Esc to cancel from the server picker, template picker, or final
+    confirmation. Cancellation exits without deleting anything. After final
+    confirmation, the deletion batch runs to completion.
+
+    A database is eligible only when it is marked as a PostgreSQL template and
+    has valid clio metadata. Built-in template0 and template1 are never listed.
+    Templates with active sessions are skipped. The command never disconnects
+    sessions and never provides a delete-all option.
+
+    The configured PostgreSQL role must own the selected databases or otherwise
+    have permission to alter and drop them. Any skipped or failed deletion returns
+    a non-zero exit code. After confirmation, a progress bar advances for every
+    processed template. A failed or skipped template does not stop later selected
+    templates; the final table reports every outcome.
+
+SYNOPSIS
+    clio prune-db-templates [--db <SERVER_NAME>]
+
+OPTIONS
+    --db
+        Configured local PostgreSQL server name. When omitted, the only eligible
+        server is selected automatically; multiple servers produce a prompt.
+
+NOTES
+    This command requires an interactive console. Automation should use the
+    list-db-templates MCP tool followed by the destructive prune-db-templates
+    MCP tool with an explicit non-empty databaseNames list.
+
+EXAMPLE
+    clio prune-db-templates
+
+    clio prune-db-templates --db local-postgres

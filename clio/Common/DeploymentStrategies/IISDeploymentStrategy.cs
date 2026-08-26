@@ -82,11 +82,6 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 
 		_logger.WriteInfo("[Create IIS Site] - Started");
 
-		// Pre-deploy: best-effort check & install of Windows features required by Creatio.
-		// Runs for every IIS-on-Windows deploy regardless of framework. Failures are logged
-		// as warnings — deployment continues just like before this check existed.
-		EnsureRequiredWindowsFeatures();
-
 		try {
 			InstallerHelper.FrameworkType frameworkType = InstallerHelper.DetectFrameworkByPath(appDirectoryPath);
 			string hostName = InstallerHelper.FetFQDN();
@@ -170,6 +165,14 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 	/// Gets a human-readable description of this deployment strategy.
 	/// </summary>
 	public string GetDescription() => "Windows IIS (Internet Information Services)";
+
+	/// <summary>
+	/// Ensures required IIS host features are present before port availability is validated.
+	/// </summary>
+	public void PrepareHost()
+	{
+		EnsureRequiredWindowsFeatures();
+	}
 
 	private void EnsureRequiredWindowsFeatures()
 	{
