@@ -289,7 +289,7 @@ public sealed class PageSyncToolBaselineTests
 			Substitute.For<ILogger>(),
 			hierarchyClient,
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(),
 			CreatePassthroughPageFileWriter());
 	}
 

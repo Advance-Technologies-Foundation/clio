@@ -21,16 +21,6 @@ public interface IPageBundleBuilder {
 internal sealed class PageBundleBuilder : IPageBundleBuilder {
 	private const string PathSeparator = "/";
 
-	private readonly IPageJsonDiffApplier _jsonDiffApplier;
-	private readonly IPageJsonPathDiffApplier _jsonPathDiffApplier;
-
-	public PageBundleBuilder(
-		IPageJsonDiffApplier jsonDiffApplier,
-		IPageJsonPathDiffApplier jsonPathDiffApplier) {
-		_jsonDiffApplier = jsonDiffApplier;
-		_jsonPathDiffApplier = jsonPathDiffApplier;
-	}
-
 	public PageBundleInfo Build(IReadOnlyList<PageSchemaBundlePart> parts) {
 		if (parts.Count == 0) {
 			return new PageBundleInfo();
@@ -38,10 +28,12 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 
 		PageSchemaBundlePart currentPart = parts[0];
 		List<PageSchemaBundlePart> mergeOrder = parts.Reverse().ToList();
-		JArray viewConfig = _jsonDiffApplier.ApplyDiff(
+		JArray viewConfig = new JsonDiffApplier().ApplyDiff(
 			new JArray(),
 			mergeOrder.Select(part => part.ParsedBody.ViewConfigDiff as JArray ?? new JArray()).ToList(),
-			mergeOrder.Select(part => new PageJsonDiffApplyOptions(part.Schema.SchemaVersion >= 1)).ToList());
+			mergeOrder.Select(part => new JsonApplierOperationsOptions {
+				ApplyMoveIfIndirectParentMoved = part.Schema.SchemaVersion >= 1
+			}).ToList()) as JArray ?? new JArray();
 		JObject viewModelConfig = BuildConfig(
 			mergeOrder,
 			part => part.ParsedBody.ViewModelConfig as JObject ?? new JObject(),
@@ -112,7 +104,7 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 		foreach (PageSchemaBundlePart part in parts) {
 			JArray diff = diffSelector(part);
 			result = diff.Count > 0
-				? _jsonPathDiffApplier.Apply(result, diff)
+				? new JsonPathDiffApplier().Apply(result, diff) as JObject ?? new JObject()
 				: PageBundleMergeHelpers.DeepMerge(result, configSelector(part));
 		}
 

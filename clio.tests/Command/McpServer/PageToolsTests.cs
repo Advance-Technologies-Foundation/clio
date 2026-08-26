@@ -1102,7 +1102,7 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'NameField',
 					    parentName: 'MainContainer',
-					    path: ['items'],
+					    propertyName: 'items',
 					    values: {
 					      type: 'crt.Input'
 					    }
@@ -1124,7 +1124,8 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'MainContainer',
 					    values: {
-					      type: 'crt.FlexContainer'
+					      type: 'crt.FlexContainer',
+					      items: []
 					    }
 					  }
 					]
@@ -1206,7 +1207,7 @@ public class PageToolsTests
 			    operation: 'insert',
 			    name: 'NameField',
 			    parentName: 'MainContainer',
-			    path: ['items'],
+			    propertyName: 'items',
 			    values: {
 			      type: 'crt.Input'
 			    }
@@ -2970,7 +2971,7 @@ public class PageToolsTests
 			logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(),
 			CreatePassthroughPageFileWriter());
 	}
 
@@ -3668,33 +3669,8 @@ public class PageToolsTests
 				}
 			}
 		});
-		var jsonDiff = Substitute.For<IPageJsonDiffApplier>();
-		jsonDiff.ApplyDiff(Arg.Any<Newtonsoft.Json.Linq.JArray>(), Arg.Any<IReadOnlyList<Newtonsoft.Json.Linq.JArray>>(), Arg.Any<IReadOnlyList<PageJsonDiffApplyOptions>>())
-			.Returns(ci => {
-				var array = new Newtonsoft.Json.Linq.JArray {
-					new Newtonsoft.Json.Linq.JObject {
-						["name"] = "RootContainer",
-						["type"] = "crt.FlexContainer",
-						["items"] = new Newtonsoft.Json.Linq.JArray {
-							new Newtonsoft.Json.Linq.JObject {
-								["name"] = "NestedContainer",
-								["type"] = "crt.Grid",
-								["items"] = new Newtonsoft.Json.Linq.JArray {
-									new Newtonsoft.Json.Linq.JObject {
-										["name"] = "LeafButton",
-										["type"] = "crt.Button"
-									}
-								}
-							}
-						}
-					}
-				};
-				return array;
-			});
-		var pathDiff = Substitute.For<IPageJsonPathDiffApplier>();
-		pathDiff.Apply(Arg.Any<Newtonsoft.Json.Linq.JObject>(), Arg.Any<Newtonsoft.Json.Linq.JArray>())
-			.Returns(ci => new Newtonsoft.Json.Linq.JObject());
-		var builder = new PageBundleBuilder(jsonDiff, pathDiff);
+		// The real client-faithful applier resolves the parser's ViewConfigDiff into the container tree under test.
+		var builder = new PageBundleBuilder();
 		var parts = new List<PageSchemaBundlePart> {
 			new(
 				new PageDesignerHierarchySchema { UId = "u", Name = "TestPage", PackageUId = "p", Body = "x" },

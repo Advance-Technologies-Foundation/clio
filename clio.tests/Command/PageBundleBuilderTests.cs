@@ -64,7 +64,7 @@ public sealed class PageBundleBuilderTests {
 							["operation"] = "insert",
 							["name"] = "NameField",
 							["parentName"] = "MainContainer",
-							["path"] = new JArray("items"),
+							["propertyName"] = "items",
 							["values"] = new JObject {
 								["type"] = "crt.Input"
 							}
@@ -344,6 +344,6 @@ public sealed class PageBundleBuilderTests {
 	}
 
 	private static IPageBundleBuilder CreateBuilder() {
-		return new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier());
+		return new PageBundleBuilder();
 	}
 }

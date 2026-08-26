@@ -468,8 +468,6 @@ public class BindingsModule {
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
 		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
-		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
-		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();

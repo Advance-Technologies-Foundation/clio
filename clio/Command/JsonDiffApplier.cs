@@ -13,8 +13,9 @@ using Newtonsoft.Json.Linq;
 /// <c>viewConfigDiff</c>-style operation set (merge / set / insert / move / remove) to a source items tree,
 /// reproducing the client semantics 1:1 — INCLUDING the exceptions the client throws
 /// (<see cref="JsonDiffApplierException"/>: not-a-container, cyclic dependency, required-parameter-missing).
-/// Unlike <see cref="PageJsonDiffApplier"/> (a tolerant, read-time merge that silently creates missing slots),
-/// this clone surfaces the same errors the server raises, so it can later back a faithful diff validator.
+/// It backs both the faithful diff validator and page-bundle resolution (<c>PageBundleBuilder</c>): a resolve of
+/// a server-valid schema chain applies cleanly, and a chain the server itself would reject surfaces the same error
+/// instead of being silently smoothed over.
 /// Data model is Newtonsoft <see cref="JToken"/>; tokens moved into the tree are deep-cloned to avoid the
 /// single-parent constraint (result-identical to the TS reference-assignment).
 /// </summary>
