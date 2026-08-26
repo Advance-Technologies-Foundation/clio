@@ -220,6 +220,50 @@ public sealed class JsonDiffApplierTests {
 			because: "the path did not route the element into MainContainer.items");
 	}
 
+	// ----- path applier (viewModelConfig / modelConfig) coverage ported from the retired
+	//       PageJsonPathDiffApplierTests, re-expressed against the client-faithful JsonPathDiffApplier that now
+	//       drives real bundle resolution via PageBundleBuilder.BuildConfig -----
+
+	[Test]
+	[Description("Path applier resolves nested aliases by _id: a name-addressed merge updates the aliased array item, and an insert into parentName + path appends into the resolved target array.")]
+	public void PathApply_WhenOperationsTargetNestedAliases_UpdatesTheExpectedNodes() {
+		var applier = new JsonPathDiffApplier();
+		JObject source = JObject.Parse("""
+			{ "values": { "MainContainer": { "_id": "MainContainer", "items": [ { "_id": "Field1", "label": "Original" } ] } } }
+			""");
+		JArray operations = Arr("""
+			[
+				{ "operation": "merge", "name": "Field1", "values": { "label": "Updated" } },
+				{ "operation": "insert", "parentName": "MainContainer", "path": ["items"], "index": 1, "values": { "_id": "Field2", "label": "Inserted" } }
+			]
+			""");
+
+		var result = (JObject)applier.Apply(source, operations);
+
+		var items = (JArray)result["values"]!["MainContainer"]!["items"]!;
+		items.Should().HaveCount(2,
+			because: "existing aliased items are kept and the new item is inserted into the resolved target array");
+		items[0]!["label"]!.ToString().Should().Be("Updated",
+			because: "merge locates the aliased array item by _id and updates its properties");
+		items[1]!["_id"]!.ToString().Should().Be("Field2",
+			because: "insert resolves the aliased parent container by _id before appending the new item");
+	}
+
+	[Test]
+	[Description("Path applier merges values into the root object when the operation path is empty — otherwise viewModelConfig / modelConfig would stay empty in the resolved bundle.")]
+	public void PathApply_WhenMergeOperationHasEmptyPath_MergesValuesIntoRoot() {
+		var applier = new JsonPathDiffApplier();
+		JObject source = new();
+		JArray operations = Arr("""
+			[ { "operation": "merge", "path": [], "values": { "attributes": { "UsrName": { "modelConfig": { "path": "PDS.UsrName" } } } } } ]
+			""");
+
+		var result = (JObject)applier.Apply(source, operations);
+
+		result["attributes"]!["UsrName"]!["modelConfig"]!["path"]!.ToString().Should().Be("PDS.UsrName",
+			because: "an empty-path merge must apply values to the root so the bundle's config is populated");
+	}
+
 	private static JObject LoadFixtureCase(string group, int index) {
 		string path = Path.Combine(AppContext.BaseDirectory, "Command/McpServer/Fixtures/JsonDiffApplierMock.json");
 		var fixture = JObject.Parse(File.ReadAllText(path));
