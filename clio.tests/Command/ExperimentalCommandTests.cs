@@ -134,6 +134,53 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 	}
 
 	[Test]
+	[Description("Enabling the mobile-page-converter feature emits the Beta-mode enablement warning (ENG-94250).")]
+	public void Execute_ShouldWarnBetaMode_WhenEnablingMobilePageConverter() {
+		// Arrange
+		ExperimentalOptions options = new() { Name = "mobile-page-converter", Enable = true };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "enabling a known feature succeeds");
+		_settingsRepository.Received(1).SetFeature("mobile-page-converter", true);
+		// enabling the mobile-page-converter feature must warn the user it activates Beta mode
+		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("Beta mode")));
+	}
+
+	[Test]
+	[Description("Disabling the mobile-page-converter feature does NOT emit the Beta-mode enablement warning.")]
+	public void Execute_ShouldNotWarnBetaMode_WhenDisablingMobilePageConverter() {
+		// Arrange
+		ExperimentalOptions options = new() { Name = "mobile-page-converter", Disable = true };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "disabling a known feature succeeds");
+		_settingsRepository.Received(1).SetFeature("mobile-page-converter", false);
+		// the Beta-mode heads-up is shown only when the feature is turned on, never on disable
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("Beta mode")));
+	}
+
+	[Test]
+	[Description("Enabling a feature that carries no enable notice emits no Beta-mode warning.")]
+	public void Execute_ShouldNotWarnBetaMode_WhenEnablingFeatureWithoutNotice() {
+		// Arrange
+		ExperimentalOptions options = new() { Name = "ai-assist", Enable = true };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "enabling any feature succeeds");
+		// only features with a registered enable notice emit the Beta-mode heads-up
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("Beta mode")));
+	}
+
+	[Test]
 	[Description("Lists feature flags by printing a table when no toggle arguments are supplied.")]
 	public void Execute_ShouldListFeatures_WhenNoArgumentsSupplied() {
 		// Arrange
