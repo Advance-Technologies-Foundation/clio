@@ -547,6 +547,32 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A non-JSON response body (an IIS/proxy error page instead of Creatio's OData pipeline) leaves record-created unknown rather than reporting a successful create — the request never reached Creatio intact, so the row's side effect cannot be assumed.")]
+	public void Create_Should_Report_RecordCreated_Unknown_On_Non_Json_Response() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html><head><title>404 - File or directory not found.</title></head></html>");
+		ODataCreateTool tool = BuildTool(client);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\"}]")
+		});
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(because: "an HTML error page proves the request never reached Creatio's OData pipeline");
+		response.Results[0].RecordCreated.Should().BeNull(
+			because: "the request did not reach Creatio intact, so whether a post-insert handler already wrote the row is unknown");
+		response.Results[0].RetryGuidance.Should().NotBeNullOrWhiteSpace(
+			because: "an unknown side effect must tell the caller to verify instead of retrying");
+		response.Results[0].Error.Should().Contain("was not JSON",
+			because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+		response.Unverified.Should().Be(1, because: "the batch must surface how many rows are unverified");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A transport failure leaves record-created unknown, because the request may have been applied before the error surfaced on the client side.")]
 	public void Create_Should_Report_RecordCreated_Unknown_On_Transport_Failure() {
 		// Arrange
