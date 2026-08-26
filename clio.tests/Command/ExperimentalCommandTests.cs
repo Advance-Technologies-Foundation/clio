@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Clio.Command;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Common;
 using Clio.UserEnvironment;
 using ConsoleTables;
@@ -195,6 +196,65 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 		result.Should().Be(0, because: "listing feature flags always succeeds");
 		_settingsRepository.DidNotReceive().SetFeature(Arg.Any<string>(), Arg.Any<bool>());
 		_logger.Received().PrintTable(Arg.Any<ConsoleTable>());
+	}
+
+	[Test]
+	[Description("The knowledge-allow-unsequenced key is a recognized standalone feature, not an unknown key.")]
+	public void Execute_ShouldNotWarnUnknownKey_WhenTogglingKnowledgeAllowUnsequenced() {
+		// Arrange
+		ExperimentalOptions options = new() {
+			Name = KnowledgeUnsequencedGitOptions.FeatureName,
+			Enable = true
+		};
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "enabling a recognized standalone feature succeeds");
+		_settingsRepository.Received(1).SetFeature(KnowledgeUnsequencedGitOptions.FeatureName, true);
+		// the key gates a DI registration value rather than an attributed type, so without the
+		// StandaloneFeatureKeys entry clio would call a live toggle unreferenced
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("No command or MCP tool currently references")));
+	}
+
+	[Test]
+	[Description("Enabling knowledge-allow-unsequenced warns which integrity guard it relaxes and that it persists.")]
+	public void Execute_ShouldWarnRelaxedIntegrity_WhenEnablingKnowledgeAllowUnsequenced() {
+		// Arrange
+		ExperimentalOptions options = new() {
+			Name = KnowledgeUnsequencedGitOptions.FeatureName,
+			Enable = true
+		};
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "enabling a known feature succeeds");
+		// the flag survives in appsettings.json and relaxes a security-relevant check, so the operator
+		// must be told both facts at the moment they turn it on
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("content-integrity") && message.Contains("disable it when you are done")));
+	}
+
+	[Test]
+	[Description("Disabling knowledge-allow-unsequenced does NOT emit the relaxed-integrity enable notice.")]
+	public void Execute_ShouldNotWarnRelaxedIntegrity_WhenDisablingKnowledgeAllowUnsequenced() {
+		// Arrange
+		ExperimentalOptions options = new() {
+			Name = KnowledgeUnsequencedGitOptions.FeatureName,
+			Disable = true
+		};
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "disabling a known feature succeeds");
+		_settingsRepository.Received(1).SetFeature(KnowledgeUnsequencedGitOptions.FeatureName, false);
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message => message.Contains("content-integrity")));
 	}
 
 	[Test]

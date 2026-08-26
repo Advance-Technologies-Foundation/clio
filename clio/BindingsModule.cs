@@ -659,7 +659,7 @@ public class BindingsModule {
 		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
-		services.AddSingleton(provider => new KnowledgeBundleClientCapabilities(
+		services.AddSingleton(new KnowledgeBundleClientCapabilities(
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 1, 0),
 			new HashSet<string>(StringComparer.Ordinal) {
@@ -667,10 +667,13 @@ public class BindingsModule {
 				GuidanceGetTool.ToolName,
 				KnowledgeFeedbackPolicyTools.GetToolName,
 				KnowledgeManagementTools.ListKnowledgeExamplesToolName
-			},
-			// LOCAL DEV TOGGLE (off by default): allow a Git knowledge bundle without an explicit
-			// "sequence" (e.g. clio-knowledge master) to load for local testing. Config: features.
-			provider.GetRequiredService<IFeatureToggleService>().IsFeatureEnabled("knowledge-allow-unsequenced")));
+			}));
+		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
+		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
+		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
+		services.AddSingleton(provider => new KnowledgeUnsequencedGitOptions(
+			provider.GetRequiredService<IFeatureToggleService>()
+				.IsFeatureEnabled(KnowledgeUnsequencedGitOptions.FeatureName)));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();

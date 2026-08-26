@@ -36,6 +36,7 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 			new Version(8, 1, 0, 86),
 			new Version(1, 1, 0),
 			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }));
+		services.AddSingleton(new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: false));
 		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
 		_services = services.BuildServiceProvider();
 		_sut = _services.GetRequiredService<IKnowledgeGitRepositoryReader>();
@@ -362,6 +363,8 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 		diagnostic.Should().BeNull(because: "a synthesized sequence must not produce a rejection diagnostic");
 		snapshot!.Sequence.Should().Be(1013021UL,
 			because: "'1.13.21' packs into ((1*1000+13)*1000+21) so downstream sees a non-zero monotonic number");
+		snapshot.SequenceSynthesized.Should().BeTrue(
+			because: "downstream guards relax only for a sequence this clio derived, so the marker must travel with it");
 	}
 
 	[Test]
@@ -421,6 +424,8 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 		result.Should().BeTrue(because: "a manifest that already carries a sequence loads normally");
 		snapshot!.Sequence.Should().Be(7UL,
 			because: "synthesis only fills a zero sequence; a declared sequence must be honored verbatim");
+		snapshot.SequenceSynthesized.Should().BeFalse(
+			because: "a producer-declared sequence must keep every stock guard even while the flag is on");
 	}
 
 	private IKnowledgeGitRepositoryReader ReaderAllowingUnsequenced() =>
@@ -429,8 +434,8 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 			new KnowledgeBundleClientCapabilities(
 				new Version(8, 1, 0, 86),
 				new Version(1, 1, 0),
-				new HashSet<string>(StringComparer.Ordinal) { "get-guidance" },
-				AllowUnsequencedGitBundles: true));
+				new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }),
+			new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: true));
 
 	private JObject ValidManifest(int resourceCount = 1) {
 		JArray resources = [];

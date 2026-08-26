@@ -12,12 +12,23 @@ using Newtonsoft.Json;
 
 namespace Clio.Command.McpServer.Knowledge;
 
+/// <summary>
+/// A validated Git knowledge checkout as read from disk.
+/// </summary>
+/// <param name="SequenceSynthesized">
+/// <see langword="true"/> when the manifest omitted <c>sequence</c> and the value in
+/// <paramref name="Sequence"/> was derived from <paramref name="LibraryVersion"/> under
+/// <see cref="KnowledgeUnsequencedGitOptions"/>. It marks the sequence as a local convenience rather
+/// than a producer-declared generation identity, so downstream guards can relax for this candidate
+/// alone without weakening anything a producer actually declared.
+/// </param>
 internal sealed record KnowledgeGitRepositorySnapshot(
 	string LibraryId,
 	string LibraryVersion,
 	ulong Sequence,
 	string ContentDigest,
-	IReadOnlyList<KnowledgeArticle> Articles);
+	IReadOnlyList<KnowledgeArticle> Articles,
+	bool SequenceSynthesized = false);
 
 internal interface IKnowledgeGitRepositoryReader {
 	bool TryRead(
@@ -58,12 +69,15 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	};
 	private readonly IFileSystem _fileSystem;
 	private readonly KnowledgeBundleClientCapabilities _capabilities;
+	private readonly KnowledgeUnsequencedGitOptions _unsequencedOptions;
 
 	public KnowledgeGitRepositoryReader(
 		IFileSystem fileSystem,
-		KnowledgeBundleClientCapabilities capabilities) {
+		KnowledgeBundleClientCapabilities capabilities,
+		KnowledgeUnsequencedGitOptions unsequencedOptions) {
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+		_unsequencedOptions = unsequencedOptions ?? throw new ArgumentNullException(nameof(unsequencedOptions));
 	}
 
 	public bool TryRead(
@@ -93,10 +107,18 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 			// loads for local testing without editing the knowledge repo. Default (flag off) keeps stock
 			// behavior: ValidateEnvelope rejects a missing sequence. Downstream identity/upgrade logic
 			// then sees a non-zero, per-branch-monotonic number (see DeriveSequenceFromLibraryVersion for
-			// the ordering caveats). NOTE: the synthesized value is a deterministic function of
-			// libraryVersion, so re-loading edited content WITHOUT bumping libraryVersion is rejected as
-			// an active-sequence content mismatch — bump libraryVersion (or restart) between iterations.
-			if (manifest.Sequence == 0 && _capabilities.AllowUnsequencedGitBundles) {
+			// the ordering caveats).
+			//
+			// The synthesized value is a deterministic function of libraryVersion, so editing an article
+			// and re-loading WITHOUT bumping libraryVersion produces the same sequence with a different
+			// content digest. That is exactly the local-iteration case the flag exists for, so it is
+			// ACCEPTED rather than rejected as a content mismatch: sequenceSynthesized travels with the
+			// snapshot and lets KnowledgeBundleRuntime.ActivateGitRepository and
+			// KnowledgeSourceManagementService relax the equal-sequence guard for this candidate alone.
+			// A producer-declared sequence never gets that relaxation, and neither does a backwards move
+			// in either place. No libraryVersion bump is needed between iterations.
+			bool sequenceSynthesized = manifest.Sequence == 0 && _unsequencedOptions.AllowUnsequencedGitBundles;
+			if (sequenceSynthesized) {
 				manifest.Sequence = DeriveSequenceFromLibraryVersion(manifest.LibraryVersion);
 			}
 			ValidateEnvelope(manifest, expectedLibraryId);
@@ -138,7 +160,8 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 				manifest.LibraryVersion,
 				manifest.Sequence,
 				Convert.ToHexString(digest.GetHashAndReset()),
-				articles);
+				articles,
+				sequenceSynthesized);
 			return true;
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException

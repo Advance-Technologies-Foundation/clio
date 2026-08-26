@@ -28,7 +28,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeArtifactTransport> _artifactTransports;
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeRepositoryTransport> _repositoryTransports;
 	private readonly IFileSystem _fileSystem;
-	private readonly KnowledgeBundleClientCapabilities _capabilities;
+	private readonly KnowledgeUnsequencedGitOptions _unsequencedOptions;
 
 	public KnowledgeSourceManagementService(
 		ISettingsRepository settingsRepository,
@@ -38,7 +38,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		IEnumerable<IKnowledgeArtifactTransport> artifactTransports,
 		IEnumerable<IKnowledgeRepositoryTransport> repositoryTransports,
 		IFileSystem fileSystem,
-		KnowledgeBundleClientCapabilities capabilities) {
+		KnowledgeUnsequencedGitOptions unsequencedOptions) {
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_store = store ?? throw new ArgumentNullException(nameof(store));
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -46,7 +46,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		_artifactTransports = IndexTransports(artifactTransports);
 		_repositoryTransports = IndexTransports(repositoryTransports);
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
-		_capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+		_unsequencedOptions = unsequencedOptions ?? throw new ArgumentNullException(nameof(unsequencedOptions));
 	}
 
 	private static IReadOnlyDictionary<KnowledgeSourceType, TTransport> IndexTransports<TTransport>(
@@ -525,11 +525,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return FailedOperation(alias,
 				$"{diagnostic ?? "Git knowledge repository is invalid."} {rollback}".Trim());
 		}
-		// LOCAL DEV TOGGLE (knowledge-allow-unsequenced): the forward-only sequence guard blocks
-		// re-testing a branch (same libraryVersion -> same synthesized sequence, new content) or
-		// switching branches. When the flag is on, skip it so a Git candidate always installs.
-		if (previousSnapshot is not null && !_capabilities.AllowUnsequencedGitBundles
-				&& IsSequenceRegression(snapshot, previousSnapshot)) {
+		if (previousSnapshot is not null && IsSequenceRegression(snapshot, previousSnapshot,
+				_unsequencedOptions.AllowUnsequencedGitBundles)) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
 				$"Git knowledge source '{alias}' rejected sequence {snapshot.Sequence}; "
@@ -555,20 +552,39 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				$"Knowledge source '{alias}' changed while its discovered branch was being persisted; retry. {rollback}".Trim());
 		}
 		string status = ResolveRepositoryStatus(result.Status, isUpdate);
-		return new KnowledgeSourceOperationResult(alias, true, status,
-			$"Git knowledge source '{alias}' is {status} at {result.ResolvedCommit} in {repositoryPath}.");
+		// A relaxed equal-sequence replacement activates successfully but still carries an advisory; it
+		// must reach the operator rather than being discarded with the activation result.
+		return WithTransportAdvisory(
+			new KnowledgeSourceOperationResult(alias, true, status,
+				$"Git knowledge source '{alias}' is {status} at {result.ResolvedCommit} in {repositoryPath}."),
+			activation.Diagnostic);
 	}
 
 	/// <summary>
 	/// Detects a downgrade or rewritten history: a sequence may never move backwards, and the same
 	/// sequence must keep the same content digest.
 	/// </summary>
+	/// <remarks>
+	/// A backwards sequence is a rollback (an upstream force-push to an older revision, say) and is
+	/// refused unconditionally so <c>RollbackRepository</c> restores the previous checkout. The
+	/// same-sequence/different-digest arm is the only one <c>knowledge-allow-unsequenced</c> relaxes,
+	/// and only for a candidate whose sequence this clio synthesized from <c>libraryVersion</c>: such a
+	/// sequence never identified a generation, so re-reading an edited local checkout under an
+	/// unchanged <c>libraryVersion</c> is a legitimate iteration rather than a broken publisher
+	/// contract. A producer-declared sequence keeps the stock guard at either flag setting.
+	/// </remarks>
+	/// <param name="snapshot">The freshly read candidate.</param>
+	/// <param name="previousSnapshot">The snapshot validated before synchronization.</param>
+	/// <param name="allowUnsequencedGitBundles">The <c>knowledge-allow-unsequenced</c> flag state.</param>
+	/// <returns><see langword="true"/> when the candidate must be refused and rolled back.</returns>
 	private static bool IsSequenceRegression(
 		KnowledgeGitRepositorySnapshot snapshot,
-		KnowledgeGitRepositorySnapshot previousSnapshot) =>
+		KnowledgeGitRepositorySnapshot previousSnapshot,
+		bool allowUnsequencedGitBundles) =>
 		snapshot.Sequence < previousSnapshot.Sequence
 		|| (snapshot.Sequence == previousSnapshot.Sequence
-			&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest, StringComparison.Ordinal));
+			&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest, StringComparison.Ordinal)
+			&& !(allowUnsequencedGitBundles && snapshot.SequenceSynthesized));
 
 	/// <summary>
 	/// Maps a Git synchronization outcome to the reported lifecycle status. A refused synchronization

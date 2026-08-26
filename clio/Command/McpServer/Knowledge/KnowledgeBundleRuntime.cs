@@ -45,15 +45,18 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	private readonly object _activationLock = new();
 	private readonly IKnowledgeBundleTrustStore _trustStore;
 	private readonly KnowledgeBundleClientCapabilities _capabilities;
+	private readonly KnowledgeUnsequencedGitOptions _unsequencedOptions;
 	private readonly IKnowledgeResolver _resolver;
 	private ActiveKnowledgeSet _active = ActiveKnowledgeSet.Empty;
 
 	public KnowledgeBundleRuntime(
 		IKnowledgeBundleTrustStore trustStore,
 		KnowledgeBundleClientCapabilities capabilities,
+		KnowledgeUnsequencedGitOptions unsequencedOptions,
 		IKnowledgeResolver resolver) {
 		_trustStore = trustStore ?? throw new ArgumentNullException(nameof(trustStore));
 		_capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+		_unsequencedOptions = unsequencedOptions ?? throw new ArgumentNullException(nameof(unsequencedOptions));
 		_resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
 	}
 
@@ -164,23 +167,31 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 					snapshot.Sequence,
 					null);
 			}
-			// LOCAL DEV TOGGLE (knowledge-allow-unsequenced): when off, keep the stock monotonic guards -- a
-			// Git candidate must not reuse an active sequence with different content, nor go backwards. When
-			// on, a Git candidate ALWAYS replaces the active generation, so a branch can be re-synced or
-			// swapped for local testing regardless of the synthesized sequence order.
-			if (!_capabilities.AllowUnsequencedGitBundles) {
-				if (current is not null && snapshot.Sequence == current.Sequence) {
+			// A backwards move is a rollback, never a legitimate local-iteration step, so the forward-only
+			// guard stays unconditional -- knowledge-allow-unsequenced does not relax it.
+			if (current is not null && snapshot.Sequence < current.Sequence) {
+				return Rejected(
+					KnowledgeBundleRejectionCode.SequenceNotForward,
+					snapshot.Sequence,
+					$"Git candidate sequence {snapshot.Sequence} must not be lower than active sequence {current.Sequence} for source '{sourceAlias}'.");
+			}
+			// Equal sequence with a different digest: for a producer-declared sequence that is a broken
+			// immutable-generation identity and stays rejected. It is relaxed ONLY for a candidate whose
+			// sequence this clio synthesized from libraryVersion under knowledge-allow-unsequenced -- there
+			// the sequence never identified a generation in the first place, and re-reading an edited local
+			// checkout is the whole point of the flag. The replacement is reported as an advisory so it is
+			// never silent.
+			string? advisory = null;
+			if (current is not null && snapshot.Sequence == current.Sequence) {
+				if (!(_unsequencedOptions.AllowUnsequencedGitBundles && snapshot.SequenceSynthesized)) {
 					return Rejected(
 						KnowledgeBundleRejectionCode.InvalidContent,
 						snapshot.Sequence,
 						$"Git candidate sequence {snapshot.Sequence} has different content than the active sequence for source '{sourceAlias}'.");
 				}
-				if (current is not null && snapshot.Sequence < current.Sequence) {
-					return Rejected(
-						KnowledgeBundleRejectionCode.SequenceNotForward,
-						snapshot.Sequence,
-						$"Git candidate sequence {snapshot.Sequence} must not be lower than active sequence {current.Sequence} for source '{sourceAlias}'.");
-				}
+				advisory = $"Knowledge source '{sourceAlias}' replaced active sequence {snapshot.Sequence} with "
+					+ "different content because knowledge-allow-unsequenced is enabled and the sequence was "
+					+ "synthesized from libraryVersion; content-integrity checking is relaxed for this source.";
 			}
 			KnowledgeLibrarySnapshot activated = new(
 				sourceAlias,
@@ -201,7 +212,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				KnowledgeBundleRejectionCode.None,
 				snapshot.Sequence,
 				snapshot.Sequence,
-				null);
+				advisory);
 		}
 	}
 
