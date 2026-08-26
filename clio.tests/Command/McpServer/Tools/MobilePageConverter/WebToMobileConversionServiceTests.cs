@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
@@ -28,6 +29,26 @@ public sealed class WebToMobileConversionServiceTests {
 			"crt.ColorButton", "crt.FolderTree", "crt.FolderTreeActions", "crt.QuickFilter"
 		};
 
+	/// <summary>The shipped grid → list view-config template, so the fixture exercises the real skeleton.</summary>
+	private static readonly ViewConfigTemplateRule ListTemplate = new() {
+		PreserveSourceProperties = true,
+		ParentName = "{{ diff.parentName }}",
+		PropertyName = "{{ diff.propertyName }}",
+		Value = JsonDocument.Parse("""
+			{
+			  "type": "crt.List",
+			  "name": "{{ diff.name }}",
+			  "items": "{{ source.items }}",
+			  "itemLayout": {
+			    "name": "{{ diff.name }}_ListItem",
+			    "type": "crt.ListItem",
+			    "title": "${{ source.columns[0].code }}",
+			    "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+			  }
+			}
+			""").RootElement.Clone()
+	};
+
 	private static readonly WebToMobilePageConversionRules Rules = new() {
 		Templates = [
 			new TemplateMappingRule {
@@ -41,7 +62,12 @@ public sealed class WebToMobileConversionServiceTests {
 		Components = [
 			new ComponentEquivalenceRule { Web = ["crt.Checkbox"], Mobile = ["crt.Toggle"], Category = "AlternativeAvailable" },
 			new ComponentEquivalenceRule { Web = ["crt.HtmlEditor"], Mobile = ["crt.RichTextEditor"], Category = "AlternativeAvailable" },
-			new ComponentEquivalenceRule { Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"], Category = "AlternativeAvailable" },
+			new ComponentEquivalenceRule {
+				Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"],
+				Category = "AlternativeAvailable",
+				Filters = [new ElementFilterRule { Type = "crt.DataGrid" }, new ElementFilterRule { Type = "crt.DataTable" }],
+				ViewConfigTemplates = [ListTemplate]
+			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
 				Category = "AlternativeAvailable", PrimaryWeb = "crt.FolderTree"
@@ -88,12 +114,14 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
-		JObject webTemplateResources = null) =>
+		JObject webTemplateResources = null,
+		IReadOnlySet<string> mobileTypes = null,
+		WebToMobilePageConversionRules rules = null) =>
 		WebToMobileAnalysisService.Analyze(
-			bundle, MobileTypes, WebTypes,
+			bundle, mobileTypes ?? MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType,
-			Rules, templateRule,
+			rules ?? Rules, templateRule,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: containerNameMap,
 			templateComponentNames: templateComponentNames,
@@ -1281,6 +1309,710 @@ public sealed class WebToMobileConversionServiceTests {
 		// The string collection binding is carried unchanged.
 		vals["items"]!.GetValue<string>().Should().Be("$SimilarLeadList");
 	}
+
+	#region Child-element array traversal (menuItems / tools / data arrays)
+
+	[Test]
+	[Description("Structural child-array traversal: a crt.Button leaf's menuItems (crt.MenuItem children) are descended into and converted as their own element-map entries carrying the menuItems slot as propertyName, instead of being copied verbatim inside the button's values.")]
+	public void Analyze_ShouldConvertMenuItems_NestedInAButtonLeaf() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
+				  "menuItems": [ { "name": "PrintItem", "type": "crt.MenuItem",
+					"caption": "#ResourceString(PrintItem_caption)#" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		// Assert
+		ElementMapEntry menuItem = Element(guide, "PrintItem");
+		menuItem.Operation.Should().Be("insert",
+			because: "a crt.MenuItem nested in the button's menuItems is a child view element the walk now descends into and converts");
+		menuItem.ParentName.Should().Be("OrderButton",
+			because: "the converted menu item stays under its button");
+		menuItem.PropertyName.Should().Be("menuItems",
+			because: "the walk records the slot it descended, so the item lands back in the button's menuItems array rather than its items");
+		menuItem.MobileType.Should().Be("crt.MenuItem",
+			because: "the child is registry-supported on mobile and kept as its own type");
+		ElementMapEntry button = Element(guide, "OrderButton");
+		button.MobileValues!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
+			because: "menuItems is emitted as its own child entries, never carried verbatim on the button — the "
+				+ "button keeps only the EMPTY slot InitializeContainerChildSlots declares, which is what lets the "
+				+ "differ append the item instead of refusing the insert");
+	}
+
+	[Test]
+	[Description("Two child-element containers on ONE component (crt.ExpansionPanel's items AND tools) are both descended: the items field and the tools button each become their own entry under the panel, each in its own propertyName slot.")]
+	public void Analyze_ShouldDescend_IntoBothItemsAndTools_OfOneComponent() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Panel", "type": "crt.ExpansionPanel",
+				"items": [ { "name": "Amount", "type": "crt.Input" } ],
+				"tools": [ { "name": "AddButton", "type": "crt.Button" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ExpansionPanel", "crt.Input", "crt.Button"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		// Assert
+		ElementMapEntry amount = Element(guide, "Amount");
+		amount.ParentName.Should().Be("Panel",
+			because: "the items child is descended and re-homed under the panel");
+		amount.PropertyName.Should().Be("items",
+			because: "an items child keeps the items slot");
+		ElementMapEntry addButton = Element(guide, "AddButton");
+		addButton.ParentName.Should().Be("Panel",
+			because: "the tools child of the SAME component is descended too — a second container is not ignored");
+		addButton.PropertyName.Should().Be("tools",
+			because: "the second container is walked into its own slot, kept distinct from items");
+		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
+		panelValues["items"]!.AsArray().Should().BeEmpty(
+			because: "Panel is occupied via an items child (Amount), so InitializeContainerChildSlots declares the "
+				+ "slot the differ requires — the array itself is never carried as a value, only the empty slot");
+		panelValues["tools"]!.AsArray().Should().BeEmpty(
+			because: "the pass keys on the slot the CHILD declares, never on a slot-name list, so the 'tools' slot "
+				+ "AddButton targets is declared exactly like the 'items' slot Amount targets — the differ refuses "
+				+ "an insert into an undeclared slot whatever it is called; both child arrays are still emitted as "
+				+ "their own entries, never carried as a value");
+	}
+
+	[Test]
+	[Description("The child-array predicate is by shape, not name: a DATA array (objects with no crt.* type) is NOT descended into — it is carried verbatim on the element, so ordinary value arrays are untouched.")]
+	public void Analyze_ShouldNotDescend_IntoDataArrayWithoutComponentTypes() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "Rating", "type": "crt.Input",
+				  "options": [ { "id": "a", "label": "A" }, { "id": "b", "label": "B" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.ParentName == "Rating",
+			because: "a data array (no crt.* typed object) is not a child-element collection, so nothing is walked out of it");
+		ElementMapEntry field = Element(guide, "Rating");
+		field.MobileValues!.AsObject()["options"]!.AsArray().Count.Should().Be(2,
+			because: "the data array is carried verbatim as a value, exactly as before the traversal change");
+	}
+
+	[Test]
+	[Description("An EMPTY array is never a child-element collection (IsChildElementArray requires non-empty), so the walk emits no child entry and the empty array is CARRIED verbatim as a value — only `items` as an array is dropped. An empty array (menuItems: [] here, or a data array like options: []) is preserved, both as a legitimate empty collection and so a mobile diff can clear a non-empty template default.")]
+	public void Analyze_ShouldCarryEmptyChildArray_Verbatim() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
+				  "menuItems": [] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.ParentName == "OrderButton",
+			because: "an empty menuItems array has no child element to emit");
+		ElementMapEntry button = Element(guide, "OrderButton");
+		JsonObject buttonValues = button.MobileValues!.AsObject();
+		buttonValues.ContainsKey("menuItems").Should().BeTrue(
+			because: "an empty array is not a walked-out structural slot, so it is carried verbatim as a value");
+		buttonValues["menuItems"]!.AsArray().Count.Should().Be(0,
+			because: "the empty collection is carried exactly as authored");
+	}
+
+	[Test]
+	[Description("A genuinely EMPTY data array (options: []) is carried verbatim on the element — the earlier blanket empty-array drop stripped it, which could not distinguish a consumed structural slot from a legitimately empty data/config array.")]
+	public void Analyze_ShouldCarryEmptyDataArray_Verbatim() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "Rating", "type": "crt.Input", "options": [] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle);
+
+		// Assert
+		JsonObject fieldValues = Element(guide, "Rating").MobileValues!.AsObject();
+		fieldValues.ContainsKey("options").Should().BeTrue(
+			because: "an empty data array must not be silently dropped — it is carried verbatim");
+		fieldValues["options"]!.AsArray().Count.Should().Be(0,
+			because: "the empty data collection is preserved so a mobile diff can clear a non-empty template default");
+	}
+
+	[Test]
+	[Description("A body-level crt.Button's menuItems whose crt.MenuItem members have NO mobile counterpart in this scope (no matching template, not registry-declared) are NOT walked out into Drop entries that would strip the slot — the whole menuItems array is carried verbatim on the button (a valid mobile input), so a body-level dropdown keeps its menu.")]
+	public void Analyze_BodyLevelButtonMenu_WithUnresolvableItems_IsCarriedVerbatim() {
+		// Arrange — a registry that supports the button but NOT crt.MenuItem (the shipped registry omits it), and
+		// no FAB rule, so nothing can convert the nested crt.MenuItem here.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderButton", "type": "crt.Button", "caption": "#ResourceString(OrderButton_caption)#",
+				  "menuItems": [ { "name": "PrintItem", "type": "crt.MenuItem",
+					"caption": "#ResourceString(PrintItem_caption)#" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: new WebToMobilePageConversionRules());
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.WebName == "PrintItem",
+			because: "a nested crt.MenuItem with no mobile counterpart is not walked out into its own (dropped) entry");
+		ElementMapEntry button = Element(guide, "OrderButton");
+		JsonArray menu = button.MobileValues!.AsObject()["menuItems"]!.AsArray();
+		menu.Count.Should().Be(1,
+			because: "the menuItems array is carried verbatim as a value so the dropdown keeps its menu");
+		menu[0]!.AsObject()["type"]!.GetValue<string>().Should().Be("crt.MenuItem",
+			because: "the carried member is preserved exactly, a valid crt.Button.menuItems entry on mobile");
+	}
+
+	[Test]
+	[Description("When the mobile registry is unavailable (mobileByType null), a crt.List's itemLayout array of crt.ListItem is NOT promoted to a walked-out child collection — with no registry to declare it an object slot, the member-resolves guard keeps it carried, so itemLayout survives as a value rather than being stripped, so the mobile-list row behavior does not regress on a degraded catalog.")]
+	public void Analyze_ItemLayoutArray_RegistryDegraded_IsCarriedNotWalked() {
+		// Arrange — no mobileByType (registry unavailable), so ResolveExpectedShape cannot flag itemLayout as an
+		// object slot; the resolve guard must still keep it carried because crt.ListItem resolves to nothing here.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SimilarLeadList", "type": "crt.List", "items": "$SimilarLeadList",
+				  "itemLayout": [ { "type": "crt.ListItem", "title": "$DS_LeadName" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.List"
+		};
+
+		// Act — mobileByType is null (the degraded path).
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.PropertyName == "itemLayout",
+			because: "with no registry and no rule to convert crt.ListItem, itemLayout is not walked out into a child entry");
+		JsonObject listValues = Element(guide, "SimilarLeadList").MobileValues!.AsObject();
+		listValues.ContainsKey("itemLayout").Should().BeTrue(
+			because: "itemLayout is carried as a value on a degraded catalog, not stripped");
+	}
+
+	#endregion
+
+	#region Path scoping + MainHeader -> FloatingActionButton (non-converting scope)
+
+	/// <summary>The header-button -> FAB rule: the non-converting scope is declared EXPLICITLY by
+	/// <paramref name="scope"/> (decoupled from <paramref name="path"/>, which is a pure positive filter). It
+	/// retargets matching header actions into FloatingActionButton.menuItems, retyping them to crt.MenuItem and
+	/// carrying only caption/visible/clicked (an authoritative denylist template).</summary>
+	private static WebToMobilePageConversionRules FabRule(string[] path, string[] scope, params string[] filterTypes) =>
+		new() {
+			NonConvertingScopeContainers = scope,
+			Components = [
+				new ComponentEquivalenceRule {
+					Path = path,
+					Filters = filterTypes.Select(t => new ElementFilterRule { Type = t }).ToList(),
+					ViewConfigTemplates = [
+						new ViewConfigTemplateRule {
+							ParentName = "FloatingActionButton",
+							PropertyName = "menuItems",
+							Value = JsonDocument.Parse("""
+								{ "type": "crt.MenuItem", "name": "{{ diff.name }}", "caption": "{{ source.caption }}",
+								  "visible": "{{ source.visible }}", "clicked": "{{ source.clicked }}" }
+								""").RootElement.Clone()
+						}
+					]
+				}
+			]
+		};
+
+	private static readonly IReadOnlySet<string> HeaderMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input", "crt.Button", "crt.MenuItem" };
+
+	[Test]
+	[Description("A crt.Button under a declared non-converting scope container (MainHeader, in nonConvertingScopeContainers) with a supported clicked is retargeted into FloatingActionButton.menuItems as a crt.MenuItem; an identical button OUTSIDE the scope is untouched (kept as its own type).")]
+	public void Analyze_Fab_ScopedButtonRetargets_OutsideButtonUntouched() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] },
+			  { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "OtherBtn", "type": "crt.Button", "caption": "#ResourceString(OtherBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert", because: "a header action with a supported clicked converts");
+		order.MobileType.Should().Be("crt.MenuItem", because: "the FAB template retypes the header button to a menu item");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the template retargets it into the FAB");
+		order.PropertyName.Should().Be("menuItems", because: "into the FAB's menuItems slot");
+		order.Index.Should().BeNull(because: "converted entries are appended after any existing static menuItems");
+		Element(guide, "OtherBtn").MobileType.Should().Be("crt.Button",
+			because: "Body is not a declared non-converting scope container, so the same button outside the header is untouched");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+			because: "a non-converting scope container produces no mobile element of its own");
+	}
+
+	[Test]
+	[Description("A dropdown crt.Button with no clicked of its own is NOT itself a FAB entry, but its nested menuItems are still descended and flattened into FloatingActionButton.menuItems as siblings (no hierarchy) — proving any-depth scope + flatten + the container-without-clicked rule.")]
+	public void Analyze_Fab_DropdownButtonDropped_ItsMenuItemsFlattened() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "MoreBtn", "type": "crt.Button", "caption": "#ResourceString(MoreBtn_caption)#",
+				  "menuItems": [
+					{ "name": "PrintItem", "type": "crt.MenuItem", "caption": "#ResourceString(PrintItem_caption)#",
+					  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
+
+		// Assert
+		Element(guide, "MoreBtn").Operation.Should().Be("drop",
+			because: "a container-only dropdown with no clicked of its own is not itself a FAB entry");
+		ElementMapEntry print = Element(guide, "PrintItem");
+		print.Operation.Should().Be("insert", because: "the nested menu item has a supported clicked and converts");
+		print.MobileType.Should().Be("crt.MenuItem", because: "a converted header action becomes a mobile menu item");
+		print.ParentName.Should().Be("FloatingActionButton",
+			because: "the nested item is flattened directly into the FAB, a sibling of every other converted action");
+		print.PropertyName.Should().Be("menuItems", because: "flattened items land in the FAB menuItems slot");
+	}
+
+	[Test]
+	[Description("A multi-element path must appear as an ORDERED subsequence of ancestors: [Outer, Inner] converts a button under Outer->Inner, but the reversed rule [Inner, Outer] does not match, so the button drops (it is inside a non-converting scope with no matching conversion).")]
+	public void Analyze_Fab_MultiElementPath_IsOrderSensitive() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Outer", "type": "crt.FlexContainer", "items": [
+				{ "name": "Inner", "type": "crt.FlexContainer", "items": [
+				  { "name": "Btn", "type": "crt.Button", "caption": "#ResourceString(Btn_caption)#",
+					"clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide ordered = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["Outer", "Inner"], ["Outer"], "crt.Button"));
+		// Assert
+		Element(ordered, "Btn").MobileType.Should().Be("crt.MenuItem",
+			because: "the ancestors [Outer, Inner] contain the path in order, so the rule matches and converts");
+
+		MobilePageConversionGuide reversed = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["Inner", "Outer"], ["Outer"], "crt.Button"));
+		Element(reversed, "Btn").Operation.Should().Be("drop",
+			because: "[Inner, Outer] is not an ordered subsequence of [Outer, Inner], so nothing converts it and the scope drops it");
+	}
+
+	[Test]
+	[Description("End-to-end header conversion: supported button -> FAB menuItem, dropdown button dropped but its item flattened, non-button dropped, MainHeader absent, visual properties denylisted, and content outside the header untouched.")]
+	public void Analyze_Fab_FullHeader_ConvertsFlattensAndDropsTheRest() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveBtn", "type": "crt.Button", "caption": "#ResourceString(SaveBtn_caption)#",
+				  "style": "primary", "icon": "save-icon", "clicked": { "request": "crt.SaveRecordRequest" } },
+				{ "name": "MoreBtn", "type": "crt.Button", "caption": "#ResourceString(MoreBtn_caption)#",
+				  "menuItems": [
+					{ "name": "PrintItem", "type": "crt.MenuItem", "caption": "#ResourceString(PrintItem_caption)#",
+					  "clicked": { "request": "crt.SaveRecordRequest" } } ] },
+				{ "name": "HeaderLabel", "type": "crt.Label", "caption": "#ResourceString(HeaderLabel_caption)#" } ] },
+			  { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "NameField", "type": "crt.Input" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
+
+		// Assert
+		ElementMapEntry save = Element(guide, "SaveBtn");
+		save.Operation.Should().Be("insert", because: "a supported header action converts");
+		save.ParentName.Should().Be("FloatingActionButton", because: "the template retargets the header action into the FAB");
+		save.MobileType.Should().Be("crt.MenuItem", because: "the authoritative template retypes it to a menu item");
+		JsonObject saveValues = save.MobileValues!.AsObject();
+		saveValues.ContainsKey("caption").Should().BeTrue(because: "caption is carried");
+		saveValues.ContainsKey("style").Should().BeFalse(because: "visual properties are denylisted by the authoritative template");
+		saveValues.ContainsKey("icon").Should().BeFalse(because: "visual properties are denylisted by the authoritative template");
+		Element(guide, "PrintItem").ParentName.Should().Be("FloatingActionButton",
+			because: "the dropdown's item flattens into the FAB as a sibling");
+		Element(guide, "MoreBtn").Operation.Should().Be("drop",
+			because: "the dropdown container has no clicked of its own");
+		Element(guide, "HeaderLabel").Operation.Should().Be("drop",
+			because: "a non-action component under the header is not converted and must not be present on mobile");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+			because: "the header itself is a non-converting scope");
+		Element(guide, "NameField").Operation.Should().Be("insert",
+			because: "content outside the header is converted normally");
+		Element(guide, "NameField").ParentName.Should().Be("Body", because: "content outside the header keeps its own parent");
+	}
+
+	[Test]
+	[Description("A declared non-converting scope container that is ALSO inherited web-template chrome (MainHeader) is preserved through template pruning — otherwise its buttons would be hoisted out and lose the ancestor the path filter needs — so the header button still converts to a FAB menu item.")]
+	public void Analyze_Fab_ScopeContainer_SurvivesTemplatePruning() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			templateComponentNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "MainHeader" });
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert",
+			because: "MainHeader is kept through chrome pruning because it is a declared non-converting scope container, so its button is still reachable and converts");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the converted header button lands in the FAB");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+			because: "the preserved scope container is still non-converting");
+	}
+
+	[Test]
+	[Description("The BUNDLED rules convert a MainHeader crt.Button into a FloatingActionButton.menuItems crt.MenuItem end to end — the only test that reads the SHIPPED FAB rule, so a typo in its path/filters/placement/value is caught here.")]
+	public void Analyze_ViewConfigTemplate_BundledRules_ConvertHeaderButtonToFab() {
+		// Arrange
+		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, shipped);
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert", because: "the shipped FAB rule converts a supported header action");
+		order.MobileType.Should().Be("crt.MenuItem", because: "the shipped template retypes it to a menu item");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the shipped rule retargets it into the FAB");
+		order.PropertyName.Should().Be("menuItems", because: "into the FAB menuItems slot");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "MainHeader",
+			because: "MainHeader is a non-converting scope in the shipped rules");
+	}
+
+	[Test]
+	[Description("A container whose name appears only in a rule's PATH (and is not declared in nonConvertingScopeContainers) is a normal container, never a drop-scope — so a multi-element path cannot silently drop an unrelated subtree.")]
+	public void Analyze_Path_NamedContainer_WithoutExplicitScope_IsNotADropScope() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Inner", "type": "crt.FlexContainer", "items": [
+				{ "name": "BodyField", "type": "crt.Input" } ] } ]
+			""");
+
+		// Act — "Inner" is named in the rule's path, but no non-converting scope is declared.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["Inner"], [], "crt.Button"));
+
+		// Assert
+		Element(guide, "BodyField").Operation.Should().Be("insert",
+			because: "Inner is only a path filter element, not a declared non-converting scope, so its non-action child is kept");
+		Element(guide, "Inner").Operation.Should().Be("insert",
+			because: "a path-named container that is not a declared scope converts as an ordinary container");
+	}
+
+	[Test]
+	[Description("A non-items array is descended only when EVERY element is a crt.*-typed object; an array whose objects carry a non-crt type (a data/config array), or a MIXED array, is carried verbatim rather than stripped into child entries.")]
+	public void Analyze_ChildArrayDetection_IgnoresArrayWithNonComponentTypedObjects() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "Field", "type": "crt.Input",
+				  "options": [ { "type": "text", "code": "a" }, { "type": "lookup", "code": "b" } ],
+				  "mixed": [ { "type": "crt.Button", "name": "X" }, { "type": "text", "code": "c" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.ParentName == "Field",
+			because: "neither array is a child-element collection (their objects are not all crt.*-typed), so nothing is walked out of Field");
+		JsonObject fieldValues = Element(guide, "Field").MobileValues!.AsObject();
+		fieldValues["options"]!.AsArray().Count.Should().Be(2,
+			because: "a data array of non-component objects is carried verbatim as a value");
+		fieldValues["mixed"]!.AsArray().Count.Should().Be(2,
+			because: "a MIXED array (component + non-component object) is carried verbatim, conservatively, not partly stripped");
+	}
+
+	[Test]
+	[Description("A leaf RETARGETED by a template (outside a declared scope) descends its nested child-arrays through the SAME scope-mode path as the non-converting scope — so a nested item with no matching conversion drops instead of being nested under the moved element, giving one consistent placement rule.")]
+	public void Analyze_Fab_RetargetedLeaf_DescendsChildrenInScopeMode() {
+		// Arrange — the rule retargets crt.Button only (no crt.MenuItem template); no scope is declared.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Bar", "type": "crt.FlexContainer", "items": [
+				{ "name": "Dropdown", "type": "crt.Button", "caption": "#ResourceString(Dropdown_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" },
+				  "menuItems": [ { "name": "Sub", "type": "crt.MenuItem", "caption": "#ResourceString(Sub_caption)#",
+					"clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule([], [], "crt.Button"));
+
+		// Assert
+		Element(guide, "Dropdown").ParentName.Should().Be("FloatingActionButton",
+			because: "the leaf is retargeted into the FAB by the template's declared placement");
+		Element(guide, "Sub").Operation.Should().Be("drop",
+			because: "a retargeted leaf descends its children in scope mode, so a nested item with no matching template drops rather than nesting under the moved element");
+	}
+
+	[Test]
+	[Description("The header→FAB gate considers ONLY the node's own clicked request: a header button with a SUPPORTED clicked still converts even when a DIFFERENT secondary binding carries an unsupported request, because HasSupportedClicked no longer scans every binding.")]
+	public void Analyze_Fab_ConvertsHeaderAction_WhenClickedSupported_DespiteUnsupportedSecondaryBinding() {
+		// Arrange — clicked is supported (SaveRecord); a secondary `updated` binding is an unsupported request.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" },
+				  "updated": { "request": "crt.TotallyUnsupportedRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert",
+			because: "the FAB gate looks only at the clicked request, which is supported, so a secondary unsupported binding does not disqualify the action");
+		order.MobileType.Should().Be("crt.MenuItem",
+			because: "the supported header action is retyped to a mobile menu item");
+		order.ParentName.Should().Be("FloatingActionButton",
+			because: "the supported header action retargets into the FAB rather than being dropped");
+	}
+
+	/// <summary>FabRule plus a versioned requests map, so scope-mode request handling can be exercised.</summary>
+	private static WebToMobilePageConversionRules FabRuleWithRequests(
+		string[] path, string[] scope, IReadOnlyList<RequestMappingRule> requests, params string[] filterTypes) {
+		WebToMobilePageConversionRules baseRule = FabRule(path, scope, filterTypes);
+		return new WebToMobilePageConversionRules {
+			NonConvertingScopeContainers = baseRule.NonConvertingScopeContainers,
+			Components = baseRule.Components,
+			Requests = requests
+		};
+	}
+
+	[Test]
+	[Description("A header button whose clicked request is UNKNOWN/custom (not in the map, not bundled) still CONVERTS into the FAB and is FLAGGED for review — aligning scope conversion with ProcessOneEventBinding — instead of vanishing, which used to lose exactly the custom-action buttons the feature must convert.")]
+	public void Analyze_Fab_HeaderButton_CustomRequest_ConvertsAndFlags() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "CustomBtn", "type": "crt.Button", "caption": "#ResourceString(CustomBtn_caption)#",
+				  "clicked": { "request": "usr.MyCustomRequest", "params": {} } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry custom = Element(guide, "CustomBtn");
+		custom.Operation.Should().Be("insert",
+			because: "a header button with a custom clicked converts (kept + flagged), not dropped");
+		custom.ParentName.Should().Be("FloatingActionButton", because: "the custom action still retargets into the FAB");
+		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
+			r.ElementName == "CustomBtn" && r.Request == "usr.MyCustomRequest",
+			because: "an unknown request is kept verbatim and flagged for review on mobile");
+	}
+
+	[Test]
+	[Description("A header button whose clicked request the versioned map explicitly CLEARS (unsupported on mobile) is DROPPED, the drop reason NAMES the request, and the lost action is recorded in requestConversions.droppedRequests so the loss is visible rather than collapsed into a generic reason.")]
+	public void Analyze_Fab_HeaderButton_ExplicitlyUnsupportedRequest_Drops_AndRecords() {
+		// Arrange — the request maps to an EMPTY mobile target = explicitly unsupported.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PrintBtn", "type": "crt.Button", "caption": "#ResourceString(PrintBtn_caption)#",
+				  "clicked": { "request": "crt.PrintablesRequest", "params": {} } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = FabRuleWithRequests(["MainHeader"], ["MainHeader"],
+			[new RequestMappingRule { Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported", Note = "Printables are web-only." }],
+			"crt.Button");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: rules);
+
+		// Assert
+		ElementMapEntry print = Element(guide, "PrintBtn");
+		print.Operation.Should().Be("drop", because: "an explicitly-unsupported clicked cannot become a live action");
+		print.Reason.Should().Contain("crt.PrintablesRequest",
+			because: "the drop reason names the offending request instead of a generic message");
+		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+			r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
+			because: "the lost header action must surface in requestConversions, not disappear silently");
+	}
+
+	[Test]
+	[Description("The scope drop reason is built FROM DATA — it names the scope container (nonConvertingScopeContainers entry) rather than hard-coding \"header\", so a second scope container reads correctly.")]
+	public void Analyze_Fab_ScopeDropReason_NamesScopeContainer() {
+		// Arrange — a non-action component (crt.Label) under the header has nothing to convert.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "HeaderLabel", "type": "crt.Label", "caption": "#ResourceString(HeaderLabel_caption)#" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry label = Element(guide, "HeaderLabel");
+		label.Operation.Should().Be("drop", because: "a non-action component under a non-converting scope is dropped");
+		label.Reason.Should().Contain("MainHeader",
+			because: "the reason names the scope container it fell under, built from data");
+		label.Reason.Should().Contain("scope",
+			because: "the wording is scope-agnostic (\"scope\"), not header-specific");
+	}
+
+	[Test]
+	[Description("A header button's visible binding is carried onto the converted FAB menu item, AND the viewModelConfig attribute it references is KEPT even though the source-tree consumer walk credited it to the dropped dropdown parent — because attributes referenced by a surviving element's MobileValues are always kept.")]
+	public void Analyze_Fab_FlattenedMenuItem_VisibleBindingCarried_AndAttributeKept() {
+		// Arrange — a dropdown (dropped) whose menu item (surviving, flattened into the FAB) is gated by $CanPrint.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "MoreBtn", "type": "crt.Button", "caption": "#ResourceString(MoreBtn_caption)#",
+				  "menuItems": [
+					{ "name": "PrintItem", "type": "crt.MenuItem", "caption": "#ResourceString(PrintItem_caption)#",
+					  "visible": "$CanPrint", "clicked": { "request": "crt.SaveRecordRequest" } } ] } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "CanPrint": { "modelConfig": { "path": "PDS.CanPrint" } } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
+
+		// Assert
+		JsonObject printValues = Element(guide, "PrintItem").MobileValues!.AsObject();
+		printValues["visible"]!.GetValue<string>().Should().Be("$CanPrint",
+			because: "the template carries source.visible onto the converted menu item");
+		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
+		attrs.ContainsKey("CanPrint").Should().BeTrue(
+			because: "the surviving flattened menu item still binds $CanPrint, so the attribute is kept even though its dropped dropdown parent was the only source-tree consumer");
+	}
+
+	[Test]
+	[Description("A header button whose clicked request maps to a DIFFERENT mobile request with a paramMap converts into a FAB menu item carrying the MOBILE request name and RENAMED params, and the conversion is recorded in requestConversions — pinning the template-render vs ProcessEventBindings ordering.")]
+	public void Analyze_Fab_HeaderButton_ClickedRenamed_WithParamMap() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenBtn", "type": "crt.Button", "caption": "#ResourceString(OpenBtn_caption)#",
+				  "clicked": { "request": "crt.LegacyOpenRequest", "params": { "recordId": "$Id" } } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = FabRuleWithRequests(["MainHeader"], ["MainHeader"],
+			[new RequestMappingRule {
+				Web = "crt.LegacyOpenRequest", Mobile = "crt.OpenPageRequest", Category = "WithAdaptation",
+				ParamMap = new Dictionary<string, string> { ["recordId"] = "id" }
+			}],
+			"crt.Button");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: rules);
+
+		// Assert
+		JsonObject open = Element(guide, "OpenBtn").MobileValues!.AsObject();
+		JsonObject clicked = open["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
+			because: "ProcessEventBindings overwrites the template-rendered clicked with the mapped MOBILE request");
+		clicked["params"]!.AsObject().ContainsKey("id").Should().BeTrue(because: "the param was renamed per paramMap");
+		clicked["params"]!.AsObject().ContainsKey("recordId").Should().BeFalse(because: "the web param key was renamed away");
+		guide.RequestConversions!.ConvertedRequests.Should().ContainSingle(r =>
+			r.ElementName == "OpenBtn" && r.WebRequest == "crt.LegacyOpenRequest" && r.MobileRequest == "crt.OpenPageRequest",
+			because: "the rename is recorded in requestConversions");
+	}
+
+	[Test]
+	[Description("When the mobile template is known (its component names probed) but has NO FloatingActionButton, a retarget into it is NOT emitted as an unresolvable insert — the header button is dropped with a diagnostic naming the missing target, and its lost action is recorded.")]
+	public void Analyze_Fab_RetargetTargetMissingOnMobileTemplate_Drops() {
+		// Arrange — the mobile template's names are probed (non-empty) but lack FloatingActionButton.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("MainContainer", "crt.GridContainer")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("drop",
+			because: "the FAB target is absent on the mobile template, so an unresolvable insert must not be emitted");
+		order.Reason.Should().Contain("FloatingActionButton",
+			because: "the diagnostic names the missing conversion target");
+		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r => r.ElementName == "OrderBtn",
+			because: "the action lost to a missing target is recorded");
+	}
+
+	[Test]
+	[Description("When the probed mobile template DOES provide a FloatingActionButton (found via the object/array slot collectors, e.g. Scaffold.floatAction), the retarget is accepted and the header button converts.")]
+	public void Analyze_Fab_RetargetTargetPresentOnMobileTemplate_Converts() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert",
+			because: "the retarget target exists on the mobile template, so the conversion proceeds");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the header action lands in the present FAB");
+	}
+
+	[Test]
+	[Description("The mobile-template collectors descend NON-items slots, so a FloatingActionButton the template declares in the Scaffold's floatAction OBJECT slot (not items) is discovered by name — proving a retarget target in an object slot is validated as present.")]
+	public void Analyze_MobileCollectors_DescendObjectSlots_ForFab() {
+		// Arrange — a mobile template viewConfig where the FAB lives under floatAction (an object slot), not items.
+		JsonArray mobileTemplate = JsonNode.Parse("""
+			[ { "name": "Scaffold", "type": "crt.Scaffold",
+				"floatAction": { "name": "FloatingActionButton", "type": "crt.FloatingActionButton" },
+				"items": [ { "name": "MainContainer", "type": "crt.GridContainer" } ] } ]
+			""")!.AsArray();
+
+		// Act
+		IReadOnlyDictionary<string, string> types =
+			WebToMobileAnalysisService.CollectComponentTypesByName(mobileTemplate);
+
+		// Assert
+		types.ContainsKey("FloatingActionButton").Should().BeTrue(
+			because: "the collector descends the floatAction object slot, not only items, so the FAB is discoverable");
+		types["FloatingActionButton"].Should().Be("crt.FloatingActionButton",
+			because: "the discovered slot carries the FAB type");
+	}
+
+	#endregion
 
 	#region ConvertPageBusinessRules
 
@@ -4019,12 +4751,805 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
+	#region Grid to list row synthesis (ENG-95046)
+
+	/// <summary>A web detail grid exactly as the detail wizard authors it: a string items binding plus the
+	/// column array whose first entry is the display column.</summary>
+	private static PageBundleInfo GridWithColumns() => Bundle(
+		viewConfigJson: """
+		[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+			{ "name": "ProductsList", "type": "crt.DataGrid", "items": "$ProductsList",
+			  "visible": true, "fitContent": true,
+			  "primaryColumnName": "ProductsListDS_Id",
+			  "selectionState": "$ProductsList_SelectionState",
+			  "_selectionOptions": { "attribute": "ProductsList_SelectionState" },
+			  "features": { "rows": { "selection": { "enable": true } } },
+			  "columns": [
+				{ "id": "c1", "code": "ProductsListDS_Product", "path": "Product", "caption": "#ResourceString(ProductsListDS_Product)#" },
+				{ "id": "c2", "code": "ProductsListDS_Price", "path": "Price", "caption": "#ResourceString(ProductsListDS_Price)#" },
+				{ "id": "c3", "code": "ProductsListDS_Quantity", "path": "Quantity", "caption": "#ResourceString(ProductsListDS_Quantity)#" } ] } ] } ]
+		""",
+		modelConfigJson: """{ "dataSources": { "PDS": {}, "ProductsListDS": {} } }""",
+		viewModelConfigJson: """
+		{ "attributes": { "ProductsList": { "isCollection": true, "modelConfig": { "path": "ProductsListDS" } } } }
+		""");
+
+	[Test]
+	[Description("A web grid converted to crt.List carries a DETERMINISTIC itemLayout: a crt.ListItem whose title is the FIRST column's binding as a STRING and whose body is one { value } entry per remaining column, in web column order.")]
+	public void Analyze_MobileValues_GridConvertedToList_CarriesDeterministicItemLayout() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.MobileType.Should().Be("crt.List", because: "the components rule maps a web grid onto the mobile list");
+		grid.MobileValues.Should().NotBeNull(because: "an insert must ship ready-to-paste values");
+		JsonNode values = grid.MobileValues;
+
+		JsonNode itemLayout = values["itemLayout"];
+		itemLayout.Should().NotBeNull(
+			because: "the row is what makes a mobile list render at all — leaving it for the caller to build from "
+				+ "prose produced pages with no title and no body (ENG-95046)");
+		itemLayout["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "authoring itemLayout bypasses the registry's GUID-macro default, so the row needs a stable name "
+				+ "of its own — and merge-by-name against a template depends on it");
+		itemLayout["type"]?.GetValue<string>().Should().Be("crt.ListItem",
+			because: "the mobile row element is inserted into the list's itemLayout");
+		itemLayout["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the registry declares crt.ListItem.title as a STRING binding — an object wrapper renders an "
+				+ "empty Title column in the designer, which is the second half of ENG-95046");
+		itemLayout["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the first web column is the display column and its code is the bound attribute name");
+		JsonArray body = itemLayout["body"]?.AsArray();
+		body.Should().HaveCount(2, because: "every column after the first becomes a body row");
+		body.Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$ProductsListDS_Price", "$ProductsListDS_Quantity" },
+			because: "body rows keep the web column order");
+	}
+
+	[Test]
+	[Description("Building the row READS the grid's columns and leaves them in place: the synthesized itemLayout coexists with the grid-only properties, because pruning what mobile crt.List does not declare belongs to the registry (ENG-91859), not to this mapping.")]
+	public void Analyze_MobileValues_GridConvertedToList_SynthesizesRowWithoutRemovingItsSource() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web);
+
+		// Assert
+		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		values["itemLayout"]?["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the row is built from the column array, which is the only reason this mapping reads it");
+		values["columns"].Should().NotBeNull(
+			because: "feeding the row must not consume the source — a per-rule drop list would be a second pruning "
+				+ "mechanism beside the registry one, and carrying these is not what broke the reported page: a list "
+				+ "whose title was an object rendered its columns fine with them present (ENG-95046)");
+		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
+			because: "the collection binding is the grid property the mobile list genuinely needs");
+		values["type"]?.GetValue<string>().Should().Be("crt.List",
+			because: "synthesizing the row must not disturb the element's own type");
+	}
+
+	/// <summary>Rules whose grid to list template is the given raw JSON skeleton.</summary>
+	private static WebToMobilePageConversionRules RulesWithTemplate(
+		string valueJson, string parentName = "{{ diff.parentName }}", string propertyName = "{{ diff.propertyName }}",
+		IReadOnlyList<ElementFilterRule> filters = null) => new() {
+		Components = [
+			new ComponentEquivalenceRule {
+				Web = ["crt.DataGrid"], Mobile = ["crt.List"], Category = "AlternativeAvailable",
+				Filters = filters ?? [new ElementFilterRule { Type = "crt.DataGrid" }],
+				ViewConfigTemplates = [new ViewConfigTemplateRule {
+					PreserveSourceProperties = true,
+					ParentName = parentName, PropertyName = propertyName,
+					Value = JsonDocument.Parse(valueJson).RootElement.Clone()
+				}]
+			}
+		]
+	};
+
+	private static MobilePageConversionGuide AnalyzeWithRules(
+		PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null, rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+	private const string RowOnlyTemplate = """
+		{ "type": "crt.List", "itemLayout": { "name": "{{ diff.name }}_ListItem", "type": "crt.ListItem",
+		                  "title": "${{ source.columns[0].code }}",
+		                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
+		""";
+
+	[Test]
+	[Description("The BUNDLED rules render a correct row end to end. Every other template test builds its own skeleton, so a typo in the shipped JSON — a mistyped token, a wrong slot name — would pass all of them; this is the only test that reads what actually ships.")]
+	public void Analyze_ViewConfigTemplate_BundledRules_RenderTheRowTheyDeclare() {
+		// Arrange — the real rules file, not a fixture.
+		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), shipped);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "the shipped template must actually produce the row it declares");
+		row["type"]?.GetValue<string>().Should().Be("crt.ListItem");
+		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "the shipped skeleton interpolates the element name into the row's own name");
+		row["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the registry declares crt.ListItem.title a plain string binding, and the { value } BODY shape "
+				+ "there renders an empty Title column while the body rows still look correct (ENG-95046)");
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "Product is the first column of a type a row title accepts");
+		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$ProductsListDS_Price", "$ProductsListDS_Quantity" },
+			because: "the remaining columns become body entries in source order");
+	}
+
+	[Test]
+	[Description("The bundled crt.Checkbox → crt.Toggle template uses preserveSourceProperties: every source property is copied EXCEPT the ones the template names (type), and the type is retyped to crt.Toggle. So the binding (control/value) and the field props carry across, layoutConfig is copied, and a source property the template does not name (inversed) is kept — the caller is not asked to rebuild anything.")]
+	public void Analyze_ViewConfigTemplate_BundledCheckboxTemplate_PreservesSourceAndRetypes() {
+		// Arrange — a real web crt.Checkbox with its full set of field properties.
+		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "IsActive", "type": "crt.Checkbox",
+				  "layoutConfig": { "column": 1, "colSpan": 1, "row": 3, "rowSpan": 1 },
+				  "value": true, "inversed": false,
+				  "label": "$Resources.Strings.IsActive", "ariaLabel": "", "labelPosition": "auto",
+				  "tooltip": "", "control": "$IsActive" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, shipped);
+
+		// Assert
+		ElementMapEntry toggle = Element(guide, "IsActive");
+		toggle.MobileType.Should().Be("crt.Toggle", because: "the template's value.type wins the leaf resolution");
+		JsonObject vals = toggle.MobileValues!.AsObject();
+		vals["type"]!.GetValue<string>().Should().Be("crt.Toggle",
+			because: "type is the one property the template names, so it is retyped rather than copied");
+		vals["control"]!.GetValue<string>().Should().Be("$IsActive",
+			because: "preserveSourceProperties carries the value binding across for a like-for-like field conversion");
+		vals["value"]!.GetValue<bool>().Should().BeTrue(because: "value is copied from source");
+		vals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.IsActive");
+		vals.ContainsKey("layoutConfig").Should().BeTrue(because: "layoutConfig is always copied — it is layout placement, not a component property");
+		vals.ContainsKey("inversed").Should().BeTrue(
+			because: "preserveSourceProperties keeps every source property the template does not name, inversed included");
+	}
+
+	[Test]
+	[Description("A path that resolves to nothing OMITS its key instead of shipping JSON null. \"title\": null is a PRESENT key of the wrong shape, and the two JSON stacks disagree about it — Newtonsoft reports it present while System.Text.Json reports it absent — so the row and anything derived from it would silently disagree.")]
+	public void Analyze_ViewConfigTemplate_PathWithoutValue_OmitsTheKeyRatherThanEmittingJsonNull() {
+		// Arrange — a path the node does not carry, alongside one it does.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "itemLayout": { "type": "crt.ListItem",
+			                  "title": "${{ source.columns[0].code }}",
+			                  "icon": "{{ source.thereIsNoSuchProperty }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		string row = Element(guide, "ProductsList").MobileValues["itemLayout"]!.ToJsonString();
+		row.Should().NotContain("icon",
+			because: "an unresolved path must drop its key — a JSON null would travel to the page as a present "
+				+ "property of the wrong shape, and this is asserted on the RAW text because an indexer check "
+				+ "passes either way: the two JSON stacks disagree about whether such a key exists");
+		row.Should().Contain("$ProductsListDS_Product",
+			because: "dropping one key must not disturb the ones that resolved");
+	}
+	[Test]
+	[Description("$each expands one body entry per remaining slot member and PARTIAL interpolation works inside a longer string, so the row's name is the element name plus the template's literal suffix.")]
+	public void Analyze_ViewConfigTemplate_EachExpandsAndPartialInterpolationWorks() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), RulesWithTemplate(RowOnlyTemplate));
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "a token inside a longer string interpolates in place rather than replacing the whole value");
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "a string that is EXACTLY one token yields that slot's own value");
+		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$ProductsListDS_Price", "$ProductsListDS_Quantity" },
+			because: "$each repeats its as-body once per remaining member, in order, with item bound to the member");
+	}
+
+	[Test]
+	[Description("A single-column grid still ships the body COLLECTION as an empty array: $each over an empty slot must yield [] rather than dropping the key, so the row keeps the shape the mobile row declares.")]
+	public void Analyze_ViewConfigTemplate_EachOverEmptySlot_ShipsAnEmptyCollection() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OneCol", "type": "crt.DataGrid", "items": "$OneCol",
+				  "columns": [ { "id": "c1", "code": "OneColDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, RulesWithTemplate(RowOnlyTemplate));
+
+		// Assert
+		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name");
+		row["body"].Should().NotBeNull(because: "the collection key must survive an empty expansion");
+		row["body"]?.AsArray().Should().BeEmpty(because: "the only column became the title, leaving nothing below it");
+	}
+
+	[Test]
+	[Description("A template that SETS a different parentName now DRIVES placement: the converted element is retargeted into the declared container (appended, no index) and its value still applies. This supersedes the earlier read-only refusal and is the mechanism a header button uses to land in FloatingActionButton.menuItems.")]
+	public void Analyze_ViewConfigTemplate_TemplateSettingItsOwnParent_Retargets() {
+		// Arrange
+		WebToMobilePageConversionRules rules = RulesWithTemplate(RowOnlyTemplate, parentName: "SomeOtherContainer");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.ParentName.Should().Be("SomeOtherContainer",
+			because: "a template naming a different parent now retargets the element there instead of being refused");
+		grid.PropertyName.Should().Be("items",
+			because: "the template echoed propertyName ({{ diff.propertyName }}), so the slot is unchanged");
+		grid.Index.Should().BeNull(
+			because: "a retargeted element is appended into the declared container, not positioned by the walk");
+		grid.MobileValues["itemLayout"].Should().NotBeNull(
+			because: "the template's value is applied together with the retarget, not skipped as before");
+	}
+
+	[Test]
+	[Description("Template-driven placement retargets BOTH parent and property: a crt.Button converted by a template declaring parentName=FloatingActionButton, propertyName=menuItems is emitted as an insert into that container's menuItems (appended, no index) — the core mechanism of the header-button -> FAB conversion.")]
+	public void Analyze_TemplateDrivenPlacement_RetargetsParentAndProperty() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.FlexContainer", "items": [
+				{ "name": "AddBtn", "type": "crt.Button", "caption": "#ResourceString(AddBtn_caption)#" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+		var rules = new WebToMobilePageConversionRules {
+			Components = [
+				new ComponentEquivalenceRule {
+					Filters = [new ElementFilterRule { Type = "crt.Button" }],
+					ViewConfigTemplates = [
+						new ViewConfigTemplateRule {
+							ParentName = "FloatingActionButton",
+							PropertyName = "menuItems",
+							Value = JsonDocument.Parse("{ \"type\": \"crt.MenuItem\" }").RootElement.Clone()
+						}
+					]
+				}
+			]
+		};
+
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: rules);
+
+		ElementMapEntry btn = Element(guide, "AddBtn");
+		btn.MobileType.Should().Be("crt.MenuItem",
+			because: "the template's value.type sets the mobile type");
+		btn.ParentName.Should().Be("FloatingActionButton",
+			because: "the template drives the element into the declared container, not its walked parent");
+		btn.PropertyName.Should().Be("menuItems",
+			because: "the template drives it into the declared property slot, not the default items");
+		btn.Index.Should().BeNull(
+			because: "a retargeted element is appended into the declared container, so it carries no positional index");
+	}
+
+	[Test]
+	[Description("An unknown token drops its key instead of shipping the literal {{ … }} text, so a typo in the rules file degrades to a missing property rather than a page carrying template syntax as data.")]
+	public void Analyze_ViewConfigTemplate_UnknownToken_DropsTheKey() {
+		// Arrange
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "{{ row.tittle }}",
+			                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		string row = Element(guide, "ProductsList").MobileValues["itemLayout"]!.ToJsonString();
+		row.Should().NotContain("tittle").And.NotContain("{{",
+			because: "template syntax reaching the page as a value is worse than an absent property — it would "
+				+ "bind to nothing and read as configured");
+	}
+
+	[Test]
+	[Description("A $each NESTED inside another $each body still expands: it must never fall through to the plain object branch, which would write the template's own $each/as keys into the page as data.")]
+	public void Analyze_ViewConfigTemplate_NestedEach_ExpandsInsteadOfLeakingTemplateKeys() {
+		// Arrange — the inner repeat walks the same slot again, which is enough to prove the branch is reached.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			                  "body": { "$each": "source.columns[1:]", "as": {
+			                      "value": "${{ code }}",
+			                      "nested": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		string rendered = row!.ToJsonString();
+		rendered.Should().NotContain("$each").And.NotContain("\"as\"",
+			because: "template syntax reaching the page as data binds to nothing and reads as configured — the "
+				+ "same failure the unknown-token case guards against");
+		row["body"]?.AsArray()[0]?["nested"]?.AsArray().Should().HaveCount(2,
+			because: "the inner repeat must expand over its slot, not be copied verbatim");
+	}
+
+	[Test]
+	[Description("The MANDATED template, verbatim, against the diff operation it was specified for: every token resolves, the row lands under itemLayout with a string title and one body entry per remaining column, and every carried property the template does not name survives.")]
+	public void Analyze_ViewConfigTemplate_MandatedFormat_RendersTheSpecifiedOperation() {
+		// Arrange — the values of the insert operation exactly as specified.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{
+				  "name": "DataGrid_rcdtw3f",
+				  "layoutConfig": { "column": 1, "colSpan": 1, "row": 1, "rowSpan": 1 },
+				  "type": "crt.DataGrid",
+				  "features": { "rows": { "selection": { "enable": true, "multiple": true } } },
+				  "items": "$DataGrid_rcdtw3f",
+				  "primaryColumnName": "DataGrid_rcdtw3fDS_Id",
+				  "columns": [
+					{ "id": "74498dd4-4574-275e-6178-c2514d6d3439", "code": "DataGrid_rcdtw3fDS_Name",
+					  "caption": "#ResourceString(DataGrid_rcdtw3fDS_Name)#", "dataValueType": 28 },
+					{ "id": "cebffd2c-ec87-7237-2c06-db6ca27ef019", "code": "DataGrid_rcdtw3fDS_Address",
+					  "caption": "#ResourceString(DataGrid_rcdtw3fDS_Address)#", "dataValueType": 29 } ],
+				  "placeholder": false
+				} ] } ]
+			""");
+		// The template exactly as specified, including the brace spacing.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{
+			    "type": "crt.List",
+			    "name":  "{{ diff.name }}",
+			    "items": "{{ source.items }}",
+			    "itemLayout": {
+			        "name":  "{{ diff.name }}_ListItem",
+			        "type":  "crt.ListItem",
+			        "title": "${{source.columns[0].code}}",
+			        "body":  { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+			    }
+			}
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "DataGrid_rcdtw3f");
+		JsonNode values = grid.MobileValues;
+		grid.MobileType.Should().Be("crt.List");
+		values["type"]?.GetValue<string>().Should().Be("crt.List");
+		values["items"]?.GetValue<string>().Should().Be("$DataGrid_rcdtw3f",
+			because: "{{ source.items }} reads the operation's own collection binding");
+
+		JsonNode row = values["itemLayout"];
+		row.Should().NotBeNull(because: "the template's nested structure is what the web node had no counterpart for");
+		row["name"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3f_ListItem",
+			because: "a token inside a longer string interpolates in place");
+		row["type"]?.GetValue<string>().Should().Be("crt.ListItem");
+		row["title"].GetValueKind().Should().Be(JsonValueKind.String,
+			because: "the $ sits OUTSIDE the braces, so the rendered title is a plain binding string");
+		row["title"]?.GetValue<string>().Should().Be("$DataGrid_rcdtw3fDS_Name",
+			because: "MediumText is a type the row's lead accepts, so the first column leads");
+		row["body"]?.AsArray().Select(x => x["value"]?.GetValue<string>()).Should().ContainInOrder(
+			new[] { "$DataGrid_rcdtw3fDS_Address" },
+			because: "the slice yields every column after the lead, and ${{ code }} binds the member's own code");
+
+		values["layoutConfig"]?["rowSpan"]?.GetValue<int>().Should().Be(1,
+			because: "the template does not name layoutConfig, so it survives — this is what keeps the element placed");
+		values["features"]?["rows"]?["selection"]?["enable"]?.GetValue<bool>().Should().BeTrue(
+			because: "a carried property the template does not name is untouched; pruning what mobile crt.List does "
+				+ "not declare belongs to the registry (ENG-91859), not to this mapping");
+		values["primaryColumnName"]?.GetValue<string>().Should().Be("DataGrid_rcdtw3fDS_Id");
+		values["columns"].Should().NotBeNull(because: "feeding the row must not consume its source");
+		values.ToJsonString().Should().NotContain("{{").And.NotContain("$each",
+			because: "no template syntax may reach the page as data");
+	}
+
+	[Test]
+	[Description("A MERGE twin gets no templated row: the template renders for an INSERT only. A merge is found by name against the element the mobile template already provides, has no parent or slot to echo, and carries a delta — a whole skeleton would overwrite the row that template supplies.")]
+	public void Analyze_ViewConfigTemplate_MergeTwin_IsNotRenderedFromTheTemplate() {
+		// Arrange — a list page: the mobile template provides List/ListItem, so the web grid is a merge twin.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "items": "$DataTable",
+				  "columns": [
+					{ "id": "c1", "code": "PDS_LeadName", "dataValueType": 28 },
+					{ "id": "c2", "code": "PDS_Status", "dataValueType": 28 } ] } ] } ]
+			""");
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["ListContainer"] = "ListContainer"
+		};
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+
+		// Act — the SHIPPED rules, so the grid → list template is present and would fire if merge were included.
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null,
+			WebToMobilePageConversionRulesCatalog.LoadBundled(), templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: containerNameMap,
+			templateComponentNames: Names("ListContainer", "DataTable"), componentNameMap: componentNameMap);
+
+		// Assert
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
+		twin.Operation.Should().Be("merge", because: "the mobile template already provides the element");
+		twin.MobileValues?["itemLayout"].Should().BeNull(
+			because: "rendering the skeleton here would replace the ListItem the mobile template supplies, and the "
+				+ "guidance tells the caller to configure that one by merge-by-name instead");
+		twin.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
+			because: "nothing was synthesized for a merge, so neither row note may fire and send the caller "
+				+ "looking for a row the converter never claimed to build");
+	}
+
+	[Test]
+	[Description("A template writing `items` as an ARRAY is refused the same way the copy rule refuses it: that shape is the child view-element collection, emitted by the tree walk, so writing it into a parent's values would nest a whole child tree inside them.")]
+	public void Analyze_ViewConfigTemplate_ItemsAsAnArray_IsNotWrittenIntoTheValues() {
+		// Arrange — the shape a container template would produce, and the one the copy rule already skips.
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "items": [ { "name": "Nested", "type": "crt.Label" } ],
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode values = Element(guide, "ProductsList").MobileValues;
+		values["items"]?.GetValue<string>().Should().Be("$ProductsList",
+			because: "the STRING collection binding the page declared survives; the template's array form is the "
+				+ "structural child collection and must not overwrite it");
+		values["itemLayout"].Should().NotBeNull(
+			because: "refusing one key must not discard the rest of the render");
+	}
+
+	[Test]
+	[Description("A template nested past the render budget has that branch abandoned rather than being followed down. The rules file is fetched at runtime, so a template is input from OUTSIDE the binary; the JSON reader stops anything deeper than its own limit, and this budget bounds the recursion within it.")]
+	public void Analyze_ViewConfigTemplate_PathologicallyNestedTemplate_DegradesInsteadOfExhaustingTheStack() {
+		// Arrange — deep enough to pass the render budget, shallow enough that the JSON reader still accepts it,
+		// so this exercises THIS guard rather than the parser's.
+		var deep = new StringBuilder("\"leaf\"");
+		for (int i = 0; i < 50; i++) {
+			deep.Insert(0, "{ \"n\": ").Append(" }");
+		}
+		WebToMobilePageConversionRules rules = RulesWithTemplate($$$"""
+			{ "type": "crt.List",
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			                  "deep": {{{deep}}} } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row.Should().NotBeNull(
+			because: "everything within the budget still renders — the guard abandons the offending branch, it "
+				+ "does not discard the whole template");
+		row!["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "a sibling of the pathological branch is unaffected");
+	}
+
+	[Test]
+	[Description("A source.* token reads the WEB node by PATH, so a nested reference resolves instead of silently returning nothing — a rule author writing source.features.rows must get the value, not a missing property.")]
+	public void Analyze_ViewConfigTemplate_SourceToken_ResolvesANestedPath() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Nested", "type": "crt.DataGrid", "items": "$Nested",
+				  "features": { "rows": { "selection": { "enable": true } } },
+				  "columns": [ { "id": "c1", "code": "NestedDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List", "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}",
+			                  "flat": "{{ source.items }}",
+			                  "nested": "{{ source.features.rows.selection.enable }}",
+			                  "missing": "{{ source.features.nope.deeper }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		JsonNode row = Element(guide, "Nested").MobileValues["itemLayout"];
+		row["flat"]?.GetValue<string>().Should().Be("$Nested",
+			because: "a single-segment source token keeps working");
+		row["nested"]?.GetValue<bool>().Should().BeTrue(
+			because: "a dotted source token must resolve through the web node rather than being read as one key, "
+				+ "and a token that is exactly one reference yields the value's own type rather than its text");
+		row["missing"].Should().BeNull(
+			because: "a path that resolves to nothing drops its key, exactly like an unknown token");
+	}
+
+	[Test]
+	[Description("The render is laid OVER the carried values: a key the template names wins, a key it does not name survives untouched, and the element's identity and value binding are never writable from a template.")]
+	public void Analyze_ViewConfigTemplate_OverlaysCarriedValuesAndLeavesTheRestAlone() {
+		// Arrange — the template restates one carried key with a different value, claims the identity keys, and
+		// says nothing about layoutConfig, which the page needs and no rule names.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "ProductsList", "type": "crt.DataGrid", "items": "$ProductsList",
+				  "layoutConfig": { "column": 1, "colSpan": 2, "row": 3, "rowSpan": 4 },
+				  "columns": [ { "id": "c1", "code": "ProductsListDS_Name", "dataValueType": 28 } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = RulesWithTemplate("""
+			{ "type": "crt.List",
+			  "name": "WrongName",
+			  "items": "$OverlaidBinding",
+			  "itemLayout": { "type": "crt.ListItem", "title": "${{ source.columns[0].code }}" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(bundle, rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		JsonNode values = grid.MobileValues;
+		values["items"]?.GetValue<string>().Should().Be("$OverlaidBinding",
+			because: "a key the template NAMES wins — the shipped skeleton relies on that to declare the mobile "
+				+ "structure over what was carried");
+		values["layoutConfig"]?["colSpan"]?.GetValue<int>().Should().Be(2,
+			because: "a key the template does not name survives untouched, which is how the element keeps its "
+				+ "placement and the grid's own properties without any rule naming them");
+		values["type"]?.GetValue<string>().Should().Be("crt.List",
+			because: "a template cannot change what component an element IS — its declared type is the gate, so a "
+				+ "template naming a different one is not applied at all rather than partially honoured");
+		values["name"]?.GetValue<string>().Should().NotBe("WrongName",
+			because: "the copy rule refuses to carry the element identity on purpose, so a template filling that "
+				+ "gap would let the rules file rename an element and desynchronize every parentName referring to it");
+		grid.MobileName.Should().Be("ProductsList",
+			because: "the converter's own identity for the element stands regardless of what a template asked for");
+		values["itemLayout"].Should().NotBeNull(
+			because: "the structure the web node had no counterpart for is what a template is actually for");
+	}
+
+	[Test]
+	[Description("A filter that does not match the node suppresses the template entirely: filters NARROW which source elements a mapping's templates apply to, so a non-matching element keeps its own values and gets no row.")]
+	public void Analyze_ViewConfigTemplate_NonMatchingFilter_RendersNothing() {
+		// Arrange
+		WebToMobilePageConversionRules rules = RulesWithTemplate(
+			RowOnlyTemplate, filters: [new ElementFilterRule { Type = "crt.DataTable" }]);
+
+		// Act — the node is a crt.DataGrid, which the filter does not name
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		grid.MobileValues["itemLayout"].Should().BeNull(
+			because: "the filter did not match, so this mapping's template must not apply to the element");
+		grid.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
+			because: "nothing was synthesized here, so neither row note may fire");
+	}
+
+	/// <summary>A mobile registry whose crt.ListItem declares each named input with the given raw descriptor.</summary>
+	private static IReadOnlyDictionary<string, ComponentRegistryEntry> RowRegistry(
+		params (string prop, string descriptorJson)[] inputs) {
+		var declared = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string prop, string descriptorJson) in inputs) {
+			declared[prop] = JsonDocument.Parse(descriptorJson).RootElement.Clone();
+		}
+		return new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.ListItem"] = new ComponentRegistryEntry { ComponentType = "crt.ListItem", Inputs = declared }
+		};
+	}
+
+	[Test]
+	[Description("A synthesized row value that CONTRADICTS a scalar the mobile registry declares is dropped rather than shipped: with body declared a string, the array body the synthesis builds is removed, while the string title the registry agrees with survives.")]
+	public void Analyze_MobileValues_SynthesizedRow_DropsValueContradictingADeclaredScalar() {
+		// Arrange — the producer declaring body as a scalar is the shape mismatch this guard exists for; the
+		// same check covers title, whose object-wrapped form RENDERS (empty Title column, body rows fine) and
+		// is therefore invisible to validate-page's client-engine simulation (ENG-95046).
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var mobile = RowRegistry(
+			("title", """{ "type": "string" }"""),
+			("body", """{ "type": "string" }"""));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["body"].Should().BeNull(
+			because: "the synthesis builds body as an array, and shipping an array where the registry declares a "
+				+ "scalar is exactly the class of defect this guard exists to stop");
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the title agrees with its declared string shape, so the guard must leave it alone");
+	}
+
+	[Test]
+	[Description("With the registry declaring the REAL crt.ListItem shapes — title a string, body an array — the scalar guard removes nothing: it must not become a second, stricter pruning pass over a row the converter built correctly.")]
+	public void Analyze_MobileValues_SynthesizedRow_KeepsEverythingTheRegistryAgreesWith() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var mobile = RowRegistry(
+			("title", """{ "type": "string" }"""),
+			("body", """{ "type": "array" }"""));
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web, mobileByType: mobile);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "ProductsList");
+		JsonNode row = grid.MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "a correctly shaped title must survive the guard untouched");
+		row["body"]?.AsArray().Should().HaveCount(2,
+			because: "an array body matches the declared array input, so nothing is dropped");
+		row["name"]?.GetValue<string>().Should().Be("ProductsList_ListItem",
+			because: "a property the registry does not declare at all is not the guard's business");
+	}
+
+	[Test]
+	[Description("With no crt.ListItem entry in the mobile registry the row is shipped as built: an absent registry means unknown, not invalid, so the guard degrades to a no-op instead of stripping the row.")]
+	public void Analyze_MobileValues_SynthesizedRow_IsUntouchedWhenTheRegistryHasNoEntry() {
+		// Arrange
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+
+		// Act — mobileByType carries no crt.ListItem at all
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: web,
+			mobileByType: Reg(("crt.List", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "ProductsList").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$ProductsListDS_Product",
+			because: "the converter must not withhold a row just because the registry cannot confirm its shape — "
+				+ "the mobile registry is still incomplete (ENG-91859)");
+		row["body"]?.AsArray().Should().HaveCount(2,
+			because: "the body is shipped for the same reason");
+	}
+
+	[Test]
+	[Description("A single-column grid yields a row with a title and an EMPTY body — the display column is the title, and there is nothing left to show underneath.")]
+	public void Analyze_MobileValues_SingleColumnGrid_YieldsTitleAndEmptyBody() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OneCol", "type": "crt.DataGrid", "items": "$OneCol",
+				  "columns": [ { "id": "c1", "code": "OneColDS_Name" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "OneCol").MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "one column is still enough to render a row");
+		row["title"]?.GetValue<string>().Should().Be("$OneColDS_Name",
+			because: "the single column is the display column, so it leads the row rather than sitting in the body");
+		row["body"].Should().NotBeNull(because: "the body collection is always present, so the shape is predictable");
+		row["body"].AsArray().Should().BeEmpty(because: "the only column became the title");
+	}
+
+	[Test]
+	[Description("A grid carrying no columns renders the template against an empty source: the itemLayout skeleton the template declares still ships (name + type + the always-present body collection), but the title path resolves to nothing and its key is dropped. The template addresses the source directly — there is no column-selection policy in code — so an absent source is just an empty render, and validate-page is the backstop for the empty row.")]
+	public void Analyze_MobileValues_GridWithoutColumns_YieldsAnEmptyRow() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "NoCols", "type": "crt.DataGrid", "items": "$NoCols" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "NoCols");
+		grid.Operation.Should().Be("insert", because: "a column-less grid still converts");
+		JsonNode row = grid.MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "the template's itemLayout skeleton renders even when the source has no columns");
+		row["type"]?.GetValue<string>().Should().Be("crt.ListItem", because: "the row element type is a template constant");
+		row["title"].Should().BeNull(because: "source.columns[0].code resolves to nothing, so the title key is dropped");
+		row["body"].AsArray().Should().BeEmpty(because: "the $each over an absent column slice ships an empty collection");
+	}
+
+	[Test]
+	[Description("Templates have PRIORITY over registry-support: a web type that IS in the mobile registry is still converted via a matching components[].filters template, resolving to the template's value.type and getting its row — the template wins the leaf resolution before the registry-support check.")]
+	public void Analyze_MobileValues_TemplateWins_EvenWhenTypeIsRegistrySupported() {
+		// Arrange — the grid's own type is ALSO in the mobile registry here; the template must still win, so a
+		// registry-supported type does not silently bypass its declared conversion.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SelfMapped", "type": "crt.DataGrid", "items": "$SelfMapped",
+				  "columns": [ { "id": "c1", "code": "SelfMappedDS_Name", "dataValueType": 30 } ] } ] } ]
+			""");
+		var mobileWithGrid = new HashSet<string>(MobileTypes, StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileWithGrid, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), null, Rules, null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "SelfMapped");
+		grid.MobileType.Should().Be("crt.List",
+			because: "the matching template's value.type wins over keeping the registry-supported type as-is");
+		JsonNode row = grid.MobileValues["itemLayout"];
+		row.Should().NotBeNull(because: "the template builds the row even though crt.DataGrid is registry-supported");
+		row["title"]?.GetValue<string>().Should().Be("$SelfMappedDS_Name",
+			because: "the single column leads the row via the template");
+	}
+
+	[Test]
+	[Description("A node that authored its OWN row without a title gets NO missing-title note: the absence is the author's choice, not a source that had nothing acceptable to offer.")]
+	public void Analyze_Reason_AuthoredRowWithoutTitle_GetsNoNote() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Authored", "type": "crt.DataGrid", "items": "$Authored",
+				  "itemLayout": { "type": "crt.ListItem", "body": [ { "value": "$AuthoredDS_Any" } ] },
+				  "columns": [ { "id": "c1", "code": "AuthoredDS_Any", "dataValueType": 10 } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		ElementMapEntry grid = Element(guide, "Authored");
+		grid.MobileValues["itemLayout"]["title"].Should().BeNull(because: "the fixture authored a row with no title, which is what makes this case distinguishable from a synthesized one");
+		grid.Reason.Should().NotContain("no title",
+			because: "the note explains that the SOURCE had no acceptable column; here the row was not "
+				+ "synthesized at all, so claiming that would be wrong");
+	}
+
+	[Test]
+	[Description("The row is emitted INSIDE the list's own values and never as a separate element-map entry: crt.List is not a container and itemLayout is an input, so an insert addressing it as a child slot fails the client-side container check and breaks the build of the WHOLE schema, not just the list.")]
+	public void Analyze_ElementMap_RowIsNeverASeparateInsert() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = Analyze(GridWithColumns(), webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.MobileType == "crt.ListItem",
+			because: "the row is a value on the list, not an element of its own — emitting it as an entry would "
+				+ "invite the caller to insert it with parentName/propertyName, which the client rejects");
+		guide.ElementMap.Should().NotContain(e => e.PropertyName == "itemLayout",
+			because: "itemLayout is an input property, not a child slot; addressing it as one is what raises "
+				+ "\"is not a container for other items\" at schema build time");
+		Element(guide, "ProductsList").MobileValues["itemLayout"].Should().NotBeNull(
+			because: "the row travels nested inside the list's values, which is the shape the client engine accepts");
+	}
+
+	[Test]
+	[Description("A web node that already carries the target property keeps its own — authored content is never replaced by the synthesized row.")]
+	public void Analyze_MobileValues_GridWithOwnItemLayout_IsNotOverwritten() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Authored", "type": "crt.DataGrid", "items": "$Authored",
+				  "itemLayout": { "type": "crt.ListItem", "title": "$Hand_Written" },
+				  "columns": [ { "id": "c1", "code": "AuthoredDS_Ignored" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)));
+
+		// Assert
+		JsonNode row = Element(guide, "Authored").MobileValues["itemLayout"];
+		row["title"]?.GetValue<string>().Should().Be("$Hand_Written",
+			because: "synthesis fills a gap; it must not clobber a row the source page actually authored");
+	}
+
+	#endregion
+
 	#region Empty container removal
 
 	private static readonly IReadOnlySet<string> EmptyRemovalMobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"crt.TabPanel", "crt.TabContainer", "crt.FlexContainer", "crt.GridContainer",
-			"crt.ExpansionPanel", "crt.Input", "crt.ComboBox"
+			"crt.ExpansionPanel", "crt.Input", "crt.ComboBox", "crt.Button"
 		};
 
 	private static readonly EmptyContainerRemovalRule EmptyRemoval = new() {
@@ -4188,7 +5713,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Decision 2026-08-03: an ExpansionPanel is judged on items ONLY — an empty panel drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
+	[Description("An ExpansionPanel with no surviving children in any slot (empty items, no tools) drops, and the tab it emptied cascades away, while the template Tabs twin stays a merge untouched.")]
 	public void Analyze_ShouldDropEmptyExpansionPanel_AndCascadeIntoTab() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -4207,8 +5732,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Items-only decision: a panel with header buttons in tools but an empty items still drops — and the discarded tools are called out in the drop reason so the loss stays visible in the report.")]
-	public void Analyze_ShouldMentionDiscardedTools_WhenEmptyPanelCarriesToolsButtons() {
+	[Description("Supersedes the 2026-08-03 items-only decision: header buttons in an ExpansionPanel's tools zone are CONVERTED by the structural child-array walk, so a panel whose only content is tools keeps them (a surviving child in any slot occupies its parent) instead of being dropped as empty.")]
+	public void Analyze_ShouldConvertToolsButtons_AndKeepTheirPanel() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "ToolsOnlyPanel", "type": "crt.ExpansionPanel",
 			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ], "items": [] } ]
@@ -4216,10 +5741,42 @@ public sealed class WebToMobileConversionServiceTests {
 
 		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
 
+		ElementMapEntry addButton = Element(guide, "AddButton");
+		addButton.Operation.Should().Be("insert",
+			because: "a crt.Button in the tools zone is a child view element the walk now descends into and converts, not header chrome to discard");
+		addButton.ParentName.Should().Be("ToolsOnlyPanel",
+			because: "the converted tool stays under its own panel");
+		addButton.PropertyName.Should().Be("tools",
+			because: "the walk records the slot it descended, so the button lands back in the panel's tools array rather than its items");
 		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
-		panel.Operation.Should().Be("drop");
-		panel.Reason.Should().Contain("empty container");
-		panel.Reason.Should().Contain("tools", because: "silent removal is acceptable only while the discarded tools stay visible in the report");
+		panel.Operation.Should().Be("insert",
+			because: "a surviving converted child (the tools button) occupies the panel, so it is no longer judged empty on items alone");
+		panel.MobileValues!.AsObject()["tools"]!.AsArray().Should().BeEmpty(
+			because: "the tools array is emitted as its own child entries, never carried as a value on the parent — "
+				+ "only the empty slot itself is declared, which is exactly what the differ needs to append the button");
+	}
+
+	[Test]
+	[Description("The complement of the kept-panel case: when the ONLY tools child DROPS (an unsupported clicked request), the ExpansionPanel has no surviving child in any slot and is removed as an empty container.")]
+	public void Analyze_ShouldDropToolsOnlyPanel_WhenItsOnlyToolDrops() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ToolsOnlyPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "DeadButton", "type": "crt.Button",
+			                 "clicked": { "request": "crt.UnsupportedXyzRequest" } } ], "items": [] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		Element(guide, "DeadButton").Operation.Should().Be("drop",
+			because: "a crt.Button whose clicked request the Mobile app does not support is dropped");
+		ElementMapEntry panel = Element(guide, "ToolsOnlyPanel");
+		panel.Operation.Should().Be("drop",
+			because: "with its only tool dropped and no items, the panel has no surviving child in any slot and is removed as empty");
+		panel.Reason.Should().Contain("empty container",
+			because: "the removal reason names the empty-container decision");
 	}
 
 	[Test]
@@ -4507,6 +6064,320 @@ public sealed class WebToMobileConversionServiceTests {
 		sales.ParentName.Should().Be("Tabs");
 		sales.Index.Should().Be(1,
 			because: "the tab index is assigned AFTER the compaction — rebased to 0 it would land before the template's general tab");
+	}
+
+	#endregion
+
+	#region InitializeContainerChildSlots — the child-collection slot on a container the differ requires
+
+	/// <summary>Builds a viewConfigDiff body from the guide's own elementMap exactly as the conversion guide
+	/// instructs a caller to: mobileValues pasted verbatim into each insert operation, nothing hand-patched.
+	/// Merge/drop/relocate-children entries never carry a viewConfigDiff operation of their own.</summary>
+	private static string BuildViewConfigDiffBody(MobilePageConversionGuide guide) {
+		var operations = new JsonArray();
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)) {
+				continue;
+			}
+			var operation = new JsonObject {
+				["operation"] = "insert",
+				["name"] = entry.MobileName,
+				["values"] = entry.MobileValues?.DeepClone() ?? new JsonObject()
+			};
+			if (entry.ParentName is { Length: > 0 }) {
+				operation["parentName"] = entry.ParentName;
+				operation["propertyName"] = entry.PropertyName is { Length: > 0 } ? entry.PropertyName : "items";
+			}
+			if (entry.Index is { } index) {
+				operation["index"] = index;
+			}
+			operations.Add(operation);
+		}
+		return new JsonObject { ["viewConfigDiff"] = operations }.ToJsonString();
+	}
+
+	[Test]
+	[Description("The core fix: a web-sourced container that survives conversion with a surviving items child gets an empty 'items' array initialized on its OWN mobileValues, across every mobile-supported container type BuildMobileValues drops the array for — a GridContainer, FlexContainer, ExpansionPanel and a converted TabContainer alike. Before the fix none of these carried 'items' at all.")]
+	public void Analyze_ContainerInsert_GetsItemsSlot_WhenChildSurvives_AcrossContainerTypes() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "FlexBox", "type": "crt.FlexContainer", "items": [ { "name": "FlexField", "type": "crt.Input" } ] },
+			  { "name": "GridBox", "type": "crt.GridContainer", "items": [ { "name": "GridField", "type": "crt.Input" } ] },
+			  { "name": "Panel", "type": "crt.ExpansionPanel", "items": [ { "name": "PanelField", "type": "crt.Input" } ] },
+			  { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			      { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "TabField", "type": "crt.Input" } ] } ] }
+			]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		foreach (string boxName in new[] { "FlexBox", "GridBox", "Panel", "OverviewTab" }) {
+			Element(guide, boxName).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+				because: $"{boxName} has a surviving items child, so the Creatio differ requires the slot to be physically declared — without it the child insert throws 'is not a container for other items'");
+		}
+	}
+
+	[Test]
+	[Description("crt.Timeline is NOT in emptyContainerRemoval.removableTypes, yet the slot-initialization pass is keyed on \"used as parent\", never on a container-type list — so a Timeline with a surviving child gets its items slot exactly like a rules-listed container. This is the exact type the original bug report's two repros both flagged as affected.")]
+	public void Analyze_TimelineContainer_GetsItemsSlot_WhenChildSurvives() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Timeline", "type": "crt.Timeline", "items": [
+				{ "name": "CallTile", "type": "crt.Input" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline", "crt.Input" };
+
+		// Act
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Timeline" },
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules: RulesWithEmptyRemoval(), templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: TabbedContainerMap);
+
+		// Assert
+		Element(guide, "Timeline").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the pass keys on \"used as parent\", not a removableTypes list, so a type absent from that list still gets its slot");
+	}
+
+	[Test]
+	[Description("Regression guard for the pass-order constraint, genuinely sensitive to it (unlike a flat container whose only child is dropped before ever becoming an insert entry, which cascades identically regardless of ordering): Outer's only child Inner IS a surviving insert at snapshot time, so Outer is 'occupied via items' from the very first round. If InitializeContainerChildSlots ran BEFORE RemoveEmptyContainers, Outer's items would already be seeded to a non-null empty array by the time Inner itself drops (its own only child, Timeline, is unsupported) — IsEmptyRemovalCandidate reads items-ABSENCE, so a pre-seeded array would make Outer look non-empty forever and the cascade would stop one level too early. Running the pass strictly after RemoveEmptyContainers (as implemented) lets Outer's true emptiness show through and both containers cascade to drop.")]
+	public void Analyze_ShouldCascadeBothLevelsToDrop_WhenItemsSlotPassRunsAfterRemoval() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Outer", "type": "crt.GridContainer", "items": [
+				{ "name": "Inner", "type": "crt.GridContainer", "items": [
+					{ "name": "Timeline", "type": "crt.Timeline" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		Element(guide, "Inner").Operation.Should().Be("drop",
+			because: "Inner's only child (Timeline) is unsupported and never becomes an insert, so Inner is never occupied and RemoveEmptyContainers drops it in round 1");
+		Element(guide, "Outer").Operation.Should().Be("drop",
+			because: "once Inner is a drop, Outer's true occupancy is empty too — this only cascades correctly if Outer's items slot was NOT pre-seeded by a too-early InitializeContainerChildSlots call");
+	}
+
+	[Test]
+	[Description("A merge twin the mobile template provides (Tabs) is used as parentName by every converted tab — it IS \"occupied\" by the same definition the pass uses — yet the pass must never fabricate a mobileValues object on it: its child-collection slot is the template's own concern, not the converter's.")]
+	public void Analyze_MergeTwinUsedAsParent_IsNeverGivenAnItemsSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		ElementMapEntry tabs = Element(guide, "Tabs");
+		tabs.Operation.Should().Be("merge", because: "Tabs is the mobile template's own twin, matched by name via the container map");
+		tabs.MobileValues.Should().BeNull(
+			because: "a merge twin carries no converter-owned mobileValues here — the pass only ever writes into an INSERT entry's own JsonObject, so SalesTab using Tabs as parentName must not fabricate one");
+	}
+
+	[Test]
+	[Description("Synthesized tab-area layers (MainTabContainer_*/Area_*, created by BuildTabAreaLayers with no webName) get their items slot from THIS SAME pass now that SynthesizedLayerEntry no longer seeds it inline — proving the pass genuinely runs AFTER BuildTabAreaLayers rather than only covering the web-sourced containers built earlier in the pipeline.")]
+	public void Analyze_SynthesizedTabAreaLayers_StillGetItemsSlot_ViaSharedPass() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: RulesWithTabAreaLayers());
+
+		// Assert
+		(string main, string area) = LayerNames("OverviewTab");
+		Synthesized(guide, main).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the tab body layer is occupied by the Area card, and must get its slot from InitializeContainerChildSlots, not from a now-removed inline compensation in SynthesizedLayerEntry");
+		Synthesized(guide, area).MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the Area card is occupied by the tab's moved content (LeadName), for the same reason");
+	}
+
+	[Test]
+	[Description("Integration-level reproduction of the bug report's repro B: a body built literally from the elementMap (mobileValues pasted verbatim, per the guide's own instructions, no hand-patched workaround) applies cleanly through the REAL differ clone (MobileDiffApplyValidator) for a nested Tabs -> TabContainer -> ExpansionPanel -> GridContainer chain. Before the fix this reproduced the exact reported error: 'Item \"SalesTab\" is not a container for other items'.")]
+	public void Analyze_ElementMapAsBuiltBody_AppliesCleanlyThroughRealDiffer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "items": [
+					{ "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel", "items": [
+						{ "name": "ProductsListContainer", "type": "crt.GridContainer", "items": [
+							{ "name": "Budget", "type": "crt.Input" } ] } ] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		string body = BuildViewConfigDiffBody(guide);
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: $"every container insert in the chain must physically declare the items slot its own child targets; validator errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("The slot the pass declares is the slot the CHILD targets, not a hardcoded 'items': an ExpansionPanel whose header button is emitted into its 'tools' slot (RecurseChildArrays walks tools exactly like items) gets 'tools' declared too, and the body built from the element map applies cleanly through the REAL differ clone. JsonDiffApplier resolves the parent collection generically as itemInfo.Item[propertyName] and throws 'is not a container for other items' for ANY slot it cannot find there, so a tools-parented survivor reproduced the reported bug identically — an items-only pass left it broken.")]
+	public void Analyze_ToolsSlotParent_GetsItsOwnSlot_AndAppliesThroughRealDiffer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Panel", "type": "crt.ExpansionPanel",
+			    "items": [ { "name": "Amount", "type": "crt.Input" } ],
+			    "tools": [ { "name": "AddButton", "type": "crt.Button" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(BuildViewConfigDiffBody(guide));
+
+		// Assert
+		Element(guide, "AddButton").PropertyName.Should().Be("tools",
+			because: "the header button is emitted as its own entry in the panel's tools slot, which is the slot its insert resolves against");
+		JsonObject panelValues = Element(guide, "Panel").MobileValues!.AsObject();
+		panelValues["tools"]!.AsArray().Should().BeEmpty(
+			because: "the panel must physically declare the tools collection its own child inserts into — an undeclared tools slot is refused by the differ exactly like an undeclared items slot");
+		panelValues["items"]!.AsArray().Should().BeEmpty(
+			because: "the items child (Amount) still gets its own declared slot — generalizing the pass to every targeted slot must not lose the items case");
+		result.IsValid.Should().BeTrue(
+			because: $"the body built verbatim from the element map must survive the Creatio differ clones for a tools-parented child too; validator errors: {string.Join("; ", result.Errors)}");
+		panelValues.Select(pair => pair.Key).Where(key => key is "items" or "tools").Should().Equal(["items", "tools"],
+			because: "a container targeted through two slots must emit them in one stable order (items first, then alphabetically) — the emitted guide is compared verbatim by callers and tests, so a set-iteration-ordered emission would make it non-deterministic");
+	}
+
+	[Test]
+	[Description("The registry shape guard: a slot the mobile registry positively declares as a SINGLE OBJECT is never declared as an empty array, even when a child insert targets the parent through it. The differ ASSIGNS into an object slot instead of appending, so an array there would be wrong for the component. Reachable only through the generic items walk, which — unlike RecurseChildArrays/IsChildElementArray — descends without asking the registry about the slot's shape, so this branch has no other guard in front of it.")]
+	public void Analyze_ObjectShapedSlot_IsNeverDeclaredAsAnArray() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ObjectBox", "type": "crt.ObjectItemsContainer", "items": [
+				{ "name": "BoxField", "type": "crt.Input" } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ObjectItemsContainer", "crt.Input"
+		};
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.ObjectItemsContainer"] = new ComponentRegistryEntry {
+				ComponentType = "crt.ObjectItemsContainer",
+				Container = true,
+				Inputs = new Dictionary<string, JsonElement> {
+					["items"] = JsonSerializer.SerializeToElement(new { type = "object" })
+				}
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileByType: mobileByType, mobileTypes: mobileTypes);
+
+		// Assert
+		ElementMapEntry field = Element(guide, "BoxField");
+		field.ParentName.Should().Be("ObjectBox",
+			because: "the generic items walk descends without a registry shape check, so the child insert targeting this parent is what makes the guard reachable at all");
+		Element(guide, "ObjectBox").MobileValues!.AsObject().ContainsKey("items").Should().BeFalse(
+			because: "the registry declares this component's items as a single object, so the pass leaves the slot "
+				+ "untouched rather than hand the differ — and the mobile designer — an array the component does not "
+				+ "accept. The deliberate consequence: such a child insert is still refused by the differ, so a rule "
+				+ "that ever retargets a child into an object slot has to provide the placeholder itself");
+	}
+
+	[Test]
+	[Description("A crt.Button whose menuItems children survive gets its 'menuItems' collection declared and the assembled body applies through the real differ clone — the third structural slot the walk emits (after items and tools), proving the pass is keyed on the child's own slot rather than on a slot-name allowlist that would have to grow with the registry.")]
+	public void Analyze_MenuItemsSlotParent_GetsItsOwnSlot_AndAppliesThroughRealDiffer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Actions", "type": "crt.FlexContainer", "items": [
+			    { "name": "OrderButton", "type": "crt.Button", "menuItems": [
+			        { "name": "PrintItem", "type": "crt.MenuItem" } ] } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.Button", "crt.MenuItem"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes);
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(BuildViewConfigDiffBody(guide));
+
+		// Assert
+		Element(guide, "PrintItem").PropertyName.Should().Be("menuItems",
+			because: "the nested menu item is emitted into the button's menuItems slot, so that is the slot its insert resolves against");
+		Element(guide, "OrderButton").MobileValues!.AsObject()["menuItems"]!.AsArray().Should().BeEmpty(
+			because: "the button must declare the menuItems collection its own child inserts into, and only the empty slot — never the child itself — is carried as a value");
+		result.IsValid.Should().BeTrue(
+			because: $"a menuItems-parented child must apply through the differ clones like any other slot; validator errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("Type-list independence proven WITHOUT any stand or seed data: crt.ButtonToggleGroup (a real mobile container the rules' emptyContainerRemoval.removableTypes never lists) and an entirely INVENTED usr.MysteryContainer both get their items slot declared. A regression that re-keyed the pass on a container-type list — the exact design this fix replaced — would leave both slotless, so this test fails on it deterministically on every unit run.")]
+	public void Analyze_ContainerTypesOutsideEveryList_StillGetItemsSlot() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "Toggles", "type": "crt.ButtonToggleGroup", "items": [
+			      { "name": "AllToggle", "type": "crt.ButtonToggleGroupItem" } ] },
+			  { "name": "Mystery", "type": "usr.MysteryContainer", "items": [
+			      { "name": "MysteryField", "type": "crt.Input" } ] }
+			]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ButtonToggleGroup", "crt.ButtonToggleGroupItem", "usr.MysteryContainer", "crt.Input"
+		};
+		IReadOnlySet<string> removableTypes = new HashSet<string>(
+			RulesWithEmptyRemoval().EmptyContainerRemoval!.RemovableTypes, StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: mobileTypes, rules: RulesWithEmptyRemoval());
+
+		// Assert
+		removableTypes.Should().NotContain("crt.ButtonToggleGroup",
+			because: "the test is only meaningful while this type stays outside the removable-type list the pass must not depend on");
+		Element(guide, "Toggles").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "the pass keys on 'targeted as a parent', so a registry container absent from every rules list still declares the slot its child needs");
+		Element(guide, "Mystery").MobileValues!["items"]!.AsArray().Should().BeEmpty(
+			because: "even a type no list anywhere could know about gets its slot — that is what makes the seeding independent of any type list");
+	}
+
+	[Test]
+	[Description("Locks the invariant the pass's defensive 'MobileValues is JsonObject' guard depends on: by the time the pass runs, EVERY insert entry another surviving insert targets as parentName carries a materialized JsonObject mobileValues. The guard is therefore a no-op today; if a future insert-producing path ever breaks the invariant, the container would silently ship without its declared slot, so the breakage must fail here instead.")]
+	public void Analyze_EveryTargetedParentInsert_CarriesJsonObjectMobileValues() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			    { "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+			        { "name": "Panel", "type": "crt.ExpansionPanel",
+			          "items": [ { "name": "Amount", "type": "crt.Input" } ],
+			          "tools": [ { "name": "AddButton", "type": "crt.Button" } ] },
+			        { "name": "Box", "type": "crt.GridContainer", "items": [
+			            { "name": "Stage", "type": "crt.ComboBox" } ] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle, rules: RulesWithEmptyRemovalAndTabLayers());
+		HashSet<string> targetedParents = new(
+			guide.ElementMap
+				.Where(e => e.Operation == "insert" && e.ParentName is { Length: > 0 })
+				.Select(e => e.ParentName!),
+			StringComparer.OrdinalIgnoreCase);
+		List<ElementMapEntry> targetedParentInserts = guide.ElementMap
+			.Where(e => e.Operation == "insert" && e.MobileName is { Length: > 0 }
+				&& targetedParents.Contains(e.MobileName!))
+			.ToList();
+
+		// Assert
+		targetedParentInserts.Should().NotBeEmpty(
+			because: "the page nests containers inside tabs, so the invariant is exercised rather than asserted over an empty set");
+		foreach (ElementMapEntry parent in targetedParentInserts) {
+			parent.MobileValues.Should().BeOfType<JsonObject>(
+				because: $"'{parent.MobileName}' is targeted as a parent, so the pass must have a JsonObject to declare the slot on — anything else means the defensive guard silently skipped a container the differ then refuses");
+		}
 	}
 
 	#endregion

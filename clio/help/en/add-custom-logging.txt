@@ -1,0 +1,64 @@
+NAME
+    add-custom-logging - Add package-specific NLog file routing to a local Creatio environment
+
+SYNOPSIS
+    clio add-custom-logging --package-name <PACKAGE> [-e <ENVIRONMENT>] [OPTIONS]
+
+DESCRIPTION
+    Reads the package's generated Constants.LoggerName value and adds a dedicated
+    logger rule to nlog.config plus a file target to nlog.targets.config.
+
+    The registered environment must have a local EnvironmentPath. The command
+    supports both Net8 installations, where the NLog files are at EnvironmentPath,
+    and .NET Framework installations, where they are under Terrasoft.WebApp.
+
+    Both XML documents are validated before either is changed. Exact existing
+    entries are a no-op; conflicting same-name entries are reported without being
+    overwritten. Unrelated text, encoding, BOM, and newline style are preserved.
+
+OPTIONS
+    --package-name <PACKAGE>
+        Package containing Files/src/cs/Constants.cs with LoggerName (required)
+
+    -e, --environment <ENVIRONMENT>
+        Registered local environment with EnvironmentPath configured. When
+        omitted, clio uses the active environment.
+
+    --min-level <LEVEL>
+        Trace, Debug, Info, Warn, Error, Fatal, or Off (default: Info)
+
+    --file-name <FILE>
+        Simple file name beneath ${TodayLogPath}. The .log extension is appended
+        when omitted. Paths and NLog layout expressions are rejected.
+
+    --restart-environment
+        Restart the environment after updating logging. Without this option the
+        command reports that a restart is required and leaves it to the caller.
+
+EXAMPLES
+    Add default Info logging for a package:
+        clio add-custom-logging --package-name UsrCodexVirtualEntity -e dev
+
+    Use Debug level and a custom file name:
+        clio add-custom-logging --package-name UsrCodexVirtualEntity -e dev --min-level Debug --file-name virtual-entity.log
+
+    Configure and restart immediately:
+        clio add-custom-logging --package-name UsrCodexVirtualEntity -e dev --restart-environment
+
+NOTES
+    - Use the long --package-name option. The inherited -p option means --password,
+      but direct connection and runtime overrides are rejected by this command.
+    - The default target and file names omit a trailing App from LoggerName.
+    - The generated final logger routes matching messages only to the dedicated file.
+    - Configuration-only reruns do not rewrite or duplicate exact existing entries.
+    - Both originals are backed up and restored if either saved file fails validation.
+    - If stored credentials cannot restart the environment, configure without
+      --restart-environment and run clio restart with credentials separately.
+
+SEE ALSO
+    add-package - Add a package to a workspace or local folder
+    list-environments - List registered Creatio environments
+    restart - Restart a Creatio environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

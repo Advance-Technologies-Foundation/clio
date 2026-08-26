@@ -61,6 +61,20 @@ stories:
     depends_on: []
     blocks: []
 
+  - id: story-get-info-cliogate-diagnostics-1
+    title: "Use capability-first cliogate diagnostics in get-info"
+    feature: "get-info-cliogate-diagnostics"
+    repo: "clio"
+    size: S
+    status: review
+    issue: 1138
+    file: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-story.md
+    prd: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-spec.md
+    adr: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-plan.md
+    test_plan: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-qa.md
+    depends_on: []
+    blocks: []
+
   - id: story-mcp-progress-wait-timeout-1
     title: "Make MCP progress waits notification-driven and timeout-safe"
     feature: "mcp-progress-wait-timeout"
@@ -2717,4 +2731,67 @@ stories:
     status_note: "Follow-up found by reviewing a real session, not by planning: setConnections accepted any [#...#] token, so a SUCCESSFUL write told the caller nothing and the caller hedged. The package now refuses a [#SysVariable...#] whose name does not resolve through SystemValueManager or whose value type is not Guid (crt-process-builder, EntityConnectionBinder.EnsureCompatibleSystemVariable) — checkable, unlike the [#SysSettings...#] residual, because the vocabulary is compiled into the platform and an unknown name breaks CODE GENERATION rather than merely writing nothing. Docs/guidance for the three usable variables shipped first and deliberately describe BOTH behaviours, since an older CrtProcessBuilder on the environment keeps the unchecked one. OPEN AND MANDATORY: clio.mcp.e2e coverage for the two refusals (unknown name, non-record type) CANNOT be written until the rebundle lands — the bundled package is resolved from the BUILD OUTPUT, so the E2E would exercise the old assembly and pass vacuously. Sequence is fixed: merge the package PR, rebundle from the merged sources (never from a working tree), re-pin ExpectedArchiveSha256 + ExpectedDescriptorModifiedOnUtc, THEN add the E2E. Also open, deliberately deferred pending measurement: the variable-to-entity check (a Contact variable on an Account column), which needs a table the platform exposes only client-side — until it exists AutoGuid/SequentialGuid pass the type check while generating a value rather than referencing a record."
     depends_on:
       - story-process-element-connections-3
+    blocks: []
+
+  - id: story-export-component-registry-1
+    title: "MCP tool + CLI verb for bulk component registry export"
+    feature: "export-component-registry"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95543
+    file: spec/stories/story-export-component-registry-1.md
+    prd: spec/prd/spec-export-component-registry.md
+    adr: spec/adr/adr-export-component-registry.md
+    status_note: "New export-component-registry MCP tool + CLI verb (not a new argument on get-component-info, which is ReadOnly=true) writes the resolved version's FULL Freedom UI component registry to a file as a byte passthrough of IComponentRegistryClient's raw response — confirmed via ComponentRegistry.live-snapshot.json that deprecated/deprecationReason exist only as raw JSON, not in the typed ComponentCatalogState model, so re-serializing would silently drop fields the ENG-95543 migration-engine consumer needs. Shape revised during implementation: mirrors ComponentInfoCommand/ComponentInfoTool (flat classes, no Command<TOptions>/BaseTool<T>), NOT GetClassicPageSourcesCommand/Tool — BaseTool.ResolveCommand eagerly builds a per-environment container, which breaks the explicit-version-only and no-flags paths (ADR D4). Two distinct output-path contracts: explicit --output-file goes through OutputPathConfinement (refuses existing target), the default <workspace-root>/.clio-migration/component-registry/<version>.json is tool-owned and overwritten on rerun. Never calls IComponentRegistryDocsClient.GetDocAsync. Long-tail MCP registration (DI + attributes only, not added to McpCoreToolProfile.CoreToolTypes or ToolContractGetTool), since the primary consumer is CI via the CLI verb, not an MCP agent. Consumed downstream by creatio-ai-app-development-toolkit branch feature/ENG-95543-registry-backed-mapping, which needs a clio release after merge."
+    depends_on: []
+    blocks: []
+
+  # --- localization-ready-packages (clio#1178) ---
+  - id: story-localization-ready-packages-1
+    title: "Publish the Creatio localization lab"
+    feature: "localization-ready-packages"
+    repo: "creatio-localization-lab"
+    size: M
+    status: done
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-1.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on: []
+    blocks:
+      - story-localization-ready-packages-2
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-2
+    title: "Generate a package-level localization schema for application packages"
+    feature: "localization-ready-packages"
+    repo: "clio"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-2.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+    blocks:
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-3
+    title: "Publish localization guidance through clio-knowledge"
+    feature: "localization-ready-packages"
+    repo: "clio-knowledge"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-3.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+      - story-localization-ready-packages-2
     blocks: []

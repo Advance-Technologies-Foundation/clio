@@ -21,7 +21,14 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("templates")]
 	public IReadOnlyList<TemplateMappingRule> Templates { get; init; } = [];
 
-	/// <summary>Group: equivalent components — web↔mobile mappings that are not a same-type match.</summary>
+	/// <summary>
+	/// Group: equivalent components. An entry is EITHER a type-equivalence (web↔mobile mapping that is not a
+	/// same-type match, e.g. crt.Checkbox→crt.Toggle) OR a template group (<c>filters</c> naming the source
+	/// elements it applies to plus the <c>viewConfigTemplates</c> that produce their mobile values, e.g. the
+	/// grid→list row). Both shapes live in one array because they answer the same question — "what does this
+	/// web component become on mobile" — and a template group also carries its own target type in
+	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair.
+	/// </summary>
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentEquivalenceRule> Components { get; init; } = [];
 
@@ -64,6 +71,18 @@ public sealed class WebToMobilePageConversionRules {
 	/// </summary>
 	[JsonPropertyName("emptyContainerRemoval")]
 	public EmptyContainerRemovalRule EmptyContainerRemoval { get; init; }
+
+	/// <summary>
+	/// Group: container NAMES that are NON-CONVERTING SCOPES on mobile (e.g. <c>MainHeader</c>). Such a container
+	/// yields no mobile element of its own; it is KEPT through template-chrome pruning (so its app-added descendants
+	/// keep it as an ancestor for a rule's <c>path</c>), its subtree is walked in scope mode, and any descendant a
+	/// conversion template does not RETARGET is dropped (not present on mobile). This is deliberately DECOUPLED from
+	/// <see cref="ComponentEquivalenceRule.Path"/> — <c>path</c> is a pure positive filter and never turns a
+	/// container into a drop-scope by itself, so a container whose name merely appears in some rule's path is NOT
+	/// made a scope. Empty or absent switches the behavior off (data-driven, like <see cref="EmptyContainerRemoval"/>).
+	/// </summary>
+	[JsonPropertyName("nonConvertingScopeContainers")]
+	public IReadOnlyList<string> NonConvertingScopeContainers { get; init; } = [];
 
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
@@ -362,4 +381,110 @@ public sealed class ComponentEquivalenceRule {
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+
+	/// <summary>
+	/// Template-group entries only: the source elements the <see cref="ViewConfigTemplates"/> apply to. A node
+	/// matches when ANY filter matches it. Empty on a plain type-equivalence entry (which matches by
+	/// <see cref="Web"/> instead).
+	/// </summary>
+	[JsonPropertyName("filters")]
+	public IReadOnlyList<ElementFilterRule> Filters { get; init; } = [];
+
+	/// <summary>
+	/// Template-group entries only: a PURE POSITIVE ancestor-NAME filter that narrows where the entry applies. Empty
+	/// (default) = the entry applies wherever its <see cref="Filters"/> match. Non-empty = it applies only to a node
+	/// whose SOURCE ancestor chain (outer→inner) contains these names as an ORDERED SUBSEQUENCE at any depth — e.g.
+	/// <c>["MainHeader"]</c> restricts the entry to elements located anywhere under a container named
+	/// <c>MainHeader</c>, and <c>["A","B"]</c> to a node under an <c>A</c> that itself (any depth) contains a
+	/// <c>B</c> above the node. AND-combined with <see cref="Filters"/>. This is ONLY a filter: it never turns a named
+	/// container into a non-converting drop-scope — that behavior is declared separately and explicitly by
+	/// <see cref="WebToMobilePageConversionRules.NonConvertingScopeContainers"/>, so a container whose name merely
+	/// appears here is unaffected on its own.
+	/// </summary>
+	[JsonPropertyName("path")]
+	public IReadOnlyList<string> Path { get; init; } = [];
+
+	/// <summary>
+	/// Template-group entries only: the mobile values produced for a matching element, as data. Each template's
+	/// own <c>value.type</c> declares the target mobile type — which is also what gates it and, for an entry with
+	/// no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a plain
+	/// type-equivalence entry.
+	/// </summary>
+	[JsonPropertyName("viewConfigTemplates")]
+	public IReadOnlyList<ViewConfigTemplateRule> ViewConfigTemplates { get; init; } = [];
 }
+
+
+/// <summary>Matches a source element. Only the component type is matched today.</summary>
+public sealed class ElementFilterRule {
+
+	/// <summary>Web component type the filter matches (e.g. <c>"crt.DataGrid"</c>).</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+}
+
+/// <summary>
+/// One templated mobile view-config value, and the contract a rules author writes against.
+/// </summary>
+/// <remarks>
+/// A path is resolved against one of two ROOTS, or against the current member inside a repeat:
+/// <list type="bullet">
+/// <item><c>{{ diff.name }}</c>, <c>{{ diff.parentName }}</c>, <c>{{ diff.propertyName }}</c> — what the
+/// converter already computed for the operation.</item>
+/// <item><c>{{ source.&lt;path&gt; }}</c> — the WEB node being converted, read as a JSON path, so indexes and
+/// slices work: <c>source.items</c>, <c>source.columns[0].code</c>, <c>source.columns[1:]</c>.</item>
+/// <item>a BARE path inside a <c>$each</c> body — the current member, e.g. <c>{{ code }}</c>.</item>
+/// </list>
+/// There is no <c>meta.*</c> root and no <c>{{ item }}</c> alias: an unresolvable path yields nothing, so a
+/// template written against either would be dropped or, for a placement field, skipped WHOLE and silently.
+/// <para>
+/// <c>parentName</c> and <c>propertyName</c> DRIVE placement. A template may ECHO the converter's own value
+/// (<c>"{{ diff.parentName }}"</c>) to leave the element where the walk found it, or it may render a DIFFERENT
+/// value to RETARGET the element — it is then emitted as an insert into that declared container/property (appended,
+/// no index) instead of its walked position. This is how a source element is regrouped elsewhere on mobile (e.g. a
+/// MainHeader button → <c>FloatingActionButton.menuItems</c>). A template that declares neither field, or only
+/// echoes, changes nothing. When a retarget names a parent the target mobile template does not provide, the
+/// converter drops the element with a diagnostic rather than emitting an unresolvable insert.
+/// </para>
+/// </remarks>
+public sealed class ViewConfigTemplateRule {
+
+	/// <summary>Target parent to place the element under — <c>"{{ diff.parentName }}"</c> to keep the walked parent,
+	/// or a different value / name to RETARGET the element there (e.g. <c>"FloatingActionButton"</c>). Absent = keep.</summary>
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
+
+	/// <summary>Target slot on the parent — <c>"{{ diff.propertyName }}"</c> to keep the walked slot, or a different
+	/// value to place into that slot when retargeting (e.g. <c>"menuItems"</c>). Absent = keep.</summary>
+	[JsonPropertyName("propertyName")]
+	public string PropertyName { get; init; }
+
+	/// <summary>
+	/// The value skeleton, and the element's TARGET type: its <c>type</c> is what gates the template against the
+	/// mobile type the element resolved to, so a template naming another type never applies.
+	/// <para>
+	/// Strings interpolate <c>{{ path }}</c> — a string that is EXACTLY one path yields that path's own value,
+	/// so a slot may carry a non-string, while anything else is substituted textually (which is what makes
+	/// <c>"${{ source.columns[0].code }}"</c> a literal <c>$</c> followed by the binding). An object
+	/// <c>{ "$each": "&lt;path&gt;", "as": { … } }</c> repeats its <c>as</c> body once per member of the
+	/// resolved collection, with the member as the root for BARE paths inside it. A path resolving to nothing
+	/// drops its key rather than emitting a null or its own text.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("value")]
+	public JsonElement? Value { get; init; }
+
+	/// <summary>
+	/// Opt-in carry switch. When true, EVERY source property is copied first (only the element's <c>name</c> and
+	/// its resolved <c>type</c> aside) and the template's <see cref="Value"/> is laid OVER them — so the mobile
+	/// element keeps all its source properties except the ones the template explicitly names, without enumerating
+	/// them (e.g. crt.Checkbox → crt.Toggle keeps <c>control</c>/<c>value</c>/<c>label</c>/… and just retypes;
+	/// a grid → list keeps its <c>dataSourceName</c>/columns). Default (false) is AUTHORITATIVE: the values are
+	/// formed EXCLUSIVELY from what the template declares (over the element's type). Either way
+	/// <c>layoutConfig</c> is always copied — it is layout placement, not a component property.
+	/// </summary>
+	[JsonPropertyName("preserveSourceProperties")]
+	public bool PreserveSourceProperties { get; init; }
+}
+
+

@@ -33,19 +33,21 @@ internal class PackageCreatorTest : BaseClioModuleTests
 	#region Methods: Private
 
 	private IWorkspaceSolutionCreator _solutionCreatorMock = Substitute.For<IWorkspaceSolutionCreator>();
+	private readonly ISchemaBuilder _schemaBuilderMock = Substitute.For<ISchemaBuilder>();
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		_solutionCreatorMock.ClearReceivedCalls();
+		_schemaBuilderMock.ClearReceivedCalls();
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton(_solutionCreatorMock);
+		containerBuilder.AddSingleton(_schemaBuilderMock);
 	}
 	
 	private PackageCreator InitCreator(){
-		return new PackageCreator(Container.GetRequiredService<EnvironmentSettings>(), Container.GetRequiredService<IWorkspace>(),
-			Container.GetRequiredService<IWorkspaceSolutionCreator>(),
-			Container.GetRequiredService<ITemplateProvider>(), Container.GetRequiredService<IWorkspacePathBuilder>(),
-			Container.GetRequiredService<IStandalonePackageFileManager>(), Container.GetRequiredService<IJsonConverter>(),
-			Container.GetRequiredService<IWorkingDirectoriesProvider>(), Container.GetRequiredService<Clio.Common.IFileSystem>());
+		PackageCreator creator = Container.GetRequiredService<IPackageCreator>()
+			.Should().BeOfType<PackageCreator>(because: "production DI must resolve the package creator implementation")
+			.Subject;
+		return creator;
 	}
 
 	#endregion
@@ -61,6 +63,146 @@ internal class PackageCreatorTest : BaseClioModuleTests
 	}
 
 	#endregion
+
+	[Test]
+	[Description("Creates a narrowly owned package-level localization schema for application packages.")]
+	public void Create_ShouldAddLocalizationSchema_WhenAsAppIsTrue() {
+		// Arrange
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, true);
+
+		// Assert
+		object[] arguments = _schemaBuilderMock.ReceivedCalls().Should().ContainSingle(
+			because: "an application package needs exactly one generated localization owner")
+			.Which.GetArguments();
+		arguments[0].Should().Be("source-code",
+			because: "localizable values need a Creatio schema resource owner");
+		arguments[1].Should().Be($"{PackageNameOne}LocalizableStrings",
+			because: "the generated owner must be discoverable from the package name");
+		arguments[2].Should().Be(Path.Combine(PackagesPath, PackageNameOne),
+			because: "the schema must be created inside the new application package");
+		SourceCodeSchemaOptions options = arguments[3].Should().BeOfType<SourceCodeSchemaOptions>(
+			because: "the shared schema builder should receive data-only localization customization").Subject;
+		options.Namespace.Should().Be($"{PackageNameOne}App",
+			because: "the generated schema must use the standalone application's namespace");
+		options.ClassDocumentation.Should().Contain("no more natural schema owner",
+			because: "the generated class must explain its narrow package-level scope");
+		options.ClassDocumentation.Should().Contain("Page and other schema resources stay",
+			because: "the generated class must reject central-registry ownership");
+		options.LocalizableStrings["LocalizableStrings.PackageLevelExample.Value"].Should()
+			.Be("Package-level localizable value",
+				because: "the new application package needs one working localization primitive");
+	}
+
+	[Test]
+	[Description("Creates an injectable adapter over Creatio LocalizableString for application packages.")]
+	public void Create_ShouldAddInjectableLocalizationAbstraction_WhenAsAppIsTrue() {
+		// Arrange
+		PackageCreator creator = InitCreator();
+		string sourceRoot = Path.Combine(PackagesPath, PackageNameOne, "Files", "src", "cs");
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, true);
+
+		// Assert
+		string resolverPath = Path.Combine(sourceRoot, "LocalizableStrings", "LocalizableStringResolver.cs");
+		FileSystem.File.Exists(resolverPath).Should().BeTrue(
+			because: "application code needs an injectable boundary over Creatio's concrete type");
+		string resolver = FileSystem.File.ReadAllText(resolverPath);
+		resolver.Should().Contain("interface ILocalizableStringResolver",
+			because: "the generated primitive must expose the resolver abstraction");
+		resolver.Should().Contain("class LocalizableStringResolver : ILocalizableStringResolver",
+			because: "the conventional implementation should be colocated with its small interface");
+		resolver.Should().Contain("new LocalizableString(",
+			because: "the concrete adapter must own construction of the Creatio Core type");
+		resolver.Should().NotContain("#RootNameSpace#",
+			because: "the generated resolver namespace must not retain an unexpanded template macro");
+		resolver.Should().Contain($"namespace {PackageNameOne}App.LocalizableStrings",
+			because: "the resolver must use the exact application root namespace generated for the package");
+		string[] localizableStringConstructors = FileSystem.Directory
+			.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+			.Where(path => FileSystem.File.ReadAllText(path).Contains("new LocalizableString("))
+			.ToArray();
+		string constructorPath = localizableStringConstructors.Should().ContainSingle().Which;
+		Path.GetFullPath(constructorPath).Should().Be(Path.GetFullPath(resolverPath),
+			because: "only the injectable adapter may construct Creatio's concrete localization primitive");
+		resolver.Should().Contain("LocalizableString localizableString = Create(",
+			because: "generated code must expose platform values to debugger breakpoints before returning");
+		resolver.Should().Contain("throwIfNoManager: false",
+			because: "the generated adapter must make the platform boolean's meaning explicit");
+		string app = FileSystem.File.ReadAllText(Path.Combine(sourceRoot, $"{PackageNameOne}App.cs"));
+		app.Should().Contain("AddTransient<LocalizableStrings.ILocalizableStringResolver",
+			because: "the generated abstraction must be resolvable from the application composition root");
+		app.Should().NotContain("#LocalizationServices#",
+			because: "template macros must not leak into generated source");
+	}
+
+	[TestCase("")]
+	[TestCase("../Escape")]
+	[TestCase(@"..\Escape")]
+	[TestCase("Package-Name")]
+	[TestCase("123Package")]
+	[TestCase("_")]
+	[TestCase("PackageName\n")]
+	[TestCase("PackageNameThatIsLongerThanTheCreatioPackageNameLimitOfSeventyCharacters123456")]
+	[Description("Rejects unsafe package names before package or localization files are written.")]
+	public void Create_ShouldRejectWithoutWriting_WhenPackageNameIsInvalid(string packageName) {
+		// Arrange
+		PackageCreator creator = InitCreator();
+		string[] filesBefore = FileSystem.AllFiles.OrderBy(path => path).ToArray();
+
+		// Act
+		Action act = () => creator.Create(PackagesPath, packageName, true);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "a package name becomes folder, project, namespace, and schema names")
+			.WithParameterName("packageName")
+			.WithMessage($"{PackageCreator.InvalidPackageNameMessage}*");
+		FileSystem.AllFiles.OrderBy(path => path).Should().Equal(filesBefore,
+			because: "validation must run before any path derived from an unsafe name is written");
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "an invalid package name must not reach schema generation");
+	}
+
+	[Test]
+	[Description("Accepts a valid package name at Creatio's seventy-character boundary.")]
+	public void Create_ShouldCreatePackage_WhenPackageNameHasSeventyCharacters() {
+		// Arrange
+		PackageCreator creator = InitCreator();
+		string packageName = new('A', 70);
+
+		// Act
+		creator.Create(PackagesPath, packageName, true);
+
+		// Assert
+		FileSystem.Directory.Exists(Path.Combine(PackagesPath, packageName)).Should().BeTrue(
+			because: "Creatio accepts application package names up to and including seventy characters");
+	}
+
+	[TestCase(false)]
+	[TestCase(null)]
+	[Description("Does not add application localization primitives to ordinary packages.")]
+	public void Create_ShouldNotAddLocalizationPrimitives_WhenAsAppIsNotTrue(bool? asApp) {
+		// Arrange
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, asApp);
+
+		// Assert
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "ordinary packages must retain their existing generated structure");
+		string sourceRoot = Path.Combine(PackagesPath, PackageNameOne, "Files", "src", "cs");
+		FileSystem.File.Exists(Path.Combine(sourceRoot, "LocalizableStrings", "LocalizableStringResolver.cs"))
+			.Should().BeFalse(
+				because: "the injectable localization primitive is part of the application-package shape only");
+		FileSystem.File.ReadAllText(Path.Combine(sourceRoot, $"{PackageNameOne}App.cs"))
+			.Should().NotContain("#LocalizationServices#",
+				because: "ordinary package source must not retain conditional template macros");
+	}
 
 	[Test]
 	public void Create_AddPackageToWorkspaceWithTwoApplication(){

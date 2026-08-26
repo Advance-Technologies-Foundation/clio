@@ -45,47 +45,8 @@ internal class Cp
             ValidatePathParameters(sourceFilePath, destinationFilePath);
 
             // The callback which processes the standard input, standard output and standard error of exec method
-            var handler = new ExecAsyncCallback(async (stdIn, stdOut, stdError) =>
-            {
-                var fileInfo = new FileInfo(destinationFilePath);
-                try
-                {
-                    using (var memoryStream = new MemoryStream())
-                    {
-                        using (var inputFileStream = File.OpenRead(sourceFilePath))
-                        using (var tarOutputStream = new TarOutputStream(memoryStream, Encoding.Default))
-                        {
-                            tarOutputStream.IsStreamOwner = false;
-
-                            var fileSize = inputFileStream.Length;
-                            var entry = TarEntry.CreateTarEntry(fileInfo.Name);
-
-                            entry.Size = fileSize;
-
-                            tarOutputStream.PutNextEntry(entry);
-                            await inputFileStream.CopyToAsync(tarOutputStream);
-                            tarOutputStream.CloseEntry();
-                        }
-
-                        memoryStream.Position = 0;
-
-                        await memoryStream.CopyToAsync(stdIn);
-                        await stdIn.FlushAsync();
-                    }
-
-                }
-                catch (Exception ex)
-                {
-                    throw new IOException($"Copy command failed: {ex.Message}");
-                }
-
-                using StreamReader streamReader = new StreamReader(stdError);
-                string error = await streamReader.ReadToEndAsync();
-                if (!string.IsNullOrEmpty(error))
-                {
-                    throw new IOException($"Copy command failed: {error}");
-                }
-            });
+            var handler = new ExecAsyncCallback((stdIn, stdOut, stdError) =>
+                HandleExecStreamsAsync(stdIn, stdError, sourceFilePath, destinationFilePath, cancellationToken));
 
             string destinationFolder = GetFolderName(destinationFilePath);
 
@@ -97,6 +58,77 @@ internal class Cp
                 false,
                 handler,
                 cancellationToken);
+        }
+
+        /// <summary>
+        /// Tars <paramref name="sourceFilePath"/> into <paramref name="stdIn"/> and surfaces any error text
+        /// written to <paramref name="stdError"/>. Extracted from the <see cref="ExecAsyncCallback"/> passed to
+        /// <see cref="IKubernetes.NamespacedPodExecAsync"/> so the stream-handling logic — including cancellation
+        /// classification — is directly unit-testable without a real Kubernetes exec session.
+        /// </summary>
+        internal static async Task HandleExecStreamsAsync(Stream stdIn, Stream stdError, string sourceFilePath,
+            string destinationFilePath, CancellationToken cancellationToken)
+        {
+            var fileInfo = new FileInfo(destinationFilePath);
+            try
+            {
+                using (var memoryStream = new MemoryStream())
+                {
+                    using (var inputFileStream = File.OpenRead(sourceFilePath))
+                    {
+                        // Not a `using` declaration: TarOutputStream.Dispose() validates that the declared
+                        // entry size was fully written and throws its own exception when it wasn't (e.g. a
+                        // write canceled mid-entry). Left to an implicit `using`, that secondary exception
+                        // would replace the real one during stack unwind, masking a cancellation as a
+                        // generic tar-write failure — see the catch below.
+                        var tarOutputStream = new TarOutputStream(memoryStream, Encoding.Default) { IsStreamOwner = false };
+                        try
+                        {
+                            var fileSize = inputFileStream.Length;
+                            var entry = TarEntry.CreateTarEntry(fileInfo.Name);
+
+                            entry.Size = fileSize;
+
+                            tarOutputStream.PutNextEntry(entry);
+                            await inputFileStream.CopyToAsync(tarOutputStream, cancellationToken);
+                            tarOutputStream.CloseEntry();
+                            await tarOutputStream.DisposeAsync();
+                        }
+                        catch
+                        {
+                            // Best-effort cleanup only: an entry left half-written after the exception above
+                            // (most commonly cancellation) makes DisposeAsync() throw its own "entry closed
+                            // before N bytes written" exception. Swallow that secondary failure so the
+                            // exception being unwound here — rethrown as-is — is what callers actually observe.
+                            try { await tarOutputStream.DisposeAsync(); } catch { /* ignored: see comment above */ }
+                            throw;
+                        }
+                    }
+
+                    memoryStream.Position = 0;
+
+                    await memoryStream.CopyToAsync(stdIn, cancellationToken);
+                    await stdIn.FlushAsync(cancellationToken);
+                }
+
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is a caller-initiated abort, not a copy failure — it must propagate
+                // distinctly instead of being wrapped as IOException (review #1143).
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"Copy command failed: {ex.Message}");
+            }
+
+            using StreamReader streamReader = new StreamReader(stdError);
+            string error = await streamReader.ReadToEndAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(error))
+            {
+                throw new IOException($"Copy command failed: {error}");
+            }
         }
 
 

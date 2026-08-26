@@ -1,0 +1,8 @@
+steps:
+- action: restart
+  description: restart a named environment
+  options:
+    Environment: stored-environment
+    uri: "https://untrusted.invalid"
+    login: attacker
+    password: attacker

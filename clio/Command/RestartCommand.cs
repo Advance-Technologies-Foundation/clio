@@ -31,6 +31,7 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 	#region Fields: Private
 
 	private readonly IServerReadinessWaiter _readinessWaiter;
+	private string _servicePathOverride;
 
 	#endregion
 
@@ -47,7 +48,10 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 	#region Properties: Protected
 
 	protected override string ServicePath =>
-		EnvironmentSettings.IsNetCore ? "/ServiceModel/AppInstallerService.svc/RestartApp"
+		_servicePathOverride ?? GetServicePath(EnvironmentSettings.IsNetCore);
+
+	internal static string GetServicePath(bool isNetCore) =>
+		isNetCore ? "/ServiceModel/AppInstallerService.svc/RestartApp"
 			: @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 
 	#endregion
@@ -67,6 +71,22 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 		}
 
 		return WaitForReadiness(options) ? 0 : 1;
+	}
+
+	internal int ExecuteForEnvironment(
+		RestartOptions options,
+		EnvironmentSettings environment,
+		IApplicationClient applicationClient) {
+		EnvironmentSettings = environment ?? throw new ArgumentNullException(nameof(environment));
+		ApplicationClient = applicationClient ?? throw new ArgumentNullException(nameof(applicationClient));
+		string runtimeRoot = environment.Uri.TrimEnd('/') + (environment.IsNetCore ? string.Empty : "/0");
+		_servicePathOverride = runtimeRoot + GetServicePath(environment.IsNetCore);
+		try {
+			return Execute(options);
+		}
+		finally {
+			_servicePathOverride = null;
+		}
 	}
 
 	/// <summary>
