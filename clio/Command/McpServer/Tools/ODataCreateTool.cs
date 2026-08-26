@@ -152,21 +152,24 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 					Success = false,
 					RecordCreated = null,
 					RetryGuidance = UnknownSideEffectGuidance,
-					Error = $"OData create did not return a record Id. Response: {Truncate(SensitiveErrorTextRedactor.Redact(json))}"
+					Error = $"OData create did not return a record Id. Response: {ODataResponseError.Truncate(SensitiveErrorTextRedactor.Redact(json))}"
 				};
 			}
 			return new ODataRowResult { Index = index, Success = true, RecordCreated = true, Id = id };
 		} catch (JsonException) {
-			// A non-JSON body on a successful POST still means the record was created.
-			return new ODataRowResult { Index = index, Success = true, RecordCreated = true };
+			// A non-JSON body never comes from Creatio's OData pipeline by itself - even a server
+			// error is one of the JSON shapes ODataResponseError.TryDetect recognizes. This shape means
+			// the request did not reach Creatio intact (a proxy/IIS/routing error, or a session
+			// redirect), so the row's side effect is UNKNOWN, not a confirmed create - never report
+			// record-created here.
+			return new ODataRowResult {
+				Index = index,
+				Success = false,
+				RecordCreated = null,
+				RetryGuidance = UnknownSideEffectGuidance,
+				Error = SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(json))
+			};
 		}
-	}
-
-	private static string Truncate(string value) {
-		if (string.IsNullOrEmpty(value)) {
-			return "<empty>";
-		}
-		return value.Length > 500 ? value[..500] + "..." : value;
 	}
 }
 
