@@ -61,6 +61,8 @@ public sealed class InstallerCommandToolTests
 			because: "the tool description should direct agents to run passing-infrastructure discovery before deployment");
 		text.Should().Contain("find-empty-iis-port",
 			because: "the tool description should tell agents how to choose a safe local IIS sitePort");
+		text.Should().Contain("reserves and revalidates",
+			because: "agents should know deploy-creatio rejects concurrent IIS port collisions before mutation");
 		text.Should().Contain("existing forced-password-change state",
 			because: "the tool description should disclose that deployment preserves the database's existing state");
 	}
@@ -185,6 +187,8 @@ public sealed class InstallerCommandToolTests
 			because: "the prompt should direct the agent to retrieve deployable recommendations before deployment");
 		prompt.Should().Contain("find-empty-iis-port",
 			because: "the prompt should direct the agent to discover a safe local IIS port when sitePort selection matters");
+		prompt.Should().Contain("reserves and revalidates",
+			because: "the prompt should explain that port discovery is backed by command-level collision protection");
 		prompt.Should().Contain("deploy-creatio",
 			because: "the prompt should conclude with the actual deployment call");
 		prompt.Should().Contain("existing forced-password-change state",

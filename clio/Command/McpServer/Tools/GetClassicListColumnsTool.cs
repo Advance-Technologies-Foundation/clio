@@ -37,11 +37,15 @@ public sealed class GetClassicListColumnsTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Resolve the effective default columns of a Classic section list through read-only Creatio APIs. " +
-		"Returns source=schema-default for static getGridDataColumns/initColumnsConfig paths, " +
+		"Returns source=profile for the saved grid profile the section actually renders (with view, viewType and " +
+		"profileScope), source=schema-default for static getGridDataColumns/initColumnsConfig paths, " +
 		"source=entity-default for the entity primary display column, or a successful source=none with no columns. " +
-		"Does not read or write user profile data. Prefer environment-name; direct connection args are fallback only.")]
+		"A product section usually resolves to profile: its code declares far fewer columns than the list shows. " +
+		"Pass ignore-profile=true to get only the statically declared set. Reads profile data, never writes it. " +
+		"Prefer environment-name; direct connection args are fallback only.")]
 	public GetClassicListColumnsResponse Resolve(
-		[Description("Parameters: schema-name (required Classic section schema); environment-name preferred.")]
+		[Description("Parameters: schema-name (required Classic section schema); optional ignore-profile; "
+			+ "environment-name preferred.")]
 		[Required]
 		GetClassicListColumnsArgs args) {
 		if (args is null) {
@@ -49,6 +53,7 @@ public sealed class GetClassicListColumnsTool(
 		}
 		GetClassicListColumnsOptions options = new() {
 			SchemaName = args.SchemaName,
+			IgnoreProfile = args.IgnoreProfile ?? false,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -72,9 +77,17 @@ public sealed class GetClassicListColumnsTool(
 
 /// <summary>Arguments accepted by <see cref="GetClassicListColumnsTool"/>.</summary>
 /// <param name="SchemaName">Classic section client-unit schema name.</param>
+/// <param name="IgnoreProfile">
+/// Skips the saved grid profile and reports only statically declared columns. Nullable so an omitted argument
+/// is not advertised as a required boolean in the tool schema; an omitted value means the profile is read.
+/// </param>
 public sealed record GetClassicListColumnsArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Classic section schema name, for example 'ContactSectionV2'")]
 	[property: Required]
-	string SchemaName
+	string SchemaName,
+	[property: JsonPropertyName("ignore-profile")]
+	[property: Description(
+		"Optional. True to skip the saved grid profile and resolve only statically declared columns.")]
+	bool? IgnoreProfile = null
 ) : ConnectionArgsBase;

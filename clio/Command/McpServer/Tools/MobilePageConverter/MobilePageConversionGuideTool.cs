@@ -77,9 +77,10 @@ public sealed class MobilePageConversionGuideTool {
 		"sourceType (detected), recommendedMobileTemplate + containerMap (web->mobile container names), sourceStructure " +
 		"(the full resolved component tree incl. inherited template components), componentSuggestions (per source component " +
 		"type: category directMapping/withAdaptation/alternativeAvailable/unsupported/requiresManualDecision + suggested " +
-		"mobile type(s) from the WebToMobilePageConversionRules matrix and registry comparison; a structural mapping like " +
-		"grid -> [crt.List, crt.ListItem] carries a note describing how to convert, e.g. the crt.ListItem goes into the " +
-		"crt.List itemLayout as the row), mobileContracts (inline " +
+		"mobile type(s) from the WebToMobilePageConversionRules matrix and registry comparison; for grid -> " +
+		"[crt.List, crt.ListItem] an INSERTED list arrives with the row already built inside its own mobileValues " +
+		"(itemLayout = a crt.ListItem) — paste it, and never emit the row as a separate insert; a list the mobile " +
+		"TEMPLATE provides is a merge twin instead and its row is still yours to configure), mobileContracts (inline " +
 		"allowed properties + example + designer defaults for each suggested mobile type), modelConfigDiff / " +
 		"viewModelConfigDiff (READY-TO-PASTE diffs — paste them verbatim as the page's diffs; never source the " +
 		"data-source section from a pre-existing body or attribute types like ForwardReference get dropped), " +

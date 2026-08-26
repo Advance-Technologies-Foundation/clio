@@ -62,7 +62,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, email?} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, email?} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
 		 + "{source?, mode?:first, columns?, sort?:{column, direction?:asc|desc}} reconfigures a readData element's "
 		 + "data configuration: omit source to keep the current source object, omit columns/sort to keep the current "
@@ -73,6 +73,14 @@ public class ModifyBusinessProcessTool(
 		 + "ANY other parameter still maps from the element (the refusal names each dependent — re-map or remove them "
 		 + "first). A retarget that proceeds clears the columns, sort AND record filter bound to the old entity — "
 		 + "re-supply them (and setFilter) in the same batch), "
+		 + "changeData {source?, values?} reconfigures a changeData element: omit source to keep the current "
+		 + "target object, a supplied values array REPLACES the whole assignment set. Retargeting source to a "
+		 + "different object REQUIRES values for the new entity in the same update — the server refuses a "
+		 + "values-less retarget, because the cleared element would be silently skipped by the runtime; the same "
+		 + "refusal covers a values-less update on an element with no stored values yet, and a retarget is "
+		 + "refused while another parameter still maps from the element (the refusal names each dependent). On ANY "
+		 + "target change (first configuration included) the stored record filter clears unless it already "
+		 + "targets the incoming object — re-issue setFilter when it cleared), "
 		 + "email "
 		 + "(sendEmail elements only, same block as create-business-process) rewrites the fields you pass — mode, "
 		 + "sender, subject, body, importance, ignoreErrors, performer replace the current value IN PLACE, but "
@@ -131,7 +139,7 @@ public class ModifyBusinessProcessTool(
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
 		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling "
-		 + "first. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder.")]
+		 + "first. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful edit the process stays INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
@@ -157,7 +165,21 @@ public class ModifyBusinessProcessTool(
 			ProcessUid = args.ProcessUid ?? string.Empty,
 			OperationsJson = args.Operations
 		};
-		return InternalExecute<ModifyBusinessProcessCommand>(options);
+		// A business process edited by clio stays interpreted and runs as-is — editing it never needs
+		// compilation (clio cannot author a Script Task or an after-activity-save script, the only in-process
+		// C#). Emit the deterministic post-op note on success (same channel as update-entity-schema) so
+		// "edited" is not mistaken for "must be compiled to run"; do not run compile-creatio, and do not infer
+		// one from a raw process read (ENG-95706).
+		CommandExecutionResult result = InternalExecute<ModifyBusinessProcessCommand>(options);
+		if (result.ExitCode != 0) {
+			return result;
+		}
+		// Append (not clobber) so a command-set success note is preserved (mirrors PageCreateTool).
+		return result with {
+			Note = string.IsNullOrWhiteSpace(result.Note)
+				? CommandExecutionResult.CompileNotRequiredNote
+				: result.Note + " " + CommandExecutionResult.CompileNotRequiredNote
+		};
 	}
 }
 
@@ -178,8 +200,8 @@ public sealed record ModifyBusinessProcessArgs(
 
 	[property: JsonPropertyName("process-name")]
 	[property: Description("Process code (schema Name) to edit; provide exactly one of process-name or process-uid.")]
-	string ProcessName,
+	string? ProcessName = null,
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
-	string ProcessUid);
+	string? ProcessUid = null);

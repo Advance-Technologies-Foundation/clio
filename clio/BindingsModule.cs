@@ -1,4 +1,4 @@
-#pragma warning disable CLIO001 // This is DI class, warning not applicable
+﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -10,6 +10,7 @@ using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.SchemaTransfer;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
@@ -300,6 +301,21 @@ public class BindingsModule {
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = TelemetryFlushService.PostTimeout);
+		// Dedicated client for the unauthenticated sysenums.js fetch (ENG-95412 enumVocabulary). Timeout is 120s
+		// (a cold stand's first hit measured 29-92s in the field; a probe-sized timeout would misreport a merely-slow
+		// stand as unreachable). AllowAutoRedirect=false + UseCookies=false match the auth/upload clients above — an
+		// unauthenticated GET to an operator-registered host has no reason to follow a redirect. The response-size
+		// cap is a defence-in-depth bound: sysenums.js is a small static file (~50KB today), so a multi-megabyte
+		// response is itself the signal something is wrong, well before the brace-matched parser would need to look at it.
+		services.AddHttpClient(ClassicEnumVocabularyResolver.HttpClientName)
+			.ConfigureHttpClient(client => {
+				client.Timeout = TimeSpan.FromSeconds(120);
+				client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
+			})
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -414,6 +430,8 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<ISchemaTransferClient, SchemaTransferClient>();
+		services.AddTransient<ISchemaBundleStore, SchemaBundleStore>();
 		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
 		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
@@ -484,6 +502,7 @@ public class BindingsModule {
 		services.AddTransient<GetClientUnitSchemaCommand>();
 		services.AddTransient<GetClassicPageSourcesCommand>();
 		services.AddTransient<IClassicListColumnParser, ClassicListColumnParser>();
+		services.AddTransient<IClassicListProfileReader, ClassicListProfileReader>();
 		services.AddTransient<IClassicListColumnResolver, ClassicListColumnResolver>();
 		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();
@@ -495,6 +514,8 @@ public class BindingsModule {
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IClassicSectionSchemaResolver, ClassicSectionSchemaResolver>();
 		services.AddTransient<IClassicDetailEditPageResolver, ClassicDetailEditPageResolver>();
+		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
+		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
@@ -569,6 +590,7 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureCommand>();
 		services.AddTransient<ComponentRegistryRefreshCommand>();
 		services.AddTransient<ComponentInfoCommand>();
+		services.AddTransient<ExportComponentRegistryCommand>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
@@ -633,6 +655,8 @@ public class BindingsModule {
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
 		services.AddTransient<DeleteSchemaTool>();
+		services.AddTransient<ExportSchemaTool>();
+		services.AddTransient<ImportSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<MobilePageConversionGuideTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
@@ -696,6 +720,7 @@ public class BindingsModule {
 		services.AddTransient<ListKnowledgeSourcesCommand>();
 		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<ExportComponentRegistryTool>();
 		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
@@ -714,6 +739,7 @@ public class BindingsModule {
 		services.AddTransient<SetRecordRightsTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
@@ -850,6 +876,10 @@ public class BindingsModule {
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();
 		services.AddTransient<AddPackageCommand>();
+		services.AddTransient<IValidator<AddCustomLoggingOptions>, AddCustomLoggingOptionsValidator>();
+		services.AddTransient<ICustomLoggingConfigurator, CustomLoggingConfigurator>();
+		services.AddTransient<IEnvironmentRestartService, EnvironmentRestartService>();
+		services.AddTransient<AddCustomLoggingCommand>();
 		services.AddTransient<UnlockPackageCommand>();
 		services.AddTransient<LockPackageCommand>();
 		services.AddTransient<DataServiceQuery>();
@@ -924,6 +954,9 @@ public class BindingsModule {
 		services.AddTransient<DeployAppCommand>();
 		services.AddTransient<ApplicationManager>();
 		services.AddTransient<RestoreDbCommand>();
+		services.AddTransient<PruneDbTemplatesCommand>();
+		services.AddTransient<IDbTemplatePruneService, DbTemplatePruneService>();
+		services.AddTransient<IDbTemplatePruneConsole, DbTemplatePruneConsole>();
 		services.AddTransient<IDbClientFactory, DbClientFactory>();
 		services.AddTransient<IDbConnectionTester, DbConnectionTester>();
 		services.AddTransient<IBackupFileDetector, BackupFileDetector>();
@@ -1017,6 +1050,8 @@ public class BindingsModule {
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
+		services.AddTransient<ExportSchemaCommand>();
+		services.AddTransient<ImportSchemaCommand>();
 		services.AddTransient<CreatioInstallerService>();
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
@@ -1397,6 +1432,9 @@ public class BindingsModule {
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
 					|| implementedInterface == typeof(IReauthExecutor)
+					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
+					// counter); it is created by CreatioClientAdapter, not resolved from DI.
+					|| implementedInterface == typeof(ILoginDiagnostics)
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.

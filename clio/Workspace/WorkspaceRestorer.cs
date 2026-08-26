@@ -16,6 +16,9 @@ namespace Clio.Workspace;
 #region Class: WorkspaceSettings
 
 public class WorkspaceRestorer : IWorkspaceRestorer{
+	private const string NoPackagesEligibleMessage =
+		"No packages are eligible for restore from .clio/workspaceSettings.json; package download was skipped.";
+
 	#region Fields: Private
 
 	private readonly ICreatioSdk _creatioSdk;
@@ -137,15 +140,27 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 
 	public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
 		WorkspaceOptions restoreWorkspaceOptions) {
-		Version creatioSdkVersion = _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion);
-		IEnumerable<string> packagesToDownload = _workspacePackageFilter
-			.FilterPackages(workspaceSettings.Packages, workspaceSettings);
+		// Resolved up front so an unreachable SDK feed still fails BEFORE any package is written to disk, but
+		// only when the NuGet restore step will actually run: resolving it reaches api.nuget.org, and doing
+		// that unconditionally made a restore WITHOUT --IsNugetRestore - which downloads packages from the
+		// environment and touches no feed - fail on a host that cannot reach it (issue #1119).
+		Version creatioSdkVersion = restoreWorkspaceOptions.IsNugetRestore == true
+			? _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion)
+			: null;
+		IEnumerable<string> filteredPackages = _workspacePackageFilter
+			.FilterPackages(workspaceSettings.Packages, workspaceSettings) ?? [];
+		List<string> packagesToDownload = filteredPackages.ToList();
 		IList<string> externalPackages = workspaceSettings.ExternalPackages;
 		if (externalPackages != null && externalPackages.Any()) {
-			packagesToDownload = packagesToDownload.Where(p => !externalPackages.Contains(p));
+			packagesToDownload = packagesToDownload.Where(p => !externalPackages.Contains(p)).ToList();
 		}
-		_packageDownloader.DownloadPackages(packagesToDownload, environmentSettings,
-			_workspacePathBuilder.PackagesFolderPath);
+		if (packagesToDownload.Count == 0) {
+			_logger.WriteWarning(NoPackagesEligibleMessage);
+		}
+		else {
+			_packageDownloader.DownloadPackages(packagesToDownload, environmentSettings,
+				_workspacePathBuilder.PackagesFolderPath);
+		}
 		if (restoreWorkspaceOptions.IsNugetRestore == true) {
 			RestoreNugetCreatioSdk(creatioSdkVersion);
 			CreateEnvironmentScript(creatioSdkVersion);

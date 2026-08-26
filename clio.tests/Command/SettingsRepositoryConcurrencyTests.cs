@@ -79,6 +79,73 @@ public sealed class SettingsRepositoryConcurrencyTests {
 	}
 
 	[Test]
+	[Description("Conditional unregister preserves a same-name environment whose deployment path changed concurrently.")]
+	public void RemoveEnvironmentIfPathMatches_ShouldPreserveReplacement_WhenPathChanged() {
+		// Arrange
+		string originalPath = Path.Combine(Path.GetTempPath(), "clio", "original");
+		string replacementPath = Path.Combine(Path.GetTempPath(), "clio", "replacement");
+		SettingsRepository setup = new(_fileSystem);
+		setup.ConfigureEnvironment("target", new EnvironmentSettings {
+			Uri = "https://original.example.com",
+			EnvironmentPath = originalPath
+		});
+		SettingsRepository uninstall = new(_fileSystem);
+		setup.ConfigureEnvironment("target", new EnvironmentSettings {
+			Uri = "https://replacement.example.com",
+			EnvironmentPath = replacementPath
+		});
+
+		// Act
+		bool removed = uninstall.RemoveEnvironmentIfPathMatches("target", originalPath);
+		SettingsRepository persisted = new(_fileSystem);
+
+		// Assert
+		removed.Should().BeFalse(because: "the original uninstall authority no longer matches the registration");
+		persisted.FindEnvironment("target").EnvironmentPath.Should().Be(replacementPath,
+			because: "a concurrent same-name deployment must not be unregistered by stale uninstall work");
+	}
+
+	[Test]
+	[Description("Conditional unregister removes the environment when its canonical deployment path still matches.")]
+	public void RemoveEnvironmentIfPathMatches_ShouldRemoveMatchingRegistration() {
+		// Arrange
+		string targetPath = Path.Combine(Path.GetTempPath(), "clio", "target");
+		SettingsRepository sut = new(_fileSystem);
+		sut.ConfigureEnvironment("target", new EnvironmentSettings {
+			Uri = "https://target.example.com",
+			EnvironmentPath = targetPath + Path.DirectorySeparatorChar
+		});
+
+		// Act
+		bool removed = sut.RemoveEnvironmentIfPathMatches("target", targetPath);
+		SettingsRepository persisted = new(_fileSystem);
+
+		// Assert
+		removed.Should().BeTrue(because: "equivalent canonical paths retain uninstall authority");
+		persisted.FindEnvironment("target").Should().BeNull(
+			because: "the unchanged matching registration should be removed after successful cleanup");
+	}
+
+	[Test]
+	[Description("Current environment lookup reloads settings so named uninstall does not act on a stale path snapshot.")]
+	public void FindCurrentEnvironment_ShouldReturnLatestRegisteredPath_WhenRepositorySnapshotIsStale() {
+		// Arrange
+		string originalPath = Path.Combine(Path.GetTempPath(), "clio", "original-current");
+		string replacementPath = Path.Combine(Path.GetTempPath(), "clio", "replacement-current");
+		SettingsRepository writer = new(_fileSystem);
+		writer.ConfigureEnvironment("target", new EnvironmentSettings { EnvironmentPath = originalPath });
+		SettingsRepository staleReader = new(_fileSystem);
+		writer.ConfigureEnvironment("target", new EnvironmentSettings { EnvironmentPath = replacementPath });
+
+		// Act
+		EnvironmentSettings current = staleReader.FindCurrentEnvironment("target");
+
+		// Assert
+		current.EnvironmentPath.Should().Be(replacementPath,
+			because: "named uninstall must acquire its name lease and then resolve the latest persisted authority");
+	}
+
+	[Test]
 	[Description("Registering an environment preserves unrelated settings changed after the repository was created.")]
 	public void ConfigureEnvironment_ShouldPreserveManualChanges_WhenRepositorySnapshotIsStale() {
 		// Arrange

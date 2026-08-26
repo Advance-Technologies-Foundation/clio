@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -33,6 +34,17 @@ internal static class ODataKeyFormatter {
 	/// </summary>
 	public static bool IsValidEntityName(string entity) =>
 		!string.IsNullOrWhiteSpace(entity) && EntityNamePattern.IsMatch(entity.Trim());
+
+	/// <summary>
+	/// True when <paramref name="path"/> is an OData member path made only of simple
+	/// identifier segments, such as <c>Name</c> or <c>Account/Id</c>.
+	/// </summary>
+	public static bool IsValidMemberPath(string path) =>
+		!string.IsNullOrWhiteSpace(path)
+		&& path.Split('/').All(segment =>
+			segment.Length > 0
+			&& string.Equals(segment, segment.Trim(), StringComparison.Ordinal)
+			&& EntityNamePattern.IsMatch(segment));
 
 	/// <summary>
 	/// True when the last segment of <paramref name="field"/> is a foreign-key field named

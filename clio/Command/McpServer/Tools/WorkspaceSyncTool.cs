@@ -152,7 +152,7 @@ public sealed class RestoreWorkspaceTool(
 	internal const string RestoreWorkspaceToolName = "restore-workspace";
 
 	/// <summary>
-	/// Restores the local workspace from the specified Creatio environment.
+	/// Restores the packages listed in the local workspace settings from the specified Creatio environment.
 	/// </summary>
 	[McpServerTool(Name = RestoreWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
@@ -165,7 +165,7 @@ public sealed class RestoreWorkspaceTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Restores the local workspace at `workspace-path` from the specified Creatio environment")]
+	[Description("Restores packages listed in `.clio/workspaceSettings.json` at `workspace-path` from the specified Creatio environment. When no packages are eligible, returns success with a warning and does not clear or delete existing package directories.")]
 	public CommandExecutionResult RestoreWorkspace(
 		[Description("Restore-workspace parameters")] [Required] RestoreWorkspaceArgs args
 	) {

@@ -148,7 +148,15 @@ public sealed class SchemaSyncTool(
 				dataForge = enrichmentService.Enrich(
 					args.EnvironmentName,
 					CollectCandidateTerms(operations),
-					CollectLookupHints(operations));
+					CollectLookupHints(operations),
+					cancellationToken);
+			} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+				// Rethrow only when the CALLER's own token requested the cancellation — it must propagate
+				// rather than be degraded into a warning and let the batch continue. TaskCanceledException
+				// (which derives from OperationCanceledException) can also surface from an alternate
+				// enrichment implementation's own independent timeout; that is an operational failure like
+				// any other and must still degrade to a warning (review #1143 follow-up).
+				throw;
 			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
 				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here

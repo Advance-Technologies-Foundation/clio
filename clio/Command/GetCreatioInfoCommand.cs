@@ -8,6 +8,7 @@ using CommandLine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Clio.Common;
+using Clio.Project.NuGet;
 
 namespace Clio.Command
 {
@@ -39,6 +40,8 @@ namespace Clio.Command
 			"The application URL is invalid. Use an absolute HTTP or HTTPS URL.";
 		private const string UnexpectedApplicationInfoResponseMessage =
 			"The Creatio ApplicationInfoService returned an unexpected response.";
+		private static readonly PackageVersion ClioGateMinimumPackageVersion =
+			PackageVersion.ParseVersion(ClioGateMinVersion);
 
 		private enum BaseProbeFailure {
 			Authentication,
@@ -48,9 +51,10 @@ namespace Clio.Command
 		}
 
 		private enum CliogateEnrichmentState {
-			UnavailableOrIncompatible,
-			CompatibilityUnknown,
-			CompatibleWithoutData,
+			NotInstalled,
+			BelowMinimumVersion,
+			InstalledWithoutData,
+			DetectionUnknown,
 			Reported
 		}
 
@@ -74,10 +78,11 @@ namespace Clio.Command
 		/// workspace metadata) always comes from the standard <c>ApplicationInfoService</c> and is enriched
 		/// with the database engine and executing framework from the admin-gated
 		/// <c>GetSystemEnvironmentInfo</c> operation — both WITHOUT cliogate. When a compatible cliogate is
-		/// installed, the cliogate-only <c>productName</c> and <c>licenseInfo</c> are merged into the same
+		/// available, the cliogate-only <c>productName</c> and <c>licenseInfo</c> are merged into the same
 		/// object (and cliogate backfills the db/framework fields on Creatio versions that lack
-		/// <c>GetSystemEnvironmentInfo</c>). Every source beyond the base is best-effort: a failure degrades
-		/// silently and the command still reports what it has.
+		/// <c>GetSystemEnvironmentInfo</c>). The endpoint is the capability check; installed-version metadata
+		/// only diagnoses a failed probe. Every source beyond the base is best-effort: a failure preserves
+		/// the available report and the command still succeeds.
 		/// </summary>
 		public override int Execute(GetCreatioInfoCommandOptions options){
 			if (!TryGetSafeTargetUri(out Uri targetUri)) {
@@ -92,15 +97,21 @@ namespace Clio.Command
 			TryEnrichWithSystemEnvironmentInfo(report, options);
 
 			// cliogate-only fields (productName, licenseInfo) + db/framework backfill for older Creatio.
-			CliogateEnrichmentState cliogateState = TryEnrichFromCliogate(report, options);
+			CliogateEnrichmentState cliogateState = TryEnrichFromCliogate(
+				report, options, out PackageVersion installedCliogateVersion);
 			if (cliogateState != CliogateEnrichmentState.Reported){
+				string installedVersionForDisplay =
+					TextUtilities.SanitizeVersionForDisplay(installedCliogateVersion);
 				string reason = cliogateState switch {
-					CliogateEnrichmentState.CompatibleWithoutData =>
-						$"cliogate {ClioGateMinVersion}+ is installed but GetSysInfo returned no data "
+					CliogateEnrichmentState.InstalledWithoutData =>
+						$"cliogate {installedVersionForDisplay} is installed, but GetSysInfo returned no data "
 						+ "(the caller may lack the CanManageSolution permission)",
-					CliogateEnrichmentState.CompatibilityUnknown =>
-						"cliogate compatibility could not be determined",
-					_ => $"cliogate {ClioGateMinVersion}+ is not installed or is incompatible"
+					CliogateEnrichmentState.BelowMinimumVersion =>
+						$"GetSysInfo returned no data; lowest detected cliogate alias version "
+						+ $"{installedVersionForDisplay} is below required {ClioGateMinVersion}",
+					CliogateEnrichmentState.DetectionUnknown =>
+						"cliogate installation/version could not be determined after GetSysInfo returned no data",
+					_ => $"cliogate {ClioGateMinVersion}+ is not installed"
 				};
 				Logger.WriteWarning(
 					$"{reason} - ProductName and LicenseInfo are unavailable. All other fields "
@@ -301,23 +312,26 @@ namespace Clio.Command
 		}
 
 		private CliogateEnrichmentState TryEnrichFromCliogate(
-			JObject report, GetCreatioInfoCommandOptions options) {
+			JObject report, GetCreatioInfoCommandOptions options, out PackageVersion installedVersion) {
+			installedVersion = null;
+			if (TryEnrichWithCliogateSysInfo(report, options)) {
+				return CliogateEnrichmentState.Reported;
+			}
 			if (ClioGateWay is null) {
-				return CliogateEnrichmentState.UnavailableOrIncompatible;
+				return CliogateEnrichmentState.NotInstalled;
 			}
-			bool compatible;
 			try {
-				compatible = ClioGateWay.IsCompatibleWith(ClioGateMinVersion);
+				installedVersion = ClioGateWay.GetInstalledVersion();
 			} catch (Exception exception) when (IsRecoverable(exception)) {
-				WriteSafeDebug("cliogate-compatibility", BaseProbeFailure.UnexpectedResponse, exception);
-				return CliogateEnrichmentState.CompatibilityUnknown;
+				WriteSafeDebug("cliogate-version-detection", BaseProbeFailure.UnexpectedResponse, exception);
+				return CliogateEnrichmentState.DetectionUnknown;
 			}
-			if (!compatible) {
-				return CliogateEnrichmentState.UnavailableOrIncompatible;
+			if (installedVersion is null) {
+				return CliogateEnrichmentState.NotInstalled;
 			}
-			return TryEnrichWithCliogateSysInfo(report, options)
-				? CliogateEnrichmentState.Reported
-				: CliogateEnrichmentState.CompatibleWithoutData;
+			return installedVersion >= ClioGateMinimumPackageVersion
+				? CliogateEnrichmentState.InstalledWithoutData
+				: CliogateEnrichmentState.BelowMinimumVersion;
 		}
 
 		/// <summary>
@@ -354,12 +368,13 @@ namespace Clio.Command
 		}
 
 		/// <summary>
-		/// Best-effort: when a compatible cliogate is installed, reads <c>GetSysInfo</c> and merges the
+		/// Best-effort: probes <c>GetSysInfo</c> as the authoritative capability check and merges the
 		/// cliogate-only <c>productName</c> and <c>licenseInfo</c> into <paramref name="report"/>. Also
 		/// backfills <c>dbEngineType</c> / <c>frameworkKind</c> / <c>frameworkDescription</c> from the
 		/// cliogate report when <see cref="TryEnrichWithSystemEnvironmentInfo"/> did not set them (Creatio
 		/// without the <c>GetSystemEnvironmentInfo</c> operation), keeping the contract consistent. Returns
-		/// whether cliogate data was merged.
+		/// whether the endpoint returned a usable <c>SysInfo</c> object. Individual optional fields may
+		/// still be absent; endpoint availability, not field completeness, is the capability boundary.
 		/// </summary>
 		private bool TryEnrichWithCliogateSysInfo(JObject report, GetCreatioInfoCommandOptions options){
 			try {

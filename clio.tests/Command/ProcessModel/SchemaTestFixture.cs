@@ -285,4 +285,32 @@ public class SchemaTestFixture{
 			.Should()
 			.Be<float>(dataValueTypeResolvedBecauseMessage, pName, "Float", exampleFilePath);
 	}
+
+	[Test]
+	[Description("Returns null when TimeZoneOffset is missing, instead of resolving against a fallback zone (sonar csharpsquid:S2583 simplification must not change this behavior).")]
+	public void FlowElement_TimeZoneInfo_Should_Be_Null_When_TimeZoneOffset_Is_Missing() {
+		// Arrange
+		FlowElement flowElement = new() { TimeZoneOffset = null };
+
+		// Act
+		TimeZoneInfo? result = flowElement.TimeZoneInfo;
+
+		// Assert
+		result.Should().BeNull(
+			because: "a missing TimeZoneOffset must resolve to no timezone rather than a hardcoded fallback");
+	}
+
+	[Test]
+	[Description("Resolves the exact TimeZoneOffset value when present, confirming the removed '?? \"UTC\"' fallback was genuinely dead code (sonar csharpsquid:S2583).")]
+	public void FlowElement_TimeZoneInfo_Should_Resolve_The_Exact_Offset_When_Present() {
+		// Arrange
+		FlowElement flowElement = new() { TimeZoneOffset = "UTC" };
+
+		// Act
+		TimeZoneInfo? result = flowElement.TimeZoneInfo;
+
+		// Assert
+		result.Should().NotBeNull(because: "a present TimeZoneOffset must resolve to a real TimeZoneInfo");
+		result!.Id.Should().Be("UTC", because: "the exact configured offset must be resolved, not a fallback");
+	}
 }

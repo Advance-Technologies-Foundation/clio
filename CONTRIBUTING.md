@@ -210,10 +210,24 @@ When creating the issue:
 - If your GitHub permissions do not allow you to set the issue type or labels, state the requested
   type and labels in the issue and ask a maintainer to apply them before review.
 
+When starting the work:
+
+- Assign the issue to yourself before editing files. If another person is assigned, coordinate with
+  them instead of taking over the issue.
+- Create and link the predictable Development branch `<github-login>/issue-<number>` from the
+  current default branch.
+- Set the organization-level `Mitigation stage` issue field to `Investigating`. Keep it current as
+  work moves through `Fixing`, `QA`, or `Waiting for human approval`.
+- If investigation proves that another `Advance-Technologies-Foundation` repository owns the fix,
+  open or reuse the downstream issue there and mark the original Clio issue as `blocked by` it.
+- Codex and Claude users should invoke the repository's `clio-issue-workflow` skill, which applies
+  these rules and routes defects owned by `clio-knowledge` or referenced example repositories.
+
 When opening the pull request:
 
-- Open the pull request as a draft. Keep it in draft while implementation, validation,
-  documentation, or the project's external review process is still in progress.
+- Open the pull request as a draft after the first meaningful investigation or repair artifact is
+  committed and the mandatory pre-PR review has passed. Keep it in draft while implementation,
+  validation, documentation, or the project's external review process is still in progress.
 - Reference at least one issue in the pull request description. Prefer a closing keyword such as
   `Fixes #123` or `Closes #123` when the pull request fully resolves the issue.
 - Assign the pull request to yourself. If your GitHub permissions do not allow this, ask a
@@ -245,4 +259,8 @@ All PRs run through SonarCloud. Resolve all new issues before requesting review.
 - [AGENTS.md](AGENTS.md) — full engineering policies (DI, testing, docs, MCP, analyzers)
 - [docs/DevFlowReadme.md](docs/DevFlowReadme.md) — end-to-end developer workflow with Creatio environments
 - [spec/create-dev-env-4-mac.md](spec/create-dev-env-4-mac.md) — macOS environment setup
-- [.codex/workspace-diary.md](.codex/workspace-diary.md) — engineering decision log
+- [docs/knowledge/](docs/knowledge/README.md) — internal knowledge base: workarounds, implicit
+  behaviour and external facts the code does not state. One file per fact; add yours in the same
+  pull request. (Not the shipped `clio-knowledge` guidance library.)
+- [.codex/archive/workspace-diary-2026-08.md](.codex/archive/workspace-diary-2026-08.md) — the
+  retired chronological engineering diary, read-only, kept for `grep`

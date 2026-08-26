@@ -98,7 +98,7 @@ public sealed class RequestInfoTool(
 		"PROACTIVELY list the catalog (omit request-type, or pass 'list') before wiring a button/menu action to a platform request, " +
 		"so the request name and its params come from the catalog instead of memory. " +
 		"Detail responses carry 'parameters' — the ONLY keys a page schema may pass via the binding's params block; an EMPTY parameters map means the request accepts NO parameters, do not invent any. " +
-		"'baseParameters' are fields every request inherits from BaseRequest ($context, scopes, type) — they are platform-injected at dispatch time and must NEVER be passed via params. " +
+		"'baseParameters' publishes the current BaseRequest fields and their producer metadata, including deprecated/deprecationReason when applicable — honor that guidance; these fields are platform-injected at dispatch time and must NEVER be passed via params. " +
 		"'documentation' carries the authoring recipe (canonical wiring, pitfalls, checklist) when the producer published one. " +
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list requests that do NOT exist in that environment. " +
@@ -226,8 +226,8 @@ public sealed class RequestInfoTool(
 	/// <summary>
 	/// Builds the detail response for a catalog hit. Unlike the component catalog's
 	/// <c>baseInputs</c> — which are authorable and therefore merged flat into
-	/// <c>inputs</c> — the request catalog's <c>baseParameters</c> are platform-injected
-	/// (<c>$context</c>, <c>scopes</c>, <c>type</c>) and are surfaced as a SEPARATE field,
+	/// <c>inputs</c> — the request catalog's producer-defined <c>baseParameters</c> are
+	/// platform-injected and surfaced with their metadata as a SEPARATE field,
 	/// so an AI consumer never learns to author them through the binding's <c>params</c>.
 	/// </summary>
 	internal static RequestInfoResponse CreateDetailResponse(
@@ -524,9 +524,9 @@ public sealed class RequestInfoResponse {
 	public IReadOnlyDictionary<string, JsonElement>? Parameters { get; init; }
 
 	/// <summary>
-	/// Gets or sets the fields every request inherits from <c>BaseRequest</c>
-	/// (<c>type</c>, <c>$context</c>, <c>scopes</c>, …). Platform-injected at dispatch
-	/// time — NEVER authored through the binding's <c>params</c>, which is why they are
+	/// Gets or sets the producer-defined fields and metadata every request inherits from
+	/// <c>BaseRequest</c>. Platform-injected at dispatch time — NEVER authored through the
+	/// binding's <c>params</c>, which is why they are
 	/// NOT merged into <see cref="Parameters"/> (the component catalog merges its
 	/// authorable <c>baseInputs</c>; this catalog deliberately does not).
 	/// </summary>

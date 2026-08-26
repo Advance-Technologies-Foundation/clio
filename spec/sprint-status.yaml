@@ -61,6 +61,20 @@ stories:
     depends_on: []
     blocks: []
 
+  - id: story-get-info-cliogate-diagnostics-1
+    title: "Use capability-first cliogate diagnostics in get-info"
+    feature: "get-info-cliogate-diagnostics"
+    repo: "clio"
+    size: S
+    status: review
+    issue: 1138
+    file: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-story.md
+    prd: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-spec.md
+    adr: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-plan.md
+    test_plan: spec/get-info-cliogate-diagnostics/get-info-cliogate-diagnostics-qa.md
+    depends_on: []
+    blocks: []
+
   - id: story-mcp-progress-wait-timeout-1
     title: "Make MCP progress waits notification-driven and timeout-safe"
     feature: "mcp-progress-wait-timeout"
@@ -3006,3 +3020,66 @@ stories:
     status_note: "RESOLVED 2026-08-18. AC-01: a trimmed tail drops its leading PARTIAL line unconditionally, and when no complete line survives the tail is withheld behind an explicit notice rather than emptied -- an empty tail would fail CarriesStandardError and strip worker-stderr, its truncation marker AND the caveat together, telling the reader the worker said nothing when the truth is that clio withheld what it kept. Unconditional rather than only-when-the-cut-landed-mid-token, because the conditional form puts the redactor pattern list inside the drain and has to be kept in step with it forever. Applied at snapshot time, not in the pump, because Tail() runs on paths before StopAsync while the buffer may still be growing. AC-02 observed red-before: reverting only Tail() to the pre-fix expression fails 2 of 33 with the marker leaking verbatim into worker-stderr; the sibling fits-inside-the-bound test stays green in that run, which is what pins the drop to truncation. The fixture asserts its own precondition -- that the last StandardErrorTailLimit characters really do begin mid-key -- and sizes the payload FROM the dispatcher constant, so moving the bound moves the cut instead of quietly re-padding the orphan into filler, which is exactly how it went unnoticed. AC-03 asserts on the whole StructuredContent of a real RelayFailureResult envelope built through the real drain, no redactor called directly. AC-04 records the failure CLASS in the threat model: redaction can be defeated UPSTREAM of itself, because every pattern recognises a secret by context and any transformation between capture and redaction can remove that evidence; the rule is REDACT FIRST then transform, with the stated exception that where bounding is liveness the order cannot be inverted and the cut must at least be structural. RESIDUAL, recorded not fixed: CredentialPairRegex uses backslash-s which includes a newline, so a key ending the dropped line with its value beginning the surviving one is still orphaned -- and tightening the pattern would make the untruncated multi-line case WORSE, so this is the limit of context-based redaction rather than a bug. Full unit suite 9181 passed / 20 failed, names matching the macOS baseline exactly. MCP, docs and ClioRing all reviewed, no contract changed -- Ring does not consume the worker failure envelope. TWO ADJACENT R-7 EXPOSURES found by the mandated scope sweep and verified independently, both DIFFERENT classes from this story: CompileOperationRegistry.BuildMessageTail returns 50 log messages to an MCP caller with no redaction at all (missing redaction, not truncation), and ExecuteEsqTool returned an unredacted DataService error body from two paths while a third redacted the same body -- the ExecuteEsqTool asymmetry is FIXED here since execute-esq is a stage-6 cohort tool; the compile tail is tracked separately because a compile log is what the user needs to read and over-redacting it is its own harm."
     depends_on:
       - story-mcp-worker-execution-boundary-17
+
+  - id: story-export-component-registry-1
+    title: "MCP tool + CLI verb for bulk component registry export"
+    feature: "export-component-registry"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95543
+    file: spec/stories/story-export-component-registry-1.md
+    prd: spec/prd/spec-export-component-registry.md
+    adr: spec/adr/adr-export-component-registry.md
+    status_note: "New export-component-registry MCP tool + CLI verb (not a new argument on get-component-info, which is ReadOnly=true) writes the resolved version's FULL Freedom UI component registry to a file as a byte passthrough of IComponentRegistryClient's raw response — confirmed via ComponentRegistry.live-snapshot.json that deprecated/deprecationReason exist only as raw JSON, not in the typed ComponentCatalogState model, so re-serializing would silently drop fields the ENG-95543 migration-engine consumer needs. Shape revised during implementation: mirrors ComponentInfoCommand/ComponentInfoTool (flat classes, no Command<TOptions>/BaseTool<T>), NOT GetClassicPageSourcesCommand/Tool — BaseTool.ResolveCommand eagerly builds a per-environment container, which breaks the explicit-version-only and no-flags paths (ADR D4). Two distinct output-path contracts: explicit --output-file goes through OutputPathConfinement (refuses existing target), the default <workspace-root>/.clio-migration/component-registry/<version>.json is tool-owned and overwritten on rerun. Never calls IComponentRegistryDocsClient.GetDocAsync. Long-tail MCP registration (DI + attributes only, not added to McpCoreToolProfile.CoreToolTypes or ToolContractGetTool), since the primary consumer is CI via the CLI verb, not an MCP agent. Consumed downstream by creatio-ai-app-development-toolkit branch feature/ENG-95543-registry-backed-mapping, which needs a clio release after merge."
+    depends_on: []
+    blocks: []
+
+  # --- localization-ready-packages (clio#1178) ---
+  - id: story-localization-ready-packages-1
+    title: "Publish the Creatio localization lab"
+    feature: "localization-ready-packages"
+    repo: "creatio-localization-lab"
+    size: M
+    status: done
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-1.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on: []
+    blocks:
+      - story-localization-ready-packages-2
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-2
+    title: "Generate a package-level localization schema for application packages"
+    feature: "localization-ready-packages"
+    repo: "clio"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-2.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+    blocks:
+      - story-localization-ready-packages-3
+
+  - id: story-localization-ready-packages-3
+    title: "Publish localization guidance through clio-knowledge"
+    feature: "localization-ready-packages"
+    repo: "clio-knowledge"
+    size: M
+    status: in-progress
+    issue: 1178
+    file: spec/stories/story-localization-ready-packages-3.md
+    prd: spec/prd/prd-localization-ready-packages.md
+    adr: spec/adr/adr-localization-ready-packages.md
+    test_plan: spec/test-plans/tp-localization-ready-packages.md
+    depends_on:
+      - story-localization-ready-packages-1
+      - story-localization-ready-packages-2
+    blocks: []

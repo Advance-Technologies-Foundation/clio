@@ -19,6 +19,19 @@ including the target IIS site or application, database (both local and
 containerized), and application files. The application pool is removed only
 when no other IIS application uses it.
 
+When uninstalling by environment name, the registered `EnvironmentPath` in
+`appsettings.json` is authoritative. Clio reads a complete, unfiltered IIS
+inventory and removes every safely validated site or application whose physical
+directory identity matches that path, including classic nested `/0` applications.
+Filesystem aliases are resolved when the directories exist. Every pool assigned to
+the selected applications is handled independently; shared pools remain available
+to unrelated applications. The registered environment URI is not used to
+discover the filesystem target. Incomplete IIS discovery aborts before database
+or file deletion. If a complete inventory has no matching target, uninstall
+continues as a non-IIS local removal. Operations using the same environment name
+or physical directory are serialized, and final unregister succeeds
+only while the registration still has the path that authorized the uninstall.
+
 On Windows, the command also attempts to remove the registered IIS
 application-pool virtual-account profile. This is best-effort: a locked,
 access-denied, or otherwise undeletable profile produces one warning after
@@ -40,16 +53,17 @@ This operation cannot be undone.
 
     When using environment name (-e):
         1. Retrieves environment settings from clio configuration
-        2. Scans IIS sites to find the matching site
-        3. Identifies the physical path of the matching IIS site
-        4. Proceeds with uninstall operations
+        2. Uses the registered EnvironmentPath as the removal target
+        3. Finds every IIS site/application with that exact normalized path
+        4. Proceeds after all matching IIS targets pass safety validation
 
     Uninstall operations (all methods):
         1. Extracts database connection string from ConnectionStrings.config
         2. Parses connection parameters (host, port, username, password)
         3. Validates that the target IIS site/application can be removed without siblings
-        4. Stops the target site when supported and deletes the target site/application
-        5. Verifies target removal, then rechecks and deletes the pool only when unused
+        4. Stops every target site; stops a pool only when all its applications
+           belong to the selected targets
+        5. Deletes every target site/application, then deletes each pool only when unused
         6. Connects and drops the database (local or Kubernetes/Rancher)
         7. Deletes all files in installation directory
         8. Deletes the registered IIS application-pool profile on Windows
@@ -78,6 +92,7 @@ uninstall-creatio [options]
     - You must provide either -e or -d (but not both)
     - Physical path must be a valid absolute directory path
     - Physical path must point to an existing directory
+    - A named environment must have a non-empty EnvironmentPath setting
 
 ## Examples
 
@@ -142,10 +157,10 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
                 remaining cleanup and environment unregistration, and exits 0
         Solution: Delete the named profile manually after the locking process exits
 
-    No IIS site found:
-        [ERR] - The registered environment URI could not be correlated with an IIS site
+    EnvironmentPath is missing:
+        [ERR] - Environment 'name' does not have a registered EnvironmentPath
         Result: The command exits with code 1 and performs no destructive cleanup
-        Solution: Correct the environment URI/IIS binding, or use -d with the verified physical path
+        Solution: Correct EnvironmentPath in appsettings.json, or use -d with the verified physical path
 
 ## Best Practices
 
@@ -206,6 +221,10 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
 destroying the entire instance
 - When `-e` is used, environment unregistration is the final stage and still
   runs after a profile-cleanup or dbHub warning
+- A named uninstall uses `EnvironmentPath`, not the environment URI, and removes
+  all safely validated IIS targets at that exact normalized path
+- Shared pools and their Windows profiles are preserved when any unrelated IIS
+  application still uses them
 - dbHub source removal is available only for `-e`, because a physical path alone
   has no registered environment-to-source ownership mapping
 

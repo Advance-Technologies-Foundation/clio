@@ -14,11 +14,13 @@ public class WorkspacePackageTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<AddPackageOptions>(addPackageCommand, logger, commandResolver) {
+	internal const string AddPackageToolName = "add-package";
 
 	/// <summary>
 	/// Adds a package to the specified workspace and optionally bootstraps follow-up configuration download.
 	/// </summary>
-	[McpServerTool(Name = "add-package", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = AddPackageToolName, ReadOnly = false, Destructive = false, Idempotent = false,
+		OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -32,6 +34,8 @@ public class WorkspacePackageTool(
 				 The workspace path is required because the command updates local workspace state and may
 				 trigger follow-up configuration download behavior. When `build-zip-path` is omitted, the
 				 follow-up flow may need the requested environment to download configuration from Creatio.
+				 Read get-guidance name=localizable-values before using or extending localization primitives
+				 generated with `as-app`.
 				 """)]
 	public CommandExecutionResult AddPackage(
 		[Description("add-package parameters")] [Required] AddPackageArgs args
@@ -131,7 +135,7 @@ public class CreateIntegrationTestProjectTool(
 /// </summary>
 public record AddPackageArgs(
 	[property:JsonPropertyName("name")]
-	[Description("Package name")]
+	[Description("Package name, 1 to 70 characters, starting with a letter or non-lone underscore and containing only letters, digits, and underscores")]
 	[Required]
 	string Name,
 
@@ -145,7 +149,7 @@ public record AddPackageArgs(
 	string EnvironmentName = null,
 
 	[property:JsonPropertyName("as-app")]
-	[Description("Whether to create an application descriptor for the package")]
+	[Description("Whether to create an application descriptor, backend localization schema, and injectable LocalizableString adapter")]
 	bool? AsApp = null,
 
 	[property:JsonPropertyName("build-zip-path")]

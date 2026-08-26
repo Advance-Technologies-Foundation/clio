@@ -55,6 +55,10 @@ public class InstallerCommandTool(
 				 If you are deploying locally to IIS, also run `find-empty-iis-port` to choose a safe `sitePort`.
 				 Review the failing areas from `assert-infrastructure`, prefer the recommended bundle from
 				 `show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.
+				 For an IIS deployment, clio reserves and revalidates `sitePort` across concurrent clio
+				 processes before changing files, databases, or IIS. A collision fails the deployment;
+				 deploy and uninstall are also serialized by environment name and physical target directory.
+				 Deployments on different names, ports, and target directories can proceed in parallel.
 				 Deployment preserves the build database's existing forced-password-change state and does not
 				 clear it automatically.
 				 For local IIS, `useHttps` prefers a matching usable LocalMachine/My certificate and falls back
@@ -114,7 +118,7 @@ public sealed record DeployCreatioArgs(
 	string ZipFile,
 
 	[property: JsonPropertyName("sitePort")]
-	[property: Description("Port where Creatio will be deployed")]
+	[property: Description("Port where Creatio will be deployed; IIS deployments reserve and validate it before mutation")]
 	[property: Required]
 	int SitePort,
 

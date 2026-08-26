@@ -65,8 +65,11 @@ public sealed class GetCreatioInfoTool(
 				     maintainer / environmentType metadata, from ApplicationInfoService.
 				   - WITHOUT cliogate (admin-gated, needs CanManageSolution): dbEngineType (MSSql / PostgreSql /
 				     Oracle), frameworkKind (Net vs NetFramework) and frameworkDescription (e.g. ".NET 8.0.x").
-				   - cliogate ONLY (>= 2.0.0.32 installed): productName and licenseInfo; cliogate also backfills
-				     dbEngineType / framework on older Creatio that predate the admin-gated operation.
+				   - cliogate ONLY: productName and licenseInfo; GetSysInfo is probed directly as the capability
+				     check (normally supplied by cliogate 2.0.0.32+) and also backfills dbEngineType / framework
+				     on older Creatio that predate the admin-gated operation. Package-version metadata is used
+				     only to diagnose a failed capability probe, so an inactive stale package alias cannot veto a
+				     working endpoint.
 
 				 Use it to confirm the platform version before assuming component availability, to read the
 				 database engine and executing framework for deploy / troubleshooting decisions, and to check the

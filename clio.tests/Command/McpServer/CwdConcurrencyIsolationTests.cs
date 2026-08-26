@@ -98,4 +98,35 @@ public sealed class CwdConcurrencyIsolationTests {
 			}
 		}
 	}
+
+	[Test]
+	[Description("PageOutputDirectoryResolver.ResolveDefaultAnchor — the shared tool-owned default-anchor reader that export-schema uses instead of taking the MCP lock itself — blocks while CwdLock is held and completes once released, proving the CLI default path still serializes on the SAME CwdLock.")]
+	public void ResolveDefaultAnchor_ShouldSerializeOnCwdLock_WhenCwdLockIsHeld() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+
+		bool cwdLockHeld = false;
+		Monitor.Enter(McpToolExecutionLock.CwdLock, ref cwdLockHeld);
+		try {
+			// Act — while the test holds CwdLock, the shared default-anchor reader must block on its cwd read.
+			Task<string> reader = Task.Run(() => PageOutputDirectoryResolver.ResolveDefaultAnchor(fileSystem));
+			bool completedWhileHeld = reader.Wait(BlockedProbe);
+
+			// Assert
+			completedWhileHeld.Should().BeFalse(
+				because: "the shared default-anchor reader must acquire the SAME CwdLock, so callers that delegate "
+					+ "to it (export-schema) keep the cross-tenant cwd guard even though they never name the lock");
+
+			// Release CwdLock and confirm it then completes.
+			Monitor.Exit(McpToolExecutionLock.CwdLock);
+			cwdLockHeld = false;
+			reader.Wait(Generous).Should().BeTrue(
+				because: "once CwdLock is released the shared default-anchor reader acquires it and resolves");
+		}
+		finally {
+			if (cwdLockHeld) {
+				Monitor.Exit(McpToolExecutionLock.CwdLock);
+			}
+		}
+	}
 }

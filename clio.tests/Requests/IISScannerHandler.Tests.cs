@@ -1,4 +1,5 @@
 ﻿using Clio.Common;
+using Clio.Common.IIS;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using Clio.Utilities;
@@ -22,7 +23,9 @@ public class IISScannerHandlerTests
 			new PowerShellFactory(),
 			Substitute.For<ILogger>(),
 			new ProcessExecutor(Substitute.For<ILogger>()),
-			Substitute.For<FluentValidation.IValidator<IISScannerRequest>>());
+			Substitute.For<FluentValidation.IValidator<IISScannerRequest>>(),
+			new PlatformDetector(),
+			new System.IO.Abstractions.FileSystem());
 
 	[Test]
 	[Description("Verifies that FindAllCreatioSites discovers both top-level sites and nested applications")]

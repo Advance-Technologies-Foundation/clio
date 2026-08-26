@@ -48,6 +48,11 @@ public sealed class GetClassicPageSourcesTool(
 		"add mini page — so `childPageCount` can exceed `detailCount`; an empty one with no warning means the details " +
 		"genuinely register no child page. Each detail entry carries the resolved `entity` and `editPage` (or " +
 		"`editPage: false` = verified no edit card), which is how the engine keys those nested manifests. " +
+		"`enumVocabulary` carries the TARGET stand's own ViewItemType/ContentType/DataValueType enum member->value " +
+		"tables, read live from that stand's sysenums.js — never a copy of the engine's pinned tables — so the " +
+		"engine's enum-drift guard can catch a stand on a different platform version; an enum whose value could not " +
+		"be measured on this run is simply omitted from the block, and `enumVocabularyCount` reports how many of the " +
+		"three were resolved. " +
 		"The unit is collected WHOLE - no limit on details, child edit pages, or parent-template depth - so a very " +
 		"wide page costs one round-trip per detail and can take minutes. If the call exceeds your client's request " +
 		"timeout, run the CLI verb for that page rather than reading the timeout as 'the page is too big'. " +
