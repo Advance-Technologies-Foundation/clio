@@ -14,11 +14,11 @@ namespace Clio.Command;
 /// Options for editing an existing business process via the ProcessDesignService package.
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states what THIS command's code needs: the email block ships in the 1.2.0.1
-// bundle, and an older server has no email member and silently discards the block while answering
-// success. Presence alone cannot express that. The guard fixture asserts the shipped archive
-// satisfies this literal, so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
+// The version literal states what THIS command's code needs: the email block shipped in 1.2.0.1 and the
+// approval block in the 1.4.0.0 bundle, and an older server has no such member — it silently discards
+// the block while answering success. Presence alone cannot express that. The guard fixture asserts
+// the shipped archive satisfies this literal, so clio can never demand a version it does not carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -208,7 +208,9 @@ public class ModifyBusinessProcessCommand(
 	// escalated, since it is not evidence of a drop. See EmailBlockExpectation for why this is not version-based.
 	private void WarnOnDiscardedEmailBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
 		IReadOnlyList<string> expected = EmailBlockExpectation.FromOperations(options.OperationsJson);
-		if (expected.Count == 0) {
+		// The Approval element has the same silent-drop failure and is verified from the SAME read-back.
+		IReadOnlyList<string> expectedApproval = ApprovalBlockExpectation.FromOperations(options.OperationsJson);
+		if (expected.Count == 0 && expectedApproval.Count == 0) {
 			return;
 		}
 
@@ -227,6 +229,12 @@ public class ModifyBusinessProcessCommand(
 			EmailBlockExpectation.Missing(described.Value, expected));
 		if (warning is not null) {
 			logger.WriteWarning(warning);
+		}
+
+		string? approvalWarning = ApprovalBlockExpectation.BuildWarning(
+			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));
+		if (approvalWarning is not null) {
+			logger.WriteWarning(approvalWarning);
 		}
 	}
 }

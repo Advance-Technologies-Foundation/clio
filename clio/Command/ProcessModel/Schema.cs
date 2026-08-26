@@ -1109,8 +1109,10 @@ public static class ManagerMap{
 			"eventsubprocessexpanded" => EventType.EventSubProcess,
 			// "sendemail" is the dedicated build/describe token for the Send email element (EmailTemplateUserTask) —
 			// an activity like any user task for the connection rules; the camelCase data-id emailTemplateUserTask
-			// is already covered by the "usertask"-suffix arm below.
-			"usertask" or "performtask" or "sendemail" => EventType.UserTask,
+			// is already covered by the "usertask"-suffix arm below. "approval" is the same case for the Approval
+			// element (ApprovalUserTask): the token does NOT end in "usertask", so without an explicit arm here it
+			// falls through to Unknown and validate-process-graph rejects a perfectly valid graph.
+			"usertask" or "performtask" or "sendemail" or "approval" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

@@ -14,11 +14,11 @@ namespace Clio.Command;
 /// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states what THIS command's code needs: the email block ships in the 1.2.0.1
-// bundle, and an older server has no email member and silently discards the block while answering
-// success. Presence alone cannot express that. The guard fixture asserts the shipped archive
-// satisfies this literal, so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
+// The version literal states what THIS command's code needs: the email block shipped in 1.2.0.1 and the
+// approval block in the 1.4.0.0 bundle, and an older server has no such member — it silently discards
+// the block while answering success. Presence alone cannot express that. The guard fixture asserts
+// the shipped archive satisfies this literal, so clio can never demand a version it does not carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -169,7 +169,11 @@ public class CreateBusinessProcessCommand(
 	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
 	private void WarnOnDiscardedEmailBlocks(CreateBusinessProcessOptions options, string? schemaName) {
 		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
-		if (expected.Count == 0 || string.IsNullOrWhiteSpace(schemaName)) {
+		// The Approval element has exactly the same silent-drop failure, so it is verified from the SAME read-back
+		// rather than a second one — the describe below is the expensive part, and one of the two blocks being
+		// absent is no reason to skip the other's check.
+		IReadOnlyList<string> expectedApproval = ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
+		if ((expected.Count == 0 && expectedApproval.Count == 0) || string.IsNullOrWhiteSpace(schemaName)) {
 			return;
 		}
 
@@ -183,6 +187,12 @@ public class CreateBusinessProcessCommand(
 			EmailBlockExpectation.Missing(described.Value, expected));
 		if (dropped is not null) {
 			logger.WriteWarning(dropped);
+		}
+
+		string? droppedApproval = ApprovalBlockExpectation.BuildWarning(
+			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));
+		if (droppedApproval is not null) {
+			logger.WriteWarning(droppedApproval);
 		}
 
 		// A package that predates the body-macro feature stores the [[…]] placeholders verbatim and still answers

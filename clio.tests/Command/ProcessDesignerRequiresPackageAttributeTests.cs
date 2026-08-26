@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement: their email block ships in the 1.2.0.1 archive, and an older server has no email member and silently discards the block while answering success — presence alone cannot express that. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement, now pinned to the archive that introduced the approval block (the email block was the previous holder, at 1.2.0.1). An older server declares neither member and silently discards the block while answering success — presence alone cannot express that. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsTheEmailOperation(
             Type optionsType)
         {
@@ -77,10 +77,11 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.2.0.1",
-                because: "the email operation these commands send was introduced in the 1.2.0.1 archive — an older "
-                    + "server ignores the block and still answers success, so the literal is what fails closed; "
-                    + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");
+            requirement!.Version.Should().Be("1.4.0.0",
+                because: "the approval operation these commands send was introduced in the 1.4.0.0 archive — an "
+                    + "older server ignores the block and still answers success, so the literal is what fails "
+                    + "closed; when the next versioned operation ships, move this pin WITH the rebundle in the "
+                    + "same commit");
         }
 
         [Test]
