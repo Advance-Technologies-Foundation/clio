@@ -226,32 +226,12 @@ public sealed partial class McpWorkerCallDispatcher {
 					// The error is composed and REPORTED FIRST and the child killed after, so the last stage it
 					// reached is captured: killing first closes the pipes, ends the read loop, and the answer
 					// would then be a relay failure with no stage named in it.
-					TerminalStageObservation observation = watch.Snapshot();
-					_logger.WriteWarning(
-						$"MCP tool '{toolName}' (pid {lease.ProcessId}) emitted no stage event for "
-						+ $"{FormatSeconds(_stageEventSilenceBound)} s. Last stage reached: "
-						+ $"{observation.LastStageDescription}. The outcome is INDETERMINATE and clio will not "
-						+ "retry it; the worker is being killed now that its last stage has been captured.");
-					CallToolResult indeterminate = IndeterminateResult(toolName, observation,
-						$"it emitted no stage event for {FormatSeconds(_stageEventSilenceBound)} s and clio "
-						+ "stopped waiting",
-						standardError.Tail());
+					CallToolResult indeterminate = BuildSilenceExpiredResult(toolName, lease, watch, standardError);
 					KillQuietly(lease, toolName);
 					return indeterminate;
 				}
 				case TerminalStageWaitOutcome.ExitGraceExpired: {
-					TerminalStageObservation observation = watch.Snapshot();
-					_logger.WriteWarning(
-						$"MCP tool '{toolName}' (pid {lease.ProcessId}) reported terminal outcome "
-						+ $"'{observation.Outcome}' but did not answer or exit within the "
-						+ $"{FormatSeconds(_postTerminalExitGrace)} s post-terminal grace, so it was killed. The "
-						+ "operation itself had already terminated, so the terminal outcome is the answer.");
-					CallToolResult terminal = TerminalOutcomeResult(toolName, observation,
-						lease.HasExited
-							? "the worker had exited without answering the call"
-							: $"the worker did not answer or exit within the "
-								+ $"{FormatSeconds(_postTerminalExitGrace)} s post-terminal grace and was killed",
-						standardError.Tail());
+					CallToolResult terminal = BuildExitGraceExpiredResult(toolName, lease, watch, standardError);
 					KillQuietly(lease, toolName);
 					return terminal;
 				}
@@ -298,46 +278,10 @@ public sealed partial class McpWorkerCallDispatcher {
 			throw;
 		}
 		catch (Exception exception) {
-			// NOTHING WAS EVER ASKED OF THE WORKER. `call` is only assigned once the handshake succeeded and
-			// the tools/call was dispatched, so a null here means the failure happened before any request
-			// reached the child — a protocol-revision mismatch, an initialize result with no protocolVersion,
-			// a broken pipe on connect. No request means nothing could have been installed, and reporting
-			// "possibly half-installed, inspect the target and remove what is there" for an environment clio
-			// never spoke to sends an operator to dismantle a working system. This is the same distinction
-			// the spawn-failure branch above already makes; it just has to survive the handshake too.
-			if (call is null) {
-				_logger.WriteWarning(
-					$"MCP worker for '{toolName}' (pid {lease.ProcessId}) failed before the operation was "
-					+ $"requested, so nothing was deployed: "
-					+ SensitiveErrorTextRedactor.Redact(exception.Message));
-				CallToolResult beforeRequest = RelayFailureResult(toolName,
-					"the worker failed before the operation was requested, so nothing was deployed",
-					detail: exception.Message, standardError.Tail());
-				KillQuietly(lease, toolName);
-				return beforeRequest;
-			}
-			// The child crashed, was killed, or closed its pipe. Whether that is an answer or an ambiguity is
-			// decided by ONE question: did the run report its terminal stage first?
-			TerminalStageObservation observation = watch.Snapshot();
-			if (observation.TerminalObserved) {
-				_logger.WriteWarning(
-					$"MCP tool '{toolName}' (pid {lease.ProcessId}) reported terminal outcome "
-					+ $"'{observation.Outcome}' and then ended without answering the call: "
-					+ SensitiveErrorTextRedactor.Redact(exception.Message));
-				CallToolResult terminal = TerminalOutcomeResult(toolName, observation,
-					"the worker ended without answering the call after its terminal stage", standardError.Tail());
-				KillQuietly(lease, toolName);
-				return terminal;
-			}
-			_logger.WriteWarning(
-				$"MCP tool '{toolName}' (pid {lease.ProcessId}) ended without reporting a terminal stage. Last "
-				+ $"stage reached: {observation.LastStageDescription}. The outcome is INDETERMINATE and clio "
-				+ "will not retry it: "
-				+ SensitiveErrorTextRedactor.Redact(exception.Message));
-			CallToolResult indeterminate = IndeterminateResult(toolName, observation,
-				"the worker process ended before reporting a terminal stage", standardError.Tail());
+			CallToolResult failureResult =
+				BuildWorkerEndedResult(toolName, lease, watch, standardError, call, exception);
 			KillQuietly(lease, toolName);
-			return indeterminate;
+			return failureResult;
 		}
 		finally {
 			if (callSource is not null) {
@@ -356,6 +300,71 @@ public sealed partial class McpWorkerCallDispatcher {
 			// where KillContained already ran, where it is a second, harmless attempt at the same kill.
 			lease.Dispose();
 		}
+	}
+
+	// The error is composed and REPORTED FIRST, so the last stage the run reached is captured before the
+	// caller kills the worker (killing first closes the pipes, ends the read loop, and the answer would then
+	// be a relay failure with no stage named in it).
+	private CallToolResult BuildSilenceExpiredResult(
+		string toolName, IWorkerLease lease, TerminalStageWatch watch, WorkerStandardErrorDrain standardError) {
+		TerminalStageObservation observation = watch.Snapshot();
+		_logger.WriteWarning(
+			$"MCP tool '{toolName}' (pid {lease.ProcessId}) emitted no stage event for "
+			+ $"{FormatSeconds(_stageEventSilenceBound)} s. Last stage reached: "
+			+ $"{observation.LastStageDescription}. The outcome is INDETERMINATE and clio will not "
+			+ "retry it; the worker is being killed now that its last stage has been captured.");
+		return IndeterminateResult(toolName, observation,
+			$"it emitted no stage event for {FormatSeconds(_stageEventSilenceBound)} s and clio stopped waiting",
+			standardError.Tail());
+	}
+
+	private CallToolResult BuildExitGraceExpiredResult(
+		string toolName, IWorkerLease lease, TerminalStageWatch watch, WorkerStandardErrorDrain standardError) {
+		TerminalStageObservation observation = watch.Snapshot();
+		_logger.WriteWarning(
+			$"MCP tool '{toolName}' (pid {lease.ProcessId}) reported terminal outcome "
+			+ $"'{observation.Outcome}' but did not answer or exit within the "
+			+ $"{FormatSeconds(_postTerminalExitGrace)} s post-terminal grace, so it was killed. The "
+			+ "operation itself had already terminated, so the terminal outcome is the answer.");
+		return TerminalOutcomeResult(toolName, observation,
+			lease.HasExited
+				? "the worker had exited without answering the call"
+				: $"the worker did not answer or exit within the "
+					+ $"{FormatSeconds(_postTerminalExitGrace)} s post-terminal grace and was killed",
+			standardError.Tail());
+	}
+
+	// The child crashed, was killed, or closed its pipe — or the failure happened before the operation was
+	// ever requested (`call` is null: a protocol-revision mismatch, a broken pipe on connect, the same
+	// distinction the spawn-failure branch above already makes). Whether that is an answer or an ambiguity
+	// is decided by ONE question when a request WAS sent: did the run report its terminal stage first?
+	private CallToolResult BuildWorkerEndedResult(string toolName, IWorkerLease lease, TerminalStageWatch watch,
+		WorkerStandardErrorDrain standardError, Task<CallToolResult> call, Exception exception) {
+		if (call is null) {
+			_logger.WriteWarning(
+				$"MCP worker for '{toolName}' (pid {lease.ProcessId}) failed before the operation was "
+				+ $"requested, so nothing was deployed: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			return RelayFailureResult(toolName,
+				"the worker failed before the operation was requested, so nothing was deployed",
+				detail: exception.Message, standardError.Tail());
+		}
+		TerminalStageObservation observation = watch.Snapshot();
+		if (observation.TerminalObserved) {
+			_logger.WriteWarning(
+				$"MCP tool '{toolName}' (pid {lease.ProcessId}) reported terminal outcome "
+				+ $"'{observation.Outcome}' and then ended without answering the call: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+			return TerminalOutcomeResult(toolName, observation,
+				"the worker ended without answering the call after its terminal stage", standardError.Tail());
+		}
+		_logger.WriteWarning(
+			$"MCP tool '{toolName}' (pid {lease.ProcessId}) ended without reporting a terminal stage. Last "
+			+ $"stage reached: {observation.LastStageDescription}. The outcome is INDETERMINATE and clio "
+			+ "will not retry it: "
+			+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		return IndeterminateResult(toolName, observation,
+			"the worker process ended before reporting a terminal stage", standardError.Tail());
 	}
 
 	/// <summary>

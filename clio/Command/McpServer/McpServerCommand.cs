@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,6 +48,12 @@ public class McpServerCommandOptions : BaseCommandOptions
 /// <summary>
 /// Starts Clio's standard-input/output MCP host.
 /// </summary>
+[method: SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Composition root for the MCP host: server, flush scheduler, session container cache, " +
+		"tenant execution lock provider, curated-knowledge bootstrap, worker supervisor, worker temp-residue " +
+		"sweeper, shared-resource reservation and logger are all constructor-injected collaborators with no " +
+		"natural grouping; a wrapper parameter object would be an artificial abstraction over the DI " +
+		"container the command already sits in front of.")]
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ITelemetryFlushScheduler flushScheduler,
 	ISessionContainerCache sessionContainerCache,

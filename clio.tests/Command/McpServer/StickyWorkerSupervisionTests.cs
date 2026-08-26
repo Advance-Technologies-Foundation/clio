@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -436,6 +437,10 @@ public sealed class StickyWorkerSupervisionTests {
 	[Test]
 	[Category("Unit")]
 	[Description("A reservation held past its reclaim ceiling is taken over by the next caller, so a holder that can never release cannot deny an environment for the life of the MCP host — and the ceiling is therefore the maximum time one stuck build can hold a target.")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "Asserts on the real elapsed wall-clock time crossing the reservation's own reclaim " +
+			"ceiling (a constructor-supplied TimeSpan, not a mock); a fake/virtual clock would make the " +
+			"assertion vacuous since the reclaim-after-real-time behavior is exactly what is under test.")]
 	public void TryReserve_ShouldReclaim_WhenTheHolderIsPastTheCeiling() {
 		// Arrange — an explicit, tiny ceiling rather than a back-dated entry: the ceiling is constructor
 		// state here, so nothing global is mutated and no test can leave it wrong for the next one.

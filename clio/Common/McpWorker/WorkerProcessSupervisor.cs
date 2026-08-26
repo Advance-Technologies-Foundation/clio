@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -1006,6 +1007,12 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		private readonly Action _killProcessTree;
 		private readonly Action _dispose;
 
+		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+			Justification = "Reduces a started process to its identity facts (process id, start time, " +
+				"executable path), its three standard-stream handles and five behavior delegates (has-exited, " +
+				"exit code, wait-for-exit, kill-tree, dispose) — that is the whole contract " +
+				"IWorkerProcessHandle exposes, by design (see the type's own remarks: 'so its owner keeps the " +
+				"only reference to it'); grouping them would just wrap the same eleven values in a DTO.")]
 		public DelegatedWorkerProcessHandle(int processId, DateTime startTimeUtc, string executablePath,
 			Stream standardInput, Stream standardOutput, Stream standardError, Func<bool> hasExited,
 			Func<int?> exitCode, Func<CancellationToken, Task> waitForExitAsync, Action killProcessTree,

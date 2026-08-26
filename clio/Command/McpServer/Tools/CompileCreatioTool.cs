@@ -122,8 +122,8 @@ public sealed class CompileCreatioTool(
 					registry.Finish(operation.OperationId, result.ExitCode, [.. result.Output]);
 					// No completion signal is sent from here (ADR rule 5). compile-creatio DOES have an
 					// operation registry, but that registry lives in whichever process ran the tool — inside the
-					// worker, once this tool routes to one — so the parent cannot read it to decide when to reap;
-					// the private signal is the one thing that crosses the boundary. It is emitted by
+					// worker, once this tool routes to one — so the parent cannot read it to decide when to reap.
+					// The private signal is the one thing that crosses the boundary. It is emitted by
 					// WorkerOperationCompletionSignal's choke point, which the call-tool filter runs around EVERY
 					// exit of this call — including the two refusals above, which used to return without it and
 					// strand the worker for its whole hard lifetime. The heartbeat helper below leases this work,

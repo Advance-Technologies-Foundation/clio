@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Abstractions;
 using System.Threading;
@@ -36,6 +37,10 @@ public class InterprocessFileGateDeadlineTests {
 
 	[Test]
 	[Description("A caller that spends most of its budget on the in-process monitor must NOT then be granted a fresh full timeout on the file handle: one deadline spans both layers.")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "This test asserts on real elapsed wall-clock time against the gate's own deadline " +
+			"(AcceptableCeiling below is a Stopwatch comparison) — a fake/virtual clock would make that " +
+			"assertion vacuous, since it is exactly the real-time budget-spanning behavior under test.")]
 	public void Enter_ShouldNotRestartTheClock_WhenTheMonitorWaitConsumedMostOfTheBudget() {
 		// Arrange — a real temp directory, a gate with a short explicit bound, and the cross-process half
 		// held for the whole test by an exclusive handle this test never releases until the end.

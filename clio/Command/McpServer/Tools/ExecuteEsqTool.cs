@@ -122,36 +122,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 
 			bool hasSuccess = root.TryGetProperty("success", out JsonElement successEl);
 			bool successIsTrue = hasSuccess && successEl.ValueKind == JsonValueKind.True;
-
-			// Explicit DataService failure envelope: 'success' is present but not true
-			// (false, or any non-true shape such as a string/number).
-			// REDACTED, like the parse-failure path below. Both of the returns here hand the caller a
-			// DataService error body — which routinely carries the request URI and host, and can carry a
-			// connection string — and this file already redacts the same `json` in its catch block. The
-			// asymmetry was not a decision: found 2026-08-18 by story 21's R-7 sweep, which asked whether
-			// any other untrusted text reaches a caller past the redactor.
-			if (hasSuccess && !successIsTrue) {
-				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) is { } errorMessage
-					? SensitiveErrorTextRedactor.Redact(errorMessage)
-					: TruncateRedacted(json));
-			}
-
 			bool hasRowsArray = root.TryGetProperty("rows", out JsonElement rowsEl)
 				&& rowsEl.ValueKind == JsonValueKind.Array;
 
-			// Error bodies that were NOT explicitly marked successful and carry no rows array:
-			// DataService responseStatus / errorInfo, or an ASP.NET error body. A response that
-			// explicitly reported success:true is never reclassified as an error here, even if it
-			// also carries a top-level responseStatus/Message (e.g. a non-row projection envelope).
-			if (!successIsTrue
-				&& !hasRowsArray
-				&& (root.TryGetProperty("responseStatus", out _)
-					|| root.TryGetProperty("errorInfo", out _)
-					|| root.TryGetProperty("ExceptionMessage", out _)
-					|| root.TryGetProperty("Message", out _))) {
-				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) is { } errorMessage
-					? SensitiveErrorTextRedactor.Redact(errorMessage)
-					: TruncateRedacted(json));
+			if (TryDataServiceFailure(root, hasSuccess, successIsTrue, hasRowsArray, json) is { } failure) {
+				return failure;
 			}
 
 			if (hasRowsArray) {
@@ -172,6 +147,39 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		} catch (Exception ex) {
 			return ExecuteEsqResponse.Failure($"Failed to parse SelectQuery response: {SensitiveErrorTextRedactor.Redact(ex.Message)} | Response: {TruncateRedacted(json)}");
 		}
+	}
+
+	/// <summary>
+	/// Classifies a parsed SelectQuery body as a DataService failure envelope — either an explicit
+	/// 'success' present-but-not-true value, or an error body that was NOT explicitly marked
+	/// successful and carries no rows array (DataService <c>responseStatus</c>/<c>errorInfo</c>, or
+	/// an ASP.NET error body). A response that explicitly reported <c>success:true</c> is never
+	/// reclassified as an error here, even if it also carries a top-level responseStatus/Message
+	/// (e.g. a non-row projection envelope). Returns <see langword="null"/> when neither shape
+	/// applies.
+	/// </summary>
+	/// <remarks>
+	/// REDACTED, like the parse-failure path in <see cref="ParseSelectQueryResponse"/>. Both returns
+	/// here hand the caller a DataService error body — which routinely carries the request URI and
+	/// host, and can carry a connection string — and that method already redacts the same
+	/// <paramref name="json"/> in its own catch block. The asymmetry was not a decision: found
+	/// 2026-08-18 by story 21's R-7 sweep, which asked whether any other untrusted text reaches a
+	/// caller past the redactor.
+	/// </remarks>
+	private static ExecuteEsqResponse? TryDataServiceFailure(
+		JsonElement root, bool hasSuccess, bool successIsTrue, bool hasRowsArray, string json) {
+		bool explicitFailure = hasSuccess && !successIsTrue;
+		bool unmarkedErrorBody = !successIsTrue && !hasRowsArray
+			&& (root.TryGetProperty("responseStatus", out _)
+				|| root.TryGetProperty("errorInfo", out _)
+				|| root.TryGetProperty("ExceptionMessage", out _)
+				|| root.TryGetProperty("Message", out _));
+		if (!explicitFailure && !unmarkedErrorBody) {
+			return null;
+		}
+		return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) is { } errorMessage
+			? SensitiveErrorTextRedactor.Redact(errorMessage)
+			: TruncateRedacted(json));
 	}
 
 	/// <summary>

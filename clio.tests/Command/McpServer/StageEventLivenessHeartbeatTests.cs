@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -56,6 +57,10 @@ public sealed class StageEventLivenessHeartbeatTests {
 	[Test]
 	[Category("Unit")]
 	[Description("A stage whose action outlasts the refresh interval re-announces itself as running, so a long stage keeps the stream alive instead of looking like a dead worker.")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "Asserts on the emitter's real periodic-refresh timer firing against RefreshInterval; a " +
+			"fake/virtual clock would make the assertion vacuous since real-time heartbeat cadence is exactly " +
+			"what is under test.")]
 	public void RunStage_ShouldReAnnounceTheRunningStage_WhenItsActionOutlastsTheRefreshInterval() {
 		// Arrange
 		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
@@ -83,6 +88,10 @@ public sealed class StageEventLivenessHeartbeatTests {
 	[Test]
 	[Category("Unit")]
 	[Description("The liveness refresh stops with the stage: nothing further is emitted once RunStage has returned, so an idle emitter never speaks for a stage that has ended.")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "Asserts on the emitter's real periodic-refresh timer firing against RefreshInterval; a " +
+			"fake/virtual clock would make the assertion vacuous since real-time heartbeat cadence is exactly " +
+			"what is under test.")]
 	public void RunStage_ShouldStopTheLivenessRefresh_WhenTheStageEnds() {
 		// Arrange
 		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
@@ -100,6 +109,10 @@ public sealed class StageEventLivenessHeartbeatTests {
 	[Test]
 	[Category("Unit")]
 	[Description("No refresh follows the terminal event of a run whose stage failed: the failure cascade and run-completed are the last events, so the parent never sees life after the run ended.")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "Asserts on the emitter's real periodic-refresh timer firing against RefreshInterval; a " +
+			"fake/virtual clock would make the assertion vacuous since real-time heartbeat cadence is exactly " +
+			"what is under test.")]
 	public void RunStage_ShouldEmitNothingAfterTheTerminalEvent_WhenTheLongStageFails() {
 		// Arrange
 		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
@@ -126,6 +139,10 @@ public sealed class StageEventLivenessHeartbeatTests {
 	[Test]
 	[Category("Unit")]
 	[Description("A long stage that RETURNS a non-zero exit code — the other route to the failure cascade, and the one that reaches it after the stop rather than before — also ends at run-completed with no refresh behind it.")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "Asserts on the emitter's real periodic-refresh timer firing against RefreshInterval; a " +
+			"fake/virtual clock would make the assertion vacuous since real-time heartbeat cadence is exactly " +
+			"what is under test.")]
 	public void RunStage_ShouldEmitNothingAfterTheTerminalEvent_WhenTheLongStageReturnsNonZero() {
 		// Arrange
 		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
@@ -168,6 +185,11 @@ public sealed class StageEventLivenessHeartbeatTests {
 	[Test]
 	[Category("Unit")]
 	[Description("The emitter's sequence counter survives a refresh racing the stage's own transition: every event of a run carries a distinct, contiguous sequence.")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "Deliberately races a real background refresh timer against the stage's own real-time " +
+			"completion (see the Arrange comment: 'the moment two threads reach the emitter's single " +
+			"sequencing chokepoint together') — a fake/virtual clock would remove the race this test exists " +
+			"to exercise.")]
 	public void Emit_ShouldAssignEveryEventADistinctContiguousSequence_WhenRefreshesRaceTheStagesOwnTransitions() {
 		// Arrange — a refresh interval short enough that a beat is in flight when the stage ends, which is
 		// the moment two threads reach the emitter's single sequencing chokepoint together.

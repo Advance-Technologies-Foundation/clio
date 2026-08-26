@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -164,6 +165,12 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// waiting out a window measured in minutes.
 	/// </param>
 	/// <exception cref="ArgumentNullException">A dependency is missing.</exception>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Composition root for the worker relay: process supervisor, transport owner, relay, " +
+			"settings repository, sticky registry, sticky poll, shared-resource reservations, command " +
+			"resolver and the timing/budget overrides are all independent constructor-injected collaborators; " +
+			"a wrapper parameter object would be an artificial abstraction over the DI container this " +
+			"dispatcher already sits in front of.")]
 	internal McpWorkerCallDispatcher(
 		IWorkerProcessSupervisor supervisor,
 		IWorkerChildTransportOwner transportOwner,

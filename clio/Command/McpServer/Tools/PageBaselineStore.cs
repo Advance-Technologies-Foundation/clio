@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -47,6 +48,12 @@ internal static class PageBaselineStore {
 	/// meta.json may have been passed over in favour of the anchor-derived one — a silent switch of
 	/// baseline location that can disarm conflict detection. <c>null</c> on the normal path.
 	/// </param>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Every parameter is one of the candidate path fragments the anchor-resolution " +
+			"algorithm compares (current directory, home directory, home fallback anchor, output directory, " +
+			"body file, schema name) plus the file-system abstraction and the out warning; collapsing them " +
+			"into a DTO would just move the same values one level of indirection away from this static, " +
+			"stateless resolver.")]
 	internal static string ResolveMetaFilePath(
 		IFileSystem fileSystem,
 		string currentDirectory,

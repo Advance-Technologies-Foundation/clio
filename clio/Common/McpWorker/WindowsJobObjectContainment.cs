@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -129,6 +130,12 @@ public sealed class WindowsJobObjectContainment : IProcessContainment {
 		private readonly AnonymousPipeServerStream _standardError;
 		private int _disposed;
 
+		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+			Justification = "Every parameter is a handle or identity fact the OS gave back when the job/process " +
+				"pair was created (job handle, process handle, process id, start time, executable path) plus " +
+				"the three standard-stream pipe ends the caller already opened; grouping them into a DTO " +
+				"would just move the same eight OS-owned values one level of indirection away from this " +
+				"private construction seam.")]
 		private WindowsJobContainedWorker(SafeKernelHandle jobHandle, SafeKernelHandle processHandle,
 			int processId, DateTime startTimeUtc, string executablePath,
 			AnonymousPipeServerStream standardInput, AnonymousPipeServerStream standardOutput,

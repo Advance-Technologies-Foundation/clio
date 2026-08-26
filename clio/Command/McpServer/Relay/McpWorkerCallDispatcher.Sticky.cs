@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -353,6 +354,11 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// </param>
 	/// <param name="cancellationToken">Caller cancellation.</param>
 	/// <returns>The worker's result, or a named error envelope.</returns>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The tool name, sticky key, environment, reservation, child call parameters, parent " +
+			"session, start gate and cancellation token are all independently required to start and register a " +
+			"sticky worker correctly; grouping them into a DTO would just move the same eight values one level " +
+			"of indirection away without reducing what a caller must supply.")]
 	private async ValueTask<CallToolResult> StartStickyWorkerAsync(
 		string toolName,
 		StickyWorkerKey key,

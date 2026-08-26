@@ -621,7 +621,11 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 	// so the final attempt's exception propagates unchanged.
 	private void PublishAtomicReplacement(string temporary, string filePath) {
 		long startedAt = Stopwatch.GetTimestamp();
-		for (int attempt = 1; ; attempt++) {
+		int attempt = 1;
+		// Bounded by the elapsed-time deadline below, not by `attempt` — a plain for-loop stop
+		// condition cannot express that, so this is a while(true) with an explicit increment
+		// (Sonar S1994: the loop's exit is time-based, not counter-based).
+		while (true) {
 			try {
 				msFileSystem.File.Move(temporary, filePath, overwrite: true);
 				return;
@@ -640,6 +644,7 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 				// generous was already failing. A deadline states the guarantee directly and does not
 				// have to be re-tuned whenever the backoff curve changes.
 				Thread.Sleep(AtomicPublishRetry.NextBackoffMilliseconds(attempt, _nextBackoffJitterMilliseconds));
+				attempt++;
 			}
 		}
 	}

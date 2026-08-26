@@ -225,7 +225,7 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 			return new IdnMapping { UseStd3AsciiRules = true }.GetAscii(host).ToLowerInvariant();
 		}
 		catch (ArgumentException) {
-			// Not a valid IDN name (an underscore label, for instance). Folding case is still safe;
+			// Not a valid IDN name (an underscore label, for instance). Folding case is still safe —
 			// inventing an A-label is not.
 			return host.ToLowerInvariant();
 		}
@@ -313,11 +313,13 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 
 	private static string NormalizePercentEncoding(string value) {
 		StringBuilder builder = new(value.Length);
-		for (int i = 0; i < value.Length; i++) {
+		int i = 0;
+		while (i < value.Length) {
 			char current = value[i];
 			if (current != '%' || i + 2 >= value.Length
 				|| !char.IsAsciiHexDigit(value[i + 1]) || !char.IsAsciiHexDigit(value[i + 2])) {
 				builder.Append(current);
+				i++;
 				continue;
 			}
 			char decoded = (char)int.Parse(value.AsSpan(i + 1, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
@@ -329,7 +331,7 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 					.Append(char.ToUpperInvariant(value[i + 1]))
 					.Append(char.ToUpperInvariant(value[i + 2]));
 			}
-			i += 2;
+			i += 3;
 		}
 		return builder.ToString();
 	}
@@ -343,42 +345,60 @@ public sealed class SessionTargetNormalizer : ISessionTargetNormalizer {
 		string input = path;
 		StringBuilder output = new(path.Length);
 		while (input.Length > 0) {
-			if (input.StartsWith("../", StringComparison.Ordinal)) {
-				input = input[3..];
-			}
-			else if (input.StartsWith("./", StringComparison.Ordinal)) {
-				input = input[2..];
-			}
-			else if (input.StartsWith("/./", StringComparison.Ordinal)) {
-				input = string.Concat("/", input[3..]);
-			}
-			else if (input == "/.") {
-				input = "/";
-			}
-			else if (input.StartsWith("/../", StringComparison.Ordinal)) {
-				input = string.Concat("/", input[4..]);
-				RemoveLastSegment(output);
-			}
-			else if (input == "/..") {
-				input = "/";
-				RemoveLastSegment(output);
-			}
-			else if (input is "." or "..") {
-				input = string.Empty;
-			}
-			else {
-				int next = input.IndexOf('/', input[0] == '/' ? 1 : 0);
-				if (next < 0) {
-					output.Append(input);
-					input = string.Empty;
-				}
-				else {
-					output.Append(input[..next]);
-					input = input[next..];
-				}
+			if (!TryStripDotSegment(ref input, output)) {
+				AppendNextSegment(ref input, output);
 			}
 		}
 		return output.ToString();
+	}
+
+	// The seven RFC 3986 §5.2.4 dot-segment rewrite rules, each independent of the others — every
+	// branch either consumes a recognized dot-segment prefix (advancing `input`) or does not apply.
+	private static bool TryStripDotSegment(ref string input, StringBuilder output) {
+		if (input.StartsWith("../", StringComparison.Ordinal)) {
+			input = input[3..];
+			return true;
+		}
+		if (input.StartsWith("./", StringComparison.Ordinal)) {
+			input = input[2..];
+			return true;
+		}
+		if (input.StartsWith("/./", StringComparison.Ordinal)) {
+			input = string.Concat("/", input[3..]);
+			return true;
+		}
+		if (input == "/.") {
+			input = "/";
+			return true;
+		}
+		if (input.StartsWith("/../", StringComparison.Ordinal)) {
+			input = string.Concat("/", input[4..]);
+			RemoveLastSegment(output);
+			return true;
+		}
+		if (input == "/..") {
+			input = "/";
+			RemoveLastSegment(output);
+			return true;
+		}
+		if (input is "." or "..") {
+			input = string.Empty;
+			return true;
+		}
+		return false;
+	}
+
+	// No dot-segment rule matched: move one ordinary path segment from `input` to `output` verbatim.
+	private static void AppendNextSegment(ref string input, StringBuilder output) {
+		int next = input.IndexOf('/', input[0] == '/' ? 1 : 0);
+		if (next < 0) {
+			output.Append(input);
+			input = string.Empty;
+		}
+		else {
+			output.Append(input[..next]);
+			input = input[next..];
+		}
 	}
 
 	private static void RemoveLastSegment(StringBuilder output) {

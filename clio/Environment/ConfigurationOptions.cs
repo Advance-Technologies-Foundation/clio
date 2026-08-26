@@ -801,7 +801,11 @@ namespace Clio
 
 		private static void PublishSettingsFile(Action publish, SettingsPublishRetryPolicy policy) {
 			long startedAt = Stopwatch.GetTimestamp();
-			for (int attempt = 1; ; attempt++) {
+			int attempt = 1;
+			// Bounded by the elapsed-time deadline below, not by `attempt` — a plain for-loop stop
+			// condition cannot express that, so this is a while(true) with an explicit increment
+			// (Sonar S1994: the loop's exit is time-based, not counter-based).
+			while (true) {
 				try {
 					publish();
 					return;
@@ -818,6 +822,7 @@ namespace Clio
 					}
 					Thread.Sleep(AtomicPublishRetry.NextBackoffMilliseconds(attempt,
 						policy.NextBackoffJitterMilliseconds));
+					attempt++;
 				}
 			}
 		}
