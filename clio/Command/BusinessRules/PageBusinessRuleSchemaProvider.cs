@@ -48,7 +48,15 @@ internal sealed class PageBusinessRuleSchemaProvider(
 			.Where(schema => schema.Body is not null)
 			.Select(schema => new PageSchemaBundlePart(schema, bodyParser.Parse(schema.Body)))
 			.ToList();
-		PageBundleInfo bundle = bundleBuilder.Build(parts);
+		PageBundleInfo bundle;
+		try {
+			bundle = bundleBuilder.Build(parts);
+		} catch (JsonDiffApplierException resolveEx) {
+			// Keep this provider's single failure contract (InvalidOperationException): strict resolution can now
+			// reject an inherited chain the platform itself would reject, so translate it into a named, actionable error.
+			throw new InvalidOperationException(resolveEx.ToPageBundleResolutionError(pageSchemaName), resolveEx);
+		}
+
 		PageDesignerHierarchySchema currentSchema = hierarchy[0];
 		string parentSchemaUId = hierarchy.Skip(1).FirstOrDefault()?.UId;
 		return new PageBusinessRuleSchemaContext(
