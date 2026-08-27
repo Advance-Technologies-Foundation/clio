@@ -239,10 +239,7 @@ internal static class ExcludedComponentsPass {
 		Dictionary<string, ElementMapEntry> byMobileName, SearchBudget budget) {
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		ElementMapEntry current = candidate;
-		for (int depth = 0; ; depth++) {
-			if (budget.Exceeded(depth)) {
-				return null;
-			}
+		for (int depth = 0; !budget.Exceeded(depth); depth++) {
 			string parentName = current.ParentName;
 			if (string.IsNullOrEmpty(parentName) || !visited.Add(parentName)
 				|| !byMobileName.TryGetValue(parentName, out ElementMapEntry parent)) {
@@ -254,6 +251,7 @@ internal static class ExcludedComponentsPass {
 			}
 			current = parent;
 		}
+		return null;
 	}
 
 	/// <summary>
@@ -311,10 +309,7 @@ internal static class ExcludedComponentsPass {
 		Dictionary<string, ElementMapEntry> byMobileName, SearchBudget budget) {
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		ElementMapEntry current = entry;
-		for (int depth = 0; ; depth++) {
-			if (budget.Exceeded(depth)) {
-				return null;
-			}
+		for (int depth = 0; !budget.Exceeded(depth); depth++) {
 			string parentName = current.ParentName;
 			if (string.IsNullOrEmpty(parentName) || !visited.Add(parentName)) {
 				return null;
@@ -327,6 +322,7 @@ internal static class ExcludedComponentsPass {
 			}
 			current = parent;
 		}
+		return null;
 	}
 
 	/// <summary>
@@ -388,11 +384,9 @@ internal static class ExcludedComponentsPass {
 			}
 			FindNestedHosts(hostValues, filtersByParentType, entry.MobileName, dropped, budget, depth: 0);
 		}
-		foreach (ElementMapEntry drop in dropped) {
-			if (drop.WebName is { Length: > 0 }) {
-				removedWebNames.Add(drop.WebName);
-			}
-		}
+		removedWebNames.UnionWith(dropped
+			.Where(drop => drop.WebName is { Length: > 0 })
+			.Select(drop => drop.WebName));
 		elementMap.AddRange(dropped);
 	}
 
