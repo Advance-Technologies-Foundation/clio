@@ -1,4 +1,5 @@
 using System.Linq;
+using System.IO;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -12,6 +13,32 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ODataUpdateToolTests {
+	[Test]
+	[Category("Unit")]
+	[Description("Reads a large update payload from rows-file and sends it as the PATCH body after confirmation.")]
+	public void Update_Should_Read_Data_From_Rows_File() {
+		// Arrange
+		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-{System.Guid.NewGuid():N}.json");
+		File.WriteAllText(rowsFile, "{\"Name\":\"New\"}");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(" + Guid + ")");
+		try {
+			// Act
+			ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+				EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
+			});
+
+			// Assert
+			response.Success.Should().BeTrue(because: "a valid file payload should follow the same PATCH path as inline data");
+			client.Received(1).ExecutePatchRequest("http://creatio/odata/Contact(" + Guid + ")", "{\"Name\":\"New\"}", 30_000, 1, 1);
+		} finally {
+			if (File.Exists(rowsFile)) File.Delete(rowsFile);
+		}
+	}
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 	private static JsonElement Obj(string json) => JsonDocument.Parse(json).RootElement.Clone();
 

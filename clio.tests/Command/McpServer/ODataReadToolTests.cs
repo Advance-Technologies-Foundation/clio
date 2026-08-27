@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -15,6 +16,39 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ODataReadToolTests {
+	[Test]
+	[Category("Unit")]
+	[Description("Writes a successful OData response to output-file, omits the inline value, and returns row and per-column byte summaries.")]
+	public void Read_Should_Write_Response_To_Output_File_When_Requested() {
+		// Arrange
+		string outputFile = Path.Combine(Path.GetTempPath(), $"odata-read-{Guid.NewGuid():N}.json");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[{\"Id\":\"1\",\"Name\":\"John\"},{\"Id\":\"2\",\"Name\":\"Jane\"}]}");
+		ODataReadTool tool = new(resolver);
+
+		try {
+			// Act
+			ODataReadResponse response = tool.Read(new ODataReadArgs {
+				EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+			});
+
+			// Assert
+			response.Success.Should().BeTrue(because: "a successful OData response should be persisted when output-file is requested");
+			response.Value.Should().BeNull(because: "large response values must not be duplicated into the MCP result");
+			response.OutputFile.Should().Be(Path.GetFullPath(outputFile), because: "the caller needs the resolved file path");
+			response.RowCount.Should().Be(2, because: "the summary should count returned object rows");
+			response.ColumnSizes.Should().ContainKey("Name", because: "the summary should expose sizes for returned columns");
+			File.ReadAllText(outputFile).Should().Contain("John", because: "the raw OData response must be written unchanged");
+		} finally {
+			if (File.Exists(outputFile)) File.Delete(outputFile);
+		}
+	}
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable read-only MCP tool name for odata-read.")]

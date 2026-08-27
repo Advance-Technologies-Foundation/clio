@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Net.Http;
+using System.IO;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -13,6 +14,36 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ODataCreateToolTests {
+	[Test]
+	[Category("Unit")]
+	[Description("Reads a large create payload from rows-file and posts its rows without requiring an inline rows array.")]
+	public void Create_Should_Read_Rows_From_File() {
+		// Arrange
+		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-create-{System.Guid.NewGuid():N}.json");
+		File.WriteAllText(rowsFile, "[{\"Name\":\"Acme\"}]");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
+		ODataCreateTool tool = new(resolver);
+
+		try {
+			// Act
+			ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+				EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+			});
+
+			// Assert
+			response.Created.Should().Be(1, because: "the row loaded from disk should be posted and reported as created");
+			client.Received(1).ExecutePostRequest("http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1);
+		} finally {
+			if (File.Exists(rowsFile)) File.Delete(rowsFile);
+		}
+	}
 	private static JsonElement Arr(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
 	[Test]

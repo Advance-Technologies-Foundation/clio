@@ -28,7 +28,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	internal const int DefaultTop = 25;
 
 	private const string ValidArgumentsHint =
-		"Valid: entity, environment-name, filters, select, expand, order-by, top, skip, count. " +
+		"Valid: entity, environment-name, filters, select, expand, order-by, top, skip, count, output-file. " +
 		"Raw filter strings are not supported; use the structured filters object.";
 
 	private static readonly IReadOnlyDictionary<string, string> ArgumentAliases =
@@ -37,6 +37,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			["environment_name"] = "environment-name",
 			["orderBy"] = "order-by",
 			["order_by"] = "order-by",
+			["outputFile"] = "output-file",
+			["output_directory"] = "output-file",
 			["limit"] = "top"
 		};
 
@@ -62,12 +64,13 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	[Description(
 		"Query Creatio records via OData v4. " +
 		"Supports structured filters, select, expand, order by, top, skip, and total-count requests. " +
+		"Set output-file to write a large raw response to disk and receive a compact row/column-size summary. " +
 		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"skip must be zero or greater; use order-by with skip for stable paging. " +
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
-		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top, skip, count (optional).")]
+		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top, skip, count, output-file (optional).")]
 		[Required]
 		ODataReadArgs args) {
 		try {
@@ -97,7 +100,14 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string url = urlBuilder.Build(path);
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
-			return ParseODataResponse(responseJson, args.Count);
+			ODataReadResponse response = ParseODataResponse(responseJson, args.Count);
+			if (response.Success && !string.IsNullOrWhiteSpace(args.OutputFile)) {
+				if (!ODataFileContract.TryWriteReadResponse(args.OutputFile, responseJson, out string outputPath, out ODataReadFileSummary summary, out string fileError)) {
+					return ODataReadResponse.Failure(fileError);
+				}
+				return response with { Value = null, OutputFile = outputPath, RowCount = summary.RowCount, ColumnSizes = summary.ColumnSizes };
+			}
+			return response;
 		} catch (Exception ex) {
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -397,6 +407,11 @@ public sealed record ODataReadArgs {
 	[Description("When true, requests the total number of matching records before top/skip paging; returned as total-count. Response count remains the number of records in this page.")]
 	public bool Count { get; init; }
 
+	/// <summary>Optional path where the raw OData JSON response is written.</summary>
+	[JsonPropertyName("output-file")]
+	[Description("Optional path for the raw OData JSON response. When set, the inline value is omitted and a compact row/column-size summary is returned. The file must not already exist.")]
+	public string? OutputFile { get; init; }
+
 	/// <summary>Structured filter used to narrow matching records.</summary>
 	[JsonPropertyName("filters")]
 	[Description(
@@ -459,7 +474,22 @@ public sealed record ODataReadResponse(
 	[property: JsonPropertyName("total-count")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Total number of records matching the filter before top/skip paging, present when count=true.")]
-	long? TotalCount = null) {
+	long? TotalCount = null,
+
+	[property: JsonPropertyName("output-file")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Absolute path to the raw OData response written to disk.")]
+	string? OutputFile = null,
+
+	[property: JsonPropertyName("row-count")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Number of object rows written to output-file.")]
+	int? RowCount = null,
+
+	[property: JsonPropertyName("column-sizes")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("UTF-8 byte totals by column for rows written to output-file.")]
+	IReadOnlyDictionary<string, long>? ColumnSizes = null) {
 
 	/// <summary>Creates a failure response.</summary>
 	public static ODataReadResponse Failure(string message) =>

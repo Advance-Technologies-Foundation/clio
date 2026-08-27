@@ -72,6 +72,40 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Binds the output-file argument through the real MCP server and keeps the file contract available for large responses.")]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read binds output-file over stdio")]
+	public async Task ODataRead_Should_Bind_Output_File_Argument() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-output-env-{Guid.NewGuid():N}";
+		string outputFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"odata-read-e2e-{Guid.NewGuid():N}.json");
+
+		try {
+			// Act
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = invalidEnvironmentName,
+						["entity"] = "Contact",
+						["output-file"] = outputFile
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "output-file is a valid odata-read argument and should reach structured tool execution");
+			response.Error.Should().Contain(invalidEnvironmentName,
+				because: "the real dispatch should bind output-file before reporting the missing environment");
+		} finally {
+			if (System.IO.File.Exists(outputFile)) System.IO.File.Delete(outputFile);
+		}
+	}
+
+	[Test]
 	[Description("Rejects a raw filter argument through the real stdio and clio-run path before resolving the requested environment.")]
 	[AllureTag(ODataReadTool.ToolName)]
 	[AllureName("odata-read rejects silently ignored raw filter over stdio")]

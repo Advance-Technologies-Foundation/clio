@@ -42,7 +42,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		"state. " +
 		"Call get-tool-contract for odata-create to see usage examples and discovery workflow hints.")]
 	public ODataCreateBatchResponse Create(
-		[Description("Parameters: entity, rows, environment-name (all required); stop-on-error (optional).")]
+		[Description("Parameters: entity, rows or rows-file, environment-name (required); stop-on-error (optional).")]
 		[Required]
 		ODataCreateArgs args) {
 		if (string.IsNullOrWhiteSpace(args.Entity)) {
@@ -52,7 +52,22 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			return ODataCreateBatchResponse.RequestError(
 				"entity must be a valid OData entity set name (letters, digits, underscore).");
 		}
-		if (args.Rows is not { ValueKind: JsonValueKind.Array } rows || rows.GetArrayLength() == 0) {
+		JsonElement? fileRows = null;
+		if (args.Rows is not null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
+			return ODataCreateBatchResponse.RequestError("Provide either rows or rows-file, not both.");
+		}
+		if (args.Rows is null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
+			if (!ODataFileContract.TryReadJson(args.RowsFile, "rows-file", out string rowsJson, out string fileError)) {
+				return ODataCreateBatchResponse.RequestError(fileError);
+			}
+			try {
+				fileRows = JsonDocument.Parse(rowsJson).RootElement.Clone();
+			} catch (JsonException ex) {
+				return ODataCreateBatchResponse.RequestError($"rows-file must contain valid JSON: {ex.Message}");
+			}
+		}
+		JsonElement? requestedRows = args.Rows ?? fileRows;
+		if (requestedRows is not { ValueKind: JsonValueKind.Array } rows || rows.GetArrayLength() == 0) {
 			return ODataCreateBatchResponse.RequestError(
 				"rows is required and must be a non-empty array of field/value objects.");
 		}
@@ -190,6 +205,11 @@ public sealed record ODataCreateArgs {
 	[Description("Stop inserting after the first failed row. Default false: continue and report every row independently. " +
 		"When true and a row fails, the rows after it are NOT attempted and do NOT appear in 'results', so 'results' may be shorter than the input 'rows'.")]
 	public bool StopOnError { get; init; }
+
+	/// <summary>Optional path to a JSON array of row objects, used instead of <see cref="Rows"/>.</summary>
+	[JsonPropertyName("rows-file")]
+	[Description("Optional path to a JSON array of field/value objects. Use this instead of rows for large payloads; the file must be readable JSON.")]
+	public string? RowsFile { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]

@@ -26,7 +26,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-update to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Update(
-		[Description("Parameters: entity, id, data, environment-name (all required).")]
+		[Description("Parameters: entity, id, data or rows-file, environment-name (required).")]
 		[Required]
 		ODataUpdateArgs args) {
 		try {
@@ -34,7 +34,22 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			if (invalidTarget is not null) {
 				return invalidTarget;
 			}
-			if (args.Data is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
+			if (args.Data is not null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
+				return ODataWriteResponse.Failure("Provide either data or rows-file, not both.");
+			}
+			JsonElement? fileData = null;
+			if (args.Data is null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
+				if (!ODataFileContract.TryReadJson(args.RowsFile, "rows-file", out string dataJson, out string fileError)) {
+					return ODataWriteResponse.Failure(fileError);
+				}
+				try {
+					fileData = JsonDocument.Parse(dataJson).RootElement.Clone();
+				} catch (JsonException ex) {
+					return ODataWriteResponse.Failure($"rows-file must contain valid JSON: {ex.Message}");
+				}
+			}
+			JsonElement? requestedData = args.Data ?? fileData;
+			if (requestedData is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
 				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
 			}
 			ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, args.Entity, args.Id, "update", "change");
@@ -88,4 +103,9 @@ public sealed record ODataUpdateArgs {
 	[JsonPropertyName("confirm")]
 	[Description("Must be true to authorize this destructive update. When false or omitted, the tool refuses and returns what would change without making any remote call.")]
 	public bool Confirm { get; init; }
+
+	/// <summary>Optional path to a JSON object of fields to change, used instead of <see cref="Data"/>.</summary>
+	[JsonPropertyName("rows-file")]
+	[Description("Optional path to a JSON object of field/value pairs. Use this instead of data for large payloads; confirm=true is still required.")]
+	public string? RowsFile { get; init; }
 }
