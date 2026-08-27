@@ -176,10 +176,10 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	internal static readonly IReadOnlyDictionary<string, string> FeatureEnableNotices =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["mobile-page-converter"] =
-				"🔔 Heads up! Enabling this feature will activate the agent in BETA MODE. "
+				"⚠️ Heads up! Enabling this feature will activate the agent in BETA MODE. "
 				+ "Please be aware that behavior may vary and improvements are ongoing.",
 			[KnowledgeUnsequencedGitOptions.FeatureName] =
-				"🔔 Local development aid. While enabled, a Git knowledge source whose manifest omits "
+				"⚠️ Local development aid. While enabled, a Git knowledge source whose manifest omits "
 				+ "\"sequence\" is loaded by deriving the sequence from libraryVersion, and such a bundle "
 				+ "may replace the active generation with different content under the SAME sequence - the "
 				+ "content-integrity check that detects a swapped guidance corpus does not apply to it. "
