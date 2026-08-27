@@ -144,6 +144,16 @@ public sealed class ElementMapEntry {
 	public string PropertyName { get; init; }
 
 	/// <summary>
+	/// True when this <c>insert</c> RETARGETS the element into a <see cref="ParentName"/> that ALREADY EXISTS on
+	/// the mobile template (e.g. <c>FloatingActionButton</c> via the Scaffold's <c>floatAction</c> slot). Apply it
+	/// as an insert of THIS child into that existing parent ONLY — do NOT insert or recreate the parent itself, and
+	/// do NOT declare its slot: the template already provides both. Omitted (null) for every other operation.
+	/// </summary>
+	[JsonPropertyName("parentExistsOnTemplate")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? ParentExistsOnTemplate { get; init; }
+
+	/// <summary>
 	/// Optional 0-based insert position within the parent's <c>items</c>. Set for a positional insert — a
 	/// web element mapped above/below an anchor container via a <c>&lt;container&gt;:top</c> /
 	/// <c>:bottom</c> template rule (<c>:top</c> elements get an ascending index from 0 so they land before
