@@ -1568,6 +1568,82 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A header action retargeted into a FloatingActionButton that EXISTS on the mobile template is flagged parentExistsOnTemplate:true, so the caller inserts only the child and never recreates the FAB container.")]
+	public void Analyze_Fab_RetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the template retargets it into the FAB");
+		order.ParentExistsOnTemplate.Should().BeTrue(
+			because: "the FAB already exists on the mobile template, so only the child is inserted and the parent is never recreated");
+	}
+
+	[Test]
+	[Description("A header button INHERITED FROM THE WEB TEMPLATE baseline (e.g. Save/Cancel/Close chrome the record-page template carries) is DROPPED, not retargeted into the FAB (the mobile template provides its own, so retargeting would duplicate it); a page-authored header action (above the baseline) still converts into FloatingActionButton.menuItems.")]
+	public void Analyze_Fab_InheritedWebTemplateChrome_DroppedNotDuplicated() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveButton", "type": "crt.Button", "caption": "#ResourceString(SaveButton_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } },
+				{ "name": "SendForApprovalButton", "type": "crt.Button", "caption": "#ResourceString(SendForApprovalButton_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")),
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "SaveButton", "type": "crt.Button" } ]
+				"""));
+
+		// Assert
+		ElementMapEntry save = Element(guide, "SaveButton");
+		save.Operation.Should().Be("drop",
+			because: "SaveButton is inherited from the web template (chrome the mobile template provides natively), so retargeting it into the FAB would duplicate it");
+		save.Reason.Should().Contain("inherited from the web template",
+			because: "the drop reason must state why the inherited-chrome header button was not retargeted");
+		ElementMapEntry send = Element(guide, "SendForApprovalButton");
+		send.Operation.Should().Be("insert", because: "a page-authored header action (absent from the web baseline) still converts");
+		send.ParentName.Should().Be("FloatingActionButton", because: "it is retargeted into the FAB");
+		guide.RequestConversions!.DroppedRequests.Should().Contain(
+			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
+			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
+	}
+
+	[Test]
+	[Description("When elementMap retargets into a FloatingActionButton the mobile template already provides, guide.constraints carries an explicit instruction to insert only the children and NOT recreate the parent container.")]
+	public void Analyze_Fab_RetargetParentOnTemplate_ConstraintWarnsAgainstRecreatingParent() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		guide.Constraints.Should().Contain(c => c.Contains("FloatingActionButton") && c.Contains("parentExistsOnTemplate"),
+			because: "the caller must be told the retarget parent already exists and only its children should be inserted");
+	}
+
+	[Test]
 	[Description("A dropdown crt.Button with no clicked of its own is NOT itself a FAB entry, but its nested menuItems are still descended and flattened into FloatingActionButton.menuItems as siblings (no hierarchy) — proving any-depth scope + flatten + the container-without-clicked rule.")]
 	public void Analyze_Fab_DropdownButtonDropped_ItsMenuItemsFlattened() {
 		// Arrange
@@ -2010,6 +2086,136 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the collector descends the floatAction object slot, not only items, so the FAB is discoverable");
 		types["FloatingActionButton"].Should().Be("crt.FloatingActionButton",
 			because: "the discovered slot carries the FAB type");
+	}
+
+	/// <summary>A container-retarget rule: matches a crt.FlexContainer under <paramref name="pathScope"/> and
+	/// retargets it (keeping its container type) into <paramref name="parentName"/>.items — exercising the CONTAINER
+	/// retarget path, which the header/FAB tests (scope path) do not.</summary>
+	private static WebToMobilePageConversionRules ContainerRetargetRule(string parentName, params string[] pathScope) =>
+		new() {
+			Components = [
+				new ComponentEquivalenceRule {
+					Path = pathScope,
+					Filters = [new ElementFilterRule { Type = "crt.FlexContainer" }],
+					ViewConfigTemplates = [
+						new ViewConfigTemplateRule {
+							ParentName = parentName,
+							PropertyName = "items",
+							Value = JsonDocument.Parse("""
+								{ "type": "crt.FlexContainer", "name": "{{ diff.name }}" }
+								""").RootElement.Clone()
+						}
+					]
+				}
+			]
+		};
+
+	[Test]
+	[Description("A crt.Button matched by a conversion rule with a positive `path` but NOT listed in nonConvertingScopeContainers is retargeted through the LEAF path into a FloatingActionButton the mobile template provides; the entry is flagged parentExistsOnTemplate:true so the caller inserts only the child.")]
+	public void Analyze_Fab_LeafRetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act — empty nonConvertingScopeContainers, so OrderBtn converts through the leaf branch, not the scope branch.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["Body"], [], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert", because: "a rule-matched leaf button converts");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the rule retargets the leaf into the FAB");
+		order.ParentExistsOnTemplate.Should().BeTrue(
+			because: "the leaf retarget path must flag a template-provided parent so the caller inserts only the child");
+	}
+
+	[Test]
+	[Description("A rule-matched leaf button INHERITED FROM THE WEB TEMPLATE baseline is dropped through the LEAF path (not retargeted; the mobile template provides its own), and its web clicked request is recorded in droppedRequests so requestConversions does not silently under-count.")]
+	public void Analyze_Fab_LeafInheritedWebTemplateChrome_DroppedAndRequestRecorded() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveButton", "type": "crt.Button", "caption": "#ResourceString(SaveButton_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act — SaveButton is in the web template baseline, so the leaf retarget is suppressed as inherited chrome.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["Body"], [], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")),
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "SaveButton", "type": "crt.Button" } ]
+				"""));
+
+		// Assert
+		ElementMapEntry save = Element(guide, "SaveButton");
+		save.Operation.Should().Be("drop",
+			because: "SaveButton is inherited from the web template baseline, so the leaf retarget is suppressed to avoid duplication");
+		save.Reason.Should().Contain("inherited from the web template",
+			because: "the drop reason must state why the inherited-chrome leaf was not retargeted");
+		guide.RequestConversions!.DroppedRequests.Should().Contain(
+			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
+			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
+	}
+
+	[Test]
+	[Description("A crt.FlexContainer matched by a conversion rule is retargeted through the CONTAINER path into a parent the mobile template provides; the container entry is flagged parentExistsOnTemplate:true.")]
+	public void Analyze_Fab_ContainerRetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Root", "type": "crt.FlexContainer", "items": [
+				{ "name": "Toolbar", "type": "crt.FlexContainer", "items": [
+					{ "name": "Fld", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
+			rules: ContainerRetargetRule("AreaContainer", "Root"),
+			mobileTemplateTypesByName: MobileTypesByName(("AreaContainer", "crt.GridContainer")));
+
+		// Assert
+		ElementMapEntry toolbar = Element(guide, "Toolbar");
+		toolbar.Operation.Should().Be("insert", because: "a rule-matched container converts");
+		toolbar.ParentName.Should().Be("AreaContainer", because: "the rule retargets the container into AreaContainer");
+		toolbar.ParentExistsOnTemplate.Should().BeTrue(
+			because: "the container retarget path must flag a template-provided parent so the caller inserts only the children");
+	}
+
+	[Test]
+	[Description("A rule-matched container INHERITED FROM THE WEB TEMPLATE baseline is dropped through the CONTAINER path (not retargeted; the mobile template provides its own), and its children are hoisted to the walk parent so they are not lost with the un-emitted container.")]
+	public void Analyze_Fab_ContainerInheritedWebTemplateChrome_DroppedChildrenHoisted() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Root", "type": "crt.FlexContainer", "items": [
+				{ "name": "Toolbar", "type": "crt.FlexContainer", "items": [
+					{ "name": "Fld", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act — Toolbar is in the web template baseline, so the container is inherited chrome.
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
+			rules: ContainerRetargetRule("AreaContainer", "Root"),
+			mobileTemplateTypesByName: MobileTypesByName(("AreaContainer", "crt.GridContainer")),
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "Toolbar", "type": "crt.FlexContainer" } ]
+				"""));
+
+		// Assert
+		ElementMapEntry toolbar = Element(guide, "Toolbar");
+		toolbar.Operation.Should().Be("drop",
+			because: "Toolbar is inherited from the web template baseline, so the container retarget is suppressed to avoid duplication");
+		toolbar.Reason.Should().Contain("inherited from the web template",
+			because: "the drop reason must state why the inherited-chrome container was not retargeted");
+		ElementMapEntry fld = Element(guide, "Fld");
+		fld.Operation.Should().Be("insert",
+			because: "the dropped container's children must be hoisted to the walk parent, not lost with the un-emitted container");
+		fld.ParentName.Should().Be("Root",
+			because: "the child is hoisted to the dropped container's walk parent, not placed under the suppressed retarget target");
 	}
 
 	#endregion
