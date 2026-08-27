@@ -210,6 +210,19 @@ public class PageGetCommand : Command<PageGetOptions> {
 			};
 			return true;
 		}
+		catch (JsonDiffApplierException resolveEx) {
+			// Strict/server-faithful resolution rejected the merged inherited chain. Name the page and point at the
+			// chain so the message is actionable instead of a bare applier error (e.g. "…is not a container").
+			// Warn (distinct from the failure envelope) so operators can spot pages that relied on a tolerance the
+			// retired resolver silently absorbed while rolling this change out.
+			_logger.WriteWarning(
+				$"Strict page-bundle resolution rejected the schema chain for '{options.SchemaName}': {resolveEx.Message}");
+			response = new PageGetResponse {
+				Success = false,
+				Error = resolveEx.ToPageBundleResolutionError(options.SchemaName)
+			};
+			return false;
+		}
 		catch (Exception ex) {
 			response = new PageGetResponse {
 				Success = false,
