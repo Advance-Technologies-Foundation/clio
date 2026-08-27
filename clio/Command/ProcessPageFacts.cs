@@ -156,7 +156,7 @@ public static class ProcessPageFactsProjection {
 		string effectiveCulture = string.IsNullOrWhiteSpace(culture) ? DefaultCulture : culture;
 		List<ProcessPageButton> buttons = [];
 		CollectButtons(bundle["viewConfig"], strings, effectiveCulture, buttons);
-		return (buttons, CollectDataSources(bundle["modelConfig"]?["dataSources"] as JObject));
+		return (Distinct(buttons), CollectDataSources(bundle["modelConfig"]?["dataSources"] as JObject));
 	}
 
 	/// <summary>
@@ -172,6 +172,26 @@ public static class ProcessPageFactsProjection {
 	#endregion
 
 	#region Methods: Private
+
+	/// <summary>
+	/// Collapses buttons that share a NAME, keeping the first.
+	/// <para>Measured, not defensive: a real Freedom UI page carries the same <c>ActionButtonsContainer</c> in two
+	/// places — the desktop header and the responsive action container — so <c>Accounts_FormPage</c> on a 8.1.3
+	/// stand reports Save/Cancel/Close TWICE (7 nodes, 4 distinct; probed 2026-08-26). The process element
+	/// identifies a button by name, so those are one button, and emitting both is worse than noise: the server
+	/// keys its button-id reuse map by name, so an agent that passes both would write two collection items that
+	/// collapse onto one id.</para>
+	/// </summary>
+	private static List<ProcessPageButton> Distinct(List<ProcessPageButton> buttons) {
+		HashSet<string> seen = new(StringComparer.Ordinal);
+		List<ProcessPageButton> distinct = [];
+		foreach (ProcessPageButton button in buttons) {
+			if (seen.Add(button.Name)) {
+				distinct.Add(button);
+			}
+		}
+		return distinct;
+	}
 
 	/// <summary>
 	/// Walks the merged view config for <c>crt.Button</c> nodes. A menu button contributes one entry per leaf menu

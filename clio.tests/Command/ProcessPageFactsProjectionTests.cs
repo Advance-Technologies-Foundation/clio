@@ -196,6 +196,33 @@ public class ProcessPageFactsProjectionTests {
 	}
 
 	[Test]
+	[Description("The same button reported from two containers collapses to ONE entry. Measured on a live 8.1.3 stand: Accounts_FormPage carries ActionButtonsContainer in BOTH MainHeaderTop and ActionContainer, so Save/Cancel/Close each appear twice (7 nodes, 4 distinct). The element identifies a button by name, and the server keys its id-reuse map by name, so emitting both would write two items that collapse onto one id.")]
+	public void Project_ShouldCollapseTheSameButtonReportedFromTwoContainers() {
+		// Arrange — the real shape, trimmed to the two containers that carry the duplicate.
+		JObject bundle = Bundle(viewConfig: """
+			[{ "type": "crt.FlexContainer", "name": "MainHeaderTop", "items": [
+				{ "type": "crt.FlexContainer", "name": "ActionButtonsContainer", "items": [
+					{ "type": "crt.Button", "name": "SaveButton", "caption": "Save",
+						"clicked": { "request": "crt.SaveRecordRequest" } },
+					{ "type": "crt.Button", "name": "CloseButton", "caption": "Close",
+						"clicked": { "request": "crt.ClosePageRequest" } } ] } ] },
+			 { "type": "crt.GridContainer", "name": "ActionContainer", "items": [
+				{ "type": "crt.FlexContainer", "name": "ActionButtonsContainer", "items": [
+					{ "type": "crt.Button", "name": "SaveButton", "caption": "Save",
+						"clicked": { "request": "crt.SaveRecordRequest" } },
+					{ "type": "crt.Button", "name": "CloseButton", "caption": "Close",
+						"clicked": { "request": "crt.ClosePageRequest" } } ] } ] }]
+			""");
+
+		// Act
+		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
+
+		// Assert
+		buttons.Select(button => button.Name).Should().Equal(["SaveButton", "CloseButton"],
+			because: "two containers carrying the same button is one button, in the order first seen");
+	}
+
+	[Test]
 	[Description("A button with no click handler reports no requests — which still leaves it eligible, matching the designer's rule for a custom button that only runs code.")]
 	public void Project_ShouldReportNoRequestsForHandlerlessButton() {
 		// Arrange
