@@ -31,11 +31,18 @@ public static class DescribeProcessPrompt {
 
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
-		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start),
+		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
+		   configuration block for a configured element - `email`, `readData`, `openEditPage`),
 		   `flows` (source, target, kind), and process `parameters` — not raw metadata.
 		2. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
 		3. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
 		   source/target), each activity's purpose, and any branches (gateways / conditional flows).
+		An `openEditPage` block tells you which page the step opens, for which object and record type, whether the
+		user ADDS a record (with the values pre-filled for them) or EDITS an existing one (and which), the
+		recommendation shown on the page, and when the step counts as complete. Narrate it in those terms rather than
+		by parameter name. One read-back caveat worth stating if you see it: the block can report pre-filled values
+		AND a record together, because the runtime applies stored values in either mode — that combination cannot be
+		written through the tool, so flag it as something a human configured by hand.
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
 		explicitly instead of guessing.

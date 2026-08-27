@@ -394,6 +394,175 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	// A signal-start process with NO filter — the base for the setFilter/clearFilter e2e (setFilter targets a
 	// signalStart or a DataSourceFilters-exposing data element). Contact.Name is a base column on every stand.
+
+	[Test]
+	[Description("Over the real MCP path, setElement reconfigures an existing openEditPage element IN PLACE, and the two DESTRUCTIVE changes are guarded: switching editMode without the new mode's payload is REFUSED, while supplying it succeeds AND clears the branch being left. The clearing matters beyond tidiness - the runtime applies stored pre-filled values in either mode, so a leftover set would be live configuration nobody asked for, and only a real server can prove it is gone.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setElement guards an openEditPage mode switch and clears the old branch")]
+	public async Task ModifyBusinessProcess_Should_GuardOpenEditPageModeSwitch_AndClearOldBranch() {
+		// Arrange - an edit-mode element opening a fixed record, so the switch to add mode has a branch to clear.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageSetElementE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageEditModeDescriptor(processName)
+		});
+
+		// Act 1 - switch the mode with NO replacement payload.
+		CallToolResult refused = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildOpenEditPageModeSwitchOperations(withDefaultValues: false)
+		});
+
+		// Assert 1
+		string refusedJson = JsonSerializer.Serialize(refused);
+		refusedJson.Should().Contain("Supply 'defaultValues'",
+			because: "the stored record belongs to the mode being left, so the new mode's payload must arrive with the "
+				+ "switch - and the refusal has to name the field the caller is missing");
+		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!.EditMode.Should().Be("edit",
+				because: "a refused update must leave the element exactly as it was, not half-switched");
+
+		// Act 2 - the same switch WITH the replacement payload.
+		CallToolResult applied = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildOpenEditPageModeSwitchOperations(withDefaultValues: true)
+		});
+
+		// Assert 2
+		applied.IsError.Should().NotBeTrue(because: "a mode switch that brings its payload must apply");
+		DescribedOpenEditPage block = ParseDescribeResult(
+				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
+		block.EditMode.Should().Be("add", because: "the requested mode is now stored");
+		block.DefaultValues.Should().NotBeNullOrEmpty(because: "the replacement payload was written");
+		block.RecordId.Should().BeNull(
+			because: "the branch being left is CLEARED - a leftover record from edit mode would be configuration "
+				+ "nobody asked for, and the runtime does not ignore it");
+	}
+
+
+	[Test]
+	[Description("Over the real MCP path, setElement with an EMPTY defaultValues array REMOVES every pre-filled value from an openEditPage element, and describe confirms the set is gone. Only a real server proves this: the values are stored through the platform's own packer, so 'cleared' has to be verified as the packer's absence rather than as an empty local object - and the runtime applies whatever stays stored, so a set that survives is live configuration nobody asked for.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process clears an openEditPage element's pre-filled values")]
+	public async Task ModifyBusinessProcess_Should_ClearOpenEditPageDefaultValues_WhenEmptyArraySupplied() {
+		// Arrange - an add-mode element that really carries a pre-filled value
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageClearE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageAddModeDescriptor(processName)
+		});
+		DescribedOpenEditPage before = ParseDescribeResult(
+				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
+		before.DefaultValues.Should().NotBeNullOrEmpty(
+			because: "the arrange step must really have stored a value for the clearing to prove anything");
+
+		// Act
+		CallToolResult applied = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+			[
+			  { "op": "setElement", "elementName": "OpenPage1",
+			    "elementUpdate": { "openEditPage": { "defaultValues": [] } } }
+			]
+			"""
+		});
+
+		// Assert
+		applied.IsError.Should().NotBeTrue(
+			because: "an empty array is a valid request - it is the only way to empty the block, so refusing it would "
+				+ "leave a caller no way to undo a pre-filled set");
+		DescribedOpenEditPage after = ParseDescribeResult(
+				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
+		after.DefaultValues.Should().BeNullOrEmpty(
+			because: "the stored set must be GONE on the server, not merely absent from the request - the runtime "
+				+ "applies whatever stays stored, in either editing mode");
+		after.EditMode.Should().Be("add",
+			because: "clearing the values must not disturb the rest of the configuration");
+	}
+
+	// An add-mode element carrying one pre-filled value, the starting state for the clearing test.
+	private static string BuildOpenEditPageAddModeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Clear E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Fill in the account",
+		      "openEditPage": {
+		        "page": "AccountPageV2",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "defaultValues": [ { "column": "Address", "value": "ClioClearProbe" } ]
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// An edit-mode Open edit page element opening a fixed record, used as the starting state for the mode switch.
+	private static string BuildOpenEditPageEditModeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page setElement E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Review the account",
+		      "openEditPage": {
+		        "page": "AccountPageV2",
+		        "editMode": "edit",
+		        "recommendation": "Review the account",
+		        "recordId": { "value": "e308b781-3c5b-4ecb-89ef-5c1ed4da488e" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// The same mode switch with and without the replacement payload the guard requires.
+	private static string BuildOpenEditPageModeSwitchOperations(bool withDefaultValues) {
+		string payload = withDefaultValues
+			? """, "defaultValues": [ { "column": "Address", "value": "ClioSetElementProbe" } ]"""
+			: string.Empty;
+		return $$"""
+		[
+		  { "op": "setElement", "elementName": "OpenPage1",
+		    "elementUpdate": { "openEditPage": { "editMode": "add"{{payload}} } } }
+		]
+		""";
+	}
+
 	private static string BuildSignalStartDescriptor(string processName) =>
 		$$"""
 		{

@@ -256,6 +256,18 @@ public sealed class DescribedElement {
 	public DescribedEmail Email { get; set; }
 
 	/// <summary>
+	/// For an Open edit page element (<c>OpenEditPageUserTask</c>): its configuration decoded back into the
+	/// descriptor vocabulary. <c>null</c> for other element kinds, for an element that stores no page (placed but
+	/// never configured), and when the server is an older <c>CrtProcessBuilder</c> that does not report it.
+	/// Round-trips into a <c>create</c>/<c>modify</c> <c>openEditPage</c> block, with one asymmetry: the write path
+	/// refuses pre-filled values together with a record, while this read reports BOTH when the schema carries them —
+	/// the runtime applies stored values in either editing mode, so hiding one would hide live configuration. Drop
+	/// the one that does not belong to the reported <c>editMode</c> before re-applying.
+	/// </summary>
+	[JsonPropertyName("openEditPage")]
+	public DescribedOpenEditPage OpenEditPage { get; set; }
+
+	/// <summary>
 	/// The element's BOUND host-entity connections ("Connected to") — which records the Activity it creates is
 	/// attached to. <c>null</c> when the element has none, and also when the server is an older
 	/// <c>CrtProcessBuilder</c> that does not report them.
@@ -289,6 +301,220 @@ public sealed class DescribedElement {
 	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
 	/// verbatim instead of being discarded without a trace.
 	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The configuration of an Open edit page element, read back from its parameters.
+/// <para>Declared rather than left to <c>AdditionalData</c> so the block is typed and documented at the tool
+/// surface. (The Modify data <c>changeData</c> block is still undeclared and reaches callers through the extension
+/// bag — worth aligning, but out of this story's scope.)</para>
+/// </summary>
+public sealed class DescribedOpenEditPage {
+	/// <summary>The page schema NAME the element opens; null when the stored page UId does not resolve here.</summary>
+	[JsonPropertyName("page")]
+	public string Page { get; set; }
+
+	/// <summary>The page schema UId as stored.</summary>
+	[JsonPropertyName("pageSchemaUId")]
+	public string PageSchemaUId { get; set; }
+
+	/// <summary>The target object (entity) name, which the designer derives from the page.</summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+
+	/// <summary>
+	/// The RECORD TYPE the page opens for, when the object is typed (<c>Activity</c> → Task / Call / Email).
+	/// <c>null</c> for an untyped object. NOT a Classic-vs-Freedom marker — feed it back as <c>recordType</c>, or a
+	/// re-apply on a typed object is refused as ambiguous.
+	/// </summary>
+	[JsonPropertyName("pageTypeUId")]
+	public string PageTypeUId { get; set; }
+
+	/// <summary>Editing mode — <c>add</c> or <c>edit</c>; null on an element that stores no mode.</summary>
+	[JsonPropertyName("editMode")]
+	public string EditMode { get; set; }
+
+	/// <summary>
+	/// The values pre-filled on the new record (<c>add</c> mode), decoded the same way a Modify data element's
+	/// assignments are. Reported whenever STORED — see the asymmetry noted on
+	/// <see cref="DescribedElement.OpenEditPage"/>.
+	/// </summary>
+	[JsonPropertyName("defaultValues")]
+	public List<JsonElement> DefaultValues { get; set; }
+
+	/// <summary>Which record the page opens (<c>edit</c> mode), decoded back into its named source where provable.</summary>
+	[JsonPropertyName("recordId")]
+	public JsonElement? RecordId { get; set; }
+
+	/// <summary>The recommendation shown on the opened page, when stored as a constant.</summary>
+	[JsonPropertyName("recommendation")]
+	public string Recommendation { get; set; }
+
+	/// <summary>The hint shown behind the page's information button, when stored as a constant.</summary>
+	[JsonPropertyName("hint")]
+	public string Hint { get; set; }
+
+	/// <summary>
+	/// "Create a list of results by column" — the step's outcome as one result per value of a lookup column.
+	/// <c>null</c> when the element stores none of it.
+	/// </summary>
+	[JsonPropertyName("resultsByColumn")]
+	public DescribedOpenEditPageResultsByColumn ResultsByColumn { get; set; }
+
+	/// <summary>
+	/// "Log activity" and its scheduling fields. <c>null</c> when the element stores none of them — which is not the
+	/// same as the designer showing them empty: the panel populates every one of these from schema defaults, so
+	/// <c>null</c> means "nothing written", never "shown as blank".
+	/// </summary>
+	[JsonPropertyName("logActivity")]
+	public DescribedOpenEditPageLogActivity LogActivity { get; set; }
+
+	/// <summary>
+	/// Who performs the step, and whether the page opens automatically. <c>null</c> on an element that carries no
+	/// performer assignment — which is the designer's own initial state, not an error.
+	/// </summary>
+	[JsonPropertyName("performer")]
+	public DescribedOpenEditPagePerformer Performer { get; set; }
+
+	/// <summary>
+	/// Completion mode — <c>onSave</c> or <c>onConditions</c>. Derived from the stored flag, never from a designer
+	/// caption: the captions for these two options differ between environments behind a platform feature switch.
+	/// </summary>
+	[JsonPropertyName("completionMode")]
+	public string CompletionMode { get; set; }
+
+	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The "Create a list of results by column" configuration of an Open edit page element.
+/// <para>Reading it back is the only way to see the result list a step offers. Note the limitation this reflects:
+/// clio cannot yet build the CONDITIONAL flows that route those results, so a clio-built process carries the list
+/// without branching on it until a human wires the flows in the designer.</para>
+/// </summary>
+public sealed class DescribedOpenEditPageResultsByColumn {
+	/// <summary>Whether the results list is generated; <c>null</c> when the flag is not stored on the element.</summary>
+	[JsonPropertyName("enabled")]
+	public bool? Enabled { get; set; }
+
+	/// <summary>
+	/// The chosen column's NAME — what a caller feeds back as <c>column</c>. <c>null</c> when no column is stored, or
+	/// when its UId no longer resolves on this environment (check <see cref="ColumnUId"/> to tell those apart).
+	/// </summary>
+	[JsonPropertyName("column")]
+	public string Column { get; set; }
+
+	/// <summary>The column's UId as stored, so an unresolvable one stays visible rather than reading as "no column".</summary>
+	[JsonPropertyName("columnUId")]
+	public string ColumnUId { get; set; }
+
+	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The "Log activity" configuration of an Open edit page element: whether the step creates an Activity record, and
+/// the scheduling fields the designer reveals under that checkbox.
+/// </summary>
+public sealed class DescribedOpenEditPageLogActivity {
+	/// <summary>
+	/// Whether the step logs an activity (<c>CreateActivity</c>). <c>null</c> when the flag is not stored, which
+	/// means the platform's <c>false</c> default applies — not that the answer is unknown.
+	/// </summary>
+	[JsonPropertyName("enabled")]
+	public bool? Enabled { get; set; }
+
+	/// <summary>"Start in" — the delay before the activity starts.</summary>
+	[JsonPropertyName("startIn")]
+	public DescribedActivityInterval StartIn { get; set; }
+
+	/// <summary>"Planned duration".</summary>
+	[JsonPropertyName("duration")]
+	public DescribedActivityInterval Duration { get; set; }
+
+	/// <summary>"Remind in" — the reminder offset.</summary>
+	[JsonPropertyName("remindIn")]
+	public DescribedActivityInterval RemindIn { get; set; }
+
+	/// <summary>"Show in calendar" — whether the activity appears in the scheduler.</summary>
+	[JsonPropertyName("showInCalendar")]
+	public bool? ShowInCalendar { get; set; }
+
+	/// <summary>
+	/// "Priority" as its lookup NAME — what a caller feeds back. <c>null</c> when no priority is stored or the
+	/// stored id no longer resolves; <see cref="PriorityId"/> tells those two apart.
+	/// </summary>
+	[JsonPropertyName("priority")]
+	public string Priority { get; set; }
+
+	/// <summary>The stored priority record id, so an unresolvable one stays visible.</summary>
+	[JsonPropertyName("priorityId")]
+	public string PriorityId { get; set; }
+
+	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// One scheduling interval: the stored number together with the unit its separate period parameter selects.
+/// <para>The pair travels as one value on purpose. The platform stores the number and the unit in INDEPENDENT
+/// parameters, so a number read without its unit means nothing — 30 is thirty minutes or thirty days depending on a
+/// second parameter entirely.</para>
+/// </summary>
+public sealed class DescribedActivityInterval {
+	/// <summary>The stored amount.</summary>
+	[JsonPropertyName("value")]
+	public int? Value { get; set; }
+
+	/// <summary>
+	/// The unit token — <c>minutes</c>, <c>hours</c>, <c>days</c>, <c>weeks</c> or <c>months</c>. <c>null</c> when no
+	/// period is stored (the runtime then uses the schema default) or the stored one is outside those five.
+	/// </summary>
+	[JsonPropertyName("unit")]
+	public string Unit { get; set; }
+
+	/// <summary>The raw stored period integer, so an unrecognized value stays visible rather than swallowed.</summary>
+	[JsonPropertyName("period")]
+	public int? Period { get; set; }
+
+	/// <summary>Forward-compatibility bag.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The performer of an Open edit page element, read back from its assignment options. Its own type rather than the
+/// Send email one: this element offers the field unconditionally, while Send email offers it only in manual send
+/// mode, so the two document different rules even where their fields coincide.
+/// </summary>
+public sealed class DescribedOpenEditPagePerformer {
+	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary>For user/manager: the contact formula on the element's <c>OwnerId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("contact")]
+	public string Contact { get; set; }
+
+	/// <summary>For role: the role formula on the element's <c>RoleId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("role")]
+	public string Role { get; set; }
+
+	/// <summary>The readable role name, when the schema stores one alongside the formula.</summary>
+	[JsonPropertyName("roleDisplay")]
+	public string RoleDisplay { get; set; }
+
+	/// <summary>Whether the page opens automatically for the performer; null when the element stores no flag.</summary>
+	[JsonPropertyName("showPage")]
+	public bool? ShowPage { get; set; }
+
+	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }

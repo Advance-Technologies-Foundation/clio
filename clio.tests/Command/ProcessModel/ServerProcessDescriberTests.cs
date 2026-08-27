@@ -161,6 +161,204 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes an Open edit page element's configuration (page, object, record type, editing mode, pre-filled values, recommendation, hint, completion mode) into the DescribedOpenEditPage DTO, so the block is surfaced typed rather than falling into the element's extension bag unnoticed.")]
+	public void Describe_ShouldReadOpenEditPageConfiguration_WhenServerReportsIt() {
+		// Arrange - the shape a CrtProcessBuilder that supports the element returns for a configured add-mode element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"pageSchemaUId\":\"f5edc79d-8d39-4e51-a255-57ccf3f1349e\",\"object\":\"Account\","
+			+ "\"pageTypeUId\":null,\"editMode\":\"add\","
+			+ "\"defaultValues\":[{\"column\":\"Address\",\"value\":\"Kyiv\"}],"
+			+ "\"recordId\":null,\"recommendation\":\"Fill in the account details\",\"hint\":\"Confirm the address\","
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.Should().NotBeNull(
+			because: "the openEditPage block must be deserialized into its own DTO, not silently absorbed by the "
+				+ "element's [JsonExtensionData] bag where no caller would find it typed");
+		block.Page.Should().Be("AccountPageV2", because: "the page name is what a caller feeds back as 'page'");
+		block.PageSchemaUId.Should().Be("f5edc79d-8d39-4e51-a255-57ccf3f1349e",
+			because: "the UId is the escape hatch when a name does not resolve");
+		block.Object.Should().Be("Account",
+			because: "the object is derived from the page server-side, so the read-back is the only place a caller "
+				+ "sees which object the step edits");
+		block.PageTypeUId.Should().BeNull(
+			because: "an untyped object stores no record type, and null is what distinguishes it from a typed one");
+		block.EditMode.Should().Be("add", because: "the editing mode decides which payload the block carries");
+		block.DefaultValues.Should().ContainSingle(
+			because: "the pre-filled values must survive the read-back to be re-appliable");
+		block.RecordId.Should().BeNull(because: "add mode opens no existing record");
+		block.Recommendation.Should().Be("Fill in the account details",
+			because: "the recommendation shown on the page round-trips");
+		block.Hint.Should().Be("Confirm the address", because: "the hint round-trips");
+		block.CompletionMode.Should().Be("onSave",
+			because: "the completion mode is derived from the stored flag, never from a designer caption");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's results-by-column block, keeping BOTH the resolved column name and its stored UId - the UId is what tells a caller 'the column no longer resolves here' apart from 'no column is set'.")]
+	public void Describe_ShouldReadOpenEditPageResultsByColumn_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\","
+			+ "\"resultsByColumn\":{\"enabled\":true,\"column\":\"Owner\","
+			+ "\"columnUId\":\"3c8c0b2f-3f0e-4a4a-9b1a-6f0f5a2b1c2d\"}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPageResultsByColumn results = result.Value.Elements[0].OpenEditPage.ResultsByColumn;
+		results.Should().NotBeNull(
+			because: "the block must be deserialized into its own DTO rather than absorbed by the openEditPage block's "
+				+ "extension bag, where a caller could not read it typed");
+		results.Enabled.Should().BeTrue(because: "the flag is what makes the step produce results at all");
+		results.Column.Should().Be("Owner",
+			because: "the NAME is what a caller feeds back, so it has to survive the read");
+		results.ColumnUId.Should().Be("3c8c0b2f-3f0e-4a4a-9b1a-6f0f5a2b1c2d",
+			because: "the UId distinguishes an unresolvable column from an unset one - with only the name, both look "
+				+ "identical");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's Log activity block, including each scheduling interval as a value plus the unit the server decoded from its stored period, so a caller can read what a step schedules without translating the platform's integer enum.")]
+	public void Describe_ShouldReadOpenEditPageLogActivity_WhenServerReportsIt() {
+		// Arrange - one interval per field, each with a different unit, so a mixed-up mapping cannot pass
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\","
+			+ "\"logActivity\":{\"enabled\":true,"
+			+ "\"startIn\":{\"value\":2,\"unit\":\"hours\",\"period\":1},"
+			+ "\"duration\":{\"value\":20,\"unit\":\"minutes\",\"period\":0},"
+			+ "\"remindIn\":{\"value\":3,\"unit\":\"days\",\"period\":2},"
+			+ "\"showInCalendar\":false}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPageLogActivity activity = result.Value.Elements[0].OpenEditPage.LogActivity;
+		activity.Should().NotBeNull(
+			because: "the block must be deserialized into its own DTO, not absorbed by the openEditPage block's "
+				+ "[JsonExtensionData] bag where no caller would find it typed");
+		activity.Enabled.Should().BeTrue(because: "the gate decides whether any of the rest takes effect");
+		activity.StartIn.Value.Should().Be(2);
+		activity.StartIn.Unit.Should().Be("hours",
+			because: "the unit is the half a caller cannot infer - 2 is two hours or two days depending on it");
+		activity.StartIn.Period.Should().Be(1, because: "the raw period travels alongside the decoded token");
+		activity.Duration.Unit.Should().Be("minutes", because: "each interval decodes independently");
+		activity.RemindIn.Unit.Should().Be("days",
+			because: "a mapping that confused the three fields would show up here");
+		activity.ShowInCalendar.Should().BeFalse(because: "the calendar flag round-trips as reported");
+	}
+
+	[Test]
+	[Description("Leaves the Log activity block null when the server omits it, so an element that stores none of those fields is not read back as one that schedules an activity - the designer's panel shows values for all of them from schema defaults, so this distinction is the only reliable one.")]
+	public void Describe_ShouldLeaveOpenEditPageLogActivityNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.LogActivity.Should().BeNull(
+			because: "an absent block means the element stores none of it, and inventing one would report scheduling "
+				+ "the process does not carry");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's performer block (kind, contact, role with its display name, and the show-page flag) into its own DTO, so a caller can see who a step is assigned to instead of finding the assignment only in the element's untyped extension bag.")]
+	public void Describe_ShouldReadOpenEditPagePerformer_WhenServerReportsIt() {
+		// Arrange - a role performer, the one kind that carries both a formula and a readable display value
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"pageSchemaUId\":\"f5edc79d-8d39-4e51-a255-57ccf3f1349e\",\"object\":\"Account\","
+			+ "\"editMode\":\"add\","
+			+ "\"performer\":{\"type\":\"role\",\"contact\":null,"
+			+ "\"role\":\"[#Lookup.a1c9dfe4-0d1e-4f0f-b6b6-b0f0a1d0e0a1.2b0d3ad9-7a27-46a3-9483-ed70c2687211#]\","
+			+ "\"roleDisplay\":\"All employees\",\"showPage\":true},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPagePerformer performer = result.Value.Elements[0].OpenEditPage.Performer;
+		performer.Should().NotBeNull(
+			because: "the performer must be deserialized into its own DTO, not silently absorbed by the openEditPage "
+				+ "block's [JsonExtensionData] bag where no caller would find it typed");
+		performer.Type.Should().Be("role", because: "the kind is what decides which of contact/role carries the value");
+		performer.Role.Should().Contain("2b0d3ad9-7a27-46a3-9483-ed70c2687211",
+			because: "the stored macro round-trips so the block can be re-submitted verbatim");
+		performer.RoleDisplay.Should().Be("All employees",
+			because: "the display name is the only human-readable half of a role assignment");
+		performer.ShowPage.Should().BeTrue(because: "the show-page flag round-trips as reported");
+	}
+
+	[Test]
+	[Description("Leaves the performer null when the server reports an Open edit page element without one, so an unassigned step - the designer's own initial state - is not read back as assigned.")]
+	public void Describe_ShouldLeaveOpenEditPagePerformerNull_WhenServerOmitsIt() {
+		// Arrange - a configured element with no assignment at all
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.Performer.Should().BeNull(
+			because: "an absent performer means UNASSIGNED, and inventing one here would report an assignment the "
+				+ "process does not carry");
+	}
+
+	[Test]
+	[Description("Leaves the openEditPage block null when the server does not report it, so an older CrtProcessBuilder - or any other element kind - reads back without inventing a configuration.")]
+	public void Describe_ShouldLeaveOpenEditPageNull_WhenServerOmitsIt() {
+		// Arrange - a plain user task, the shape any element other than an Open edit page one returns
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.Should().BeNull(
+			because: "an absent block must stay null so it serializes away for an older server, and so a caller "
+				+ "cannot read 'configured' out of an element that is not");
+	}
+
+	[Test]
 	[Description("Deserializes a Send email element's email configuration (mode, sender, subject, hasBody, the decoded body, importance, ignoreErrors, recipients, manual-mode performer) from the server response into the DescribedEmail DTO, so describe read-back surfaces the email block instead of dropping it.")]
 	public void Describe_ShouldReadSendEmailConfiguration_WhenServerReportsIt() {
 		// Arrange — the shape a runtime-verified CrtProcessBuilder DescribeProcess returns for a configured element
