@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -5,6 +6,7 @@ using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -13,14 +15,105 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class ODataUpdateToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
+	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
+	private const string MetadataUrl = "http://creatio/odata/Contact/$metadata";
+	private const string KeyUrl = "http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)";
+
 	private static JsonElement Obj(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
 	/// <summary>
-	/// A valid single-record OData response for the pre-write $select probe: none of the
-	/// recognized error shapes, so the probe confirms the fields exist.
+	/// Minimal CSDL 4.0 document: Contact carries Name/JobTitle (plain), SomeGuid (plain Guid) and
+	/// AccountId (a lookup — the Account navigation property declares <c>Partner="AccountId"</c>),
+	/// plus the Account type.
 	/// </summary>
+	private static string CsdL() => $"""
+		<?xml version="1.0" encoding="utf-8" standalone="no"?>
+		<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+		  <edmx:DataServices>
+		    <Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+		      <EntityType Name="Contact">
+		        <Key><PropertyRef Name="Id" /></Key>
+		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+		        <Property Name="Name" Type="Edm.String" />
+		        <Property Name="JobTitle" Type="Edm.String" />
+		        <Property Name="SomeGuid" Type="Edm.Guid" />
+		        <Property Name="AccountId" Type="Edm.Guid" />
+		        <NavigationProperty Name="Account" Partner="AccountId" Type="Terrasoft.Configuration.OData.Account" />
+		      </EntityType>
+		      <EntityType Name="Account">
+		        <Key><PropertyRef Name="Id" /></Key>
+		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+		        <Property Name="Name" Type="Edm.String" />
+		      </EntityType>
+		    </Schema>
+		  </edmx:DataServices>
+		</edmx:Edmx>
+		""";
+
+	/// <summary>CSDL that does not declare Contact at all (type-missing → probe fallback).</summary>
+	private const string CsdLWithoutContact = """
+		<?xml version="1.0" encoding="utf-8" standalone="no"?>
+		<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+		  <edmx:DataServices>
+		    <Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+		      <EntityType Name="Account">
+		        <Key><PropertyRef Name="Id" /></Key>
+		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+		      </EntityType>
+		    </Schema>
+		  </edmx:DataServices>
+		</edmx:Edmx>
+		""";
+
+	private const string HtmlPage = "<html><head><title>404 - Not Found</title></head><body>error</body></html>";
+	private const string NonJsonProbeBody = "IIS: The request could not be mapped to an application.";
+
+	private static string UnknownPropertyError(string name) =>
+		"{\"error\":{\"code\":\"-1\",\"message\":\"Could not find a property named '" + name +
+		"' on type 'Terrasoft.Configuration.OData.Contact'.\"}}";
+
+	/// <summary>A valid single-record OData response (no recognized error shape).</summary>
 	private static string ProbeOk(string field) =>
-		$"{{\"@odata.context\":\"http://creatio/odata/$metadata#Contact({Guid})\",\"Id\":\"{Guid}\",\"{field}\":\"probe\"}}";
+		"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(" + Guid + ")\",\"Id\":\"" + Guid +
+		"\",\"" + field + "\":\"probe\"}";
+
+	private sealed class Fixture {
+		public Fixture(string metadataBody, Func<string, string> probeBody) {
+			Client = Substitute.For<IApplicationClient>();
+			UrlBuilder = Substitute.For<IServiceUrlBuilder>();
+			UrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+			Client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+				.Returns(call => {
+					string url = call.ArgAt<string>(0);
+					if (url.EndsWith("/$metadata", StringComparison.Ordinal)) {
+						return metadataBody;
+					}
+					return probeBody(url);
+				});
+			Resolver = Substitute.For<IToolCommandResolver>();
+			Resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(Client);
+			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
+			Tool = new ODataUpdateTool(Resolver);
+		}
+
+		public IApplicationClient Client { get; }
+		public IServiceUrlBuilder UrlBuilder { get; }
+		public IToolCommandResolver Resolver { get; }
+		public ODataUpdateTool Tool { get; }
+	}
+
+	/// <summary>Happy-path fixture: $metadata resolves, so no $select probe may run.</summary>
+	private static Fixture CsdLFixture() =>
+		new(CsdL(), _ => throw new System.InvalidOperationException("probe must not run: $metadata is authoritative"));
+
+	private static ODataWriteResponse Update(Fixture f, string data) =>
+		f.Tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Id = Guid,
+			Data = Obj(data),
+			Confirm = true
+		});
 
 	[Test]
 	[Category("Unit")]
@@ -39,349 +132,287 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Sends a PATCH to the addressed entity key with the JSON body via the shared application client.")]
+	[Description("Verifies fields via $metadata, then PATCHes the addressed key with the JSON body.")]
 	public void Update_Should_Patch_Addressed_Key_With_Body() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ProbeOk("Name"));
-		ODataUpdateTool tool = new(resolver);
-
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev",
-			Entity = "Contact",
-			Id = Guid,
-			Data = Obj("{\"Name\":\"New\"}"),
-			Confirm = true
-		});
-
-		response.Success.Should().BeTrue();
-		response.Id.Should().Be(Guid);
-		urlBuilder.Received(1).Build($"odata/Contact({Guid})");
-		urlBuilder.Received(1).Build($"odata/Contact({Guid})?$select=Id%2CName");
-		client.Received(1).ExecutePatchRequest($"http://creatio/odata/Contact({Guid})", "{\"Name\":\"New\"}", 30_000, 1, 1);
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Rejects a missing or non-GUID id without any remote call to guard against keyless mass updates.")]
-	public void Update_Should_Reject_NonGuid_Id() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataUpdateTool tool = new(resolver);
-
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = "all", Data = Obj("{\"Name\":\"x\"}"), Confirm = true
-		});
-
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("must be a record GUID");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Refuses a destructive update when confirm is omitted, without any remote call.")]
-	public void Update_Should_Refuse_Without_Confirm() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataUpdateTool tool = new(resolver);
-
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}")
-		});
-
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("confirm");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Rejects empty data without any remote call.")]
-	public void Update_Should_Reject_Empty_Data() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataUpdateTool tool = new(resolver);
-
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{}")
-		});
-
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("data is required");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("An empty PATCH response body (Creatio's normal 204 No Content on success) is reported as success.")]
-	public void Update_Should_Succeed_On_Empty_Response_Body() {
-		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ProbeOk("Name"));
-		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		ODataUpdateTool tool = new(resolver);
 
-		// Act
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
-		});
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
-		// Assert
-		response.Success.Should().BeTrue(because: "an empty body is Creatio's normal successful PATCH response");
+		response.Success.Should().BeTrue(because: response.Error);
+		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
+			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+		f.Client.DidNotReceive().ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()
+			// because: $metadata is the primary validator; the $select probe runs only as a fallback
+		);
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A non-JSON response body (an IIS/proxy error page instead of Creatio's OData pipeline) must never be reported as a successful update — the write's transport layer never throws on a non-2xx status, so the body is the only signal available.")]
-	public void Update_Should_Fail_When_Response_Is_Not_Json() {
-		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ProbeOk("Name"));
-		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("<html><head><title>404 - File or directory not found.</title></head></html>");
-		ODataUpdateTool tool = new(resolver);
+	[Description("Fails when a data field is absent from the entity's CSDL; nothing is written, no probe runs.")]
+	public void Update_Should_Reject_Field_Missing_From_Metadata() {
+		Fixture f = new(CsdL(), _ => throw new System.InvalidOperationException("probe must not run: $metadata is authoritative"));
 
-		// Act
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
-		});
+		ODataWriteResponse response = Update(f, """{"Name":"New","Color":"#fff"}""");
 
-		// Assert
-		response.Success.Should().BeFalse(because: "an HTML error page proves the request never reached Creatio's OData pipeline");
-		response.Error.Should().Contain("was not JSON", because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("A recognized Creatio OData error body returned with a non-failing HTTP status is reported as a failure, not swallowed as a successful update.")]
-	public void Update_Should_Fail_When_Response_Is_ODataError() {
-		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ProbeOk("Name"));
-		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
-		ODataUpdateTool tool = new(resolver);
-
-		// Act
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
-		});
-
-		// Assert
-		response.Success.Should().BeFalse(because: "an OData error envelope must not be reported as a successful update");
-		response.Error.Should().Be("Column Name is required");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("A valid JSON response body that is not one of the recognized Creatio error shapes is reported as success — this pins the third ValidateWriteResponse branch, so a broadened error detector cannot start failing every PATCH that answers with a plain body.")]
-	public void Update_Should_Succeed_When_Response_Is_Valid_Json_Without_Error() {
-		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ProbeOk("Name"));
-		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{}");
-		ODataUpdateTool tool = new(resolver);
-
-		// Act
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
-		});
-
-		// Assert
-		response.Success.Should().BeTrue(because: "an empty JSON object carries none of the recognized error members, so it is consistent with a successful PATCH");
-		response.Error.Should().BeNull();
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("A data field the OData type does not have must fail the call before the PATCH goes out, so success:true cannot mean a write that never happened (GitHub #1212).")]
-	public void Update_Should_Reject_Unknown_Field_Before_Write() {
-		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"error\":{\"message\":\"The query specified in the URI is not valid. Could not find a property named 'labNoSuchColumnXyz' on type 'Terrasoft.Configuration.OData.Contact'.\"}}");
-		ODataUpdateTool tool = new(resolver);
-
-		// Act
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev",
-			Entity = "Contact",
-			Id = Guid,
-			Data = Obj("{\"labNoSuchColumnXyz\":\"#000000\"}"),
-			Confirm = true
-		});
-
-		// Assert
 		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("'labNoSuchColumnXyz'")
-			.And.Contain("do not exist")
+		response.Error!.Should()
+			.Contain("Color")
+			.And.Contain("do not exist on the OData type of Contact")
+			.And.Contain("$metadata")
 			.And.Contain("nothing was written");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("The OData service reports only the FIRST unknown $select property, so the tool must probe each remaining field individually to name every bad field in one round trip.")]
-	public void Update_Should_Report_Every_Unknown_Field() {
-		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecuteGetRequest(
-				Arg.Is<string>(url => url.Contains("Id%2ClabA%2ClabB")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"error\":{\"message\":\"Could not find a property named 'labA' on type 'Terrasoft.Configuration.OData.Contact'.\"}}");
-		client.ExecuteGetRequest(
-				Arg.Is<string>(url => url.Contains("Id%2ClabB")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"error\":{\"message\":\"Could not find a property named 'labB' on type 'Terrasoft.Configuration.OData.Contact'.\"}}");
-		ODataUpdateTool tool = new(resolver);
+	[Description("Lists every data field missing from the CSDL type in a single failure message.")]
+	public void Update_Should_Reject_Multiple_Unknown_Fields_At_Once() {
+		Fixture f = CsdLFixture();
 
-		// Act
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+		ODataWriteResponse response = Update(f, """{"Name":"New","Color":"#fff","Phone":"123"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("Color")
+			.And.Contain("Phone")
+			.And.Contain("do not exist on the OData type of Contact");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces an unverified (non-JSON, non-recognized) pre-write response and refuses to write.")]
+	public void Update_Should_Reject_When_Probe_Body_Cannot_Be_Parsed() {
+		Fixture f = new(HtmlPage, _ => NonJsonProbeBody);
+
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("could not be verified")
+			.And.Contain("No write was performed");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces an unrecognized OData error from the pre-write requests without writing.")]
+	public void Update_Should_Reject_Before_Writing_When_Probe_Hits_Different_OData_Error() {
+		const string serverError = """{"error":{"code":"-1","message":"The request is invalid."}}""";
+		Fixture f = new(serverError, _ => serverError);
+
+		ODataWriteResponse response = Update(f, """{"Name":"New","JobTitle":"CEO"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("The request is invalid")
+			.And.Contain("pre-write")
+			.And.Contain("not performed");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats empty/ack PATCH bodies and valid-JSON write responses as success.")]
+	public void Update_Should_Pass_Ack_Bodies_And_Valid_Json_Through() {
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty, $"{{\"Id\":\"{Guid}\"}}");
+
+		ODataWriteResponse first = Update(f, """{"Name":"New"}""");
+		ODataWriteResponse second = Update(f, """{"Name":"Newer"}""");
+
+		first.Success.Should().BeTrue(because: "an empty PATCH body is a valid 204 ack");
+		second.Success.Should().BeTrue(because: "a valid single-record JSON body is a successful OData write");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a clean failure when the PATCH itself throws, without leaking internals.")]
+	public void Update_Should_Fail_Cleanly_When_Patch_Throws() {
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Throws(new System.Net.Http.HttpRequestException("boom at /home/depot/odata"));
+
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("[redacted-path]")
+			.And.NotContain("/home/depot");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a data field whose name is not a valid OData member path, before any remote call.")]
+	public void Update_Should_Reject_Malformed_Field_Name_Before_Any_Remote_Call() {
+		Fixture f = CsdLFixture();
+
+		ODataWriteResponse response = Update(f, """{"Name":"New","Name?$filter=Bad":"x"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("not a valid OData field name")
+			.And.Contain("Name?$filter=Bad");
+		f.Client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a field set containing any malformed name without running the pre-write validation.")]
+	public void Update_Should_Reject_Mixed_Malformed_And_Unknown_Field_Sets_Without_Patching() {
+		Fixture f = CsdLFixture();
+
+		ODataWriteResponse response = Update(f, """{"Name":"New","Name?$filter=Bad":"x","Color":"#fff"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("not a valid OData field name")
+			.And.Contain("No write was performed");
+		f.Client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When confirm is omitted, the tool refuses before any remote call.")]
+	public void Update_Should_Not_Call_Remote_When_Not_Confirmed() {
+		Fixture f = CsdLFixture();
+		ODataUpdateArgs args = new() {
 			EnvironmentName = "dev",
 			Entity = "Contact",
 			Id = Guid,
-			Data = Obj("{\"labA\":\"#1\",\"labB\":\"#2\"}"),
-			Confirm = true
-		});
+			Data = Obj("""{"Name":"New"}""")
+		};
 
-		// Assert
+		ODataWriteResponse response = f.Tool.Update(args);
+
 		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("'labA'").And.Contain("'labB'");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		response.Error!.Should()
+			.Contain("Refusing to update")
+			.And.Contain("Contact")
+			.And.Contain("\"confirm\": true");
+		f.Client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A malformed data field name is rejected locally before any remote call, because it would also corrupt the probe's $select list.")]
-	public void Update_Should_Reject_Malformed_Field_Name_Locally() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataUpdateTool tool = new(resolver);
+	[Description("Rejects a lookup field set to the empty GUID, with a null-to-clear hint; nothing is written.")]
+	public void Update_Should_Reject_EmptyGuid_On_Lookup_Field() {
+		Fixture f = CsdLFixture();
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Bad Field!\":\"x\"}"), Confirm = true
-		});
+		ODataWriteResponse response = Update(f, $"{{\"AccountId\":\"{EmptyGuid}\"}}");
 
 		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("not a valid OData field name");
-		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		response.Error!.Should()
+			.Contain("AccountId")
+			.And.Contain(EmptyGuid)
+			.And.Contain("null to clear")
+			.And.Contain("No write was performed");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("When the pre-write probe returns an empty body the fields are unverified - the update must fail, not proceed, because an unverifiable write would reintroduce the silent success.")]
-	public void Update_Should_Fail_When_Probe_Returns_Empty_Body() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+	[Description("Allows JSON null on a lookup field — that is the legitimate way to clear a reference.")]
+	public void Update_Should_Allow_Null_On_Lookup_Field() {
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		ODataUpdateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
-		});
+		ODataWriteResponse response = Update(f, """{"AccountId":null}""");
 
-		response.Success.Should().BeFalse(because: "unverified fields must not be reported as a write");
-		response.Error.Should().Contain("could not be verified");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		response.Success.Should().BeTrue(because: "null clears the lookup; only the empty-GUID string is dropped by the platform");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"AccountId":null}""", 30000);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("When the pre-write probe returns a non-JSON body (a proxy error page) the fields are unverified - the update must fail, not proceed.")]
-	public void Update_Should_Fail_When_Probe_Returns_NonJson_Body() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("<html><head><title>503 - Service Unavailable</title></head></html>");
-		ODataUpdateTool tool = new(resolver);
+	[Description("Allows the empty GUID on a plain Guid property — the silent-drop only affects lookup (Partner) fields.")]
+	public void Update_Should_Allow_EmptyGuid_On_Plain_Guid_Field() {
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
-		});
+		ODataWriteResponse response = Update(f, $"{{\"SomeGuid\":\"{EmptyGuid}\"}}");
 
-		response.Success.Should().BeFalse(because: "unverified fields must not be reported as a write");
-		response.Error.Should().Contain("could not be verified");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		response.Success.Should().BeTrue(because: "SomeGuid has no Partner attribute, so it is a plain Guid, not a lookup");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, $"{{\"SomeGuid\":\"{EmptyGuid}\"}}", 30000);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("When the probe fails for a reason other than a missing property (e.g. the record does not exist), that error is surfaced verbatim and no write is attempted.")]
-	public void Update_Should_Surface_NonProperty_Probe_Error() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"error\":{\"message\":\"The requested resource does not exist.\"}}");
-		ODataUpdateTool tool = new(resolver);
+	[Description("Falls back to the $select probe when $metadata is not CSDL, and reports only the field the probe rejects.")]
+	public void Update_Should_Fall_Back_To_Select_Probe_When_Metadata_Is_Not_Csl() {
+		Fixture f = new(HtmlPage, url =>
+			url.Contains("Color", StringComparison.Ordinal) ? UnknownPropertyError("Color") : ProbeOk("Name"));
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
-		});
+		ODataWriteResponse response = Update(f, """{"Name":"New","JobTitle":"CEO","Color":"#fff"}""");
 
 		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("The requested resource does not exist.");
-		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		response.Error!.Should()
+			.Contain("Color")
+			.And.Contain("could not be verified against the service");
+		response.Error.Should().NotContain("JobTitle", because: "the follow-up probe confirmed JobTitle exists");
+		f.Client.Received(3).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			ODataFieldValidation.RequestTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Falls back to the $select probe when the CSDL declares no matching type; an all-ok probe lets the write proceed.")]
+	public void Update_Should_Fall_Back_When_Metadata_Type_Missing() {
+		Fixture f = new(CsdLWithoutContact, _ => ProbeOk("Name"));
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		response.Success.Should().BeTrue(because: "the probe verified every field; a missing CSDL type is a degraded path, not a failure");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Sends the bounded retry parameters (30s timeout, 3 attempts, 1s delay) for the pre-write requests.")]
+	public void Update_Should_Use_Bounded_Retry_For_PreWrite_Requests() {
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		response.Success.Should().BeTrue(because: response.Error);
+		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
+			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec)
+			// because: the retry budget must stay bounded so a dead metadata endpoint cannot hang the tool
+		;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts credential-bearing URIs surfaced by a failed pre-write validation.")]
+	public void Update_Should_Redact_Sensitive_Tokens_In_PreWrite_Error() {
+		const string serverError =
+			"""{"error":{"code":"-1","message":"auth failed for http://admin:Sup3rS3cret@env.internal:80/odata"}}""";
+		Fixture f = new(serverError, _ => serverError);
+
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("[redacted-uri]")
+			.And.NotContain("Sup3rS3cret")
+			.And.NotContain("admin@env.internal");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 }

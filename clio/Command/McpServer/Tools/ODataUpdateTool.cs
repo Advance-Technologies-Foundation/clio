@@ -10,7 +10,11 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH).
+/// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH). Before the PATCH
+/// goes out, <see cref="ODataFieldValidation"/> verifies every data field against the entity's
+/// OData type (<c>odata/{entity}/$metadata</c>) and rejects lookup reference values in the
+/// empty-GUID form the platform silently drops, so the tool's success flag describes only
+/// writes the service has actually accepted.
 /// </summary>
 [McpServerToolType]
 public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
@@ -22,8 +26,12 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 	[Description(
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
-		"Every data field must exist on the entity's OData type: the fields are probed against the record " +
-		"before the write, and any unknown field fails the call with nothing written, so success:true always means a write. " +
+		"Data fields are verified against the entity's OData type ($metadata) before the write: " +
+		"an unknown field fails the call with nothing written, and a lookup (reference) field set to the " +
+		"empty GUID is rejected with a hint to send null (the platform silently drops that value instead of " +
+		"clearing the reference). success:true means the service accepted the PATCH after this pre-validation; " +
+		"platform builds that silently discard unsupported values can still leave some fields unwritten, so " +
+		"re-read important values with odata-read after a critical write. " +
 		"This tool never performs a keyless mass update. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
@@ -52,7 +60,9 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 				urlBuilder,
 				args.Entity.Trim(),
 				args.Id.Trim(),
-				data.EnumerateObject().Select(property => property.Name).ToList());
+				data.EnumerateObject()
+					.Select(property => new ODataFieldValidation.DataField(property.Name, property.Value))
+					.ToList());
 			if (fieldValidationError is not null) {
 				return fieldValidationError;
 			}
@@ -88,7 +98,9 @@ public sealed record ODataUpdateArgs {
 		"Object of field/value pairs to change. Only supplied fields are updated. " +
 		"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
 		"Columns absent from $metadata (e.g. Color) cannot be written here - verify them with execute-esq instead. " +
-		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
+		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name; " +
+		"to CLEAR a lookup send null - the platform silently drops an empty GUID " +
+		"(00000000-0000-0000-0000-000000000000) on lookup fields. " +
 		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" }")]
 	[Required]
 	public JsonElement? Data { get; init; }
