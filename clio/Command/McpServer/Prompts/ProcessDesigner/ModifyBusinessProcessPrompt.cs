@@ -35,6 +35,11 @@ public static class ModifyBusinessProcessPrompt {
 		 `useBackgroundMode` on any element kind, and a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
 		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended); `setConnections` binds the "Connected to" links of the
+		 and a `preconfiguredPage` element's `preconfiguredPage` block (`page`, `buttons`, `dataSources`,
+		 `performer`, `recommendation`), where OMITTING `buttons` or `dataSources` means LEAVE THEM ALONE and
+		 never "the page has none"; ANY `setElement` touching such an element also re-reads the page and
+		 reconciles its parameters, so a value dropped by a data-type change is reported in the warnings below;
+		 an element on a Classic UI page keeps that page and is limited to the fields both page types share;
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). Any failed operation aborts the whole edit
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,

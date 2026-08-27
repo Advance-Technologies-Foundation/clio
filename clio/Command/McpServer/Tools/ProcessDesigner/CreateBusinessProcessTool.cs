@@ -28,7 +28,8 @@ public class CreateBusinessProcessTool(
 		 OpenWorld = false),
 	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. The "
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
-		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail "
+		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail"
+		 + "|preconfiguredPage "
 		 + "(aliases readData/performTask), caption, userTaskName?, "
 		 + "readData? (readData elements only: {source:<EntityName> (required), mode?:first (the only supported "
 		 + "mode — the first record of the sorted selection; collection/count/aggregation are planned), "
@@ -72,6 +73,21 @@ public class CreateBusinessProcessTool(
 		 + "performer? (manual mode only — who performs the task: "
 		 + "{type:user|manager|role, contact? (a formula; defaults to the current user's contact), role? (a "
 		 + "SysAdminUnit role name or record id, required for type:role), showPage?})}), "
+		 + "preconfiguredPage? (preconfiguredPage elements only — shows a Freedom UI page to a user and "
+		 + "resumes when the user presses a completing button: {page:<Freedom UI page schema name> (REQUIRED "
+		 + "— the server NEVER creates a page, and both an unknown page and a Classic UI page are refused), "
+		 + "buttons:[{name (the buttons view-element name on the page), caption?, event?:clicked, validate?}] "
+		 + "(REQUIRED on a build — at least one, and NOT defaulted for you: an element with no completing "
+		 + "button saves green and then hangs forever at run time), "
+		 + "dataSources?:[{name, entitySchemaName}], "
+		 + "performer? ({type:user|manager|role, contact?, role?, showPage?} — omit the whole block and the "
+		 + "CURRENT USER is used; omit showPage and the page is STILL shown automatically because that is the "
+		 + "task default, so do not send showPage:true to be sure — it is accepted only for type:user anyway), "
+		 + "recommendation? (a single line — a line break is rejected)}). "
+		 + "The pages buttons and data sources are FACTS, not values you may invent: a page inherits its "
+		 + "buttons from its template chain and the server cannot see them, so call get-process-page-facts "
+		 + "FIRST and pass its entries through unchanged. The pages PARAMETERS are deliberately absent from "
+		 + "the descriptor — the server reads them off the page itself and copies them onto the element, "
 		 + "useBackgroundMode? (element-level: every element supports it; true runs it asynchronously via the "
 		 + "background scheduler — omit to keep the element kind's default, e.g. a signalStart defaults to true), signal?, "
 		 + "filter?}), flows[] ({source, target} of "
@@ -89,7 +105,12 @@ public class CreateBusinessProcessTool(
 		 + "changedColumns?:[<ColumnName>,...]} instead of a page save handler. changedColumns restricts an "
 		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
 		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
-		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful create the process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author.")]
+		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful create the process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author. "
+		 + "A SUCCESSFUL build can still report caveats, and they arrive as message-type \"Warning\" entries "
+		 + "in execution-log-messages — there is no separate warnings field on the response, so looking for "
+		 + "one and finding nothing is not evidence there were none. Read them: a Pre-configured page whose "
+		 + "referenced page could not be loaded is built and SAVED carrying none of that pages parameters, "
+		 + "so anything you meant to map onto them is simply not there.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {

@@ -90,7 +90,7 @@ public sealed class CreateBusinessProcessService(
 			throw new InvalidOperationException(result.ErrorMessage ?? "BuildProcess failed.");
 		}
 
-		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId);
+		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId, result.Warnings);
 	}
 
 	private static JsonObject ParseDescriptor(string descriptorJson) {
@@ -125,6 +125,14 @@ public sealed class CreateBusinessProcessService(
 
 		[JsonPropertyName("errorMessage")]
 		public string? ErrorMessage { get; set; }
+
+		/// <summary>
+		/// Caveats about a build that SUCCEEDED. Absent on a package that predates the field, which is why the
+		/// property is nullable rather than defaulted to an empty list: "the server sent none" and "the server
+		/// cannot send any" are different, and only the first means there was nothing to report.
+		/// </summary>
+		[JsonPropertyName("warnings")]
+		public List<string>? Warnings { get; set; }
 	}
 
 	#endregion
@@ -154,6 +162,12 @@ public class CreateBusinessProcessCommand(
 				options.Environment,
 				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
+			// Written as WARNINGS on a SUCCESSFUL build, the same way the modify command writes its own. A build
+			// that reports nothing is what a caller reads as "everything landed", so a notice dropped here is worse
+			// than one never raised: the agent checks, finds nothing, and concludes there was nothing to find.
+			foreach (string warning in result.Warnings ?? []) {
+				logger.WriteWarning(warning);
+			}
 			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
@@ -210,4 +224,12 @@ public sealed record CreateBusinessProcessRequest(string DescriptorJson, string?
 /// </summary>
 /// <param name="SchemaName">Final schema name of the created process.</param>
 /// <param name="SchemaUId">UId of the created process schema.</param>
-public sealed record CreateBusinessProcessResult(string? SchemaName, string? SchemaUId);
+/// <param name="Warnings">
+/// Notices the build raised — outcomes that SUCCEEDED but the caller has to know about, so a successful build is
+/// never silently different from what was asked for. Today the case that reaches here is a Pre-configured page
+/// whose referenced page could not be loaded: the element is saved carrying none of the page's parameters, so
+/// anything meant to map onto them is simply not there. <c>null</c> when there are none, or when the target
+/// environment carries a package that does not report them.
+/// </param>
+public sealed record CreateBusinessProcessResult(string? SchemaName, string? SchemaUId,
+	IReadOnlyList<string>? Warnings = null);

@@ -56,6 +56,47 @@ public sealed class CreateBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("Reads the server's warnings[] off a SUCCESSFUL build. An undeclared member is dropped in silence by the deserializer, which is exactly how the field shipped on the server and reached nobody.")]
+	public void BuildProcess_ShouldReadWarnings_WhenServerReportsThemOnASuccessfulBuild() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\","
+			+ "\"warnings\":[\"Element 'ApproveRequest': the referenced page could not be read\"]}}");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		CreateBusinessProcessResult result = service.BuildProcess(Env,
+			new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		result.Warnings.Should().ContainSingle(because: "a warning the server reported must reach the caller");
+		result.Warnings[0].Should().Contain("ApproveRequest",
+			because: "the notice names the element whose page could not be loaded, and that is the actionable half");
+	}
+
+	[Test]
+	[Description("Leaves Warnings null when the server sends no warnings member — a package that predates the field must not look like one that reported an empty list.")]
+	public void BuildProcess_ShouldLeaveWarningsNull_WhenServerReportsNone() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		CreateBusinessProcessResult result = service.BuildProcess(Env,
+			new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		result.Warnings.Should().BeNull(
+			because: "'the server cannot report any' and 'the server reported none' are different answers, and only "
+				+ "the second means there was nothing to report");
+	}
+
+	[Test]
 	[Description("Surfaces the server's errorMessage as an exception when the BuildProcess result reports success=false.")]
 	public void BuildProcess_ShouldThrowWithServerMessage_WhenSuccessFalse() {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
