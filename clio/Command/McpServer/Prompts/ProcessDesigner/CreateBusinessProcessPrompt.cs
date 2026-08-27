@@ -50,9 +50,8 @@ public static class CreateBusinessProcessPrompt {
 		 whose `kind` is `freedom` (state that preference conditionally — an environment with the 8.x-pages feature off
 		 offers Classic pages only). Only a page registered on a SECTION can be opened; anything else is refused,
 		 because the designer resolves the stored page against that same list and would otherwise render its page field
-		 empty and lose the element's configuration on the next human save. Set `recordType` only when the chosen page
-		 serves several record types (a typed object registers the same page once per type) — ambiguity is refused
-		 listing the types. Then choose `editMode`: `add` takes `defaultValues` (the same entry shape a Modify data
+		 empty and lose the element's configuration on the next human save. `recordType` is an optional CHECK — the designer offers one
+		 entry per page, so the type follows the page; pass it only to assert which registration you expect. Then choose `editMode`: `add` takes `defaultValues` (the same entry shape a Modify data
 		 element's `values` use), `edit` requires `recordId`; the two are mutually exclusive in storage, so supplying
 		 the other mode's field is refused. `completion.mode` `onConditions` requires the element's `filter` in the
 		 same request and vice versa — the runtime gates the filter on the mode, so a mismatched pair would run green
