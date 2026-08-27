@@ -1901,13 +1901,24 @@ public static class WebToMobileAnalysisService {
 						ItemsPropertyName, sourceAncestors);
 				ClickedConvertibility clicked = ClassifyClicked(ctx, node, out string scopedRequest);
 				bool targetMissing = scopedTarget is { } t && RetargetTargetMissing(ctx, t.Parent);
-				if (scopedTarget is { } nativeTarget && RetargetSourceProvidedByTemplate(ctx, name)) {
+				if (scopedTarget is { } nativeTarget && clicked == ClickedConvertibility.Convertible
+					&& RetargetSourceProvidedByTemplate(ctx, name)) {
 					// The mobile template already provides an element with this name natively (e.g. Save/Cancel/Close on the
 					// Scaffold); retargeting the header source into a shared container would duplicate it. Drop it — the native
-					// element keeps its own action, so nothing is lost.
+					// element carries its OWN action. Guarded by convertibility so a node that would NOT have converted anyway
+					// (no clicked, an explicitly-unsupported request) keeps its accurate data-derived ScopeDropReason below
+					// instead of this native-equivalent one.
 					ctx.Out.Add(Drop(name, type,
 						$"action under non-converting scope '{scopeContainer}'; '{name}' is already provided natively by the "
 						+ $"mobile template — not retargeted into {nativeTarget.Parent}.{nativeTarget.Property} (retargeting would duplicate the native element)"));
+					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on a
+					// same-named button); record it so requestConversions still reports the dropped action rather than losing it silently.
+					if (scopedRequest is not null) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = name, Binding = "clicked", WebRequest = scopedRequest,
+							Reason = $"'{name}' is already provided natively by the mobile template, which carries its own action"
+						});
+					}
 				} else if (scopedTarget is { } target && clicked == ClickedConvertibility.Convertible && !targetMissing) {
 					CaptionResource scopedCaption = ResolveCaptionResource(ctx, node, name);
 					// BuildMobileValues → ProcessEventBindings converts (or keeps+flags) the clicked request in place,
@@ -1918,8 +1929,7 @@ public static class WebToMobileAnalysisService {
 						WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = scopedType,
 						ParentName = target.Parent, PropertyName = target.Property, Index = null,
 						CaptionResource = scopedCaption, MobileValues = scopedValues,
-						ParentExistsOnTemplate = ctx.MobileTypesByName is { Count: > 0 } && ctx.MobileTypesByName.ContainsKey(target.Parent)
-							? true : (bool?)null,
+						ParentExistsOnTemplate = ParentProvidedByTemplate(ctx, target.Parent) ? true : (bool?)null,
 						Reason = $"action under non-converting scope '{scopeContainer}'; converted into {target.Parent}.{target.Property}"
 					});
 				} else {
@@ -2073,18 +2083,18 @@ public static class WebToMobileAnalysisService {
 				bool containerRetargeted = false;
 				if (ResolveTemplatePlacement(ctx, node, type, name, containerParent, containerProperty, sourceAncestors)
 					is { } containerTarget) {
-						// A container the mobile template already provides natively must not be retargeted into a shared
-						// parent — that would duplicate it. Drop it and hoist its children to the walk parent so they are
-						// not lost with the container that is not re-emitted.
-						if (RetargetSourceProvidedByTemplate(ctx, name)) {
-							ctx.Out.Add(Drop(name, type,
-								$"'{name}' is already provided natively by the mobile template — not retargeted into "
-								+ $"'{containerTarget.Parent}.{containerTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
-							if (items is not null) {
-								WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name));
-							}
-							continue;
+					// A container the mobile template already provides natively must not be retargeted into a shared
+					// parent — that would duplicate it. Drop it and hoist its children to the walk parent so they are
+					// not lost with the container that is not re-emitted.
+					if (RetargetSourceProvidedByTemplate(ctx, name)) {
+						ctx.Out.Add(Drop(name, type,
+							$"'{name}' is already provided natively by the mobile template — not retargeted into "
+							+ $"'{containerTarget.Parent}.{containerTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
+						if (items is not null) {
+							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name));
 						}
+						continue;
+					}
 					// A retarget into a parent the mobile template lacks is dropped, not emitted as an unresolvable
 					// insert (see the leaf branch). Container children are hoisted to the walk parent so they are not
 					// lost with the container that could not be placed.
@@ -2110,9 +2120,8 @@ public static class WebToMobileAnalysisService {
 					Index = containerIndex,
 					CaptionResource = containerCaption,
 					MobileValues = containerValues,
-					ParentExistsOnTemplate = containerRetargeted
-						&& ctx.MobileTypesByName is { Count: > 0 } && ctx.MobileTypesByName.ContainsKey(containerParent)
-							? true : (bool?)null,
+					ParentExistsOnTemplate = containerRetargeted && ParentProvidedByTemplate(ctx, containerParent)
+						? true : (bool?)null,
 					Reason = containerRetargeted
 						? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
 						: isPositional
@@ -2160,6 +2169,15 @@ public static class WebToMobileAnalysisService {
 					ctx.Out.Add(Drop(name, type,
 						$"'{name}' is already provided natively by the mobile template — not retargeted into "
 						+ $"'{leafTarget.Parent}.{leafTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
+					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on a
+					// same-named button); record it so requestConversions reports the dropped action instead of losing it silently.
+					ClassifyClicked(ctx, node, out string nativeSourceRequest);
+					if (nativeSourceRequest is not null) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = name, Binding = "clicked", WebRequest = nativeSourceRequest,
+							Reason = $"'{name}' is already provided natively by the mobile template, which carries its own action"
+						});
+					}
 					RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name), inNonConvertingScope: true);
 					continue;
 				}
@@ -2198,9 +2216,8 @@ public static class WebToMobileAnalysisService {
 				Index = leafIndex,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
-				ParentExistsOnTemplate = leafRetargeted
-					&& ctx.MobileTypesByName is { Count: > 0 } && ctx.MobileTypesByName.ContainsKey(leafParent)
-						? true : (bool?)null,
+				ParentExistsOnTemplate = leafRetargeted && ParentProvidedByTemplate(ctx, leafParent)
+					? true : (bool?)null,
 				Reason = leafReason
 			});
 			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
@@ -2274,6 +2291,18 @@ public static class WebToMobileAnalysisService {
 	private static bool RetargetTargetMissing(ElementMapContext ctx, string parentName) =>
 		ctx.MobileTypesByName is { Count: > 0 } && !string.IsNullOrEmpty(parentName)
 		&& !ctx.MobileTypesByName.ContainsKey(parentName);
+
+	/// <summary>
+	/// True when the mobile template PROVIDES the retarget parent (its name is in the probed template's resolved
+	/// tree) — the exact inverse of <see cref="RetargetTargetMissing"/> over the same probed-names condition, so the
+	/// two never drift. Drives <c>elementMap[].parentExistsOnTemplate</c>: when true the caller inserts ONLY the
+	/// children and never re-declares the template-provided parent. Like its inverse it decides membership ONLY when
+	/// template names were probed; with none probed (template unavailable/unknown) it returns false and the flag is
+	/// omitted rather than asserted on missing information.
+	/// </summary>
+	private static bool ParentProvidedByTemplate(ElementMapContext ctx, string parentName) =>
+		ctx.MobileTypesByName is { Count: > 0 } && !string.IsNullOrEmpty(parentName)
+		&& !RetargetTargetMissing(ctx, parentName);
 
 	/// <summary>
 	/// True when the mobile template ALREADY provides a component with this element NAME (present in the probed

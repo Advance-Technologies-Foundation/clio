@@ -1616,6 +1616,9 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry send = Element(guide, "SendForApprovalButton");
 		send.Operation.Should().Be("insert", because: "a header action with no native equivalent still converts");
 		send.ParentName.Should().Be("FloatingActionButton", because: "it is retargeted into the FAB");
+		guide.RequestConversions!.DroppedRequests.Should().Contain(
+			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
+			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
 	}
 
 	[Test]
@@ -2081,6 +2084,131 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the collector descends the floatAction object slot, not only items, so the FAB is discoverable");
 		types["FloatingActionButton"].Should().Be("crt.FloatingActionButton",
 			because: "the discovered slot carries the FAB type");
+	}
+
+	/// <summary>A container-retarget rule: matches a crt.FlexContainer under <paramref name="pathScope"/> and
+	/// retargets it (keeping its container type) into <paramref name="parentName"/>.items — exercising the CONTAINER
+	/// retarget path, which the header/FAB tests (scope path) do not.</summary>
+	private static WebToMobilePageConversionRules ContainerRetargetRule(string parentName, params string[] pathScope) =>
+		new() {
+			Components = [
+				new ComponentEquivalenceRule {
+					Path = pathScope,
+					Filters = [new ElementFilterRule { Type = "crt.FlexContainer" }],
+					ViewConfigTemplates = [
+						new ViewConfigTemplateRule {
+							ParentName = parentName,
+							PropertyName = "items",
+							Value = JsonDocument.Parse("""
+								{ "type": "crt.FlexContainer", "name": "{{ diff.name }}" }
+								""").RootElement.Clone()
+						}
+					]
+				}
+			]
+		};
+
+	[Test]
+	[Description("A crt.Button matched by a conversion rule with a positive `path` but NOT listed in nonConvertingScopeContainers is retargeted through the LEAF path into a FloatingActionButton the mobile template provides; the entry is flagged parentExistsOnTemplate:true so the caller inserts only the child.")]
+	public void Analyze_Fab_LeafRetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "OrderBtn", "type": "crt.Button", "caption": "#ResourceString(OrderBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act — empty nonConvertingScopeContainers, so OrderBtn converts through the leaf branch, not the scope branch.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["Body"], [], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")));
+
+		// Assert
+		ElementMapEntry order = Element(guide, "OrderBtn");
+		order.Operation.Should().Be("insert", because: "a rule-matched leaf button converts");
+		order.ParentName.Should().Be("FloatingActionButton", because: "the rule retargets the leaf into the FAB");
+		order.ParentExistsOnTemplate.Should().BeTrue(
+			because: "the leaf retarget path must flag a template-provided parent so the caller inserts only the child");
+	}
+
+	[Test]
+	[Description("A rule-matched leaf button whose NAME the mobile template already provides natively is dropped through the LEAF path (not retargeted), and its (possibly custom) web clicked request is recorded in droppedRequests so requestConversions does not silently under-count.")]
+	public void Analyze_Fab_LeafSourceProvidedNatively_DroppedAndRequestRecorded() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveButton", "type": "crt.Button", "caption": "#ResourceString(SaveButton_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
+			""");
+
+		// Act — SaveButton's name is on the mobile template, so the leaf retarget is suppressed as a native equivalent.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["Body"], [], "crt.Button"),
+			mobileTemplateTypesByName: MobileTypesByName(
+				("FloatingActionButton", "crt.FloatingActionButton"), ("SaveButton", "crt.Button")));
+
+		// Assert
+		ElementMapEntry save = Element(guide, "SaveButton");
+		save.Operation.Should().Be("drop",
+			because: "the mobile template already provides SaveButton natively, so the leaf retarget is suppressed to avoid duplication");
+		save.Reason.Should().Contain("already provided natively",
+			because: "the drop reason must state why the native-equivalent leaf was not retargeted");
+		guide.RequestConversions!.DroppedRequests.Should().Contain(
+			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
+			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
+	}
+
+	[Test]
+	[Description("A crt.FlexContainer matched by a conversion rule is retargeted through the CONTAINER path into a parent the mobile template provides; the container entry is flagged parentExistsOnTemplate:true.")]
+	public void Analyze_Fab_ContainerRetargetParentOnTemplate_FlagsParentExistsOnTemplate() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Root", "type": "crt.FlexContainer", "items": [
+				{ "name": "Toolbar", "type": "crt.FlexContainer", "items": [
+					{ "name": "Fld", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
+			rules: ContainerRetargetRule("AreaContainer", "Root"),
+			mobileTemplateTypesByName: MobileTypesByName(("AreaContainer", "crt.GridContainer")));
+
+		// Assert
+		ElementMapEntry toolbar = Element(guide, "Toolbar");
+		toolbar.Operation.Should().Be("insert", because: "a rule-matched container converts");
+		toolbar.ParentName.Should().Be("AreaContainer", because: "the rule retargets the container into AreaContainer");
+		toolbar.ParentExistsOnTemplate.Should().BeTrue(
+			because: "the container retarget path must flag a template-provided parent so the caller inserts only the children");
+	}
+
+	[Test]
+	[Description("A rule-matched container whose NAME the mobile template already provides natively is dropped through the CONTAINER path (not retargeted), and its children are hoisted to the walk parent so they are not lost with the un-emitted container.")]
+	public void Analyze_Fab_ContainerSourceProvidedNatively_DroppedChildrenHoisted() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Root", "type": "crt.FlexContainer", "items": [
+				{ "name": "Toolbar", "type": "crt.FlexContainer", "items": [
+					{ "name": "Fld", "type": "crt.Input" } ] } ] } ]
+			""");
+
+		// Act — Toolbar's name IS on the mobile template, so the container is a native equivalent.
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
+			rules: ContainerRetargetRule("AreaContainer", "Root"),
+			mobileTemplateTypesByName: MobileTypesByName(("AreaContainer", "crt.GridContainer"), ("Toolbar", "crt.FlexContainer")));
+
+		// Assert
+		ElementMapEntry toolbar = Element(guide, "Toolbar");
+		toolbar.Operation.Should().Be("drop",
+			because: "the mobile template already provides Toolbar natively, so the container retarget is suppressed to avoid duplication");
+		toolbar.Reason.Should().Contain("already provided natively",
+			because: "the drop reason must state why the native-equivalent container was not retargeted");
+		ElementMapEntry fld = Element(guide, "Fld");
+		fld.Operation.Should().Be("insert",
+			because: "the dropped container's children must be hoisted to the walk parent, not lost with the un-emitted container");
+		fld.ParentName.Should().Be("Root",
+			because: "the child is hoisted to the dropped container's walk parent, not placed under the suppressed retarget target");
 	}
 
 	#endregion

@@ -85,6 +85,7 @@ public sealed class MobilePageConversionGuideTool {
 		"plus requestConversions (component event-binding requests/actions for mobile — supported requests are kept/remapped inside " +
 		"elementMap[].mobileValues; ONLY a crt.Button whose request the mobile app does not support is DROPPED (dead button), appearing as an elementMap `drop` — other component types are NOT dropped for an unsupported request (some use system requests absent from the list): their binding is kept verbatim and flagged; advisory summary only), " +
 		"plus deterministic empty-container removal (containers emptied by the conversion arrive as elementMap drops with reason \"empty container\"; the do/don't rules are in the conversion guide), " +
+		"plus parentExistsOnTemplate on an elementMap insert that RETARGETS into a container the mobile template ALREADY provides (insert ONLY the child; NEVER re-declare, insert, or merge the parent — the template supplies it, and authoring your own overrides the native one; a same-named source the template provides natively is DROPPED, not retargeted; do/don't in the conversion guide), " +
 		"plus adaptiveLayout (the responsive layout for each MULTI-column grid container - phone collapses to 1 column and stacks, " +
 			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
 			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +
