@@ -514,7 +514,11 @@ namespace Clio.Command
 
 		internal static string CategorizeError(Exception ex, string operationLabel) {
 			return ex switch {
+				HttpRequestException httpEx when IsAuthenticationFailure(httpEx)
+					=> $"Authentication error {operationLabel}.",
 				HttpRequestException => $"Network error {operationLabel}.",
+				WebException webEx when IsAuthenticationFailure(webEx)
+					=> $"Authentication error {operationLabel}.",
 				WebException => $"Network error {operationLabel}.",
 				SocketException => $"Network error {operationLabel}.",
 				UnauthorizedAccessException => $"Authentication error {operationLabel}.",
@@ -523,6 +527,13 @@ namespace Clio.Command
 				InvalidOperationException invEx => invEx.Message,
 				_ => $"Failed {operationLabel}."
 			};
+		}
+
+		private static bool IsAuthenticationFailure(Exception exception) {
+			string message = exception.Message ?? string.Empty;
+			return message.Contains("401", StringComparison.OrdinalIgnoreCase)
+				|| message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+				|| (exception.InnerException is not null && IsAuthenticationFailure(exception.InnerException));
 		}
 
 		private static string DescribeUnreadableBinaryTarget(string code) {

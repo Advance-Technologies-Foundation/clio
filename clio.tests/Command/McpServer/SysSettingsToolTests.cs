@@ -187,6 +187,21 @@ public sealed class SysSettingsToolTests {
 			because: "the MCP envelope must classify the failure so the caller knows to repair credentials");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("list-sys-settings maps an HTTP 401 raised during environment resolution to an authentication diagnostic instead of a generic network failure.")]
+	public void ListSysSettings_Should_Categorize_Http401_As_Authentication_Failure() {
+		SysSettingsListTool tool = new(BuildResolverThatThrows(new HttpRequestException(
+			"Response status code does not indicate success: 401 (Unauthorized).")));
+
+		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("local"));
+
+		result.Success.Should().BeFalse(
+			because: "an HTTP 401 means the configured credentials were rejected");
+		result.Error.Should().Be("Authentication error listing sys-settings.",
+			because: "MCP callers need a credential-repair diagnostic rather than a misleading network error");
+	}
+
 	#endregion
 
 	#region create-sys-setting
