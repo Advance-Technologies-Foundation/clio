@@ -170,6 +170,23 @@ public sealed class SysSettingsToolTests {
 			because: "the CategorizeError fallback maps non-network/auth exceptions to the canonical 'Failed listing' message");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("list-sys-settings maps a Creatio authentication rejection to a structured authentication diagnostic instead of returning a successful empty catalog.")]
+	public void ListSysSettings_Should_Categorize_Authentication_Failures() {
+		SysSettingsListTool tool = new(BuildResolverThatThrows(new System.Security.Authentication.AuthenticationException(
+			"Authentication failed while listing sys-settings: Your password has expired.")));
+
+		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("local"));
+
+		result.Success.Should().BeFalse(
+			because: "an authentication rejection must never be represented as a successful empty catalog");
+		result.Settings.Should().BeEmpty(
+			because: "no settings were safely read after credentials were rejected");
+		result.Error.Should().Be("Authentication error listing sys-settings.",
+			because: "the MCP envelope must classify the failure so the caller knows to repair credentials");
+	}
+
 	#endregion
 
 	#region create-sys-setting

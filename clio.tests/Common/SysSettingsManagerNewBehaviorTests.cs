@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Authentication;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -254,6 +255,50 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "an empty name is invalid input and the helper short-circuits without contacting the provider");
 		sut.FindSchemaUIdByName("   ").Should().BeNull(
 			because: "a whitespace-only name is invalid input and the helper short-circuits without contacting the provider");
+	}
+
+	#endregion
+
+	#region Authentication failure handling
+
+	[Test]
+	[Description("GetAllSysSettingsWithValues fails closed when the DataService returns Creatio's expired-password authentication error instead of allowing the repository provider to expose an empty list.")]
+	public void GetAllSysSettingsWithValues_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"5\",\"message\":\"Your password has expired\"}}");
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues(includeBinary: true);
+
+		// Assert
+		AuthenticationException exception = act.Should().Throw<AuthenticationException>().Which;
+		exception.Message.Should().Contain("password has expired",
+			because: "the actionable platform cause must survive the fail-closed authentication mapping");
+		exception.Message.Should().Contain("Verify the environment credentials",
+			because: "an automation caller needs a recovery action rather than a false empty-list success");
+	}
+
+	[Test]
+	[Description("UpdateSysSetting fails before posting when the authenticated DataService probe reports ErrorCode 5, so an expired password is not reduced to a generic write failure.")]
+	public void UpdateSysSetting_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
+		// Arrange
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrAuthFailure", "Text");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		Action act = () => sut.UpdateSysSetting("UsrAuthFailure", "value");
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "a rejected authenticated probe must stop the write before the generic save-result path");
+		applicationClient.ReceivedCalls().Should().ContainSingle(
+			because: "the rejected probe must stop the update before a second write request is sent");
 	}
 
 	#endregion

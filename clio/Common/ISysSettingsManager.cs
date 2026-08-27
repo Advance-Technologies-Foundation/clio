@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Security.Authentication;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ATF.Repository;
@@ -132,6 +133,10 @@ public interface ISysSettingsManager
 
 public class SysSettingsManager : ISysSettingsManager
 {
+	private const string AuthenticatedReadinessQuery =
+		"{\"rootSchemaName\":\"SysSettings\",\"operationType\":0," +
+		"\"columns\":{\"items\":{\"Id\":{\"expression\":{\"expressionType\":0," +
+		"\"columnPath\":\"Id\"}}}},\"rowCount\":1}";
 
 	#region Fields: Private
 
@@ -392,6 +397,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	/// <inheritdoc cref="ISysSettingsManager.GetAllUsersDefaultWithType" />
 	public (string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code) {
+		EnsureAuthenticatedDataServiceResponse("reading sys-setting");
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
 		if (sysSetting is null) {
 			return (string.Empty, null);
@@ -437,6 +443,7 @@ public class SysSettingsManager : ISysSettingsManager
 		string json = sysSetting.ToString();
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
+		EnsureAuthenticatedDataServiceResponse("creating sys-setting");
 		string response = _creatioClient.ExecutePostRequest(url, json);
 		return JsonSerializer.Deserialize<InsertSysSettingResponse>(response, _jsonSerializerOptions);
 	}
@@ -546,6 +553,7 @@ public class SysSettingsManager : ISysSettingsManager
 				$"SysSettings with code: {code} is not updated. Unsupported value-type-name '{optionsType}'.");
 			return false;
 		}
+		EnsureAuthenticatedDataServiceResponse("updating sys-setting");
 		string requestData = JsonSerializer.Serialize(new Dictionary<string, object> {
 			["isPersonal"] = false,
 			["sysSettingsValues"] = new Dictionary<string, object> { [code] = payloadValue }
@@ -618,6 +626,7 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	public List<SysSettings> GetAllSysSettingsWithValues(bool includeBinary = false) {
+		EnsureAuthenticatedDataServiceResponse("listing sys-settings");
 		var models = AppDataContextFactory.GetAppDataContext(_dataProvider).Models<SysSettings>();
 		var sysSettings = includeBinary
 			? models.ToList()
@@ -633,6 +642,107 @@ public class SysSettingsManager : ISysSettingsManager
 			sysSetting.SysSettingsValues = currentSysSettingValue;
 		}
 		return sysSettings;
+	}
+
+	/// <summary>
+	/// Probes the authenticated DataService surface used by the repository provider before a sys-settings
+	/// operation. The provider exposes authentication failures as an unsuccessful empty collection, so a
+	/// raw response must be inspected before a provider result is trusted.
+	/// </summary>
+	/// <param name="operationLabel">The sys-settings operation used in the diagnostic.</param>
+	/// <exception cref="AuthenticationException">Thrown when Creatio rejects the credentials.</exception>
+	private void EnsureAuthenticatedDataServiceResponse(string operationLabel) {
+		// The provider-only constructor is used by isolated model tests and has no HTTP client. Production
+		// composition supplies both dependencies; keeping this seam inert preserves those tests.
+		if (_creatioClient is null || _serviceUrlBuilder is null) {
+			return;
+		}
+		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
+		string response;
+		try {
+			response = _creatioClient.ExecutePostRequest(url, AuthenticatedReadinessQuery);
+		} catch (Exception exception) when (IsAuthenticationException(exception)) {
+			throw new AuthenticationException(
+				$"Authentication failed while {operationLabel}. Verify the environment credentials and retry.",
+				exception);
+		}
+		if (string.IsNullOrWhiteSpace(response)) {
+			return;
+		}
+		if (ReauthExecutor.IsSessionExpiredResponse(response)) {
+			throw new AuthenticationException(
+				$"Authentication failed while {operationLabel}: Creatio returned a login redirect. " +
+				"Verify the environment credentials (for an expired password, repair the registered profile) and retry.");
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(response);
+			if (!ContainsAuthenticationFailure(document.RootElement)) {
+				return;
+			}
+			string detail = FindStringProperty(document.RootElement, "message") ?? "Creatio rejected the credentials.";
+			throw new AuthenticationException(
+				$"Authentication failed while {operationLabel}: {SanitizeAuthenticationDetail(detail)} " +
+				"Verify the environment credentials and retry.");
+		} catch (JsonException) {
+			throw new InvalidOperationException(
+				$"Failed {operationLabel}: the environment returned a non-JSON response instead of a DataService response.");
+		}
+	}
+
+	private static bool ContainsAuthenticationFailure(JsonElement element) {
+		if (element.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in element.EnumerateObject()) {
+				if (string.Equals(property.Name, "ErrorCode", StringComparison.OrdinalIgnoreCase)
+					&& string.Equals(property.Value.ToString(), "5", StringComparison.OrdinalIgnoreCase)) {
+					return true;
+				}
+				if (string.Equals(property.Name, "Message", StringComparison.OrdinalIgnoreCase)
+					&& property.Value.ValueKind == JsonValueKind.String) {
+					string message = property.Value.GetString();
+					if (message?.Contains("password has expired", StringComparison.OrdinalIgnoreCase) == true
+						|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)) {
+						return true;
+					}
+				}
+				if (ContainsAuthenticationFailure(property.Value)) {
+					return true;
+				}
+			}
+		}
+		return element.ValueKind == JsonValueKind.Array
+			&& element.EnumerateArray().Any(ContainsAuthenticationFailure);
+	}
+
+	private static string FindStringProperty(JsonElement element, string propertyName) {
+		if (element.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in element.EnumerateObject()) {
+				if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)
+					&& property.Value.ValueKind == JsonValueKind.String) {
+					return property.Value.GetString();
+				}
+				string nested = FindStringProperty(property.Value, propertyName);
+				if (nested is not null) {
+					return nested;
+				}
+			}
+		}
+		return element.ValueKind == JsonValueKind.Array
+			? element.EnumerateArray().Select(item => FindStringProperty(item, propertyName))
+				.FirstOrDefault(value => value is not null)
+			: null;
+	}
+
+	private static string SanitizeAuthenticationDetail(string detail) =>
+		detail.Replace("\r", " ").Replace("\n", " ").Trim();
+
+	private static bool IsAuthenticationException(Exception exception) {
+		if (exception is AuthenticationException or UnauthorizedAccessException) {
+			return true;
+		}
+		string message = exception.Message ?? string.Empty;
+		return message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase);
 	}
 
 	// Platform-fixed FileSecurityMode lookup ids (constants in Terrasoft.Web.FileSecurity.FileSecurityModeProvider).
