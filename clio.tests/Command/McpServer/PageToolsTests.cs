@@ -1449,6 +1449,76 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("TryGetPage returns success:false with the actionable message when a child is inserted into a container whose collection was never seeded - the strict applier rejects it (client parity) instead of silently auto-creating the collection.")]
+	public void TryGetPage_WhenContainerCollectionNotSeeded_ReturnsActionableFailure() {
+		// Arrange - the base template inserts MainContainer WITHOUT an items collection; the current page then
+		// inserts a child into MainContainer.items. The faithful applier throws "not a container" (the client does
+		// the same), where the retired tolerant applier would have auto-created the missing items array.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrUnseeded_FormPage",
+			"unseeded-schema-uid",
+			"unseeded-package-uid",
+			"UsrUnseeded",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "unseeded-schema-uid",
+				["name"] = "UsrUnseeded_FormPage",
+				["package"] = new JObject { ["uId"] = "unseeded-package-uid", ["name"] = "UsrUnseeded" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'NameField',
+					    parentName: 'MainContainer',
+					    propertyName: 'items',
+					    values: { type: 'crt.Input' }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject { ["uId"] = "base-pkg-uid", ["name"] = "CrtBase" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: { type: 'crt.FlexContainer' }
+					  }
+					]
+					""")
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrUnseeded_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a child insert into an unseeded container collection is rejected, not silently repaired");
+		response.Success.Should().BeFalse(
+			because: "the strict-applier rejection surfaces as an explicit failure envelope");
+		response.Error.Should().Contain("Failed to resolve page bundle for 'UsrUnseeded_FormPage'",
+			because: "the failure names the page instead of surfacing a bare applier error");
+		response.Error.Should().Contain("not a container",
+			because: "the preserved applier diagnostic identifies the unseeded container as the offending target");
+	}
+
+	[Test]
 	[Description("TryGetPage returns error when schema metadata is not found in SysSchema")]
 	public void TryGetPage_WhenSchemaNotFound_ReturnsError() {
 		// Arrange

@@ -219,8 +219,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 				$"Strict page-bundle resolution rejected the schema chain for '{options.SchemaName}': {resolveEx.Message}");
 			response = new PageGetResponse {
 				Success = false,
-				Error = $"Failed to resolve page bundle for '{options.SchemaName}': the schema chain contains "
-					+ $"an operation the platform itself would reject ({resolveEx.Message})."
+				Error = resolveEx.ToPageBundleResolutionError(options.SchemaName)
 			};
 			return false;
 		}

@@ -821,6 +821,14 @@ public sealed class JsonDiffApplierException : Exception {
 	public JsonDiffApplierException(string message) : base(message) { }
 }
 
+/// <summary>Shared wording for a strict page-bundle resolution failure so every entry point (get-page,
+/// business-rule resolution) surfaces one identical, actionable message.</summary>
+public static class JsonDiffApplierExceptionExtensions {
+	public static string ToPageBundleResolutionError(this JsonDiffApplierException resolveEx, string schemaName) =>
+		$"Failed to resolve page bundle for '{schemaName}': the schema chain contains an operation the platform "
+		+ $"itself would reject ({resolveEx.Message}).";
+}
+
 /// <summary>Exact clone of the client <c>resources.ts</c> message templates used by <see cref="JsonDiffApplier"/>.</summary>
 public static class JsonDiffApplierResources {
 	public const string LoopDependency = "Cyclic dependency exists for object \"{0}\". The parentName parameter cannot be equal to name";

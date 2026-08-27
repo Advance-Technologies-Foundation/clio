@@ -54,10 +54,7 @@ internal sealed class PageBusinessRuleSchemaProvider(
 		} catch (JsonDiffApplierException resolveEx) {
 			// Keep this provider's single failure contract (InvalidOperationException): strict resolution can now
 			// reject an inherited chain the platform itself would reject, so translate it into a named, actionable error.
-			throw new InvalidOperationException(
-				$"Failed to resolve page bundle for '{pageSchemaName}': the schema chain contains an operation the "
-				+ $"platform itself would reject ({resolveEx.Message}).",
-				resolveEx);
+			throw new InvalidOperationException(resolveEx.ToPageBundleResolutionError(pageSchemaName), resolveEx);
 		}
 
 		PageDesignerHierarchySchema currentSchema = hierarchy[0];

@@ -170,14 +170,16 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 
 	// One-time warnings shown only when a feature is ENABLED (never on disable/list). Keyed
 	// case-insensitively. The mobile-page-converter Beta heads-up is TEMPORARY — remove that entry when
-	// the converter graduates out of Beta.
+	// the converter graduates out of Beta. Notice text is written verbatim to the console, the log file
+	// and every additional sink, so it carries no markup - Markdown asterisks would show up literally.
+	// Emphasize with UPPER CASE instead.
 	internal static readonly IReadOnlyDictionary<string, string> FeatureEnableNotices =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["mobile-page-converter"] =
-				"🔔 Heads up! Enabling this feature will activate the agent in **Beta mode**. "
+				"⚠️ Heads up! Enabling this feature will activate the agent in BETA MODE. "
 				+ "Please be aware that behavior may vary and improvements are ongoing.",
 			[KnowledgeUnsequencedGitOptions.FeatureName] =
-				"🔔 Local development aid. While enabled, a Git knowledge source whose manifest omits "
+				"⚠️ Local development aid. While enabled, a Git knowledge source whose manifest omits "
 				+ "\"sequence\" is loaded by deriving the sequence from libraryVersion, and such a bundle "
 				+ "may replace the active generation with different content under the SAME sequence - the "
 				+ "content-integrity check that detects a swapped guidance corpus does not apply to it. "
