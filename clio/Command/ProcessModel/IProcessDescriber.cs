@@ -373,7 +373,10 @@ public sealed class DescribedOpenEditPage {
 
 	/// <summary>
 	/// Who performs the step, and whether the page opens automatically. <c>null</c> on an element that carries no
-	/// performer assignment — which is the designer's own initial state, not an error.
+	/// performer assignment — the designer's own initial state, not an error.
+	/// <para><c>null</c> does NOT mean the step runs for nobody: the platform resolves an empty performer to the
+	/// CURRENT USER's contact at run time, which is why the designer's card shows "User" and the current user for an
+	/// element whose schema stores neither. Report it as "not assigned explicitly", not as a gap to fill.</para>
 	/// </summary>
 	[JsonPropertyName("performer")]
 	public DescribedOpenEditPagePerformer Performer { get; set; }
