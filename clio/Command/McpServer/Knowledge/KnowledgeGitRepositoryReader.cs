@@ -12,12 +12,23 @@ using Newtonsoft.Json;
 
 namespace Clio.Command.McpServer.Knowledge;
 
+/// <summary>
+/// A validated Git knowledge checkout as read from disk.
+/// </summary>
+/// <param name="SequenceSynthesized">
+/// <see langword="true"/> when the manifest omitted <c>sequence</c> and the value in
+/// <paramref name="Sequence"/> was derived from <paramref name="LibraryVersion"/> under
+/// <see cref="KnowledgeUnsequencedGitOptions"/>. It marks the sequence as a local convenience rather
+/// than a producer-declared generation identity, so downstream guards can relax for this candidate
+/// alone without weakening anything a producer actually declared.
+/// </param>
 internal sealed record KnowledgeGitRepositorySnapshot(
 	string LibraryId,
 	string LibraryVersion,
 	ulong Sequence,
 	string ContentDigest,
-	IReadOnlyList<KnowledgeArticle> Articles);
+	IReadOnlyList<KnowledgeArticle> Articles,
+	bool SequenceSynthesized = false);
 
 internal interface IKnowledgeGitRepositoryReader {
 	bool TryRead(
@@ -58,12 +69,15 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 	};
 	private readonly IFileSystem _fileSystem;
 	private readonly KnowledgeBundleClientCapabilities _capabilities;
+	private readonly KnowledgeUnsequencedGitOptions _unsequencedOptions;
 
 	public KnowledgeGitRepositoryReader(
 		IFileSystem fileSystem,
-		KnowledgeBundleClientCapabilities capabilities) {
+		KnowledgeBundleClientCapabilities capabilities,
+		KnowledgeUnsequencedGitOptions unsequencedOptions) {
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+		_unsequencedOptions = unsequencedOptions ?? throw new ArgumentNullException(nameof(unsequencedOptions));
 	}
 
 	public bool TryRead(
@@ -86,6 +100,27 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 					DateParseHandling = DateParseHandling.None,
 					MaxDepth = 64
 				}) ?? throw new InvalidDataException("Git knowledge manifest is empty.");
+			// LOCAL DEV TOGGLE (off by default): clio-knowledge master/newer branches derive the
+			// generation sequence from libraryVersion and omit the explicit "sequence" field (a bundle
+			// format ahead of this clio). When the 'knowledge-allow-unsequenced' feature flag is enabled
+			// in the clio config, synthesize a non-zero sequence from libraryVersion so ANY branch/tag
+			// loads for local testing without editing the knowledge repo. Default (flag off) keeps stock
+			// behavior: ValidateEnvelope rejects a missing sequence. Downstream identity/upgrade logic
+			// then sees a non-zero, per-branch-monotonic number (see DeriveSequenceFromLibraryVersion for
+			// the ordering caveats).
+			//
+			// The synthesized value is a deterministic function of libraryVersion, so editing an article
+			// and re-loading WITHOUT bumping libraryVersion produces the same sequence with a different
+			// content digest. That is exactly the local-iteration case the flag exists for, so it is
+			// ACCEPTED rather than rejected as a content mismatch: sequenceSynthesized travels with the
+			// snapshot and lets KnowledgeBundleRuntime.ActivateGitRepository and
+			// KnowledgeSourceManagementService relax the equal-sequence guard for this candidate alone.
+			// A producer-declared sequence never gets that relaxation, and neither does a backwards move
+			// in either place. No libraryVersion bump is needed between iterations.
+			bool sequenceSynthesized = manifest.Sequence == 0 && _unsequencedOptions.AllowUnsequencedGitBundles;
+			if (sequenceSynthesized) {
+				manifest.Sequence = DeriveSequenceFromLibraryVersion(manifest.LibraryVersion);
+			}
 			ValidateEnvelope(manifest, expectedLibraryId);
 			ValidateCompatibility(manifest);
 			ValidateRequirements(manifest);
@@ -125,7 +160,8 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 				manifest.LibraryVersion,
 				manifest.Sequence,
 				Convert.ToHexString(digest.GetHashAndReset()),
-				articles);
+				articles,
+				sequenceSynthesized);
 			return true;
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException
@@ -174,6 +210,44 @@ internal sealed class KnowledgeGitRepositoryReader : IKnowledgeGitRepositoryRead
 		} catch (System.Text.Json.JsonException exception) {
 			throw new InvalidDataException("Git knowledge manifest is not strict JSON.", exception);
 		}
+	}
+
+	// Cap the number of version components folded into the synthesized sequence. Each component
+	// contributes up to 3 digits (factor 1000), so four components stay well within ulong
+	// (max ~1e12); folding an unbounded segment count would overflow and wrap to a wrong value.
+	private const int MaxSequenceComponents = 4;
+
+	// LOCAL DEV AID (gated off by default via the 'knowledge-allow-unsequenced' flag): pack
+	// libraryVersion (e.g. "1.13.21") into a non-zero sequence so a knowledge branch/tag that omits
+	// the explicit "sequence" field still loads. Each dotted component is clamped to 3 digits and only
+	// the first MaxSequenceComponents are used: "1.13.21" -> ((1*1000+13)*1000+21) = 1013021. This is
+	// monotonic ONLY across versions that share the same shape (fixed segment count, every component
+	// < 1000) — enough for iterating a single local branch, which is the only supported use.
+	private static ulong DeriveSequenceFromLibraryVersion(string libraryVersion) {
+		if (string.IsNullOrWhiteSpace(libraryVersion)) {
+			return 1;
+		}
+		ulong accumulated = 0;
+		int consumed = 0;
+		foreach (string part in libraryVersion.Split('.')) {
+			if (consumed == MaxSequenceComponents) {
+				break;
+			}
+			ulong component = 0;
+			foreach (char character in part) {
+				if (character < '0' || character > '9') {
+					break;
+				}
+				component = component * 10 + (ulong)(character - '0');
+				if (component > 999) {
+					component = 999;
+					break;
+				}
+			}
+			accumulated = accumulated * 1000 + component;
+			consumed++;
+		}
+		return accumulated == 0 ? 1 : accumulated;
 	}
 
 	private static void ValidateEnvelope(
@@ -410,7 +484,7 @@ internal sealed class KnowledgeGitRepositoryManifest {
 	public string LibraryVersion { get; init; } = string.Empty;
 
 	[JsonProperty("sequence")]
-	public ulong Sequence { get; init; }
+	public ulong Sequence { get; set; }
 
 	[JsonProperty("compatibility")]
 	public KnowledgeGitRepositoryCompatibility? Compatibility { get; init; }
