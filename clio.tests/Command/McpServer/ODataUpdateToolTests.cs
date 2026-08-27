@@ -15,6 +15,13 @@ public sealed class ODataUpdateToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 	private static JsonElement Obj(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
+	/// <summary>
+	/// A valid single-record OData response for the pre-write $select probe: none of the
+	/// recognized error shapes, so the probe confirms the fields exist.
+	/// </summary>
+	private static string ProbeOk(string field) =>
+		$"{{\"@odata.context\":\"http://creatio/odata/$metadata#Contact({Guid})\",\"Id\":\"{Guid}\",\"{field}\":\"probe\"}}";
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-update.")]
@@ -40,6 +47,8 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ProbeOk("Name"));
 		ODataUpdateTool tool = new(resolver);
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -53,6 +62,7 @@ public sealed class ODataUpdateToolTests {
 		response.Success.Should().BeTrue();
 		response.Id.Should().Be(Guid);
 		urlBuilder.Received(1).Build($"odata/Contact({Guid})");
+		urlBuilder.Received(1).Build($"odata/Contact({Guid})?$select=Id%2CName");
 		client.Received(1).ExecutePatchRequest($"http://creatio/odata/Contact({Guid})", "{\"Name\":\"New\"}", 30_000, 1, 1);
 	}
 
@@ -123,6 +133,8 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ProbeOk("Name"));
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
 		ODataUpdateTool tool = new(resolver);
@@ -147,6 +159,8 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ProbeOk("Name"));
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html><head><title>404 - File or directory not found.</title></head></html>");
 		ODataUpdateTool tool = new(resolver);
@@ -172,6 +186,8 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ProbeOk("Name"));
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
 		ODataUpdateTool tool = new(resolver);
@@ -197,6 +213,8 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ProbeOk("Name"));
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{}");
 		ODataUpdateTool tool = new(resolver);
@@ -209,5 +227,161 @@ public sealed class ODataUpdateToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "an empty JSON object carries none of the recognized error members, so it is consistent with a successful PATCH");
 		response.Error.Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A data field the OData type does not have must fail the call before the PATCH goes out, so success:true cannot mean a write that never happened (GitHub #1212).")]
+	public void Update_Should_Reject_Unknown_Field_Before_Write() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"message\":\"The query specified in the URI is not valid. Could not find a property named 'labNoSuchColumnXyz' on type 'Terrasoft.Configuration.OData.Contact'.\"}}");
+		ODataUpdateTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Id = Guid,
+			Data = Obj("{\"labNoSuchColumnXyz\":\"#000000\"}"),
+			Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("'labNoSuchColumnXyz'")
+			.And.Contain("do not exist")
+			.And.Contain("nothing was written");
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The OData service reports only the FIRST unknown $select property, so the tool must probe each remaining field individually to name every bad field in one round trip.")]
+	public void Update_Should_Report_Every_Unknown_Field() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequest(
+				Arg.Is<string>(url => url.Contains("Id%2ClabA%2ClabB")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"message\":\"Could not find a property named 'labA' on type 'Terrasoft.Configuration.OData.Contact'.\"}}");
+		client.ExecuteGetRequest(
+				Arg.Is<string>(url => url.Contains("Id%2ClabB")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"message\":\"Could not find a property named 'labB' on type 'Terrasoft.Configuration.OData.Contact'.\"}}");
+		ODataUpdateTool tool = new(resolver);
+
+		// Act
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Id = Guid,
+			Data = Obj("{\"labA\":\"#1\",\"labB\":\"#2\"}"),
+			Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("'labA'").And.Contain("'labB'");
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A malformed data field name is rejected locally before any remote call, because it would also corrupt the probe's $select list.")]
+	public void Update_Should_Reject_Malformed_Field_Name_Locally() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		ODataUpdateTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Bad Field!\":\"x\"}"), Confirm = true
+		});
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("not a valid OData field name");
+		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the pre-write probe returns an empty body the fields are unverified - the update must fail, not proceed, because an unverifiable write would reintroduce the silent success.")]
+	public void Update_Should_Fail_When_Probe_Returns_Empty_Body() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		ODataUpdateTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
+		});
+
+		response.Success.Should().BeFalse(because: "unverified fields must not be reported as a write");
+		response.Error.Should().Contain("could not be verified");
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the pre-write probe returns a non-JSON body (a proxy error page) the fields are unverified - the update must fail, not proceed.")]
+	public void Update_Should_Fail_When_Probe_Returns_NonJson_Body() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html><head><title>503 - Service Unavailable</title></head></html>");
+		ODataUpdateTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
+		});
+
+		response.Success.Should().BeFalse(because: "unverified fields must not be reported as a write");
+		response.Error.Should().Contain("could not be verified");
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the probe fails for a reason other than a missing property (e.g. the record does not exist), that error is surfaced verbatim and no write is attempted.")]
+	public void Update_Should_Surface_NonProperty_Probe_Error() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"message\":\"The requested resource does not exist.\"}}");
+		ODataUpdateTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}"), Confirm = true
+		});
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("The requested resource does not exist.");
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 }

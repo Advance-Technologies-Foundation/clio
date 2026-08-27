@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -21,6 +22,8 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 	[Description(
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
+		"Every data field must exist on the entity's OData type: the fields are probed against the record " +
+		"before the write, and any unknown field fails the call with nothing written, so success:true always means a write. " +
 		"This tool never performs a keyless mass update. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
@@ -43,6 +46,16 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			}
 
 			(IApplicationClient client, string url) = ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
+			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(new EnvironmentOptions { Environment = args.EnvironmentName });
+			ODataWriteResponse fieldValidationError = ODataFieldValidation.ValidateDataFields(
+				client,
+				urlBuilder,
+				args.Entity.Trim(),
+				args.Id.Trim(),
+				data.EnumerateObject().Select(property => property.Name).ToList());
+			if (fieldValidationError is not null) {
+				return fieldValidationError;
+			}
 			string response = client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
 			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
 			if (validationError is not null) {
@@ -73,6 +86,8 @@ public sealed record ODataUpdateArgs {
 	[JsonPropertyName("data")]
 	[Description(
 		"Object of field/value pairs to change. Only supplied fields are updated. " +
+		"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
+		"Columns absent from $metadata (e.g. Color) cannot be written here - verify them with execute-esq instead. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
 		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" }")]
 	[Required]
