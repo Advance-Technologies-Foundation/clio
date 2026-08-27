@@ -530,6 +530,11 @@ namespace Clio.Command
 		}
 
 		private static bool IsAuthenticationFailure(Exception exception) {
+			if (exception is WebException { Response: HttpWebResponse response }
+				&& (response.StatusCode == HttpStatusCode.Unauthorized
+					|| response.StatusCode == HttpStatusCode.NotFound)) {
+				return true;
+			}
 			string message = exception.Message ?? string.Empty;
 			return message.Contains("401", StringComparison.OrdinalIgnoreCase)
 				|| message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
