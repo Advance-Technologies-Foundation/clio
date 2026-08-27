@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -203,10 +203,15 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
 					+ $"failed with: {response.Error} — a runtime regression, not missing seed data");
 			MobilePageConversionGuide guide = response.Guide!;
-			bool mentionsBannedType = guide.ElementMap.Any(e => filters.Any(f =>
-				string.Equals(e.MobileType, f.Type, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e.WebType, f.Type, StringComparison.OrdinalIgnoreCase)));
-			if (mentionsBannedType) {
+			// A page only EXERCISES the rule when a banned type survived conversion as an insert. Accepting a
+			// mere mention (including e.WebType, which a plain unsupported-type drop also satisfies) would let
+			// the loop break on a page where the exclusion pass had nothing to decide, and
+			// AssertExcludedComponentsHonored would then pass by construction — reporting a vacuous run as a
+			// real one, which is the exact failure the Ignore branch below exists to prevent.
+			bool exercisesBannedType = guide.ElementMap.Any(e =>
+				string.Equals(e.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+				&& filters.Any(f => string.Equals(e.MobileType, f.Type, StringComparison.OrdinalIgnoreCase)));
+			if (exercisesBannedType) {
 				AssertExcludedComponentsHonored(guide, filters);
 				bannedTypeExercised = true;
 				convertedSchemaName = schemaName;
@@ -218,15 +223,15 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		if (!bannedTypeExercised) {
 			Assert.Ignore(
 				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
-				+ "carries a component of any excludedComponents-banned type, so the TRANSPORT path could not be exercised "
+				+ "converts a component of any excludedComponents-banned type into a surviving insert, so the TRANSPORT path could not be exercised "
 				+ "end to end. This skip is not a coverage gap for the rule itself: the acceptance criterion is enforced "
 				+ "hermetically on production-shaped metadata by WebToMobileRealPageRegressionTests (the pinned OOTB "
 				+ "Leads_FormPage), which runs on every build. What is NOT covered while this skips is the rule reaching "
 				+ "the same verdict through the real clio mcp-server process. To close that, add a seeded page with a "
 				+ "crt.SearchFilter inside a crt.ExpansionPanel's tools to the seed application.");
 		}
-		bannedTypeExercised.Should().BeTrue(
-			because: $"the seeded page '{convertedSchemaName}' mentions a banned type, so the invariant was actually asserted");
+		TestContext.Out.WriteLine(
+			$"excludedComponents invariant asserted against seeded page '{convertedSchemaName}'.");
 	}
 
 	/// <summary>

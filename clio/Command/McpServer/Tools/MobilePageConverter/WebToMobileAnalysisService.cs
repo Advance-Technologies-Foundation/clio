@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -206,7 +206,8 @@ public static class WebToMobileAnalysisService {
 		// BuildRequestConversionInfo (a removed element's binding is reported as discarded, not converted),
 		// web names → BuildMobileViewModelConfig (removal is layout cleanup — referenced attributes are KEPT).
 		HashSet<string> excludedRemovedNames = ExcludedComponentsPass.RemoveExcludedComponents(
-			elementMap, rules, out HashSet<string> excludedRemovedMobileNames);
+			elementMap, rules, out HashSet<string> excludedRemovedMobileNames,
+			out ExcludedComponentsPass.ExcludedComponentsDiagnostics excludedDiagnostics);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -366,7 +367,9 @@ public static class WebToMobileAnalysisService {
 				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
 				normalization: componentPropertyOverrides,
 				webTemplateUnavailable: webTemplateUnavailable,
-				hasComponentTwin: componentMap.Count > 0),
+				hasComponentTwin: componentMap.Count > 0,
+				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
+				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -1633,7 +1636,8 @@ public static class WebToMobileAnalysisService {
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
-		bool webTemplateUnavailable = false, bool hasComponentTwin = false) {
+		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
+		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1737,6 +1741,23 @@ public static class WebToMobileAnalysisService {
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
 		AppendNormalizationLines(constraints, normalization);
+		if (exclusionSearchTruncated) {
+			// The one outcome the drop entries cannot report: a component that was never removed produces no
+			// entry, so without this line a banned component past the depth budget is indistinguishable from
+			// one no rule targets.
+			constraints.Add(
+				"An excludedComponents search hit its depth budget and abandoned a branch: a banned component nested "
+				+ "deeper than the budget is still on the page and has NO drop entry. Re-check the deepest branches "
+				+ "of the converted page against the rules before treating the exclusion report as complete.");
+		}
+		if (discardedExclusionFilters > 0) {
+			// The rules file can be fetched from the CDN at runtime, so a typo in a published rule silently
+			// switches an exclusion off. Naming the count makes that debuggable from the report alone.
+			constraints.Add(
+				$"{discardedExclusionFilters} excludedComponents filter(s) were ignored because they declare no "
+				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
+				+ "misspelled property name.");
+		}
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +

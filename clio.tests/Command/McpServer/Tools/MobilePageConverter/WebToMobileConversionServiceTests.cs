@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6075,7 +6075,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		// Assert
-		Element(guide, "CustomHost").MobileValues!["widgets"]!.AsArray().Should().BeEmpty(
+		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "with no propertiesContainerName the search is not limited to a hardcoded property name");
 		Element(guide, "Buried").Operation.Should().Be("drop",
 			because: "the nested component is still found and removed even though it sits under an arbitrary property");
@@ -6125,7 +6125,7 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
 			.Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "ProductsRefreshButton",
 				because: "the second, unrelated rule (usr.Foo inside usr.Bar) must not affect the ExpansionPanel host");
-		Element(guide, "CustomHost").MobileValues!["widgets"]!.AsArray().Should().BeEmpty(
+		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the first, unrelated rule (crt.SearchFilter inside crt.ExpansionPanel.tools) must not affect this host");
 	}
 
@@ -6150,7 +6150,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode innerBar = Element(guide, "OuterPanel").MobileValues!["tools"]![0]!["items"]![0]!;
 		innerBar["name"]!.GetValue<string>().Should().Be("InnerBar",
 			because: "the nested host itself must survive — only the banned component inside it is removed");
-		innerBar["widgets"]!.AsArray().Should().BeEmpty(
+		(innerBar as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the host is matched by its type anywhere in the tree, not by having an elementMap entry");
 		guide.ElementMap.Where(e => e.WebName == "Buried").Should().ContainSingle(
 			because: "exactly one drop entry per removal — a nested host must not be processed twice")
@@ -6176,7 +6176,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		JsonNode host = Element(guide, "CustomHost").MobileValues!;
-		host["tools"]!.AsArray().Should().BeEmpty(
+		(host as JsonObject)!.ContainsKey("tools").Should().BeFalse(
 			because: "the named property is the scope, so its component is stripped");
 		host["widgets"]!.AsArray().Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "WidgetsFoo",
 			because: "an explicit scope is an explicit boundary — the un-named sibling property is untouched");
@@ -6197,9 +6197,9 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		JsonNode host = Element(guide, "CustomHost").MobileValues!;
-		host["tools"]!.AsArray().Should().BeEmpty(
+		(host as JsonObject)!.ContainsKey("tools").Should().BeFalse(
 			because: "with no named property the tools branch of the host is in scope");
-		host["widgets"]!.AsArray().Should().BeEmpty(
+		(host as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "with no named property every property of the host — tools and widgets alike — is in scope");
 		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().HaveCount(2,
 			because: "each removed instance is reported once, and exactly once");
@@ -6224,7 +6224,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(scoped));
 
 		// Assert
-		Element(guide, "CasedHost").MobileValues!["Tools"]!.AsArray().Should().BeEmpty(
+		(Element(guide, "CasedHost").MobileValues! as JsonObject)!.ContainsKey("Tools").Should().BeFalse(
 			because: "the scope-property lookup is case-insensitive like every other comparison here");
 		Element(guide, "ScopelessHost").MobileValues!["widgets"]!.AsArray().Should().ContainSingle(
 			because: "a host without the named property is a no-op — never a fallback to the whole subtree");
@@ -6251,7 +6251,7 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry outer = Element(guide, "OuterBar");
 		outer.Operation.Should().Be("insert",
 			because: "a host never removes itself — the strip searches only INSIDE its scope");
-		outer.MobileValues!["widgets"]!.AsArray().Should().BeEmpty(
+		(outer.MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the nested same-type node is a legitimate match inside the outer host's scope");
 		guide.ElementMap.Where(e => e.WebName == "InnerBar").Should().ContainSingle(
 			because: "the removed nested host is reported once").Which.Operation.Should().Be("drop");
@@ -6280,10 +6280,99 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
 
 		// Assert
-		Element(guide, "CustomHost").MobileValues!["widgets"]!.AsArray().Should().BeEmpty(
+		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
 			because: "the guard abandons the offending branch only — a sibling at sane depth still strips");
 		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
 			because: "the pathological branch was abandoned, so only the sane sibling produced a removal");
+		guide.Constraints.Should().Contain(c => c.Contains("depth budget"),
+			because: "a component the search never reached is KEPT with no drop entry — the one outcome the "
+				+ "element map cannot report, so it has to reach the caller as a constraint instead");
+	}
+
+	[Test]
+	[Description("A merge twin's carried values ARE stripped — they are the delta this converter writes over the template element, so a banned component in them is something the converter is about to add — but a collection the strip empties is REMOVED rather than left as [], so the delta cannot erase the template's own non-empty value.")]
+	public void RemoveExcludedComponents_ShouldStripMergeDelta_AndDropTheCollectionItEmpties() {
+		// Arrange — a template twin whose converter-owned delta carries the banned type in 'tools', plus a
+		// second host whose 'tools' keeps a survivor so the emptied-vs-thinned distinction is visible.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "TemplatePanel", MobileName = "TemplatePanel", MobileType = "crt.ExpansionPanel",
+				Operation = "merge",
+				MobileValues = JsonNode.Parse("""
+					{ "caption": "Products",
+					  "tools": [ { "name": "CarriedSearchFilter", "type": "crt.SearchFilter" } ] }
+					""")!.AsObject()
+			},
+			new() {
+				WebName = "ConvertedPanel", MobileName = "ConvertedPanel", MobileType = "crt.ExpansionPanel",
+				Operation = "insert",
+				MobileValues = JsonNode.Parse("""
+					{ "tools": [ { "name": "KeptSearchFilter", "type": "crt.SearchFilter" },
+					             { "name": "RefreshButton", "type": "crt.Button" } ] }
+					""")!.AsObject()
+			}
+		};
+
+		// Act
+		ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> _, out _);
+
+		// Assert
+		var twin = (JsonObject)elementMap[0].MobileValues!;
+		twin.ContainsKey("tools").Should().BeFalse(
+			because: "an emptied collection in a template delta would OVERWRITE the tools strip the template "
+				+ "ships — removing the banned component must not also erase the host's own content");
+		twin["caption"]!.GetValue<string>().Should().Be("Products",
+			because: "only the emptied collection goes; the rest of the delta is untouched");
+		elementMap[0].Operation.Should().Be("merge",
+			because: "the twin itself is still the template's element — the pass strips its delta, never drops it");
+
+		var converted = (JsonObject)elementMap[1].MobileValues!;
+		converted["tools"]!.AsArray().Should().ContainSingle(
+			i => i!["name"]!.GetValue<string>() == "RefreshButton",
+			because: "a collection that merely THINNED keeps its surviving members and stays declared");
+	}
+
+	[Test]
+	[Description("A filter missing parentType is unusable and is skipped — but the rules file can be fetched from the CDN at runtime, so a typo there would otherwise switch an exclusion off with no signal anywhere. The count reaches the caller as a constraint.")]
+	public void Analyze_ShouldConstrain_WhenAFilterIsDiscardedAsMalformed() {
+		// Arrange — one usable filter and one with a misspelled property, exactly the CDN-typo shape.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar",
+			    "widgets": [ { "name": "Foo", "type": "usr.Foo" } ] } ]
+			""");
+		var malformed = new ExcludedComponentFilterRule { Type = "usr.Foo" };
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter, malformed));
+
+		// Assert
+		guide.Constraints.Should().Contain(c => c.Contains("excludedComponents filter"),
+			because: "an exclusion that never ran must say so — silence is indistinguishable from 'nothing matched'");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
+			because: "the usable filter still runs — one malformed entry disables only itself");
+	}
+
+	[Test]
+	[Description("The malformed-filter constraint is raised only when a filter really was discarded: a well-formed rules file must not carry a warning about filters it does not have.")]
+	public void Analyze_ShouldNotConstrain_WhenEveryFilterIsWellFormed() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar",
+			    "widgets": [ { "name": "Foo", "type": "usr.Foo" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		guide.Constraints.Should().NotContain(c => c.Contains("excludedComponents filter"),
+			because: "a constraint that fires on a healthy page trains the reader to ignore it");
+		guide.Constraints.Should().NotContain(c => c.Contains("depth budget"),
+			because: "no branch was abandoned, so nothing was left unsearched");
 	}
 
 	// ── Entry-graph phase: on a real registry the child-array traversal walks tools/menuItems children
@@ -6602,7 +6691,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
-			out HashSet<string> _);
+			out HashSet<string> _, out _);
 
 		// Assert
 		elementMap.Single(e => e.WebName == "ConvertedSearchFilter").Operation.Should().Be("drop",
@@ -6636,7 +6725,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
-			out HashSet<string> removedMobileNames);
+			out HashSet<string> removedMobileNames, out _);
 
 		// Assert
 		removedWebNames.Should().BeEquivalentTo(["WalkedSearchFilter", "CarriedSearchFilter"],
@@ -6669,7 +6758,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
 			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
-			out HashSet<string> removedMobileNames);
+			out HashSet<string> removedMobileNames, out _);
 
 		// Assert
 		elementMap.Should().AllSatisfy(e => e.Operation.Should().Be("insert"),
