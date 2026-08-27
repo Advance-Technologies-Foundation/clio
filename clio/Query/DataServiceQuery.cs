@@ -108,6 +108,12 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	#region Fields: Private
 
+	/// <summary>
+	/// Upper bound for the error-page detection patterns so a hostile or oversized response body cannot
+	/// stall the command through catastrophic backtracking.
+	/// </summary>
+	private static readonly TimeSpan ErrorDetectionRegexTimeout = TimeSpan.FromSeconds(1);
+
 	private readonly IFileSystem _fileSystem;
 
 	#endregion
@@ -178,7 +184,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	private static bool TryGetErrorStatus(string response, out int statusCode) {
 		statusCode = 0;
 		Match match = Regex.Match(response ?? string.Empty, @"(?:HTTP\s+Error\s+|<title>\s*)(?<status>[45]\d{2})\b",
-			RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+			RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, ErrorDetectionRegexTimeout);
 		return match.Success && int.TryParse(match.Groups["status"].Value, out statusCode);
 	}
 
@@ -192,7 +198,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)) {
 			return TryGetErrorStatus(trimmed, out _)
 				|| Regex.IsMatch(trimmed, "server error|file or directory not found|error page",
-					RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+					RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, ErrorDetectionRegexTimeout);
 		}
 
 		try {
