@@ -865,9 +865,11 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		performer.RoleDisplay.Should().Be(OpenEditPagePerformerRole,
 			because: "the name the caller used is kept as the display value, so a human opening the element sees a "
 				+ "role name rather than a GUID");
-		performer.ShowPage.Should().BeTrue(
-			because: "'Show page automatically' is written explicitly at create, so describe can report it instead of "
-				+ "leaving the flag to an unreportable schema default");
+		performer.ShowPage.Should().BeFalse(
+			because: "the flag is written explicitly at create — so describe can report it rather than leaving it to an "
+				+ "unreportable schema default — but its VALUE follows the performer, and a ROLE performer cannot have "
+				+ "the page open by itself: the platform opens it only for the user a step is assigned to, and the "
+				+ "designer disables that checkbox for role/manager");
 	}
 
 	[Test]

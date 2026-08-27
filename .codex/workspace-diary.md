@@ -9263,3 +9263,23 @@ spec/ai-business-process-generation/ai-bp-element-catalog.md (both alternative r
 Impact: 7406 unit tests + the 7 WorkspaceTemplateGuidanceDrift guards green. Env note: a partial .NET update landed
 mid-session (AspNetCore 10.0.11 without NETCore.App 10.0.11) and aborted every test run until the runtime finished
 installing — not a code failure, worth recognizing rather than re-diagnosing.
+
+## 2026-08-27 – First real E2E run: three test defects, one of them hiding a contract defect
+Context: the eleven openEditPage E2E tests had never been executed. Deployed the package to eng-92715-0905 and ran
+them: 8/11.
+1. A modify test died with NullReference because `setElement` had been REFUSED and the test read it as success.
+   Root cause worth remembering: clio-run reports a refused edit with exit-code 1 INSIDE the payload while
+   `isError` stays null, so `result.IsError.Should().NotBeTrue()` passes for a refusal. This file already had
+   `ModifyExpectingSuccessAsync`, which asserts the "edited (" line — every new test now goes through it. Never
+   assert MCP success through IsError alone.
+   The refusal it hid was a real contract defect, fixed in the package: an object-bound block could not be set on
+   an update without re-sending the page.
+2. An assertion matched "Supply 'defaultValues'" while the tool envelope escapes apostrophes as ' — the
+   refusal was correct and the assertion could never match. Match quote-free fragments, and assert the reason as
+   well as the field.
+3. A create-side test still expected showPage true for a ROLE performer — stale since the semantics changed to
+   "showPage follows the performer". Corrected with the reason.
+Also: `McpE2E.Sandbox.EnvironmentName` in clio.mcp.e2e/appsettings.json is how the suite picks its environment.
+The file is TRACKED, so it was set for the run and reverted — a machine-specific env name does not belong in the
+repo. Re-set it before any future run.
+Result: 11/11 green on the stand.

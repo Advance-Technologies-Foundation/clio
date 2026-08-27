@@ -417,9 +417,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		// Assert 1
 		string refusedJson = JsonSerializer.Serialize(refused);
-		refusedJson.Should().Contain("Supply 'defaultValues'",
+		// Matched WITHOUT apostrophes: the tool envelope escapes them as \u0027, so a quoted fragment never matches
+		// however right the message is.
+		refusedJson.Should().Contain("defaultValues",
 			because: "the stored record belongs to the mode being left, so the new mode's payload must arrive with the "
 				+ "switch - and the refusal has to name the field the caller is missing");
+		refusedJson.Should().Contain("clears the branch being left",
+			because: "the refusal must also say WHY the payload is required, not only which field");
 		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = processName
@@ -484,9 +488,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 
 		// Assert
-		applied.IsError.Should().NotBeTrue(
-			because: "an empty array is a valid request - it is the only way to empty the block, so refusing it would "
-				+ "leave a caller no way to undo a pre-filled set");
+		SerializeToolText(applied).Should().Contain("edited (",
+			because: "an empty array is a valid request - it is the only way to empty the block - and a refusal must "
+				+ "not be readable as success: clio-run reports a refused edit with exit-code 1 INSIDE the payload "
+				+ "while isError stays null");
 		DescribedOpenEditPage after = ParseDescribeResult(
 				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
@@ -540,21 +545,15 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 
 		// Act
-		CallToolResult applied = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = """
+		await ModifyExpectingSuccessAsync(context, processName, """
 			[
 			  { "op": "setElement", "elementName": "OpenPage1",
 			    "elementUpdate": { "openEditPage": {
 			      "performer": { "type": "role", "role": "All employees", "showPage": false } } } }
 			]
-			"""
-		});
+			""");
 
-		// Assert
-		applied.IsError.Should().NotBeTrue(
-			because: "All employees is a platform role on every stand, so the name must resolve");
+		// Assert - the helper already refused to read a refusal as success.
 		DescribedOpenEditPagePerformer performer = ReadOpenEditPage(
 			await DescribeAsync(context, processName)).Performer!;
 		performer.Type.Should().Be("role",
@@ -584,20 +583,15 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 
 		// Act - change the reminder only.
-		CallToolResult applied = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = """
+		await ModifyExpectingSuccessAsync(context, processName, """
 			[
 			  { "op": "setElement", "elementName": "OpenPage1",
 			    "elementUpdate": { "openEditPage": {
 			      "logActivity": { "remindIn": { "value": 3, "unit": "days" } } } } }
 			]
-			"""
-		});
+			""");
 
 		// Assert
-		applied.IsError.Should().NotBeTrue(because: "a partial Log activity update must apply");
 		DescribedOpenEditPageLogActivity activity = ReadOpenEditPage(
 			await DescribeAsync(context, processName)).LogActivity!;
 		activity.RemindIn!.Value.Should().Be(3, because: "the requested amount reached the server");
@@ -626,19 +620,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 
 		// Act 1 - enable it on the saved element.
-		CallToolResult enabled = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = """
+		await ModifyExpectingSuccessAsync(context, processName, """
 			[
 			  { "op": "setElement", "elementName": "OpenPage1",
 			    "elementUpdate": { "openEditPage": { "resultsByColumn": { "column": "Owner" } } } }
 			]
-			"""
-		});
+			""");
 
-		// Assert 1
-		enabled.IsError.Should().NotBeTrue(because: "Owner is a lookup column on Account on every environment");
+		// Assert 1 - enabling an object-bound block on an existing element must NOT require the page back.
 		DescribedOpenEditPageResultsByColumn after = ReadOpenEditPage(
 			await DescribeAsync(context, processName)).ResultsByColumn!;
 		after.Enabled.Should().BeTrue(because: "naming a column turns the list on");
@@ -647,19 +636,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "platform's column identifier rather than the name");
 
 		// Act 2 - turn it off.
-		CallToolResult disabled = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = """
+		await ModifyExpectingSuccessAsync(context, processName, """
 			[
 			  { "op": "setElement", "elementName": "OpenPage1",
 			    "elementUpdate": { "openEditPage": { "resultsByColumn": { "enabled": false } } } }
 			]
-			"""
-		});
+			""");
 
 		// Assert 2
-		disabled.IsError.Should().NotBeTrue(because: "turning the list off is a valid update");
 		DescribedOpenEditPageResultsByColumn cleared = ReadOpenEditPage(
 			await DescribeAsync(context, processName)).ResultsByColumn!;
 		cleared.Enabled.Should().BeFalse(because: "the explicit off is stored, not left to a default");
