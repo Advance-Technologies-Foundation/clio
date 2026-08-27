@@ -298,4 +298,53 @@ public sealed class PageBusinessRuleSchemaProviderTests {
 			Arg.Any<string>(),
 			Arg.Any<string>());
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Translates a strict-applier rejection of the inherited chain into a named, actionable InvalidOperationException that preserves the original applier error as the inner exception.")]
+	public void GetSchema_Should_Wrap_StrictApplierRejection_With_Actionable_Error() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		IPageSchemaBodyParser bodyParser = Substitute.For<IPageSchemaBodyParser>();
+		IPageBundleBuilder bundleBuilder = Substitute.For<IPageBundleBuilder>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://dev/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				"http://dev/DataService/json/SyncReply/SelectQuery",
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[{"UId":"11111111-1111-1111-1111-111111111111"}]}""");
+		hierarchyClient.GetParentSchemas(
+				"11111111-1111-1111-1111-111111111111",
+				"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+			.Returns([
+				new PageDesignerHierarchySchema { UId = "22222222-2222-2222-2222-222222222222", Name = "UsrPage", Body = "current" },
+				new PageDesignerHierarchySchema { UId = "33333333-3333-3333-3333-333333333333", Name = "BasePage", Body = "parent" }
+			]);
+		bodyParser.Parse(Arg.Any<string>()).Returns(new PageParsedSchemaBody());
+		JsonDiffApplierException resolveEx = new("Item \"MainContainer\" is not a container for other items");
+		bundleBuilder.Build(Arg.Any<IReadOnlyList<PageSchemaBundlePart>>()).Throws(resolveEx);
+		PageBusinessRuleSchemaProvider provider = new(
+			applicationClient,
+			serviceUrlBuilder,
+			hierarchyClient,
+			bodyParser,
+			bundleBuilder);
+
+		// Act
+		Action act = () => provider.GetSchema(
+			"UsrPage",
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Failed to resolve page bundle for 'UsrPage':*platform itself would reject*is not a container*",
+				because: "a strict resolution failure should surface a named, actionable error instead of a bare applier message")
+			.WithInnerException<JsonDiffApplierException>()
+			.WithMessage("*is not a container*",
+				because: "the original applier rejection must be preserved as the inner exception for diagnostics");
+	}
 }

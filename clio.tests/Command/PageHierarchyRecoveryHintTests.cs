@@ -277,7 +277,7 @@ public sealed class PageHierarchyRecoveryHintTests {
 	private PageGetCommand CreateGetCommand(IPageDesignerHierarchyClient hierarchyClient) =>
 		new(_applicationClient, _serviceUrlBuilder, _logger, hierarchyClient,
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			Substitute.For<IPageFileWriter>());
 
 	private static PageUpdateOptions CreateUpdateOptions() =>
