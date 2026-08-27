@@ -1,4 +1,4 @@
-﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
@@ -254,7 +254,6 @@ internal static class ExcludedComponentsPass {
 			}
 			current = parent;
 		}
-		return null;
 	}
 
 	/// <summary>
@@ -328,7 +327,6 @@ internal static class ExcludedComponentsPass {
 			}
 			current = parent;
 		}
-		return null;
 	}
 
 	/// <summary>
@@ -490,7 +488,7 @@ internal static class ExcludedComponentsPass {
 	/// <summary>
 	/// The host's own key matching <paramref name="propertyName"/>, or null when the host does not carry it
 	/// at all. Resolved as a KEY rather than a node so the caller can remove the property itself and not just
-	/// its contents. Case-insensitive with exact case winning, matching <see cref="ResolveScope"/>. Callers
+	/// its contents. Case-insensitive with exact case winning — exact match first, then the first case-insensitive one. Callers
 	/// must decide separately whether the filter names a property — a null here means "this host lacks it",
 	/// never "no scope was asked for".
 	/// </summary>
@@ -500,26 +498,6 @@ internal static class ExcludedComponentsPass {
 		}
 		return hostValues.FirstOrDefault(
 			p => string.Equals(p.Key, propertyName, StringComparison.OrdinalIgnoreCase)).Key;
-	}
-
-	/// <summary>
-	/// The subtree a filter searches: the host's <c>PropertiesContainerName</c> property when named, or the
-	/// whole host values otherwise (a filter that names no property searches everywhere the host carries
-	/// children, at any depth). The property lookup is case-insensitive — exact case wins, then the first
-	/// case-insensitive match — consistent with every other comparison this pass makes; a host that lacks
-	/// the named property under either reading is a no-op for that filter (an explicit scope is an explicit
-	/// boundary, never a fallback to the whole subtree).
-	/// </summary>
-	private static JsonNode ResolveScope(JsonObject hostValues, ExcludedComponentFilterRule filter) {
-		string propertyName = filter.PropertiesContainerName;
-		if (string.IsNullOrWhiteSpace(propertyName)) {
-			return hostValues;
-		}
-		if (hostValues.TryGetPropertyValue(propertyName, out JsonNode exact)) {
-			return exact;
-		}
-		return hostValues.FirstOrDefault(
-			p => string.Equals(p.Key, propertyName, StringComparison.OrdinalIgnoreCase)).Value;
 	}
 
 	/// <summary>

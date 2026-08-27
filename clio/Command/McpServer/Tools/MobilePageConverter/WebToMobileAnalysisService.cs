@@ -1,4 +1,4 @@
-﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System;
 using System.Collections.Generic;
