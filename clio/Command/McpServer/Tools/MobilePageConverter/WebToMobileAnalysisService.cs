@@ -1902,21 +1902,21 @@ public static class WebToMobileAnalysisService {
 				ClickedConvertibility clicked = ClassifyClicked(ctx, node, out string scopedRequest);
 				bool targetMissing = scopedTarget is { } t && RetargetTargetMissing(ctx, t.Parent);
 				if (scopedTarget is { } nativeTarget && clicked == ClickedConvertibility.Convertible
-					&& RetargetSourceProvidedByTemplate(ctx, name)) {
-					// The mobile template already provides an element with this name natively (e.g. Save/Cancel/Close on the
-					// Scaffold); retargeting the header source into a shared container would duplicate it. Drop it — the native
-					// element carries its OWN action. Guarded by convertibility so a node that would NOT have converted anyway
-					// (no clicked, an explicitly-unsupported request) keeps its accurate data-derived ScopeDropReason below
-					// instead of this native-equivalent one.
+					&& RetargetSourceIsInheritedChrome(ctx, name)) {
+					// The element is inherited from the web template (chrome such as Save/Cancel/Close), which the mobile
+					// template provides natively; retargeting it into a shared container would duplicate it. Drop it — the
+					// native element carries its OWN action. Guarded by convertibility so a node that would NOT have converted
+					// anyway (no clicked, an explicitly-unsupported request) keeps its accurate data-derived ScopeDropReason
+					// below instead of this inherited-chrome one.
 					ctx.Out.Add(Drop(name, type,
-						$"action under non-converting scope '{scopeContainer}'; '{name}' is already provided natively by the "
-						+ $"mobile template — not retargeted into {nativeTarget.Parent}.{nativeTarget.Property} (retargeting would duplicate the native element)"));
-					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on a
-					// same-named button); record it so requestConversions still reports the dropped action rather than losing it silently.
+						$"action under non-converting scope '{scopeContainer}'; '{name}' is inherited from the web template "
+						+ $"(chrome the mobile template provides natively) — not retargeted into {nativeTarget.Parent}.{nativeTarget.Property} (retargeting would duplicate the native element)"));
+					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on an
+					// inherited button); record it so requestConversions still reports the dropped action rather than losing it silently.
 					if (scopedRequest is not null) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = name, Binding = "clicked", WebRequest = scopedRequest,
-							Reason = $"'{name}' is already provided natively by the mobile template, which carries its own action"
+							Reason = $"'{name}' is inherited from the web template (chrome the mobile template provides natively), which carries its own action"
 						});
 					}
 				} else if (scopedTarget is { } target && clicked == ClickedConvertibility.Convertible && !targetMissing) {
@@ -2083,12 +2083,12 @@ public static class WebToMobileAnalysisService {
 				bool containerRetargeted = false;
 				if (ResolveTemplatePlacement(ctx, node, type, name, containerParent, containerProperty, sourceAncestors)
 					is { } containerTarget) {
-					// A container the mobile template already provides natively must not be retargeted into a shared
-					// parent — that would duplicate it. Drop it and hoist its children to the walk parent so they are
-					// not lost with the container that is not re-emitted.
-					if (RetargetSourceProvidedByTemplate(ctx, name)) {
+					// A container inherited from the web template (chrome the mobile template provides natively) must not be
+					// retargeted into a shared parent — that would duplicate it. Drop it and hoist its children to the walk
+					// parent so they are not lost with the container that is not re-emitted.
+					if (RetargetSourceIsInheritedChrome(ctx, name)) {
 						ctx.Out.Add(Drop(name, type,
-							$"'{name}' is already provided natively by the mobile template — not retargeted into "
+							$"'{name}' is inherited from the web template (chrome the mobile template provides natively) — not retargeted into "
 							+ $"'{containerTarget.Parent}.{containerTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
 						if (items is not null) {
 							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name));
@@ -2161,21 +2161,21 @@ public static class WebToMobileAnalysisService {
 			bool leafRetargeted = false;
 			if (ResolveTemplatePlacement(ctx, node, leafMobileType, name, leafParent, leafProperty, sourceAncestors)
 				is { } leafTarget) {
-				// A source element the mobile template ALREADY provides natively (e.g. Save / Cancel / Close, carried
-				// by the Scaffold's leading/actions) must NOT be retargeted into a shared container — that would
-				// duplicate the native element. Drop it with a diagnostic; its nested actions are still recursed in
-				// scope for an explicit outcome, and the native element keeps its own action so nothing is lost.
-				if (RetargetSourceProvidedByTemplate(ctx, name)) {
+				// A source element inherited from the web template (e.g. Save / Cancel / Close, carried by the record-page
+				// template) must NOT be retargeted into a shared container — the mobile template provides its own
+				// equivalent, so that would duplicate it. Drop it with a diagnostic; its nested actions are still recursed
+				// in scope for an explicit outcome, and the native element keeps its own action so nothing is lost.
+				if (RetargetSourceIsInheritedChrome(ctx, name)) {
 					ctx.Out.Add(Drop(name, type,
-						$"'{name}' is already provided natively by the mobile template — not retargeted into "
+						$"'{name}' is inherited from the web template (chrome the mobile template provides natively) — not retargeted into "
 						+ $"'{leafTarget.Parent}.{leafTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
-					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on a
-					// same-named button); record it so requestConversions reports the dropped action instead of losing it silently.
+					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on an
+					// inherited button); record it so requestConversions reports the dropped action instead of losing it silently.
 					ClassifyClicked(ctx, node, out string nativeSourceRequest);
 					if (nativeSourceRequest is not null) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
 							ElementName = name, Binding = "clicked", WebRequest = nativeSourceRequest,
-							Reason = $"'{name}' is already provided natively by the mobile template, which carries its own action"
+							Reason = $"'{name}' is inherited from the web template (chrome the mobile template provides natively), which carries its own action"
 						});
 					}
 					RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name), inNonConvertingScope: true);
@@ -2305,16 +2305,19 @@ public static class WebToMobileAnalysisService {
 		&& !RetargetTargetMissing(ctx, parentName);
 
 	/// <summary>
-	/// True when the mobile template ALREADY provides a component with this element NAME (present in the probed
-	/// template's resolved tree). A source element a conversion template would RETARGET into a shared mobile
-	/// container — e.g. a header Save / Cancel / Close button the Scaffold already carries in its leading/actions —
-	/// must NOT be retargeted: the native element already exists, so the retarget would duplicate it. Only ever
-	/// consulted on the retarget path. Fails OPEN (false) when no template names were probed, so a missing probe
-	/// never silently suppresses a conversion.
+	/// True when a source element a conversion template would RETARGET is INHERITED FROM THE WEB TEMPLATE baseline
+	/// (present in <see cref="ElementMapContext.WebBaselineNodes"/>) rather than authored on the page. Inherited
+	/// header chrome — a Save / Cancel / Close button carried by the web record-page template — must NOT be
+	/// retargeted into a shared mobile container: the mobile template provides its own equivalent, so retargeting
+	/// would duplicate it. Keying off the WEB template (where the element actually lives under its web name) is why
+	/// this is robust: it does not depend on the element's name coinciding with a node in the mobile template — a
+	/// match that is fragile (any node, containers included) and wrong when the two templates name the same button
+	/// differently. A page-AUTHORED header action is above the baseline, so it is absent here and converts. Only ever
+	/// consulted on the retarget path. Fails OPEN (false) when the web baseline was not read (empty), so a missing
+	/// baseline never silently suppresses a page-authored conversion.
 	/// </summary>
-	private static bool RetargetSourceProvidedByTemplate(ElementMapContext ctx, string name) =>
-		ctx.MobileTypesByName is { Count: > 0 } && !string.IsNullOrEmpty(name)
-		&& ctx.MobileTypesByName.ContainsKey(name);
+	private static bool RetargetSourceIsInheritedChrome(ElementMapContext ctx, string name) =>
+		!string.IsNullOrEmpty(name) && ctx.WebBaselineNodes.ContainsKey(name);
 
 	/// <summary>
 	/// Builds the element drop reason AND the request-loss reason for a node that did NOT convert inside a

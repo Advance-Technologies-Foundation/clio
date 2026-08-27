@@ -1590,8 +1590,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A header button whose NAME the mobile template already provides natively (e.g. SaveButton on the Scaffold) is DROPPED, not retargeted into the FAB (retargeting would duplicate the native element); a header action with no native equivalent still converts into FloatingActionButton.menuItems.")]
-	public void Analyze_Fab_SourceProvidedNativelyByTemplate_DroppedNotDuplicated() {
+	[Description("A header button INHERITED FROM THE WEB TEMPLATE baseline (e.g. Save/Cancel/Close chrome the record-page template carries) is DROPPED, not retargeted into the FAB (the mobile template provides its own, so retargeting would duplicate it); a page-authored header action (above the baseline) still converts into FloatingActionButton.menuItems.")]
+	public void Analyze_Fab_InheritedWebTemplateChrome_DroppedNotDuplicated() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
@@ -1604,17 +1604,19 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
 			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"),
-			mobileTemplateTypesByName: MobileTypesByName(
-				("FloatingActionButton", "crt.FloatingActionButton"), ("SaveButton", "crt.Button")));
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")),
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "SaveButton", "type": "crt.Button" } ]
+				"""));
 
 		// Assert
 		ElementMapEntry save = Element(guide, "SaveButton");
 		save.Operation.Should().Be("drop",
-			because: "the mobile template already provides SaveButton natively, so retargeting it into the FAB would duplicate it");
-		save.Reason.Should().Contain("already provided natively",
-			because: "the drop reason must state why the native-equivalent header button was not retargeted");
+			because: "SaveButton is inherited from the web template (chrome the mobile template provides natively), so retargeting it into the FAB would duplicate it");
+		save.Reason.Should().Contain("inherited from the web template",
+			because: "the drop reason must state why the inherited-chrome header button was not retargeted");
 		ElementMapEntry send = Element(guide, "SendForApprovalButton");
-		send.Operation.Should().Be("insert", because: "a header action with no native equivalent still converts");
+		send.Operation.Should().Be("insert", because: "a page-authored header action (absent from the web baseline) still converts");
 		send.ParentName.Should().Be("FloatingActionButton", because: "it is retargeted into the FAB");
 		guide.RequestConversions!.DroppedRequests.Should().Contain(
 			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
@@ -2132,8 +2134,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A rule-matched leaf button whose NAME the mobile template already provides natively is dropped through the LEAF path (not retargeted), and its (possibly custom) web clicked request is recorded in droppedRequests so requestConversions does not silently under-count.")]
-	public void Analyze_Fab_LeafSourceProvidedNatively_DroppedAndRequestRecorded() {
+	[Description("A rule-matched leaf button INHERITED FROM THE WEB TEMPLATE baseline is dropped through the LEAF path (not retargeted; the mobile template provides its own), and its web clicked request is recorded in droppedRequests so requestConversions does not silently under-count.")]
+	public void Analyze_Fab_LeafInheritedWebTemplateChrome_DroppedAndRequestRecorded() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Body", "type": "crt.FlexContainer", "items": [
@@ -2141,18 +2143,20 @@ public sealed class WebToMobileConversionServiceTests {
 				  "clicked": { "request": "crt.SaveRecordRequest" } } ] } ]
 			""");
 
-		// Act — SaveButton's name is on the mobile template, so the leaf retarget is suppressed as a native equivalent.
+		// Act — SaveButton is in the web template baseline, so the leaf retarget is suppressed as inherited chrome.
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
 			rules: FabRule(["Body"], [], "crt.Button"),
-			mobileTemplateTypesByName: MobileTypesByName(
-				("FloatingActionButton", "crt.FloatingActionButton"), ("SaveButton", "crt.Button")));
+			mobileTemplateTypesByName: MobileTypesByName(("FloatingActionButton", "crt.FloatingActionButton")),
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "SaveButton", "type": "crt.Button" } ]
+				"""));
 
 		// Assert
 		ElementMapEntry save = Element(guide, "SaveButton");
 		save.Operation.Should().Be("drop",
-			because: "the mobile template already provides SaveButton natively, so the leaf retarget is suppressed to avoid duplication");
-		save.Reason.Should().Contain("already provided natively",
-			because: "the drop reason must state why the native-equivalent leaf was not retargeted");
+			because: "SaveButton is inherited from the web template baseline, so the leaf retarget is suppressed to avoid duplication");
+		save.Reason.Should().Contain("inherited from the web template",
+			because: "the drop reason must state why the inherited-chrome leaf was not retargeted");
 		guide.RequestConversions!.DroppedRequests.Should().Contain(
 			r => r.ElementName == "SaveButton" && r.WebRequest == "crt.SaveRecordRequest",
 			because: "the native element carries its own action, but the dropped web request must still be reported so requestConversions does not silently under-count");
@@ -2183,8 +2187,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A rule-matched container whose NAME the mobile template already provides natively is dropped through the CONTAINER path (not retargeted), and its children are hoisted to the walk parent so they are not lost with the un-emitted container.")]
-	public void Analyze_Fab_ContainerSourceProvidedNatively_DroppedChildrenHoisted() {
+	[Description("A rule-matched container INHERITED FROM THE WEB TEMPLATE baseline is dropped through the CONTAINER path (not retargeted; the mobile template provides its own), and its children are hoisted to the walk parent so they are not lost with the un-emitted container.")]
+	public void Analyze_Fab_ContainerInheritedWebTemplateChrome_DroppedChildrenHoisted() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Root", "type": "crt.FlexContainer", "items": [
@@ -2192,18 +2196,21 @@ public sealed class WebToMobileConversionServiceTests {
 					{ "name": "Fld", "type": "crt.Input" } ] } ] } ]
 			""");
 
-		// Act — Toolbar's name IS on the mobile template, so the container is a native equivalent.
+		// Act — Toolbar is in the web template baseline, so the container is inherited chrome.
 		MobilePageConversionGuide guide = Analyze(bundle,
 			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input" },
 			rules: ContainerRetargetRule("AreaContainer", "Root"),
-			mobileTemplateTypesByName: MobileTypesByName(("AreaContainer", "crt.GridContainer"), ("Toolbar", "crt.FlexContainer")));
+			mobileTemplateTypesByName: MobileTypesByName(("AreaContainer", "crt.GridContainer")),
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "Toolbar", "type": "crt.FlexContainer" } ]
+				"""));
 
 		// Assert
 		ElementMapEntry toolbar = Element(guide, "Toolbar");
 		toolbar.Operation.Should().Be("drop",
-			because: "the mobile template already provides Toolbar natively, so the container retarget is suppressed to avoid duplication");
-		toolbar.Reason.Should().Contain("already provided natively",
-			because: "the drop reason must state why the native-equivalent container was not retargeted");
+			because: "Toolbar is inherited from the web template baseline, so the container retarget is suppressed to avoid duplication");
+		toolbar.Reason.Should().Contain("inherited from the web template",
+			because: "the drop reason must state why the inherited-chrome container was not retargeted");
 		ElementMapEntry fld = Element(guide, "Fld");
 		fld.Operation.Should().Be("insert",
 			because: "the dropped container's children must be hoisted to the walk parent, not lost with the un-emitted container");
