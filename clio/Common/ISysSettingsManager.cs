@@ -693,28 +693,30 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 	}
 
-	private static bool ContainsAuthenticationFailure(JsonElement element) {
-		if (element.ValueKind == JsonValueKind.Object) {
-			foreach (JsonProperty property in element.EnumerateObject()) {
-				if (string.Equals(property.Name, "ErrorCode", StringComparison.OrdinalIgnoreCase)
-					&& string.Equals(property.Value.ToString(), "5", StringComparison.OrdinalIgnoreCase)) {
-					return true;
-				}
-				if (string.Equals(property.Name, "Message", StringComparison.OrdinalIgnoreCase)
-					&& property.Value.ValueKind == JsonValueKind.String) {
-					string message = property.Value.GetString();
-					if (message?.Contains("password has expired", StringComparison.OrdinalIgnoreCase) == true
-						|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)) {
-						return true;
-					}
-				}
-				if (ContainsAuthenticationFailure(property.Value)) {
-					return true;
-				}
-			}
+	private static bool ContainsAuthenticationFailure(JsonElement element) => element.ValueKind switch {
+		JsonValueKind.Object => element.EnumerateObject().Any(IsAuthenticationFailureProperty),
+		JsonValueKind.Array => element.EnumerateArray().Any(ContainsAuthenticationFailure),
+		_ => false
+	};
+
+	private static bool IsAuthenticationFailureProperty(JsonProperty property) =>
+		IsAuthenticationErrorCode(property)
+		|| IsAuthenticationFailureMessage(property)
+		|| ContainsAuthenticationFailure(property.Value);
+
+	private static bool IsAuthenticationErrorCode(JsonProperty property) =>
+		string.Equals(property.Name, "ErrorCode", StringComparison.OrdinalIgnoreCase)
+		&& string.Equals(property.Value.ToString(), "5", StringComparison.OrdinalIgnoreCase);
+
+	private static bool IsAuthenticationFailureMessage(JsonProperty property) {
+		if (!string.Equals(property.Name, "Message", StringComparison.OrdinalIgnoreCase)
+			|| property.Value.ValueKind != JsonValueKind.String) {
+			return false;
 		}
-		return element.ValueKind == JsonValueKind.Array
-			&& element.EnumerateArray().Any(ContainsAuthenticationFailure);
+		string message = property.Value.GetString();
+		return message is not null
+			&& (message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
+				|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase));
 	}
 
 	private static string FindStringProperty(JsonElement element, string propertyName) {
