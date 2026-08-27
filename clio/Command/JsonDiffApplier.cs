@@ -8,13 +8,32 @@ using System.Linq;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
+/// View-config diff applier abstraction (<c>viewConfigDiff</c>: <c>name</c> + <c>parentName</c> +
+/// <c>propertyName</c> targeting). Behavior-bearing, so it is resolved through DI rather than constructed
+/// with <c>new</c>. Callers that need a fresh, alias-isolated instance per diff chain inject a
+/// <c>Func&lt;IJsonDiffApplier&gt;</c> factory (see <c>BindingsModule</c>) — the applier retains per-chain
+/// alias state, so instances must not be shared across independent chains.
+/// </summary>
+public interface IJsonDiffApplier {
+	/// <summary>Applies one operation set to a source token (mirrors the client <c>apply</c>).</summary>
+	JToken Apply(JToken sourceObject, JArray operations, JsonApplierOperationsOptions operationsOptions = null);
+
+	/// <summary>Applies an ordered list of per-layer operation sets (mirrors the client <c>applyDiff</c>).</summary>
+	JToken ApplyDiff(
+		JArray sourceObject,
+		IReadOnlyList<JArray> operations,
+		IReadOnlyList<JsonApplierOperationsOptions> operationsOptions = null);
+}
+
+/// <summary>
 /// Faithful C# clone of the Creatio client-side <c>JsonApplierService</c>
 /// (<c>creatio-ui/.../services/json-applier/json-applier.service.ts</c>). It applies a Freedom UI
 /// <c>viewConfigDiff</c>-style operation set (merge / set / insert / move / remove) to a source items tree,
 /// reproducing the client semantics 1:1 — INCLUDING the exceptions the client throws
 /// (<see cref="JsonDiffApplierException"/>: not-a-container, cyclic dependency, required-parameter-missing).
-/// Unlike <see cref="PageJsonDiffApplier"/> (a tolerant, read-time merge that silently creates missing slots),
-/// this clone surfaces the same errors the server raises, so it can later back a faithful diff validator.
+/// It backs both the faithful diff validator and page-bundle resolution (<c>PageBundleBuilder</c>): a resolve of
+/// a server-valid schema chain applies cleanly, and a chain the server itself would reject surfaces the same error
+/// instead of being silently smoothed over.
 /// Data model is Newtonsoft <see cref="JToken"/>; tokens moved into the tree are deep-cloned to avoid the
 /// single-parent constraint (result-identical to the TS reference-assignment).
 /// </summary>
@@ -29,7 +48,7 @@ using Newtonsoft.Json.Linq;
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "1:1 clone of the client TS JsonApplierService — expression mirrors the reference.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "1:1 clone of the client TS JsonApplierService — explicit loops mirror the reference control flow.")]
 [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "1:1 clone of the client TS JsonApplierService — null returns mirror the reference semantics.")]
-public class JsonDiffApplier {
+public class JsonDiffApplier : IJsonDiffApplier {
 
 	private readonly bool _disableApplyMoveIfIndirectParentMoved;
 	private readonly Dictionary<string, ItemInfo> _memoryStore = new(StringComparer.Ordinal);
@@ -800,6 +819,14 @@ public sealed class JsonApplierOperationsOptions {
 /// <summary>Error thrown by <see cref="JsonDiffApplier"/>, mirroring the client <c>new Error(...)</c> throws.</summary>
 public sealed class JsonDiffApplierException : Exception {
 	public JsonDiffApplierException(string message) : base(message) { }
+}
+
+/// <summary>Shared wording for a strict page-bundle resolution failure so every entry point (get-page,
+/// business-rule resolution) surfaces one identical, actionable message.</summary>
+public static class JsonDiffApplierExceptionExtensions {
+	public static string ToPageBundleResolutionError(this JsonDiffApplierException resolveEx, string schemaName) =>
+		$"Failed to resolve page bundle for '{schemaName}': the schema chain contains an operation the platform "
+		+ $"itself would reject ({resolveEx.Message}).";
 }
 
 /// <summary>Exact clone of the client <c>resources.ts</c> message templates used by <see cref="JsonDiffApplier"/>.</summary>

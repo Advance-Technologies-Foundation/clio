@@ -219,7 +219,7 @@ public sealed class PageUpdateToolTests {
 				.Returns("""{"success":true,"rows":[]}""");
 			PageGetCommand getCommand = new(getClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 				Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
-				new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+				new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 				Substitute.For<IPageFileWriter>());
 			_commandResolver.Resolve<PageGetCommand>(Arg.Do<EnvironmentOptions>(o => captured = o)).Returns(getCommand);
 
