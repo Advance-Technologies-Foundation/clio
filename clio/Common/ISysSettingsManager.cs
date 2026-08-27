@@ -626,11 +626,15 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	public List<SysSettings> GetAllSysSettingsWithValues(bool includeBinary = false) {
-		EnsureAuthenticatedDataServiceResponse("listing sys-settings");
 		var models = AppDataContextFactory.GetAppDataContext(_dataProvider).Models<SysSettings>();
 		var sysSettings = includeBinary
 			? models.ToList()
 			: models.Where(s => s.ValueTypeName != "Binary").ToList();
+		// RemoteDataProvider represents an authentication failure as an empty model collection. Probe only
+		// after that signal so provider-backed unit tests and legitimate non-empty reads stay side-effect free.
+		if (sysSettings.Count == 0) {
+			EnsureAuthenticatedDataServiceResponse("listing sys-settings");
+		}
 
 		var sysSettingsValues = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSettingsValue>()
