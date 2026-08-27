@@ -1061,6 +1061,204 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
+	[Description("A lower Git sequence is rejected and rolled back even when it was synthesized, because anti-rollback is never relaxed.")]
+	public void Update_ShouldRollbackGitCheckout_WhenSynthesizedSequenceRegresses() {
+		// Arrange
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		const string nextRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				nextRevision,
+				null,
+				repositoryPath,
+				ResolvedCommit: nextRevision));
+		int reads = 0;
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			reads++;
+			// Both reads are synthesized: a force-push to an older revision on a branch whose manifest
+			// omits "sequence" is precisely the case the relaxed arm must NOT cover.
+			call[2] = reads == 2
+				? GitSnapshot(source.LibraryId) with {
+					Sequence = 4, ContentDigest = "older", SequenceSynthesized = true }
+				: GitSnapshot(source.LibraryId) with {
+					Sequence = 5, ContentDigest = "current", SequenceSynthesized = true };
+			call[3] = null;
+			return true;
+		});
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the local-iteration relaxation covers equal-sequence content, never a downgrade");
+		result.Sources.Single().Status.Should().Be("rejected",
+			because: "an accepted downgrade would silently swap the guidance corpus after an upstream force-push");
+		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
+	}
+
+	[Test]
+	[Description("A synthesized-sequence Git checkout with edited content installs and reports the runtime relaxation advisory.")]
+	public void Update_ShouldInstallGitCheckout_WhenEqualSynthesizedSequenceHasEditedContent() {
+		// Arrange
+		const string advisory = "content-integrity checking is relaxed for this source.";
+		_runtime.ActivateGitRepository(
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<KnowledgeSourceParticipation>(),
+			Arg.Any<KnowledgeGitRepositorySnapshot>()).Returns(new KnowledgeBundleActivationResult(
+				KnowledgeBundleActivationStatus.Activated,
+				KnowledgeBundleRejectionCode.None,
+				1013021,
+				1013021,
+				advisory));
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		const string nextRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				nextRevision,
+				null,
+				repositoryPath,
+				ResolvedCommit: nextRevision));
+		int reads = 0;
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			reads++;
+			// Same libraryVersion on both sides, so the synthesized sequence is identical and only the
+			// content digest moves - the local edit-and-reload loop the flag exists for.
+			call[2] = GitSnapshot(source.LibraryId) with {
+				Sequence = 1013021,
+				ContentDigest = reads == 2 ? "edited" : "current",
+				SequenceSynthesized = true
+			};
+			call[3] = null;
+			return true;
+		});
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "re-reading an edited local checkout must not require bumping libraryVersion under the flag");
+		_gitTransport.DidNotReceive().Restore(repositoryPath, previousRevision);
+		result.Sources.Single().Message.Should().Contain(advisory,
+			because: "the activation advisory about relaxed integrity checking must reach the operator");
+	}
+
+	[Test]
+	[Description("A synthesized equal-sequence candidate the runtime refuses is still rolled back and reported as rejected.")]
+	public void Update_ShouldRollbackGitCheckout_WhenRuntimeRefusesSynthesizedEqualSequence() {
+		// Arrange — IsSequenceRegression waves this candidate through on the marker alone, so the
+		// knowledge-allow-unsequenced decision belongs entirely to the runtime. This pins the claim that
+		// a runtime refusal produces the same outcome the install-side guard would have produced.
+		_runtime.ActivateGitRepository(
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<KnowledgeSourceParticipation>(),
+			Arg.Any<KnowledgeGitRepositorySnapshot>()).Returns(new KnowledgeBundleActivationResult(
+				KnowledgeBundleActivationStatus.Rejected,
+				KnowledgeBundleRejectionCode.InvalidContent,
+				1013021,
+				1013021,
+				"Git candidate sequence 1013021 has different content than the active sequence."));
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		const string nextRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				nextRevision,
+				null,
+				repositoryPath,
+				ResolvedCommit: nextRevision));
+		int reads = 0;
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			reads++;
+			call[2] = GitSnapshot(source.LibraryId) with {
+				Sequence = 1013021,
+				ContentDigest = reads == 2 ? "edited" : "current",
+				SequenceSynthesized = true
+			};
+			call[3] = null;
+			return true;
+		});
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the runtime is the single authority on whether the relaxation applies");
+		result.Sources.Single().Status.Should().Be("rejected",
+			because: "a runtime refusal must be indistinguishable from an install-side refusal to the operator");
+		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
+	}
+
+	[Test]
+	[Description("A producer-declared equal sequence with edited content is rejected and rolled back, never relaxed.")]
+	public void Update_ShouldRollbackGitCheckout_WhenEqualDeclaredSequenceHasEditedContent() {
+		// Arrange
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		const string nextRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				nextRevision,
+				null,
+				repositoryPath,
+				ResolvedCommit: nextRevision));
+		int reads = 0;
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			reads++;
+			call[2] = GitSnapshot(source.LibraryId) with {
+				Sequence = 5,
+				ContentDigest = reads == 2 ? "edited" : "current"
+			};
+			call[3] = null;
+			return true;
+		});
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "the bypass is scoped to synthesized sequences; a declared generation stays immutable");
+		result.Sources.Single().Status.Should().Be("rejected",
+			because: "rewritten history under a declared sequence is a publisher-contract violation, not an iteration");
+		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
+	}
+
+	[Test]
 	[Description("A Git checkout and runtime are rolled back when default-branch persistence loses its settings race.")]
 	public void Install_ShouldRollbackGitCheckout_WhenBranchPersistenceCasFails() {
 		// Arrange

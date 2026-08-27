@@ -29,6 +29,35 @@ internal static class ODataResponseError {
 		+ "an entity deployed without compilation).";
 
 	/// <summary>
+	/// Hint appended when a write response body could not be parsed as JSON at all. Creatio's OData
+	/// pipeline never returns a non-JSON body by itself - even a server error comes back as one of the
+	/// shapes <see cref="TryDetect"/> recognizes. A non-JSON body (an HTML error page, a plain-text
+	/// block) therefore means the request did not reach Creatio's OData controller intact: a proxy/IIS
+	/// routing error, or a session redirect page the reauth executor did not recognize as expired.
+	/// Retrying immediately will not help with the former, and the side effect of the write itself is
+	/// unverified either way - the caller must confirm the actual state before retrying.
+	/// </summary>
+	internal const string NonJsonResponseHint =
+		"The response was not JSON, which Creatio's OData pipeline never returns by itself (even a server error "
+		+ "is one of the recognized JSON error shapes). This points to the request not reaching Creatio intact - "
+		+ "a proxy/IIS/routing error, or a session redirect - rather than a problem with the request's OData/ESQ "
+		+ "shape. Whether the change was actually applied is unverified; confirm with odata-read before retrying.";
+
+	/// <summary>
+	/// Builds the failure text for a write response body that failed to parse as JSON.
+	/// </summary>
+	internal static string DescribeNonJsonResponse(string body) =>
+		$"Creatio did not return a JSON response. {NonJsonResponseHint} Response: {Truncate(body)}";
+
+	/// <summary>Truncates a raw response body to a safe preview length for error messages.</summary>
+	internal static string Truncate(string value) {
+		if (string.IsNullOrEmpty(value)) {
+			return "<empty>";
+		}
+		return value.Length > 500 ? value[..500] + "..." : value;
+	}
+
+	/// <summary>
 	/// Attempts to recognize a Creatio error body that the transport returned with a non-failing
 	/// HTTP status, so the odata-* tools can report <c>success=false</c> instead of wrapping the
 	/// error as data.
