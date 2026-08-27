@@ -63,6 +63,14 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	/// </summary>
 	public const string SelectQueryHtmlBodyMarker = "select-query-secret-marker";
 
+	/// <summary>
+	/// Marker embedded in the HTML body the stub returns for any odata request (GET/POST/PATCH/DELETE)
+	/// against <see cref="RuntimeDetectionStubServerConfiguration.ODataNonJsonEntity"/>. Mirrors the
+	/// IIS-served 404/401 pages observed in ENG-95971: the request reaches the stub but never reaches a
+	/// real OData controller, so the body is plain HTML instead of any recognized JSON shape.
+	/// </summary>
+	public const string ODataNonJsonBodyMarker = "odata-nonjson-secret-marker";
+
 	private static string BuildScript(RuntimeDetectionStubServerConfiguration configuration, int port) {
 		string configJson = JsonSerializer.Serialize(configuration);
 		return $$"""
@@ -145,6 +153,15 @@ http.createServer((request, response) => {
       sendText(response, 404, "Not Found");
       return;
     }
+    if (config.ODataNonJsonEntity && url.includes("/odata/" + config.ODataNonJsonEntity)) {
+      // ENG-95971: the stand answered an odata request (read or write) with an IIS-style HTML error
+      // page instead of JSON or a recognized error shape - the request reached the stub but never
+      // reached a real OData controller. Any HTTP method is matched: the same failure was observed on
+      // GET, PATCH, and DELETE alike.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>{{ODataNonJsonBodyMarker}}</body></html>");
+      return;
+    }
     if ((request.method === "GET" || request.method === "POST") && config.ODataRoutingErrorEntity && (url.includes("/odata/" + config.ODataRoutingErrorEntity + "?") || url.endsWith("/odata/" + config.ODataRoutingErrorEntity))) {
       // ASP.NET Web API 404 routing error shape for an unregistered/uncompiled OData controller.
       // Creatio returns this with HTTP 200 in the analyzed session, masking the failure as data.
@@ -177,4 +194,5 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreUiMarkerEnabled = false,
 	bool NetFrameworkUiMarkerEnabled = false,
 	string? ODataRoutingErrorEntity = null,
-	string? HtmlSelectQuerySchemaName = null);
+	string? HtmlSelectQuerySchemaName = null,
+	string? ODataNonJsonEntity = null);

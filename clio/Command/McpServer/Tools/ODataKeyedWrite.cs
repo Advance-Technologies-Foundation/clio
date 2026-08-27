@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Clio.Common;
 
 namespace Clio.Command.McpServer.Tools;
@@ -57,5 +58,35 @@ internal static class ODataKeyedWrite {
 		IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 		string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id));
 		return (client, url);
+	}
+
+	/// <summary>
+	/// Validates the response body of a keyed PATCH/DELETE write. Creatio normally answers a
+	/// successful update or delete with <c>204 No Content</c> (empty body), so an empty response is
+	/// success. The transport layer (<see cref="IApplicationClient"/>) returns whatever body came
+	/// back regardless of HTTP status - it never throws for a non-2xx response - so a body that IS
+	/// present must be inspected: a recognized Creatio error shape, or a body that fails to parse as
+	/// JSON at all (an IIS/proxy error page, a stale-session redirect), both mean the write must not
+	/// be reported as successful.
+	/// </summary>
+	/// <param name="response">The raw response body returned by the PATCH/DELETE request.</param>
+	/// <returns>A redacted failure message, or <c>null</c> when the response is consistent with success.</returns>
+	internal static string ValidateWriteResponse(string response) {
+		// Whitespace counts as "no body", not as an unparsable body: a proxy that pads an otherwise
+		// empty 204 with a newline is the realistic source of a whitespace-only response, and Creatio
+		// itself always answers a genuine failure with one of the recognized JSON error shapes. Treating
+		// whitespace as a failure would therefore turn successful writes into false negatives, which is
+		// the worse outcome here - the caller would re-send an update that already landed.
+		if (string.IsNullOrWhiteSpace(response)) {
+			return null;
+		}
+		try {
+			using JsonDocument doc = JsonDocument.Parse(response);
+			return ODataResponseError.TryDetect(doc.RootElement, out string serverError)
+				? SensitiveErrorTextRedactor.Redact(serverError)
+				: null;
+		} catch (JsonException) {
+			return SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(response));
+		}
 	}
 }
