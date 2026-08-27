@@ -50,6 +50,7 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
+		"Set validate=false only as an explicit escape hatch for a pre-existing page defect; it skips client-side content and run-process validation, while JavaScript syntax and AST loadability checks plus the page baseline/conflict guard remain mandatory. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
 		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
@@ -113,23 +114,32 @@ public sealed class PageUpdateTool(
 				Error = "Either 'body' or 'body-file' must provide page body content."
 			}, null, null, null);
 		}
+		if (args.Validate == false && args.Force == true) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "validate=false cannot be combined with force=true. Keep the baseline/conflict guard enabled when using the validation escape hatch."
+			}, null, null, null);
+		}
 		PageUpdateResponse appendFormFailure = TryValidateAppendBodyForm(options);
 		if (appendFormFailure != null) {
 			return (appendFormFailure, null, null, null);
 		}
 		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
 		if (syntaxFailure != null) {
-			return (ResolveSyntaxFailure(options, syntaxFailure), null, null, null);
+			return (ResolveSyntaxFailure(options, syntaxFailure, args.Validate ?? true), null, null, null);
 		}
-		string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
-		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options, requestedVersion);
-		if (validationFailure != null)
-			return (validationFailure, null, null, null);
-		(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
-			ValidateRunProcessButtons(options);
-		if (runProcessFailure != null)
-			return (runProcessFailure, null, null, null);
-		validationWarnings = MergeWarnings(validationWarnings, runProcessWarnings);
+		IReadOnlyList<string> validationWarnings = null;
+		if (options.Validate) {
+			string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
+			(PageUpdateResponse validationFailure, IReadOnlyList<string> bodyValidationWarnings) = ValidateBody(options, requestedVersion);
+			if (validationFailure != null)
+				return (validationFailure, null, null, null);
+			(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
+				ValidateRunProcessButtons(options);
+			if (runProcessFailure != null)
+				return (runProcessFailure, null, null, null);
+			validationWarnings = MergeWarnings(bodyValidationWarnings, runProcessWarnings);
+		}
 		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
 		if (lintFailure != null)
 			return (lintFailure, null, null, null);
@@ -200,7 +210,10 @@ public sealed class PageUpdateTool(
 	// EnvironmentResolutionException throw (the unknown-environment / missing-settings guard runs
 	// before any network call); the resolved command is discarded, so a body that cannot parse
 	// triggers no Creatio I/O even in dry-run.
-	internal PageUpdateResponse ResolveSyntaxFailure(PageUpdateOptions options, PageUpdateResponse syntaxFailure) {
+	internal PageUpdateResponse ResolveSyntaxFailure(PageUpdateOptions options, PageUpdateResponse syntaxFailure, bool validate = true) {
+		if (!validate) {
+			return syntaxFailure;
+		}
 		// 1. Argument-payload validation — pure offline, independent of body parsing or markers.
 		string argumentError = PageUpdateCommand.ValidateArgumentPayloads(options.Resources, options.OptionalProperties);
 		if (argumentError != null) {
@@ -429,6 +442,7 @@ public sealed class PageUpdateTool(
 			Resources = args.Resources,
 			OptionalProperties = args.OptionalProperties,
 			Mode = args.Mode,
+			Validate = args.Validate ?? true,
 			TargetPackageUId = args.TargetPackageUId,
 			TargetSchemaUId = args.TargetSchemaUId,
 			Environment = args.EnvironmentName,
@@ -686,5 +700,8 @@ public sealed record PageUpdateArgs(
 	bool? Force = null,
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
-	string? OutputDirectory = null
+	string? OutputDirectory = null,
+	[property: JsonPropertyName("validate")]
+	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, and the page baseline/conflict guard still run. Cannot be combined with force=true.")]
+	bool? Validate = null
 );

@@ -2666,6 +2666,24 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Designer-only _designOptions metadata is ignored by the localizable-text validator, so a templateValuesMapping attribute name is not mistaken for user-visible text.")]
+	public void ValidateLocalizableTextLiterals_DesignerOptionsCaptionMapping_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"Playbook_KnowledgeBaseDS_Name"}}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "_designOptions.templateValuesMapping.caption is designer metadata naming a data-source attribute, not runtime user-visible text");
+		result.Errors.Should().BeEmpty(
+			because: "designer metadata must not produce a localizable-text validation error");
+	}
+
+	[Test]
 	[Description("A panel/tab title set as an inline literal is rejected — titles are user-visible text and must be localizable.")]
 	public void ValidateLocalizableTextLiterals_TitleInlineLiteral_ReturnsInvalid() {
 		// Arrange

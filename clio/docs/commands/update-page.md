@@ -16,6 +16,13 @@ The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.
 
+The MCP `update-page` tool also accepts `validate: false` as an explicit escape
+hatch when a full replacement body contains a pre-existing defect that is
+unrelated to the requested edit. This skips client-side content and run-process
+validation but does not skip JavaScript syntax, AST loadability, or the page
+baseline/conflict guard. It cannot be combined with `force: true`. The CLI
+command has no equivalent flag.
+
 After a successful non-dry-run save, update-page also attempts a
 best-effort live Designer Presence notification so active Creatio designers
 can be warned that the page was saved outside their session. This live push

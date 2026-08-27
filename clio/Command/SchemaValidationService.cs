@@ -2565,6 +2565,9 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (string.Equals(property.Name, "_designOptions", StringComparison.OrdinalIgnoreCase)) {
+						continue;
+					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
 					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result);
 				}

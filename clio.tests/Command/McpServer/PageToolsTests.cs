@@ -39,6 +39,116 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("The update-page MCP contract documents validate=false as a guarded escape hatch while retaining the syntax and AST loadability floor.")]
+	public void PageUpdateTool_Description_Should_Document_ValidationEscapeHatch() {
+		// Arrange
+		var method = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!;
+		string description = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act
+		bool mentionsEscapeHatch = description.Contains("validate=false", StringComparison.Ordinal);
+
+		// Assert
+		mentionsEscapeHatch.Should().BeTrue(
+			because: "callers need to know that validation can be bypassed only explicitly for pre-existing defects");
+		description.Should().Contain("JavaScript syntax",
+			because: "the contract must make clear that validate=false does not bypass the mandatory syntax floor");
+	}
+
+	[Test]
+	[Description("Serializes the update-page validation escape hatch using the kebab-case MCP argument name.")]
+	public void PageUpdateArgs_ShouldSerializeValidateUsingKebabCase() {
+		// Arrange
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", "define(...)", null, null, null, null, null, null,
+			Validate: false);
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(args);
+
+		// Assert
+		json.Should().Contain("\"validate\":false",
+			because: "the MCP contract must expose the explicit validation escape hatch");
+		json.Should().NotContain("\"validation\":",
+			because: "the argument is named validate in the MCP contract");
+	}
+
+	[Test]
+	[Description("update-page validate=false bypasses pre-existing content and run-process validation while still allowing the command save path to run.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_BypassContentValidation_WhenValidateIsFalse() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")), Arg.Any<string>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody(),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"Playbook_KnowledgeBaseDS_Name"}}}},{"operation":"insert","name":"RunBpButton","values":{"type":"crt.Button","clicked":{"request":"crt.RunBusinessProcessRequest","params":{"processRunType":"RegardlessOfThePage"}}}}]""");
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", body, null, false, null, null, null, null,
+			SkipSampling: true, TargetSchemaUId: "validation-schema-uid", Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		(response.Error ?? string.Empty).Should().NotContain("processName",
+			because: "validate=false must bypass the pre-existing run-process structural false positive");
+		(response.Error ?? string.Empty).Should().NotContain("user-visible text",
+			because: "validate=false must bypass the pre-existing designer metadata false positive");
+		response.Success.Should().BeTrue(
+			because: "validation disabled must allow the syntactically valid replacement to be persisted");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("update-page rejects the validation escape hatch when it is combined with force=true, preserving the baseline conflict guard.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_RejectValidationBypassWithForce() {
+		// Arrange
+		PageUpdateTool tool = BuildAppendGuardTool();
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", CreatePageBody(), null, true, null, null, null, null,
+			SkipSampling: true, Force: true, Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the validation escape hatch must not also disable optimistic conflict protection");
+		response.Error.Should().Contain("cannot be combined with force=true",
+			because: "the caller needs an actionable explanation of the safety constraint");
+	}
+
+	[Test]
+	[Description("update-page validate=false does not bypass the mandatory JavaScript syntax gate.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_RetainSyntaxGate_WhenValidateIsFalse() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		PageUpdateArgs args = new("UsrValidationEscapeSyntax_FormPage", SyntaxBrokenMarkerBody, null, true, null, null, null, null,
+			SkipSampling: true, Validate: false);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "validation=false must not permit a JavaScript body that cannot load");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the mandatory syntax gate must remain the reported failure when content validation is disabled");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "a syntax-invalid body must never reach the remote save path");
+	}
+
+	[Test]
 	[Description("Verifies that PageCreateTool has the correct MCP tool name")]
 	public void PageCreateTool_HasCorrectName() {
 		PageCreateTool.ToolName.Should().Be("create-page", "because the MCP tool name must match the protocol contract");
@@ -5480,6 +5590,8 @@ public class PageToolsTests
 	private static PageUpdateTool BuildAppendGuardTool(IApplicationClient applicationClient = null) {
 		applicationClient ??= Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
 		ILogger logger = Substitute.For<ILogger>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();

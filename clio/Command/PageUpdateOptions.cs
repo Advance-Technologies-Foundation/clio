@@ -39,6 +39,15 @@ namespace Clio.Command {
 		public bool DryRun { get; set; }
 
 		/// <summary>
+		/// Gets or sets a value indicating whether the MCP page-body validation chain should run.
+		/// </summary>
+		/// <remarks>
+		/// The MCP adapter owns this escape hatch; the CLI command does not expose it as an option.
+		/// JavaScript syntax and AST loadability checks remain mandatory when validation is disabled.
+		/// </remarks>
+		public bool Validate { get; set; } = true;
+
+		/// <summary>
 		/// Gets or sets the explicit resource captions used for <c>#ResourceString(key)#</c> macros.
 		/// </summary>
 		[Option("resources", Required = false, HelpText = "JSON object of resource key-value pairs for #ResourceString(key)# macros")]
@@ -179,8 +188,10 @@ namespace Clio.Command {
 				if (commonValidationError != null) { response = commonValidationError; return false; }
 				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
-				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
-				if (validationError != null) { response = validationError; return false; }
+				if (options.Validate) {
+					PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
+					if (validationError != null) { response = validationError; return false; }
+				}
 				if (options.DryRun) {
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
@@ -190,8 +201,10 @@ namespace Clio.Command {
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
-				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(schemaToSave, bodyToWrite, context.SchemaType);
-				if (captionError != null) { response = captionError; return false; }
+				if (options.Validate) {
+					PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(schemaToSave, bodyToWrite, context.SchemaType);
+					if (captionError != null) { response = captionError; return false; }
+				}
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;

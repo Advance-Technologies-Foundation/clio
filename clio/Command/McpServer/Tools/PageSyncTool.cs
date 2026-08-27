@@ -757,8 +757,9 @@ public sealed class PageSyncTool(
 			Resources = page.Resources,
 			OptionalProperties = page.OptionalProperties,
 			Environment = opOptions.EnvironmentName,
-			Force = page.Force ?? false,
-			NotifyDesignerPresence = false
+				Force = page.Force ?? false,
+				Validate = opOptions.Validate,
+				NotifyDesignerPresence = false
 		};
 		(string metaFilePath, bool baselineArmed) =
 			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
