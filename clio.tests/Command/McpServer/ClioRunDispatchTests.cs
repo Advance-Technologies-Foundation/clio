@@ -48,6 +48,26 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the contracted invalid-parameter-type diagnostic when clio-run dispatch receives a wrong JSON value type for a target tool argument.")]
+	public async Task RunAsync_ShouldReportContractedTypeError_WhenDispatchedArgumentHasWrongType() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement arguments = JsonDocument.Parse("{\"value\":[\"wrong\"]}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("echo-tool", arguments, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		result.IsError.Should().BeTrue(because: "clio-run must reject an incompatible target argument before invoking the tool");
+		text.Should().Contain("invalid-parameter-type", because: "the nested dispatch must use the MCP argument error contract");
+		text.Should().Contain("value", because: "the target argument name must be actionable");
+		text.Should().Contain("string", because: "the diagnostic must state the expected JSON type");
+		text.Should().NotContain("Cannot get the value of a token type", because: "the SDK implementation exception must not leak to the agent");
+	}
+
 	// A real SDK-built tool whose method throws, so InvokeAsync surfaces an exception (which the SDK
 	// wraps) for the error-masking guard test.
 	[McpServerToolType]

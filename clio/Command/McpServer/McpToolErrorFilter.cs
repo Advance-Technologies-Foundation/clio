@@ -78,7 +78,7 @@ public static class McpToolErrorFilter
 	private static string GetSurfacedMessage(Exception exception) =>
 		Clio.Common.SurfacedExceptionMessage.Resolve(exception);
 
-	private static bool TryCreateArgumentDeserializationError(
+	internal static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
 		out CallToolResult? result) {
 		result = null;
