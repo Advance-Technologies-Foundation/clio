@@ -740,9 +740,12 @@ public class SysSettingsManager : ISysSettingsManager
 			return true;
 		}
 		string message = exception.Message ?? string.Empty;
-		return message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
+		return message.Contains("401", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
 			|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
-			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase);
+			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase)
+			|| (exception.InnerException is not null && IsAuthenticationException(exception.InnerException));
 	}
 
 	// Platform-fixed FileSecurityMode lookup ids (constants in Terrasoft.Web.FileSecurity.FileSecurityModeProvider).

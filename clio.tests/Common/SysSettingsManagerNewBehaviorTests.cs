@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Authentication;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
@@ -299,6 +300,23 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "a rejected authenticated probe must stop the write before the generic save-result path");
 		applicationClient.ReceivedCalls().Should().ContainSingle(
 			because: "the rejected probe must stop the update before a second write request is sent");
+	}
+
+	[Test]
+	[Description("GetAllSysSettingsWithValues maps an HTTP 401 thrown by the application client to an authentication failure instead of leaking a generic error to MCP callers.")]
+	public void GetAllSysSettingsWithValues_ShouldMapHttpUnauthorizedException() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized)."));
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues();
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "an HTTP 401 means the stored Creatio credentials were rejected and must not appear as an empty list");
 	}
 
 	#endregion
