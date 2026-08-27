@@ -159,11 +159,72 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		return json;
 	}
 
+	private static string NormalizeServicePath(string servicePath) {
+		if (string.IsNullOrWhiteSpace(servicePath)) {
+			return servicePath;
+		}
+
+		string normalized = servicePath.Trim();
+		if (normalized.StartsWith("/0/", StringComparison.OrdinalIgnoreCase)) {
+			normalized = normalized[3..];
+		}
+		else if (normalized.StartsWith("0/", StringComparison.OrdinalIgnoreCase)) {
+			normalized = normalized[2..];
+		}
+
+		return normalized.TrimStart('/');
+	}
+
+	private static bool TryGetErrorStatus(string response, out int statusCode) {
+		statusCode = 0;
+		Match match = Regex.Match(response ?? string.Empty, @"(?:HTTP\s+Error\s+|<title>\s*)(?<status>[45]\d{2})\b",
+			RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+		return match.Success && int.TryParse(match.Groups["status"].Value, out statusCode);
+	}
+
+	private static bool IsErrorResponse(string response) {
+		if (string.IsNullOrWhiteSpace(response)) {
+			return false;
+		}
+
+		string trimmed = response.TrimStart();
+		if (trimmed.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase)
+			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)) {
+			return TryGetErrorStatus(trimmed, out _)
+				|| Regex.IsMatch(trimmed, "server error|file or directory not found|error page",
+					RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+		}
+
+		try {
+			if (JToken.Parse(trimmed) is not JObject parsed) {
+				return false;
+			}
+			JToken code = parsed["Code"] ?? parsed["code"];
+			JToken exception = parsed["Exception"] ?? parsed["exception"];
+			return code?.Type == JTokenType.Integer && code.Value<int>() != 0
+				&& exception?.Type == JTokenType.String && !string.IsNullOrWhiteSpace(exception.Value<string>());
+		}
+		catch (JsonReaderException) {
+			return false;
+		}
+	}
+
+	private void WriteServiceError(string response) {
+		string status = TryGetErrorStatus(response, out int statusCode)
+			? $"HTTP status {statusCode}"
+			: "HTTP status unavailable from the response body";
+		string detail = response?.Trim();
+		if (detail?.Length > 500) {
+			detail = detail[..500] + "...";
+		}
+		Logger.WriteError($"Service request failed ({status}). Response was not saved. {detail}");
+	}
+
 	#endregion
 
 	#region Methods: Protected
 
-	protected virtual string BuildUrl(T options) => ServiceUrlBuilderInstance.Build(options.ServicePath);
+	protected virtual string BuildUrl(T options) => ServiceUrlBuilderInstance.Build(NormalizeServicePath(options.ServicePath));
 
 	protected string ExecuteServiceRequest(string url, string requestData, string resultFileName = null,
 		string httpMethod = ""){
@@ -177,6 +238,11 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData),
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
+
+		if (IsErrorResponse(jsonResult)) {
+			WriteServiceError(jsonResult);
+			return null;
+		}
 
 		string beautifiedJson = BeautifyJsonIfPossible(jsonResult);
 		
@@ -212,14 +278,18 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	public override int Execute(T options){
 		IsSilent = options.IsSilent;
 		if (string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody)) {
-			ExecuteServiceRequest(BuildUrl(options), string.Empty, options.ResultFileName, options.HttpMethodName);
+			if (ExecuteServiceRequest(BuildUrl(options), string.Empty, options.ResultFileName, options.HttpMethodName) is null) {
+				return 1;
+			}
 		}
 		else {
 			string requestData = string.IsNullOrWhiteSpace(options.RequestBody) ? GetRequestData(options.RequestFileName) : options.RequestBody;
 			if (options.Variables != null && options.Variables.Any()) {
 				requestData = ReplaceVariablesInJson(requestData, options.Variables);
 			}
-			ExecuteServiceRequest(BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName);
+			if (ExecuteServiceRequest(BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName) is null) {
+				return 1;
+			}
 		}
 		return 0;
 	}

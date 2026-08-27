@@ -21,7 +21,16 @@ Call a Creatio service endpoint.
 
 ```bash
 clio call-service -e dev
+clio call-service -e dev --method GET --service-path odata/BulkEmailCategory
+clio call-service -e dev --method GET --service-path /0/odata/BulkEmailCategory
 ```
+
+`--service-path` is relative to the Creatio application root. Use `odata/...`; clio also accepts
+the equivalent `/odata/...`, `0/odata/...`, and `/0/odata/...` forms. The optional `0/` application
+alias is normalized automatically.
+
+If the service returns a Creatio error envelope or an HTML server error page, clio reports a
+non-zero exit code and does not write the response to `--destination`.
 
 ## Options
 
