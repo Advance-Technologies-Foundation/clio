@@ -83,6 +83,11 @@ public sealed class DescribeProcessCommandTests {
 									Name = "SaveButton", Caption = "Save | SaveButton", Event = "clicked",
 									Validate = true
 								}
+							],
+							DataSources = [
+								new DescribedPreconfiguredPageDataSource {
+									Name = "PDS", EntitySchemaName = "Account", Parameter = "DataSource_PDS_Id"
+								}
 							]
 						}
 					}
@@ -101,7 +106,10 @@ public sealed class DescribeProcessCommandTests {
 			json.Contains("preconfiguredPage")
 			&& json.Contains("UsrRequestReview_FormPage")
 			&& json.Contains("SaveButton")
-			&& json.Contains("inSync")));
+			&& json.Contains("inSync")
+			// The data-source parameter surfaces ONLY here — the element's own parameter list omits it — so a
+			// model that drops this member takes the saved-record handle with it.
+			&& json.Contains("DataSource_PDS_Id")));
 	}
 
 	[Test]

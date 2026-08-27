@@ -421,6 +421,17 @@ public sealed class DescribedPreconfiguredPage {
 	public string Recommendation { get; set; }
 
 	/// <summary>
+	/// The page's data sources, each with the ELEMENT PARAMETER holding the id of the record the page saved.
+	/// Empty when the element has none; null from a server that does not report them yet.
+	/// <para>The parameter named here is the handle a mapping uses to pass the saved record to a later element —
+	/// and it does NOT appear in the element's own parameter list, because the server reports element parameters
+	/// only when they are a result, an output, or carry a stored value, and a data-source parameter is none of
+	/// those until run time. This is the only place it surfaces.</para>
+	/// </summary>
+	[JsonPropertyName("dataSources")]
+	public List<DescribedPreconfiguredPageDataSource> DataSources { get; set; }
+
+	/// <summary>
 	/// CLASSIC UI pages only: the "Connected object" entity schema name. Null for a Freedom UI page, which carries
 	/// its object in its own data sources instead.
 	/// </summary>
@@ -461,6 +472,24 @@ public sealed class DescribedPreconfiguredPagePerformer {
 	/// </summary>
 	[JsonPropertyName("showPage")]
 	public bool? ShowPage { get; set; }
+}
+
+/// <summary>One page data source of a Pre-configured page element, with the parameter carrying its record id.</summary>
+public sealed class DescribedPreconfiguredPageDataSource {
+	/// <summary>The data source's name on the page (for example <c>PDS</c>).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>The entity the data source reads and writes; the raw UId when the schema no longer resolves.</summary>
+	[JsonPropertyName("entitySchemaName")]
+	public string EntitySchemaName { get; set; }
+
+	/// <summary>
+	/// The element parameter holding the record id — <c>DataSource_&lt;name&gt;_&lt;primary column&gt;</c>. Use it
+	/// as a mapping source to pass the saved record downstream, or set it to pre-open the page on an existing one.
+	/// </summary>
+	[JsonPropertyName("parameter")]
+	public string Parameter { get; set; }
 }
 
 /// <summary>One completing button of a Pre-configured page element.</summary>
