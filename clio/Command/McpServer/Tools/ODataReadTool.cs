@@ -97,7 +97,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string url = urlBuilder.Build(path);
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
-			return ParseODataResponse(responseJson, args.Count);
+			return ParseODataResponse(responseJson, args.Entity.Trim(), args.Count);
 		} catch (Exception ex) {
 			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -300,7 +300,11 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		return $"?{string.Join("&", parts)}";
 	}
 
-	private static ODataReadResponse ParseODataResponse(string json, bool countRequested) {
+	private static ODataReadResponse ParseODataResponse(string json, string entityName, bool countRequested) {
+		if (ODataResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
+			return ODataReadResponse.Failure(missingEntitySetError);
+		}
+
 		try {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
@@ -318,6 +322,10 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// Single-entity response (no value wrapper)
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
 		} catch (Exception ex) {
+			string trimmedJson = json.TrimStart();
+			if (trimmedJson.Length == 0 || (trimmedJson[0] != '{' && trimmedJson[0] != '[')) {
+				return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
+			}
 			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json;
 			if (preview.Length > 500) {
 				preview = preview[..500] + "...";

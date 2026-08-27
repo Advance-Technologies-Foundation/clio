@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -40,6 +41,39 @@ public sealed class McpToolErrorFilterTests
 			because: "the real cause must be surfaced so the agent can self-correct");
 		text.Should().NotContain("deserialize",
 			because: "an execution failure must not be mislabeled as an argument-binding diagnostic");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Uses the contracted invalid-parameter-type code, the nested wire name, and the expected JSON type when a composite MCP argument contains the wrong value type.")]
+	public async Task HandleCallToolErrors_Should_Report_Contracted_Type_Error_When_Nested_Argument_Has_Wrong_Type() {
+		// Arrange
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw new AssertionException("tool body must not run"));
+		ODataReadTool toolInstance = new(Substitute.For<IToolCommandResolver>());
+		MethodInfo method = typeof(ODataReadTool).GetMethod(nameof(ODataReadTool.Read), BindingFlags.Public | BindingFlags.Instance)!;
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"odata-read",
+			new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse("{\"entity\":\"Lead\",\"environment-name\":\"dev\",\"order-by\":[\"CreatedOn desc\"]}").RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(method, toolInstance);
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "wrong argument types must be rejected before the OData tool body executes");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("invalid-parameter-type",
+			because: "the failure must use the error code advertised by get-tool-contract");
+		text.Should().Contain("order-by",
+			because: "the nested wire parameter must be named instead of exposing only the composite args wrapper");
+		text.Should().Contain("string",
+			because: "the caller must be told the expected JSON shape");
+		text.Should().NotContain("Cannot get the value of a token type",
+			because: "the raw System.Text.Json implementation message is not an agent-facing contract diagnostic");
 	}
 
 	[Test]

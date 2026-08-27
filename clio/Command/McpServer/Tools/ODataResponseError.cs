@@ -49,6 +49,41 @@ internal static class ODataResponseError {
 	internal static string DescribeNonJsonResponse(string body) =>
 		$"Creatio did not return a JSON response. {NonJsonResponseHint} Response: {Truncate(body)}";
 
+	/// <summary>
+	/// Attempts to classify the IIS HTML 404 returned when an entity set has no OData controller.
+	/// </summary>
+	/// <param name="body">The raw response body returned by the OData request.</param>
+	/// <param name="entityName">The requested OData entity set name.</param>
+	/// <param name="message">The actionable failure message when the body is an IIS 404.</param>
+	/// <returns><see langword="true"/> when the response is an IIS-style 404 page.</returns>
+	internal static bool TryDescribeMissingEntitySet(string body, string entityName, out string message) {
+		message = string.Empty;
+		if (!LooksLikeIisNotFoundPage(body)) {
+			return false;
+		}
+
+		message = $"OData entity set '{entityName}' could not be reached and may not be exposed over OData. "
+			+ "Use execute-esq to read schemas that do not have an OData entity set. "
+			+ "The server returned an IIS 404 page instead of an OData response.";
+		return true;
+	}
+
+	/// <summary>
+	/// Builds a concise failure for a read response that is not JSON, without echoing the raw body.
+	/// </summary>
+	/// <returns>An actionable non-JSON response message.</returns>
+	internal static string DescribeNonJsonReadResponse() =>
+		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "
+		+ "problem rather than an OData query-shape problem; verify the environment and retry only after the "
+		+ "endpoint is returning JSON.";
+
+	private static bool LooksLikeIisNotFoundPage(string body) {
+		string trimmedBody = body.TrimStart();
+		return trimmedBody.StartsWith("<", StringComparison.Ordinal)
+		&& body.Contains("404", StringComparison.OrdinalIgnoreCase)
+		&& body.Contains("not found", StringComparison.OrdinalIgnoreCase);
+	}
+
 	/// <summary>Truncates a raw response body to a safe preview length for error messages.</summary>
 	internal static string Truncate(string value) {
 		if (string.IsNullOrEmpty(value)) {

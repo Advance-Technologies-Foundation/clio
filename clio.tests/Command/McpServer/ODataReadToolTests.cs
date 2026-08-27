@@ -851,6 +851,70 @@ public sealed class ODataReadToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Classifies an IIS HTML 404 for an unknown OData entity set as an unavailable entity set and keeps the HTML boilerplate out of the failure.")]
+	public void Read_Should_Report_Missing_Entity_Set_When_Server_Returns_Iis_Html_404() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/MessageType?$top=10");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>iis noise</body></html>");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "MessageType",
+			Top = 10
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an IIS 404 means the requested entity set is unavailable, not that an OData body was malformed");
+		response.Error.Should().Contain("MessageType",
+			because: "the failure must identify the entity set that is not exposed");
+		response.Error.Should().Contain("execute-esq",
+			because: "the caller needs the supported escape route for schemas without an OData entity set");
+		response.Error.Should().NotContain("404 - File or directory not found",
+			because: "IIS HTML boilerplate is not an actionable MCP diagnostic");
+		response.Error.Should().NotContain("Failed to parse OData response",
+			because: "the response was a routing failure rather than malformed OData JSON");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not echo a non-JSON OData response body into the MCP failure when the response is not the specific IIS 404 entity-set case.")]
+	public void Read_Should_Not_Expose_NonJson_Response_Body_When_Server_Returns_Html_Error() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><head><title>500 - Server Error</title></head><body>private response marker</body></html>");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a non-JSON response cannot be a successful OData read");
+		response.Error.Should().Contain("did not return a JSON OData response",
+			because: "the failure should identify the transport/content problem");
+		response.Error.Should().NotContain("private response marker",
+			because: "raw proxy or server response bodies must not leak into the MCP transcript");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A server error body (ASP.NET EDM model NullReferenceException) is reported as a failure, not wrapped as a single-entity success.")]
 	public void Read_Should_Surface_Server_Error_As_Failure() {
 		IApplicationClient client = Substitute.For<IApplicationClient>();

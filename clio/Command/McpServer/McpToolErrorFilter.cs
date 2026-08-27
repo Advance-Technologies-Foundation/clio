@@ -99,7 +99,11 @@ public static class McpToolErrorFilter
 				argumentValue.Deserialize(parameter.ParameterType, SerializerOptions);
 			}
 			catch (Exception ex) when (IsDeserializationException(ex)) {
-				result = CreateJsonErrorResult(BuildDeserializationErrorMessage(context.Params.Name, argumentName, ex));
+				result = CreateJsonErrorResult(BuildDeserializationErrorMessage(
+					context.Params.Name,
+					parameter.ParameterType,
+					argumentName,
+					ex));
 				return true;
 			}
 		}
@@ -123,14 +127,48 @@ public static class McpToolErrorFilter
 		?? parameter.Name
 		?? string.Empty;
 
-	private static string BuildDeserializationErrorMessage(string? toolName, string? argumentName, Exception exception) {
-		// The serializer message can echo back the offending argument value, so redact it too.
-		string detail = SensitiveErrorTextRedactor.Redact(exception.Message);
+	private static string BuildDeserializationErrorMessage(
+		string? toolName,
+		Type parameterType,
+		string? argumentName,
+		Exception exception) {
+		string preciseArgumentName = GetPreciseArgumentName(parameterType, argumentName, exception);
+		string expectedType = GetExpectedJsonType(parameterType, preciseArgumentName);
 		string message = string.IsNullOrWhiteSpace(argumentName)
-			? $"Failed to deserialize arguments for MCP tool '{toolName ?? UnknownToolName}': {detail}"
-			: $"Failed to deserialize argument '{argumentName}' for MCP tool '{toolName ?? UnknownToolName}': {detail}";
-		return message;
+			? $"invalid-parameter-type: arguments for MCP tool '{toolName ?? UnknownToolName}' must match the documented shape (expected {expectedType})."
+			: $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolName ?? UnknownToolName}' must be {expectedType}.";
+		return $"{message} Received an incompatible JSON value.";
 	}
+
+	private static string GetPreciseArgumentName(Type parameterType, string? argumentName, Exception exception) {
+		if (parameterType.IsClass && parameterType != typeof(string)
+			&& exception is JsonException { Path: { } path }
+			&& path.StartsWith("$.", StringComparison.Ordinal)) {
+			string propertyName = path[2..].Split(['.', '['], 2)[0];
+			if (GetJsonPropertyNames(parameterType).Contains(propertyName, StringComparer.OrdinalIgnoreCase)) {
+				return propertyName;
+			}
+		}
+		return argumentName ?? string.Empty;
+	}
+
+	private static string GetExpectedJsonType(Type parameterType, string argumentName) {
+		PropertyInfo? property = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.FirstOrDefault(candidate =>
+				(GetJsonPropertyName(candidate) ?? candidate.Name).Equals(argumentName, StringComparison.OrdinalIgnoreCase));
+		Type type = property?.PropertyType ?? parameterType;
+		if (Nullable.GetUnderlyingType(type) is { } underlyingType) {
+			type = underlyingType;
+		}
+		if (type == typeof(string)) return "a string";
+		if (type == typeof(bool)) return "a boolean";
+		if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string)) return "an array";
+		if (type.IsPrimitive || type == typeof(decimal)) return "a number";
+		return "an object";
+	}
+
+	private static string? GetJsonPropertyName(PropertyInfo property) =>
+		property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
 
 	private static bool IsDeserializationException(Exception exception) =>
 		exception is JsonException or NotSupportedException;
