@@ -10,38 +10,41 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ODataResponseErrorTests {
 	[Test]
 	[Category("Unit")]
-	[Description("A keyed read body whose selected column is named ExceptionMessage (alongside @odata.context and Id) is data, not an ASP.NET error.")]
-	public void TryDetect_Should_Not_Treat_Error_Named_Column_On_Keyed_Read_As_Error() {
+	[Description("An ASP.NET HttpError carrying InnerException is still detected. ASP.NET Web API populates InnerException whenever error detail is enabled, so any 'does the body carry other members?' guard on this branch would report a genuine server exception as success through every caller of TryDetect.")]
+	public void TryDetect_Should_Detect_AspNet_Error_Carrying_InnerException() {
 		// Arrange
 		const string body =
-			"{\"@odata.context\":\"http://env/0/odata/$metadata#Contact\"," +
-			"\"Id\":\"11111111-1111-1111-1111-111111111111\",\"ExceptionMessage\":\"boom at /home/depot\"}";
+			"{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"NullReferenceException at App.X\"," +
+			"\"ExceptionType\":\"System.NullReferenceException\",\"StackTrace\":\"at App.X()\"," +
+			"\"InnerException\":{\"Message\":\"inner\",\"ExceptionType\":\"System.Exception\"}}";
 		JsonElement root = JsonDocument.Parse(body).RootElement;
 
 		// Act
-		bool isError = ODataResponseError.TryDetect(root, out _);
+		bool isError = ODataResponseError.TryDetect(root, out string message);
 
 		// Assert
-		isError.Should().BeFalse(because:
-			"the body carries @odata.context and Id alongside the caller-chosen ExceptionMessage column, so it is a real keyed entity read, not a server error");
+		isError.Should().BeTrue(because:
+			"InnerException is a standard member of the HttpError shape, not evidence that the body is data");
+		message.Should().Contain("NullReferenceException", because:
+			"the caller needs the actual exception text, not a generic server-error placeholder");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A keyed read body whose selected columns are named ExceptionType and StackTrace (plus @odata.context/Id) is data, not an ASP.NET error.")]
-	public void TryDetect_Should_Not_Treat_Error_Named_Columns_On_Keyed_Read_As_Error() {
+	[Description("An ASP.NET HttpError whose members are all present is detected regardless of extra ModelState-style members, for the same reason as InnerException.")]
+	public void TryDetect_Should_Detect_AspNet_Error_Carrying_ModelState() {
 		// Arrange
 		const string body =
-			"{\"@odata.context\":\"http://env/0/odata/$metadata#Log\"," +
-			"\"Id\":\"22222222-2222-2222-2222-222222222222\",\"ExceptionType\":\"App.Exception\",\"StackTrace\":\"at App.X()\"}";
+			"{\"Message\":\"The request is invalid.\",\"ExceptionMessage\":\"validation failed\"," +
+			"\"ModelState\":{\"data.Name\":[\"required\"]}}";
 		JsonElement root = JsonDocument.Parse(body).RootElement;
 
 		// Act
 		bool isError = ODataResponseError.TryDetect(root, out _);
 
 		// Assert
-		isError.Should().BeFalse(because:
-			"the body carries @odata.context and Id, so a log-shaped entity whose columns are named like HttpError keys is data, not a server error");
+		isError.Should().BeTrue(because:
+			"an HttpError with additional diagnostic members is still an error body, and reporting it as success is the exact defect this class exists to prevent");
 	}
 
 	[Test]

@@ -16,14 +16,14 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ODataUpdateToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
-	private const string MetadataUrl = "http://creatio/odata/Contact/$metadata";
+	private const string MetadataUrl = "http://creatio/odata/$metadata";
 	private const string KeyUrl = "http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)";
 
 	private static JsonElement Obj(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
 	/// <summary>
 	/// Minimal CSDL 4.0 document: Contact carries Name/JobTitle (plain), SomeGuid (plain Guid) and
-	/// AccountId (a lookup — the Account navigation property declares <c>Partner="AccountId"</c>),
+	/// AccountId (the foreign key its Account navigation property constrains, per CSDL 4.0),
 	/// plus the Account type.
 	/// </summary>
 	private static string CsdL() => $"""
@@ -38,7 +38,9 @@ public sealed class ODataUpdateToolTests {
 		        <Property Name="JobTitle" Type="Edm.String" />
 		        <Property Name="SomeGuid" Type="Edm.Guid" />
 		        <Property Name="AccountId" Type="Edm.Guid" />
-		        <NavigationProperty Name="Account" Partner="AccountId" Type="Terrasoft.Configuration.OData.Account" />
+		        <NavigationProperty Name="Account" Type="Terrasoft.Configuration.OData.Account">
+		          <ReferentialConstraint Property="AccountId" ReferencedProperty="Id" />
+		        </NavigationProperty>
 		      </EntityType>
 		      <EntityType Name="Account">
 		        <Key><PropertyRef Name="Id" /></Key>
@@ -304,47 +306,74 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects a lookup field set to the empty GUID, with a null-to-clear hint; nothing is written.")]
-	public void Update_Should_Reject_EmptyGuid_On_Lookup_Field() {
+	[Description("Passes a lookup field set to the empty GUID through to the PATCH: this tool validates field NAMES only. Rejecting the value needs the entity's foreign-key set, which exists only on the CSDL path, so enforcing it here would pass or fail the same call depending on whether $metadata resolved — it is tracked as its own change instead.")]
+	public void Update_Should_Not_Reject_EmptyGuid_On_Lookup_Field() {
+		// Arrange
 		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, $"{{\"AccountId\":\"{EmptyGuid}\"}}");
 
-		response.Success.Should().BeFalse();
-		response.Error!.Should()
-			.Contain("AccountId")
-			.And.Contain(EmptyGuid)
-			.And.Contain("null to clear")
-			.And.Contain("No write was performed");
-		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "AccountId is a real property of the type, and this validator only checks that field names exist");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, $"{{\"AccountId\":\"{EmptyGuid}\"}}", 30000);
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Allows JSON null on a lookup field — that is the legitimate way to clear a reference.")]
 	public void Update_Should_Allow_Null_On_Lookup_Field() {
+		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"AccountId":null}""");
 
-		response.Success.Should().BeTrue(because: "null clears the lookup; only the empty-GUID string is dropped by the platform");
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "null clears the lookup; only the empty-GUID string is dropped by the platform");
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"AccountId":null}""", 30000);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Allows the empty GUID on a plain Guid property — the silent-drop only affects lookup (Partner) fields.")]
+	[Description("Allows the empty GUID on a plain Guid property — no value-level rule applies to it either.")]
 	public void Update_Should_Allow_EmptyGuid_On_Plain_Guid_Field() {
+		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, $"{{\"SomeGuid\":\"{EmptyGuid}\"}}");
 
-		response.Success.Should().BeTrue(because: "SomeGuid has no Partner attribute, so it is a plain Guid, not a lookup");
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "SomeGuid exists on the type, which is the only thing this validator checks");
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, $"{{\"SomeGuid\":\"{EmptyGuid}\"}}", 30000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A fallback $select probe whose record carries a caller-chosen column named ExceptionMessage confirms the field instead of reading it as a server error. This discrimination lives in the probe (a body with @odata.context or Id is the record it asked for), NOT in ODataResponseError - putting it there would blind every caller to real ASP.NET exceptions.")]
+	public void Update_Should_Treat_Error_Named_Column_On_Probe_As_Data() {
+		// Arrange
+		Fixture f = new(HtmlPage, _ => ProbeOk("ExceptionMessage"));
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"ExceptionMessage":"boom at /home/depot"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the probe body carries @odata.context and Id, so it is the record the probe addressed, not an error envelope");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"ExceptionMessage":"boom at /home/depot"}""", 30000);
 	}
 
 	[Test]

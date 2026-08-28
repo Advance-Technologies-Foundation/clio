@@ -1,5 +1,5 @@
 ---
-description: Creatio's OData v4 endpoint accepts a PATCH naming properties the entity type does not have and answers an empty 204-like body without writing anything - odata-update pre-validates every data field against the entity's $metadata CSDL (with a $select probe fallback), and rejects lookup fields set to the empty GUID
+description: Creatio's OData v4 endpoint accepts a PATCH naming properties the entity type does not have and answers an empty 204-like body without writing anything - odata-update pre-validates every data field NAME against the service-root $metadata CSDL, with a $select probe fallback
 applies-to:
   - clio/Command/McpServer/Tools/ODataUpdateTool.cs
   - clio/Command/McpServer/Tools/ODataFieldValidation.cs
@@ -14,22 +14,32 @@ accepted by Creatio's OData v4 endpoint: it answers with an empty (204-like) bod
 **writes nothing**. GitHub #1212 demonstrated `odata-update` calls with a `Color` column
 (absent from `$metadata`) and a fully nonexistent column both returning `success: true`
 while leaving the target untouched — silent data loss, made worse by the asymmetry that
-`odata-read` `$select` rejects the same property names strictly. A second value-level
-variant of the same defect: a lookup (reference) column set to the empty GUID
-`00000000-0000-0000-0000-00000000` is silently dropped by the platform (the PATCH answers
-success, the reference stays untouched), while `null` clears the reference — so that value
-form is rejected up front with a hint to send `null`.
+`odata-read` `$select` rejects the same property names strictly.
+
+Scope note: only field NAMES are validated. A related value-level variant exists — a lookup
+(reference) column set to the empty GUID is silently dropped by the platform while `null`
+clears the reference — but `odata-update` does NOT reject it. Enforcing it needs the entity's
+foreign-key set, which is only available on the CSDL path, so the same call would pass or fail
+depending on whether `$metadata` resolved on that environment. It is tracked separately rather
+than shipped non-deterministically here.
 
 `ODataUpdateTool` therefore runs `ODataFieldValidation.ValidateDataFields` before every
-PATCH. The PRIMARY validator is the service's own metadata: `GET odata/{entity}/$metadata`
-is fetched (bounded: 30 s timeout, 3 attempts, 1 s delay) and parsed as CSDL — the entity's
-property set (following `BaseType` inheritance, navigation properties included) and its
-lookup reference-ID set (every `NavigationProperty/@Partner`) come from ONE deterministic
-GET, which replaces the earlier per-field binary `$select` probing. The `$select` probe
-(`$select=Id,<fields>`; the service names only the FIRST unknown property, so remaining
-fields are re-probed individually, capped at 10) runs only as a FALLBACK when the metadata
-body is empty, non-XML, or yields no type for the entity; the empty-GUID check is skipped
-on that path because the reference-ID set is then unknown. Three semantics are kept: a
+PATCH. The PRIMARY validator is the service's own metadata: `GET odata/$metadata` is fetched
+(bounded: 30 s timeout, 3 attempts, 1 s delay) and parsed as CSDL, and the entity's property
+set (following `BaseType` inheritance, navigation properties included) comes from ONE
+deterministic GET, which replaces the earlier per-field binary `$select` probing.
+
+**The route is the SERVICE ROOT.** In OData v4 `$metadata` is a service-root resource
+(`serviceRoot/$metadata`); `serviceRoot/EntitySet/$metadata` is not a defined resource path,
+and ASP.NET Web API OData's `MetadataRoutingConvention` maps only `~/$metadata`. Every
+`@odata.context` value this repo has captured confirms the root form
+(`.../0/odata/$metadata#Contact`). A per-entity route would 404 into the routing-error body —
+the transport does not throw on non-2xx — leaving the CSDL branch permanently unresolved and
+every update silently on the degraded probe while the tool advertised metadata validation.
+
+The `$select` probe (`$select=Id,<fields>`; the service names only the FIRST unknown property,
+so remaining fields are re-probed individually, capped at 10) runs only as a FALLBACK when the
+metadata body is empty, non-XML, or yields no type for the entity. Three semantics are kept: a
 recognized unknown-property fault fails the call naming the field(s) ("could not be
 verified against the service" on the fallback path, "do not exist on the OData type" on the
 CSDL path); an empty or non-JSON pre-write body means UNVERIFIED and fails the call —

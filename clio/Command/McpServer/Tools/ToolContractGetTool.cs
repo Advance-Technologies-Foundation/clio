@@ -2155,8 +2155,8 @@ internal static class ToolContractCatalog {
 		return new ToolContractDefinition(
 			ODataUpdateTool.ToolName,
 			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. " +
-			"Data fields are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written, " +
-			"and a lookup (reference) field set to the empty GUID is rejected - send null to clear a reference (the platform silently drops the empty GUID). " +
+			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
+			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
 			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
 			"some fields unwritten, so re-read important values with odata-read after a critical write. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(

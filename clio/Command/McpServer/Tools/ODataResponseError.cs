@@ -103,15 +103,14 @@ internal static class ODataResponseError {
 		if (!isAspNetError) {
 			return false;
 		}
-		// A genuine OData response always carries a member beyond the HttpError keys - an
-		// @odata.context annotation (default metadata level), a value collection wrapper, a
-		// created record's Id, or a real entity column - so a body whose only members are the
-		// error keys is an error, not data. Without this guard a caller-chosen entity column
-		// named ExceptionMessage/ExceptionType/StackTrace on a keyed read (the odata-update
-		// pre-write probe selects caller fields by name) would be misclassified as a server error.
-		if (HasNonAspNetErrorMembers(root)) {
-			return false;
-		}
+		// NOTE: deliberately no "does the body carry other members?" guard here. ASP.NET Web API's
+		// HttpError populates InnerException whenever error detail is enabled, so such a guard would
+		// classify a genuine unhandled server exception as NOT an error - and every caller
+		// (ODataKeyedWrite.ValidateWriteResponse, ODataReadTool, ODataCreateTool,
+		// Branding/SetBackgroundImageCommand) would then report success on it. The false positive it
+		// would have prevented - a probed record whose own columns are named ExceptionMessage /
+		// ExceptionType / StackTrace - is already handled upstream by
+		// ODataFieldValidation.IsSelectedRecord, which returns before TryDetect is ever reached.
 		message = First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error.";
 		return true;
 	}
@@ -129,7 +128,7 @@ internal static class ODataResponseError {
 	// selected only a Message-named column would still lose its distinguishing member and be
 	// misclassified — no current call site does that (the probe relies on default metadata); if a
 	// metadata=none by-key read is ever added, revisit this branch. The ASP.NET-exception branch
-	// carries the same guard (HasNonAspNetErrorMembers) for the same reason.
+	// deliberately carries NO such guard - see the note in TryDetectAspNetException.
 	private static bool TryDetectRoutingError(JsonElement root, out string message) {
 		message = string.Empty;
 		if (!(root.TryGetProperty(MessagePropertyName, out JsonElement bareMessage)
@@ -174,22 +173,6 @@ internal static class ODataResponseError {
 	private static bool HasNonRoutingErrorMembers(JsonElement root) =>
 		root.EnumerateObject().Any(property =>
 			!property.NameEquals(MessagePropertyName) && !property.NameEquals("MessageDetail"));
-
-	/// <summary>
-	/// Returns true when the object carries any member other than the ASP.NET HttpError keys
-	/// (<c>Message</c> / <c>MessageDetail</c> / <c>ExceptionMessage</c> / <c>ExceptionType</c> /
-	/// <c>StackTrace</c>), which indicates a real OData payload (metadata, <c>value</c>, or entity
-	/// columns) rather than a bare error body. The guard lets a caller-chosen entity column named
-	/// after one of the error keys coexist with the entity's other members without being read as a
-	/// server error.
-	/// </summary>
-	private static bool HasNonAspNetErrorMembers(JsonElement root) =>
-		root.EnumerateObject().Any(property =>
-			!property.NameEquals(MessagePropertyName)
-			&& !property.NameEquals("MessageDetail")
-			&& !property.NameEquals("ExceptionMessage")
-			&& !property.NameEquals("ExceptionType")
-			&& !property.NameEquals("StackTrace"));
 
 	private static string? First(JsonElement root, params string[] names) {
 		foreach (string name in names) {

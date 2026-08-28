@@ -13,13 +13,10 @@ namespace Clio.Command.McpServer.Tools;
 /// Pre-write field validation for <see cref="ODataUpdateTool"/>. Creatio's OData v4 endpoint
 /// accepts a PATCH body that names properties the entity type does not have and answers with
 /// an empty 204-like body, writing nothing (GitHub #1212) - so a caller that trusts
-/// <c>success:true</c> believes a write happened that never did. A second, value-level
-/// variant of the same defect: a lookup (reference) column that DOES exist on the OData type
-/// set to the empty GUID is silently dropped by the platform (the same PATCH then answers
-/// success while the reference is untouched), so that value form is rejected up front with a
-/// hint to send <c>null</c> instead. To keep the success flag meaningful, the supplied data
-/// fields are verified before the PATCH goes out, against the entity's OData type as published
-/// by the service's own metadata endpoint (<c>GET odata/{entity}/$metadata</c>, the same
+/// <c>success:true</c> believes a write happened that never did. To keep the success flag
+/// meaningful, the supplied data field NAMES are verified before the PATCH goes out, against the
+/// entity's OData type as published by the service's own metadata endpoint
+/// (<c>GET odata/$metadata</c> - the service-root resource, the same
 /// document the service links from every <c>@odata.context</c> response): one fetch yields
 /// both the full set of known property names and the set of lookup reference-ID properties.
 /// When the metadata endpoint is unavailable (unsupported, empty, or non-XML body) the
@@ -66,9 +63,8 @@ internal static class ODataFieldValidation {
 
 	/// <summary>
 	/// Verifies the supplied <paramref name="fields"/> against the entity's OData type before a
-	/// write: every field name must exist on the type, and a lookup reference field must not be
-	/// set to the empty GUID (the platform drops that value silently; <c>null</c> clears the
-	/// reference). Returns <c>null</c> when every field is confirmed, or a failure response when
+	/// write: every field name must exist on the type. Values are NOT validated. Returns
+	/// <c>null</c> when every field is confirmed, or a failure response when
 	/// a field is missing, a value form is unsupported, a field name is malformed, or the
 	/// validation itself could not be completed (in which case the update must not be reported as
 	/// attempted). No PATCH is sent on any failure path.
@@ -105,23 +101,11 @@ internal static class ODataFieldValidation {
 			if (unknown.Count > 0) {
 				return ODataWriteResponse.Failure(BuildUnknownFieldsMessage(entity, id, unknown, partial: false, viaProbe: false));
 			}
-			List<string> emptyGuidLookups = fields
-				.Where(field => metadata.ReferenceIdProperties.Contains(field.Name)
-					&& field.Value.ValueKind == JsonValueKind.String
-					&& IsEmptyGuid(field.Value.GetString()))
-				.Select(field => field.Name)
-				.Distinct(StringComparer.Ordinal)
-				.ToList();
-			if (emptyGuidLookups.Count > 0) {
-				return ODataWriteResponse.Failure(BuildEmptyGuidLookupMessage(entity, id, emptyGuidLookups));
-			}
 			return null;
 		}
 
 		// The metadata endpoint did not yield a usable type definition (unsupported, empty,
 		// non-XML, or a recognized error). Degrade to the $select probe for name validation.
-		// The lookup value check is skipped on this path, because the reference-ID set is
-		// unknown (a plain GUID column set to the empty GUID must not be rejected on a guess).
 		return ValidateBySelectProbe(client, urlBuilder, entity, id, keys);
 	}
 
@@ -135,49 +119,52 @@ internal static class ODataFieldValidation {
 	private sealed record EntityMetadata(
 		bool Resolved,
 		HashSet<string> Properties,
-		HashSet<string> ReferenceIdProperties,
 		string? ServerError,
 		string? UnverifiedDetail);
 
 	/// <summary>
-	/// GETs <c>odata/{entity}/$metadata</c> and parses the CSDL: the entity's properties
-	/// (following <c>BaseType</c> inheritance) and its lookup reference-ID properties (the
-	/// <c>Partner</c> attribute of each <c>NavigationProperty</c>). See
-	/// <see cref="EntityMetadata"/> for the outcome encoding.
+	/// GETs the SERVICE-ROOT <c>odata/$metadata</c> document and parses the CSDL for the entity's
+	/// properties, following <c>BaseType</c> inheritance. The route is the service root, not
+	/// <c>odata/{entity}/$metadata</c>: in OData v4 <c>$metadata</c> is a service-root resource and
+	/// ASP.NET Web API OData's MetadataRoutingConvention maps only <c>~/$metadata</c>, so the
+	/// per-entity form is not a defined resource path - it would 404 into the routing-error body,
+	/// leaving this branch permanently unresolved and every call silently on the degraded probe.
+	/// The root document covers all types; <see cref="ParseCSDLEntity"/> selects the one addressed.
+	/// See <see cref="EntityMetadata"/> for the outcome encoding.
 	/// </summary>
 	private static EntityMetadata FetchMetadata(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string entity) {
-		string url = urlBuilder.Build($"odata/{entity.Trim()}/$metadata");
+		string url = urlBuilder.Build("odata/$metadata");
 		string body = client.ExecuteGetRequest(url, RequestTimeoutMs, TransientAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
-			return new EntityMetadata(false, [], [], null, "the OData metadata response was empty.");
+			return new EntityMetadata(false, [], null, "the OData metadata response was empty.");
 		}
 		if (body.TrimStart().StartsWith("<", StringComparison.Ordinal)) {
 			// The metadata endpoint answers with CSDL XML. A parse that yields the entity's type
 			// definition resolves the validation; any other parse outcome leaves the fields
 			// unverified (the fallback probe then decides what it can).
 			try {
-				(CsdlType? type, HashSet<string> referenceIds) = ParseCSDLEntity(body, entity);
+				CsdlType? type = ParseCSDLEntity(body, entity);
 				if (type is not null) {
-					return new EntityMetadata(true, type.Properties, referenceIds, null, null);
+					return new EntityMetadata(true, type.Properties, null, null);
 				}
-				return new EntityMetadata(false, [], [], null,
+				return new EntityMetadata(false, [], null,
 					"the OData metadata response did not contain a type definition for the entity.");
 			} catch (Exception) {
-				return new EntityMetadata(false, [], [], null,
+				return new EntityMetadata(false, [], null,
 					SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
 			}
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
 			return ODataResponseError.TryDetect(doc.RootElement, out string serverError)
-				? new EntityMetadata(false, [], [], SensitiveErrorTextRedactor.Redact(serverError), null)
-				: new EntityMetadata(false, [], [], null,
+				? new EntityMetadata(false, [], SensitiveErrorTextRedactor.Redact(serverError), null)
+				: new EntityMetadata(false, [], null,
 					SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
 		} catch (JsonException) {
-			return new EntityMetadata(false, [], [], null,
+			return new EntityMetadata(false, [], null,
 				SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
 		}
 	}
@@ -187,30 +174,25 @@ internal static class ODataFieldValidation {
 	/// included - both are legal <c>$select</c> members) and its base type name for inheritance
 	/// resolution.
 	/// </summary>
-	private sealed record CsdlType(string Name, string? BaseType, HashSet<string> Properties,
-		HashSet<string> PartnerReferenceIds);
+	private sealed record CsdlType(string Name, string? BaseType, HashSet<string> Properties);
 
 	/// <summary>
 	/// Parses the CSDL document and resolves the <paramref name="entity"/> type following
-	/// <c>BaseType</c> inheritance (cycle-guarded). Returns the resolved property set and the
-	/// lookup reference-ID set (every <c>NavigationProperty/@Partner</c> value in the
-	/// inheritance chain), or <c>(null, empty set)</c> when the document carries no
-	/// <c>EntityType</c> matching the entity name.
+	/// <c>BaseType</c> inheritance (cycle-guarded). Returns the resolved type, or <c>null</c> when
+	/// the document carries no <c>EntityType</c> matching the entity name.
 	/// </summary>
-	private static (CsdlType? Type, HashSet<string> ReferenceIds) ParseCSDLEntity(string body, string entity) {
+	private static CsdlType? ParseCSDLEntity(string body, string entity) {
 		Dictionary<string, CsdlType> types = ParseCSDLTypes(body);
 		if (!TryResolveEntity(types, entity, out CsdlType? target)) {
-			return (null, []);
+			return null;
 		}
-		HashSet<string> referenceIds = [];
-		CollectInherited(target, types, visited: [], referenceIds);
-		return (target, referenceIds);
+		CollectInherited(target!, types, visited: []);
+		return target;
 	}
 
 	/// <summary>
 	/// Reads every <c>EntityType</c> element of the CSDL document into a name-keyed map.
-	/// Navigation properties are recorded twice: as legal member names (selectable) and, when
-	/// they declare a <c>Partner</c> reference property, as reference-ID names.
+	/// Navigation properties are recorded as legal member names - both are selectable.
 	/// </summary>
 	private static Dictionary<string, CsdlType> ParseCSDLTypes(string body) {
 		Dictionary<string, CsdlType> types = new(StringComparer.Ordinal);
@@ -238,7 +220,7 @@ internal static class ODataFieldValidation {
 		}
 		if (reader.LocalName == "EntityType" && reader.GetAttribute("Name") is string name) {
 			currentTypeName = name;
-			types[name] = new CsdlType(name, reader.GetAttribute("BaseType"), [], []);
+			types[name] = new CsdlType(name, reader.GetAttribute("BaseType"), []);
 			return;
 		}
 		if (currentTypeName is null || !types.TryGetValue(currentTypeName, out CsdlType? type)) {
@@ -258,26 +240,13 @@ internal static class ODataFieldValidation {
 			type.Properties.Add(propName);
 			return;
 		}
-		if (reader.LocalName == "NavigationProperty") {
-			RecordNavigationProperty(reader, type);
+		if (reader.LocalName == "NavigationProperty" && reader.GetAttribute("Name") is string navName) {
+			type.Properties.Add(navName);
 			return;
 		}
 		if (reader.LocalName is "ComplexType" or "EntityContainer") {
 			// Leaves the EntityType scope: nested elements belong to another construct.
 			currentTypeName = null;
-		}
-	}
-
-	/// <summary>
-	/// Records a navigation property's name (a legal <c>$select</c> member) and, when it declares a
-	/// <c>Partner</c> reference property, that reference-ID name as well.
-	/// </summary>
-	private static void RecordNavigationProperty(XmlReader reader, CsdlType type) {
-		if (reader.GetAttribute("Name") is string navName) {
-			type.Properties.Add(navName);
-		}
-		if (reader.GetAttribute("Partner") is string partner) {
-			type.PartnerReferenceIds.Add(partner);
 		}
 	}
 
@@ -293,34 +262,21 @@ internal static class ODataFieldValidation {
 
 	/// <summary>
 	/// Walks the <c>BaseType</c> chain (cycle-guarded) accumulating every property name in
-	/// <paramref name="target"/>'s resolved set and every <c>Partner</c> reference-ID name in
-	/// <paramref name="referenceIds"/>.
+	/// <paramref name="type"/>'s resolved set.
 	/// </summary>
 	private static void CollectInherited(
 		CsdlType type,
 		Dictionary<string, CsdlType> types,
-		List<string> visited,
-		HashSet<string> referenceIds) {
+		List<string> visited) {
 		if (visited.Contains(type.Name)) {
 			return;
 		}
 		visited.Add(type.Name);
-		foreach (string partner in type.PartnerReferenceIds) {
-			referenceIds.Add(partner);
-		}
 		if (type.BaseType is not null && types.TryGetValue(type.BaseType, out CsdlType? baseType)) {
-			CollectInherited(baseType, types, visited, referenceIds);
+			CollectInherited(baseType, types, visited);
 			type.Properties.UnionWith(baseType.Properties);
 		}
 	}
-
-	/// <summary>
-	/// True when the string is the empty GUID in any casing - the value form the platform drops
-	/// on lookup (reference) columns instead of clearing the reference.
-	/// </summary>
-	private static bool IsEmptyGuid(string? value) =>
-		!string.IsNullOrWhiteSpace(value)
-		&& value.Trim().Equals(Guid.Empty.ToString(), StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Fallback validation through the service's own <c>$select</c> strictness: a single-record
@@ -497,17 +453,4 @@ internal static class ODataFieldValidation {
 			"verify it with execute-esq and use a supported write path. Fix the field names and retry.";
 	}
 
-	/// <summary>
-	/// Builds the failure text for a lookup (reference) field set to the empty GUID: the
-	/// platform silently drops that value (the reference is left untouched) while still
-	/// answering success, so the call is rejected with a hint that <c>null</c> clears the
-	/// reference.
-	/// </summary>
-	private static string BuildEmptyGuidLookupMessage(string entity, string id, IReadOnlyList<string> fields) {
-		string list = string.Join(", ", fields.Select(field => $"'{field}'"));
-		return
-			$"odata-update rejected: {list} is a lookup (reference) field of {entity}({id}), and the platform silently ignores the empty GUID " +
-			"00000000-0000-0000-0000-000000000000 on lookup fields instead of clearing the reference - the value would not have been persisted. " +
-			"Send null to clear the reference (a real target GUID writes the reference). No write was performed.";
-	}
 }

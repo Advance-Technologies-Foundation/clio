@@ -26,10 +26,9 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 	[Description(
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
-		"Data fields are verified against the entity's OData type ($metadata) before the write: " +
-		"an unknown field fails the call with nothing written, and a lookup (reference) field set to the " +
-		"empty GUID is rejected with a hint to send null (the platform silently drops that value instead of " +
-		"clearing the reference). success:true means the service accepted the PATCH after this pre-validation; " +
+		"Data field NAMES are verified against the entity's OData type ($metadata) before the write: " +
+		"an unknown field fails the call with nothing written. Field VALUES are not validated. " +
+		"success:true means the service accepted the PATCH after this pre-validation; " +
 		"platform builds that silently discard unsupported values can still leave some fields unwritten, so " +
 		"re-read important values with odata-read after a critical write. " +
 		"This tool never performs a keyless mass update. " +
@@ -99,8 +98,8 @@ public sealed record ODataUpdateArgs {
 		"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
 		"Columns absent from $metadata (e.g. Color) cannot be written here - verify them with execute-esq instead. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name; " +
-		"to CLEAR a lookup send null - the platform silently drops an empty GUID " +
-		"(00000000-0000-0000-0000-000000000000) on lookup fields. " +
+		"to CLEAR a lookup send null - the platform silently drops the empty GUID " +
+		"(00000000-0000-0000-0000-000000000000) on lookup fields rather than clearing the reference. " +
 		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" }")]
 	[Required]
 	public JsonElement? Data { get; init; }
