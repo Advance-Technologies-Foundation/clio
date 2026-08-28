@@ -288,8 +288,10 @@ public class RunProcessCommand(
 	}
 
 	/// <summary>
-	/// Extracts the platform's <c>errorInfo</c> pair member by member rather than re-serializing it — see
-	/// <c>docs/knowledge/platform/runprocess-errorinfo-arrives-as-a-jsonelement.md</c>.
+	/// Extracts the platform's <c>errorInfo</c> pair. It is declared <see cref="object"/> on the shared DTO,
+	/// so System.Text.Json fills it with a <see cref="JsonElement"/>, and a reflection-based serializer would
+	/// render that struct's public surface as <c>{"ValueKind":1}</c> and drop the message — hence reading
+	/// the members rather than re-serializing.
 	/// </summary>
 	internal static (string ErrorCode, string Message) ReadErrorInfo(object errorInfo) {
 		if (errorInfo is not JsonElement element || element.ValueKind != JsonValueKind.Object) {
