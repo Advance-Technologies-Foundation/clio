@@ -105,7 +105,6 @@ public sealed class RunProcessToolTests {
 
 		// Assert
 		launched.Should().BeFalse(because: "an unknown code is a hard error, not a warning");
-		response.Success.Should().BeFalse(because: "nothing was launched");
 		response.Error.Should().Contain("SysModulesSelectedId",
 			because: "the caller needs the list of codes the process actually accepts to fix the call");
 		harness.PostedBodies.Should().BeEmpty(
@@ -223,7 +222,7 @@ public sealed class RunProcessToolTests {
 		harness.Command.TryRun(options, out RunProcessResponse response);
 
 		// Assert
-		response.Success.Should().BeTrue(because: "a well-formed call must reach the platform");
+		response.Error.Should().BeNull(because: "a well-formed call must reach the platform");
 		harness.PostedBodies.Should().HaveCount(1, because: "exactly one launch was requested");
 		ProcessStartArgs posted = JsonSerializer.Deserialize<ProcessStartArgs>(harness.PostedBodies[0]);
 		posted.Values.Should().ContainSingle().Which.Value.Should().Be(filter,
@@ -233,21 +232,37 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The resolved schema code is what is posted and echoed back, even when the caller passed a caption.")]
-	public void TryRun_Should_Post_And_Echo_The_Resolved_Process_Code() {
+	[Description("A display caption is refused, naming the code it resolved to. A caption is not unique, and this tool starts a process rather than reading one, so an ambiguous key could launch the wrong one.")]
+	public void TryRun_Should_Refuse_A_Caption_And_Name_The_Code_It_Resolved_To() {
 		// Arrange
 		Harness harness = BuildHarness(MigratorSignature());
 		RunProcessOptions options = new() { ProcessName = "Migrate dashboards process" };
 
 		// Act
-		harness.Command.TryRun(options, out RunProcessResponse response);
+		bool launched = harness.Command.TryRun(options, out RunProcessResponse response);
 
 		// Assert
-		response.ResolvedProcessCode.Should().Be(ProcessCode,
-			because: "the caller needs the code to reuse it in later calls and page configs");
+		launched.Should().BeFalse(because: "a caption is not an accepted identifier for a launch");
+		response.Error.Should().Contain(ProcessCode,
+			because: "naming the code it resolved to turns the refusal into a one-edit fix");
+		harness.PostedBodies.Should().BeEmpty(
+			because: "the refusal must happen before the launch, not after starting the wrong process");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The process code is posted as the schema name, which is what the platform launches by.")]
+	public void TryRun_Should_Post_The_Process_Code_As_The_Schema_Name() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
+
+		// Assert
 		ProcessStartArgs posted = JsonSerializer.Deserialize<ProcessStartArgs>(harness.PostedBodies[0]);
 		posted.SchemaName.Should().Be(ProcessCode,
-			because: "the platform launches by schema name, so the caption must be resolved before posting");
+			because: "the platform launches by schema name");
 	}
 
 	[Test]
@@ -281,7 +296,7 @@ public sealed class RunProcessToolTests {
 		harness.Command.TryRun(options, out RunProcessResponse response);
 
 		// Assert
-		response.Success.Should().BeTrue(because: "a null value is not an error, it is an absent value");
+		response.Error.Should().BeNull(because: "a null value is not an error, it is an absent value");
 		ProcessStartArgs posted = JsonSerializer.Deserialize<ProcessStartArgs>(harness.PostedBodies[0]);
 		posted.Values.Should().ContainSingle(
 			because: "only the parameter that carried a value may be posted — the platform expresses 'unset' "
@@ -371,7 +386,7 @@ public sealed class RunProcessToolTests {
 
 		// Assert
 		response.Status.Should().Be("completed", because: "platform code 2 is ProcessStatus.Done");
-		response.Success.Should().BeTrue(because: "the run finished without an error status");
+		response.Error.Should().BeNull(because: "the run finished without an error status");
 		response.ProcessId.Should().Be("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31",
 			because: "the caller needs the instance id, which is also the run's SysProcessLog primary key");
 	}
@@ -389,10 +404,10 @@ public sealed class RunProcessToolTests {
 
 		// Assert
 		response.Status.Should().Be("error", because: "platform code 3 is ProcessStatus.Error");
-		response.Success.Should().BeFalse(
+		response.Error.Should().NotBeNullOrWhiteSpace(
 			because: "trusting the platform's own success flag here is exactly the trap this projection exists "
-				+ "to close — a failed run reports success=true whenever that platform feature flag is off");
-		response.Error.Should().NotBeNullOrWhiteSpace(because: "a failure must carry a reason");
+				+ "to close — a failed run reports success=true whenever that platform feature flag is off, "
+				+ "so the error status alone has to raise the failure");
 	}
 
 	[Test]
@@ -436,7 +451,7 @@ public sealed class RunProcessToolTests {
 		response.Status.Should().Be("refused",
 			because: "reading only the empty id and the zero status would report this refusal as a successful "
 				+ "background launch — success/errorInfo are the only things that tell the two apart");
-		response.Success.Should().BeFalse(because: "nothing was started");
+		response.Error.Should().NotBeNullOrWhiteSpace(because: "nothing was started, and the caller must learn why");
 		response.ProcessId.Should().BeNull(because: "there is no instance to point at");
 		response.Error.Should().Contain("automatic",
 			because: "the caller must learn the process has no manual entry point at all");
@@ -456,7 +471,7 @@ public sealed class RunProcessToolTests {
 		// Assert
 		response.Status.Should().Be("queued-background",
 			because: "the launch succeeded but no verdict exists, and the caller must not read it as completion");
-		response.Success.Should().BeTrue(
+		response.Error.Should().BeNull(
 			because: "for a fire-and-forget process the queueing IS the outcome, so this is not a failure");
 		response.ProcessId.Should().BeNull(because: "the platform returned an empty descriptor");
 		response.Status.Should().NotBe("inactive",
@@ -507,7 +522,7 @@ public sealed class RunProcessToolTests {
 			new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
 
 		// Assert
-		response.Success.Should().BeTrue(because: "the resolved command reached the platform stub");
+		response.Error.Should().BeNull(because: "the resolved command reached the platform stub");
 		commandResolver.Received(1).Resolve<RunProcessCommand>(
 			Arg.Is<RunProcessOptions>(o => o.Environment == "dev"));
 	}
@@ -535,7 +550,7 @@ public sealed class RunProcessToolTests {
 		// Assert
 		response.Status.Should().Be("accepted-still-running",
 			because: "answering before Creatio does is not a failure and not a success");
-		response.Success.Should().BeTrue(because: "the launch itself was accepted");
+		response.Error.Should().BeNull(because: "the launch itself was accepted");
 		response.ProcessId.Should().BeNull(
 			because: "the id only exists in the RunProcess response and the log row is written when the run "
 				+ "ends, so there is genuinely no handle to report — reporting a guessed one would be worse");

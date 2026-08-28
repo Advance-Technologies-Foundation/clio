@@ -27,7 +27,11 @@ using StjJsonException = System.Text.Json.JsonException;
 // no [Verb] at all, like create-/modify-/describe-business-process and validate-process-graph.)
 public sealed class RunProcessOptions : EnvironmentOptions {
 
-	/// <summary>Process code (schema Name) or display caption.</summary>
+	/// <summary>
+	/// Process code (schema Name). A display caption is NOT accepted: captions are not unique, and this
+	/// tool launches a process rather than reading one, so resolving by an ambiguous key could start the
+	/// wrong process.
+	/// </summary>
 	public string ProcessName { get; set; } = string.Empty;
 
 	/// <summary>Input parameter values keyed by parameter CODE (never caption).</summary>
@@ -46,14 +50,6 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 public sealed class RunProcessResponse {
 
 	/// <summary>
-	/// <c>false</c> when clio refused the call, the platform refused the launch, or the run ended with the
-	/// Error status — it cannot tell those three apart, so read <see cref="Status"/> for the outcome.
-	/// </summary>
-	[JsonProperty("success")]
-	[System.Text.Json.Serialization.JsonPropertyName("success")]
-	public bool Success { get; set; }
-
-	/// <summary>
 	/// The run outcome, and the only field that carries it. Either the platform's process status lowercased
 	/// (<c>inactive</c>, <c>running</c>, <c>completed</c> — the enum name is <c>Done</c> — <c>error</c>,
 	/// <c>cancelled</c>, <c>cancelling</c>, or <c>unknown-status-{n}</c> carrying the raw code for a status
@@ -61,16 +57,11 @@ public sealed class RunProcessResponse {
 	/// <c>refused</c> (it declined to start the process and nothing ran), <c>queued-background</c> (the
 	/// schema starts in background mode, so it returned no handle and no result) and
 	/// <c>accepted-still-running</c> (clio answered at the MCP response deadline before Creatio replied).
-	/// <see langword="null"/> when the call was rejected before launch — read <see cref="Error"/> then.
+	/// <see langword="null"/> when the call was rejected before launch — <see cref="Error"/> says why.
 	/// </summary>
 	[JsonProperty("status")]
 	[System.Text.Json.Serialization.JsonPropertyName("status")]
 	public string Status { get; set; }
-
-	/// <summary>The resolved schema Name, echoed back even when the caller passed a caption.</summary>
-	[JsonProperty("resolvedProcessCode")]
-	[System.Text.Json.Serialization.JsonPropertyName("resolvedProcessCode")]
-	public string ResolvedProcessCode { get; set; }
 
 	/// <summary>
 	/// The launched process instance id, or <c>null</c> when the platform returned none. It is also the
@@ -91,8 +82,9 @@ public sealed class RunProcessResponse {
 	public List<string> Warnings { get; set; } = [];
 
 	/// <summary>
-	/// Why the call failed, or <see langword="null"/> when it did not. The only populated field when the
-	/// call was rejected before launch.
+	/// Why the call failed, or <see langword="null"/> when it did not — the failure signal of this
+	/// response. Set for a rejected call, a refused launch and a run that ended with the Error status, and
+	/// the only populated field when the call was rejected before launch.
 	/// </summary>
 	[JsonProperty("error")]
 	[System.Text.Json.Serialization.JsonPropertyName("error")]
@@ -181,18 +173,21 @@ public class RunProcessCommand(
 		}
 
 		ProcessModel.ProcessModel model = resolved.Value;
+		if (!string.Equals(model.Code, options.ProcessName, StringComparison.Ordinal)) {
+			response = Failure(BuildCaptionRejectedMessage(options.ProcessName, model.Code));
+			return false;
+		}
+
 		List<ProcessParameter> signature = model.Parameters ?? [];
 
 		if (!TryBuildParameterValues(options.Parameters, signature, out ProcessStartArgs.ParameterValues[] values,
 				out string parameterError)) {
 			response = Failure(parameterError);
-			response.ResolvedProcessCode = model.Code;
 			return false;
 		}
 
 		if (!TryValidateResultParameters(options.ResultParameters, signature, out string resultError)) {
 			response = Failure(resultError);
-			response.ResolvedProcessCode = model.Code;
 			return false;
 		}
 
@@ -219,14 +214,13 @@ public class RunProcessCommand(
 		}
 		catch (StjJsonException e) {
 			response = Failure($"RunProcess returned a response clio could not read: {e.Message}");
-			response.ResolvedProcessCode = model.Code;
 			return false;
 		}
 
 		response = Project(platformResponse, model.Code);
 		// The return value feeds Execute's exit code, so it must track the OUTCOME, not merely the fact that
 		// a request was sent: a refusal ("nothing was started") and a failed run would otherwise both exit 0.
-		return response.Success;
+		return response.Error is null;
 	}
 
 	/// <summary>
@@ -241,11 +235,7 @@ public class RunProcessCommand(
 	/// </remarks>
 	internal static RunProcessResponse Project(ProcessStartResponse platformResponse, string processCode) {
 		if (platformResponse is null) {
-			return new RunProcessResponse {
-				Success = false,
-				ResolvedProcessCode = processCode,
-				Error = "RunProcess returned an empty response"
-			};
+			return new RunProcessResponse { Error = "RunProcess returned an empty response" };
 		}
 
 		(string errorCode, string errorMessage) = ReadErrorInfo(platformResponse.ErrorInfo);
@@ -254,34 +244,27 @@ public class RunProcessCommand(
 
 		if (noHandle && !platformResponse.Success) {
 			return new RunProcessResponse {
-				Success = false,
 				Status = RefusedStatus,
-				ResolvedProcessCode = processCode,
 				Error = BuildRefusalMessage(processCode, errorCode, errorMessage)
 			};
 		}
 
 		if (noHandle) {
 			return new RunProcessResponse {
-				Success = true,
 				Status = QueuedBackgroundStatus,
-				ResolvedProcessCode = processCode,
 				Warnings = [BuildQueuedBackgroundNote(processCode)]
 			};
 		}
 
 		RunProcessResponse response = new() {
-			// The platform sets success=false for ProcessStatus.Error only while the
-			// Feature-SetErrorInfoIfProcessHasFailedExecution flag is on, so a failed run can arrive with
-			// success=true. Both signals are combined so a failure reported by EITHER is a failure here,
-			// keeping success == false the honest failure signal every clio MCP tool uses.
-			Success = platformResponse.Success && platformResponse.ProcessStatus != ErrorStatus,
-			ResolvedProcessCode = processCode,
 			Status = ResolveStatusName(platformResponse.ProcessStatus),
 			ProcessId = platformResponse.ProcessId.ToString(),
 			ResultParameterValues = platformResponse.ResultParameterValues
 		};
-		if (!response.Success) {
+		// The platform sets success=false for ProcessStatus.Error only while the
+		// Feature-SetErrorInfoIfProcessHasFailedExecution flag is on, so a failed run can arrive with
+		// success=true. Both signals are read so a failure reported by EITHER surfaces as an error.
+		if (!platformResponse.Success || platformResponse.ProcessStatus == ErrorStatus) {
 			response.Error = DescribeFailure(errorCode, errorMessage);
 		}
 		return response;
@@ -499,7 +482,17 @@ public class RunProcessCommand(
 		return false;
 	}
 
-	private static RunProcessResponse Failure(string error) => new() { Success = false, Error = error };
+	private static RunProcessResponse Failure(string error) => new() { Error = error };
+
+	/// <summary>
+	/// The message returned when <c>process-name</c> resolved to a different code than it spelled, which
+	/// means it was a caption (or the wrong casing) rather than the schema code.
+	/// </summary>
+	internal static string BuildCaptionRejectedMessage(string supplied, string resolvedCode) =>
+		$"'{supplied}' is not a process CODE. It resolved to '{resolvedCode}', so it was a display caption "
+		+ "or the wrong casing. Pass the code: a caption is not unique and is not what the platform "
+		+ "launches by, and this tool starts a process rather than reading one, so an ambiguous key could "
+		+ $"start the wrong one. Use '{resolvedCode}', or get-process-signature to confirm the code.";
 
 	/// <inheritdoc />
 	public override int Execute(RunProcessOptions options) {

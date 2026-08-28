@@ -19,16 +19,16 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RunProcessTool.ToolName;
 
-	/// <summary>
-	/// The outcomes a live launch may legitimately report. Every one of them is a valid contract answer, so
-	/// the assertion pins the vocabulary rather than a single expected verdict — which process the sandbox is
-	/// configured with is not this test's business.
-	/// </summary>
+	/// <summary>The statuses that come from the platform's own scale.</summary>
 	private static readonly string[] PlatformStatuses = [
 		"completed", "error", "cancelled", "cancelling", "running", "inactive"
 	];
 
-	/// <summary>Every value the tool may report, platform statuses plus the three the scale cannot express.</summary>
+	/// <summary>
+	/// Every status a live launch may legitimately report — the platform's own plus the three its scale
+	/// cannot express. The assertion pins the vocabulary rather than one expected verdict, because which
+	/// process the sandbox is configured with is not this test's business.
+	/// </summary>
 	private static readonly string[] LaunchStatuses = [
 		.. PlatformStatuses, "queued-background", "refused", "accepted-still-running"
 	];
@@ -67,23 +67,21 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> { ["ThisParameterDoesNotExist"] = "x" });
 
 		// Assert
-		envelope.Success.Should().BeFalse(
-			because: "an unknown parameter code is a hard error — the platform would silently drop the value");
-		envelope.ResolvedProcessCode.Should().Be(processCode,
-			because: "the process resolved fine; only the parameter code was wrong, and the caller needs to "
-				+ "see that distinction to know what to fix");
 		envelope.Error.Should().NotBeNullOrWhiteSpace(
-			because: "the rejection must name the accepted codes so the caller can correct the call");
+			because: "an unknown parameter code is a hard error — the platform would silently drop the value, "
+				+ "and the rejection must name the accepted codes so the caller can correct the call");
+		envelope.Status.Should().BeNull(
+			because: "the call was rejected before launch, so there is no run state to report");
 		envelope.ProcessId.Should().BeNull(
 			because: "validation runs before the server call, so nothing may have been launched");
 	}
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("Launching the configured sandbox process reports one of the contract's outcome modes and, whenever the platform produced a handle, echoes the resolved process code alongside it.")]
+	[Description("Launching the configured sandbox process reports one of the contract's statuses, and a real process id only ever arrives with a status from the platform's own scale.")]
 	[AllureTag(ToolName)]
 	[AllureName("Run process launches the configured sandbox process")]
-	[AllureDescription("Starts the real clio MCP server, dispatches run-process through clio-run for the configured sandbox process, and verifies the envelope reports a known outcome mode with a resolved process code.")]
+	[AllureDescription("Starts the real clio MCP server, dispatches run-process through clio-run for the configured sandbox process, and verifies the envelope reports a known status, pairing a real process id only with a platform status.")]
 	public async Task RunProcess_Should_Launch_The_Configured_Sandbox_Process() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -112,8 +110,6 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 		envelope.Status.Should().BeOneOf(LaunchStatuses,
 			because: "status is the only field carrying the verdict, so it must always be one of the documented "
 				+ $"values. Error: {envelope.Error}");
-		envelope.ResolvedProcessCode.Should().Be(processCode,
-			because: "the resolved code is echoed back so the caller can reuse it verbatim");
 		if (envelope.ProcessId is not null) {
 			envelope.Status.Should().BeOneOf(PlatformStatuses,
 				because: "a real process id means the platform reported a real run state, so the status must be "

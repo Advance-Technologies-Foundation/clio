@@ -59,14 +59,14 @@ public sealed class RunProcessTool(
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description(
-		"Run (launch) a Creatio business process on a registered environment. Resolve the parameter CODES with "
-		+ "get-process-signature FIRST and key `parameters` by those codes — the platform silently drops a value "
-		+ "keyed by a caption. "
-		+ "READ THE OUTCOME FROM `status`, not from `success`: `success` is false for a rejected call, a refused "
-		+ "launch and a failed run alike, so it cannot tell them apart. `status` is either the platform's process "
-		+ "status lowercased (completed | error | cancelled | running | cancelling | inactive, or "
-		+ "unknown-status-<n> carrying the raw code for a status this clio does not know) or one of three states "
-		+ "the platform's scale cannot express. "
+		"Run (launch) a Creatio business process on a registered environment. Identify the process by its CODE "
+		+ "(schema Name); a display caption is REJECTED, because captions are not unique and this tool starts a "
+		+ "process rather than reading one. Resolve the code and the parameter CODES with get-process-signature "
+		+ "FIRST and key `parameters` by those codes — the platform silently drops a value keyed by a caption. "
+		+ "READ THE OUTCOME FROM `status`; `error` is the failure signal (non-null means the call did not "
+		+ "succeed). `status` is either the platform's process status lowercased (completed | error | cancelled | "
+		+ "running | cancelling | inactive, or unknown-status-<n> carrying the raw code for a status this clio "
+		+ "does not know) or one of three states the platform's scale cannot express. "
 		+ "(1) `refused`: the platform declined to start it and NOTHING ran — most often a process whose only start "
 		+ "events are automatic, which has no manual entry point at all, so no call can ever start it. "
 		+ "(2) `queued-background`: the schema starts in background mode, so the platform queued it fire-and-forget "
@@ -74,8 +74,8 @@ public sealed class RunProcessTool(
 		+ "passing `result-parameters` is what forces it to run synchronously and produce a verdict instead. "
 		+ "(3) `accepted-still-running`: the run outlived the MCP response deadline; clio answered first and has no "
 		+ "verdict. In the last two cases do NOT re-run to find out — a second launch duplicates the work; judge the "
-		+ "outcome from the process's own effects. `status` is ABSENT when the call was rejected before launch — "
-		+ "read `error` then. "
+		+ "outcome from the process's own effects. `status` is ABSENT when the call was rejected before launch, "
+		+ "and `error` says why. "
 		+ "`status: running` means the process suspended on something external (a user task, a timer, a signal) and its "
 		+ "`processId` is real — it is also the PRIMARY KEY of the run's SysProcessLog row, so poll it with odata-read "
 		+ "on SysProcessLog filtered by Id when you need to await completion. "
@@ -115,7 +115,6 @@ public sealed class RunProcessTool(
 		}
 		catch (McpResponseDeadlineExceededException) {
 			return new RunProcessResponse {
-				Success = true,
 				Status = "accepted-still-running",
 				Warnings = [BuildStillRunningNote(args.ProcessName)]
 			};
@@ -143,7 +142,6 @@ public sealed class RunProcessTool(
 		}
 		catch (Exception e) {
 			return new RunProcessResponse {
-				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(e.Message)
 			};
 		}
@@ -163,8 +161,9 @@ public sealed class RunProcessTool(
 public sealed record RunProcessArgs {
 
 	[JsonPropertyName("process-name")]
-	[Description("Process code (schema Name), e.g. 'MigrateDashboardsProcess', OR the display caption shown in "
-		+ "the process designer. The resolved code is echoed back as resolvedProcessCode.")]
+	[Description("Process CODE (schema Name), e.g. 'MigrateDashboardsProcess'. A display caption is rejected "
+		+ "with the code it resolved to: a caption is not unique, so launching by one could start the wrong "
+		+ "process. Get the code from get-process-signature, which accepts either and echoes the code back.")]
 	[Required]
 	public required string ProcessName { get; init; }
 

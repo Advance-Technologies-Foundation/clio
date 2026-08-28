@@ -75,9 +75,10 @@ public sealed class RunProcessContractToolE2ETests : McpContractFixtureBase {
 			arrangeContext, "UsrMissingProcess", invalidEnvironmentName, parameters: null);
 
 		// Assert
-		envelope.Success.Should().BeFalse(because: "an unknown environment cannot launch anything");
 		envelope.Error.Should().NotBeNullOrWhiteSpace(
-			because: "a failed launch must carry a human-readable reason");
+			because: "an unknown environment cannot launch anything, and error is the failure signal");
+		envelope.Status.Should().BeNull(
+			because: "the call was rejected before launch, so there is no run state to report");
 	}
 
 	/// <summary>

@@ -5,9 +5,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Results;
 
 internal sealed record RunProcessEnvelope(
-	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("status")] string? Status,
-	[property: JsonPropertyName("resolvedProcessCode")] string? ResolvedProcessCode,
 	[property: JsonPropertyName("processId")] string? ProcessId,
 	[property: JsonPropertyName("resultParameterValues")] Dictionary<string, object>? ResultParameterValues,
 	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings,
