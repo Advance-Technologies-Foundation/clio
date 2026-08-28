@@ -296,8 +296,12 @@ public class SysSettingsManagerNewBehaviorTests {
 		Action act = () => sut.UpdateSysSetting("UsrAuthFailure", "value");
 
 		// Assert
-		act.Should().Throw<AuthenticationException>(
-			because: "a rejected authenticated probe must stop the write before the generic save-result path");
+		AuthenticationException exception = act.Should().Throw<AuthenticationException>(
+			because: "a rejected authenticated probe must stop the write before the generic save-result path").Which;
+		exception.Message.Should().Contain("password has expired",
+			because: "the actionable platform cause must be preserved so the operator knows what to fix");
+		exception.Message.Should().Contain("Verify the environment credentials",
+			because: "auth errors must carry a recovery action, not just a type marker");
 		applicationClient.ReceivedCalls().Should().ContainSingle(
 			because: "the rejected probe must stop the update before a second write request is sent");
 	}

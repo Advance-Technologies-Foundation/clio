@@ -529,10 +529,11 @@ namespace Clio.Command
 			};
 		}
 
+		// Only 401 is a credential signal. 404 is a routing/resource error — a misconfigured environment URL
+		// or a renamed DataService endpoint would otherwise send the operator off to fix working credentials.
 		private static bool IsAuthenticationFailure(Exception exception) {
 			if (exception is WebException { Response: HttpWebResponse response }
-				&& (response.StatusCode == HttpStatusCode.Unauthorized
-					|| response.StatusCode == HttpStatusCode.NotFound)) {
+				&& response.StatusCode == HttpStatusCode.Unauthorized) {
 				return true;
 			}
 			string message = exception.Message ?? string.Empty;

@@ -1093,8 +1093,19 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
-			envSettings => new SysSettingsManager(BuildRemoteDataProvider(envSettings)));
+		// The per-environment manager gets the SAME dependency set as the DI-resolved one. A provider-only
+		// manager would silently skip the authenticated DataService probe, so every command reached through
+		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
+		// The client stays lazy, so building the factory result costs no HTTP call on its own.
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp =>
+			envSettings => new SysSettingsManager(
+				new CreatioClientAdapter(new Lazy<CreatioClient>(() => BuildCreatioClient(envSettings))),
+				new ServiceUrlBuilder(envSettings),
+				BuildRemoteDataProvider(envSettings),
+				sp.GetRequiredService<IWorkingDirectoriesProvider>(),
+				sp.GetRequiredService<Clio.Common.IFileSystem>(),
+				sp.GetRequiredService<IFileSystem>(),
+				sp.GetRequiredService<ILogger>()));
 
 		RegisterFluentValidators(services);
 		return settingsRepository;

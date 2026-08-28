@@ -138,6 +138,31 @@ public class SysSettingsManager : ISysSettingsManager
 		"\"columns\":{\"items\":{\"Id\":{\"expression\":{\"expressionType\":0," +
 		"\"columnPath\":\"Id\"}}}},\"rowCount\":1}";
 
+	/// <summary>
+	/// Depth cap for the recursive walk over the probe response. The body is server-controlled, so an
+	/// unbounded walk over a pathologically nested payload would raise an uncatchable
+	/// <see cref="StackOverflowException"/>. DataService fault envelopes nest a handful of levels at most.
+	/// </summary>
+	private const int MaxAuthProbeJsonDepth = 20;
+
+	/// <summary>Cap on the server-controlled detail embedded in an authentication exception message.</summary>
+	private const int MaxAuthenticationDetailLength = 300;
+
+	/// <summary>
+	/// Creatio's authentication-rejection messages, matched by <b>equality</b> rather than substring — the
+	/// same contract <see cref="ReauthExecutor.IsSessionExpiredResponse" /> deliberately uses. A business-rule
+	/// error whose text merely embeds one of these phrases (for example
+	/// <c>"User authentication failed validation for field X"</c>) is not a credential failure and must not
+	/// block the operation.
+	/// </summary>
+	private static readonly HashSet<string> AuthenticationFailureMessages =
+		new(StringComparer.OrdinalIgnoreCase) {
+			"Authentication failed.",
+			"Authentication failed",
+			"Your password has expired.",
+			"Your password has expired"
+		};
+
 	#region Fields: Private
 
 	private readonly IApplicationClient _creatioClient;
@@ -147,6 +172,12 @@ public class SysSettingsManager : ISysSettingsManager
 	private readonly IFileSystem _filesystem;
 	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 	private readonly ILogger _logger;
+
+	/// <summary>
+	/// Set once the authenticated DataService probe has been confirmed for this instance. The manager is
+	/// resolved per command invocation, so a confirmed session stays valid for its whole lifetime.
+	/// </summary>
+	private volatile bool _authProbeSucceeded;
 
 	private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
 		WriteIndented = false,
@@ -175,10 +206,6 @@ public class SysSettingsManager : ISysSettingsManager
 		_filesystem = filesystem;
 		_abstractionsFileSystem = abstractionsFileSystem;
 		_logger = logger;
-	}
-
-	public SysSettingsManager(IDataProvider providerMock) {
-		_dataProvider = providerMock;
 	}
 
 	#endregion
@@ -656,9 +683,11 @@ public class SysSettingsManager : ISysSettingsManager
 	/// <param name="operationLabel">The sys-settings operation used in the diagnostic.</param>
 	/// <exception cref="AuthenticationException">Thrown when Creatio rejects the credentials.</exception>
 	private void EnsureAuthenticatedDataServiceResponse(string operationLabel) {
-		// The provider-only constructor is used by isolated model tests and has no HTTP client. Production
-		// composition supplies both dependencies; keeping this seam inert preserves those tests.
-		if (_creatioClient is null || _serviceUrlBuilder is null) {
+		// The probe answers one question — "are these credentials accepted?" — and the answer cannot change
+		// within the lifetime of a manager instance (SysSettingsManager is resolved per command invocation).
+		// Re-probing on every helper call would add one DataService round-trip per read; GetFileSecurityPolicy
+		// alone performs three sequential reads, so the flag removes 2/3 of that avoidable latency.
+		if (_authProbeSucceeded) {
 			return;
 		}
 		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
@@ -671,6 +700,7 @@ public class SysSettingsManager : ISysSettingsManager
 				exception);
 		}
 		if (string.IsNullOrWhiteSpace(response)) {
+			_authProbeSucceeded = true;
 			return;
 		}
 		if (ReauthExecutor.IsSessionExpiredResponse(response)) {
@@ -681,6 +711,7 @@ public class SysSettingsManager : ISysSettingsManager
 		try {
 			using JsonDocument document = JsonDocument.Parse(response);
 			if (!ContainsAuthenticationFailure(document.RootElement)) {
+				_authProbeSucceeded = true;
 				return;
 			}
 			string detail = FindStringProperty(document.RootElement, "message") ?? "Creatio rejected the credentials.";
@@ -693,16 +724,21 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 	}
 
-	private static bool ContainsAuthenticationFailure(JsonElement element) => element.ValueKind switch {
-		JsonValueKind.Object => element.EnumerateObject().Any(IsAuthenticationFailureProperty),
-		JsonValueKind.Array => element.EnumerateArray().Any(ContainsAuthenticationFailure),
-		_ => false
-	};
+	private static bool ContainsAuthenticationFailure(JsonElement element, int depth = 0) {
+		if (depth > MaxAuthProbeJsonDepth) {
+			return false;
+		}
+		return element.ValueKind switch {
+			JsonValueKind.Object => element.EnumerateObject().Any(property => IsAuthenticationFailureProperty(property, depth + 1)),
+			JsonValueKind.Array => element.EnumerateArray().Any(item => ContainsAuthenticationFailure(item, depth + 1)),
+			_ => false
+		};
+	}
 
-	private static bool IsAuthenticationFailureProperty(JsonProperty property) =>
+	private static bool IsAuthenticationFailureProperty(JsonProperty property, int depth) =>
 		IsAuthenticationErrorCode(property)
 		|| IsAuthenticationFailureMessage(property)
-		|| ContainsAuthenticationFailure(property.Value);
+		|| ContainsAuthenticationFailure(property.Value, depth);
 
 	private static bool IsAuthenticationErrorCode(JsonProperty property) =>
 		string.Equals(property.Name, "ErrorCode", StringComparison.OrdinalIgnoreCase)
@@ -714,32 +750,43 @@ public class SysSettingsManager : ISysSettingsManager
 			return false;
 		}
 		string message = property.Value.GetString();
-		return message is not null
-			&& (message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
-				|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase));
+		return message is not null && AuthenticationFailureMessages.Contains(message.Trim());
 	}
 
-	private static string FindStringProperty(JsonElement element, string propertyName) {
+	private static string FindStringProperty(JsonElement element, string propertyName, int depth = 0) {
+		if (depth > MaxAuthProbeJsonDepth) {
+			return null;
+		}
 		if (element.ValueKind == JsonValueKind.Object) {
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)
 					&& property.Value.ValueKind == JsonValueKind.String) {
 					return property.Value.GetString();
 				}
-				string nested = FindStringProperty(property.Value, propertyName);
+				string nested = FindStringProperty(property.Value, propertyName, depth + 1);
 				if (nested is not null) {
 					return nested;
 				}
 			}
 		}
 		return element.ValueKind == JsonValueKind.Array
-			? element.EnumerateArray().Select(item => FindStringProperty(item, propertyName))
+			? element.EnumerateArray().Select(item => FindStringProperty(item, propertyName, depth + 1))
 				.FirstOrDefault(value => value is not null)
 			: null;
 	}
 
-	private static string SanitizeAuthenticationDetail(string detail) =>
-		detail.Replace("\r", " ").Replace("\n", " ").Trim();
+	/// <summary>
+	/// Normalizes a server-controlled detail before it is embedded in an exception message: every control
+	/// character is dropped (not just CR/LF, so NUL, TAB and escape sequences cannot corrupt terminal output
+	/// or a log pipeline) and the result is capped so a pathological multi-megabyte payload cannot be
+	/// amplified into every downstream log sink.
+	/// </summary>
+	private static string SanitizeAuthenticationDetail(string detail) {
+		string cleaned = new string(detail.Where(character => !char.IsControl(character)).ToArray()).Trim();
+		return cleaned.Length > MaxAuthenticationDetailLength
+			? cleaned[..MaxAuthenticationDetailLength] + "…"
+			: cleaned;
+	}
 
 	private static bool IsAuthenticationException(Exception exception) {
 		if (exception is AuthenticationException or UnauthorizedAccessException) {
