@@ -157,6 +157,143 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"the seeded page '{convertedSchemaName}' carries a MainHeader action that must convert into the FloatingActionButton");
 	}
 
+	[Test]
+	[Description("Non-vacuous excludedComponents TRANSPORT guard (ENG-95081): converts real seeded pages until one carries a component of a bundled-rule-banned type, then asserts NO surviving insert of a banned type reaches the banned host through the banned slot on the entry graph — the regression where crt.SearchFilter survived inside crt.ExpansionPanel's tools because the pass searched only verbatim-carried values. Any candidate that fails to convert fails the test immediately (a runtime regression, never a seed gap); when no seeded page carries any banned type it IGNORES with an explicit reason instead of passing silently. The rule's own acceptance criterion does not depend on this test — WebToMobileRealPageRegressionTests enforces it hermetically on the pinned OOTB Leads_FormPage — so what this one adds is the verdict travelling through the real clio mcp-server process.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide honors bundled excludedComponents rules on the entry graph")]
+	[AllureDescription("Loads the bundled conversion rules' excludedComponents filters, iterates the seeded application's pages through the real clio MCP server, and on the first page whose element map mentions a banned type at all asserts that every surviving insert of a banned type has NO ancestor-entry chain reaching the banned host through the banned slot; a conversion failure fails the test, and a seed set with no banned type degrades to Ignore (never a vacuous pass).")]
+	public async Task MobilePageConversionGuideTool_Should_Honor_Bundled_ExcludedComponents_Rules() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		List<ExcludedComponentFilterRule> filters = WebToMobilePageConversionRulesCatalog.LoadBundled()
+			.ExcludedComponents
+			.SelectMany(g => g?.Filters ?? [])
+			.Where(f => !string.IsNullOrWhiteSpace(f?.Type) && !string.IsNullOrWhiteSpace(f.ParentType))
+			.ToList();
+		filters.Should().NotBeEmpty(
+			because: "the bundled conversion rules ship excludedComponents filters — with none, this guard no longer tests anything and must be revisited");
+
+		// Act — convert candidates until one MENTIONS a banned type at all (as an insert OR a drop).
+		// A conversion FAILURE fails the test right here — it is a runtime regression, never a seed gap,
+		// and deferring it would let a later banned-type candidate mask it behind a green run.
+		bool bannedTypeExercised = false;
+		string convertedSchemaName = string.Empty;
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			(callResult.IsError == true).Should().BeFalse(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ "returned a transport-level error — a runtime regression, not missing seed data");
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			response.Success.Should().BeTrue(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ $"failed with: {response.Error} — a runtime regression, not missing seed data");
+			MobilePageConversionGuide guide = response.Guide!;
+			// A page only EXERCISES the rule when a banned type survived conversion as an insert. Accepting a
+			// mere mention (including e.WebType, which a plain unsupported-type drop also satisfies) would let
+			// the loop break on a page where the exclusion pass had nothing to decide, and
+			// AssertExcludedComponentsHonored would then pass by construction — reporting a vacuous run as a
+			// real one, which is the exact failure the Ignore branch below exists to prevent.
+			bool exercisesBannedType = guide.ElementMap.Any(e =>
+				string.Equals(e.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+				&& filters.Any(f => string.Equals(e.MobileType, f.Type, StringComparison.OrdinalIgnoreCase)));
+			if (exercisesBannedType) {
+				AssertExcludedComponentsHonored(guide, filters);
+				bannedTypeExercised = true;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		if (!bannedTypeExercised) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converts a component of any excludedComponents-banned type into a surviving insert, so the TRANSPORT path could not be exercised "
+				+ "end to end. This skip is not a coverage gap for the rule itself: the acceptance criterion is enforced "
+				+ "hermetically on production-shaped metadata by WebToMobileRealPageRegressionTests (the pinned OOTB "
+				+ "Leads_FormPage), which runs on every build. What is NOT covered while this skips is the rule reaching "
+				+ "the same verdict through the real clio mcp-server process. To close that, add a seeded page with a "
+				+ "crt.SearchFilter inside a crt.ExpansionPanel's tools to the seed application.");
+		}
+		TestContext.Out.WriteLine(
+			$"excludedComponents invariant asserted against seeded page '{convertedSchemaName}'.");
+	}
+
+	/// <summary>
+	/// The entry-graph invariant of the excludedComponents pass, re-derived independently of the product
+	/// code: a SURVIVING insert of a banned <c>type</c> must have NO ancestor-entry chain (via
+	/// <c>parentName</c>, over insert/merge entries) that reaches a host of the banned <c>parentType</c>
+	/// through the banned slot — the edge entering the host must occupy <c>propertiesContainerName</c>
+	/// (absent <c>propertyName</c> = <c>items</c>; a filter with no slot accepts any). A banned-type entry
+	/// that appears only as a drop is the pass doing its job and passes this check by construction.
+	/// </summary>
+	private static void AssertExcludedComponentsHonored(
+		MobilePageConversionGuide guide, List<ExcludedComponentFilterRule> filters) {
+		Dictionary<string, ElementMapEntry> byMobileName = guide.ElementMap
+			.Where(e => (e.Operation == "insert" || e.Operation == "merge") && !string.IsNullOrEmpty(e.MobileName))
+			.GroupBy(e => e.MobileName!, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (entry.Operation != "insert" || string.IsNullOrEmpty(entry.MobileType)) {
+				continue;
+			}
+			foreach (ExcludedComponentFilterRule filter in filters) {
+				if (!string.Equals(entry.MobileType, filter.Type, StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				string? bannedHost = FindBannedHostOnAncestorPath(entry, filter, byMobileName);
+				bannedHost.Should().BeNull(
+					because: $"surviving insert '{entry.MobileName}' of banned type '{filter.Type}' reaches host "
+						+ $"'{bannedHost}' of type '{filter.ParentType}'"
+						+ (string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
+							? ""
+							: $" through its '{filter.PropertiesContainerName}' slot")
+						+ " — the excludedComponents pass must have dropped it (ENG-95081)");
+			}
+		}
+	}
+
+	/// <summary>The ancestor climb of <see cref="AssertExcludedComponentsHonored"/>: the banned host's
+	/// mobile name, or null when the entry's chain never reaches one in scope. Bounded and cycle-guarded —
+	/// the map arrives from a real environment.</summary>
+	private static string? FindBannedHostOnAncestorPath(
+		ElementMapEntry candidate, ExcludedComponentFilterRule filter,
+		Dictionary<string, ElementMapEntry> byMobileName) {
+		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		ElementMapEntry current = candidate;
+		for (int depth = 0; depth <= 32; depth++) {
+			string? parentName = current.ParentName;
+			if (string.IsNullOrEmpty(parentName) || !visited.Add(parentName)
+				|| !byMobileName.TryGetValue(parentName, out ElementMapEntry? parent)) {
+				return null;
+			}
+			bool slotMatches = string.IsNullOrWhiteSpace(filter.PropertiesContainerName)
+				|| string.Equals(
+					string.IsNullOrEmpty(current.PropertyName) ? "items" : current.PropertyName,
+					filter.PropertiesContainerName, StringComparison.OrdinalIgnoreCase);
+			if (string.Equals(parent.MobileType, filter.ParentType, StringComparison.OrdinalIgnoreCase) && slotMatches) {
+				return parent.MobileName;
+			}
+			current = parent;
+		}
+		return null;
+	}
+
 	/// <summary>
 	/// Any element retargeted into <c>FloatingActionButton.menuItems</c> — a converted MainHeader action
 	/// (ENG-93152) — must be a <c>crt.MenuItem</c> insert carrying no visual properties (style/color/icon): the
@@ -169,6 +306,12 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		foreach (ElementMapEntry entry in fabEntries) {
 			entry.MobileType.Should().Be("crt.MenuItem",
 				because: $"a header action retargeted into the FAB ('{entry.WebName}') becomes a mobile menu item");
+			// ENG-93152: the recommended mobile record template provides the FloatingActionButton natively (in the
+			// Scaffold's floatAction slot). Reaching this retarget therefore means the probe found the FAB, so the entry
+			// MUST be flagged parentExistsOnTemplate:true — the caller inserts only the child and never re-declares the FAB.
+			entry.ParentExistsOnTemplate.Should().BeTrue(
+				because: $"the mobile template provides the FloatingActionButton natively, so the retargeted action "
+					+ $"('{entry.WebName}') must be flagged parentExistsOnTemplate:true over the real MCP transport");
 			if (entry.MobileValues is JsonObject values) {
 				values.ContainsKey("style").Should().BeFalse(
 					because: $"visual properties are denylisted on a converted FAB menu item ('{entry.WebName}')");
@@ -185,6 +328,13 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			guide.ElementMap.Should().NotContain(
 				e => e.WebName == "MainHeader" && (e.Operation == "insert" || e.Operation == "merge"),
 				because: "a non-converting scope container (MainHeader) is never emitted as a mobile element (AC 4.5)");
+			// ENG-93152 parentExistsOnTemplate contract: the FAB is template-provided, so the guide must NEVER emit an
+			// insert/merge that re-declares it — authoring a second FloatingActionButton would override the native one.
+			guide.ElementMap.Should().NotContain(
+				e => (e.Operation == "insert" || e.Operation == "merge")
+					&& (e.MobileName == "FloatingActionButton" || e.MobileType == "crt.FloatingActionButton"),
+				because: "the FloatingActionButton is provided by the mobile template, so the guide must never emit an "
+					+ "insert/merge that re-declares it (only the retargeted children are inserted)");
 		}
 	}
 
@@ -326,6 +476,261 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: "the guide must forbid the caller from offering the two-layer body as a choice");
 		guide.NextSteps.Should().Contain(s => s.Contains("tabAreaLayers") && s.Contains("MANDATORY"),
 			because: "the ordered steps must tell the caller to state the structure as fact, not ask for approval");
+	}
+
+	[Test]
+	[Description("Container child-slot regression guard: every surviving container insert that another surviving insert targets as parentName must physically declare THE SLOT IT IS TARGETED THROUGH ('items', 'tools', 'menuItems', …) in its mobileValues, and the viewConfigDiff assembled from the element map (in map order, exactly as the guide's nextSteps instruct the caller) must apply cleanly through the faithful differ clones. Before the converter declared those slots, the FIRST parent-child insert pair failed the Creatio differ with 'Item X is not a container for other items', so this is non-vacuous on any seeded page with nested containers. A conversion failure always fails the test, and so does a page that converted WITH tabAreaLayers yet produced no parent-targeting insert (the synthesized layers guarantee one by construction); Ignores only when the seed truly carries no nested structure at all.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide returns an element map the Creatio differ applies cleanly")]
+	[AllureDescription("Starts the real clio MCP server, converts every seeded page of the AutoTestClioMcp application, assembles each guide's insert entries into a mobile body viewConfigDiff and applies it through MobileDiffApplyValidator (the faithful JsonDiffApplier clone) — reproducing at the full MCP path the differ acceptance the unit tier covers in MobileDiffApplyValidatorTests, and asserting every parent-targeted insert declares the child slot its own children are inserted through.")]
+	public async Task MobilePageConversionGuideTool_Should_Return_ElementMap_The_Differ_Applies_Cleanly() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act + Assert (per page) — convert EVERY seeded page; a conversion failure is a runtime
+		// regression, never a seed gap, so failures are collected and fail the test outright.
+		int pagesWithTargetedParents = 0;
+		int pagesWithTabAreaLayers = 0;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? guide = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (guide is null) {
+				continue;
+			}
+			if (guide.TabAreaLayers is { Count: > 0 }) {
+				pagesWithTabAreaLayers++;
+			}
+			List<(ElementMapEntry Parent, string Slot)> targetedParents = ResolveTargetedParents(guide);
+			if (targetedParents.Count == 0) {
+				continue;
+			}
+			pagesWithTargetedParents++;
+			foreach ((ElementMapEntry parent, string slot) in targetedParents) {
+				(parent.MobileValues as JsonObject).Should().NotBeNull(
+					because: $"a container insert ('{parent.MobileName}' on '{schemaName}') always carries a mobileValues object built by the converter");
+				((JsonObject)parent.MobileValues!).ContainsKey(slot).Should().BeTrue(
+					because: $"'{parent.MobileName}' on '{schemaName}' is targeted as a parent through '{slot}', so the converter must have declared that slot — the Creatio differ resolves the parent collection generically as itemInfo.Item[propertyName] and refuses the child insert with 'is not a container for other items' for ANY slot it cannot find there");
+			}
+			SchemaValidationResult applied = MobileDiffApplyValidator.Validate(AssembleViewConfigDiffBody(guide));
+			applied.IsValid.Should().BeTrue(
+				because: $"the viewConfigDiff assembled from the guide for '{schemaName}' must survive the Creatio differ clones; before the converter declared container child slots this failed with 'is not a container for other items'. Errors: {string.Join("; ", applied.Errors)}");
+		}
+
+		// Assert (aggregate) — never pass vacuously.
+		if (failedCandidates.Count > 0) {
+			Assert.Fail(
+				$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+				+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+		}
+		if (pagesWithTargetedParents == 0) {
+			// A page that converted WITH tabAreaLayers always has a targeted parent by construction:
+			// BuildTabAreaLayers synthesizes the tab-body grid and inserts the Area card into it through the
+			// 'items' slot, and both layers are ordinary element-map inserts. Zero targeted parents on such a
+			// page is therefore a converter regression (the synthesized layers or their parentName/propertyName
+			// wiring went missing), NOT missing seed data — so it must fail in CI rather than skip.
+			if (pagesWithTabAreaLayers > 0) {
+				Assert.Fail(
+					$"{pagesWithTabAreaLayers} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' converted WITH tabAreaLayers, so the synthesized tab-body/Area layers must "
+					+ "appear in the element map as inserts that target a parent through a child slot — yet not one "
+					+ "parent-targeting insert was found. That is a converter regression in BuildTabAreaLayers or in the "
+					+ "element map's parentName/propertyName wiring, not a seed-data gap.");
+			}
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "produced a container insert with child inserts (and none carried tabs, whose synthesized layers would "
+				+ "have produced one), so the container child-slot differ contract could not be exercised end to end. "
+				+ "Add a seeded page with nested containers to guard this integration.");
+		}
+		pagesWithTargetedParents.Should().BeGreaterThan(0,
+			because: "at least one seeded page with nested containers must have exercised the differ-apply gate");
+	}
+
+	[Test]
+	[Description("Non-vacuous guard for container types OUTSIDE emptyContainerRemoval.removableTypes: converts seeded pages until one yields a surviving parent-targeted insert whose mobileType the empty-container-removal pass never lists (a crt.Button carrying menuItems children, a crt.Timeline, a crt.ButtonToggleGroup, …), then asserts the slot it is targeted through is declared and the differ applies cleanly — the slot declaration is keyed on 'used as parent through this slot', never on a type list, and a type-list-keyed regression would silently reintroduce exactly this case. The type-list independence itself is additionally pinned off-stand, on every unit run, by WebToMobileConversionServiceTests.Analyze_ContainerTypesOutsideEveryList_StillGetItemsSlot; this test is its full-MCP-path counterpart. When NO seeded page carries such a container it IGNORES with an explicit seed instruction instead of passing silently; a conversion failure always fails the test.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide declares the child slot on containers outside the removable-type list")]
+	[AllureDescription("Starts the real clio MCP server, converts seeded pages of AutoTestClioMcp until one produces a surviving parent-targeted container insert whose type is not in the bundled emptyContainerRemoval.removableTypes, and asserts the converter declared the child slot that insert is targeted through and that the assembled viewConfigDiff applies cleanly through the faithful differ clones — the type-list-independent half of the container child-slot contract, through the full MCP path.")]
+	public async Task MobilePageConversionGuideTool_Should_Declare_ChildSlot_On_NonRemovableType_Container() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		IReadOnlySet<string> removableTypes = ResolveBundledRemovableTypes();
+
+		// Act — convert candidates until one yields a parent-targeted insert whose type the removal pass
+		// never lists, through ANY child slot (a crt.Button targeted through menuItems qualifies exactly like
+		// a crt.Timeline targeted through items); a conversion failure is a runtime regression, never a seed gap.
+		MobilePageConversionGuide? matchedGuide = null;
+		ElementMapEntry? matchedParent = null;
+		string matchedSlot = string.Empty;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? guide = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (guide is null) {
+				continue;
+			}
+			(ElementMapEntry Parent, string Slot) match = ResolveTargetedParents(guide).FirstOrDefault(p =>
+				p.Parent.MobileType is { Length: > 0 } && !removableTypes.Contains(p.Parent.MobileType));
+			if (match.Parent is not null) {
+				matchedGuide = guide;
+				matchedParent = match.Parent;
+				matchedSlot = match.Slot;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		if (matchedGuide is null) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "produced a surviving parent-targeted insert whose type is outside emptyContainerRemoval.removableTypes "
+				+ $"({string.Join(", ", removableTypes)}). The seed application is provisioned OUTSIDE this repository (the "
+				+ "pipeline pushes the AutoTest/AutoTestClioMcp packages onto the stand), so this gap is closed by seeding, "
+				+ "not by a code change: add a page holding children inside a registry-supported container of another type "
+				+ "— a crt.Button with menuItems, a crt.Timeline, a crt.ButtonToggleGroup. Until then the type-list "
+				+ "independence stays pinned off-stand by the unit test named in this test's Description.");
+		}
+		(matchedParent!.MobileValues as JsonObject).Should().NotBeNull(
+			because: $"a container insert ('{matchedParent.MobileName}' on '{convertedSchemaName}') always carries a mobileValues object built by the converter");
+		((JsonObject)matchedParent.MobileValues!).ContainsKey(matchedSlot).Should().BeTrue(
+			because: $"'{matchedParent.MobileName}' ({matchedParent.MobileType}) on '{convertedSchemaName}' is outside the removable-type list and is targeted through '{matchedSlot}' — exactly the class of parent a type-list-keyed seeding would leave slotless for the differ to refuse");
+		SchemaValidationResult applied = MobileDiffApplyValidator.Validate(AssembleViewConfigDiffBody(matchedGuide!));
+		applied.IsValid.Should().BeTrue(
+			because: $"the viewConfigDiff assembled from the guide for '{convertedSchemaName}' must survive the Creatio differ clones. Errors: {string.Join("; ", applied.Errors)}");
+	}
+
+	/// <summary>
+	/// Converts one seeded page through the real MCP server. A transport-level error or an unsuccessful
+	/// response is collected into <paramref name="failedCandidates"/> (the caller fails the test on any —
+	/// a seeded page that stops converting is a runtime regression, never a seed gap) and yields null.
+	/// </summary>
+	private static async Task<MobilePageConversionGuide?> ConvertOrCollectFailureAsync(
+		McpServerSession session, CancellationToken cancellationToken, string environmentName,
+		string schemaName, List<string> failedCandidates) {
+		CallToolResult callResult = await session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			cancellationToken);
+		if (callResult.IsError == true) {
+			failedCandidates.Add($"'{schemaName}': transport-level error");
+			return null;
+		}
+		MobilePageConversionGuideResponse response =
+			EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+		if (!response.Success) {
+			failedCandidates.Add($"'{schemaName}': {response.Error}");
+			return null;
+		}
+		if (response.Guide is null) {
+			failedCandidates.Add($"'{schemaName}': successful response carried no guide");
+			return null;
+		}
+		return response.Guide;
+	}
+
+	/// <summary>
+	/// Surviving inserts that at least one OTHER surviving insert targets as <c>parentName</c>, each paired
+	/// with the slot it is targeted THROUGH — any slot, not just <c>items</c> (an absent propertyName defaults
+	/// to <c>items</c>, mirroring the converter's own slot resolution). A parent targeted through two slots
+	/// yields one pair per slot. Merge twins are excluded on both sides on purpose: a template-provided parent
+	/// carries no converter-owned mobileValues, so it is not this contract's subject.
+	/// </summary>
+	private static List<(ElementMapEntry Parent, string Slot)> ResolveTargetedParents(MobilePageConversionGuide guide) {
+		// (parentName, slot) pairs an insert actually targets. The slot is the child's own propertyName —
+		// 'items' only as the documented default — because the differ resolves the parent collection as
+		// itemInfo.Item[propertyName] and refuses ANY slot the parent does not declare, not just 'items'.
+		Dictionary<string, HashSet<string>> targetedSlots = new(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (entry.Operation != "insert" || entry.ParentName is not { Length: > 0 }) {
+				continue;
+			}
+			string slot = entry.PropertyName is { Length: > 0 } ? entry.PropertyName : "items";
+			if (!targetedSlots.TryGetValue(entry.ParentName, out HashSet<string>? slots)) {
+				// Ordinal, like the converter's own pass: the differ reads the slot as a case-SENSITIVE JSON
+				// member, so a casing the parent does not declare verbatim is still refused.
+				slots = new HashSet<string>(StringComparer.Ordinal);
+				targetedSlots[entry.ParentName] = slots;
+			}
+			slots.Add(slot);
+		}
+		List<(ElementMapEntry Parent, string Slot)> parents = [];
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (entry.Operation != "insert" || entry.MobileName is not { Length: > 0 }
+				|| !targetedSlots.TryGetValue(entry.MobileName, out HashSet<string>? slots)) {
+				continue;
+			}
+			parents.AddRange(slots.Select(slot => (entry, slot)));
+		}
+		return parents;
+	}
+
+	/// <summary>
+	/// Assembles the mobile body's <c>viewConfigDiff</c> from the element map's INSERT entries, in map
+	/// order — the same mechanical assembly the guide's nextSteps instruct the caller to perform
+	/// (parent-before-child order is the converter's own guarantee, asserted by the tabAreaLayers test
+	/// above). Merge entries are left out on purpose: a merge twin layers onto a template-provided element
+	/// the diff never declares, which the validator's seeded base already covers.
+	/// </summary>
+	private static string AssembleViewConfigDiffBody(MobilePageConversionGuide guide) {
+		var viewConfigDiff = new JsonArray();
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (entry.Operation != "insert" || entry.MobileName is not { Length: > 0 }) {
+				continue;
+			}
+			var operation = new JsonObject {
+				["operation"] = "insert",
+				["name"] = entry.MobileName,
+				// A genuine converter insert always carries a JsonObject; the fallback only keeps a
+				// hypothetical value-less entry from crashing the assembly instead of the differ gate.
+				["values"] = entry.MobileValues?.DeepClone() ?? new JsonObject { ["type"] = entry.MobileType }
+			};
+			if (entry.ParentName is { Length: > 0 }) {
+				operation["parentName"] = entry.ParentName;
+				operation["propertyName"] = entry.PropertyName is { Length: > 0 } ? entry.PropertyName : "items";
+			}
+			viewConfigDiff.Add(operation);
+		}
+		return new JsonObject { ["viewConfigDiff"] = viewConfigDiff }.ToJsonString();
+	}
+
+	/// <summary>
+	/// The bundled rules' <c>emptyContainerRemoval.removableTypes</c> list — read from the converter's own
+	/// bundled catalog so the test never maintains a second copy. The registry may serve a NEWER rules
+	/// version at runtime, but removableTypes is the converter's own baseline contract and the bundled file
+	/// is its source of truth in this repository.
+	/// </summary>
+	private static IReadOnlySet<string> ResolveBundledRemovableTypes() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		return new HashSet<string>(
+			rules.EmptyContainerRemoval?.RemovableTypes ?? [],
+			StringComparer.OrdinalIgnoreCase);
 	}
 
 	/// <summary>Position of an entry in the element map by its mobile name, -1 when absent.</summary>

@@ -6,6 +6,14 @@ using System.Linq;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
+/// Path-addressed diff applier abstraction (<c>viewModelConfigDiff</c> / <c>modelConfigDiff</c>: <c>_id</c>
+/// identity, <c>path</c> targeting). Distinct from <see cref="IJsonDiffApplier"/> so a consumer can inject the
+/// path variant specifically; behavior-bearing, so it is DI-resolved via a <c>Func&lt;IJsonPathDiffApplier&gt;</c>
+/// factory rather than constructed with <c>new</c>.
+/// </summary>
+public interface IJsonPathDiffApplier : IJsonDiffApplier { }
+
+/// <summary>
 /// Faithful C# clone of the Creatio client-side <c>JsonPathApplierService</c>
 /// (<c>creatio-ui/.../services/json-path-applier/json-path-applier.service.ts</c>), a subclass of
 /// <see cref="JsonDiffApplier"/> used for <c>viewModelConfigDiff</c> / <c>modelConfigDiff</c>. It identifies
@@ -17,7 +25,7 @@ using Newtonsoft.Json.Linq;
 // reference for fidelity; refactoring would diverge from the source of truth this validator reproduces.
 [SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "1:1 clone of the client TS JsonPathApplierService — structure mirrors the reference for fidelity.")]
 [SuppressMessage("Minor Code Smell", "S3247:Duplicate casts should not be used", Justification = "1:1 clone of the client TS JsonPathApplierService — mirrors the reference's dynamic narrowing.")]
-public sealed class JsonPathDiffApplier : JsonDiffApplier {
+public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier {
 
 	public JsonPathDiffApplier(bool disableApplyMoveIfIndirectParentMoved = false)
 		: base(disableApplyMoveIfIndirectParentMoved) { }

@@ -5504,7 +5504,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
 			new ToolInputSchemaContract(
 				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
 				[
@@ -5733,7 +5733,15 @@ internal static class ToolContractCatalog {
 			[
 				Field("created", NumberType, "Number of rows created."),
 				Field("failed", NumberType, "Number of rows that failed."),
-				Field("results", ArrayType, "Per-row outcomes for every attempted row; each item has index, success, id, and error."),
+				Field("unverified", NumberType,
+					"Failed rows whose side effect could NOT be verified (a subset of 'failed'). Non-zero means the "
+					+ "batch must not be blindly re-sent."),
+				Field("results", ArrayType,
+					"Per-row outcomes for every attempted row; each item has index, success, id, error, "
+					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
+					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
+					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
+					+ "duplicates it."),
 				Field("error", StringType, "Request-level error that prevented any row from being attempted.")
 			]);
 	}

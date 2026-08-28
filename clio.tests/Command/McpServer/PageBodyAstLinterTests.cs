@@ -369,6 +369,43 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
+	[Description("A Freedom UI Dashboard container's generated `_designOptions` block carrying both `entitySchemaName` and a `filters` array raises no entity-data-source-static-filters finding — `_designOptions` is designer-owned dashboard metadata, not a `crt.EntityDataSource` config, even though it happens to share the same co-located-key signature (GH-1125)")]
+	public void Lint_ShouldNotEmitWarning_WhenDashboardDesignOptionsHasEntitySchemaNameAndFilters() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, viewConfigDiff: [ " +
+			"{ \"operation\": \"merge\", \"name\": \"Dashboards\", \"values\": { \"_designOptions\": { " +
+			"\"entitySchemaName\": \"UsrExample\", \"dependencies\": [], \"filters\": [] } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters,
+			because: "the dashboard's `_designOptions.filters` array is designer-generated dashboard metadata, not a `crt.EntityDataSource` config, so the 'filters is an ignored EntityDataSource config key' claim this rule warns about does not apply — flagging it would be a false positive that misdirects the agent toward an unrelated, non-existent fix");
+	}
+
+	[Test]
+	[Description("A genuine `crt.EntityDataSource` config.filters sitting alongside a Dashboard's `_designOptions` block in the same page body still raises entity-data-source-static-filters — the `_designOptions` carve-out is scoped to the exact object held directly by a property literally named `_designOptions`, not to the whole page body or dashboard entry")]
+	public void Lint_ShouldStillEmitWarning_WhenGenuineEntityDataSourceCoexistsWithDashboardDesignOptions() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: {}, " +
+			"viewConfigDiff: [ { \"operation\": \"merge\", \"name\": \"Dashboards\", \"values\": { \"_designOptions\": { " +
+			"\"entitySchemaName\": \"UsrExample\", \"dependencies\": [], \"filters\": [] } } } ], " +
+			"modelConfigDiff: [ { \"operation\": \"merge\", \"path\": [\"dataSources\"], \"values\": { " +
+			"\"EmailDS\": { \"type\": \"crt.EntityDataSource\", \"scope\": \"viewElement\", \"config\": { " +
+			"\"entitySchemaName\": \"Activity\", \"filters\": { \"items\": {}, \"filterType\": 6, \"rootSchemaName\": \"Activity\" } } } } } ] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleEntityDataSourceStaticFilters,
+			because: "the `_designOptions` carve-out must not swallow a genuine EntityDataSource false negative elsewhere in the same body — only the object directly held by a property literally named `_designOptions` is excluded, everything else keeps the existing detection");
+	}
+
+	[Test]
 	[Description("The canonical static-filter mechanism — a `_PredefinedFilter` view-model attribute referenced from the collection attribute's `filterAttributes` — raises no entity-data-source-static-filters finding because no `filters` key sits on a crt.EntityDataSource config")]
 	public void Lint_ShouldNotEmitWarning_WhenStaticFilterUsesPredefinedFilterAttribute() {
 		// Arrange

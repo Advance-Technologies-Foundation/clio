@@ -476,6 +476,27 @@ internal sealed record KnowledgeBundleClientCapabilities(
 	Version McpToolContractVersion,
 	IReadOnlySet<string> Tools);
 
+/// <summary>
+/// Opt-in local-iteration behavior for Git-backed knowledge sources, sourced from the
+/// <see cref="FeatureName"/> feature flag. Off by default; nothing else in clio reads it.
+/// </summary>
+/// <remarks>
+/// This is an operator dev toggle, not a negotiated client capability, so it is deliberately kept
+/// out of <see cref="KnowledgeBundleClientCapabilities"/> - that record models what this build
+/// offers a knowledge producer and drives compatibility/requirement validation.
+/// </remarks>
+/// <param name="AllowUnsequencedGitBundles">
+/// When <see langword="true"/>, a Git knowledge manifest that omits the top-level <c>sequence</c>
+/// field loads by synthesizing the sequence from <c>libraryVersion</c>, and a candidate whose
+/// sequence was synthesized that way may replace an active generation carrying the same sequence
+/// with different content. Producer-declared sequences keep every stock guard, and the forward-only
+/// guard is never relaxed.
+/// </param>
+internal sealed record KnowledgeUnsequencedGitOptions(bool AllowUnsequencedGitBundles) {
+	/// <summary>The clio feature-flag key that supplies <see cref="AllowUnsequencedGitBundles"/>.</summary>
+	internal const string FeatureName = "knowledge-allow-unsequenced";
+}
+
 internal enum KnowledgeBundleActivationStatus {
 	Activated,
 	Rejected

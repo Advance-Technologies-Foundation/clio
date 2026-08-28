@@ -185,6 +185,18 @@
       "crt.ExpansionPanel"
     ]
   },
+  "excludedComponents": [
+    {
+      "filters": [
+        {
+          "type": "crt.SearchFilter",
+          "parentType": "crt.ExpansionPanel",
+          "propertiesContainerName": "tools",
+          "note": "ENG-95081: the panel's tools strip is a compact icon-only header row on mobile, which a search field does not fit. Positional only - crt.SearchFilter elsewhere on the page converts normally."
+        }
+      ]
+    }
+  ],
   "nonConvertingScopeContainers": ["MainHeader"],
   "requests": [
     { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },

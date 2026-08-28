@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -64,7 +66,7 @@ public sealed class PageBundleBuilderTests {
 							["operation"] = "insert",
 							["name"] = "NameField",
 							["parentName"] = "MainContainer",
-							["path"] = new JArray("items"),
+							["propertyName"] = "items",
 							["values"] = new JObject {
 								["type"] = "crt.Input"
 							}
@@ -343,7 +345,162 @@ public sealed class PageBundleBuilderTests {
 			because: "args should come from the first current-page hierarchy item");
 	}
 
+	[Test]
+	[Description("Two sequential Build calls on the same builder do not leak alias state across chains: an alias declared in the first chain must not affect the second chain's merge, while the alias still carries across layers within its own chain.")]
+	public void Build_CalledTwice_DoesNotLeakAliasStateAcrossChains() {
+		// Arrange — first chain declares an alias 'Btn' (real element 'RealButton') whose excludeOperations drops a
+		// merge; a child layer then merges by that alias name. If the alias carries across layers within this chain
+		// (required), the merge is excluded and the caption stays 'base'.
+		IPageBundleBuilder builder = CreateBuilder();
+		List<PageSchemaBundlePart> aliasChain = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "alias-child-uid", Name = "UsrAlias_FormPage",
+					PackageUId = "alias-pkg-uid", PackageName = "UsrAlias", SchemaVersion = 1, Body = "child"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "merge",
+							["name"] = "Btn",
+							["values"] = new JObject { ["caption"] = "child" }
+						}
+					}
+				}),
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "alias-base-uid", Name = "BasePage",
+					PackageUId = "alias-base-pkg-uid", PackageName = "CrtBase", SchemaVersion = 1, Body = "base"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "MainContainer",
+							["values"] = new JObject { ["type"] = "crt.FlexContainer", ["items"] = new JArray() }
+						},
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "RealButton",
+							["parentName"] = "MainContainer",
+							["propertyName"] = "items",
+							["alias"] = new JObject { ["name"] = "Btn", ["excludeOperations"] = new JArray { "merge" } },
+							["values"] = new JObject { ["type"] = "crt.Button", ["caption"] = "base" }
+						}
+					}
+				})
+		];
+
+		// Second chain uses an element literally named 'Btn' (no alias) and merges it. If the first chain's alias had
+		// leaked into this Build, the merge would be excluded and the caption would stay 'x'.
+		List<PageSchemaBundlePart> plainChain = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "plain-child-uid", Name = "UsrPlain_FormPage",
+					PackageUId = "plain-pkg-uid", PackageName = "UsrPlain", SchemaVersion = 1, Body = "child"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "merge",
+							["name"] = "Btn",
+							["values"] = new JObject { ["caption"] = "merged" }
+						}
+					}
+				}),
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "plain-base-uid", Name = "BasePage",
+					PackageUId = "plain-base-pkg-uid", PackageName = "CrtBase", SchemaVersion = 1, Body = "base"
+				},
+				new PageParsedSchemaBody {
+					ViewConfigDiff = new JArray {
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "MainContainer",
+							["values"] = new JObject { ["type"] = "crt.FlexContainer", ["items"] = new JArray() }
+						},
+						new JObject {
+							["operation"] = "insert",
+							["name"] = "Btn",
+							["parentName"] = "MainContainer",
+							["propertyName"] = "items",
+							["values"] = new JObject { ["type"] = "crt.Button", ["caption"] = "x" }
+						}
+					}
+				})
+		];
+
+		// Act
+		PageBundleInfo aliasResult = builder.Build(aliasChain);
+		PageBundleInfo plainResult = builder.Build(plainChain);
+
+		// Assert
+		aliasResult.ViewConfig[0]!["items"]![0]!["caption"]!.ToString().Should().Be("base",
+			because: "within one chain the alias carries across layers, so its excludeOperations drops the child merge");
+		plainResult.ViewConfig[0]!["items"]![0]!["caption"]!.ToString().Should().Be("merged",
+			because: "each Build call uses a fresh applier, so the first chain's alias must not exclude the second chain's merge");
+	}
+
+	[Test]
+	[Description("Build surfaces a JsonDiffApplierException (not a bare InvalidCastException) when the view-config applier returns a non-array token, so the guarded cast keeps the failure inside the type the get-page / business-rule callers catch.")]
+	public void Build_WhenViewConfigApplierReturnsNonArray_ThrowsNamingExpectedType() {
+		// Arrange
+		IJsonDiffApplier viewApplier = Substitute.For<IJsonDiffApplier>();
+		viewApplier.ApplyDiff(Arg.Any<JArray>(), Arg.Any<IReadOnlyList<JArray>>(), Arg.Any<IReadOnlyList<JsonApplierOperationsOptions>>())
+			.Returns(new JObject());
+		IPageBundleBuilder builder = new PageBundleBuilder(() => viewApplier, () => Substitute.For<IJsonPathDiffApplier>());
+		List<PageSchemaBundlePart> parts = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "u", Name = "UsrPage", PackageUId = "p", PackageName = "UsrPage", SchemaVersion = 1, Body = "b"
+				},
+				new PageParsedSchemaBody())
+		];
+
+		// Act
+		Action act = () => builder.Build(parts);
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>()
+			.WithMessage("*view config*JArray*",
+				because: "an unexpected view-config token must surface as the handled exception type naming the expected shape, not a bare InvalidCastException");
+	}
+
+	[Test]
+	[Description("BuildConfig surfaces a JsonDiffApplierException when the path applier returns a non-object token for a config diff, keeping the guarded cast failure inside the handled type.")]
+	public void Build_WhenPathApplierReturnsNonObject_ThrowsNamingExpectedType() {
+		// Arrange — the view applier resolves fine (empty array) so execution reaches BuildConfig, where the path
+		// applier returns a non-object for a non-empty view-model diff.
+		IJsonDiffApplier viewApplier = Substitute.For<IJsonDiffApplier>();
+		viewApplier.ApplyDiff(Arg.Any<JArray>(), Arg.Any<IReadOnlyList<JArray>>(), Arg.Any<IReadOnlyList<JsonApplierOperationsOptions>>())
+			.Returns(new JArray());
+		IJsonPathDiffApplier pathApplier = Substitute.For<IJsonPathDiffApplier>();
+		pathApplier.Apply(Arg.Any<JToken>(), Arg.Any<JArray>(), Arg.Any<JsonApplierOperationsOptions>())
+			.Returns(new JArray());
+		IPageBundleBuilder builder = new PageBundleBuilder(() => viewApplier, () => pathApplier);
+		List<PageSchemaBundlePart> parts = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "u", Name = "UsrPage", PackageUId = "p", PackageName = "UsrPage", SchemaVersion = 1, Body = "b"
+				},
+				new PageParsedSchemaBody {
+					ViewModelConfigDiff = new JArray {
+						new JObject { ["operation"] = "merge", ["path"] = new JArray(), ["values"] = new JObject() }
+					}
+				})
+		];
+
+		// Act
+		Action act = () => builder.Build(parts);
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>()
+			.WithMessage("*config*JObject*",
+				because: "an unexpected config token must surface as the handled exception type naming the expected shape");
+	}
+
 	private static IPageBundleBuilder CreateBuilder() {
-		return new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier());
+		return new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier());
 	}
 }

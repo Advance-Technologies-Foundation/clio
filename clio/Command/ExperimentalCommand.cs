@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -105,6 +106,11 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 		if (!keyIsKnown) {
 			_logger.WriteWarning($"No command or MCP tool currently references the feature key '{key}'.");
 		}
+		// Some features carry a one-time notice shown only at the moment they are ENABLED (e.g. a Beta-mode
+		// heads-up). Disabling never shows it, and it is keyed case-insensitively like every other key here.
+		if (enable && FeatureEnableNotices.TryGetValue(key, out string enableNotice)) {
+			_logger.WriteWarning(enableNotice);
+		}
 		return 0;
 	}
 
@@ -156,8 +162,30 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	// Feature keys clio recognizes that are NOT derived from a [FeatureToggle] attribute on an
 	// options/MCP type (registration-filter profiles, etc.), listed so `clio experimental` shows them
 	// and `--enable/--disable` does not warn they are unknown. Compared case-insensitively.
-	// Currently empty: the mcp-lazy-tools profile toggle was removed — lazy is now the only tool surface.
-	internal static readonly string[] StandaloneFeatureKeys = [];
+	internal static readonly string[] StandaloneFeatureKeys = [
+		// Gates a DI registration value (KnowledgeUnsequencedGitOptions), not an attributed type, so it
+		// cannot be discovered through GetGatedTypes.
+		KnowledgeUnsequencedGitOptions.FeatureName
+	];
+
+	// One-time warnings shown only when a feature is ENABLED (never on disable/list). Keyed
+	// case-insensitively. The mobile-page-converter Beta heads-up is TEMPORARY — remove that entry when
+	// the converter graduates out of Beta. Notice text is written verbatim to the console, the log file
+	// and every additional sink, so it carries no markup - Markdown asterisks would show up literally.
+	// Emphasize with UPPER CASE instead.
+	internal static readonly IReadOnlyDictionary<string, string> FeatureEnableNotices =
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["mobile-page-converter"] =
+				"⚠️ Heads up! Enabling this feature will activate the agent in BETA MODE. "
+				+ "Please be aware that behavior may vary and improvements are ongoing.",
+			[KnowledgeUnsequencedGitOptions.FeatureName] =
+				"⚠️ Local development aid. While enabled, a Git knowledge source whose manifest omits "
+				+ "\"sequence\" is loaded by deriving the sequence from libraryVersion, and such a bundle "
+				+ "may replace the active generation with different content under the SAME sequence - the "
+				+ "content-integrity check that detects a swapped guidance corpus does not apply to it. "
+				+ "Rollbacks to a lower sequence are still refused. The flag is persistent and affects "
+				+ "every later clio run against every environment; disable it when you are done.",
+		};
 
 	private static IEnumerable<string> GetKnownFeatureKeys() =>
 		GetGatedTypes()

@@ -27,6 +27,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 	private const string TestArticleText = "Synthetic signed test payload.\n";
 
 	private ServiceProvider _container;
+	private ServiceProvider _relaxedContainer;
 	private IKnowledgeBundleRuntime _runtime;
 	private IKnowledgeBundleTrustStore _trustStore;
 	private string _privateKeyPem;
@@ -55,6 +56,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 			new Version(8, 1, 0, 86),
 			new Version(1, 0, 0),
 			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }));
+		services.AddSingleton(new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: false));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		_container = services.BuildServiceProvider();
@@ -64,6 +66,8 @@ public sealed class KnowledgeBundleRuntimeTests {
 	[TearDown]
 	public void TearDown() {
 		_container.Dispose();
+		_relaxedContainer?.Dispose();
+		_relaxedContainer = null;
 	}
 
 	[Test]
@@ -297,6 +301,101 @@ public sealed class KnowledgeBundleRuntimeTests {
 			because: "equal-sequence digest divergence is an invalid publisher contract rather than an ordinary replay");
 		lookup.Article!.Text.Should().Be("active",
 			because: "a divergent candidate must never replace last-known-good content");
+	}
+
+	[Test]
+	[Description("Flag on: a synthesized-sequence Git snapshot replaces equal-sequence active content and reports an advisory.")]
+	public void ActivateGitRepository_ShouldReplaceActiveSnapshot_WhenEqualSynthesizedSequenceAllowed() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = RuntimeAllowingUnsequenced();
+		KnowledgeGitRepositorySnapshot active =
+			GitSnapshot(sequence: 1000000, digest: "DIGEST-A", text: "active", sequenceSynthesized: true);
+		KnowledgeGitRepositorySnapshot edited =
+			GitSnapshot(sequence: 1000000, digest: "DIGEST-B", text: "edited", sequenceSynthesized: true);
+		runtime.ActivateGitRepository("partner", 100, KnowledgeSourceParticipation.Authoritative, active);
+
+		// Act
+		KnowledgeBundleActivationResult result = runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, edited);
+		KnowledgeArticleLookup lookup = runtime.Find("docs://knowledge/com.example.partner/guide");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Activated,
+			because: "a synthesized sequence never identified a generation, so editing a local checkout must reload");
+		lookup.Article!.Text.Should().Be("edited",
+			because: "the whole point of the flag is serving the edited local content without a libraryVersion bump");
+		result.Diagnostic.Should().NotBeNullOrWhiteSpace(
+			because: "relaxing content integrity must be reported to the operator rather than applied silently");
+	}
+
+	[Test]
+	[Description("Flag on: a producer-declared equal sequence with different content is still rejected as invalid content.")]
+	public void ActivateGitRepository_ShouldRejectSnapshot_WhenEqualDeclaredSequenceHasDifferentDigest() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = RuntimeAllowingUnsequenced();
+		KnowledgeGitRepositorySnapshot active = GitSnapshot(sequence: 2, digest: "DIGEST-A", text: "active");
+		KnowledgeGitRepositorySnapshot divergent = GitSnapshot(sequence: 2, digest: "DIGEST-B", text: "divergent");
+		runtime.ActivateGitRepository("partner", 100, KnowledgeSourceParticipation.Authoritative, active);
+
+		// Act
+		KnowledgeBundleActivationResult result = runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, divergent);
+		KnowledgeArticleLookup lookup = runtime.Find("docs://knowledge/com.example.partner/guide");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "the flag scopes its bypass to synthesized sequences; a declared generation identity stays immutable");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "the content-integrity control must still classify a swapped corpus under a declared sequence");
+		lookup.Article!.Text.Should().Be("active",
+			because: "a rejected candidate must never replace last-known-good content");
+	}
+
+	[Test]
+	[Description("Flag on: a backwards Git sequence is still rejected, because a rollback is never a local-iteration step.")]
+	public void ActivateGitRepository_ShouldRejectSnapshot_WhenSequenceMovesBackwardAndUnsequencedAllowed() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = RuntimeAllowingUnsequenced();
+		KnowledgeGitRepositorySnapshot active =
+			GitSnapshot(sequence: 1013021, digest: "DIGEST-A", text: "active", sequenceSynthesized: true);
+		KnowledgeGitRepositorySnapshot older =
+			GitSnapshot(sequence: 1013020, digest: "DIGEST-B", text: "older", sequenceSynthesized: true);
+		runtime.ActivateGitRepository("partner", 100, KnowledgeSourceParticipation.Authoritative, active);
+
+		// Act
+		KnowledgeBundleActivationResult result = runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, older);
+		KnowledgeArticleLookup lookup = runtime.Find("docs://knowledge/com.example.partner/guide");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "anti-rollback is not part of what the local-iteration flag is allowed to disable");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.SequenceNotForward,
+			because: "a lower sequence is a downgrade regardless of how the sequence was obtained");
+		lookup.Article!.Text.Should().Be("active",
+			because: "a refused downgrade must retain the previously active content");
+	}
+
+	[Test]
+	[Description("Flag on: an unchanged Git snapshot still hot-refreshes in place instead of being treated as a replacement.")]
+	public void ActivateGitRepository_ShouldRefreshInPlace_WhenSnapshotUnchangedAndUnsequencedAllowed() {
+		// Arrange
+		IKnowledgeBundleRuntime runtime = RuntimeAllowingUnsequenced();
+		KnowledgeGitRepositorySnapshot active =
+			GitSnapshot(sequence: 1013021, digest: "DIGEST-A", text: "active", sequenceSynthesized: true);
+		runtime.ActivateGitRepository("partner", 100, KnowledgeSourceParticipation.Authoritative, active);
+
+		// Act
+		KnowledgeBundleActivationResult result = runtime.ActivateGitRepository(
+			"partner", 50, KnowledgeSourceParticipation.Supplement, active);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Activated,
+			because: "an identical re-read is a policy refresh, not a content replacement");
+		result.Diagnostic.Should().BeNull(
+			because: "nothing was relaxed on an identical re-read, so no advisory belongs on the result");
+		result.ActiveSequence.Should().Be(1013021,
+			because: "an idempotent refresh must retain the active generation identity");
 	}
 
 	[Test]
@@ -781,7 +880,11 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	private MemoryStream ValidCandidate() => new(_validCandidateBytes.ToArray());
 
-	private static KnowledgeGitRepositorySnapshot GitSnapshot(ulong sequence, string digest, string text) => new(
+	private static KnowledgeGitRepositorySnapshot GitSnapshot(
+		ulong sequence,
+		string digest,
+		string text,
+		bool sequenceSynthesized = false) => new(
 		"com.example.partner",
 		"1.0.0",
 		sequence,
@@ -793,7 +896,27 @@ public sealed class KnowledgeBundleRuntimeTests {
 			LibraryId: "com.example.partner",
 			ItemId: "guide",
 			TopicId: "example.guide",
-			Role: "guidance")]);
+			Role: "guidance")],
+		sequenceSynthesized);
+
+	/// <summary>
+	/// A second runtime whose only difference from the fixture default is that
+	/// knowledge-allow-unsequenced is ON, so the relaxed arm can be exercised against the same
+	/// snapshots as the stock guards.
+	/// </summary>
+	private IKnowledgeBundleRuntime RuntimeAllowingUnsequenced() {
+		ServiceCollection services = new();
+		services.AddSingleton(_trustStore);
+		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+			new Version(8, 1, 0, 86),
+			new Version(1, 0, 0),
+			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }));
+		services.AddSingleton(new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: true));
+		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
+		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
+		_relaxedContainer = services.BuildServiceProvider();
+		return _relaxedContainer.GetRequiredService<IKnowledgeBundleRuntime>();
+	}
 
 	private MemoryStream MutateAndResign(Action<JsonObject> mutateManifest) => MutateCandidate(entries => {
 		JsonObject manifest = JsonNode.Parse(entries["manifest.json"])!.AsObject();
