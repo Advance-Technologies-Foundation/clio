@@ -226,10 +226,11 @@ public sealed record CreateBusinessProcessRequest(string DescriptorJson, string?
 /// <param name="SchemaUId">UId of the created process schema.</param>
 /// <param name="Warnings">
 /// Notices the build raised — outcomes that SUCCEEDED but the caller has to know about, so a successful build is
-/// never silently different from what was asked for. Today the case that reaches here is a Pre-configured page
-/// whose referenced page could not be loaded: the element is saved carrying none of the page's parameters, so
-/// anything meant to map onto them is simply not there. <c>null</c> when there are none, or when the target
-/// environment carries a package that does not report them.
+/// never silently different from what was asked for. Two cases reach a build today, both from a Pre-configured
+/// page element: a referenced page that could not be loaded (the element is saved carrying none of the page's
+/// parameters, so anything meant to map onto them is simply not there), and a page parameter the element cannot
+/// carry under its name (the describe block's <c>shadowedPageParameters</c> reports the same state durably).
+/// <c>null</c> when there are none, or when the target environment carries a package that does not report them.
 /// </param>
 public sealed record CreateBusinessProcessResult(string? SchemaName, string? SchemaUId,
 	IReadOnlyList<string>? Warnings = null);

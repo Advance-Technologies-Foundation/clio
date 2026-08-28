@@ -409,9 +409,11 @@ public sealed class DescribedPreconfiguredPage {
 	public DescribedPreconfiguredPagePerformer Performer { get; set; }
 
 	/// <summary>
-	/// The completing buttons, in stored order. EMPTY (not null) for a Freedom UI element that has none selected,
-	/// so "none selected" stays distinct from "not applicable" — and an empty list on a Freedom page is the
-	/// element that can never finish at run time.
+	/// The completing buttons, in stored order. An EMPTY list is only interpretable together with
+	/// <see cref="PageUiType"/>: on <c>freedom</c> it means none are selected — an element that can never finish
+	/// at run time; on <c>classic</c> it is the NORMAL state (such a page completes through its own page-designer
+	/// buttons, so do not report it as broken); on a null page type it means nothing, because the page could not
+	/// be read.
 	/// </summary>
 	[JsonPropertyName("buttons")]
 	public List<DescribedPreconfiguredPageButton> Buttons { get; set; }
@@ -462,7 +464,13 @@ public sealed class DescribedPreconfiguredPage {
 	/// </summary>
 	[JsonPropertyName("shadowedPageParameters")]
 	public List<string> ShadowedPageParameters { get; set; }
-}
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
 
 /// <summary>The performer of a Pre-configured page element ("Who performs the task?").</summary>
 public sealed class DescribedPreconfiguredPagePerformer {
@@ -480,12 +488,19 @@ public sealed class DescribedPreconfiguredPagePerformer {
 
 	/// <summary>
 	/// "Show page automatically" — reported ONLY for a <c>user</c> performer, because the runtime ignores it when
-	/// the task runs for anyone else. Null on a role/manager performer therefore means "not applicable", not
-	/// "disabled".
+	/// the task runs for anyone else. Null on a role/manager performer means "not applicable". Null on a
+	/// <c>user</c> performer means ENABLED — the task schema's default applies, and a designer-built element
+	/// stores no value of its own — so do NOT write <c>showPage: true</c> back to "fix" it.
 	/// </summary>
 	[JsonPropertyName("showPage")]
 	public bool? ShowPage { get; set; }
-}
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
 
 /// <summary>One page data source of a Pre-configured page element, with the parameter carrying its record id.</summary>
 public sealed class DescribedPreconfiguredPageDataSource {
@@ -503,7 +518,13 @@ public sealed class DescribedPreconfiguredPageDataSource {
 	/// </summary>
 	[JsonPropertyName("parameter")]
 	public string Parameter { get; set; }
-}
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
 
 /// <summary>One completing button of a Pre-configured page element.</summary>
 public sealed class DescribedPreconfiguredPageButton {
@@ -522,7 +543,13 @@ public sealed class DescribedPreconfiguredPageButton {
 	/// <summary>Whether pressing it validates the page first. Absent on the element reads as the card default (true).</summary>
 	[JsonPropertyName("validate")]
 	public bool? Validate { get; set; }
-}
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
 
 /// <summary>The manual-mode performer of a Send email element ("Who performs the task?").</summary>
 public sealed class DescribedEmailPerformer {
