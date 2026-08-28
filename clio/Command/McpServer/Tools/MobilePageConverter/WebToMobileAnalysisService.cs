@@ -4206,10 +4206,10 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Applies the rules' <c>componentPropertyOverrides</c> to every element-map INSERT, stamping each mobile
-	/// standard the rules file declares (container spacing, metric style). An entry is matched by
-	/// <c>mobileType</c>, then narrowed by the rule's optional <c>filters</c> (see
-	/// <see cref="MatchesFilters"/>); a type may carry several rules and EVERY matching one is applied, in
-	/// the order the rules file declares them. For each match the listed properties are SET on the prebuilt
+	/// standard the rules file declares (container spacing, metric style). A rule is selected purely by its
+	/// <c>filters</c> — the component type is one constraint among them, evaluated by the same matcher the
+	/// components group uses (see <see cref="MatchesFilters"/>) — and EVERY matching rule is applied, in the
+	/// order the rules file declares them. For each match the listed properties are SET on the prebuilt
 	/// <c>mobileValues</c> — by default REPLACING whatever the web page carried (any shape: token, px
 	/// number, CSS string, per-axis object; the web value is discarded, never translated) and ADDED when
 	/// the web page carried none, so the converted body is self-describing instead of leaning on the
@@ -4231,30 +4231,19 @@ public static class WebToMobileAnalysisService {
 		if (overrides is not { Count: > 0 }) {
 			return result;
 		}
-		// A mobile type may carry SEVERAL rules — an unconditional standard plus any number narrowed by
-		// `filters` — so the index keeps every rule of a type in DECLARATION order instead of last-wins.
-		// Order is the rules file's to decide: two matching rules that write the same key resolve
-		// last-declared-wins per KEY, which is also how one type mixes replace and merge semantics without
-		// loosening the per-rule merge flag.
-		var byType = new Dictionary<string, List<ComponentPropertyOverrideRule>>(StringComparer.OrdinalIgnoreCase);
-		foreach (ComponentPropertyOverrideRule rule in overrides) {
-			if (string.IsNullOrWhiteSpace(rule?.Type) || rule.Values is not { Count: > 0 }) {
-				continue;
-			}
-			if (!byType.TryGetValue(rule.Type, out List<ComponentPropertyOverrideRule> declared)) {
-				declared = [];
-				byType[rule.Type] = declared;
-			}
-			declared.Add(rule);
-		}
-		if (byType.Count == 0) {
+		// No index by type: the component type is one FILTER constraint among others, so a rule is selected
+		// exactly the way a components-group entry is — by running its filters. Every rule that matches is
+		// applied, in DECLARATION order, and two matching rules that write the same key resolve
+		// last-declared-wins per KEY. That is also how one type mixes replace and merge semantics without
+		// loosening the per-rule merge flag. A rule that stamps nothing is dropped up front.
+		List<ComponentPropertyOverrideRule> declared = [.. overrides.Where(r => r?.Values is { Count: > 0 })];
+		if (declared.Count == 0) {
 			return result;
 		}
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
 				|| entry.MobileType is not { Length: > 0 }
-				|| entry.MobileValues is not JsonObject values
-				|| !byType.TryGetValue(entry.MobileType, out List<ComponentPropertyOverrideRule> typeRules)) {
+				|| entry.MobileValues is not JsonObject values) {
 				continue;
 			}
 			// Which rules apply is decided against the element as it ENTERED the pass — every filter is
@@ -4263,7 +4252,7 @@ public static class WebToMobileAnalysisService {
 			// filtered on borderRadius Medium from ever matching), making the outcome depend on the order the
 			// file happens to list them in. Only the WRITING follows declaration order.
 			List<ComponentPropertyOverrideRule> matched =
-				[.. typeRules.Where(rule => MatchesFilters(values, rule.Filters))];
+				[.. declared.Where(rule => MatchesFilters(values, rule.Filters))];
 			var properties = new List<string>();
 			var skippedPaths = new List<string>();
 			foreach (ComponentPropertyOverrideRule rule in matched) {

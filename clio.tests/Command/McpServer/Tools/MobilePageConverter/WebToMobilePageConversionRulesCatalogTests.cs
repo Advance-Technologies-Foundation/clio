@@ -21,6 +21,11 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobilePageConversionRulesCatalogTests {
 
+	/// <summary>True when the rule's filters select the given mobile component type.</summary>
+	private static bool Targets(ComponentPropertyOverrideRule rule, string type) =>
+		rule.Filters.Any(f => string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+
+
 	private static Stream JsonStream(string json) => new MemoryStream(Encoding.UTF8.GetBytes(json));
 
 	[Test]
@@ -136,7 +141,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
-			.Single(o => o.Type == "crt.IndicatorWidget");
+			.Single(o => Targets(o, "crt.IndicatorWidget"));
 		metric.MergeNestedObjects.Should().BeTrue(
 			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
 		JsonElement config = metric.Values["config"];
@@ -155,20 +160,15 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		rules.ComponentPropertyOverrides.Should().OnlyContain(
-			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
-			because: "a rule without a type or values cannot stamp anything");
-		rules.ComponentPropertyOverrides
-			.Where(o => o.Filters.Count == 0)
-			.Select(o => o.Type)
-			.Should().OnlyHaveUniqueItems(
-				because: "an UNFILTERED rule already applies to every insert of its type, so a second one for "
-					+ "the same type is always a duplicate — a narrowed rule is what a further entry per type is for");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Values.Count > 0,
+			because: "a rule without values cannot stamp anything");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Filters.Count > 0,
+			because: "filters are the rule's ONLY selector now — an entry without them would stamp onto every "
+				+ "insert of every type, which no standard wants");
 		rules.ComponentPropertyOverrides
 			.SelectMany(o => o.Filters)
-			.Should().OnlyContain(f => string.IsNullOrWhiteSpace(f.Type),
-				because: "the pass selects the rule by its own `type` BEFORE reading filters, so the key can only "
-					+ "be a tautology or — with another value — a contradiction that makes the rule never fire");
+			.Should().OnlyContain(f => !string.IsNullOrWhiteSpace(f.Type),
+				because: "a bundled filter that names no type would widen its standard across component types");
 	}
 
 	[Test]
@@ -179,7 +179,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		rules.ComponentPropertyOverrides
-			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
+			.Where(o => Targets(o, "crt.GridContainer") || Targets(o, "crt.FlexContainer"))
 			.Should().HaveCount(3)
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale");
@@ -193,14 +193,14 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		ComponentPropertyOverrideRule radius = rules.ComponentPropertyOverrides
-			.Single(o => o.Type == "crt.GridContainer" && o.Filters.Count > 0);
+			.Single(o => Targets(o, "crt.GridContainer") && o.Filters.Any(f => f.Values is { Count: > 0 }));
 		radius.Values.Should().ContainKey("borderRadius", because: "the rule exists to promote the radius");
 		radius.Values["borderRadius"].GetString().Should().Be("large");
 		radius.MergeNestedObjects.Should().BeFalse(
 			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
 		ElementFilterRule filter = radius.Filters.Single();
-		filter.Type.Should().BeNull(because: "the rule is already selected by type — only the discriminating property belongs here");
-		filter.Values.Should().HaveCount(1);
+		filter.Type.Should().Be("crt.GridContainer", because: "the type is a filter constraint like any other");
+		filter.Values.Should().HaveCount(1, because: "one discriminating property beyond the type");
 		filter.Values["borderRadius"].GetString().Should().Be("medium",
 			because: "the first iteration deliberately narrows to the Medium radius rather than to any non-zero one");
 	}

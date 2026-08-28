@@ -247,20 +247,22 @@ public sealed class SynthesizedContainerRule {
 /// them is ignored for those keys.
 /// </summary>
 public sealed class ComponentPropertyOverrideRule {
-	/// <summary>Mobile component type the override applies to (e.g. "crt.GridContainer").</summary>
-	[JsonPropertyName("type")]
-	public string Type { get; init; }
-
 	/// <summary>
-	/// Optional filters that NARROW which inserted elements of <see cref="Type"/> the rule applies to, matched
-	/// against the element's MOBILE values. Empty or absent (the default) = the rule applies to EVERY insert of
-	/// that type — the long-standing behavior every unconditional standard relies on.
+	/// Which inserted elements the rule applies to, matched against the element's MOBILE values. This is the
+	/// rule's ONLY selector — the component type is a filter constraint like any other
+	/// (<c>[{ "type": "crt.GridContainer" }]</c>), so a standard that targets a type outright and one narrowed
+	/// to a subset of it are the same construct, not two.
 	/// <para>
-	/// Same shape and same semantics as <see cref="ComponentEquivalenceRule.Filters"/>: a list of
-	/// <see cref="ElementFilterRule"/>, OR-ed with each other, each one AND-ing every constraint it declares.
-	/// Declaring <c>type</c> here is redundant — the rule is already selected by <see cref="Type"/> before any
-	/// filter is read — so it can only be a tautology or, with a different value, a contradiction that makes
-	/// the rule never fire.
+	/// Same shape and the same match rule as <see cref="ComponentEquivalenceRule.Filters"/>, evaluated by the
+	/// same code: the entries are OR-ed, each one AND-s every constraint it declares, a value matches only on
+	/// DEEP equality (so an ABSENT property never matches), and an entry that declares nothing matches nothing.
+	/// A list is what makes a union expressible — <c>[{type, borderRadius: small}, {type, borderRadius: medium}]</c>
+	/// reads as "either radius".
+	/// </para>
+	/// <para>
+	/// Empty or absent matches EVERY insert of every type, mirroring the components group. That is almost never
+	/// what a standard wants, so <c>LoadBundled_OverridesCarryDataOnly</c> requires every bundled rule to
+	/// declare at least one filter.
 	/// </para>
 	/// <para>
 	/// Every rule's filters are evaluated against the element as it ENTERED the pass, before the first value

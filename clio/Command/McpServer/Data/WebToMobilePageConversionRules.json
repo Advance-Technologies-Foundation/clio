@@ -157,20 +157,19 @@
   },
   "componentPropertyOverrides": [
     {
-      "type": "crt.GridContainer",
+      "filters": [{ "type": "crt.GridContainer" }],
       "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } }
     },
     {
-      "type": "crt.GridContainer",
-      "filters": [{ "borderRadius": "medium" }],
+      "filters": [{ "type": "crt.GridContainer", "borderRadius": "medium" }],
       "values": { "borderRadius": "large" }
     },
     {
-      "type": "crt.FlexContainer",
+      "filters": [{ "type": "crt.FlexContainer" }],
       "values": { "gap": "medium" }
     },
     {
-      "type": "crt.IndicatorWidget",
+      "filters": [{ "type": "crt.IndicatorWidget" }],
       "mergeNestedObjects": true,
       "values": {
         "config": {
