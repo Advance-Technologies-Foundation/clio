@@ -31,7 +31,13 @@ public sealed class ODataUpdateToolTests {
 		<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
 		  <edmx:DataServices>
 		    <Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">
-		      <EntityType Name="Contact">
+		      <EntityType Name="BaseEntity">
+		        <Key><PropertyRef Name="Id" /></Key>
+		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+		        <Property Name="CreatedOn" Type="Edm.DateTimeOffset" />
+		        <Property Name="ModifiedOn" Type="Edm.DateTimeOffset" />
+		      </EntityType>
+		      <EntityType Name="Contact" BaseType="Terrasoft.Configuration.OData.BaseEntity">
 		        <Key><PropertyRef Name="Id" /></Key>
 		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
 		        <Property Name="Name" Type="Edm.String" />
@@ -159,6 +165,45 @@ public sealed class ODataUpdateToolTests {
 			// because: $metadata is the primary validator; the $select probe runs only as a fallback
 		);
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a field the entity INHERITS through BaseType. A CSDL BaseType attribute is fully qualified while the type map is keyed by the short name, so a raw lookup silently no-ops and every BaseEntity field (Id, CreatedOn, ModifiedOn) reads as non-existent.")]
+	public void Update_Should_Accept_Field_Inherited_Through_BaseType() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"ModifiedOn":"2024-01-01T00:00:00Z"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "ModifiedOn is declared on the BaseEntity that Contact derives from, so it is a real field");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"ModifiedOn":"2024-01-01T00:00:00Z"}""", 30000);
+		f.Client.DidNotReceive().ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An inherited field is still checked: a name on neither the entity nor its base type is rejected, so resolving inheritance did not turn the validator into a rubber stamp.")]
+	public void Update_Should_Still_Reject_Field_On_Neither_Entity_Nor_BaseType() {
+		// Arrange
+		Fixture f = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"NotOnBaseEntityEither":"x"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "walking the BaseType chain adds the base's fields, it does not accept unknown ones");
+		response.Error!.Should().Contain("NotOnBaseEntityEither",
+			because: "the caller has to be told which field the type does not carry");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
 	[Test]
@@ -444,11 +489,12 @@ public sealed class ODataUpdateToolTests {
 			.And.Contain("could not be verified against the service",
 				because: "the fallback must name the offending field and say the check was the weaker one");
 		response.Error.Should().NotContain("JobTitle", because: "the follow-up probe confirmed JobTitle exists");
-		// The batch probe (full RequestTimeoutMs) pins the multi-field $select encoding and names only the
-		// FIRST unknown (Color); the two follow-ups (Name, JobTitle) run at the shorter FollowUpProbeTimeoutMs
-		// and both succeed, so only Color is reported.
+		// The batch probe (full RequestTimeoutMs) pins the multi-field $select list - the commas stay LITERAL,
+		// because they are $select's own separator - and names only the FIRST unknown (Color); the two
+		// follow-ups (Name, JobTitle) run at the shorter FollowUpProbeTimeoutMs and both succeed, so only
+		// Color is reported.
 		f.Client.Received(1).ExecuteGetRequest(
-			$"{KeyUrl}?$select=Id%2CName%2CJobTitle%2CColor",
+			$"{KeyUrl}?$select=Id,Name,JobTitle,Color",
 			ODataFieldValidation.RequestTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.Received(2).ExecuteGetRequest(
 			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),

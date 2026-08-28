@@ -269,15 +269,27 @@ internal static class ODataFieldValidation {
 	private static void CollectInherited(
 		CsdlType type,
 		Dictionary<string, CsdlType> types,
-		List<string> visited) {
-		if (visited.Contains(type.Name)) {
+		HashSet<string> visited) {
+		if (!visited.Add(type.Name)) {
 			return;
 		}
-		visited.Add(type.Name);
-		if (type.BaseType is not null && types.TryGetValue(type.BaseType, out CsdlType? baseType)) {
+		if (type.BaseType is null) {
+			return;
+		}
+		// The map is keyed by the EntityType's short Name, but per CSDL 4.0 a BaseType attribute is a
+		// FULLY-QUALIFIED type name ("Terrasoft.Configuration.OData.BaseEntity"). Looking the raw value up
+		// never matched, so the whole walk was a silent no-op and every field inherited from BaseEntity
+		// (Id, CreatedOn, ModifiedOn, CreatedById, ModifiedById, ...) was reported as non-existent.
+		if (types.TryGetValue(ShortTypeName(type.BaseType), out CsdlType? baseType)) {
 			CollectInherited(baseType, types, visited);
 			type.Properties.UnionWith(baseType.Properties);
 		}
+	}
+
+	/// <summary>Strips the CSDL namespace qualifier from a type reference.</summary>
+	private static string ShortTypeName(string qualifiedName) {
+		int lastDot = qualifiedName.LastIndexOf('.');
+		return lastDot >= 0 ? qualifiedName[(lastDot + 1)..] : qualifiedName;
 	}
 
 	/// <summary>
@@ -369,8 +381,13 @@ internal static class ODataFieldValidation {
 		string id,
 		IReadOnlyList<string> keys,
 		int timeoutMs = RequestTimeoutMs) {
+		// NOT percent-encoded: the comma is $select's own list separator, and encoding it turns a
+		// three-field select into a request for one selector literally named "Id%2CCreatedOn%2CName",
+		// which a conforming server rejects as an unknown property - failing every probe on this path.
+		// The names are already constrained by IsValidMemberPath to letters, digits, underscore and '/',
+		// none of which need encoding.
 		string selectList = "Id," + string.Join(",", keys);
-		string path = $"{ODataKeyFormatter.KeyPath(entity, id)}?$select={Uri.EscapeDataString(selectList)}";
+		string path = $"{ODataKeyFormatter.KeyPath(entity, id)}?$select={selectList}";
 		string url = urlBuilder.Build(path);
 		string body = client.ExecuteGetRequest(url, timeoutMs, TransientAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
