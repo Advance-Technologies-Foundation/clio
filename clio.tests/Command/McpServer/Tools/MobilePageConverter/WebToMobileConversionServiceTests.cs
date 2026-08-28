@@ -479,14 +479,39 @@ public sealed class WebToMobileConversionServiceTests {
 		Components = [new ComponentEquivalenceRule { Web = ["crt.DataGrid"], Mobile = ["crt.List"], Category = "AlternativeAvailable" }]
 	};
 
+	/// <summary>
+	/// A deliberately MINIMAL stand-in for the shipped tabbed rule's container map: these tests drive synthetic
+	/// bundles, so they name only the containers those bundles contain. It must stay a SUBSET of the shipped
+	/// rule — an entry the rules file does not carry makes every test here assert against a rules file that does
+	/// not exist, which is exactly how ENG-94951 survived (this map used to carry
+	/// GeneralInfoTabContainer -&gt; GeneralTabContainer while the shipped rules had no general-tab entry at all).
+	/// <see cref="TabbedContainerMap_ShouldStayASubsetOfTheShippedRules"/> enforces that.
+	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> TabbedContainerMap =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["Tabs"] = "Tabs",
 			["FeedTabContainer"] = "FeedContainer",
 			["AttachmentsTabContainer"] = "AttachmentsContainer",
-			["GeneralInfoTabContainer"] = "GeneralTabContainer",
 			["SideAreaProfileContainer"] = "AreaProfileContainer"
 		};
+
+	[Test]
+	[Description("ENG-94951 drift guard: the hand-written container map these tests drive must be a SUBSET of the shipped tabbed rule. An entry the rules file does not ship makes every test using this map assert against a rules file that does not exist — the blind spot that let the missing general-tab mapping survive.")]
+	public void TabbedContainerMap_ShouldStayASubsetOfTheShippedRules() {
+		// Arrange
+		TemplateMappingRule tabbed = WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+			.Single(t => string.Equals(t.Web, "PageWithTabsFreedomTemplate", StringComparison.OrdinalIgnoreCase));
+
+		// Act
+		IReadOnlyDictionary<string, string> shipped = MobilePageConversionGuideTool.BuildContainerNameMap(tabbed);
+
+		// Assert
+		TabbedContainerMap.Should().OnlyContain(
+			pair => shipped.ContainsKey(pair.Key) && shipped[pair.Key] == pair.Value,
+			because: "a hand-written mapping absent from (or different in) the shipped rules is a green test "
+				+ "asserting behaviour the product does not have; shipped map: "
+				+ string.Join(", ", shipped.Select(kv => $"{kv.Key}->{kv.Value}")));
+	}
 
 	private static MobilePageConversionGuide AnalyzeTabbed(
 		PageBundleInfo bundle,

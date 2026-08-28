@@ -497,6 +497,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// regression, never a seed gap, so failures are collected and fail the test outright.
 		int pagesWithTargetedParents = 0;
 		int pagesWithTabAreaLayers = 0;
+		int pagesWithTabStripChildren = 0;
 		List<string> failedCandidates = [];
 		foreach (string schemaName in candidates) {
 			MobilePageConversionGuide? guide = await ConvertOrCollectFailureAsync(
@@ -507,6 +508,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			if (guide.TabAreaLayers is { Count: > 0 }) {
 				pagesWithTabAreaLayers++;
 			}
+			AssertNoNonTabChildOfATabStrip(guide, schemaName);
+			pagesWithTabStripChildren += guide.ElementMap.Any(e => e.Operation == "insert"
+				&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
+				? 1
+				: 0;
 			List<(ElementMapEntry Parent, string Slot)> targetedParents = ResolveTargetedParents(guide);
 			if (targetedParents.Count == 0) {
 				continue;
@@ -552,7 +558,50 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		}
 		pagesWithTargetedParents.Should().BeGreaterThan(0,
 			because: "at least one seeded page with nested containers must have exercised the differ-apply gate");
+		if (pagesWithTabStripChildren == 0) {
+			// Not a failure: the tab-strip invariant is pinned hermetically on every build by
+			// WebToMobileGeneralInfoTabRegressionTests against the OOTB Services_FormPage. What is NOT covered
+			// while this is silent is the RUNTIME-FETCHED rules file reaching the same verdict through the real
+			// clio mcp-server process — the one failure mode no hermetic unit test can see.
+			TestContext.Out.WriteLine(
+				$"No seeded page of '{ApplicationCode}' on environment '{environmentName}' produced a converted tab, "
+				+ "so the ENG-94951 tab-strip invariant was not exercised over the real transport. Add a tabbed "
+				+ "record page whose General information tab holds an expansion panel to the seed application.");
+		}
 	}
+
+	/// <summary>
+	/// ENG-94951: a parent that at least one <c>crt.TabContainer</c> insert targets IS a tab strip, and a
+	/// <c>crt.TabPanel</c> renders only <c>crt.TabContainer</c> children — so any OTHER insert targeting that
+	/// same parent is invisible in Mobile Designer and its whole subtree is lost from the converted page.
+	/// Derived from the serialized guide alone, deliberately NOT by calling the converter's own detection pass,
+	/// so this re-states the invariant over the real transport instead of re-running the implementation.
+	/// </summary>
+	private static void AssertNoNonTabChildOfATabStrip(MobilePageConversionGuide guide, string schemaName) {
+		HashSet<string> strips = [
+			.. guide.ElementMap
+				.Where(e => e.Operation == "insert"
+					&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)
+					&& e.ParentName is { Length: > 0 })
+				.Select(e => e.ParentName!)
+		];
+		List<ElementMapEntry> offenders = [
+			.. guide.ElementMap.Where(e => e.Operation == "insert"
+				&& e.ParentName is { Length: > 0 }
+				&& strips.Contains(e.ParentName!)
+				&& !string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
+		];
+		offenders.Should().BeEmpty(
+			because: $"on '{schemaName}' a crt.TabPanel accepts only crt.TabContainer children, so each of these is "
+				+ "invisible in Mobile Designer and its whole subtree is lost from the converted page (ENG-94951): "
+				+ string.Join(", ", offenders.Select(e => $"{e.MobileName}({e.MobileType})->{e.ParentName}")));
+		guide.Constraints.Should().NotContain(c => c.Contains("INVISIBLE in Mobile Designer"),
+			because: $"the converter's own tab-strip loss report must stay silent on '{schemaName}' — it fires only "
+				+ "when a RUNTIME-FETCHED rules file has lost a containers entry, which no hermetic unit test can see");
+	}
+
+	/// <summary>Mobile component type of a single tab; only this type may be a child of a crt.TabPanel.</summary>
+	private const string MobileTabComponentType = "crt.TabContainer";
 
 	[Test]
 	[Description("Non-vacuous guard for container types OUTSIDE emptyContainerRemoval.removableTypes: converts seeded pages until one yields a surviving parent-targeted insert whose mobileType the empty-container-removal pass never lists (a crt.Button carrying menuItems children, a crt.Timeline, a crt.ButtonToggleGroup, …), then asserts the slot it is targeted through is declared and the differ applies cleanly — the slot declaration is keyed on 'used as parent through this slot', never on a type list, and a type-list-keyed regression would silently reintroduce exactly this case. The type-list independence itself is additionally pinned off-stand, on every unit run, by WebToMobileConversionServiceTests.Analyze_ContainerTypesOutsideEveryList_StillGetItemsSlot; this test is its full-MCP-path counterpart. When NO seeded page carries such a container it IGNORES with an explicit seed instruction instead of passing silently; a conversion failure always fails the test.")]

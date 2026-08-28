@@ -374,7 +374,8 @@ public static class WebToMobileAnalysisService {
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
 					.Distinct(StringComparer.OrdinalIgnoreCase)
-					.ToList()),
+					.ToList(),
+				nonTabChildrenOfTabPanels: CollectNonTabChildrenOfTabPanels(elementMap, mobileTypesByName)),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -397,6 +398,20 @@ public static class WebToMobileAnalysisService {
 	/// operand's attribute path remapped from the source DS column path to the mobile viewModel attribute name, so
 	/// the rule is ready for create-page-business-rule. Returns null when no probe ran.
 	/// </summary>
+	/// <summary>
+	/// True when the entry is a container twin that maps a web TAB onto the mobile tab's CONTENT container
+	/// (e.g. <c>GeneralInfoTab</c> -&gt; <c>GeneralTabContainer</c>). Such a <c>containers</c> entry is a PLACEMENT
+	/// rule — it decides where the tab's children go — and NOT an identity rule: on the mobile template the two
+	/// names are different elements (the tab's <c>crt.TabContainer</c> and the <c>crt.GridContainer</c> inside it).
+	/// Passes that resolve an element's IDENTITY (the page-business-rule survivor map) must skip it; passes that
+	/// resolve PLACEMENT (the element map's parent resolution) must not.
+	/// </summary>
+	private static bool IsTabToContentContainerTwin(ElementMapEntry entry) =>
+		string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
+		&& string.Equals(entry.WebType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)
+		&& !string.IsNullOrWhiteSpace(entry.MobileName)
+		&& !string.Equals(entry.MobileName, entry.WebName, StringComparison.OrdinalIgnoreCase);
+
 	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
 		PageBusinessRuleProbeResult probe,
 		IReadOnlyList<ElementMapEntry> elementMap,
@@ -412,6 +427,16 @@ public static class WebToMobileAnalysisService {
 		var survivors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap ?? []) {
 			if (string.IsNullOrWhiteSpace(entry?.WebName)) {
+				continue;
+			}
+			// A container twin that maps a web TAB onto the mobile tab's CONTENT container (GeneralInfoTab ->
+			// GeneralTabContainer) is a PLACEMENT map, not an identity map: on mobile those are two different
+			// elements (the crt.TabContainer with its header, and the crt.GridContainer inside it). Carrying it
+			// into the survivor map would silently rewrite a rule action targeting the TAB into one targeting its
+			// BODY — "hide GeneralInfoTab" would blank the tab's content while leaving the header in the strip.
+			// Excluded so the action is filtered out and the rule is reported in droppedRules instead, which is an
+			// explicit loss the user can act on rather than a wrong conversion nobody sees.
+			if (IsTabToContentContainerTwin(entry)) {
 				continue;
 			}
 			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
@@ -1643,7 +1668,8 @@ public static class WebToMobileAnalysisService {
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
-		IReadOnlyList<string> retargetParentsOnTemplate = null) {
+		IReadOnlyList<string> retargetParentsOnTemplate = null,
+		IReadOnlyList<string> nonTabChildrenOfTabPanels = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1751,6 +1777,18 @@ public static class WebToMobileAnalysisService {
 				"paste mobileValues verbatim — do NOT reparent, reorder or re-place anything yourself, and do NOT " +
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
+		}
+		if (nonTabChildrenOfTabPanels is { Count: > 0 }) {
+			// Silent failure by construction: the mobile designer renders a tab strip's non-tab child as nothing,
+			// so without this line a lost subtree is indistinguishable from a page that never had it.
+			constraints.Add(
+				"elementMap inserts element(s) DIRECTLY into a mobile tab strip (crt.TabPanel) that are NOT tabs: "
+				+ string.Join(", ", nonTabChildrenOfTabPanels)
+				+ ". A crt.TabPanel renders only crt.TabContainer children, so each of these — and everything nested "
+				+ "inside it — is INVISIBLE in Mobile Designer and effectively lost. Do NOT paste those entries as they "
+				+ "are: place each one inside the content container of the tab it belongs to, and report the correction. "
+				+ "The underlying cause is a MISSING containers entry in the web→mobile conversion rules for that web "
+				+ "container (e.g. GeneralInfoTab → GeneralTabContainer) — report it so the rules file is fixed.");
 		}
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
@@ -2018,9 +2056,18 @@ public static class WebToMobileAnalysisService {
 			// 1. merge — element is a template twin (provided by the mobile template). Recurse so its
 			//    children get their own entries (parent = the template element).
 			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
+				// The twin's type is the MOBILE element's type when the mobile template is readable: a containers
+				// entry may pair elements of different types (GeneralInfoTab, a crt.TabContainer, merges onto
+				// GeneralTabContainer, a crt.GridContainer), and reporting the web type there would name a type
+				// the mobile element does not have — both to the model reading the guide and to
+				// ExcludedComponentsPass, which matches a filter's parentType against this field. Falls back to
+				// the web type (the pair is same-type for every other shipped entry) when the template is unknown.
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = twinMobileName,
-					MobileType = ctx.MobileTypes.Contains(type ?? "") ? type : null,
+					MobileType = ctx.MobileTypesByName.TryGetValue(twinMobileName, out string twinType)
+							&& !string.IsNullOrEmpty(twinType)
+						? twinType
+						: (ctx.MobileTypes.Contains(type ?? "") ? type : null),
 					Reason = TwinReason(name)
 				});
 				if (items is not null) {
@@ -3966,6 +4013,55 @@ public static class WebToMobileAnalysisService {
 	/// <summary>Mobile component type of a single tab.</summary>
 	private const string MobileTabComponentType = "crt.TabContainer";
 
+	/// <summary>Mobile component type of the tab strip, whose items may only be <see cref="MobileTabComponentType"/>.</summary>
+	private const string MobileTabPanelComponentType = "crt.TabPanel";
+
+	/// <summary>
+	/// Names the converted elements the element map would insert straight into a mobile <c>crt.TabPanel</c>
+	/// without being a <c>crt.TabContainer</c> themselves. A tab strip renders only tabs, so such a child is
+	/// invisible in Mobile Designer and its whole subtree is lost from the converted page — SILENTLY, which is
+	/// how ENG-94951 shipped: the general-information tab was subtracted as inherited web-template chrome and
+	/// its content was hoisted one level up into <c>Tabs</c>.
+	/// <para>
+	/// The cure is a <c>containers</c> entry in the rules file mapping the web tab onto the mobile tab's CONTENT
+	/// container (e.g. <c>GeneralInfoTab -&gt; GeneralTabContainer</c>). This pass cannot apply that mapping —
+	/// only the rules know the mobile counterpart — so it reports the loss instead of letting it pass unseen.
+	/// The rules file is fetched at runtime, so a published rules file missing an entry reintroduces the defect
+	/// with no code change; this keeps that debuggable from the guide alone.
+	/// </para>
+	/// </summary>
+	private static List<string> CollectNonTabChildrenOfTabPanels(
+		IReadOnlyList<ElementMapEntry> elementMap,
+		IReadOnlyDictionary<string, string> mobileTypesByName) {
+		// A parent is a tab strip when the mobile tabbed template's OWN strip name (a constant of that template,
+		// exactly as AssignConvertedTabIndexes treats it — see its remarks), when the MOBILE TEMPLATE declares it
+		// as one, or when the conversion itself inserts it as one (a page-authored crt.TabPanel). The constant is
+		// the floor on purpose: mobileTypesByName is EMPTY whenever the mobile-template probe failed, and this
+		// report would otherwise vanish in exactly the degraded run that most needs it — chrome subtraction is
+		// driven by the web baseline and the rules alone, so the hoist still happens with no mobile template read.
+		var tabPanelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { MobileTabsElementName };
+		foreach (KeyValuePair<string, string> pair in mobileTypesByName) {
+			if (string.Equals(pair.Value, MobileTabPanelComponentType, StringComparison.OrdinalIgnoreCase)) {
+				tabPanelNames.Add(pair.Key);
+			}
+		}
+		foreach (ElementMapEntry entry in elementMap) {
+			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+				&& string.Equals(entry.MobileType, MobileTabPanelComponentType, StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrEmpty(entry.MobileName)) {
+				tabPanelNames.Add(entry.MobileName);
+			}
+		}
+		return [.. elementMap
+			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& !string.IsNullOrEmpty(e.ParentName)
+				&& tabPanelNames.Contains(e.ParentName)
+				&& !string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
+			.Select(e => $"{(string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName)} "
+				+ $"({(string.IsNullOrEmpty(e.MobileType) ? "no mobile type" : e.MobileType)}) -> {e.ParentName}")
+			.Distinct(StringComparer.OrdinalIgnoreCase)];
+	}
+
 	/// <summary>
 	/// 0-based index of the FIRST converted tab within the mobile Tabs items: 1 places it right after the
 	/// template's general tab (position 0) and before the template's Feed/Attachments tabs, which shift
@@ -4184,13 +4280,15 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void InitializeContainerChildSlots(List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
-		// occupiedSlots keys purely on MobileName, not on entry identity: a collision would silently seed both
-		// same-named entries. This is safe only because MobileName is guaranteed unique here by construction, not
-		// checked defensively — Freedom UI itself requires unique component names on a page (the web source this
-		// walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers, actively avoids
-		// every name already in the map (its own `taken` set, seeded from every WebName AND MobileName) before
-		// picking a suffix. No test constructs a collision because producing one would require bypassing that
-		// same guarantee, which no caller of this method does.
+		// occupiedSlots keys purely on MobileName, not on entry identity. MobileName is NOT unique across the
+		// element map: `containers` is a MANY-TO-ONE map by design (CardContentWrapper and GeneralInfoTab both
+		// merge onto GeneralTabContainer), so two entries can share one mobile name. This stays safe because the
+		// loop below is gated on Operation == "insert" and every duplicate produced by that map is a MERGE — the
+		// insert side keeps its own uniqueness: Freedom UI requires unique component names on a page (the web
+		// source this walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers,
+		// actively avoids every name already in the map (its own `taken` set, seeded from every WebName AND
+		// MobileName) before picking a suffix. Any future pass that indexes this map by MobileName WITHOUT the
+		// insert gate must state its own tie-break rather than assume uniqueness.
 		var occupiedSlots = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
 			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
