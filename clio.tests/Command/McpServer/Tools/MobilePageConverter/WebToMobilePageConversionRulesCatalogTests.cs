@@ -186,7 +186,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules promote a grid container's corner radius to Large whenever it HAD one — every non-zero token of the registry's borderRadius enum is listed — while a grid carrying no radius (absent, none or default) is left alone.")]
+	[Description("The bundled rules promote a grid container that already shows a MEDIUM corner radius to Large, and narrow to that token alone — a grid at another radius, or at none, is left untouched.")]
 	public void LoadBundled_ReturnsSeededCornerRadiusOverride() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -198,13 +198,12 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		radius.Values["borderRadius"].GetString().Should().Be("large");
 		radius.MergeNestedObjects.Should().BeFalse(
 			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
-		radius.Filters.Should().OnlyContain(f => f.Type == "crt.GridContainer" && f.Values.Count == 1,
-			because: "each entry is the same type narrowed by one radius token — the list is the union");
-		radius.Filters.Select(f => f.Values["borderRadius"].GetString())
-			.Should().BeEquivalentTo(["extra-small", "small", "medium", "extra-large", "xxl", "xxxl"],
-				because: "every non-zero value of the registry's borderRadius enum is promoted. 'none' and "
-					+ "'default' mean the element has NO radius and must stay untouched; 'large' is the target "
-					+ "itself, so listing it would only add no-op entries to the normalization report");
+		ElementFilterRule filter = radius.Filters.Single();
+		filter.Type.Should().Be("crt.GridContainer", because: "the type is a filter constraint like any other");
+		filter.Values.Should().HaveCount(1, because: "one discriminating property beyond the type");
+		filter.Values["borderRadius"].GetString().Should().Be("medium",
+			because: "the standard is deliberately narrowed to the Medium radius — widening it to every "
+				+ "non-zero token is a scope decision that belongs on the ticket, not in this file");
 	}
 
 	[Test]

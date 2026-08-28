@@ -4437,8 +4437,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The BUNDLED rules promote the corner radius end to end: every grid that ARRIVED with a radius — a converted web one at any non-zero token, and the Area card the tab synthesis creates at the platform's Medium — ships Large, while a grid with no radius or an explicit none is untouched. The other tests build their own rules, so only this one reads what actually ships.")]
-	public void Analyze_BundledRules_PromoteEveryGridThatHadACornerRadius() {
+	[Description("The BUNDLED rules promote the Medium corner radius end to end — the Area card the tab synthesis creates at the platform's Medium ships Large — and touch nothing else: a grid at another radius, at none, or without one keeps what it had. The other tests build their own rules, so only this one reads what actually ships.")]
+	public void Analyze_BundledRules_PromoteTheMediumCornerRadius() {
 		// Arrange — the real rules file, and a tab whose content covers every radius case.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
@@ -4459,19 +4459,20 @@ public sealed class WebToMobileConversionServiceTests {
 		// Act
 		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: shipped);
 
-		// Assert — every grid that arrived with a non-zero radius, whatever the token, ships Large.
-		foreach (string name in new[] { "SmallCard", "MediumCard", "HugeCard" }) {
-			Element(guide, name).MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
-				because: $"{name} arrived with a radius, and mobile has ONE corner standard for a card");
-		}
+		// Assert — the Medium grid is promoted...
+		Element(guide, "MediumCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "Medium is the token the shipped standard promotes");
 
-		// ...and the Area card the tab synthesis creates carries the platform's Medium into the pass, so the
-		// shipped rules promote it too — this is the ticket's actual deliverable.
+		// ...and so is the Area card the tab synthesis creates, because it carries the platform's Medium into
+		// the pass. This is the ticket's actual deliverable.
 		(_, string area) = LayerNames("OverviewTab");
 		Synthesized(guide, area).MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
 			because: "tabAreaLayers mirrors the designer's own Medium; promoting it is the normalization's job");
 
-		// A grid with no radius is left alone — 'none' means the element deliberately has none.
+		// Everything else keeps what it had — the standard is deliberately narrowed to one token.
+		Element(guide, "SmallCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("small");
+		Element(guide, "HugeCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("xxxl",
+			because: "a radius other than Medium is outside the standard and must not be rewritten");
 		Element(guide, "SquareCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("none",
 			because: "'none' removes the border radius, so the element never had one to promote");
 		Element(guide, "PlainCard").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
