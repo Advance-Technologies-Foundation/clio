@@ -37,9 +37,10 @@ public static class ModifyBusinessProcessPrompt {
 		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
 		 and a `preconfiguredPage` element's `preconfiguredPage` block (`page`, `buttons`, `dataSources`,
 		 `performer`, `recommendation`), where OMITTING `buttons` or `dataSources` means LEAVE THEM ALONE and —
-		 with one exception: changing `page` on a Freedom UI element REQUIRES `buttons` in the same call, because
+		 with one exception: changing `page` TO a Freedom UI page REQUIRES `buttons` in the same call, because
 		 the stored buttons name the previous page's buttons and the operation is refused rather than carried
-		 across (re-read `get-process-page-facts` for the new page first) —
+		 across (re-read `get-process-page-facts` for the new page first); changing `page` to a Classic UI page
+		 is refused outright —
 		 never "the page has none"; ANY `setElement` touching such an element also re-reads the page and
 		 reconciles its parameters, so a value dropped by a data-type change is reported in the warnings below;
 		 an element on a Classic UI page keeps that page and is limited to the fields both page types share;
