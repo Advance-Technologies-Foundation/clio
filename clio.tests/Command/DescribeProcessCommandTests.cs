@@ -88,7 +88,8 @@ public sealed class DescribeProcessCommandTests {
 								new DescribedPreconfiguredPageDataSource {
 									Name = "PDS", EntitySchemaName = "Account", Parameter = "DataSource_PDS_Id"
 								}
-							]
+							],
+							ShadowedPageParameters = ["Title"]
 						}
 					}
 				],
@@ -109,7 +110,11 @@ public sealed class DescribeProcessCommandTests {
 			&& json.Contains("inSync")
 			// The data-source parameter surfaces ONLY here — the element's own parameter list omits it — so a
 			// model that drops this member takes the saved-record handle with it.
-			&& json.Contains("DataSource_PDS_Id")));
+			&& json.Contains("DataSource_PDS_Id")
+			// Shadowed parameters are the ONLY signal that the page declares something the element does not
+			// carry — inSync deliberately stays true for it — so a model that drops this member drops the
+			// warning entirely.
+			&& json.Contains("shadowedPageParameters")));
 	}
 
 	[Test]

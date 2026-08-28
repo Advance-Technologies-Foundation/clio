@@ -449,6 +449,19 @@ public sealed class DescribedPreconfiguredPage {
 	/// </summary>
 	[JsonPropertyName("inSync")]
 	public bool? InSync { get; set; }
+
+	/// <summary>
+	/// Page parameters that are NOT on the element and never will be under that name — the name is already taken
+	/// by a parameter the element itself owns. Empty in the ordinary case. <c>null</c> means UNKNOWN, from either
+	/// of two causes: the page's parameters could not be read (in which case <see cref="InSync"/> is null too —
+	/// they are always null together), or the server is an older CrtProcessBuilder that does not report them.
+	/// <para>Read it alongside <see cref="InSync"/>, never instead of it. A shadowed parameter is a stable end
+	/// state rather than drift, so <c>inSync</c> stays <c>true</c> — it means "nothing left to synchronize", NOT
+	/// "the element carries every page parameter". Mapping to one of these names silently targets the element's
+	/// own parameter instead of the page's.</para>
+	/// </summary>
+	[JsonPropertyName("shadowedPageParameters")]
+	public List<string> ShadowedPageParameters { get; set; }
 }
 
 /// <summary>The performer of a Pre-configured page element ("Who performs the task?").</summary>
