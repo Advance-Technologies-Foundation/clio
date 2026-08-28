@@ -7575,8 +7575,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
 
 		// Assert
-		LayoutConfigOf(Element(guide, "Top1"))!["row"]!.GetValue<int>().Should().Be(1);
-		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(2);
+		LayoutConfigOf(Element(guide, "Top1"))!["row"]!.GetValue<int>().Should().Be(1,
+			because: "the sibling above the anchor takes the anchor's own template row");
+		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(2,
+			because: "the anchor moves down by the one element placed above it");
 		LayoutConfigOf(Element(guide, "Bottom1"))!["row"]!.GetValue<int>().Should().Be(3,
 			because: "content below the anchor starts at the row right after it");
 		LayoutConfigOf(Element(guide, "Bottom2"))!["row"]!.GetValue<int>().Should().Be(4,
@@ -7831,6 +7833,25 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.NextSteps.Should().Contain(s => s.Contains("guide.resourceStrings as a WHOLE"),
 			because: "nothing else in the guide tells the caller to register the nested tokens, and the tool "
 				+ "description that used to say so has been trimmed");
+	}
+
+
+	[Test]
+	[Description("Review finding: the anchor's whole new layoutConfig travels in a MERGE entry's mobileValues, and the paste-verbatim step is scoped to inserts — so nextSteps must tell the caller to emit a merge operation with those values. Without it a caller that follows the steps literally leaves the anchor in the template's row and silently reproduces the misplacement.")]
+	public void Analyze_ShouldTellTheCaller_ToApplyMergeValuesAsAMergeOperation() {
+		// Arrange
+		PageBundleInfo bundle = WrapperBundle(aboveCount: 1);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
+
+		// Assert
+		LayoutConfigOf(AnchorMerge(guide, "Tabs")).Should().NotBeNull(
+			because: "this page moves the anchor, so its placement exists only inside a merge entry's mobileValues");
+		guide.NextSteps.Should().Contain(
+			s => s.Contains("operation=merge") && s.Contains("mobileValues"),
+			because: "the merge clause is the only place that tells the caller a merge entry can carry values at "
+				+ "all — the paste-verbatim step right after it is scoped to inserts");
 	}
 
 	#endregion
