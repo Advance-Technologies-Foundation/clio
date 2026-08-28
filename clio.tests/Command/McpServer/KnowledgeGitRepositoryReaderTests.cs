@@ -36,6 +36,7 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 			new Version(8, 1, 0, 86),
 			new Version(1, 1, 0),
 			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }));
+		services.AddSingleton(new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: false));
 		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
 		_services = services.BuildServiceProvider();
 		_sut = _services.GetRequiredService<IKnowledgeGitRepositoryReader>();
@@ -323,6 +324,118 @@ public sealed class KnowledgeGitRepositoryReaderTests {
 		diagnostic.Should().Contain("invalid descriptor",
 			because: "a path spelled with a droppable segment is a producer contract violation, not a read failure");
 	}
+
+	[Test]
+	[Description("Default (flag off): a Git manifest that omits the sequence field is rejected by envelope validation.")]
+	public void TryRead_ShouldRejectRepository_WhenSequenceOmittedAndUnsequencedNotAllowed() {
+		// Arrange
+		JObject manifest = ValidManifest();
+		manifest.Remove("sequence");
+		WriteResource("guidance/sample.md", "content");
+		WriteManifest(manifest);
+
+		// Act
+		bool result = _sut.TryRead(_repositoryPath, LibraryId, out KnowledgeGitRepositorySnapshot? snapshot,
+			out string? diagnostic);
+
+		// Assert
+		result.Should().BeFalse(because: "stock clio must not accept a knowledge bundle without an explicit sequence");
+		snapshot.Should().BeNull(because: "a zero/omitted sequence fails ValidateEnvelope before publication");
+		diagnostic.Should().Contain("envelope", because: "the operator needs to see the envelope rejection reason");
+	}
+
+	[Test]
+	[Description("Flag on: an omitted sequence is synthesized from libraryVersion so the bundle loads for local testing.")]
+	public void TryRead_ShouldSynthesizeSequenceFromLibraryVersion_WhenUnsequencedAllowed() {
+		// Arrange
+		JObject manifest = ValidManifest();
+		manifest["libraryVersion"] = "1.13.21";
+		manifest.Remove("sequence");
+		WriteResource("guidance/sample.md", "content");
+		WriteManifest(manifest);
+
+		// Act
+		bool result = ReaderAllowingUnsequenced().TryRead(_repositoryPath, LibraryId,
+			out KnowledgeGitRepositorySnapshot? snapshot, out string? diagnostic);
+
+		// Assert
+		result.Should().BeTrue(because: "the flag lets a sequence-less Git bundle load by deriving the sequence");
+		diagnostic.Should().BeNull(because: "a synthesized sequence must not produce a rejection diagnostic");
+		snapshot!.Sequence.Should().Be(1013021UL,
+			because: "'1.13.21' packs into ((1*1000+13)*1000+21) so downstream sees a non-zero monotonic number");
+		snapshot.SequenceSynthesized.Should().BeTrue(
+			because: "downstream guards relax only for a sequence this clio derived, so the marker must travel with it");
+	}
+
+	[Test]
+	[Description("Flag on: a version component of 1000+ is clamped to 3 digits so the synthesized sequence stays bounded.")]
+	public void TryRead_ShouldClampOversizedVersionComponent_WhenSynthesizingSequence() {
+		// Arrange
+		JObject manifest = ValidManifest();
+		manifest["libraryVersion"] = "1.13.1500";
+		manifest.Remove("sequence");
+		WriteResource("guidance/sample.md", "content");
+		WriteManifest(manifest);
+
+		// Act
+		bool result = ReaderAllowingUnsequenced().TryRead(_repositoryPath, LibraryId,
+			out KnowledgeGitRepositorySnapshot? snapshot, out string? diagnostic);
+
+		// Assert
+		result.Should().BeTrue(because: "an oversized component must not break loading under the flag");
+		snapshot!.Sequence.Should().Be(1013999UL, because: "the 1500 component is clamped to 999: (1*1000+13)*1000+999");
+	}
+
+	[Test]
+	[Description("Flag on: a libraryVersion with many segments folds only the first four, so the sequence cannot overflow ulong.")]
+	public void TryRead_ShouldCapComponentCount_WhenSynthesizingSequence() {
+		// Arrange
+		JObject manifest = ValidManifest();
+		manifest["libraryVersion"] = "1.13.21.5.9.4.8";
+		manifest.Remove("sequence");
+		WriteResource("guidance/sample.md", "content");
+		WriteManifest(manifest);
+
+		// Act
+		bool result = ReaderAllowingUnsequenced().TryRead(_repositoryPath, LibraryId,
+			out KnowledgeGitRepositorySnapshot? snapshot, out string? diagnostic);
+
+		// Assert
+		result.Should().BeTrue(because: "an unbounded segment count must be capped, not overflow into a wrong value");
+		snapshot!.Sequence.Should().Be(1013021005UL,
+			because: "only the first four components (1,13,21,5) are folded: (((1*1000+13)*1000+21)*1000+5)");
+	}
+
+	[Test]
+	[Description("Flag on: an explicit non-zero sequence is preserved and never overwritten by the synthesized value.")]
+	public void TryRead_ShouldPreserveExplicitSequence_WhenUnsequencedAllowed() {
+		// Arrange
+		JObject manifest = ValidManifest();
+		manifest["libraryVersion"] = "1.13.21";
+		manifest["sequence"] = 7;
+		WriteResource("guidance/sample.md", "content");
+		WriteManifest(manifest);
+
+		// Act
+		bool result = ReaderAllowingUnsequenced().TryRead(_repositoryPath, LibraryId,
+			out KnowledgeGitRepositorySnapshot? snapshot, out string? diagnostic);
+
+		// Assert
+		result.Should().BeTrue(because: "a manifest that already carries a sequence loads normally");
+		snapshot!.Sequence.Should().Be(7UL,
+			because: "synthesis only fills a zero sequence; a declared sequence must be honored verbatim");
+		snapshot.SequenceSynthesized.Should().BeFalse(
+			because: "a producer-declared sequence must keep every stock guard even while the flag is on");
+	}
+
+	private IKnowledgeGitRepositoryReader ReaderAllowingUnsequenced() =>
+		new KnowledgeGitRepositoryReader(
+			_fileSystem,
+			new KnowledgeBundleClientCapabilities(
+				new Version(8, 1, 0, 86),
+				new Version(1, 1, 0),
+				new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }),
+			new KnowledgeUnsequencedGitOptions(AllowUnsequencedGitBundles: true));
 
 	private JObject ValidManifest(int resourceCount = 1) {
 		JArray resources = [];

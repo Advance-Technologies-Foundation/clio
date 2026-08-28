@@ -548,20 +548,45 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				$"Knowledge source '{alias}' changed while its discovered branch was being persisted; retry. {rollback}".Trim());
 		}
 		string status = ResolveRepositoryStatus(result.Status, isUpdate);
-		return new KnowledgeSourceOperationResult(alias, true, status,
-			$"Git knowledge source '{alias}' is {status} at {result.ResolvedCommit} in {repositoryPath}.");
+		// A relaxed equal-sequence replacement activates successfully but still carries an advisory; it
+		// must reach the operator rather than being discarded with the activation result.
+		return WithTransportAdvisory(
+			new KnowledgeSourceOperationResult(alias, true, status,
+				$"Git knowledge source '{alias}' is {status} at {result.ResolvedCommit} in {repositoryPath}."),
+			activation.Diagnostic);
 	}
 
 	/// <summary>
 	/// Detects a downgrade or rewritten history: a sequence may never move backwards, and the same
 	/// sequence must keep the same content digest.
 	/// </summary>
+	/// <remarks>
+	/// A backwards sequence is a rollback (an upstream force-push to an older revision, say) and is
+	/// refused unconditionally so <c>RollbackRepository</c> restores the previous checkout. The
+	/// same-sequence/different-digest arm is skipped only for a candidate carrying
+	/// <see cref="KnowledgeGitRepositorySnapshot.SequenceSynthesized"/>: such a sequence never identified
+	/// a generation, so re-reading an edited local checkout under an unchanged <c>libraryVersion</c> is a
+	/// legitimate iteration rather than a broken publisher contract. A producer-declared sequence keeps
+	/// the stock guard.
+	/// <para>
+	/// The <c>knowledge-allow-unsequenced</c> flag is deliberately NOT read here. The marker can only be
+	/// set by <see cref="KnowledgeGitRepositoryReader"/> under that flag, and
+	/// <see cref="IKnowledgeBundleRuntime.ActivateGitRepository"/> — which does read it — runs
+	/// immediately after this check and refuses the same candidate when the flag is off. That refusal
+	/// takes the activation-rejected branch below, which rolls the checkout back and reports the same
+	/// <c>rejected</c> status, so the flag stays authoritative in exactly one place.
+	/// </para>
+	/// </remarks>
+	/// <param name="snapshot">The freshly read candidate.</param>
+	/// <param name="previousSnapshot">The snapshot validated before synchronization.</param>
+	/// <returns><see langword="true"/> when the candidate must be refused and rolled back.</returns>
 	private static bool IsSequenceRegression(
 		KnowledgeGitRepositorySnapshot snapshot,
 		KnowledgeGitRepositorySnapshot previousSnapshot) =>
 		snapshot.Sequence < previousSnapshot.Sequence
 		|| (snapshot.Sequence == previousSnapshot.Sequence
-			&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest, StringComparison.Ordinal));
+			&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest, StringComparison.Ordinal)
+			&& !snapshot.SequenceSynthesized);
 
 	/// <summary>
 	/// Maps a Git synchronization outcome to the reported lifecycle status. A refused synchronization

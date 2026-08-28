@@ -1102,7 +1102,7 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'NameField',
 					    parentName: 'MainContainer',
-					    path: ['items'],
+					    propertyName: 'items',
 					    values: {
 					      type: 'crt.Input'
 					    }
@@ -1124,7 +1124,8 @@ public class PageToolsTests
 					    operation: 'insert',
 					    name: 'MainContainer',
 					    values: {
-					      type: 'crt.FlexContainer'
+					      type: 'crt.FlexContainer',
+					      items: []
 					    }
 					  }
 					]
@@ -1206,7 +1207,7 @@ public class PageToolsTests
 			    operation: 'insert',
 			    name: 'NameField',
 			    parentName: 'MainContainer',
-			    path: ['items'],
+			    propertyName: 'items',
 			    values: {
 			      type: 'crt.Input'
 			    }
@@ -1375,6 +1376,146 @@ public class PageToolsTests
 			because: "the MCP-facing response should serialize the raw payload block");
 		serializedResponse.Should().Contain("\"packageUId\":\"99999999-2222-3333-4444-555555555555\"",
 			because: "the MCP-facing response should keep the package identifier stable");
+	}
+
+	[Test]
+	[Description("TryGetPage surfaces a named, actionable success:false failure (not a raw applier error) when the strict client-faithful applier rejects the merged inherited chain.")]
+	public void TryGetPage_WhenStrictApplierRejectsChain_ReturnsActionableFailure() {
+		// Arrange - the current page contributes a view-config op the platform itself rejects (parentName == name
+		// is a cyclic dependency), so the strict applier throws while resolving the merged bundle.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrBad_FormPage",
+			"bad-schema-uid",
+			"bad-package-uid",
+			"UsrBad",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "bad-schema-uid",
+				["name"] = "UsrBad_FormPage",
+				["package"] = new JObject { ["uId"] = "bad-package-uid", ["name"] = "UsrBad" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'Loop',
+					    parentName: 'Loop',
+					    values: { type: 'crt.Input' }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject { ["uId"] = "base-pkg-uid", ["name"] = "CrtBase" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: { type: 'crt.FlexContainer', items: [] }
+					  }
+					]
+					""")
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrBad_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a schema chain the platform would reject must not resolve to a silent wrong bundle");
+		response.Success.Should().BeFalse(
+			because: "the strict-applier rejection should be reported as an explicit failure envelope");
+		response.Error.Should().Contain("Failed to resolve page bundle for 'UsrBad_FormPage'",
+			because: "the failure should name the page instead of surfacing a bare applier error");
+		response.Error.Should().Contain("the platform itself would reject",
+			because: "the message should explain the chain is rejected by the same engine the platform uses");
+		response.Error.Should().Contain("Cyclic dependency",
+			because: "the original applier diagnostic should be preserved so the offending operation is identifiable");
+	}
+
+	[Test]
+	[Description("TryGetPage returns success:false with the actionable message when a child is inserted into a container whose collection was never seeded - the strict applier rejects it (client parity) instead of silently auto-creating the collection.")]
+	public void TryGetPage_WhenContainerCollectionNotSeeded_ReturnsActionableFailure() {
+		// Arrange - the base template inserts MainContainer WITHOUT an items collection; the current page then
+		// inserts a child into MainContainer.items. The faithful applier throws "not a container" (the client does
+		// the same), where the retired tolerant applier would have auto-created the missing items array.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrUnseeded_FormPage",
+			"unseeded-schema-uid",
+			"unseeded-package-uid",
+			"UsrUnseeded",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "unseeded-schema-uid",
+				["name"] = "UsrUnseeded_FormPage",
+				["package"] = new JObject { ["uId"] = "unseeded-package-uid", ["name"] = "UsrUnseeded" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'NameField',
+					    parentName: 'MainContainer',
+					    propertyName: 'items',
+					    values: { type: 'crt.Input' }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject { ["uId"] = "base-pkg-uid", ["name"] = "CrtBase" },
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: { type: 'crt.FlexContainer' }
+					  }
+					]
+					""")
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrUnseeded_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a child insert into an unseeded container collection is rejected, not silently repaired");
+		response.Success.Should().BeFalse(
+			because: "the strict-applier rejection surfaces as an explicit failure envelope");
+		response.Error.Should().Contain("Failed to resolve page bundle for 'UsrUnseeded_FormPage'",
+			because: "the failure names the page instead of surfacing a bare applier error");
+		response.Error.Should().Contain("not a container",
+			because: "the preserved applier diagnostic identifies the unseeded container as the offending target");
 	}
 
 	[Test]
@@ -2970,7 +3111,7 @@ public class PageToolsTests
 			logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
 			CreatePassthroughPageFileWriter());
 	}
 
@@ -3668,33 +3809,8 @@ public class PageToolsTests
 				}
 			}
 		});
-		var jsonDiff = Substitute.For<IPageJsonDiffApplier>();
-		jsonDiff.ApplyDiff(Arg.Any<Newtonsoft.Json.Linq.JArray>(), Arg.Any<IReadOnlyList<Newtonsoft.Json.Linq.JArray>>(), Arg.Any<IReadOnlyList<PageJsonDiffApplyOptions>>())
-			.Returns(ci => {
-				var array = new Newtonsoft.Json.Linq.JArray {
-					new Newtonsoft.Json.Linq.JObject {
-						["name"] = "RootContainer",
-						["type"] = "crt.FlexContainer",
-						["items"] = new Newtonsoft.Json.Linq.JArray {
-							new Newtonsoft.Json.Linq.JObject {
-								["name"] = "NestedContainer",
-								["type"] = "crt.Grid",
-								["items"] = new Newtonsoft.Json.Linq.JArray {
-									new Newtonsoft.Json.Linq.JObject {
-										["name"] = "LeafButton",
-										["type"] = "crt.Button"
-									}
-								}
-							}
-						}
-					}
-				};
-				return array;
-			});
-		var pathDiff = Substitute.For<IPageJsonPathDiffApplier>();
-		pathDiff.Apply(Arg.Any<Newtonsoft.Json.Linq.JObject>(), Arg.Any<Newtonsoft.Json.Linq.JArray>())
-			.Returns(ci => new Newtonsoft.Json.Linq.JObject());
-		var builder = new PageBundleBuilder(jsonDiff, pathDiff);
+		// The real client-faithful applier resolves the parser's ViewConfigDiff into the container tree under test.
+		var builder = new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier());
 		var parts = new List<PageSchemaBundlePart> {
 			new(
 				new PageDesignerHierarchySchema { UId = "u", Name = "TestPage", PackageUId = "p", Body = "x" },

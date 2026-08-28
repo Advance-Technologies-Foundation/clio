@@ -2,8 +2,10 @@ using System;
 using System.IO.Abstractions.TestingHelpers;
 using Clio;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -65,6 +67,26 @@ public class BindingsModuleMcpHostGateTests {
 			because: "the MCP server singleton must be registered only when the host is explicitly requested");
 		provider.GetService(typeof(McpServerCommand)).Should().BeNull(
 			because: "McpServerCommand depends on the gated McpServer singleton, so it must be absent from non-mcp builds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("KnowledgeUnsequencedGitOptions resolves from the real container and is OFF when no feature flag is set.")]
+	public void Register_Should_ResolveUnsequencedGitOptionsDisabled_When_FeatureFlagIsAbsent() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+
+		// Act
+		IServiceProvider provider = new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: false);
+		KnowledgeUnsequencedGitOptions options = provider.GetRequiredService<KnowledgeUnsequencedGitOptions>();
+
+		// Assert — the registration is a factory over IFeatureToggleService, so nothing else in the suite
+		// proves it is reachable; a dropped or mis-scoped registration would only surface at runtime.
+		options.Should().NotBeNull(
+			because: "the local-iteration options must resolve from the real composition root, not only from test doubles");
+		options.AllowUnsequencedGitBundles.Should().BeFalse(
+			because: "knowledge-allow-unsequenced is opt-in, so an environment with no flag keeps every stock guard");
 	}
 
 	[Test]

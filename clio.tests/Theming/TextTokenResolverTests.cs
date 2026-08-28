@@ -7,7 +7,7 @@ namespace Clio.Tests.Theming;
 
 /// <summary>
 /// Calibration anchors for <see cref="TextTokenResolver"/>: the AA-passing stop walk, the link-hover
-/// increment, and the <c>text-on-*</c> base-light / palette-900 resolution.
+/// increment, and the <c>text-on-*</c> light / palette-900 / dark resolution.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -51,7 +51,7 @@ public sealed class TextTokenResolverTests {
 	}
 
 	[Test]
-	[Description("resolveTextOnColorToken returns base-light over a dark background.")]
+	[Description("resolveTextOnColorToken returns the light reference over a dark background.")]
 	public void ResolveTextOnColorToken_ShouldReturnBaseLight_OverDarkBackground() {
 		// Act
 		TextOnColorResolution resolved = TextTokenResolver.ResolveTextOnColorToken("text-on-primary", Palettes["primary"][500], Palettes);
@@ -70,5 +70,43 @@ public sealed class TextTokenResolverTests {
 		resolved.Kind.Should().Be(TextOnColorKind.Palette, because: "white fails AA over the light primary-10 background");
 		resolved.PaletteName.Should().Be("primary", because: "the token maps to the primary palette");
 		resolved.Step.Should().Be(900, because: "the darkest stop is used as the dark-text option");
+	}
+
+	[Test]
+	[Description("resolveTextOnColorToken falls through to the dark reference when neither white nor stop 900 reaches AA.")]
+	public void ResolveTextOnColorToken_ShouldResolveToBaseDark_WhenWhiteAndStop900BothFailAa() {
+		// Act
+		TextOnColorResolution resolved = TextTokenResolver.ResolveTextOnColorToken("text-on-accent", Palettes["accent"][500], Palettes);
+
+		// Assert
+		resolved.Kind.Should().Be(TextOnColorKind.BaseDark,
+			because: "over the accent-500 background white reaches only 3.50 and accent-900 only 4.18, "
+				+ "while the dark reference reaches 5.07 and is the first candidate that passes AA");
+	}
+
+	[Test]
+	[Description("resolveTextOnColorToken picks the dark reference when it is the highest-contrast candidate and none of the three reaches AA.")]
+	public void ResolveTextOnColorToken_ShouldPickDarkReference_WhenItWinsTheHighestContrastFallback() {
+		// Act
+		TextOnColorResolution resolved = TextTokenResolver.ResolveTextOnColorToken("text-on-accent", "#fc172d", Palettes);
+
+		// Assert
+		resolved.Kind.Should().Be(TextOnColorKind.BaseDark,
+			because: "no candidate reaches AA over #fc172d (white 3.96, accent-900 3.70, dark 4.48), so the "
+				+ "highest-contrast one wins — and it is neither the first candidate nor the winner of the "
+				+ "two-candidate rule this replaced, so the assertion discriminates the new fallback");
+	}
+
+	[Test]
+	[Description("resolveTextOnColorToken picks the highest-contrast candidate when none of the three reaches AA.")]
+	public void ResolveTextOnColorToken_ShouldPickHighestContrast_WhenNoCandidateReachesAa() {
+		// Act
+		TextOnColorResolution resolved = TextTokenResolver.ResolveTextOnColorToken("text-on-primary", Palettes["primary"][400], Palettes);
+
+		// Assert
+		resolved.Kind.Should().Be(TextOnColorKind.BaseLight,
+			because: "over the mid-tone primary-400 background every candidate fails AA (white 4.31, "
+				+ "primary-900 3.71, dark 4.12), so the highest-contrast one wins and no AA-passing "
+				+ "text colour exists for that background");
 	}
 }
