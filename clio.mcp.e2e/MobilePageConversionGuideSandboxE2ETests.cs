@@ -524,10 +524,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// Assert — the anchor made room. The exact arithmetic is unit-tested; what must hold end to end is that
 		// the anchor no longer sits in the row the template pinned it to, and that it is re-placed exactly once.
 		List<ElementMapEntry> above = PlacedAboveAnchor(guide);
-		string anchorName = ResolveAnchorName(above[0]);
+		string anchorName = ResolveBundledPositionalAnchor();
 		anchorName.Should().NotBeNullOrEmpty(
-			because: $"the reason text of '{above[0].MobileName}' on '{convertedSchemaName}' must name the anchor it "
-				+ "was placed around");
+			because: "the bundled tabbed template rule must declare the mobile anchor its ':top' content is placed "
+				+ $"around, so '{convertedSchemaName}' has something to be positioned against");
 
 		List<ElementMapEntry> anchorMerges = [.. guide.ElementMap
 			.Where(e => e.Operation == "merge" && string.Equals(e.MobileName, anchorName, StringComparison.OrdinalIgnoreCase))];
@@ -560,17 +560,19 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				e.Operation == "insert" && e.Index is not null
 				&& e.Reason is not null && e.Reason.Contains("placed above the mobile ", StringComparison.Ordinal))];
 
-	/// <summary>The anchor name out of a positional entry's reason ("… placed above the mobile Tabs (in X)").</summary>
-	private static string ResolveAnchorName(ElementMapEntry positionalEntry) {
-		const string marker = "placed above the mobile ";
-		int start = positionalEntry.Reason.IndexOf(marker, StringComparison.Ordinal);
-		if (start < 0) {
-			return null;
-		}
-		start += marker.Length;
-		int end = positionalEntry.Reason.IndexOf(" (", start, StringComparison.Ordinal);
-		return end < 0 ? positionalEntry.Reason[start..] : positionalEntry.Reason[start..end];
-	}
+	/// <summary>
+	/// The MOBILE anchor the bundled tabbed-template rule places its positional content around, read from the
+	/// shipped rules file rather than parsed out of the converter's prose — a reason-wording change must not
+	/// break this test, and the rule is the authoritative source anyway. Mirrors
+	/// <see cref="ResolveBundledRemovableTypes"/>. Null when no rule declares a positional entry.
+	/// </summary>
+	private static string ResolveBundledPositionalAnchor() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+			.Where(t => t.Mobile == "MobilePageWithTabsFreedomTemplate")
+			.SelectMany(t => t.Containers)
+			.Where(c => c.Mobile is not null && c.Mobile.Contains(':'))
+			.Select(c => c.Mobile.Split(':', 2)[0].Trim())
+			.FirstOrDefault(anchor => anchor.Length > 0);
 
 	[Test]
 	[Description("Container child-slot regression guard: every surviving container insert that another surviving insert targets as parentName must physically declare THE SLOT IT IS TARGETED THROUGH ('items', 'tools', 'menuItems', …) in its mobileValues, and the viewConfigDiff assembled from the element map (in map order, exactly as the guide's nextSteps instruct the caller) must apply cleanly through the faithful differ clones. Before the converter declared those slots, the FIRST parent-child insert pair failed the Creatio differ with 'Item X is not a container for other items', so this is non-vacuous on any seeded page with nested containers. A conversion failure always fails the test, and so does a page that converted WITH tabAreaLayers yet produced no parent-targeting insert (the synthesized layers guarantee one by construction); Ignores only when the seed truly carries no nested structure at all.")]

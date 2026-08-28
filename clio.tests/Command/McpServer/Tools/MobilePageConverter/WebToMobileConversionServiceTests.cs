@@ -7614,6 +7614,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		LayoutConfigOf(AnchorMerge(guide, "Tabs")).Should().BeNull(
 			because: "moving the anchor is the cost of freeing a row — with nothing above it there is nothing to free");
+		LayoutConfigOf(Element(guide, "Bottom1"))!["row"]!.GetValue<int>().Should().Be(2,
+			because: "a below-only group must still be placed: the anchor keeps the template's row 1 and the "
+				+ "sibling takes the row after it — leaving it unpositioned is the very defect this pass exists for");
 	}
 
 	[Test]
@@ -7649,6 +7652,114 @@ public sealed class WebToMobileConversionServiceTests {
 		anchor.WebName.Should().Be("Tabs", because: "the existing twin entry was patched, not replaced");
 		anchor.Reason.Should().Contain("provided by the mobile template",
 			because: "the twin's own explanation must survive alongside the placement note");
+	}
+
+
+	[Test]
+	[Description("Review finding: a group with content ONLY below the anchor is placed too. The anchor stays where the template put it and the siblings take the rows after it, in web order — an unpositioned sibling would be dropped to the bottom by the runtime exactly like the :top case.")]
+	public void Analyze_ShouldPlaceBelowOnlyGroup_WithoutTouchingTheAnchor() {
+		// Arrange
+		PageBundleInfo bundle = WrapperBundle(aboveCount: 0, belowCount: 2);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
+
+		// Assert
+		LayoutConfigOf(Element(guide, "Bottom1"))!.ToJsonString().Should().Be("""{"row":2,"column":1}""",
+			because: "the first sibling below the anchor takes the row right after the anchor's own");
+		LayoutConfigOf(Element(guide, "Bottom2"))!.ToJsonString().Should().Be("""{"row":3,"column":1}""",
+			because: "each further sibling below takes the next row, in web order");
+		LayoutConfigOf(AnchorMerge(guide, "Tabs")).Should().BeNull(
+			because: "nothing is above the anchor, so its own row is still free and must not be moved");
+	}
+
+	[Test]
+	[Description("Review finding: the adaptive pass must not claim a positional sibling. Its ParentName is the MOBILE anchor parent, which can collide by name with a multi-column WEB grid of the same name — placing it there would both give it a row from the wrong grid and make the anchor move for a sibling that never did.")]
+	public void Analyze_ShouldKeepPositionalSiblingsOutOfTheAdaptivePass() {
+		// Arrange — the web wrapper's parent is a 2-column grid NAMED like the mobile anchor's parent.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainContainer", "type": "crt.GridContainer", "columns": ["1fr", "1fr"], "items": [
+			    { "name": "Top1", "type": "crt.FlexContainer", "items": [ { "name": "TopField1", "type": "crt.Input" } ] },
+			    { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			        { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			            { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "LeadName", "type": "crt.Input" } ] } ] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle, TabsPinnedToRow(3));
+
+		// Assert — the adaptive pass must not even REPORT it: guide.adaptiveLayout is the caller-facing record of
+		// what that pass owns, and an element it never legitimately placed must not appear there.
+		(guide.AdaptiveLayout ?? []).Should().NotContain(
+			g => g.Items.Any(i => i.Name == "Top1"),
+			because: "the sibling was rerouted OUT of that web grid, so the grid's column count says nothing about "
+				+ "it — and the mobile parent it landed in only collides with the web grid by NAME");
+
+		JsonNode sibling = LayoutConfigOf(Element(guide, "Top1"));
+		sibling!["adaptive"].Should().BeNull(
+			because: "positional placement owns this element, and it is a single column whatever the web grid was");
+		sibling.ToJsonString().Should().Be("""{"row":3,"column":1}""",
+			because: "the anchor's own template row is the origin — row 1 would leave rows 2-3 empty above it");
+		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(4,
+			because: "the anchor moves by the number of siblings ACTUALLY placed, which is exactly the one above it");
+	}
+
+	[Test]
+	[Description("Review finding: an anchor carrying a flat row beside a row-less adaptive block is placed FLAT — the shape follows where the rows actually are, so a sibling can never receive an empty adaptive block and no placement at all.")]
+	public void Analyze_ShouldPlaceFlat_WhenTheAdaptiveBlockCarriesNoRow() {
+		// Arrange
+		PageBundleInfo bundle = WrapperBundle(aboveCount: 1);
+		var mixed = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase) {
+			["Tabs"] = JsonNode.Parse("""{ "row": 1, "column": 1, "adaptive": { "small": { "colSpan": 2 } } }""")!.AsObject()
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle, mixed);
+
+		// Assert
+		LayoutConfigOf(Element(guide, "Top1"))!.ToJsonString().Should().Be("""{"row":1,"column":1}""",
+			because: "the only row the anchor declares is the flat one, so that is the shape the sibling gets");
+		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(2,
+			because: "the flat row is the one that moves");
+	}
+
+	[Test]
+	[Description("An anchor whose row is not an integral number is left alone with its group rather than throwing: Analyze runs inside the guide build, where an exception becomes a whole-tool failure.")]
+	public void Analyze_ShouldLeaveTheGroupAlone_WhenTheAnchorRowIsNotAnInteger() {
+		// Arrange
+		PageBundleInfo bundle = WrapperBundle(aboveCount: 1);
+		var fractional = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase) {
+			["Tabs"] = JsonNode.Parse("""{ "row": 1.5, "column": 1 }""")!.AsObject()
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle, fractional);
+
+		// Assert
+		LayoutConfigOf(Element(guide, "Top1")).Should().BeNull(
+			because: "a row the converter cannot reason about must degrade to no placement, never to an exception");
+		LayoutConfigOf(AnchorMerge(guide, "Tabs")).Should().BeNull(
+			because: "nothing was placed, so there is no room to make");
+	}
+
+	[Test]
+	[Description("Review finding: guide.resourceStrings must be registered as a WHOLE — the per-element captionResource step does not cover the #ResourceString tokens nested inside a component's own values, and an unregistered token renders raw on the device.")]
+	public void Analyze_ShouldTellTheCaller_ToRegisterTheWholeResourceMap() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "LeadName", "type": "crt.Input", "caption": "$Resources.Strings.LeadName_caption" } ] } ]
+			""",
+			resourcesJson: """{ "LeadName_caption": { "en-US": "Name" } }""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		guide.ResourceStrings.Should().NotBeNull(because: "the page carries a localizable caption");
+		guide.NextSteps.Should().Contain(s => s.Contains("guide.resourceStrings as a WHOLE"),
+			because: "nothing else in the guide tells the caller to register the nested tokens, and the tool "
+				+ "description that used to say so has been trimmed");
 	}
 
 	#endregion

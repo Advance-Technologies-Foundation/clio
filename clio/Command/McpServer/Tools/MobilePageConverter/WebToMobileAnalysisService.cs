@@ -381,7 +381,8 @@ public static class WebToMobileAnalysisService {
 				normalization: componentPropertyOverrides,
 				webTemplateUnavailable: webTemplateUnavailable,
 				hasComponentTwin: componentMap.Count > 0,
-				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
+				hasExcludedComponents: excludedRemovedNames.Count > 0,
+			exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
 				retargetParentsOnTemplate: elementMap
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
@@ -392,7 +393,8 @@ public static class WebToMobileAnalysisService {
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
-				normalization: componentPropertyOverrides),
+				normalization: componentPropertyOverrides,
+			hasResourceStrings: resourceStrings.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -1708,6 +1710,7 @@ public static class WebToMobileAnalysisService {
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
+		bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1838,6 +1841,15 @@ public static class WebToMobileAnalysisService {
 				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
 				+ "misspelled property name.");
 		}
+		if (hasExcludedComponents) {
+			constraints.Add(
+				"One or more components were removed by an excludedComponents rule — they appear in elementMap as "
+				+ "drop entries whose reason names the rule, the type, the host and the slot. That removal is "
+				+ "POSITIONAL, not conversion loss: the same type converts normally OUTSIDE that position. Do NOT "
+				+ "re-insert such a component anywhere, do NOT look for a substitute, and do NOT raise it as a gate "
+				+ "question — just report it like any other drop. Which types are banned from which hosts is converter "
+				+ "configuration resolved at run time, so read the drop reasons rather than assuming a fixed list.");
+		}
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
@@ -1849,7 +1861,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		ComponentPropertyOverrideResult normalization = null) {
+		ComponentPropertyOverrideResult normalization = null, bool hasResourceStrings = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -1866,6 +1878,13 @@ public static class WebToMobileAnalysisService {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
 		AppendNormalizationLines(steps, normalization);
+		if (hasResourceStrings) {
+			steps.Add("Register guide.resourceStrings as a WHOLE with one update-page resources call: it is the "
+				+ "{key: en-US text} map for EVERY #ResourceString token the pasted mobileValues carry, including the "
+				+ "ones nested inside a component value (config.title, text.template, a list row caption). Registering "
+				+ "only the per-element captionResource keys leaves the nested tokens unresolved and they render as "
+				+ "the raw token on the device.");
+		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
 		return steps;
@@ -3754,6 +3773,14 @@ public static class WebToMobileAnalysisService {
 				!colsByMobileParent.ContainsKey(e.ParentName)) {
 				continue;
 			}
+			// A positional sibling was rerouted OUT of the web grid it was declared in and into the anchor's
+			// mobile parent, so that grid's column count says nothing about it — and the two can collide by NAME
+			// through the fallback above (a web MainContainer that is a multi-column grid vs the mobile
+			// MainContainer the siblings land in). Placing it here would give it a row this pass owns and let
+			// PlacePositionalGroups shift the anchor to make room for a sibling that never moved.
+			if (e.PositionalAnchor is { Length: > 0 }) {
+				continue;
+			}
 			if (!byContainer.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
 				list = [];
 				byContainer[e.ParentName] = list;
@@ -4087,18 +4114,32 @@ public static class WebToMobileAnalysisService {
 			// Above the anchor: the compacted 0..N-1 index. Below it: no index, element-map order kept.
 			List<ElementMapEntry> above = [.. group.Where(e => e.Index is not null).OrderBy(e => e.Index.Value)];
 			List<ElementMapEntry> below = [.. group.Where(e => e.Index is null)];
-			if (above.Count == 0
+			if ((above.Count == 0 && below.Count == 0)
 				|| !mobileLayoutConfigs.TryGetValue(group.Key, out JsonObject anchorPlacement)
 				|| !CarriesRow(anchorPlacement)) {
 				continue;
 			}
-			for (int i = 0; i < above.Count; i++) {
-				PlaceSibling(above[i], anchorPlacement, offset: i);
+			// Count the siblings ACTUALLY placed, never the candidates: the anchor may only be moved to make room
+			// that was really taken, or it vacates rows nothing occupies.
+			int placedAbove = 0;
+			foreach (ElementMapEntry sibling in above) {
+				if (PlaceSibling(sibling, anchorPlacement, offset: placedAbove)) {
+					placedAbove++;
+				}
 			}
-			for (int i = 0; i < below.Count; i++) {
-				PlaceSibling(below[i], anchorPlacement, offset: above.Count + 1 + i);
+			// Below the anchor: the rows after its own, shifted or not. A group with nothing above it is still
+			// placed — the anchor stays where the template put it and the siblings follow it. Leaving them
+			// unpositioned is the very defect this pass exists for: the mobile runtime does not auto-place a
+			// child that carries no layoutConfig.
+			int belowOffset = placedAbove + 1;
+			foreach (ElementMapEntry sibling in below) {
+				if (PlaceSibling(sibling, anchorPlacement, offset: belowOffset)) {
+					belowOffset++;
+				}
 			}
-			SetAnchorPlacement(elementMap, group.Key, ShiftRows(anchorPlacement, above.Count), above.Count);
+			if (placedAbove > 0) {
+				SetAnchorPlacement(elementMap, group.Key, ShiftRows(anchorPlacement, placedAbove), placedAbove);
+			}
 		}
 	}
 
@@ -4118,48 +4159,82 @@ public static class WebToMobileAnalysisService {
 		if (placement is null) {
 			yield break;
 		}
-		if (placement[LayoutRowKey]?.GetValueKind() == JsonValueKind.Number) {
+		if (TryRow(placement, out _)) {
 			yield return placement;
 		}
-		if (placement[LayoutAdaptiveKey] is JsonObject adaptive) {
-			foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive) {
-				if (breakpoint.Value is JsonObject slot && slot[LayoutRowKey]?.GetValueKind() == JsonValueKind.Number) {
-					yield return slot;
-				}
+		foreach ((_, JsonObject slot) in AdaptiveRowSlots(placement)) {
+			yield return slot;
+		}
+	}
+
+	/// <summary>
+	/// Each breakpoint of an <c>adaptive</c> block that actually carries a row, with its key. A block whose
+	/// breakpoints declare none yields nothing, so a placement is never treated as adaptive on the strength of an
+	/// empty or row-less block — which would hand a sibling an empty adaptive block and no placement at all.
+	/// </summary>
+	private static IEnumerable<(string Key, JsonObject Slot)> AdaptiveRowSlots(JsonObject placement) {
+		if (placement?[LayoutAdaptiveKey] is not JsonObject adaptive) {
+			yield break;
+		}
+		foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive) {
+			if (breakpoint.Value is JsonObject slot && TryRow(slot, out _)) {
+				yield return (breakpoint.Key, slot);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Reads a slot's <c>row</c> as an integer. False when it is absent or not an integral number — a fractional
+	/// or non-numeric row is a placement the converter cannot reason about, and it must degrade rather than throw:
+	/// this runs inside the guide build, where an exception becomes a whole-tool failure.
+	/// </summary>
+	private static bool TryRow(JsonObject slot, out int row) {
+		row = 0;
+		return slot?[LayoutRowKey] is JsonValue value && value.TryGetValue(out row);
 	}
 
 	/// <summary>The anchor's declared placement with every row it carries moved down by <paramref name="by"/>.</summary>
 	private static JsonObject ShiftRows(JsonObject placement, int by) {
 		var shifted = (JsonObject)placement.DeepClone();
-		foreach (JsonObject slot in RowSlots(shifted)) {
-			slot[LayoutRowKey] = slot[LayoutRowKey].GetValue<int>() + by;
+		foreach (JsonObject slot in RowSlots(shifted).ToList()) {
+			if (TryRow(slot, out int row)) {
+				slot[LayoutRowKey] = row + by;
+			}
 		}
 		return shifted;
 	}
 
 	/// <summary>
-	/// Writes one sibling's placement: the anchor's own row plus <paramref name="offset"/>, in column 1, mirroring
-	/// the anchor's flat-or-adaptive shape so the runtime resolves both the same way. Only <c>row</c> and
-	/// <c>column</c> are written — <c>colSpan</c> / <c>rowSpan</c> are not supported by the mobile runtime. A
-	/// sibling the adaptive pass already placed per breakpoint keeps that placement.
+	/// Writes one sibling's placement — the anchor's own row plus <paramref name="offset"/>, in column 1 — and
+	/// reports whether it wrote one, so the caller shifts the anchor by what was really placed. The shape follows
+	/// WHERE THE ANCHOR'S ROWS ACTUALLY ARE rather than merely whether an <c>adaptive</c> key exists, so an anchor
+	/// with a flat row beside a row-less adaptive block places its siblings flat. Only <c>row</c> and
+	/// <c>column</c> are written — <c>colSpan</c> / <c>rowSpan</c> are not supported by the mobile runtime.
+	/// <para>
+	/// A placement the sibling already carries is REPLACED: positional placement is authoritative for an element
+	/// the rule rerouted out of its web container, and the one pass that could otherwise have written one
+	/// (<see cref="BuildAdaptiveLayout"/>) now skips these entries at the source.
+	/// </para>
 	/// </summary>
-	private static void PlaceSibling(ElementMapEntry sibling, JsonObject anchorPlacement, int offset) {
-		if (sibling.MobileValues is not JsonObject values
-			|| (values["layoutConfig"] is JsonObject existing && existing[LayoutAdaptiveKey] is not null)) {
-			return;
+	private static bool PlaceSibling(ElementMapEntry sibling, JsonObject anchorPlacement, int offset) {
+		if (sibling.MobileValues is not JsonObject values) {
+			return false;
 		}
-		values["layoutConfig"] = anchorPlacement[LayoutAdaptiveKey] is JsonObject adaptive
-			? new JsonObject {
-				[LayoutAdaptiveKey] = new JsonObject(adaptive
-					.Where(breakpoint => breakpoint.Value is JsonObject slot
-						&& slot[LayoutRowKey]?.GetValueKind() == JsonValueKind.Number)
-					.Select(breakpoint => new KeyValuePair<string, JsonNode>(
-						breakpoint.Key,
-						SiblingSlot(((JsonObject)breakpoint.Value)[LayoutRowKey].GetValue<int>() + offset))))
+		List<(string Key, JsonObject Slot)> breakpoints = [.. AdaptiveRowSlots(anchorPlacement)];
+		if (breakpoints.Count > 0) {
+			var adaptive = new JsonObject();
+			foreach ((string key, JsonObject slot) in breakpoints) {
+				TryRow(slot, out int row);
+				adaptive[key] = SiblingSlot(row + offset);
 			}
-			: SiblingSlot(anchorPlacement[LayoutRowKey].GetValue<int>() + offset);
+			values["layoutConfig"] = new JsonObject { [LayoutAdaptiveKey] = adaptive };
+			return true;
+		}
+		if (!TryRow(anchorPlacement, out int flatRow)) {
+			return false;
+		}
+		values["layoutConfig"] = SiblingSlot(flatRow + offset);
+		return true;
 	}
 
 	/// <summary>One sibling cell: the computed row of column 1, and nothing the mobile runtime ignores.</summary>
