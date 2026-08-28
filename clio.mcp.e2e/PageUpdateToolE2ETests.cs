@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -356,10 +356,17 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	public async Task PageUpdateTool_Should_Bypass_Content_Validation_When_Explicitly_Disabled() {
 		// Arrange
 		string invalidEnvironmentName = $"missing-validation-bypass-env-{Guid.NewGuid():N}";
-		string runProcessBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function() { return { "
-			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\",\"params\":{\"processRunType\":\"RegardlessOfThePage\"}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
-			+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
-			+ "/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		// The syntax gate stays mandatory when validate=false, so this body must be VALID
+		// JavaScript: every SCHEMA_* marker block needs its property name. The defect under
+		// test is semantic - a run-process button without processName - not a parse error.
+		string runProcessBody = "define(\"UsrValidationBypass_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, "
+			+ "function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { "
+			+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\",\"params\":{\"processRunType\":\"RegardlessOfThePage\"}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act

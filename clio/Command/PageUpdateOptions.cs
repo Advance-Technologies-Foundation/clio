@@ -1,4 +1,4 @@
-namespace Clio.Command {
+﻿namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
@@ -188,10 +188,8 @@ namespace Clio.Command {
 				if (commonValidationError != null) { response = commonValidationError; return false; }
 				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
-				if (options.Validate) {
-					PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
-					if (validationError != null) { response = validationError; return false; }
-				}
+				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
+				if (validationError != null) { response = validationError; return false; }
 				if (options.DryRun) {
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
@@ -201,10 +199,8 @@ namespace Clio.Command {
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
-				if (options.Validate) {
-					PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(schemaToSave, bodyToWrite, context.SchemaType);
-					if (captionError != null) { response = captionError; return false; }
-				}
+				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
+				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				response.Warnings = downgradeWarnings is { Count: > 0 } ? downgradeWarnings : null;
@@ -578,7 +574,12 @@ namespace Clio.Command {
 		}
 
 		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
-				JObject schemaToSave, string body, PageSchemaType schemaType) {
+				PageUpdateOptions options, JObject schemaToSave, string body, PageSchemaType schemaType) {
+			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
+			// client-side content checks here rather than at the call site, so TryUpdatePage stays flat.
+			if (!options.Validate) {
+				return null;
+			}
 			if (schemaType == PageSchemaType.Mobile) {
 				return null;
 			}
@@ -829,6 +830,11 @@ namespace Clio.Command {
 			PageUpdateOptions options,
 			PageSchemaType schemaType,
 			Dictionary<string, string> explicitResources) {
+			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
+			// client-side content checks here rather than at the call site, so TryUpdatePage stays flat.
+			if (!options.Validate) {
+				return null;
+			}
 			return schemaType == PageSchemaType.Mobile
 				? ValidateMobileInput(options)
 				: ValidateWebInput(options, explicitResources);

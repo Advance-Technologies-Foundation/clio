@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -557,6 +557,7 @@ internal static class ToolContractCatalog {
 	private const string ExampleLeftExpressionUId = "e277d35c-4c0f-4bd4-9e9e-58b0d5a1c101";
 	private const string ExampleRightExpressionUId = "81b8b8ea-6ad4-4f0e-9d6b-2f70b9a2c202";
 	private const string ExampleActionUId = "c334b501-8a53-46fa-9b7e-7d41c3d4c303";
+	private const string ValidateFieldName = "validate";
 	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
@@ -3770,7 +3771,7 @@ internal static class ToolContractCatalog {
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
-					Field("validate", BooleanType, "Run client-side validation before save."),
+					Field(ValidateFieldName, BooleanType, "Run client-side validation before save."),
 					Field(VerifyFieldName, BooleanType, "Read the page back after save.")
 				]),
 			EnvelopeOutput(
@@ -3784,7 +3785,7 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			[],
 			[
-				Default("validate", "true", "Client-side validation is enabled by default."),
+				Default(ValidateFieldName, "true", "Client-side validation is enabled by default."),
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default.")
 			],
 			[
@@ -3797,7 +3798,7 @@ internal static class ToolContractCatalog {
 							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
 					},
-					["validate"] = true
+					[ValidateFieldName] = true
 				})
 			],
 			Flow(
@@ -4711,7 +4712,7 @@ internal static class ToolContractCatalog {
 					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`. Either `body` or `body-file` must be provided."),
 					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
-					Field("validate", BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, and the page baseline/conflict guard still run. Cannot be combined with force=true."),
+					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, and the page baseline/conflict guard still run. Cannot be combined with force=true."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
@@ -4739,7 +4740,7 @@ internal static class ToolContractCatalog {
 			],
 			[
 				Default(DryRunFieldName, BooleanFalseLiteral, "Saves by default; pass true to validate without writing."),
-				Default("validate", "true", "Runs client-side content validation by default; set false only for a pre-existing defect."),
+				Default(ValidateFieldName, "true", "Runs client-side content validation by default; set false only for a pre-existing defect."),
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
 				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
 			],
