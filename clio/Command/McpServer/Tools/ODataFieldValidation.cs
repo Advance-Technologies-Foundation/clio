@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -429,6 +429,15 @@ internal static class ODataFieldValidation {
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
+			if (IsSelectedRecord(doc.RootElement)) {
+				// The probe asked for a specific record with $select, so the caller's own column names
+				// sit at the root of a successful body. ODataResponseError.TryDetect classifies whole
+				// ERROR envelopes and its ASP.NET branch fires on the mere presence of a root member
+				// named ExceptionType/ExceptionMessage/StackTrace - all legal column names on a
+				// log-shaped entity. A body carrying @odata.context or the selected Id is the record
+				// the probe asked for, so it confirms the keys before any error shape is considered.
+				return new ProbeResult(true, null, null);
+			}
 			return ODataResponseError.TryDetect(doc.RootElement, out string serverError)
 				? new ProbeResult(false, SensitiveErrorTextRedactor.Redact(serverError), null)
 				: new ProbeResult(true, null, null);
@@ -437,6 +446,16 @@ internal static class ODataFieldValidation {
 				SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
 		}
 	}
+
+	/// <summary>
+	/// True when the body is the single record the probe addressed: it carries the service's
+	/// <c>@odata.context</c> annotation or the selected <c>Id</c>. An error envelope carries
+	/// neither, so this distinguishes a record whose own columns happen to be named like the
+	/// members of an error shape from an actual error.
+	/// </summary>
+	private static bool IsSelectedRecord(JsonElement root) =>
+		root.ValueKind == JsonValueKind.Object
+		&& (root.TryGetProperty("@odata.context", out _) || root.TryGetProperty("Id", out _));
 
 	/// <summary>
 	/// Matches the OData service's unknown-property fault:

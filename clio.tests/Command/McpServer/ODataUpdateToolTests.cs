@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -402,6 +402,25 @@ public sealed class ODataUpdateToolTests {
 			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec)
 			// because: the retry budget must stay bounded so a dead metadata endpoint cannot hang the tool
 		;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats a probed record as confirmed even when a selected column is named like an ASP.NET error member.")]
+	public void Update_Should_Not_Read_Selected_Error_Named_Columns_As_A_Server_Error() {
+		const string probedRecord =
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(" + Guid + ")\",\"Id\":\"" + Guid +
+			"\",\"ExceptionMessage\":\"boom\"}";
+		Fixture f = new(HtmlPage, _ => probedRecord);
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		ODataWriteResponse response = Update(f, """{"ExceptionMessage":"boom"}""");
+
+		response.Success.Should().BeTrue(
+			because: "ExceptionMessage is a legal column on a log-shaped entity; the probe asked for it by $select "
+				+ "and got the record back, so the write must not be rejected as a server error");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"ExceptionMessage":"boom"}""", 30000);
 	}
 
 	[Test]
