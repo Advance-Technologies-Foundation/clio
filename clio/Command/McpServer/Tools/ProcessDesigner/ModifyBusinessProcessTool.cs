@@ -197,7 +197,7 @@ public sealed record ModifyBusinessProcessArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}].")]
+	[property: Description("The operations array SERIALIZED AS A JSON STRING - not a nested array. Passing a real array fails with \"Cannot get the value of a token type 'StartArray' as a string\". e.g. \"[{\\\"op\\\":\\\"removeElement\\\",\\\"elementName\\\":\\\"StartEvent1\\\"}]\".")]
 	[property: Required]
 	string Operations,
 

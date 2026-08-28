@@ -172,8 +172,9 @@ public sealed record CreateBusinessProcessArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("descriptor")]
-	[property: Description("Inline JSON process descriptor (name, caption, packageName, elements[], flows[], "
-		+ "parameters[], mappings[]).")]
+	[property: Description("The process descriptor (name, caption, packageName, elements[], flows[], "
+		+ "parameters[], mappings[]) SERIALIZED AS A JSON STRING - not a nested object. Passing a real object "
+		+ "fails with \"Cannot get the value of a token type 'StartObject' as a string\".")]
 	[property: Required]
 	string Descriptor,
 
