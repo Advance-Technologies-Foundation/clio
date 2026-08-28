@@ -188,7 +188,63 @@ public sealed class WebToMobileRealPageRegressionTests {
 					.Select(e => $"{e.MobileName} [{string.Join("|", DeclaredChildSlots(e))}]")));
 	}
 
+	[Test]
+	[Description("ENG-96153 row order: a web tab's tools strip is its header and renders above the tab body, so after the retarget it must occupy a LOWER Area row than the tab's items content — element-map order alone stacks it last, because the walk always reaches items children before tools children.")]
+	public void Analyze_ShouldStackToolsStripAboveItemsContent_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		JsonNode viewConfig = fixture["viewConfig"]!;
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectTypes(viewConfig, mobileTypes);
+		IReadOnlyList<string> headerNames = ChildrenOfTabToolsStrips(viewConfig);
+		headerNames.Should().HaveCountGreaterThan(1,
+			because: "the pinned page must still carry several tabs whose header sits in the tools strip, or "
+				+ "this test proves the ordering rule on a single accidental case");
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		var checkedAreas = new List<string>();
+		foreach (string headerName in headerNames) {
+			ElementMapEntry header = guide.ElementMap.SingleOrDefault(
+				e => string.Equals(e.WebName, headerName, StringComparison.Ordinal)
+					&& string.Equals(e.Operation, "insert", StringComparison.Ordinal));
+			if (header?.ParentName is not { Length: > 0 } area) {
+				continue; // a header the converter dropped entirely carries no row to compare
+			}
+			List<ElementMapEntry> bodySiblings = guide.ElementMap
+				.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+					&& string.Equals(e.ParentName, area, StringComparison.OrdinalIgnoreCase)
+					&& !headerNames.Contains(e.WebName, StringComparer.Ordinal))
+				.ToList();
+			if (bodySiblings.Count == 0) {
+				continue; // nothing to sit above — a header-only tab cannot express the ordering
+			}
+			checkedAreas.Add(area);
+			int headerRow = AssignedRow(header);
+			headerRow.Should().BeGreaterThan(0,
+				because: $"the retarget gives every moved child a single-column layoutConfig, so '{headerName}' must carry a row");
+			bodySiblings.Select(AssignedRow).Should().OnlyContain(bodyRow => bodyRow > headerRow,
+				because: $"the tools strip is the tab's header: in Area '{area}' it must render above "
+					+ $"[{string.Join(", ", bodySiblings.Select(e => $"{e.WebName ?? e.MobileName}@row{AssignedRow(e)}"))}], "
+					+ $"but it was placed at row {headerRow}");
+		}
+		checkedAreas.Should().HaveCountGreaterThan(1,
+			because: "the ordering rule must have been exercised on more than one tab of the pinned page — "
+				+ "zero or one comparable Area means the assertions above were mostly skipped");
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
+
+	/// <summary>The grid row the tab-area pass assigned to a moved child, or -1 when it carries no placement.</summary>
+	private static int AssignedRow(ElementMapEntry entry) =>
+		entry.MobileValues is JsonObject values
+		&& values["layoutConfig"] is JsonObject layoutConfig
+		&& layoutConfig["row"] is JsonValue row
+		&& row.TryGetValue(out int parsed)
+			? parsed
+			: -1;
 
 	/// <summary>Names of the elements sitting directly in a <c>crt.TabContainer</c>'s <c>tools</c> strip.</summary>
 	private static IReadOnlyList<string> ChildrenOfTabToolsStrips(JsonNode node) {
