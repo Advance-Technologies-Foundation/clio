@@ -38,6 +38,225 @@ clio/Command/McpServer/Tools/ToolContractGetTool.cs
 Impact: a consumer can distinguish an unverified insert from a verified failure instead of silently
 duplicating rows on the natural retry.
 
+## 2026-08-25 – ENG-91846: Perform task — CrtProcessBuilder 1.3.0.5 rebundle, MCP contract, E2E net
+Context: clio side of ENG-91846 (Perform task usability + AI understanding). The server change lives in
+cli-process-builder (ProcessParameterValueValidator: a Lookup constant that parses as a non-empty Guid is
+accepted as ConstValue; Guid.Empty is refused as referencing no record; a non-Guid gets a bare-Guid-first
+message with the [#Lookup…#] expression as the named fallback). The full live probe matrix is in THAT
+repo's diary — the most reusable artefact of the ticket.
+Decision — rebundle: `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath C:/Projects/cli-process-builder
+-Version 1.3.0.5 -Configuration Release -Framework net10.0`. Three pins refreshed from the produced archive
+(sha256 AE2B0E30…, version, descriptor ModifiedOnUtc); the schema-descriptor pin is verified-not-refreshed
+by design. The final cut is a SAME-VERSION re-cut done by hand (the runbook's unreleased-branch case: a
+call-site comment fix in ProcessMappingService changed an in-archive source after 1.3.0.5 was stamped, so
+only ModifiedOnUtc moved - /Date(1787824843000)/); the sha-pin prose carried a FILL-ME-ON-COMMIT slot until
+the producing package commit existed. No `[RequiresPackage]` version literal (presence-only is pinned and deliberate); the skew guard
+is the convergence detector armed by the version bump. Interim stamps 1.3.0.2–1.3.0.4 existed only inside
+this branch and were never released, so 1.3.0.5 is the version every surface documents as the route minimum.
+Discovery — the sha-pin's SUMMARY prose names the producing package-repo commit and the rebundle script
+does NOT refresh it (it refreshes constants only): it sat naming a 1.2.0.0-era commit through several
+rebundles until checked by hand. Update that prose on every rebundle - carry a FILL-ME-ON-COMMIT slot while
+the producing commit does not exist yet, and fill it in the clio commit that lands the bytes.
+Decision — version story on every surface (two tools, prompt, capability map, guidance): the two thresholds
+are separated. "The route ships from CrtProcessBuilder 1.3.0.5" is the fixed feature minimum; "this clio
+refuses any environment older than the version it BUNDLES" is the moving convergence threshold, left as a
+rule because the refusal itself names both versions at run time. An older clio (no such gate) surfaces the
+old package's [#Lookup…#]-macro rejection instead — either refusal means the environment is behind.
+MCP surface: [Description] edits in ModifyBusinessProcessTool + CreateBusinessProcessTool and a trigger
+line in ModifyBusinessProcessPrompt (bare-Guid route, both refusal surfaces, Guid.Empty); the stale
+"Lookup DEFAULT-value macro rules" guide-contents phrase reworded. Reviewed, no update required:
+DescribeProcessTool (the absence-is-not-non-existence sentence already shipped), ValidateProcessGraphTool,
+GetProcessSignatureTool (deliberately ungated), ListUserTasksTool, CreateBusinessProcessPrompt,
+DescribeProcessPrompt, ValidateProcessGraphPrompt, ListUserTasksPrompt, all of Resources/.
+E2E — five new tests in ModifyBusinessProcessToolE2ETests, the only regression net this repo has for the
+opaque .gz: the perform-task parameter families (all three scheduling pairs, both booleans, the performer
+expression route, Recommendation, InformationOnStep, plus bare-Guid ActivityCategory AND ActivityPriority,
+every written parameter asserted through the typed describe model); outputs-as-mapping-sources into Guid
+process parameters with the [Element:{uid}] metapath read-back plus a clean validate-process-graph shape
+(built with the production ProcessGraphNodeArg/ProcessGraphEdgeArg types, not local duplicates); the
+non-Guid negative (message still carries 'expression' and '[#Lookup'); the Guid.Empty negative; the
+type-incompatible-mapping negative onto the performer lookup. The asserted GUID literals are base-seed
+rows safe on every stand: the runtime itself hardcodes "To do" as the category fallback, and "High" is
+chosen BECAUSE it is not the shipped Medium default, so the read-back discriminates a write.
+Discovery — Activity.AllowedResult derives from outgoing CONDITIONAL flows, not from the category; the
+category-driven allowed-results list (GetResultParameterAllValues, ConstValue-only) surfaces on the task
+page/designer, so that column can never verify the degradation the ConstValue rule prevents.
+Discovery — ShowInScheduler HAS a designer control: the "Show in calendar" checkbox inherited from
+BaseUserTaskPropertiesPage (grepping only the ActivityUserTask pages misses it — the resource string
+ShowInSchedulerCaption lives on the base page). An earlier claim here and in the guidance said the
+opposite; both fixed. Evidence: a designer export carries ShowInScheduler with ModifiedInSchemaUId = the
+PROCESS schema, i.e. moved by a human through the UI.
+Discovery — a running `clio mcp-server` holds file locks on its build output, so `dotnet build` of
+clio/clio.tests/clio.mcp.e2e fails with MSB3021; the MCP E2E harness also leaks one such process per test
+session (follow-up filed) — stop strays before building.
+ClioRing compatibility reviewed, no Ring-consumed contract changed: grep for the five process-designer tool
+names over clio-ring/ClioRing.Ipc, clio-ring/ClioRing, clio-ring/ClioRing.Desktop/actions.json is empty.
+Docs: McpCapabilityMap §11 carries the lookup-value change; §4 unchanged. CLI docs: none required (MCP-only
+tools, no [Verb]) — stated, not omitted. curated-knowledge-names.json NOT re-pinned (clio still consumes
+generation 1.13.43; the guidance lands via the clio-knowledge PR, which must merge only AFTER this rebundle
+releases — release-skew rule R16). ai-bp-element-catalog row fixed (invented "Who performs" → OwnerId, the
+unsupported required-flag claim dropped, branching credited to ENG-91853, ENG-91846 records the limitation).
+Files: clio/CrtProcessBuilder/CrtProcessBuilder.gz, clio.tests/Common/BundledProcessBuilderPackageTests.cs,
+clio/Command/McpServer/Tools/ProcessDesigner/{ModifyBusinessProcessTool,CreateBusinessProcessTool}.cs,
+clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs,
+clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs, docs/McpCapabilityMap.md,
+spec/ai-business-process-generation/ai-bp-element-catalog.md
+Impact: the shipped archive, the validator relaxation and the guidance move together; an environment behind
+1.3.0.5 gets the convergence refusal naming both versions instead of a misleading "parameter unsettable";
+the E2E suite guards both accepted parameters and both refusals of the route it ships.
+
+## 2026-08-27 – ENG-91846: performer assignment ships (D3 closed by user decision), reference-existence guard
+Context: the user overruled the plan's D3 deferral — "assigned to the sales team" must work in THIS ticket.
+The server side (shared UserTaskPerformerApplier extracted from the Send email performer, the
+ActivityUserTask-only gate, the Lookup reference-existence guard) lives in cli-process-builder — see THAT
+repo's diary (2026-08-27 entry) for the mechanism evidence, incl. the designer-built specimen that proved
+BP7 → Activity.OwnerRole with an EMPTY Owner.
+Decision — contract: performTask elements take a top-level `performer` block ({type:user|manager|role,
+contact?, role?, showPage?}) on create/addElement/setElement — the SAME shape as email.performer, so an
+agent learns one vocabulary; describe returns it top-level for ActivityUserTask only (re-appliability is
+the read-back contract), while a Send email element keeps it inside its email block. Tool [Description]s
+carry the honest-team-assignment sentence (the Activity carries the role in OwnerRole, Owner stays EMPTY,
+never fake a team by writing a role id into OwnerId) and the CallUserTask-by-name refusal.
+Decision — DTO: DescribedElement gains a typed `performer` member; DescribedEmailPerformer renamed
+DescribedPerformer (one wire shape, two report sites). Typed, not extension-bag — the four-dropped-fields
+incident is the standard here.
+Decision — the wrong-entity OwnerId hole (live-proven: addMapping OwnerId=<SysAdminUnit id> was ACCEPTED
+into the Contact-typed parameter) closes in the same cut that opens the real team route: the validator now
+requires a Lookup constant to exist in the parameter's reference object, and the tools document the
+refusal.
+Decision — the version RAISED to 1.3.0.6 (user decision: the ticket ships as if nothing below .6 existed).
+The in-place 1.3.0.5 re-cuts had made equal version numbers meaningless to the convergence check, so a
+reviewer's stand or checkout could hold stale bytes undetectably; the raise re-arms the detector — every
+1.3.0.5 environment now gets the update path instead of the equal-version short-circuit. Cut by the
+canonical rebundle-process-builder.ps1 (it also refreshed the three pin constants itself). Every shipped
+"CrtProcessBuilder <version>" literal moved to 1.3.0.6, and a NEW guard —
+ToolContractVersionLiterals_ShouldMatchTheBundledArchiveVersion in BundledProcessBuilderPackageTests —
+pins the tool-description and prompt literals to the archive version, so the next bump fails that test
+until every shipped literal moves with the pin (the reviewer's "hand-restated in ~13 places" finding, the
+in-repo half; the guidance repo's literals remain unbound — cross-repo asserts have no home). The sha-pin
+prose names the producing package commit 354de2d7 and records both prescribed cross-checks as RUN, not
+assumed: its descriptor's ModifiedOnUtc equals the pin, and all 114 archive entries equal that commit's
+checkout rendering byte for byte (the only committed file absent is the .DotSettings clioignore excludes).
+Knowledge base: two records updated in this PR (the capability-map guard record notes the new partial
+version-literal pin; the mcp-server lock record widened to Release outputs + the e2e harness leak) and two
+platform records added (ShowInScheduler checkbox lives on BaseUserTaskPropertiesPage;
+Activity.AllowedResult derives from conditional flows). The other six records the diff touches were
+reviewed — facts unchanged, no update required.
+Files: clio/CrtProcessBuilder/CrtProcessBuilder.gz, clio.tests/Common/BundledProcessBuilderPackageTests.cs,
+clio/Command/McpServer/Tools/ProcessDesigner/{ModifyBusinessProcessTool,CreateBusinessProcessTool}.cs,
+clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs,
+clio/Command/ProcessModel/IProcessDescriber.cs, clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs,
+docs/McpCapabilityMap.md, docs/knowledge/{McpServer,process,platform}/*
+Impact: the user prompt "create a call task for the sales team on new order" is buildable and honest —
+category Call + performer role, with the agent told to say the Activity's TYPE stays Task and the role
+lands in OwnerRole.
+
+## 2026-08-27 – ENG-91846: role existence closes the last silent path; ships as 1.3.0.7
+Context: review found the reference-existence guard did not reach `performer.role`, and the hole was
+reproduced live (a random Guid accepted, stored, and read back as a normal team assignment). The server
+fix lives in cli-process-builder — see that repo's diary for the VwSysRole measurement and why the name
+route moved there too.
+Decision — clio side: both tool descriptions and the capability map now STATE the check (a role is
+verified to exist on either route, so an arbitrary Guid or a user's own SysAdminUnit id is refused rather
+than written into `OwnerRole`, which does not control integrity). The reviewer's alternative — documenting
+the absence of validation — was the worse half of the choice offered: the block advertises ids, so the
+honest fix is the check, not a caveat.
+Decision — the version raised again, to 1.3.0.7, for the reason the .6 raise existed: reviewers and
+testers are actively installing, and only a raise makes an older cut detectably stale.
+Tests — the E2E gap the reviewer named is closed by a live negative (a non-existent role Guid through
+`setElement.performer`, asserting the refusal names the value AND that describe reports no performer), and
+the reviewer's second Minor by two environment-independent describer unit tests for the TOP-LEVEL
+`performer` DTO (present, and absent-stays-null).
+Note — the brittle-substring finding on the refusal assertions stands as a trade-off, not a fix: the
+server returns prose, not an error code, so a message assertion is the only way to pin that the refusal
+stays actionable. Each such test also asserts the BEHAVIOUR (nothing persisted), which is what would
+survive a rewording.
+Files: clio/CrtProcessBuilder/CrtProcessBuilder.gz, clio.tests/Common/BundledProcessBuilderPackageTests.cs,
+clio.tests/Command/ProcessModel/ServerProcessDescriberTests.cs,
+clio/Command/McpServer/Tools/ProcessDesigner/{ModifyBusinessProcessTool,CreateBusinessProcessTool}.cs,
+clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs,
+clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs, docs/McpCapabilityMap.md
+The sha-pin prose names the producing package commit 53bbee69 and records both prescribed cross-checks as
+RUN: its descriptor's ModifiedOnUtc equals the pin, and all 114 archive entries equal that commit's
+checkout rendering byte for byte (only the clioignore'd .DotSettings is absent).
+Impact: every route that can name a role now proves it exists before storing it.
+
+## 2026-08-27 – ENG-91846: review round on the performer, and the delivery version becomes 1.3.1.0
+Context: the performer review raised three caller-outcome findings; the server-side answers live in
+cli-process-builder (see that repo's diary for what was refuted by measurement and what was accepted).
+Decision — clio side: both tool descriptions now say a `contact` takes a bare Contact record Guid as well as
+a formula, and that a role NAME matching more than one role is refused so the caller passes the id.
+Decision — the delivery ships as 1.3.1.0, a MINOR raise, on the reviewer's recommendation. The digit is the
+message: ENG-91846 adds a capability (a task can be assigned to a team), while every 1.3.0.x stamp before it
+was another pass at the same fix. It also spares the in-place alternative's caveat — that anyone holding the
+previous cut would have had to reinstall by hand, because the convergence check reads version numbers, not
+bytes. Every shipped literal moved with it, which the version-literal guard enforces.
+The producing package commit is 948cae8f; the sha-pin prose names it, and both provenance cross-checks ran
+against it (descriptor stamp via `git show`, and the entry-by-entry byte comparison: 114/114 archive entries
+match that commit's checkout rendering, none missing, none extra).
+Files: clio/CrtProcessBuilder/CrtProcessBuilder.gz, clio.tests/Common/BundledProcessBuilderPackageTests.cs,
+clio/Command/McpServer/Tools/ProcessDesigner/{ModifyBusinessProcessTool,CreateBusinessProcessTool}.cs
+Impact: the contract text matches what the package now accepts on both performer fields.
+
+## 2026-08-28 – ENG-91846: re-review Medium lands, the delivery re-cut as 1.3.1.1
+Context: d-krestov's re-review at package commit 948cae8f converted approval to changes-requested: one Medium
+to fix (the performer routes resolved a parameter's reference by UId alone, skipping the name-typed
+population the validator's own fallback exists for), caption-is-write-once and S107 to fix or ticket. The
+server-side fix and both ticket decisions live in the package repo's diary; both are TICKETED with the
+refutation arguments recorded (caption = a resource-materialization write needing its own probe round; the
+S107 handler move would trade an E2E-pinned loud refusal for silent dropping — the applier has four
+consumption sites).
+Decision — clio ships the fix as 1.3.1.1, a PATCH: the 1.3.1.0 capability's reach widened, no new
+capability. 1.3.1.0 was never released, so it joins the branch-internal stamps and every shipped
+"ships from CrtProcessBuilder <version>" literal re-baselines to 1.3.1.1 — the first version to exist
+outside the branch. The version-literal guard enforced the sweep (two tool descriptions, the modify prompt);
+the capability map and the knowledge guide moved with them by hand (6 literals in the guide, 0 leftovers).
+Contract TEXT is otherwise unchanged: the name-typed fix makes documented behavior reach a wider population,
+it does not change what the contract says.
+Files: clio/CrtProcessBuilder/CrtProcessBuilder.gz (1.3.1.1, stamp /Date(1787902471000)/, sha 16FAB395…),
+clio.tests/Common/BundledProcessBuilderPackageTests.cs (pins script-refreshed; the sha-pin prose names the
+producing package commit 2ce4ae34, and both provenance cross-checks ran against it — the descriptor stamp
+via `git show`, and the entry-by-entry byte comparison: 114/114 archive entries match that commit's
+checkout rendering, none missing, none extra),
+clio/Command/McpServer/{Tools/ProcessDesigner/*,Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs},
+docs/McpCapabilityMap.md.
+Impact: archive, pins, and every version literal agree on 1.3.1.1; EOL audit 112/112 CRLF (114 entries with
+the two binaries), Common 1137, full unit 9706, knowledge producer 102.
+
+## 2026-08-28 – ENG-91846: the synthesized review lands the missing fail-closed floor and the missing E2E shapes
+Context: Alexandr-Kravchuk's six-lens review, changes-requested: one Blocker (the performer /
+reference-existence guard is a security-character server change gated only by description literals and
+convergence — no [RequiresPackage] floor), one Major (type:manager and the bare-Guid contact route untested
+in E2E, create-time inline performer untested), four Minors.
+Decision — the Blocker is accepted WITHOUT argument, because the repository's own rule already mandated it:
+docs/agent-instructions/bundled-packages.md, "a server-side change with a SECURITY character needs a
+literal, always … convergence warns and proceeds when it cannot read the archive … only the literal fails
+closed." Create/Modify options move from the 1.2.0.1 email floor to 1.3.1.1 (the released version carrying
+the performer block and the existence guard; the email floor is subsumed), the pin test renames off its
+email-specific premise, and the D8 comment updates. Verified live: the E2E gate passed against the stand's
+recorded 1.3.1.1 with the floor active.
+Discovery — the knowledge record "requirespackage-version-floor-cannot-refuse-more-than-convergence" was
+WRONG in exactly the two states that matter: its subset arithmetic (floor ⊆ convergence, from F <= B) holds
+only while convergence is healthy, and TryGetConvergenceRefusal warn-and-allows on an unreadable archive
+(BundledPackageConvergence.cs:80) and on a suffixed bundled version (:90). In those degraded states
+convergence refuses NOTHING and the floor is the only fail-closed gate. Record rewritten and renamed to
+requirespackage-version-floor-survives-convergence-degraded-modes.md; the reviewer's Blocker text is what
+exposed the gap.
+Decision — the Major lands as two live E2E tests plus one promoted constant: manager-from-bare-contact-Guid
+(modify path; asserts the composed [#Lookup…#] macro, the manager token, showPage=false parity) and
+create-time inline performer (user + bare Guid through CreateBusinessProcessTool's OWN deserialization
+path). The managerless RUNTIME error is recorded as an ACCEPTED coverage gap in the test description — it
+surfaces only when the process runs, and the suite verifies design-time contracts. The Supervisor CONTACT
+seed id (410006e1-…) was measured on the stand before pinning: the Supervisor SysAdminUnit is a DIFFERENT
+id (7f3b869f-…), so the constant pair also witnesses that the existence guard distinguishes the tables.
+Fixture now 34 tests.
+Files: clio/Command/{ModifyBusinessProcessCommand,CreateBusinessProcessCommand}.cs,
+clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs,
+clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs,
+docs/knowledge/Common/requirespackage-version-floor-survives-convergence-degraded-modes.md (renamed).
+Impact: an environment older than 1.3.1.1 is refused outright on create/modify — not warned — even when
+convergence has degraded; every newly documented performer contract shape is exercised live on both entry
+points. Command+Common 4975 green.
 ## 2026-08-26 - ENG-92715 Open edit page element: clio side
 Context: clio consumer surface for the new `openEditPage` element type shipped by CrtProcessBuilder (see the cli-process-builder diary entry of the same date for the server half and the platform discoveries behind it).
 Decision: declare the describe block as a TYPED DTO rather than leaving it to the element's extension bag. Note the inconsistency this exposes - the Modify data `changeData` block is still undeclared and reaches callers through `[JsonExtensionData]`; worth aligning, deliberately out of this story's scope.
