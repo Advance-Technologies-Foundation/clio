@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.IO;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -39,6 +39,114 @@ public sealed class ODataUpdateToolTests {
 			if (File.Exists(rowsFile)) File.Delete(rowsFile);
 		}
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects data and rows-file together instead of silently preferring one, so a caller never PATCHes a payload it did not choose.")]
+	public void Update_Should_Reject_Data_And_RowsFile_Together() {
+		// Arrange
+		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-{System.Guid.NewGuid():N}.json");
+		File.WriteAllText(rowsFile, "{\"Name\":\"FromFile\"}");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+
+		try {
+			// Act
+			ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+				EnvironmentName = "dev", Entity = "Contact", Id = Guid,
+				Data = Obj("{\"Name\":\"Inline\"}"), RowsFile = rowsFile, Confirm = true
+			});
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "two payload sources are ambiguous and picking one silently would write data the caller did not choose");
+			response.Error.Should().Contain("not both",
+				because: "the caller has to be told which argument to drop");
+			client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		} finally {
+			if (File.Exists(rowsFile)) File.Delete(rowsFile);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An exploratory confirm=false call answers with the confirmation prompt even when rows-file does not exist: the confirm gate is the first guard, so the agent learns the operation is destructive before it fixes the path.")]
+	public void Update_Should_Require_Confirmation_Before_Touching_RowsFile() {
+		// Arrange
+		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-absent-{System.Guid.NewGuid():N}.json");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = false
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unconfirmed destructive update never proceeds");
+		(response.Error ?? string.Empty).Should().NotContain("was not found",
+			because: "the confirm gate must answer first - a path error here would make the agent fix the path "
+				+ "before it knows the operation needs confirmation at all");
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a missing rows-file as a structured failure once confirmation has passed, rather than letting the file exception escape as a protocol error.")]
+	public void Update_Should_Report_Missing_RowsFile_After_Confirmation() {
+		// Arrange
+		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-absent-{System.Guid.NewGuid():N}.json");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+
+		// Act
+		ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an absent payload file is a request error, not a transport failure");
+		response.Error.Should().Contain("was not found",
+			because: "the caller has to know the path did not resolve to a file");
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports malformed rows-file JSON as a structured failure instead of surfacing a raw parser exception.")]
+	public void Update_Should_Report_Invalid_RowsFile_Json() {
+		// Arrange
+		string rowsFile = Path.Combine(Path.GetTempPath(), $"odata-update-bad-{System.Guid.NewGuid():N}.json");
+		File.WriteAllText(rowsFile, "{ not json");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+
+		try {
+			// Act
+			ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+				EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
+			});
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "an unparseable payload must fail the request, not the MCP protocol frame");
+			response.Error.Should().Contain("must contain valid JSON",
+				because: "the caller has to know the file content is at fault, not the request shape");
+			client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		} finally {
+			if (File.Exists(rowsFile)) File.Delete(rowsFile);
+		}
+	}
+
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 	private static JsonElement Obj(string json) => JsonDocument.Parse(json).RootElement.Clone();
 

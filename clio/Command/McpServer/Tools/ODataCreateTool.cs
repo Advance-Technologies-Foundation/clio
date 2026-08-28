@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -13,7 +14,9 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for creating one or more Creatio records via OData v4 (HTTP POST) in a single call.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
+public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem = null) {
+
+	private readonly IoFileSystem _fileSystem = fileSystem ?? new System.IO.Abstractions.FileSystem();
 
 	internal const string ToolName = "odata-create";
 
@@ -52,24 +55,9 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			return ODataCreateBatchResponse.RequestError(
 				"entity must be a valid OData entity set name (letters, digits, underscore).");
 		}
-		JsonElement? fileRows = null;
-		if (args.Rows is not null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
-			return ODataCreateBatchResponse.RequestError("Provide either rows or rows-file, not both.");
-		}
-		if (args.Rows is null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
-			if (!ODataFileContract.TryReadJson(args.RowsFile, "rows-file", out string rowsJson, out string fileError)) {
-				return ODataCreateBatchResponse.RequestError(fileError);
-			}
-			try {
-				fileRows = JsonDocument.Parse(rowsJson).RootElement.Clone();
-			} catch (JsonException ex) {
-				return ODataCreateBatchResponse.RequestError($"rows-file must contain valid JSON: {ex.Message}");
-			}
-		}
-		JsonElement? requestedRows = args.Rows ?? fileRows;
-		if (requestedRows is not { ValueKind: JsonValueKind.Array } rows || rows.GetArrayLength() == 0) {
-			return ODataCreateBatchResponse.RequestError(
-				"rows is required and must be a non-empty array of field/value objects.");
+		ODataCreateBatchResponse payloadError = ResolveRequestedRows(args, out JsonElement rows);
+		if (payloadError is not null) {
+			return payloadError;
 		}
 
 		IApplicationClient client;
@@ -94,6 +82,40 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			index++;
 		}
 		return ODataCreateBatchResponse.From(results);
+	}
+
+	/// <summary>
+	/// Resolves the batch payload from the mutually exclusive <c>rows</c> / <c>rows-file</c> pair. Returns
+	/// <see langword="null"/> when <paramref name="rows"/> holds a valid non-empty array, otherwise the
+	/// request-level failure to hand straight back to the caller.
+	/// </summary>
+	private ODataCreateBatchResponse ResolveRequestedRows(ODataCreateArgs args, out JsonElement rows) {
+		rows = default;
+		bool hasRowsFile = !string.IsNullOrWhiteSpace(args.RowsFile);
+		if (args.Rows is not null && hasRowsFile) {
+			return ODataCreateBatchResponse.RequestError("Provide either rows or rows-file, not both.");
+		}
+		JsonElement? fileRows = null;
+		if (args.Rows is null && hasRowsFile) {
+			if (!ODataFileContract.TryReadJson(_fileSystem, args.RowsFile, "rows-file", out string rowsJson, out string fileError)) {
+				return ODataCreateBatchResponse.RequestError(fileError);
+			}
+			try {
+				// JsonDocument rents from ArrayPool<byte>; without disposing, the buffers are only returned on a
+				// finalizer cycle. Clone() detaches the element from the document, so disposing here is correct.
+				using JsonDocument document = JsonDocument.Parse(rowsJson);
+				fileRows = document.RootElement.Clone();
+			} catch (JsonException ex) {
+				return ODataCreateBatchResponse.RequestError($"rows-file must contain valid JSON: {ex.Message}");
+			}
+		}
+		JsonElement? requestedRows = args.Rows ?? fileRows;
+		if (requestedRows is not { ValueKind: JsonValueKind.Array } parsedRows || parsedRows.GetArrayLength() == 0) {
+			return ODataCreateBatchResponse.RequestError(
+				"rows is required and must be a non-empty array of field/value objects.");
+		}
+		rows = parsedRows;
+		return null;
 	}
 
 	private static ODataRowResult CreateRow(IApplicationClient client, string url, JsonElement row, int index) {
@@ -196,8 +218,8 @@ public sealed record ODataCreateArgs {
 		"Pass all rows for the same entity here rather than calling the tool once per row. " +
 		"Use dataforge-get-table-columns to discover field names. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
-		"Example: [ { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }, { \"Name\": \"Globex\" } ]")]
-	[Required]
+		"Example: [ { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }, { \"Name\": \"Globex\" } ] " +
+		"Exactly one of rows or rows-file is required; supplying both is rejected.")]
 	public JsonElement? Rows { get; init; }
 
 	/// <summary>Whether to stop after the first failed row.</summary>

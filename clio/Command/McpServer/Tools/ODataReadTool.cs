@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.ComponentModel;
@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -14,7 +15,9 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for querying Creatio records via OData v4.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
+public sealed class ODataReadTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem = null) {
+
+	private readonly IoFileSystem _fileSystem = fileSystem ?? new System.IO.Abstractions.FileSystem();
 
 	internal const string ToolName = "odata-read";
 
@@ -38,7 +41,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			["orderBy"] = "order-by",
 			["order_by"] = "order-by",
 			["outputFile"] = "output-file",
-			["output_directory"] = "output-file",
+			["output_file"] = "output-file",
 			["limit"] = "top"
 		};
 
@@ -60,11 +63,17 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	};
 
 	/// <summary>Reads Creatio records using OData v4.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// ReadOnly is FALSE because output-file writes a local file. The MCP read-deadline pipeline treats a
+	// ReadOnly call as retry-safe and races it against a deadline; if that deadline fired after the file
+	// landed but before the response returned, the retry would be refused by the "already exists" guard and
+	// the agent would be stuck with a file it was told was never written. Same reasoning as get-page.
+	// Idempotent is FALSE for the same reason: a second call to the same output-file is rejected, not a no-op.
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Query Creatio records via OData v4. " +
 		"Supports structured filters, select, expand, order by, top, skip, and total-count requests. " +
 		"Set output-file to write a large raw response to disk and receive a compact row/column-size summary. " +
+		"An output-file call is NOT retry-safe against the same path: the target must not already exist, so a retry must use a different path. " +
 		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"skip must be zero or greater; use order-by with skip for stable paging. " +
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
@@ -99,10 +108,19 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string path = $"odata/{args.Entity.Trim()}{queryString}";
 			string url = urlBuilder.Build(path);
 
+			// Confine the output path BEFORE the fetch: a rejected path should not cost a full (possibly large)
+			// OData response first.
+			string outputPath = null;
+			if (!string.IsNullOrWhiteSpace(args.OutputFile)
+				&& !ODataFileContract.TryResolveOutputPath(_fileSystem, args.OutputFile, out outputPath, out string pathError)) {
+				return ODataReadResponse.Failure(pathError);
+			}
+
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
 			ODataReadResponse response = ParseODataResponse(responseJson, args.Count);
-			if (response.Success && !string.IsNullOrWhiteSpace(args.OutputFile)) {
-				if (!ODataFileContract.TryWriteReadResponse(args.OutputFile, responseJson, out string outputPath, out ODataReadFileSummary summary, out string fileError)) {
+			if (response.Success && outputPath is not null) {
+				if (!ODataFileContract.TryWriteReadResponse(
+					_fileSystem, outputPath, responseJson, out ODataReadFileSummary summary, out string fileError)) {
 					return ODataReadResponse.Failure(fileError);
 				}
 				return response with { Value = null, OutputFile = outputPath, RowCount = summary.RowCount, ColumnSizes = summary.ColumnSizes };
@@ -409,7 +427,7 @@ public sealed record ODataReadArgs {
 
 	/// <summary>Optional path where the raw OData JSON response is written.</summary>
 	[JsonPropertyName("output-file")]
-	[Description("Optional path for the raw OData JSON response. When set, the inline value is omitted and a compact row/column-size summary is returned. The file must not already exist.")]
+	[Description("Optional path for the raw OData JSON response, confined to the workspace or the OS temp directory. When set, the inline value is omitted and a compact row/column-size summary is returned. The file must not already exist, so a retry must use a different path.")]
 	public string? OutputFile { get; init; }
 
 	/// <summary>Structured filter used to narrow matching records.</summary>

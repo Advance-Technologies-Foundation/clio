@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -51,7 +51,70 @@ public sealed class ODataReadToolTests {
 	}
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable read-only MCP tool name for odata-read.")]
+	[Description("Refuses an output-file that already exists, and refuses it BEFORE the OData request so a rejected path never costs a full fetch first.")]
+	public void Read_Should_Reject_Existing_Output_File_Before_Fetching() {
+		// Arrange
+		string outputFile = Path.Combine(Path.GetTempPath(), $"odata-read-existing-{Guid.NewGuid():N}.json");
+		File.WriteAllText(outputFile, "{}");
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		ODataReadTool tool = new(resolver);
+
+		try {
+			// Act
+			ODataReadResponse response = tool.Read(new ODataReadArgs {
+				EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+			});
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "an explicit output-file is additive and must never overwrite an existing file");
+			response.Error.Should().Contain("already exists",
+				because: "the caller has to know to choose a different path");
+			client.DidNotReceive().ExecuteGetRequest(
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		} finally {
+			if (File.Exists(outputFile)) File.Delete(outputFile);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses an output-file outside the workspace and the OS temp directory, so an agent-supplied path cannot land a write on an arbitrary file.")]
+	public void Read_Should_Reject_Output_File_Outside_The_Allowed_Locations() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		ODataReadTool tool = new(resolver);
+		string outsidePath = Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+			$"clio-odata-output-probe-{Guid.NewGuid():N}.json");
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outsidePath
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a path outside the allowed locations must never be written");
+		response.Error.Should().Contain("allowed locations",
+			because: "the caller has to be told the path was refused by confinement");
+		File.Exists(outsidePath).Should().BeFalse(
+			because: "the refusal must happen before anything is created on disk");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises a stable MCP tool name for odata-read, and the safety annotations that match its local-write side effect.")]
 	public void Read_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -64,8 +127,12 @@ public sealed class ODataReadToolTests {
 		// Assert
 		attribute.Name.Should().Be(ODataReadTool.ToolName,
 			because: "the MCP tool name must stay stable for callers and tests");
-		attribute.ReadOnly.Should().BeTrue(
-			because: "odata-read only queries Creatio records");
+		attribute.ReadOnly.Should().BeFalse(
+			because: "output-file writes a local file, and a ReadOnly annotation would make the MCP read-deadline "
+				+ "pipeline treat the call as retry-safe - a deadline firing after the file landed would leave the "
+				+ "agent with a retry the already-exists guard refuses");
+		attribute.Idempotent.Should().BeFalse(
+			because: "a second call to the same output-file is refused, not a no-op");
 		attribute.Destructive.Should().BeFalse(
 			because: "odata-read must not mutate remote Creatio state");
 	}

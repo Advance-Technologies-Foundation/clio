@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -12,7 +13,9 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH).
 /// </summary>
 [McpServerToolType]
-public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
+public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem = null) {
+
+	private readonly IoFileSystem _fileSystem = fileSystem ?? new System.IO.Abstractions.FileSystem();
 
 	internal const string ToolName = "odata-update";
 
@@ -37,13 +40,25 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			if (args.Data is not null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
 				return ODataWriteResponse.Failure("Provide either data or rows-file, not both.");
 			}
+			if (args.Data is null && string.IsNullOrWhiteSpace(args.RowsFile)) {
+				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
+			}
+			// The confirmation gate runs BEFORE the file is touched. It is the first meaningful guard, so an
+			// exploratory confirm=false call must answer "here is what would change", not "rows-file was not
+			// found" - and an exploratory call should not read and parse a payload it will not send.
+			ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, args.Entity, args.Id, "update", "change");
 			JsonElement? fileData = null;
-			if (args.Data is null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
-				if (!ODataFileContract.TryReadJson(args.RowsFile, "rows-file", out string dataJson, out string fileError)) {
+			if (args.Data is null) {
+				if (notConfirmed is not null) {
+					return notConfirmed;
+				}
+				if (!ODataFileContract.TryReadJson(_fileSystem, args.RowsFile, "rows-file", out string dataJson, out string fileError)) {
 					return ODataWriteResponse.Failure(fileError);
 				}
 				try {
-					fileData = JsonDocument.Parse(dataJson).RootElement.Clone();
+					// JsonDocument rents from ArrayPool<byte>; Clone() detaches the element, so dispose here.
+					using JsonDocument document = JsonDocument.Parse(dataJson);
+					fileData = document.RootElement.Clone();
 				} catch (JsonException ex) {
 					return ODataWriteResponse.Failure($"rows-file must contain valid JSON: {ex.Message}");
 				}
@@ -52,7 +67,6 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			if (requestedData is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
 				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
 			}
-			ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, args.Entity, args.Id, "update", "change");
 			if (notConfirmed is not null) {
 				return notConfirmed;
 			}
@@ -89,8 +103,8 @@ public sealed record ODataUpdateArgs {
 	[Description(
 		"Object of field/value pairs to change. Only supplied fields are updated. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
-		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" }")]
-	[Required]
+		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" } " +
+		"Exactly one of data or rows-file is required; supplying both is rejected.")]
 	public JsonElement? Data { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>

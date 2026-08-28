@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -1991,7 +1991,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Set output-file to keep a large raw response on disk; the response then returns the path and a row/column-size summary instead of inline values. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Set output-file to keep a large raw response on disk; the response then returns the path and a row/column-size summary instead of inline values. That write refuses an existing target, so an output-file call is not retry-safe against the same path. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2004,7 +2004,7 @@ internal static class ToolContractCatalog {
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
 					Field("count", BooleanType, "When true, requests the total number of matching records before top/skip paging. The response returns it as total-count; response count remains the number of records in this page."),
-					Field("output-file", StringType, "Optional path for the raw OData JSON response. The file must not already exist; when set, the inline value is omitted and row-count/column-sizes are returned.")
+					Field("output-file", StringType, "Optional path for the raw OData JSON response, confined to the workspace or the OS temp directory. The file must not already exist, so an output-file call is NOT retry-safe against the same path - a retry must use a different one. When set, the inline value is omitted and row-count/column-sizes are returned.")
 				],
 				Validators: [
 					new ToolContractValidator("top-range", "invalid-top", "top",
@@ -2129,7 +2129,7 @@ internal static class ToolContractCatalog {
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
 					Field("rows", ArrayType, "Array of row objects to insert; each row is an object of field/value pairs for one new record. Lookup fields are set with their GUID, for example [ { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" } ]. Pass all rows in one call rather than one call per row."),
 					Field("stop-on-error", BooleanType, "Optional. Stop after the first failed row. Default false: continue and report every row independently. When true, rows after a failure are not attempted and do not appear in results, so results may be shorter than rows."),
-					Field("rows-file", StringType, "Optional path to a JSON array of row objects. Use instead of rows for large payloads; rows and rows-file cannot be combined."),
+					Field("rows-file", StringType, "Optional path to a JSON array of row objects, confined to the workspace or the OS temp directory and capped at 10 MB. Exactly one of rows or rows-file is required; supplying both is rejected."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
 			ODataCreateBatchOutput(),
@@ -2166,7 +2166,7 @@ internal static class ToolContractCatalog {
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
 					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
-					Field("rows-file", StringType, "Optional path to a JSON object of field/value pairs. Use instead of data for large payloads; data and rows-file cannot be combined."),
+					Field("rows-file", StringType, "Optional path to a JSON object of field/value pairs, confined to the workspace or the OS temp directory and capped at 10 MB. Exactly one of data or rows-file is required; supplying both is rejected. Read only after the confirm gate passes."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),

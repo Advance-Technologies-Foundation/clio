@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -28,6 +28,30 @@ internal static class OutputPathConfinement {
 	public sealed class UnresolvableLinkException : Exception { }
 
 	/// <summary>
+	/// Read-side counterpart of <see cref="Resolve"/>: confines a caller-supplied INPUT path to the same
+	/// workspace anchor / OS temp directory, then requires the file to exist. Without it a file-backed
+	/// payload argument is an arbitrary file reader — a prompt-injection payload could point it at clio's
+	/// own credentials store and have the contents forwarded to a remote endpoint. The existence rule is
+	/// inverted relative to <see cref="Resolve"/>, which refuses a path that already exists; everything
+	/// before that rule is shared.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used for path resolution and the workspace-marker probe.</param>
+	/// <param name="inputFile">The caller-supplied input path (may be relative).</param>
+	/// <param name="optionName">Argument name used in the caller-facing messages.</param>
+	/// <returns>The resolved absolute path with a <c>null</c> error, or <c>(null, error)</c>.</returns>
+	internal static (string path, string error) ResolveForRead(
+		IoFileSystem fileSystem, string inputFile, string optionName) {
+		(string full, string error) = ResolveConfined(fileSystem, inputFile, optionName);
+		if (error is not null) {
+			return (null, error);
+		}
+		if (!fileSystem.File.Exists(full)) {
+			return (null, $"{optionName} file was not found.");
+		}
+		return (full, null);
+	}
+
+	/// <summary>
 	/// Resolves <paramref name="outputFile"/> to an absolute path and confirms it stays inside a trusted
 	/// workspace anchor or the OS temp directory. Symlinks are resolved before the check so a link cannot smuggle
 	/// the write outside the allowed zones, and an anchor that is a filesystem root or an ancestor of the user's
@@ -41,6 +65,27 @@ internal static class OutputPathConfinement {
 		/// already exists is never overwritten, keeping every routing tool's Destructive=false honest).
 	/// </returns>
 	internal static (string path, string error) Resolve(IoFileSystem fileSystem, string outputFile) {
+		(string full, string error) = ResolveConfined(fileSystem, outputFile, "output-file");
+		if (error is not null) {
+			return (null, error);
+		}
+		// Keep the Destructive=false classification honest: an explicit output-file must not silently
+		// overwrite an existing file. Confinement bounds WHERE the write lands, not WHETHER it destroys
+		// existing content. The tool-owned default output path does not flow through here, so re-runs to it
+		// still overwrite their own output.
+		if (fileSystem.File.Exists(full) || fileSystem.Directory.Exists(full)) {
+			return (null,
+				$"output-file '{outputFile}' already exists; refusing to overwrite it. Choose a different " +
+				"path or remove the existing file.");
+		}
+		return (full, null);
+	}
+
+	// Everything both directions share: resolve to an absolute, symlink-followed path and confirm it stays
+	// inside a trusted workspace anchor or the OS temp root. The existence rule is the caller's, because the
+	// two directions want opposite answers.
+	private static (string path, string error) ResolveConfined(
+		IoFileSystem fileSystem, string candidatePath, string optionName) {
 		// H1: reading the process-global cwd (for the anchor) must serialize against the MCP workspace tools that
 		// PIN cwd. In the MCP path this runs under the shared tool lock; in the single-threaded CLI path the lock
 		// is uncontended. Callers that resolve a tool-owned DEFAULT anchor instead go through
@@ -54,7 +99,7 @@ internal static class OutputPathConfinement {
 				home,
 				ClioRuntimePaths.Home,
 				null);
-			string full = fileSystem.Path.GetFullPath(outputFile);
+			string full = fileSystem.Path.GetFullPath(candidatePath);
 			string tempRoot = fileSystem.Path.GetFullPath(fileSystem.Path.GetTempPath());
 
 			// Confine the REAL (symlink-followed) path, not just the lexical one: Path.GetFullPath collapses `..`
@@ -77,7 +122,7 @@ internal static class OutputPathConfinement {
 				// that cannot be normalized). Fail CLOSED: never fall back to a lexical path that would slip past
 				// confinement (see ResolveRealPath / ResolveSymlink).
 				return (null,
-					$"output-file '{outputFile}' resolves through an unresolvable symbolic link; refusing to write.");
+					$"{optionName} '{candidatePath}' resolves through an unresolvable symbolic link; refusing to continue.");
 			}
 
 			// A filesystem root ('/', 'C:\') or an ancestor of the user's home directory ('/Users', '/home',
@@ -88,18 +133,8 @@ internal static class OutputPathConfinement {
 
 			if (!IsPathConfined(real, trustedAnchor, realTempRoot)) {
 				return (null,
-					$"output-file '{outputFile}' resolves outside the allowed locations; it must be inside the " +
+					$"{optionName} '{candidatePath}' resolves outside the allowed locations; it must be inside the " +
 					"workspace or the OS temp directory.");
-			}
-
-			// Keep the Destructive=false classification honest: an explicit output-file must not silently
-			// overwrite an existing file. Confinement bounds WHERE the write lands, not WHETHER it destroys
-			// existing content. The tool-owned default output path does not flow through here, so re-runs to it
-			// still overwrite their own output.
-			if (fileSystem.File.Exists(full) || fileSystem.Directory.Exists(full)) {
-				return (null,
-					$"output-file '{outputFile}' already exists; refusing to overwrite it. Choose a different " +
-					"path or remove the existing file.");
 			}
 
 			return (full, null);
