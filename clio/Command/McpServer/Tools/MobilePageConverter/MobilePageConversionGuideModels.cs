@@ -199,6 +199,15 @@ public sealed class ElementMapEntry {
 	[JsonPropertyName("reason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Reason { get; set; }
+
+	/// <summary>
+	/// Converter bookkeeping, never serialized: the MOBILE anchor name (e.g. <c>Tabs</c>) when this
+	/// <c>insert</c> was routed by a <c>&lt;anchor&gt;:top</c> / <c>:bottom</c> template rule. The anchor-row
+	/// pass counts the entries the RULE routed, never "every indexed insert under that parent" — an ordinary
+	/// insert can legitimately target the same mobile container and must not shift the anchor.
+	/// </summary>
+	[JsonIgnore]
+	internal string PositionalAnchor { get; set; }
 }
 
 /// <summary>
