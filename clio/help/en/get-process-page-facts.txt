@@ -21,9 +21,15 @@ DESCRIPTION
 
     Choosing WHICH candidates complete the page remains a decision. A candidate is reported when its handler
     issues crt.SaveRecordRequest, crt.ClosePageRequest or crt.CancelRecordChangesRequest, or when it declares no
-    requests at all.
+    requests at all. Buttons sharing a NAME are collapsed into one entry (a real page can carry the same button
+    in two containers), keeping the most informative copy. Caption resolution falls back per caption:
+    the requested culture, then en-US, then the first language the page's resources carry — a culture the page
+    does not have yields en-US captions with no error.
 
-    Fails for a Classic UI page, which completes through the buttons its own page designer marks instead.
+    Fails for any page that is not a Freedom UI WEB page — a Classic UI page (which completes through the
+    buttons its own page designer marks instead) and a mobile page alike. A successful read can still carry a
+    'warnings' entry when no candidate was found: that is ambiguous between "the page has no buttons" and "the
+    bundle's shape was not recognised", and must not be read as a clean answer.
 
 OPTIONS
     --schema-name       Freedom UI page schema name, e.g. 'UsrMyApp_FormPage' (required)

@@ -85,6 +85,11 @@ public sealed class ProcessPageFactsToolE2ETests : McpContractFixtureBase {
 				&& button.Caption.EndsWith($" | {button.Name}", StringComparison.Ordinal)
 				&& button.Event == "clicked",
 			because: "the element stores the designer's '<caption> | <name>' composition and the clicked event");
+		// The one assertion in the repo that exercises the name-dedup against REAL stand data: a live page carries
+		// the same ActionButtonsContainer in two places, so without the collapse this reported 7 entries for 4
+		// buttons — and the process element identifies a button by name.
+		response.CompletingButtonCandidates.Select(button => button.Name).Should().OnlyHaveUniqueItems(
+			because: "duplicated containers on a real page must collapse to one entry per button name");
 	}
 
 	#region Methods: Private

@@ -20,6 +20,16 @@ public class ProcessPageFactsOptions : EnvironmentOptions {
 }
 
 /// <summary>
+/// The one page-reading operation <see cref="ProcessPageFactsCommand"/> needs, extracted as a seam so the command
+/// is testable: <see cref="PageGetCommand"/> is concrete and pulls six collaborators, which made the two guards
+/// that decide "facts or refusal" the only code on this surface with zero unit coverage.
+/// </summary>
+public interface IProcessPageReader {
+	/// <inheritdoc cref="PageGetCommand.TryGetPage"/>
+	bool TryGetPage(PageGetOptions options, out PageGetResponse response);
+}
+
+/// <summary>
 /// Reports the facts a Pre-configured page process element needs about a Freedom UI page: which buttons can
 /// complete the page, and which page-scoped entity data sources it has.
 /// <para>Why this exists in clio rather than in the CrtProcessBuilder package: both answers are only knowable from
@@ -33,15 +43,15 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 
 	#region Fields: Private
 
-	private readonly PageGetCommand _pageGetCommand;
+	private readonly IProcessPageReader _pageReader;
 	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public ProcessPageFactsCommand(PageGetCommand pageGetCommand, ILogger logger) {
-		_pageGetCommand = pageGetCommand;
+	public ProcessPageFactsCommand(IProcessPageReader pageReader, ILogger logger) {
+		_pageReader = pageReader;
 		_logger = logger;
 	}
 
@@ -65,7 +75,7 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 			Login = options.Login,
 			Password = options.Password
 		};
-		if (!_pageGetCommand.TryGetPage(pageOptions, out PageGetResponse page) || page?.Bundle is null) {
+		if (!_pageReader.TryGetPage(pageOptions, out PageGetResponse page) || page?.Bundle is null) {
 			response = new ProcessPageFactsResponse {
 				Success = false,
 				SchemaName = options.SchemaName,
@@ -73,31 +83,82 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 			};
 			return false;
 		}
-		// The page must be a Freedom UI one: a Classic page has no merged view config to read buttons from, and the
-		// process element completes it through its own page-designer buttons instead. Saying so is more useful than
-		// reporting an empty candidate list, which reads as "this page has no buttons".
-		if (page.Page is not null
-			&& !string.Equals(page.Page.SchemaType, PageSchemaType.Web.ToLabel(), StringComparison.Ordinal)) {
+		// The page must be a Freedom UI web page: a Classic page has no merged view config to read buttons from,
+		// and the process element completes it through its own page-designer buttons instead. Saying so is more
+		// useful than reporting an empty candidate list, which reads as "this page has no buttons".
+		// The numeric schema type maps everything that is not positively web/mobile — a Classic page, but ALSO a
+		// platform that simply omitted the value — to "unknown", so an unknown label falls back to inferring the
+		// type from the raw body before refusing: refusing on "the platform did not tell us" would turn one absent
+		// field into a refusal for every page on that environment.
+		PageSchemaType resolvedType = ResolvePageType(page);
+		if (resolvedType != PageSchemaType.Web) {
+			string reason = resolvedType == PageSchemaType.Mobile
+				? "it is a MOBILE page"
+				: "it could not be positively identified as one — a Classic UI page reads back this way";
 			response = new ProcessPageFactsResponse {
 				Success = false,
 				SchemaName = options.SchemaName,
-				Error = $"Page '{options.SchemaName}' is not a Freedom UI web page (schema type "
-					+ $"'{page.Page.SchemaType}'), so it has no completing-button candidates to report."
+				Error = $"Page '{options.SchemaName}' is not a Freedom UI web page ({reason}), so it has no "
+					+ "completing-button candidates to report. A Classic UI page completes through its own "
+					+ "page-designer buttons instead."
 			};
 			return false;
 		}
 		// The bundle model serializes with System.Text.Json; the projection reads Newtonsoft nodes so it can be
 		// tested against the exact JSON an agent sees in bundle.json. One round-trip is cheaper than two parsers.
-		JObject bundle = JObject.Parse(System.Text.Json.JsonSerializer.Serialize(page.Bundle));
-		(List<ProcessPageButton> buttons, List<ProcessPageDataSource> dataSources) =
-			ProcessPageFactsProjection.Project(bundle, options.Culture);
+		// Guarded: TryGetPage catches its own failures, but the serialize/parse/project chain below runs OUTSIDE
+		// that boundary, and an exception escaping here would leave the MCP surface with a raw, unredacted error.
+		List<ProcessPageButton> buttons;
+		List<ProcessPageDataSource> dataSources;
+		try {
+			JObject bundle = JObject.Parse(System.Text.Json.JsonSerializer.Serialize(page.Bundle));
+			(buttons, dataSources) = ProcessPageFactsProjection.Project(bundle, options.Culture);
+		} catch (Exception projectionError) {
+			response = new ProcessPageFactsResponse {
+				Success = false,
+				SchemaName = options.SchemaName,
+				Error = $"Page '{options.SchemaName}' was read but its merged bundle could not be projected: "
+					+ $"{projectionError.Message}"
+			};
+			return false;
+		}
+		List<ProcessPageButton> candidates =
+			buttons.Where(ProcessPageFactsProjection.IsCompletingCandidate).ToList();
 		response = new ProcessPageFactsResponse {
 			Success = true,
 			SchemaName = page.Page?.SchemaName ?? options.SchemaName,
-			CompletingButtonCandidates = buttons.Where(ProcessPageFactsProjection.IsCompletingCandidate).ToList(),
-			DataSources = dataSources
+			CompletingButtonCandidates = candidates,
+			DataSources = dataSources,
+			// An empty candidate list on a page that PASSED the web-page guard is ambiguous — the page may
+			// genuinely have no buttons, or the merged bundle's shape may not be one the projection recognises —
+			// and silence here reads as the first. Said explicitly, because a Pre-configured page element built
+			// with no completing button can never finish at run time.
+			Warnings = candidates.Count > 0
+				? null
+				: new List<string> {
+					$"No completing-button candidates were found on '{options.SchemaName}'. Either the page "
+					+ "genuinely has no buttons, or the merged bundle's shape was not recognised — verify in the "
+					+ "page designer before building a Pre-configured page element on it, because an element "
+					+ "without a completing button can never finish at run time."
+				}
 		};
 		return true;
+	}
+
+	/// <summary>
+	/// Resolves the page's UI generation, falling back from the reported label to body inference: the numeric
+	/// schema type maps everything but web/mobile to Unknown — a Classic page and a missing value alike — and only
+	/// the body can tell those apart.
+	/// </summary>
+	private static PageSchemaType ResolvePageType(PageGetResponse page) {
+		string label = page.Page?.SchemaType;
+		if (string.Equals(label, PageSchemaType.Web.ToLabel(), StringComparison.Ordinal)) {
+			return PageSchemaType.Web;
+		}
+		if (string.Equals(label, PageSchemaType.Mobile.ToLabel(), StringComparison.Ordinal)) {
+			return PageSchemaType.Mobile;
+		}
+		return PageSchemaTypeExtensions.FromBody(page.Raw?.Body);
 	}
 
 	/// <inheritdoc />

@@ -57,6 +57,13 @@ designer-built element:
 - A **button** is a candidate when its click handler issues `crt.SaveRecordRequest`, `crt.ClosePageRequest` or
   `crt.CancelRecordChangesRequest` — or when it declares no requests at all (a custom button that only runs code
   can still be chosen).
+- Buttons sharing a **name** are collapsed into one entry, keeping the most informative copy (a candidate over a
+  non-candidate, one that names its requests over one that does not). Measured, not defensive: a real Freedom UI
+  page carries the same `ActionButtonsContainer` in two places, so `Accounts_FormPage` reported Save/Cancel/Close
+  twice — and the process element identifies a button by name, so those are one button.
+- The **caption culture** falls back per caption: the requested `--culture`, then `en-US`, then the first
+  language the page's resources carry. A culture the page does not have yields English captions with no error —
+  check before storing them into a localized process.
 - A **menu** button contributes one entry per leaf menu item, not one for itself, with the caption path joined as
   `"Actions | Approve | ApproveItem"`.
 - The **caption** is the page button's resolved caption and its element name joined with `" | "`, which is exactly
@@ -67,6 +74,11 @@ designer-built element:
 
 ## Notes
 
-- Fails for a Classic UI page, which completes through the buttons its own page designer marks as completing the
-  process step. The error says so rather than reporting an empty candidate list.
+- Fails for any page that is not a Freedom UI **web** page — a Classic UI page (which completes through the
+  buttons its own page designer marks as completing the process step) and a mobile page alike. The error says so
+  rather than reporting an empty candidate list.
+- A successful read can still carry a `warnings` entry when no completing-button candidate was found: that state
+  is ambiguous between "the page genuinely has no buttons" and "the merged bundle's shape was not recognised", so
+  it is flagged instead of returned as a clean empty list — an element built without a completing button can
+  never finish at run time.
 - Read-only: it never modifies the page.

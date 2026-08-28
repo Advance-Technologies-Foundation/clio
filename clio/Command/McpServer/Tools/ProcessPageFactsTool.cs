@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -19,14 +20,17 @@ public sealed class ProcessPageFactsTool(
 	internal const string ToolName = "get-process-page-facts";
 	private const string SchemaNameParam = "schema-name";
 
-	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["schemaName"] = SchemaNameParam,
-		["pageName"] = SchemaNameParam,
-		["page-name"] = SchemaNameParam,
-		["page"] = SchemaNameParam,
-		["name"] = SchemaNameParam,
-		["environmentName"] = "environment-name"
-	};
+	private static readonly Dictionary<string, string> LegacyAliases =
+		// Seeded from the shared environment-name pair (which includes the snake_case spelling this map used to
+		// miss) so the canonical aliases are defined once, exactly as the shared map's own doc instructs.
+		new(McpToolArgumentSupport.EnvironmentNameAliases.ToDictionary(pair => pair.Key, pair => pair.Value),
+				StringComparer.Ordinal) {
+			["schemaName"] = SchemaNameParam,
+			["pageName"] = SchemaNameParam,
+			["page-name"] = SchemaNameParam,
+			["page"] = SchemaNameParam,
+			["name"] = SchemaNameParam
+		};
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
@@ -41,7 +45,9 @@ public sealed class ProcessPageFactsTool(
 		[Required] ProcessPageFactsArgs args) {
 		string? legacyAliasError = GetLegacyAliasError(args);
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
-			return new ProcessPageFactsResponse { Success = false, Error = legacyAliasError };
+			return new ProcessPageFactsResponse {
+				Success = false, SchemaName = args.SchemaName, Error = legacyAliasError
+			};
 		}
 		if (string.IsNullOrWhiteSpace(args.SchemaName)) {
 			return new ProcessPageFactsResponse { Success = false, Error = "schema-name is required." };
@@ -61,6 +67,7 @@ public sealed class ProcessPageFactsTool(
 			} catch (Exception ex) {
 				return new ProcessPageFactsResponse {
 					Success = false,
+					SchemaName = args.SchemaName,
 					Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 				};
 			}
@@ -71,7 +78,7 @@ public sealed class ProcessPageFactsTool(
 
 	private static string? GetLegacyAliasError(ProcessPageFactsArgs args) {
 		return McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, string.Empty,
+			args.ExtensionData, LegacyAliases, ".",
 			"Valid: schema-name, culture, environment-name, uri, login, password.");
 	}
 

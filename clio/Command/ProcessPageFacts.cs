@@ -106,6 +106,16 @@ public sealed class ProcessPageFactsResponse {
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
 	public string Error { get; set; }
+
+	/// <summary>
+	/// Gets or sets caveats about a SUCCESSFUL read — null when there are none. Today the one case: the page
+	/// passed the Freedom-UI guard but yielded no completing-button candidates, which is ambiguous between "the
+	/// page has no buttons" and "the bundle's shape was not recognised", and must not read as a clean answer.
+	/// </summary>
+	[DataMember(Name = "warnings")]
+	[JsonProperty("warnings")]
+	[JsonPropertyName("warnings")]
+	public List<string> Warnings { get; set; }
 }
 
 /// <summary>
@@ -174,7 +184,11 @@ public static class ProcessPageFactsProjection {
 	#region Methods: Private
 
 	/// <summary>
-	/// Collapses buttons that share a NAME, keeping the first.
+	/// Collapses buttons that share a NAME, preferring the most informative entry rather than blindly the first:
+	/// walk order is JSON property order, which means nothing, and the first copy of a duplicated button can be
+	/// the one WITHOUT a handler (or with a non-completing one) while its twin carries
+	/// <c>crt.SaveRecordRequest</c> — keep-first would then either drop the button from the candidate list
+	/// entirely or report empty <c>requests</c> the caller passes verbatim into the descriptor.
 	/// <para>Measured, not defensive: a real Freedom UI page carries the same <c>ActionButtonsContainer</c> in two
 	/// places — the desktop header and the responsive action container — so <c>Accounts_FormPage</c> on a 8.1.3
 	/// stand reports Save/Cancel/Close TWICE (7 nodes, 4 distinct; probed 2026-08-26). The process element
@@ -183,15 +197,27 @@ public static class ProcessPageFactsProjection {
 	/// collapse onto one id.</para>
 	/// </summary>
 	private static List<ProcessPageButton> Distinct(List<ProcessPageButton> buttons) {
-		HashSet<string> seen = new(StringComparer.Ordinal);
+		Dictionary<string, int> indexByName = new(StringComparer.Ordinal);
 		List<ProcessPageButton> distinct = [];
 		foreach (ProcessPageButton button in buttons) {
-			if (seen.Add(button.Name)) {
+			if (!indexByName.TryGetValue(button.Name, out int index)) {
+				indexByName[button.Name] = distinct.Count;
 				distinct.Add(button);
+				continue;
+			}
+			if (Rank(button) > Rank(distinct[index])) {
+				distinct[index] = button;
 			}
 		}
 		return distinct;
 	}
+
+	/// <summary>
+	/// How informative a duplicated button entry is: a completing candidate outranks a non-candidate, and among
+	/// candidates one that names its requests outranks one with none. First occurrence wins ties.
+	/// </summary>
+	private static int Rank(ProcessPageButton button) =>
+		(IsCompletingCandidate(button) ? 2 : 0) + (button.Requests is { Count: > 0 } ? 1 : 0);
 
 	/// <summary>
 	/// Walks the merged view config for <c>crt.Button</c> nodes. A menu button contributes one entry per leaf menu

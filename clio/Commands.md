@@ -443,6 +443,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page"></a>
 <a id="page-get"></a>
 - [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="get-process-page-facts"></a>
+<a id="page-facts"></a>
 - [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`
 <a id="get-page-hierarchy"></a>
 <a id="page-hierarchy-get"></a>

@@ -223,6 +223,28 @@ public class ProcessPageFactsProjectionTests {
 	}
 
 	[Test]
+	[Description("When a duplicated button's copies DIFFER, the collapse keeps the most informative one, not the first: walk order is JSON property order, which means nothing, and keep-first could drop a real completing button from the candidate list entirely — the first copy carries a non-completing request while its twin carries crt.SaveRecordRequest.")]
+	public void Project_ShouldPreferTheInformativeCopyWhenDuplicatesDiffer() {
+		// Arrange — first occurrence is NOT a candidate (a foreign request); the second is.
+		JObject bundle = Bundle(viewConfig: """
+			[{ "type": "crt.FlexContainer", "name": "Header", "items": [
+				{ "type": "crt.Button", "name": "SaveButton", "caption": "Save",
+					"clicked": { "request": "crt.PrintRequest" } } ] },
+			 { "type": "crt.GridContainer", "name": "Actions", "items": [
+				{ "type": "crt.Button", "name": "SaveButton", "caption": "Save",
+					"clicked": { "request": "crt.SaveRecordRequest" } } ] }]
+			""");
+
+		// Act
+		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
+
+		// Assert
+		buttons.Should().ContainSingle();
+		buttons[0].Requests.Should().Equal(["crt.SaveRecordRequest"],
+			because: "the completing copy must win the collapse, or the button vanishes from the candidates");
+	}
+
+	[Test]
 	[Description("A button with no click handler reports no requests — which still leaves it eligible, matching the designer's rule for a custom button that only runs code.")]
 	public void Project_ShouldReportNoRequestsForHandlerlessButton() {
 		// Arrange

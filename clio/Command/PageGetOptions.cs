@@ -40,7 +40,7 @@ public class PageGetOptions : EnvironmentOptions {
 /// <summary>
 /// Reads Freedom UI pages as merged bundle-first envelopes.
 /// </summary>
-public class PageGetCommand : Command<PageGetOptions> {
+public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
