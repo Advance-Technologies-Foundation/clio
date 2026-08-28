@@ -370,11 +370,10 @@ public sealed class RunProcessToolTests {
 		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
 
 		// Assert
-		response.Mode.Should().Be("completed", because: "status 2 is ProcessStatus.Done");
+		response.Status.Should().Be("completed", because: "platform code 2 is ProcessStatus.Done");
 		response.Success.Should().BeTrue(because: "the run finished without an error status");
 		response.ProcessId.Should().Be("0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31",
 			because: "the caller needs the instance id, which is also the run's SysProcessLog primary key");
-		response.ProcessStatus.Should().Be(2, because: "the raw platform status travels alongside the mode");
 	}
 
 	[Test]
@@ -389,7 +388,7 @@ public sealed class RunProcessToolTests {
 		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
 
 		// Assert
-		response.Mode.Should().Be("error", because: "status 3 is ProcessStatus.Error");
+		response.Status.Should().Be("error", because: "platform code 3 is ProcessStatus.Error");
 		response.Success.Should().BeFalse(
 			because: "trusting the platform's own success flag here is exactly the trap this projection exists "
 				+ "to close — a failed run reports success=true whenever that platform feature flag is off");
@@ -434,7 +433,7 @@ public sealed class RunProcessToolTests {
 		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
 
 		// Assert
-		response.Mode.Should().Be("refused",
+		response.Status.Should().Be("refused",
 			because: "reading only the empty id and the zero status would report this refusal as a successful "
 				+ "background launch — success/errorInfo are the only things that tell the two apart");
 		response.Success.Should().BeFalse(because: "nothing was started");
@@ -455,13 +454,14 @@ public sealed class RunProcessToolTests {
 		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
 
 		// Assert
-		response.Mode.Should().Be("queued-background",
+		response.Status.Should().Be("queued-background",
 			because: "the launch succeeded but no verdict exists, and the caller must not read it as completion");
 		response.Success.Should().BeTrue(
 			because: "for a fire-and-forget process the queueing IS the outcome, so this is not a failure");
 		response.ProcessId.Should().BeNull(because: "the platform returned an empty descriptor");
-		response.ProcessStatus.Should().BeNull(
-			because: "the zero status is the descriptor default, not an observed run state");
+		response.Status.Should().NotBe("inactive",
+			because: "the platform's zero status here is the empty descriptor's default, not an observed run "
+				+ "state, so reporting it as the Inactive status would invent a verdict");
 		response.Warnings.Should().ContainSingle().Which.Should().Contain("result-parameters",
 			because: "requesting result parameters is the only way to force such a process to run "
 				+ "synchronously and produce a verdict, so the note must say so");
@@ -533,7 +533,7 @@ public sealed class RunProcessToolTests {
 			new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
 
 		// Assert
-		response.Mode.Should().Be("accepted-still-running",
+		response.Status.Should().Be("accepted-still-running",
 			because: "answering before Creatio does is not a failure and not a success");
 		response.Success.Should().BeTrue(because: "the launch itself was accepted");
 		response.ProcessId.Should().BeNull(

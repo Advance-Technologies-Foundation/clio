@@ -24,9 +24,13 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 	/// the assertion pins the vocabulary rather than a single expected verdict — which process the sandbox is
 	/// configured with is not this test's business.
 	/// </summary>
-	private static readonly string[] LaunchOutcomes = [
-		"completed", "error", "cancelled", "cancelling", "running", "inactive",
-		"queued-background", "refused", "accepted-still-running"
+	private static readonly string[] PlatformStatuses = [
+		"completed", "error", "cancelled", "cancelling", "running", "inactive"
+	];
+
+	/// <summary>Every value the tool may report, platform statuses plus the three the scale cannot express.</summary>
+	private static readonly string[] LaunchStatuses = [
+		.. PlatformStatuses, "queued-background", "refused", "accepted-still-running"
 	];
 
 	[Category("McpE2E.Sandbox")]
@@ -105,15 +109,15 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 			arrangeContext, processCode!, environmentName!, parameters: null);
 
 		// Assert
-		envelope.Mode.Should().BeOneOf(LaunchOutcomes,
-			because: $"mode is the only field carrying the verdict, so it must always be one of the documented "
-				+ $"outcomes. Error: {envelope.Error}");
+		envelope.Status.Should().BeOneOf(LaunchStatuses,
+			because: "status is the only field carrying the verdict, so it must always be one of the documented "
+				+ $"values. Error: {envelope.Error}");
 		envelope.ResolvedProcessCode.Should().Be(processCode,
 			because: "the resolved code is echoed back so the caller can reuse it verbatim");
 		if (envelope.ProcessId is not null) {
-			envelope.ProcessStatus.Should().NotBeNull(
-				because: "a real handle and a real status arrive together — a process id without a status "
-					+ "would leave the caller unable to judge the run");
+			envelope.Status.Should().BeOneOf(PlatformStatuses,
+				because: "a real process id means the platform reported a real run state, so the status must be "
+					+ "one from its own scale rather than one of the no-handle values");
 		}
 	}
 

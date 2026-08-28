@@ -47,25 +47,25 @@ public sealed class RunProcessResponse {
 
 	/// <summary>
 	/// <c>false</c> when clio refused the call, the platform refused the launch, or the run ended with the
-	/// Error status — it cannot tell those three apart, so read <see cref="Mode"/> for the outcome.
+	/// Error status — it cannot tell those three apart, so read <see cref="Status"/> for the outcome.
 	/// </summary>
 	[JsonProperty("success")]
 	[System.Text.Json.Serialization.JsonPropertyName("success")]
 	public bool Success { get; set; }
 
 	/// <summary>
-	/// The run outcome, and the only field that carries it. Either the platform's status scale lowercased
+	/// The run outcome, and the only field that carries it. Either the platform's process status lowercased
 	/// (<c>inactive</c>, <c>running</c>, <c>completed</c> — the enum name is <c>Done</c> — <c>error</c>,
-	/// <c>cancelled</c>, <c>cancelling</c>, or <c>unknown-status-{n}</c> for a code this clio does not know),
-	/// or one of three non-status outcomes: <c>refused</c> (the platform declined to start it and nothing
-	/// ran), <c>queued-background</c> (the schema starts in background mode, so the platform returned no
-	/// handle and no result) and <c>accepted-still-running</c> (clio answered at the MCP response deadline
-	/// before Creatio replied). <see langword="null"/> when the call was rejected before launch — read
-	/// <see cref="Error"/> then.
+	/// <c>cancelled</c>, <c>cancelling</c>, or <c>unknown-status-{n}</c> carrying the raw code for a status
+	/// this clio does not know), or one of three states the platform's scale cannot express:
+	/// <c>refused</c> (it declined to start the process and nothing ran), <c>queued-background</c> (the
+	/// schema starts in background mode, so it returned no handle and no result) and
+	/// <c>accepted-still-running</c> (clio answered at the MCP response deadline before Creatio replied).
+	/// <see langword="null"/> when the call was rejected before launch — read <see cref="Error"/> then.
 	/// </summary>
-	[JsonProperty("mode")]
-	[System.Text.Json.Serialization.JsonPropertyName("mode")]
-	public string Mode { get; set; }
+	[JsonProperty("status")]
+	[System.Text.Json.Serialization.JsonPropertyName("status")]
+	public string Status { get; set; }
 
 	/// <summary>The resolved schema Name, echoed back even when the caller passed a caption.</summary>
 	[JsonProperty("resolvedProcessCode")]
@@ -79,14 +79,6 @@ public sealed class RunProcessResponse {
 	[JsonProperty("processId")]
 	[System.Text.Json.Serialization.JsonPropertyName("processId")]
 	public string ProcessId { get; set; }
-
-	/// <summary>
-	/// Raw platform status code, or <c>null</c> when the platform reported no run state — a refusal, a
-	/// background queueing, or a deadline answer.
-	/// </summary>
-	[JsonProperty("processStatus")]
-	[System.Text.Json.Serialization.JsonPropertyName("processStatus")]
-	public int? ProcessStatus { get; set; }
 
 	/// <summary>Values of the requested <c>result-parameters</c>, keyed by code.</summary>
 	[JsonProperty("resultParameterValues")]
@@ -120,9 +112,9 @@ public class RunProcessCommand(
 	: Command<RunProcessOptions> {
 
 	/// <summary>
-	/// <c>Terrasoft.Core.Process.ProcessStatus</c> codes rendered as mode names. The same scale is stored in
-	/// <c>SysProcessStatus.Value</c>, so a polled log row and this response agree. Code 2 is <c>Done</c> in
-	/// the enum and <c>Completed</c> in the lookup; it is surfaced as <c>completed</c>.
+	/// <c>Terrasoft.Core.Process.ProcessStatus</c> codes rendered as status names. Code 2 is <c>Done</c> in
+	/// the enum and <c>Completed</c> in the lookup row a polled <c>SysProcessLog</c> points at; it is
+	/// surfaced as <c>completed</c>, so a caller comparing the two matches on the lookup name, not the code.
 	/// </summary>
 	private static readonly Dictionary<int, string> StatusNames = new() {
 		[0] = "inactive",
@@ -133,8 +125,8 @@ public class RunProcessCommand(
 		[5] = "cancelling"
 	};
 
-	private const string QueuedBackgroundMode = "queued-background";
-	private const string RefusedMode = "refused";
+	private const string QueuedBackgroundStatus = "queued-background";
+	private const string RefusedStatus = "refused";
 
 	private const int InactiveStatus = 0;
 	private const int ErrorStatus = 3;
@@ -263,7 +255,7 @@ public class RunProcessCommand(
 		if (noHandle && !platformResponse.Success) {
 			return new RunProcessResponse {
 				Success = false,
-				Mode = RefusedMode,
+				Status = RefusedStatus,
 				ResolvedProcessCode = processCode,
 				Error = BuildRefusalMessage(processCode, errorCode, errorMessage)
 			};
@@ -272,7 +264,7 @@ public class RunProcessCommand(
 		if (noHandle) {
 			return new RunProcessResponse {
 				Success = true,
-				Mode = QueuedBackgroundMode,
+				Status = QueuedBackgroundStatus,
 				ResolvedProcessCode = processCode,
 				Warnings = [BuildQueuedBackgroundNote(processCode)]
 			};
@@ -285,9 +277,8 @@ public class RunProcessCommand(
 			// keeping success == false the honest failure signal every clio MCP tool uses.
 			Success = platformResponse.Success && platformResponse.ProcessStatus != ErrorStatus,
 			ResolvedProcessCode = processCode,
-			Mode = ResolveModeName(platformResponse.ProcessStatus),
+			Status = ResolveStatusName(platformResponse.ProcessStatus),
 			ProcessId = platformResponse.ProcessId.ToString(),
-			ProcessStatus = platformResponse.ProcessStatus,
 			ResultParameterValues = platformResponse.ResultParameterValues
 		};
 		if (!response.Success) {
@@ -320,7 +311,7 @@ public class RunProcessCommand(
 			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]");
 	}
 
-	private static string ResolveModeName(int status) =>
+	private static string ResolveStatusName(int status) =>
 		StatusNames.TryGetValue(status, out string name) ? name : $"unknown-status-{status}";
 
 	// Timeout.Infinite is the IApplicationClient default and what a long synchronous process needs; a

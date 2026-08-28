@@ -12,7 +12,7 @@ when the status is `ProcessStatus.Error` **and**
 `GlobalAppSettings.FeatureSetErrorInfoIfProcessHasFailedExecution` is on (config key
 `Feature-SetErrorInfoIfProcessHasFailedExecution`; it defaults to true but is per-instance). On an
 instance where it is off, a failed run answers `success: true` with `processStatus: 3`. The verdict lives
-in `processStatus`, whose scale is `Terrasoft.Core.Process.ProcessStatus` — `0 Inactive, 1 Running,
+in the response's own `processStatus`, whose scale is `Terrasoft.Core.Process.ProcessStatus` — `0 Inactive, 1 Running,
 2 Done, 3 Error, 4 Cancelled, 5 Cancelling` — the same integers stored in `SysProcessStatus.Value`
 (verified against a live 8.3.4 stand, where the lookup row for 2 reads "Completed").
 

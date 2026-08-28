@@ -6,10 +6,9 @@ namespace Clio.Mcp.E2E.Support.Results;
 
 internal sealed record RunProcessEnvelope(
 	[property: JsonPropertyName("success")] bool Success,
-	[property: JsonPropertyName("mode")] string? Mode,
+	[property: JsonPropertyName("status")] string? Status,
 	[property: JsonPropertyName("resolvedProcessCode")] string? ResolvedProcessCode,
 	[property: JsonPropertyName("processId")] string? ProcessId,
-	[property: JsonPropertyName("processStatus")] int? ProcessStatus,
 	[property: JsonPropertyName("resultParameterValues")] Dictionary<string, object>? ResultParameterValues,
 	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings,
 	[property: JsonPropertyName("error")] string? Error);
@@ -84,9 +83,9 @@ internal static class RunProcessResultParser {
 			RunProcessEnvelope? item = JsonSerializer.Deserialize<RunProcessEnvelope>(
 				element.GetRawText(),
 				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-			// A run-process envelope always carries either an outcome mode or a failure reason; anything
-			// carrying neither is some other tool's payload (or clio-run's own wrapper).
-			if (item is null || (string.IsNullOrWhiteSpace(item.Mode) && string.IsNullOrWhiteSpace(item.Error))) {
+			// A run-process envelope always carries either a status or a failure reason; anything carrying
+			// neither is some other tool's payload (or clio-run's own wrapper).
+			if (item is null || (string.IsNullOrWhiteSpace(item.Status) && string.IsNullOrWhiteSpace(item.Error))) {
 				envelope = null;
 				return false;
 			}

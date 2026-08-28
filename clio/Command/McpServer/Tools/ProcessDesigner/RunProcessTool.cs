@@ -62,10 +62,11 @@ public sealed class RunProcessTool(
 		"Run (launch) a Creatio business process on a registered environment. Resolve the parameter CODES with "
 		+ "get-process-signature FIRST and key `parameters` by those codes — the platform silently drops a value "
 		+ "keyed by a caption. "
-		+ "READ THE OUTCOME FROM `mode`, not from `success`: `success` is false for a rejected call, a refused launch "
-		+ "and a failed run alike, so it cannot tell them apart. `mode` carries the outcome and is either the "
-		+ "platform's status scale lowercased (completed | error | cancelled | running | cancelling | inactive, or "
-		+ "unknown-status-<n> for a code this clio does not know) or one of three non-status outcomes. "
+		+ "READ THE OUTCOME FROM `status`, not from `success`: `success` is false for a rejected call, a refused "
+		+ "launch and a failed run alike, so it cannot tell them apart. `status` is either the platform's process "
+		+ "status lowercased (completed | error | cancelled | running | cancelling | inactive, or "
+		+ "unknown-status-<n> carrying the raw code for a status this clio does not know) or one of three states "
+		+ "the platform's scale cannot express. "
 		+ "(1) `refused`: the platform declined to start it and NOTHING ran — most often a process whose only start "
 		+ "events are automatic, which has no manual entry point at all, so no call can ever start it. "
 		+ "(2) `queued-background`: the schema starts in background mode, so the platform queued it fire-and-forget "
@@ -73,9 +74,9 @@ public sealed class RunProcessTool(
 		+ "passing `result-parameters` is what forces it to run synchronously and produce a verdict instead. "
 		+ "(3) `accepted-still-running`: the run outlived the MCP response deadline; clio answered first and has no "
 		+ "verdict. In the last two cases do NOT re-run to find out — a second launch duplicates the work; judge the "
-		+ "outcome from the process's own effects. `mode` is ABSENT when the call was rejected before launch — read "
-		+ "`error` then. "
-		+ "`mode: running` means the process suspended on something external (a user task, a timer, a signal) and its "
+		+ "outcome from the process's own effects. `status` is ABSENT when the call was rejected before launch — "
+		+ "read `error` then. "
+		+ "`status: running` means the process suspended on something external (a user task, a timer, a signal) and its "
 		+ "`processId` is real — it is also the PRIMARY KEY of the run's SysProcessLog row, so poll it with odata-read "
 		+ "on SysProcessLog filtered by Id when you need to await completion. "
 		+ "This tool NEVER retries, and neither should you on a timeout: a second launch can duplicate the work. "
@@ -115,7 +116,7 @@ public sealed class RunProcessTool(
 		catch (McpResponseDeadlineExceededException) {
 			return new RunProcessResponse {
 				Success = true,
-				Mode = "accepted-still-running",
+				Status = "accepted-still-running",
 				Warnings = [BuildStillRunningNote(args.ProcessName)]
 			};
 		}
@@ -186,7 +187,7 @@ public sealed record RunProcessArgs {
 	[JsonPropertyName("timeout")]
 	[Description("HTTP request timeout in seconds. Omit for no timeout, which is what a long synchronous process "
 		+ "needs. This bounds the request, not the MCP response — a run that outlives the response deadline is "
-		+ "answered with mode 'accepted-still-running' while it keeps going server-side.")]
+		+ "answered with status 'accepted-still-running' while it keeps going server-side.")]
 	public int? Timeout { get; init; }
 
 	[JsonPropertyName("environment-name")]
