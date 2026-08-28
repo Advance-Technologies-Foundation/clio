@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -186,7 +187,7 @@ internal static class ODataFieldValidation {
 		if (!TryResolveEntity(types, entity, out CsdlType? target)) {
 			return null;
 		}
-		CollectInherited(target!, types, visited: []);
+		CollectInherited(target, types, visited: []);
 		return target;
 	}
 
@@ -254,7 +255,8 @@ internal static class ODataFieldValidation {
 	/// Finds the entity type, tolerating case (the entity set name is what the caller supplied;
 	/// the CSDL carries the type's canonical casing) and reporting the single match.
 	/// </summary>
-	private static bool TryResolveEntity(Dictionary<string, CsdlType> types, string entity, out CsdlType? target) {
+	private static bool TryResolveEntity(Dictionary<string, CsdlType> types, string entity,
+		[NotNullWhen(true)] out CsdlType? target) {
 		target = types.Values.FirstOrDefault(type =>
 			string.Equals(type.Name, entity.Trim(), StringComparison.OrdinalIgnoreCase));
 		return target is not null;
