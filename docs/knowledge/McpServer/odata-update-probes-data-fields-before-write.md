@@ -5,6 +5,7 @@ applies-to:
   - clio/Command/McpServer/Tools/ODataFieldValidation.cs
   - clio/Command/McpServer/Tools/ODataKeyedWrite.cs
   - clio.tests/Command/McpServer/ODataUpdateToolTests.cs
+  - clio.mcp.e2e/ODataUpdatePreWriteValidationE2ETests.cs
 ticket: GH-1212
 date: 2026-08-27
 ---
@@ -81,6 +82,20 @@ request did not reach the OData pipeline intact (proxy page, session redirect, g
 the body); a PATCH, by contrast, can legitimately answer a body-less 204. Treating an empty probe
 body as "fields confirmed" would recreate the false success this validation removes; both stay
 fail-closed after the bounded retry.
+
+**How the route and the no-write are proved** — the service-root `$metadata` route and the
+absence of the PATCH are pinned end-to-end, not just in-process:
+`clio.mcp.e2e/ODataUpdatePreWriteValidationE2ETests` drives the real MCP server against a stub
+Creatio that records every request it serves
+(`RuntimeDetectionStubServer.RecordedRequestsPath`), so the tests assert the validation GETs
+`.../odata/$metadata` and never `.../odata/{entity}/$metadata`, and that a rejected or
+unverified payload produces **no PATCH request at all**. The stub acks a PATCH, so the absence
+of the request — not a transport failure — is what proves the tool refused to write. A unit
+test cannot establish either fact: it sees the mocked calls, not the URL the process emits.
+On the unverified path the surfaced text keeps a prefix of the unrecognized body as diagnostics
+(the same contract as `ODataKeyedWrite.ValidateWriteResponse`) while
+`SensitiveErrorTextRedactor` scrubs the credentials and internal hostnames such a proxy/SSO
+page carries; the e2e test pins both halves.
 
 **What breaks if you ignore it** — any relaxation (skipping validation on "known-safe"
 fields, treating an unverified metadata/probe body as success, moving validation to after

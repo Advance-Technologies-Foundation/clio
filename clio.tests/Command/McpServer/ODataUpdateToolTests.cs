@@ -121,13 +121,18 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-update.")]
 	public void Update_Should_Advertise_Stable_Tool_Name() {
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ODataUpdateTool)
-			.GetMethod(nameof(ODataUpdateTool.Update))!
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(ODataUpdateTool).GetMethod(nameof(ODataUpdateTool.Update))!;
+
+		// Act
+		McpServerToolAttribute attribute = (McpServerToolAttribute)method
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
-		attribute.Name.Should().Be(ODataUpdateTool.ToolName);
-		attribute.ReadOnly.Should().BeFalse();
+		// Assert
+		attribute.Name.Should().Be(ODataUpdateTool.ToolName,
+			because: "the advertised tool name is a published contract MCP clients bind to");
+		attribute.ReadOnly.Should().BeFalse(because: "the tool writes to remote state");
 		attribute.Destructive.Should().BeTrue(because: "an update mutates existing remote state");
 		attribute.Idempotent.Should().BeTrue(because: "re-applying the same field values is idempotent");
 	}
@@ -136,12 +141,15 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Verifies fields via $metadata, then PATCHes the addressed key with the JSON body.")]
 	public void Update_Should_Patch_Addressed_Key_With_Body() {
+		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
+		// Assert
 		response.Success.Should().BeTrue(because: response.Error);
 		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
 			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
@@ -157,16 +165,22 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Fails when a data field is absent from the entity's CSDL; nothing is written, no probe runs.")]
 	public void Update_Should_Reject_Field_Missing_From_Metadata() {
+		// Arrange
 		Fixture f = new(CsdL(), _ => throw new System.InvalidOperationException("probe must not run: $metadata is authoritative"));
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","Color":"#fff"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "Color is absent from the CSDL type, so the payload cannot be written truthfully");
 		response.Error!.Should()
 			.Contain("Color")
 			.And.Contain("do not exist on the OData type of Contact")
 			.And.Contain("$metadata")
-			.And.Contain("nothing was written");
+			.And.Contain("nothing was written",
+				because: "the caller must learn which field is wrong, which type it was checked against, "
+					+ "and that no partial write happened");
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -174,15 +188,19 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Lists every data field missing from the CSDL type in a single failure message.")]
 	public void Update_Should_Reject_Multiple_Unknown_Fields_At_Once() {
+		// Arrange
 		Fixture f = CsdLFixture();
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","Color":"#fff","Phone":"123"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(because: "two of the three fields do not exist on the type");
 		response.Error!.Should()
 			.Contain("Color")
 			.And.Contain("Phone")
-			.And.Contain("do not exist on the OData type of Contact");
+			.And.Contain("do not exist on the OData type of Contact",
+				because: "one round trip must name every bad field, not just the first");
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -190,14 +208,19 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Surfaces an unverified (non-JSON, non-recognized) pre-write response and refuses to write.")]
 	public void Update_Should_Reject_When_Probe_Body_Cannot_Be_Parsed() {
+		// Arrange
 		Fixture f = new(HtmlPage, _ => NonJsonProbeBody);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "neither validator reached a verdict, and this tool must not write on an unverified payload");
 		response.Error!.Should()
 			.Contain("could not be verified")
-			.And.Contain("No write was performed");
+			.And.Contain("No write was performed",
+				because: "an unverified outcome must read as unverified, never as a silent success");
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -205,16 +228,21 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Surfaces an unrecognized OData error from the pre-write requests without writing.")]
 	public void Update_Should_Reject_Before_Writing_When_Probe_Hits_Different_OData_Error() {
+		// Arrange
 		const string serverError = """{"error":{"code":"-1","message":"The request is invalid."}}""";
 		Fixture f = new(serverError, _ => serverError);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","JobTitle":"CEO"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an OData error that is not the unknown-property fault still means the payload was never verified");
 		response.Error!.Should()
 			.Contain("The request is invalid")
 			.And.Contain("pre-write")
-			.And.Contain("not performed");
+			.And.Contain("not performed",
+				because: "the server's own message must survive, attributed to the pre-write stage");
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -222,13 +250,16 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Treats empty/ack PATCH bodies and valid-JSON write responses as success.")]
 	public void Update_Should_Pass_Ack_Bodies_And_Valid_Json_Through() {
+		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty, $"{{\"Id\":\"{Guid}\"}}");
 
+		// Act
 		ODataWriteResponse first = Update(f, """{"Name":"New"}""");
 		ODataWriteResponse second = Update(f, """{"Name":"Newer"}""");
 
+		// Assert
 		first.Success.Should().BeTrue(because: "an empty PATCH body is a valid 204 ack");
 		second.Success.Should().BeTrue(because: "a valid single-record JSON body is a successful OData write");
 	}
@@ -237,30 +268,39 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Returns a clean failure when the PATCH itself throws, without leaking internals.")]
 	public void Update_Should_Fail_Cleanly_When_Patch_Throws() {
+		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Throws(new System.Net.Http.HttpRequestException("boom at /home/depot/odata"));
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(because: "a transport failure on the PATCH is not a successful write");
 		response.Error!.Should()
 			.Contain("[redacted-path]")
-			.And.NotContain("/home/depot");
+			.And.NotContain("/home/depot",
+				because: "server-side absolute paths must not reach the MCP caller's transcript");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects a data field whose name is not a valid OData member path, before any remote call.")]
 	public void Update_Should_Reject_Malformed_Field_Name_Before_Any_Remote_Call() {
+		// Arrange
 		Fixture f = CsdLFixture();
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","Name?$filter=Bad":"x"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a name carrying query syntax could smuggle options into the $select probe URL");
 		response.Error!.Should()
 			.Contain("not a valid OData field name")
-			.And.Contain("Name?$filter=Bad");
+			.And.Contain("Name?$filter=Bad",
+				because: "the rejected name must be quoted back so the caller can find it");
 		f.Client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
@@ -269,14 +309,19 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Rejects a field set containing any malformed name without running the pre-write validation.")]
 	public void Update_Should_Reject_Mixed_Malformed_And_Unknown_Field_Sets_Without_Patching() {
+		// Arrange
 		Fixture f = CsdLFixture();
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","Name?$filter=Bad":"x","Color":"#fff"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the malformed name short-circuits validation before any remote call is made");
 		response.Error!.Should()
 			.Contain("not a valid OData field name")
-			.And.Contain("No write was performed");
+			.And.Contain("No write was performed",
+				because: "the syntactic rejection is reported first and the write is skipped entirely");
 		f.Client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
@@ -285,6 +330,7 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("When confirm is omitted, the tool refuses before any remote call.")]
 	public void Update_Should_Not_Call_Remote_When_Not_Confirmed() {
+		// Arrange
 		Fixture f = CsdLFixture();
 		ODataUpdateArgs args = new() {
 			EnvironmentName = "dev",
@@ -293,13 +339,16 @@ public sealed class ODataUpdateToolTests {
 			Data = Obj("""{"Name":"New"}""")
 		};
 
+		// Act
 		ODataWriteResponse response = f.Tool.Update(args);
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(because: "a destructive tool must not act without an explicit confirm");
 		response.Error!.Should()
 			.Contain("Refusing to update")
 			.And.Contain("Contact")
-			.And.Contain("\"confirm\": true");
+			.And.Contain("\"confirm\": true",
+				because: "the refusal must name the target and spell out the argument that unblocks it");
 		f.Client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
@@ -380,15 +429,20 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Falls back to the $select probe when $metadata is not CSDL, and reports only the field the probe rejects.")]
 	public void Update_Should_Fall_Back_To_Select_Probe_When_Metadata_Is_Not_Csl() {
+		// Arrange
 		Fixture f = new(HtmlPage, url =>
 			url.Contains("Color", StringComparison.Ordinal) ? UnknownPropertyError("Color") : ProbeOk("Name"));
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","JobTitle":"CEO","Color":"#fff"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the degraded probe path still has to reject a field the service does not know");
 		response.Error!.Should()
 			.Contain("Color")
-			.And.Contain("could not be verified against the service");
+			.And.Contain("could not be verified against the service",
+				because: "the fallback must name the offending field and say the check was the weaker one");
 		response.Error.Should().NotContain("JobTitle", because: "the follow-up probe confirmed JobTitle exists");
 		// The batch probe (full RequestTimeoutMs) pins the multi-field $select encoding and names only the
 		// FIRST unknown (Color); the two follow-ups (Name, JobTitle) run at the shorter FollowUpProbeTimeoutMs
@@ -406,12 +460,15 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Falls back to the $select probe when the CSDL declares no matching type; an all-ok probe lets the write proceed.")]
 	public void Update_Should_Fall_Back_When_Metadata_Type_Missing() {
+		// Arrange
 		Fixture f = new(CsdLWithoutContact, _ => ProbeOk("Name"));
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
+		// Assert
 		response.Success.Should().BeTrue(because: "the probe verified every field; a missing CSDL type is a degraded path, not a failure");
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
 	}
@@ -420,12 +477,15 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Sends the bounded retry parameters (30s timeout, 3 attempts, 1s delay) for the pre-write requests.")]
 	public void Update_Should_Use_Bounded_Retry_For_PreWrite_Requests() {
+		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
+		// Assert
 		response.Success.Should().BeTrue(because: response.Error);
 		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
 			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec)
@@ -437,6 +497,7 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Treats a probed record as confirmed even when a selected column is named like an ASP.NET error member.")]
 	public void Update_Should_Not_Read_Selected_Error_Named_Columns_As_A_Server_Error() {
+		// Arrange
 		const string probedRecord =
 			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(" + Guid + ")\",\"Id\":\"" + Guid +
 			"\",\"ExceptionMessage\":\"boom\"}";
@@ -444,8 +505,10 @@ public sealed class ODataUpdateToolTests {
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"ExceptionMessage":"boom"}""");
 
+		// Assert
 		response.Success.Should().BeTrue(
 			because: "ExceptionMessage is a legal column on a log-shaped entity; the probe asked for it by $select "
 				+ "and got the record back, so the write must not be rejected as a server error");
@@ -456,17 +519,21 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Redacts credential-bearing URIs surfaced by a failed pre-write validation.")]
 	public void Update_Should_Redact_Sensitive_Tokens_In_PreWrite_Error() {
+		// Arrange
 		const string serverError =
 			"""{"error":{"code":"-1","message":"auth failed for http://admin:Sup3rS3cret@env.internal:80/odata"}}""";
 		Fixture f = new(serverError, _ => serverError);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(because: "an auth failure on the pre-write request is not a successful write");
 		response.Error!.Should()
 			.Contain("[redacted-uri]")
 			.And.NotContain("Sup3rS3cret")
-			.And.NotContain("admin@env.internal");
+			.And.NotContain("admin@env.internal",
+				because: "credentials embedded in a service URI must never reach the MCP caller's transcript");
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -474,19 +541,24 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("Redacts an internal host/credential URI surfaced in a non-JSON (unverified) pre-write probe body.")]
 	public void Update_Should_Redact_Host_In_NonJson_Probe_Body() {
+		// Arrange
 		const string nonJsonWithHost =
 			"IIS: The request has been routed. See http://admin:Sup3rS3cret@env.internal:80/trace for details.";
 		Fixture f = new(HtmlPage, _ => nonJsonWithHost);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
 
-		response.Success.Should().BeFalse();
+		// Assert
+		response.Success.Should().BeFalse(because: "a non-JSON probe body leaves the payload unverified");
 		response.Error!.Should()
 			.Contain("could not be verified")
 			.And.Contain("[redacted-uri]")
 			.And.NotContain("Sup3rS3cret")
 			.And.NotContain("env.internal")
-			.And.NotContain("admin@env");
+			.And.NotContain("admin@env",
+				because: "the non-JSON body is the IIS/proxy error page - exactly the carrier of internal hosts "
+					+ "and credentials the redactor exists to scrub");
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -494,7 +566,7 @@ public sealed class ODataUpdateToolTests {
 	[Category("Unit")]
 	[Description("A pre-write probe reading a keyed entity whose column is named after an HttpError key (ExceptionMessage) is data, not a server error; the write proceeds.")]
 	public void Update_Should_Treat_Error_Named_Probe_Column_As_Data() {
-		// A log-shaped entity: the caller selects a column literally named ExceptionMessage, so the keyed
+		// Arrange - a log-shaped entity: the caller selects a column literally named ExceptionMessage, so the keyed
 		// probe response echoes it alongside @odata.context and Id.
 		Fixture f = new(HtmlPage, _ =>
 			"{" +
@@ -505,8 +577,10 @@ public sealed class ODataUpdateToolTests {
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
+		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","ExceptionMessage":"boom at /home/depot"}""");
 
+		// Assert
 		response.Success.Should().BeTrue(because:
 			"the probe body carries @odata.context and Id alongside the caller-chosen ExceptionMessage column, so it is a keyed entity read, not a server error; the write must proceed");
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New","ExceptionMessage":"boom at /home/depot"}""", 30000);
