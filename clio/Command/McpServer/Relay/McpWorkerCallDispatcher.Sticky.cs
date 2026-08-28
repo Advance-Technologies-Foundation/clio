@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -417,11 +417,14 @@ public sealed partial class McpWorkerCallDispatcher {
 
 		StickyWorkerEntry entry = null;
 		bool ownershipTransferred = false;
+		// Tracked outside the try so the failure paths can release a transport the session never took
+		// ownership of; OpenAsync is what transfers that ownership, and the entry then owns the session.
+		ITransport childTransport = null;
 		try {
 			using CancellationTokenSource handshakeSource =
 				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			handshakeSource.CancelAfter(_stickyCallBudget);
-			ITransport childTransport = await _transportOwner
+			childTransport = await _transportOwner
 				.ConnectAsync(lease.StandardInput, lease.StandardOutput, handshakeSource.Token)
 				.ConfigureAwait(false);
 			// The tap is scoped to THIS ENTRY, never to the key: the key outlives the worker registered
@@ -488,6 +491,11 @@ public sealed partial class McpWorkerCallDispatcher {
 				standardError.Tail());
 		}
 		finally {
+			if (entry is null) {
+				// The handshake never completed, so nothing took ownership of the transport. Once an entry
+				// exists it owns the session, and the session owns the transport.
+				await DisposeTransportQuietly(childTransport, toolName).ConfigureAwait(false);
+			}
 			if (!ownershipTransferred && entry is not null) {
 				// Belt and braces for an entry the registry never took. The branch above already released
 				// it before invoking anything — a worker nobody owns must not run a second operation of a

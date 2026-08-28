@@ -334,8 +334,11 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		TimeSpan remaining = lease.BudgetExpiresAtUtc - DateTimeOffset.UtcNow;
 		budgetSource.CancelAfter(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
 		WorkerRelaySession session = null;
+		// Tracked outside the try so the failure paths can release a transport the session never took
+		// ownership of; OpenAsync is what transfers that ownership.
+		ITransport childTransport = null;
 		try {
-			ITransport childTransport = await _transportOwner
+			childTransport = await _transportOwner
 				.ConnectAsync(lease.StandardInput, lease.StandardOutput, budgetSource.Token)
 				.ConfigureAwait(false);
 			session = await _relay
@@ -380,6 +383,10 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 			if (session is not null) {
 				// Bounded by the session's own two grace windows; it never waits on the worker process.
 				await session.DisposeAsync().ConfigureAwait(false);
+			}
+			else {
+				// The handshake never completed, so nothing took ownership of the transport.
+				await DisposeTransportQuietly(childTransport, toolName).ConfigureAwait(false);
 			}
 			await standardError.StopAsync().ConfigureAwait(false);
 			// Disposing the lease kills the worker if it is still running, drops its stale-worker registry
@@ -551,6 +558,26 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 			// the finally block is a second chance at the same kill.
 			_logger.WriteWarning(
 				$"MCP worker for '{toolName}' (pid {lease.ProcessId}) could not be killed: "
+				+ SensitiveErrorTextRedactor.Redact(exception.Message));
+		}
+	}
+
+	// A transport that ConnectAsync returned but OpenAsync never took ownership of has to be released here.
+	// WorkerRelaySession owns the transport only once it exists; when the handshake is cancelled or fails,
+	// the SDK transport keeps its pipe wrappers, completion sources and event registrations alive until GC.
+	// Under repeated handshake timeouts those accumulate, so the failure paths dispose explicitly.
+	private async ValueTask DisposeTransportQuietly(ITransport transport, string toolName) {
+		if (transport is null) {
+			return;
+		}
+		try {
+			await transport.DisposeAsync().ConfigureAwait(false);
+		}
+		catch (Exception exception) {
+			// Reported, never rethrown: the caller is already receiving an answer for the original failure,
+			// and a transport that will not close must not replace that answer.
+			_logger.WriteWarning(
+				$"MCP worker transport for '{toolName}' could not be disposed after a failed handshake: "
 				+ SensitiveErrorTextRedactor.Redact(exception.Message));
 		}
 	}

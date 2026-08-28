@@ -1292,6 +1292,11 @@ internal class Program {
 			return string.Empty;
 		}
 		int logIndex = Array.IndexOf(args, "--log");
+		// A trailing "--log" with no value would index past the end. Fail with the actual problem instead
+		// of an IndexOutOfRangeException from deep inside argument parsing.
+		if (logIndex + 1 >= args.Length) {
+			throw new ArgumentException("--log requires a value.", nameof(args));
+		}
 		string logTarget = args[logIndex + 1];
 		args = args.Where(x => x != "--log" && x != logTarget).ToArray();
 		return logTarget;
