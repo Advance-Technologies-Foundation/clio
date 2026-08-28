@@ -182,7 +182,8 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 					DesignPackageName = designPackageName,
 					RootSchemaUId = rootSchemaUId,
 					WillCreateReplacingInDesignPackage = willCreateReplacing,
-					SchemaType = pageSchemaType.ToLabel()
+					SchemaType = pageSchemaType.ToLabel(),
+					SchemaTypeValue = currentSchema.SchemaType
 				},
 				Bundle = new PageBundleInfo {
 					Name = bundle.Name,

@@ -319,6 +319,18 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("schema-type")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string SchemaType { get; init; }
+
+	/// <summary>
+	/// Gets or sets the RAW numeric <c>ClientUnitSchemaType</c> the hierarchy service reported, before the
+	/// web/mobile/unknown collapse — null when the service omitted it. The label above folds "present but neither
+	/// web nor mobile" (a Classic page, a module) and "absent" into one <c>unknown</c>, and a consumer that must
+	/// tell those apart (the process-page-facts guard) needs the difference: a PRESENT non-web value is a positive
+	/// identification, an absent one is not.
+	/// </summary>
+	[JsonProperty("schema-type-value", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("schema-type-value")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public int? SchemaTypeValue { get; init; }
 }
 
 /// <summary>

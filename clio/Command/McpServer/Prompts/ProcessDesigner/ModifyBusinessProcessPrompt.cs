@@ -34,7 +34,7 @@ public static class ModifyBusinessProcessPrompt {
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
 		 `useBackgroundMode` on any element kind, and a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
-		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended); `setConnections` binds the "Connected to" links of the
+		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
 		 and a `preconfiguredPage` element's `preconfiguredPage` block (`page`, `buttons`, `dataSources`,
 		 `performer`, `recommendation`), where OMITTING `buttons` or `dataSources` means LEAVE THEM ALONE and —
 		 with one exception: changing `page` on a Freedom UI element REQUIRES `buttons` in the same call, because
@@ -43,6 +43,7 @@ public static class ModifyBusinessProcessPrompt {
 		 never "the page has none"; ANY `setElement` touching such an element also re-reads the page and
 		 reconciles its parameters, so a value dropped by a data-type change is reported in the warnings below;
 		 an element on a Classic UI page keeps that page and is limited to the fields both page types share;
+		 `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). Any failed operation aborts the whole edit
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,

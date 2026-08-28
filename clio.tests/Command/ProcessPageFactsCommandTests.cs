@@ -74,13 +74,15 @@ public sealed class ProcessPageFactsCommandTests {
 	}
 
 	[Test]
-	[Description("An UNKNOWN schema type is not refused outright: the numeric type maps a Classic page AND a platform that omitted the value to the same label, so the guard falls back to body inference. A body that is not mobile JSON reads as web, and the facts are produced — refusing on 'the platform did not tell us' would turn one absent field into a refusal for every page on that environment.")]
+	[Description("An UNKNOWN schema type is not refused outright: the numeric type maps a Classic page AND a platform that omitted the value to the same label, so the guard falls back to the body — but only POSITIVE Freedom evidence passes, the viewConfigDiff member every Freedom UI web body names. Refusing on 'the platform did not tell us' would turn one absent field into a refusal for every page on that environment.")]
 	public void TryGetFacts_ShouldFallBackToBodyInferenceWhenTheSchemaTypeIsUnknown() {
-		// Arrange — unknown label, but a body that is clearly a web (Angular) schema, not mobile JSON.
+		// Arrange — unknown label, but a body carrying the Freedom UI marker.
 		StubPage(new PageGetResponse {
 			Success = true,
 			Page = new PageMetadataInfo { SchemaName = "UsrRequest_FormPage", SchemaType = "unknown" },
-			Raw = new PageRawInfo { Body = "define(\"UsrRequest_FormPage\", [], function() {});" },
+			Raw = new PageRawInfo {
+				Body = "define(\"UsrRequest_FormPage\", [], function() { return { viewConfigDiff: [] }; });"
+			},
 			Bundle = new PageBundleInfo()
 		});
 
@@ -88,7 +90,52 @@ public sealed class ProcessPageFactsCommandTests {
 		bool success = _command.TryGetFacts(Options(), out ProcessPageFactsResponse response);
 
 		// Assert
-		success.Should().BeTrue(because: "an unresolved type with a web-shaped body is a readable Freedom UI page");
+		success.Should().BeTrue(because: "an unresolved type with Freedom UI body evidence is a readable page");
+	}
+
+	[Test]
+	[Description("A schema whose numeric type is PRESENT but neither web nor mobile is refused WITHOUT consulting the body — measured on a live stand: ProcessModuleV2 reports a numeric type, has no editable schema, and get-page therefore hands back a SYNTHESIZED body carrying the very viewConfigDiff marker the body check trusts. Evidence clio planted itself is not evidence.")]
+	public void TryGetFacts_ShouldRefuseWhenTheNumericTypeIsPresentAndNonWeb() {
+		// Arrange — the ProcessModuleV2 shape: numeric present, label unknown, marker-bearing synthesized body.
+		StubPage(new PageGetResponse {
+			Success = true,
+			Page = new PageMetadataInfo {
+				SchemaName = "ProcessModuleV2", SchemaType = "unknown", SchemaTypeValue = 2
+			},
+			Raw = new PageRawInfo {
+				Body = "define(\"ProcessModuleV2\", [], function() { return { viewConfigDiff: [] }; });"
+			},
+			Bundle = new PageBundleInfo()
+		});
+
+		// Act
+		bool success = _command.TryGetFacts(Options(), out ProcessPageFactsResponse response);
+
+		// Assert
+		success.Should().BeFalse(
+			because: "a present non-web numeric is a positive identification the body cannot override");
+	}
+
+	[Test]
+	[Description("A CLASSIC page is refused on the shape it actually reaches this guard in: label 'unknown' plus an AMD define() body WITHOUT the viewConfigDiff member. A shape-only body check would call that body web — Classic bodies are AMD modules too — and wave the page past the guard into a success with an empty candidate list.")]
+	public void TryGetFacts_ShouldRefuseAClassicPageByItsRealShape() {
+		// Arrange — the realistic Classic input: TryGetPage always populates Raw.Body, and a Classic body is an
+		// AMD module carrying `diff`, never `viewConfigDiff`.
+		StubPage(new PageGetResponse {
+			Success = true,
+			Page = new PageMetadataInfo { SchemaName = "UsrClassicPage", SchemaType = "unknown" },
+			Raw = new PageRawInfo {
+				Body = "define(\"UsrClassicPage\", [], function() { return { diff: /**SCHEMA_DIFF*/[]/**SCHEMA_DIFF*/ }; });"
+			},
+			Bundle = new PageBundleInfo()
+		});
+
+		// Act
+		bool success = _command.TryGetFacts(Options(), out ProcessPageFactsResponse response);
+
+		// Assert
+		success.Should().BeFalse();
+		response.Error.Should().Contain("Classic UI page");
 	}
 
 	[Test]

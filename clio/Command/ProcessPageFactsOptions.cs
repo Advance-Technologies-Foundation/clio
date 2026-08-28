@@ -149,6 +149,13 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 	/// Resolves the page's UI generation, falling back from the reported label to body inference: the numeric
 	/// schema type maps everything but web/mobile to Unknown — a Classic page and a missing value alike — and only
 	/// the body can tell those apart.
+	/// <para>The order of evidence matters, and both shortcuts were measured wrong on a live stand. A PRESENT
+	/// numeric type that is neither web nor mobile is a POSITIVE identification — a Classic page, a module — and
+	/// is refused without looking at the body. The body is consulted only when the numeric is genuinely absent,
+	/// and even then a shape test is not enough: a Classic body is an AMD <c>define(...)</c> module too, and the
+	/// <c>viewConfigDiff</c> marker alone is not proof either, because <c>get-page</c> SYNTHESIZES a marker-bearing
+	/// empty body whenever the page has no editable schema — clio would be trusting evidence it planted itself
+	/// (measured: <c>ProcessModuleV2</c>, numeric type present, synthesized body, marker and all).</para>
 	/// </summary>
 	private static PageSchemaType ResolvePageType(PageGetResponse page) {
 		string label = page.Page?.SchemaType;
@@ -158,7 +165,16 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 		if (string.Equals(label, PageSchemaType.Mobile.ToLabel(), StringComparison.Ordinal)) {
 			return PageSchemaType.Mobile;
 		}
-		return PageSchemaTypeExtensions.FromBody(page.Raw?.Body);
+		if (page.Page?.SchemaTypeValue is not null) {
+			// The platform DID say what this is, and it is neither web nor mobile.
+			return PageSchemaType.Unknown;
+		}
+		string body = page.Raw?.Body;
+		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
+			return PageSchemaType.Mobile;
+		}
+		bool hasFreedomMarkers = body?.Contains("viewConfigDiff", StringComparison.Ordinal) == true;
+		return hasFreedomMarkers ? PageSchemaType.Web : PageSchemaType.Unknown;
 	}
 
 	/// <inheritdoc />
