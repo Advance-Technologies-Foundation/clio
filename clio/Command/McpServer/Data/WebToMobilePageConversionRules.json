@@ -161,7 +161,14 @@
       "values": { "gap": { "rowGap": "medium", "columnGap": "medium" } }
     },
     {
-      "filters": [{ "type": "crt.GridContainer", "borderRadius": "medium" }],
+      "filters": [
+        { "type": "crt.GridContainer", "borderRadius": "extra-small" },
+        { "type": "crt.GridContainer", "borderRadius": "small" },
+        { "type": "crt.GridContainer", "borderRadius": "medium" },
+        { "type": "crt.GridContainer", "borderRadius": "extra-large" },
+        { "type": "crt.GridContainer", "borderRadius": "xxl" },
+        { "type": "crt.GridContainer", "borderRadius": "xxxl" }
+      ],
       "values": { "borderRadius": "large" }
     },
     {

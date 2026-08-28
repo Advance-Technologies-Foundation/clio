@@ -4437,6 +4437,57 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("The BUNDLED rules promote the corner radius end to end: every grid that ARRIVED with a radius — a converted web one at any non-zero token, and the Area card the tab synthesis creates at the platform's Medium — ships Large, while a grid with no radius or an explicit none is untouched. The other tests build their own rules, so only this one reads what actually ships.")]
+	public void Analyze_BundledRules_PromoteEveryGridThatHadACornerRadius() {
+		// Arrange — the real rules file, and a tab whose content covers every radius case.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "items": [
+					{ "name": "SmallCard",  "type": "crt.GridContainer", "borderRadius": "small",
+					  "items": [ { "name": "F1", "type": "crt.Input", "control": "$F1" } ] },
+					{ "name": "MediumCard", "type": "crt.GridContainer", "borderRadius": "medium",
+					  "items": [ { "name": "F2", "type": "crt.Input", "control": "$F2" } ] },
+					{ "name": "HugeCard",   "type": "crt.GridContainer", "borderRadius": "xxxl",
+					  "items": [ { "name": "F3", "type": "crt.Input", "control": "$F3" } ] },
+					{ "name": "SquareCard", "type": "crt.GridContainer", "borderRadius": "none",
+					  "items": [ { "name": "F4", "type": "crt.Input", "control": "$F4" } ] },
+					{ "name": "PlainCard",  "type": "crt.GridContainer",
+					  "items": [ { "name": "F5", "type": "crt.Input", "control": "$F5" } ] } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules shipped = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle, rules: shipped);
+
+		// Assert — every grid that arrived with a non-zero radius, whatever the token, ships Large.
+		foreach (string name in new[] { "SmallCard", "MediumCard", "HugeCard" }) {
+			Element(guide, name).MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+				because: $"{name} arrived with a radius, and mobile has ONE corner standard for a card");
+		}
+
+		// ...and the Area card the tab synthesis creates carries the platform's Medium into the pass, so the
+		// shipped rules promote it too — this is the ticket's actual deliverable.
+		(_, string area) = LayerNames("OverviewTab");
+		Synthesized(guide, area).MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "tabAreaLayers mirrors the designer's own Medium; promoting it is the normalization's job");
+
+		// A grid with no radius is left alone — 'none' means the element deliberately has none.
+		Element(guide, "SquareCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("none",
+			because: "'none' removes the border radius, so the element never had one to promote");
+		Element(guide, "PlainCard").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+			because: "a grid that carried no radius must not acquire one");
+		// It IS reported — the unconditional gap rule still applies to it — but only for what was written.
+		NormalizationEntry square = guide.Normalizations!["spacing"].Normalized
+			.Single(n => n.Name == Element(guide, "SquareCard").MobileName);
+		square.Properties.Should().Equal(["gap"],
+			because: "the gap rule matched it and the radius rule did not, so the report names gap alone");
+		guide.Normalizations["spacing"].Normalized
+			.Single(n => n.Name == Element(guide, "MediumCard").MobileName)
+			.Properties.Should().Equal(["gap", "borderRadius"],
+				because: "a grid both rules matched is ONE entry listing what each of them wrote");
+	}
+
+	[Test]
 	[Description("The component type is selected THROUGH the filter, like a components-group entry: a rule whose filter names another type never reaches this element, and there is no separate type field to fall back on.")]
 	public void Analyze_OverrideFilters_ShouldSelectTheTypeThroughTheFilter() {
 		// Arrange
