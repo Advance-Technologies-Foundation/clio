@@ -32,9 +32,14 @@ public static class ModifyBusinessProcessPrompt {
 		 `setParameter` updates a parameter in place, `removeParameter` is dependency-checked, `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
-		 `useBackgroundMode` on any element kind, and a `sendEmail` element's `email` block, where the fields you
+		 `useBackgroundMode` on any element kind, a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
-		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
+		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended), and a `performTask` element's `performer` block
+		 (`type:user|manager|role` plus `contact?`/`role?`/`showPage?` — WHO performs the task; `role` is the honest
+		 "assign to a team": the created Activity carries the role in its own OwnerRole column with an EMPTY
+		 owner, so never fake a team by writing a role id into the OwnerId parameter — that id is refused as
+		 referencing no Contact record; the retired CallUserTask is refused by name because its runtime ignores
+		 the assignment),
 		 and a `preconfiguredPage` element's `preconfiguredPage` block (`page`, `buttons`, `dataSources`,
 		 `performer`, `recommendation`), where OMITTING `buttons` or `dataSources` means LEAVE THEM ALONE and —
 		 with one exception: changing `page` TO a Freedom UI page REQUIRES `buttons` in the same call, because
@@ -46,7 +51,12 @@ public static class ModifyBusinessProcessPrompt {
 		 an element on a Classic UI page keeps that page and is limited to the fields both page types share;
 		 `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
-		 and `clearConnections` unbinds them). Any failed operation aborts the whole edit
+		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare
+		 non-empty record Guid (the route ships from CrtProcessBuilder 1.3.1.1, and this clio additionally
+		 refuses any environment older than the version it bundles — up front, via the package-convergence
+		 message — while an older clio surfaces the old package's `[#Lookup…#]`-macro rejection; either refusal
+		 means the environment's package is behind, so update it rather than concluding the parameter is
+		 unsettable). Any failed operation aborts the whole edit
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
 		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
 		 (`removeElement` / `removeFlow` / `removeParameter` / `clearConnections`) with the user before proceeding.
