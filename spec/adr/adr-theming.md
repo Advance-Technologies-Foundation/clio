@@ -11,12 +11,13 @@ and `adr-theming-agent-advisor.md`. It is the single design-rationale document f
 |------|------|--------|
 | Contour A — dev / workspace flow | ENG-90636 | **Shipped** — `clear-themes-cache`, `list-themes`, delegate/guidance model |
 | Contour B — no-code / server flow | ENG-91387 | **Shipped** — `create-theme`, `update-theme`, `delete-theme` over native `ThemeService` |
-| Native build engine | ENG-90636 (continuation) | **Live** — `build-theme`; `[FeatureToggle("theming")]` removed at go-live (2026-07-08), parity gate verified |
+| Native build engine | ENG-90636 (continuation) | **Live** — `build-theme`; `[FeatureToggle("theming")]` removed at go-live (2026-07-08), colour-math parity gate verified |
 | Agent advisor | theming-agent | **Live** — renamed `theme-color-advisor` → `advise-theme-palette`; reachable (toggle removed at go-live); advisor story still in progress |
 
 **Go-live (2026-07-08).** `[FeatureToggle("theming")]` has been removed from the entire theming
 surface (verbs, MCP tools, resources, prompts); the feature is live on all four surfaces and the
-public docs ship in the generated export baseline. The parity gate (C-D7) is green. This supersedes
+public docs ship in the generated export baseline. The colour-math parity gate (C-D7) is green; the
+`buildThemeCss` golden is a regression pin rather than a parity gate — see the C-D7 amendment. This supersedes
 the "dark by default until go-live" state that B-D1 and C-D6 below record as the original design.
 
 ---
@@ -296,6 +297,14 @@ guard + committed template fixture. Uniform palette calibration (R-18): assert `
 all five default anchors (primary/secondary/accent/success/error) equals the TS golden **identically** —
 no secondary special-case; the math never reproduces the platform's hand-tuned secondary (build-theme
 always generates it from `generateScale(deriveSecondary(primary))`).
+
+*Amended (ENG-94155):* layer (2) has split. The `hex → {generateScale, deriveSecondary, accentCandidates}`
+pairs in `color-math-parity.json` remain the cross-implementation parity gate and are still bit-exact with
+the TS package (`ColorMathParityTests`). The full `buildThemeCss` outputs in `theme-css-golden.json` are no
+longer that gate: the `text-on-*` rule deliberately diverged from the captured TS behaviour, and three of
+its five cases were re-pinned. That file now pins regressions in clio's own output
+(`ThemeCssBuilderTests.Build_ShouldMatchCommittedGolden_ForEveryBuilderFixtureCase`). A divergence from the
+TS package in those cases is expected — do not "restore" them.
 
 **C-D8 — Guidance swap; token catalog + prose guides stay out of clio.** Edit `ThemingGuidanceResource`
 to replace the npm-fetch instructions with "call `build-theme`", keeping all other sections. The `--crt-*`

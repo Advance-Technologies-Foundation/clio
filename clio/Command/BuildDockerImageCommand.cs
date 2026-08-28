@@ -59,6 +59,14 @@ public class BuildDockerImageOptions {
 	/// </summary>
 	[Option("use-nerdctl", Required = false, HelpText = "Use the nerdctl CLI for this invocation, bypassing runtime CLI auto-detection")]
 	public bool UseNerdctl { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the source <c>db</c> folder is kept in the
+	/// application image instead of being stripped from the build context.
+	/// </summary>
+	[Option("include-db", Required = false,
+		HelpText = "Keep the source `db` folder in the built application image at `/app/db`. Off by default. Matches the layout of the published Creatio image, which the creatio-helm chart's databaseBootstrap reads to seed a template database. Ignored by templates `base` and `db`")]
+	public bool IncludeDb { get; set; }
 }
 
 /// <summary>
