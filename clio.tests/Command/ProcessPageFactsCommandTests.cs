@@ -94,6 +94,28 @@ public sealed class ProcessPageFactsCommandTests {
 	}
 
 	[Test]
+	[Description("A MOBILE page identified by BODY SHAPE alone (numeric type absent, label unknown) is refused as mobile. This branch cannot be dropped in favour of the Freedom-marker check below it: a mobile body is JSON that CONTAINS viewConfigDiff, so without the mobile-shape test first the marker check would call it web and hand out completing-button facts for a mobile page.")]
+	public void TryGetFacts_ShouldRefuseAMobilePageByItsBodyShape() {
+		// Arrange — no numeric, unknown label, and the real mobile body shape: JSON carrying the marker.
+		StubPage(new PageGetResponse {
+			Success = true,
+			Page = new PageMetadataInfo { SchemaName = "UsrRequestMobilePage", SchemaType = "unknown" },
+			Raw = new PageRawInfo {
+				Body = "{\n\t\"viewConfigDiff\": [],\n\t\"viewModelConfigDiff\": []\n}"
+			},
+			Bundle = new PageBundleInfo()
+		});
+
+		// Act
+		bool success = _command.TryGetFacts(Options(), out ProcessPageFactsResponse response);
+
+		// Assert
+		success.Should().BeFalse();
+		response.Error.Should().Contain("MOBILE",
+			because: "JSON body shape identifies mobile before the Freedom marker gets a vote");
+	}
+
+	[Test]
 	[Description("A schema whose numeric type is PRESENT but neither web nor mobile is refused WITHOUT consulting the body — measured on a live stand: ProcessModuleV2 reports a numeric type, has no editable schema, and get-page therefore hands back a SYNTHESIZED body carrying the very viewConfigDiff marker the body check trusts. Evidence clio planted itself is not evidence.")]
 	public void TryGetFacts_ShouldRefuseWhenTheNumericTypeIsPresentAndNonWeb() {
 		// Arrange — the ProcessModuleV2 shape: numeric present, label unknown, marker-bearing synthesized body.

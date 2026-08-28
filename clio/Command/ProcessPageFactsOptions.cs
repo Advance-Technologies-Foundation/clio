@@ -86,10 +86,11 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 		// The page must be a Freedom UI web page: a Classic page has no merged view config to read buttons from,
 		// and the process element completes it through its own page-designer buttons instead. Saying so is more
 		// useful than reporting an empty candidate list, which reads as "this page has no buttons".
-		// The numeric schema type maps everything that is not positively web/mobile — a Classic page, but ALSO a
-		// platform that simply omitted the value — to "unknown", so an unknown label falls back to inferring the
-		// type from the raw body before refusing: refusing on "the platform did not tell us" would turn one absent
-		// field into a refusal for every page on that environment.
+		// The numeric schema type LABELS everything that is not positively web/mobile — a Classic page, but ALSO a
+		// platform that simply omitted the value — as "unknown", and the raw numeric tells those apart: present but
+		// non-web is a positive identification and refuses outright, while body inference runs only when the value
+		// is genuinely absent — refusing on "the platform did not tell us" would turn one absent field into a
+		// refusal for every page on that environment.
 		PageSchemaType resolvedType = ResolvePageType(page);
 		if (resolvedType != PageSchemaType.Web) {
 			string reason = resolvedType == PageSchemaType.Mobile
@@ -146,9 +147,10 @@ public class ProcessPageFactsCommand : Command<ProcessPageFactsOptions> {
 	}
 
 	/// <summary>
-	/// Resolves the page's UI generation, falling back from the reported label to body inference: the numeric
-	/// schema type maps everything but web/mobile to Unknown — a Classic page and a missing value alike — and only
-	/// the body can tell those apart.
+	/// Resolves the page's UI generation from the label, then the raw numeric type, then — only when the numeric
+	/// is absent — body inference: the LABEL maps everything but web/mobile to Unknown, a Classic page and a
+	/// missing value alike, and it is the raw <see cref="PageMetadataInfo.SchemaTypeValue"/> that tells those
+	/// apart.
 	/// <para>The order of evidence matters, and both shortcuts were measured wrong on a live stand. A PRESENT
 	/// numeric type that is neither web nor mobile is a POSITIVE identification — a Classic page, a module — and
 	/// is refused without looking at the body. The body is consulted only when the numeric is genuinely absent,

@@ -223,6 +223,32 @@ public class ProcessPageFactsProjectionTests {
 	}
 
 	[Test]
+	[Description("A LATER, WEAKER copy must not clobber the informative one already kept — the collapse replaces only on a strictly higher rank, and keep-last would pass the keep-most-informative test by luck of ordering while dropping crt.SaveRecordRequest whenever the weak copy happens to walk second. Also pins that replacement keeps the first-seen POSITION.")]
+	public void Project_ShouldKeepTheInformativeCopyWhenTheWeakerDuplicateWalksSecond() {
+		// Arrange — the mirror of the keep-most-informative test: candidate copy FIRST, weak copy last,
+		// with another button between them to make the kept position observable.
+		JObject bundle = Bundle(viewConfig: """
+			[{ "type": "crt.FlexContainer", "name": "Header", "items": [
+				{ "type": "crt.Button", "name": "SaveButton", "caption": "Save",
+					"clicked": { "request": "crt.SaveRecordRequest" } },
+				{ "type": "crt.Button", "name": "CloseButton", "caption": "Close",
+					"clicked": { "request": "crt.ClosePageRequest" } } ] },
+			 { "type": "crt.GridContainer", "name": "Actions", "items": [
+				{ "type": "crt.Button", "name": "SaveButton", "caption": "Save",
+					"clicked": { "request": "crt.PrintRequest" } } ] }]
+			""");
+
+		// Act
+		(List<ProcessPageButton> buttons, _) = ProcessPageFactsProjection.Project(bundle);
+
+		// Assert
+		buttons.Select(button => button.Name).Should().Equal(["SaveButton", "CloseButton"],
+			because: "replacement never moves a button from where it was first seen");
+		buttons[0].Requests.Should().Equal(["crt.SaveRecordRequest"],
+			because: "a later weaker copy must not clobber the completing copy already kept");
+	}
+
+	[Test]
 	[Description("When a duplicated button's copies DIFFER, the collapse keeps the most informative one, not the first: walk order is JSON property order, which means nothing, and keep-first could drop a real completing button from the candidate list entirely — the first copy carries a non-completing request while its twin carries crt.SaveRecordRequest.")]
 	public void Project_ShouldPreferTheInformativeCopyWhenDuplicatesDiffer() {
 		// Arrange — first occurrence is NOT a candidate (a foreign request); the second is.
