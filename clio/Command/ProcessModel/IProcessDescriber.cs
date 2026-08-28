@@ -272,6 +272,17 @@ public sealed class DescribedElement {
 	public bool? Deprecated { get; set; }
 
 	/// <summary>
+	/// For a Perform task element (<c>ActivityUserTask</c>): the performer ("Who performs the task?") read back
+	/// from its performer-assignment options — <c>user</c> / <c>manager</c> / <c>role</c> with the stored contact
+	/// or role formula. Round-trips into a create/modify <c>performer</c> block. <c>null</c> when the element
+	/// carries no assignment, for other element kinds, and when the server (an older <c>CrtProcessBuilder</c>)
+	/// does not report it. A Send email element reports its manual-mode performer inside <see cref="Email"/>
+	/// instead — one platform mechanism, two report sites matching the two write sites.
+	/// </summary>
+	[JsonPropertyName("performer")]
+	public DescribedPerformer Performer { get; set; }
+
+	/// <summary>
 	/// For a user-task element: whether connections on THIS element would be written at run time. <c>false</c> is the
 	/// answer that matters — it marks a process whose connections persist, compile and run green while writing
 	/// nothing — and it has TWO causes with different fixes: the user task's runtime never writes connections
@@ -361,7 +372,7 @@ public sealed class DescribedEmail {
 
 	/// <summary>The manual-mode performer; null when the element carries no performer assignment.</summary>
 	[JsonPropertyName("performer")]
-	public DescribedEmailPerformer Performer { get; set; }
+	public DescribedPerformer Performer { get; set; }
 
 	/// <summary>
 	/// Captures every other field the server reports inside the email block so the description round-trips
@@ -373,8 +384,11 @@ public sealed class DescribedEmail {
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
-/// <summary>The manual-mode performer of a Send email element ("Who performs the task?").</summary>
-public sealed class DescribedEmailPerformer {
+/// <summary>
+/// The performer of a user-task element ("Who performs the task?"), read back from its performer-assignment
+/// options: top-level on a described Perform task, inside the <c>email</c> block on a described Send email element.
+/// </summary>
+public sealed class DescribedPerformer {
 	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
