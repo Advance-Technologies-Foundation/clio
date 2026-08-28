@@ -1,4 +1,4 @@
-﻿COMMAND TYPE
+COMMAND TYPE
     Development commands
 
 NAME

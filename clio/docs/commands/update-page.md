@@ -1,4 +1,4 @@
-﻿# update-page
+# update-page
 
 ## Command Type
 

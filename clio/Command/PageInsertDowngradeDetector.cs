@@ -25,13 +25,17 @@ using Newtonsoft.Json.Linq;
 /// </list>
 /// All findings are WARNINGS, not errors: the detector inspects only this schema's own prior body, so
 /// it cannot tell an orphaning downgrade from a legitimate one where a parent schema inserts the same
-/// name (full-hierarchy resolution is out of scope). It therefore advises rather than blocks. A
-/// hand-authored <c>replace</c> body is the live producer of this failure. Append mode USED to produce
-/// it too, until GitHub #1132 widened the merge identity to <c>(operation, name)</c>: an incoming
-/// <c>merge</c> no longer replaces a current <c>insert</c> for the same component, so the merge result
-/// keeps both and nothing is downgraded. The detector needs no knowledge of which mode produced the
-/// body — it compares the resolved final body against the prior body, so it covers <c>replace</c> and
-/// <c>append</c> identically.
+/// name (full-hierarchy resolution is out of scope). It therefore advises rather than blocks.
+/// <para>
+/// Since GitHub #1132 the append merger identifies an operation by <c>(operation, name)</c>, so an
+/// incoming <c>merge</c> no longer REPLACES a current <c>insert</c> — both are kept, and this detector
+/// stays quiet because nothing was orphaned. Be aware that keeping both does NOT make both take
+/// effect: the differ runs whole groups in a fixed order (merges first, then removes/inserts/moves)
+/// rather than in array order, so a transform beside an <c>insert</c> for the same name is inert.
+/// Reporting THAT shape is deliberately out of scope here and tracked separately in GH-1240.
+/// </para>
+/// The detector needs no knowledge of which mode produced the body — it compares the resolved final
+/// body against the prior body, so it covers <c>replace</c> and <c>append</c> identically.
 /// </remarks>
 internal static class PageInsertDowngradeDetector {
 
@@ -73,6 +77,9 @@ internal static class PageInsertDowngradeDetector {
 			}
 			if (finalNameOps.Contains(InsertOperation)) {
 				// The insert is preserved (e.g. updated, or kept alongside a sibling op) — not a downgrade.
+				// NOTE a sibling merge/move/remove kept beside the insert is INERT at apply time (the differ
+				// runs the merge group before the insert group and discards what fails), which this detector
+				// deliberately does NOT report — see the class remarks and GH-1240.
 				continue;
 			}
 			string transform = FirstTransformOperation(finalNameOps);

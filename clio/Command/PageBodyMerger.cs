@@ -17,6 +17,13 @@ internal static class PageBodyMerger {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	/// <summary>
+	/// The one operation verb whose merge identity depends on more than (operation, name): the differ
+	/// routes a <c>remove</c> carrying a <c>properties</c> array into a different group, and a different
+	/// apply pass, than an element <c>remove</c>. Ordinal, matching the differ switch.
+	/// </summary>
+	private const string RemoveOperationName = "remove";
+
+	/// <summary>
 	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the
 	/// correct actor. The corrective advice differs by role: the caller can convert an <see cref="Incoming"/>
 	/// body they authored, but a <see cref="Current"/> (server-side) body is not theirs to convert — for that
@@ -471,56 +478,58 @@ internal static class PageBodyMerger {
 	private static bool IsCloseBracket(char ch) => ch is ')' or '}' or ']';
 
 	/// <summary>
-	/// Merges two <c>viewConfigDiff</c> operation arrays, treating <c>(operation, name)</c> — not
-	/// <c>name</c> alone — as an operation's identity. EVERY current entry survives at its original
-	/// position unless the incoming fragment carries an entry with the SAME identity: that one replaces
-	/// the first current occurrence in place and supersedes any further current occurrences. Incoming
-	/// entries whose identity is absent from the current body are appended after all current entries,
-	/// in incoming order.
+	/// Merges two <c>viewConfigDiff</c> operation arrays, treating an operation's IDENTITY - not its
+	/// <c>name</c> alone - as what collides. EVERY current entry survives at its original position unless
+	/// the incoming fragment carries an entry with the SAME identity: that one replaces the first current
+	/// occurrence in place and supersedes any further current occurrences. Incoming entries the current
+	/// body does not already carry are appended in the caller's own order.
 	/// </summary>
 	/// <remarks>
 	/// GitHub #1132. The previous implementation flattened <c>current.Concat(incoming)</c> into ONE
-	/// dictionary keyed by <c>name</c>, which produced two independent silent-data-loss defects:
-	/// <list type="bullet">
-	/// <item>Two CURRENT entries sharing a name — e.g. a <c>move</c> and a <c>merge</c> for one
-	/// component — collapsed to the last one, so an append DROPPED an operation the page already had
-	/// even when the incoming fragment never mentioned that component. Multiple operations per name is
-	/// a supported shape, not a malformed body: <see cref="JsonDiffApplier"/> (clio's clone of the
-	/// platform differ) groups operations by name into per-name LISTS and applies removes, moves,
-	/// inserts and merges as separate ordered passes.</item>
-	/// <item>An incoming <c>merge</c> destroyed a current <c>insert</c> for the same name, orphaning
-	/// the component at runtime — the exact failure <see cref="PageInsertDowngradeDetector"/> exists to
-	/// warn about. With identity widened to the operation, the two now coexist instead.</item>
-	/// </list>
-	/// Entries with no identity (a non-object element, or an object with no <c>name</c>) are preserved
-	/// IN PLACE rather than relocated to the tail as the previous implementation did: a
-	/// <c>viewConfigDiff</c> is an ordered operation list, so moving an operation changes when it is
-	/// applied relative to its neighbours.
+	/// dictionary keyed by <c>name</c>, so two CURRENT entries sharing a name - e.g. a <c>move</c> and a
+	/// <c>merge</c> for one component - collapsed to the last one. An append therefore DROPPED an
+	/// operation the page already had even when the incoming fragment never mentioned that component.
+	/// Multiple operations per name is a supported shape, not a malformed body: <see cref="JsonDiffApplier"/>
+	/// (clio's clone of the platform differ) groups operations by name into per-name LISTS and applies
+	/// removes, moves, inserts and merges as separate ordered passes.
+	/// <para>
+	/// Widening the identity to include the operation is what makes "preserve every current entry"
+	/// coherent: with a <c>name</c>-only key an incoming <c>merge</c> on a component the body already
+	/// <c>move</c>s would replace that move and drop the merge beside it, re-creating the very loss this
+	/// method exists to prevent.
+	/// </para>
+	/// <para>
+	/// NOTE that keeping an incoming transform beside a current <c>insert</c> for one name does NOT make
+	/// both take effect. The differ applies whole groups in a fixed order - merges first, then
+	/// removes/inserts/moves - so a <c>merge</c>, <c>move</c>, or element <c>remove</c> aimed at a component
+	/// this body inserts resolves against a source that does not contain it yet and is discarded. The
+	/// incoming operation is preserved rather than silently deleted — strictly better than the pre-#1132
+	/// behaviour, which destroyed the insert and orphaned the component — but it is INERT, and nothing
+	/// currently reports that. Tracked separately in GH-1240; do not read this method as making both
+	/// operations take effect.
+	/// </para>
+	/// Entries with no identity (a non-object element, or an object whose <c>name</c> is missing, empty, or
+	/// not a JSON string) are preserved IN PLACE rather than relocated to the tail - on BOTH sides. A
+	/// <c>viewConfigDiff</c> is an ordered operation list, so moving an operation changes when it applies
+	/// relative to its neighbours, and that is as true of the caller's fragment as of the server's body.
 	/// </remarks>
 	private static JArray MergeViewConfigDiffOperations(JArray current, JArray incoming) {
-		var incomingByIdentity = new Dictionary<string, JToken>(StringComparer.Ordinal);
-		var incomingIdentityOrder = new List<string>();
-		var incomingUnidentified = new List<JToken>();
+		// Last incoming entry wins WITHIN one fragment: a caller who repeats an identity in the same body
+		// means the later spelling, and only one of the two can survive without re-creating the duplicate
+		// the caller is collapsing. The emit pass below still places it at the FIRST occurrence's position.
+		var incomingByIdentity = new Dictionary<OperationIdentity, JToken>();
 		foreach (JToken item in incoming) {
-			if (!TryGetOperationIdentity(item, out string identity)) {
-				incomingUnidentified.Add(item);
-				continue;
+			if (TryGetOperationIdentity(item, out OperationIdentity identity)) {
+				incomingByIdentity[identity] = item;
 			}
-			if (!incomingByIdentity.ContainsKey(identity)) {
-				incomingIdentityOrder.Add(identity);
-			}
-			// Last incoming entry wins WITHIN one fragment: a caller who repeats an identity in the same
-			// body means the later spelling, and only one of the two can survive without re-creating the
-			// duplicate the caller is collapsing.
-			incomingByIdentity[identity] = item;
 		}
-		var replaced = new HashSet<string>(StringComparer.Ordinal);
+		var replaced = new HashSet<OperationIdentity>();
 		var merged = new JArray();
 		foreach (JToken item in current) {
-			if (!TryGetOperationIdentity(item, out string identity) ||
+			if (!TryGetOperationIdentity(item, out OperationIdentity identity) ||
 				!incomingByIdentity.TryGetValue(identity, out JToken replacement)) {
 				// No identity, or no incoming entry claims this identity. The current entry is kept
-				// VERBATIM AND IN PLACE — this is the #1132 fix: current entries are never deduped
+				// VERBATIM AND IN PLACE - this is the #1132 fix: current entries are never deduped
 				// against each other, so an append can no longer drop an operation it never referenced.
 				merged.Add(item);
 				continue;
@@ -529,47 +538,90 @@ internal static class PageBodyMerger {
 				merged.Add(replacement);
 				continue;
 			}
-			// A FURTHER current entry whose identity the incoming fragment already superseded is dropped:
-			// the differ applies a per-name group in array order, so keeping it would re-apply the stale
-			// values after the replacement.
+			// A FURTHER current entry of an identity the incoming fragment already superseded is dropped.
+			// Keeping it would let it re-apply AFTER the replacement - the differ walks a per-name group in
+			// array order - so the caller's new values would lose to the stale ones. The residual cost is
+			// real and worth naming: when two same-identity current entries set DISJOINT keys (one title,
+			// one visible), the second entry's keys go with it. Dropping is still the better of the two
+			// available behaviours, because the alternative silently defeats the incoming write.
 		}
-		foreach (string identity in incomingIdentityOrder) {
-			if (!replaced.Contains(identity)) {
+		// One ordered pass over the incoming array, so an unidentified incoming entry stays interleaved
+		// exactly where the caller wrote it instead of being flushed to the tail behind every identified one.
+		var emitted = new HashSet<OperationIdentity>();
+		foreach (JToken item in incoming) {
+			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
+				merged.Add(item);
+				continue;
+			}
+			if (!replaced.Contains(identity) && emitted.Add(identity)) {
 				merged.Add(incomingByIdentity[identity]);
 			}
-		}
-		foreach (JToken item in incomingUnidentified) {
-			merged.Add(item);
 		}
 		return merged;
 	}
 
 	/// <summary>
-	/// Computes the merge identity of one <c>viewConfigDiff</c> entry: its <c>operation</c> lower-cased
-	/// (so <c>Merge</c> and <c>merge</c> are one identity) and its <c>name</c> verbatim (component names
-	/// are case-sensitive to the differ, which groups them with <see cref="StringComparer.Ordinal"/>),
-	/// joined by a separator no JSON string value can contain — plain concatenation would let
-	/// <c>("merge","AB")</c> collide with <c>("mergeA","B")</c>.
+	/// The identity of one <c>viewConfigDiff</c> operation, as the differ itself distinguishes them.
+	/// </summary>
+	/// <remarks>
+	/// A record struct rather than a concatenated string key on purpose: every single-character separator
+	/// is forgeable. <c>U+0000</c> included - it is a legal JSON string escape that Newtonsoft decodes to a
+	/// real NUL - so a crafted operation carrying one could collide with a legitimate entry and reintroduce
+	/// the #1132 silent operation loss on a path that writes to a customer environment. A tuple removes the
+	/// need to reason about separators at all.
+	/// </remarks>
+	/// <param name="Operation">The operation verb, or the empty string when the entry carries none.</param>
+	/// <param name="Name">The target component name.</param>
+	/// <param name="TargetsProperties">
+	/// Whether this is a <c>remove</c> carrying a <c>properties</c> array. <see cref="JsonDiffApplier"/>
+	/// routes <c>remove</c> into two DIFFERENT groups applied in two different passes depending on that
+	/// array, so a property removal and an element removal for one component are distinct operations and
+	/// must not collide - conflating them would let an incoming property removal delete a current element
+	/// removal, which is the #1132 defect in miniature.
+	/// </param>
+	private readonly record struct OperationIdentity(string Operation, string Name, bool TargetsProperties);
+
+	/// <summary>
+	/// Computes the merge identity of one <c>viewConfigDiff</c> entry from its <c>operation</c>,
+	/// <c>name</c>, and - for a <c>remove</c> - whether it targets properties rather than the element.
+	/// Both strings are compared ordinally.
 	/// </summary>
 	/// <param name="item">The array element to identify.</param>
-	/// <param name="identity">The composite identity key, or <see langword="null"/> when the entry has none.</param>
+	/// <param name="identity">The composite identity, or <see langword="default"/> when the entry has none.</param>
 	/// <returns>
-	/// <see langword="false"/> for a non-object element or an object with a missing/blank <c>name</c>;
-	/// such an entry is never merged and never reordered. A missing <c>operation</c> is deliberately NOT
-	/// defaulted — it forms its own identity — because guessing the platform's default would silently
-	/// re-introduce the #1132 replacement of an operation the caller never named.
+	/// <see langword="false"/> for a non-object element, or an object whose <c>name</c> is absent, empty,
+	/// JSON-null, or not a JSON string; such an entry is never merged and never reordered. Three deliberate
+	/// choices, all of which fail toward that safe branch:
+	/// <list type="bullet">
+	/// <item><c>operation</c> is compared ORDINALLY, not case-insensitively. The differ switches on the raw
+	/// string with NO default case, so <c>"Merge"</c> matches nothing and is discarded at apply time.
+	/// Folding case would let an incoming <c>"Merge"</c> replace - and therefore delete - a working current
+	/// <c>"merge"</c> in favour of an operation that never runs.</item>
+	/// <item>A missing <c>operation</c> is NOT defaulted; it forms its own identity with the empty string,
+	/// because guessing the platform's default would silently re-introduce the #1132 replacement of an
+	/// operation the caller never named.</item>
+	/// <item><c>name</c> must be a JSON string, so <c>{"name":123}</c> and <c>{"name":"123"}</c> cannot
+	/// share an identity the way a bare <c>ToString()</c> would have conflated them.</item>
+	/// </list>
 	/// </returns>
-	private static bool TryGetOperationIdentity(JToken item, out string identity) {
-		identity = null;
+	private static bool TryGetOperationIdentity(JToken item, out OperationIdentity identity) {
+		identity = default;
 		if (item is not JObject operationItem) {
 			return false;
 		}
-		string name = operationItem["name"]?.ToString();
+		if (operationItem["name"] is not JValue { Type: JTokenType.String } nameValue) {
+			return false;
+		}
+		string name = nameValue.Value<string>();
 		if (string.IsNullOrEmpty(name)) {
 			return false;
 		}
-		string operation = operationItem["operation"]?.ToString() ?? string.Empty;
-		identity = operation.ToLowerInvariant() + "\u0000" + name;
+		string operation = operationItem["operation"] is JValue { Type: JTokenType.String } operationValue
+			? operationValue.Value<string>()
+			: string.Empty;
+		bool targetsProperties = string.Equals(operation, RemoveOperationName, StringComparison.Ordinal)
+			&& operationItem["properties"] is JArray;
+		identity = new OperationIdentity(operation, name, targetsProperties);
 		return true;
 	}
 
