@@ -4551,26 +4551,34 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A numeric filter value matches WITHIN a small tolerance rather than requiring bit-identical doubles — 1 and 1.0 agree — but still rejects a value that differs by more than the tolerance.")]
-	public void Analyze_OverrideFilters_ShouldCompareNumbersWithinTolerance() {
-		// Arrange
+	[Description("A numeric filter value matches by PARSED VALUE, not by literal text: the element's integer 4 and the filter's 4.0 are the same number, while a genuinely different number does not match.")]
+	public void Analyze_OverrideFilters_ShouldCompareNumbersByValue() {
+		// Arrange — one grid whose value is an integer, one whose value is a float, and filters that write
+		// each of them the OTHER way round, so both directions of the int/float pairing are covered.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "IntegerGrid", "type": "crt.GridContainer", "columns": 4, "items": [
 				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+			  { "name": "FloatGrid", "type": "crt.GridContainer", "columns": 8.0, "items": [
+				{ "name": "Amount", "type": "crt.Input", "control": "$Amount" } ] },
 			  { "name": "OtherGrid", "type": "crt.GridContainer", "columns": 5, "items": [
 				{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
 			""");
-		ComponentPropertyOverrideRule rule = Override("crt.GridContainer",
+		ComponentPropertyOverrideRule intAgainstFloat = Override("crt.GridContainer",
 			"""{ "borderRadius": "large" }""", """[{ "columns": 4.0 }]""");
+		ComponentPropertyOverrideRule floatAgainstInt = Override("crt.GridContainer",
+			"""{ "borderRadius": "large" }""", """[{ "columns": 8 }]""");
 
 		// Act
-		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, rule);
+		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, intAgainstFloat, floatAgainstInt);
 
 		// Assert
 		Element(guide, "IntegerGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
-			because: "the integer 4 and the filter's 4.0 are the same numeric value");
+			because: "the element's integer 4 and the filter's 4.0 parse to the same double — the literal "
+				+ "text differs, the value does not");
+		Element(guide, "FloatGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
+			because: "the mirror case must hold too: the element carries 8.0 and the filter writes 8");
 		Element(guide, "OtherGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
-			because: "5 is outside the comparison tolerance of the filter's 4.0");
+			because: "5 is a different number from either filter's value");
 	}
 
 	#endregion
