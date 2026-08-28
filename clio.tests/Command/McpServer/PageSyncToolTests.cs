@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Threading;
@@ -175,6 +176,18 @@ public sealed class PageSyncToolTests {
 				+ "dead-end the caller who must overwrite an external change on a page with a pre-existing defect");
 		response.Pages.Single(page => page.SchemaName == "UsrTodo_FormPage").Success.Should().BeTrue(
 			because: "the sibling page without force must be unaffected either way");
+		PageSyncValidationResult forcedValidation =
+			response.Pages.Single(page => page.SchemaName == "UsrForced_FormPage").Validation;
+		forcedValidation.Should().NotBeNull(
+			because: "the advisory has to travel somewhere, and Validation is the per-page warning envelope");
+		forcedValidation.Warnings.Should().Contain(warning => warning.Contains("baseline/conflict guard"),
+			because: "the validate contract promises a warning when both guards are relaxed, and sync-pages "
+				+ "calls TryUpdatePage directly so it never passes through update-page's advisory");
+		IReadOnlyList<string> siblingWarnings =
+			response.Pages.Single(page => page.SchemaName == "UsrTodo_FormPage").Validation?.Warnings
+			?? [];
+		siblingWarnings.Should().NotContain(warning => warning.Contains("baseline/conflict guard"),
+			because: "the page that did not ask for force still has its baseline guard armed");
 	}
 
 	[Test]

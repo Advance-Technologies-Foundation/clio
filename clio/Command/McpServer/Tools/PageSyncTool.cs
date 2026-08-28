@@ -679,6 +679,12 @@ public sealed class PageSyncTool(
 					return validationFailure;
 			}
 			validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
+			// Both guards off is allowed but never silent - update-page emits the same advisory, and the
+			// `validate` contract promises it on this path too. sync-pages calls TryUpdatePage directly, so
+			// it never passes through PageUpdateTool where update-page emits it.
+			if (!opOptions.Validate && page.Force == true) {
+				validationResult = AppendCommandWarnings(validationResult, [PageUpdateTool.ForceValidateAdvisory]);
+			}
 			if (opOptions.MobileBaseResolutionDegraded) {
 				// The mobile base could not be pre-resolved, so the body was validated against the permissive seeded
 				// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.

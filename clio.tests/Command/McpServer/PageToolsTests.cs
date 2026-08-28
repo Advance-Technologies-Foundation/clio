@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -108,6 +108,43 @@ public class PageToolsTests
 			because: "validation disabled must allow the syntactically valid replacement to be persisted");
 		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The MCP adapter words the escape-hatch hint for a command-layer content failure, so discoverability survives moving the hint off the CLI-reachable command.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_NameTheEscapeHatch_WhenCommandContentValidationFails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")), Arg.Any<string>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody(),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		// A mobile body carrying an AMD-only 'handlers' section - a CONTENT rule, the half validate=false skips.
+		PageUpdateArgs args = new("UsrMobile_FormPage",
+			"""
+			{
+			  "viewConfigDiff": [],
+			  "handlers": []
+			}
+			""",
+			null, true, null, null, null, null,
+			SkipSampling: true, TargetSchemaUId: "validation-schema-uid");
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the content rule applies with validation on");
+		response.Error.Should().Contain("validate=false",
+			because: "discoverability was the original complaint - an MCP caller must learn about the flag at "
+				+ "the point of failure, even though the command layer no longer words the hint itself");
 	}
 
 	[Test]
@@ -2307,9 +2344,9 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("A content-validation failure names the escape hatch, so a caller that trips a pre-existing defect learns about validate=false where the failure happens.")]
+	[Description("A content-validation failure is MARKED as skippable but does not name validate=false in the command layer: PageUpdateCommand is CLI-reachable and Validate carries no [Option], so a CLI user must not be pointed at a flag their parser rejects. The MCP adapter words the hint off this marker.")]
 	[Category("Unit")]
-	public void TryUpdatePage_WhenContentValidationFails_ErrorMentionsTheEscapeHatch() {
+	public void TryUpdatePage_WhenContentValidationFails_MarksTheFailureWithoutNamingTheMcpOnlyFlag() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -2333,8 +2370,36 @@ public class PageToolsTests
 		// Assert
 		result.Should().BeFalse(
 			because: "the content rule still applies with validation on");
-		response.Error.Should().Contain("validate=false",
-			because: "discoverability was the original complaint - the hint belongs where the caller actually is");
+		response.ContentValidationFailure.Should().BeTrue(
+			because: "the MCP adapter needs to know this failure came from the half validate=false skips");
+		response.Error.Should().NotContain("validate=false",
+			because: "a CLI user cannot set validate, so the command layer must not advertise it");
+	}
+
+	[Test]
+	[Description("A structural-floor failure is NOT marked as skippable, so the escape hatch is never advertised for a rule validate=false cannot bypass.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenStructuralFloorFails_DoesNotMarkTheFailureAsSkippable() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = "{ this is not valid json",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the mobile structural floor rejects a body that is not a JSON object");
+		response.ContentValidationFailure.Should().BeFalse(
+			because: "the structural floor is not bypassable, so the escape hatch must never be advertised for it");
 	}
 
 	[Test]

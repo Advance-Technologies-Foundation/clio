@@ -111,6 +111,11 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
+		// The command layer marks a content-rule failure but does not word the hint - `validate` is
+		// MCP-only, so the CLI-reachable command must not tell its users to re-run with a flag their
+		// parser does not accept. This is the MCP side of that split.
+		if (response.ContentValidationFailure)
+			response = WithEscapeHatchHint(response);
 		if (baselineArmed && response.Success && !options.DryRun)
 			pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
 		response.SamplingReview = samplingReview;

@@ -1,4 +1,4 @@
-namespace Clio.Command {
+﻿namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
@@ -814,7 +814,17 @@ namespace Clio.Command {
 		internal const string ValidationEscapeHatchHint =
 			" If this defect pre-exists on the page and is unrelated to your edit, re-run with validate=false.";
 
-		private static string AppendValidationEscapeHatchHint(string error) => error + ValidationEscapeHatchHint;
+		/// <summary>
+		/// Builds a failure for a rule in the SKIPPABLE half of the chain. The hint itself is NOT appended
+		/// here: <see cref="PageUpdateCommand"/> is the CLI-reachable command and <c>Validate</c> carries no
+		/// <c>[Option]</c>, so a CLI user would be told to re-run with a flag their parser does not accept.
+		/// The response is only MARKED, and the MCP adapter appends the hint for the callers that can act on it.
+		/// </summary>
+		private static PageUpdateResponse ContentValidationFailure(string error) => new() {
+			Success = false,
+			Error = error,
+			ContentValidationFailure = true
+		};
 
 		/// <summary>
 		/// Validates the <c>resources</c> and <c>optional-properties</c> argument payloads WITHOUT
@@ -874,11 +884,8 @@ namespace Clio.Command {
 			}
 			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(options.Body);
 			if (!mobileResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = AppendValidationEscapeHatchHint(
-						MobileValidationFailedPrefix + string.Join("; ", mobileResult.Errors))
-				};
+				return ContentValidationFailure(
+					MobileValidationFailedPrefix + string.Join("; ", mobileResult.Errors));
 			}
 			return null;
 		}
@@ -913,31 +920,19 @@ namespace Clio.Command {
 			}
 			SchemaValidationResult handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
 			if (!handlerResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = AppendValidationEscapeHatchHint($"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}")
-				};
+				return ContentValidationFailure($"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}");
 			}
 			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = AppendValidationEscapeHatchHint($"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}")
-				};
+				return ContentValidationFailure($"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}");
 			}
 			SchemaValidationResult insertSelfConsistencyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(options.Body, explicitResources);
 			if (!insertSelfConsistencyResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = AppendValidationEscapeHatchHint($"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}")
-				};
+				return ContentValidationFailure($"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}");
 			}
 			SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
 			if (!validatorPlacementResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = AppendValidationEscapeHatchHint($"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}")
-				};
+				return ContentValidationFailure($"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}");
 			}
 			return null;
 		}
