@@ -299,30 +299,41 @@ public sealed class SectionCreateSerializationGuardTests {
 		using ManualResetEventSlim otherKeyEntered = new(false);
 		using SemaphoreSlim enteredWork = new(0);
 
+		// Dedicated OS threads (not thread-pool tasks), for the same reason the process-wide sibling test
+		// below uses them: every participant here BLOCKS inside its work or on the gate, so callerCount + 2
+		// threads must exist simultaneously. On a thread pool started at minThreads == processor count, the
+		// extra threads arrive through the pool's ~1-2/second injection heuristic, which on a small CI agent
+		// pushes the first best-effort entry past SignalWait and fails the test on scheduling, not behaviour.
 		// The holder occupies the per-key gate (in-flight = 1) so every subsequent same-key caller must queue.
-		Task holder = Task.Run(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
+		Thread holder = new(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
 			holderEntered.Set();
 			releaseHolder.Wait(GenerousWait);
 			return 0;
-		}));
+		})) { IsBackground = true };
+		holder.Start();
 		holderEntered.Wait(SignalWait).Should().BeTrue(
 			because: "the holder must occupy the per-key gate before the fan-out queues behind it");
 
 		// Act — fan out callerCount same-key callers; each signals when it ENTERS its work, then parks.
-		Task[] callers = new Task[callerCount];
+		Thread[] callers = new Thread[callerCount];
 		for (int i = 0; i < callerCount; i++) {
-			callers[i] = Task.Run(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
+			callers[i] = new Thread(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
 				enteredWork.Release();
 				releaseCallers.Wait(GenerousWait);
 				return 0;
-			}));
+			})) { IsBackground = true };
+		}
+
+		foreach (Thread caller in callers) {
+			caller.Start();
 		}
 
 		// A different application key must never be affected by the same-key back-pressure.
-		Task otherKey = Task.Run(() => guard.Run("prod", "UsrOther", GenerousWait, () => {
+		Thread otherKey = new(() => guard.Run("prod", "UsrOther", GenerousWait, () => {
 			otherKeyEntered.Set();
 			return 0;
-		}));
+		})) { IsBackground = true };
+		otherKey.Start();
 
 		// Assert
 		for (int i = 0; i < expectedBestEffort; i++) {
@@ -337,10 +348,11 @@ public sealed class SectionCreateSerializationGuardTests {
 
 		releaseHolder.Set();
 		releaseCallers.Set();
-		Task[] all = [holder, otherKey, .. callers];
-		Action drain = () => Task.WaitAll(all, GenerousWait);
-		drain.Should().NotThrow(
-			because: "releasing the holder must let the parked callers complete with no SemaphoreFullException — the gate is never over-released");
+		Thread[] all = [holder, otherKey, .. callers];
+		foreach (Thread participant in all) {
+			participant.Join(GenerousWait).Should().BeTrue(
+				because: "releasing the holder must let the parked callers complete with no SemaphoreFullException — the gate is never over-released");
+		}
 		logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("without serialization", StringComparison.OrdinalIgnoreCase)));
 	}
