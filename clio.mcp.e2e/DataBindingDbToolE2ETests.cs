@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -504,11 +504,12 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		string diagnostics = DescribeCallResult(callResult);
 		diagnostics.Should().Contain(toolName,
 			because: "the invocation failure should identify the affected MCP tool");
-		// Accept both the native SDK binding diagnostic (resident tools) and the clio-run-surfaced
-		// executor error (lazy surface): "An error occurred invoking '<tool>'." /
-		// "Failed to deserialize argument 'args' for MCP tool '<tool>'" / "Error: tool '<tool>' failed: …".
+		// Accept every binding-layer surface: the contracted diagnostic McpToolErrorFilter now emits
+		// ("invalid-parameter-type: argument '<name>' for MCP tool '<tool>' must be …"), the native SDK
+		// message ("An error occurred invoking '<tool>'." / "Failed to deserialize argument 'args' for
+		// MCP tool '<tool>'") and the clio-run executor wrapper ("Error: tool '<tool>' failed: …").
 		diagnostics.Should().MatchRegex(
-			"(?is)(an error occurred invoking|failed to deserialize argument|failed)",
+			"(?is)(invalid-parameter-type|an error occurred invoking|failed to deserialize argument|failed)",
 			because: "the diagnostic should describe a binding-layer failure whether it is raised natively or wrapped by the clio-run executor");
 	}
 
