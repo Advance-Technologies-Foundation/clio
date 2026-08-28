@@ -4283,8 +4283,7 @@ public sealed class WebToMobileConversionServiceTests {
 			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(valuesJson),
 			Filters = filtersJson is null
 				? []
-				: JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filtersJson)
-					.Cast<IReadOnlyDictionary<string, JsonElement>>().ToList()
+				: JsonSerializer.Deserialize<List<ElementFilterRule>>(filtersJson)
 		};
 
 	private static MobilePageConversionGuide AnalyzeOverrides(PageBundleInfo bundle,
@@ -5065,6 +5064,45 @@ public sealed class WebToMobileConversionServiceTests {
 		                  "title": "${{ source.columns[0].code }}",
 		                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
 		""";
+
+	/// <summary>Builds the value-constraint bag an <see cref="ElementFilterRule"/> carries as extension data.</summary>
+	private static IDictionary<string, JsonElement> Bag(string json) =>
+		JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+
+	[Test]
+	[Description("A components filter narrows by VALUE as well as by type: ElementFilterRule is shared with the override pass, so a value constraint must be honoured on the source side too rather than silently ignored.")]
+	public void Analyze_ComponentFilter_ShouldNarrowBySourceValue() {
+		// Arrange — the same template behind two filters that differ only in the value they require.
+		WebToMobilePageConversionRules matching = RulesWithTemplate(RowOnlyTemplate,
+			filters: [new ElementFilterRule { Type = "crt.DataGrid", Values = Bag("""{ "fitContent": true }""") }]);
+		WebToMobilePageConversionRules missing = RulesWithTemplate(RowOnlyTemplate,
+			filters: [new ElementFilterRule { Type = "crt.DataGrid", Values = Bag("""{ "fitContent": false }""") }]);
+
+		// Act
+		MobilePageConversionGuide matched = AnalyzeWithRules(GridWithColumns(), matching);
+		MobilePageConversionGuide skipped = AnalyzeWithRules(GridWithColumns(), missing);
+
+		// Assert
+		Element(matched, "ProductsList").MobileValues!["itemLayout"].Should().NotBeNull(
+			because: "the source grid carries fitContent true, so the filter matches and the template renders");
+		Element(skipped, "ProductsList").MobileValues!.AsObject().ContainsKey("itemLayout").Should().BeFalse(
+			because: "the value constraint is not satisfied, so the template must not apply — a silently "
+				+ "ignored constraint would render the row anyway");
+	}
+
+	[Test]
+	[Description("A filter that declares neither a type nor a value matches NOTHING on the source side, mirroring the override pass — reading it as 'matches everything' would silently widen the rule it was written to narrow.")]
+	public void Analyze_ComponentFilter_ShouldTreatAnEmptyFilterAsMatchingNothing() {
+		// Arrange
+		WebToMobilePageConversionRules rules = RulesWithTemplate(RowOnlyTemplate, filters: [new ElementFilterRule()]);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		Element(guide, "ProductsList").MobileValues!.AsObject().ContainsKey("itemLayout").Should().BeFalse(
+			because: "an empty filter constrains nothing and must not be read as an unconditional match");
+	}
 
 	[Test]
 	[Description("The BUNDLED rules render a correct row end to end. Every other template test builds its own skeleton, so a typo in the shipped JSON — a mistyped token, a wrong slot name — would pass all of them; this is the only test that reads what actually ships.")]

@@ -251,8 +251,10 @@ public static class WebToMobileAnalysisService {
 		// (discarded, never translated). Which component, which properties and which values all come from
 		// the rules file — this pass knows none of them. Runs AFTER the tab-area pass so one pass covers
 		// converted and synthesized elements alike (the invariant is per-element-map, not per-origin);
-		// merge twins the mobile template provides are never touched. Each rule also declares the report
-		// group it feeds, so two standards never bleed into each other's summary.
+		// merge twins the mobile template provides are never touched. The report group is derived from the
+		// component TYPE, not declared by the rule, so two standards targeting the SAME type (the
+		// unconditional gap rule and the narrowed corner-radius one both target crt.GridContainer) share one
+		// summary section — read each entry's own properties rather than the section name.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
@@ -319,11 +321,14 @@ public static class WebToMobileAnalysisService {
 			// preserved verbatim. Every standard — spacing included — is also reported under normalizations.
 			SpacingNormalization = spacingNormalization.Count > 0
 				? new SpacingNormalizationInfo {
-					Note = "Mobile follows the mobile spacing standard: the web page's container spacing was "
-						+ "IGNORED (not translated) and every inserted crt.GridContainer / crt.FlexContainer "
-						+ "carries gap Medium, already baked into elementMap[].mobileValues — nothing separate "
-						+ "to apply. Silent normalization, not a gate decision: report it as ONE aggregated "
-						+ "line and never restore the web spacing.",
+					Note = "Mobile follows the mobile container standards: the web page's own value for every "
+						+ "property listed below was IGNORED (not translated), and the mobile value is already "
+						+ "baked into elementMap[].mobileValues — nothing separate to apply. Read each entry's "
+						+ "`properties` for what was actually written on that element: this section carries "
+						+ "EVERY standard that targets a container type (gap, and any other such as the corner "
+						+ "radius), not the spacing alone, so do not assume it from the section name. Silent "
+						+ "normalization, not a gate decision: report it as ONE aggregated line and never "
+						+ "restore the web values.",
 					Normalized = [.. spacingNormalization.Select(n => new SpacingNormalizationEntry {
 						Name = n.Name, Type = n.Type, Properties = n.Properties
 					})]
@@ -3006,15 +3011,58 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
-	/// <summary>True when any filter matches the node, or the mapping declares none (match everything).</summary>
+	/// <summary>
+	/// True when any filter matches the SOURCE web node, or the mapping declares none (match everything).
+	/// Shares <see cref="ElementFilterRule"/> and its match rule with the override pass (see
+	/// <see cref="MatchesFilters"/>): the filters are OR-ed, and each one AND-s every constraint it declares —
+	/// its <c>type</c> and any value constraint. A value constraint is compared through the same
+	/// <see cref="JsonValueEquals"/> the override pass uses, so the two sides can never drift apart on what
+	/// "equal" means; the Newtonsoft node is adapted lazily, so a type-only filter (all of them today) costs
+	/// nothing extra.
+	/// </summary>
 	private static bool MatchesAnyFilter(IReadOnlyList<ElementFilterRule> filters, JObject node) {
 		if (filters is not { Count: > 0 }) {
 			return true;
 		}
 		string type = node["type"]?.ToString();
-		return filters.Any(f => !string.IsNullOrWhiteSpace(f?.Type)
-			&& string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+		return filters.Any(f => Declares(f)
+			&& (string.IsNullOrWhiteSpace(f.Type) || string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase))
+			&& MatchesValueConstraints(f, key => ToJsonNode(node[key])));
 	}
+
+	/// <summary>
+	/// True when the filter constrains anything at all. A filter that declares neither a type nor a value is a
+	/// rules-file mistake, and reading it as "matches everything" would silently widen the rule it was written
+	/// to narrow — so it matches nothing instead, on both sides.
+	/// </summary>
+	private static bool Declares(ElementFilterRule filter) =>
+		filter is not null && (!string.IsNullOrWhiteSpace(filter.Type) || filter.Values is { Count: > 0 });
+
+	/// <summary>
+	/// True when every value constraint the filter declares is DEEP-equal to what <paramref name="resolve"/>
+	/// returns for that property name. An absent property resolves to null and therefore never matches.
+	/// </summary>
+	private static bool MatchesValueConstraints(ElementFilterRule filter, Func<string, JsonNode> resolve) {
+		if (filter.Values is not { Count: > 0 }) {
+			return true;
+		}
+		foreach (KeyValuePair<string, JsonElement> constraint in filter.Values) {
+			if (!JsonValueEquals(resolve(constraint.Key), constraint.Value)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// <summary>
+	/// Adapts a Newtonsoft token to a <see cref="JsonNode"/> so one comparer serves both JSON stacks. Called
+	/// only for a filter that actually declares a value constraint, so the common type-only filter never pays
+	/// for the round-trip.
+	/// </summary>
+	private static JsonNode ToJsonNode(JToken token) =>
+		token is null || token.Type == JTokenType.Null
+			? null
+			: JsonNode.Parse(token.ToString(Newtonsoft.Json.Formatting.None));
 
 	/// <summary>
 	/// True when a rule's <c>path</c> scope is satisfied for a node. Empty (or null) path = no scoping (matches
@@ -4242,26 +4290,20 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Whether an override rule applies to the element carrying <paramref name="values"/>. A rule with no
-	/// filters applies to every insert of its type — the long-standing behavior. Otherwise the bags are
-	/// OR-ed and the keys inside one bag are AND-ed, and a key matches only when the element's own value is
-	/// DEEP-equal to the filter's, so an ABSENT property never matches. An EMPTY bag matches NOTHING: it is
-	/// a rules-file mistake, and treating it as "matches everything" would silently widen a rule written to
-	/// be narrow. The element's values are only READ here — see the caller for why every rule of a type is
-	/// matched before any of them writes.
+	/// filters applies to every insert of its type — the long-standing behavior. Otherwise the same rule as
+	/// <see cref="MatchesAnyFilter"/> on the source side: the filters are OR-ed, each one AND-s every
+	/// constraint it declares, a value matches only on DEEP equality (so an ABSENT property never matches),
+	/// and a filter that declares nothing matches nothing. The element's values are only READ here — see the
+	/// caller for why every rule of a type is matched before any of them writes.
 	/// </summary>
-	private static bool MatchesFilters(JsonObject values,
-		IReadOnlyList<IReadOnlyDictionary<string, JsonElement>> filters) {
+	private static bool MatchesFilters(JsonObject values, IReadOnlyList<ElementFilterRule> filters) {
 		if (filters is not { Count: > 0 }) {
 			return true;
 		}
-		foreach (IReadOnlyDictionary<string, JsonElement> filter in filters) {
-			if (filter is { Count: > 0 } && filter.All(pair =>
-					values.TryGetPropertyValue(pair.Key, out JsonNode actual)
-					&& JsonValueEquals(actual, pair.Value))) {
-				return true;
-			}
-		}
-		return false;
+		string type = values["type"] is JsonValue node && node.TryGetValue(out string declared) ? declared : null;
+		return filters.Any(f => Declares(f)
+			&& (string.IsNullOrWhiteSpace(f.Type) || string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase))
+			&& MatchesValueConstraints(f, key => values[key]));
 	}
 
 	/// <summary>Tolerance for the <see cref="JsonValueKind.Number"/> branch of <see cref="JsonValueEquals"/>.</summary>

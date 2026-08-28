@@ -19,8 +19,14 @@ applies every one whose `filters` match. The two orders involved are deliberatel
 
 This replaces the earlier invariant, where `byType` was a `Dictionary<string, Rule>` and a duplicate
 `type` silently LAST-WINS — a second rule for a type used to make the first one vanish entirely.
-An empty filter bag matches NOTHING (not everything), and `type` inside a bag is never meaningful:
-the rule is already selected by its own `type` before any filter is read.
+A filter that declares nothing — no type, no value — matches NOTHING, not everything. `type` inside an
+override filter is redundant: the rule is already selected by its own `type` before any filter is read.
+
+`ElementFilterRule` is SHARED with `ComponentEquivalenceRule.Filters`, and both sides run the same match
+rule (filters OR-ed, each AND-ing every constraint it declares, deep equality on values). The two differ
+only in what they read: the components group matches the SOURCE web node (Newtonsoft `JObject`), the
+override group matches the element's TARGET mobile values (STJ `JsonObject`). One comparer serves both —
+the Newtonsoft token is adapted through `ToJsonNode` lazily, so a type-only filter never pays for it.
 
 **Why it is this way** — a lazily evaluated filter would let an unrelated rule enable or disable a
 narrowed one by touching the property it filters on (a rule stamping `borderRadius: large` would stop

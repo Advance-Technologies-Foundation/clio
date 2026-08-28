@@ -166,7 +166,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 					+ "the same type is always a duplicate — a narrowed rule is what a further entry per type is for");
 		rules.ComponentPropertyOverrides
 			.SelectMany(o => o.Filters)
-			.Should().OnlyContain(f => !f.ContainsKey("type"),
+			.Should().OnlyContain(f => string.IsNullOrWhiteSpace(f.Type),
 				because: "the pass selects the rule by its own `type` BEFORE reading filters, so the key can only "
 					+ "be a tautology or — with another value — a contradiction that makes the rule never fire");
 	}
@@ -198,9 +198,10 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		radius.Values["borderRadius"].GetString().Should().Be("large");
 		radius.MergeNestedObjects.Should().BeFalse(
 			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
-		IReadOnlyDictionary<string, JsonElement> filter = radius.Filters.Single();
-		filter.Should().HaveCount(1, because: "the rule is already selected by type — only the discriminating property belongs here");
-		filter["borderRadius"].GetString().Should().Be("medium",
+		ElementFilterRule filter = radius.Filters.Single();
+		filter.Type.Should().BeNull(because: "the rule is already selected by type — only the discriminating property belongs here");
+		filter.Values.Should().HaveCount(1);
+		filter.Values["borderRadius"].GetString().Should().Be("medium",
 			because: "the first iteration deliberately narrows to the Medium radius rather than to any non-zero one");
 	}
 

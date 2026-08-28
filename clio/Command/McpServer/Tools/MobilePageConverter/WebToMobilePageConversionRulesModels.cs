@@ -252,22 +252,15 @@ public sealed class ComponentPropertyOverrideRule {
 	public string Type { get; init; }
 
 	/// <summary>
-	/// Optional value filters that NARROW which inserted elements of <see cref="Type"/> the rule applies to.
-	/// Empty or absent (the default) = the rule applies to EVERY insert of that type — the long-standing
-	/// behavior every unconditional standard relies on.
+	/// Optional filters that NARROW which inserted elements of <see cref="Type"/> the rule applies to, matched
+	/// against the element's MOBILE values. Empty or absent (the default) = the rule applies to EVERY insert of
+	/// that type — the long-standing behavior every unconditional standard relies on.
 	/// <para>
-	/// Each entry is a bag of property name → expected value matched against the element's mobile values:
-	/// the keys inside one bag are AND-ed, the bags themselves are OR-ed (the same convention as
-	/// <see cref="ComponentEquivalenceRule.Filters"/>, which is closed to <c>type</c> and cannot express a
-	/// value match — hence a separate shape here rather than a widened <see cref="ElementFilterRule"/>).
-	/// A key matches only on DEEP equality, so an ABSENT property never matches and neither does a value
-	/// that merely has the right shape. An EMPTY bag matches NOTHING: it is a rules-file mistake, and
-	/// reading it as "matches everything" would silently widen a rule that was meant to be narrowed.
-	/// </para>
-	/// <para>
-	/// Declaring <c>type</c> inside a bag is pointless and dangerous, not merely redundant: the pass has
-	/// already selected the rule by <see cref="Type"/> before any filter is read, so the key can only be a
-	/// tautology or — with a different value — a contradiction that makes the rule NEVER fire, silently.
+	/// Same shape and same semantics as <see cref="ComponentEquivalenceRule.Filters"/>: a list of
+	/// <see cref="ElementFilterRule"/>, OR-ed with each other, each one AND-ing every constraint it declares.
+	/// Declaring <c>type</c> here is redundant — the rule is already selected by <see cref="Type"/> before any
+	/// filter is read — so it can only be a tautology or, with a different value, a contradiction that makes
+	/// the rule never fire.
 	/// </para>
 	/// <para>
 	/// Every rule's filters are evaluated against the element as it ENTERED the pass, before the first value
@@ -276,7 +269,7 @@ public sealed class ComponentPropertyOverrideRule {
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("filters")]
-	public IReadOnlyList<IReadOnlyDictionary<string, JsonElement>> Filters { get; init; } = [];
+	public IReadOnlyList<ElementFilterRule> Filters { get; init; } = [];
 
 	/// <summary>Property name → value stamped onto the inserted element's mobile values.</summary>
 	[JsonPropertyName("values")]
@@ -445,9 +438,28 @@ public sealed class ComponentEquivalenceRule {
 /// <summary>Matches a source element. Only the component type is matched today.</summary>
 public sealed class ElementFilterRule {
 
-	/// <summary>Web component type the filter matches (e.g. <c>"crt.DataGrid"</c>).</summary>
+	/// <summary>Component type the filter matches (e.g. <c>"crt.DataGrid"</c>). Omit to constrain by value only.</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
+
+	/// <summary>
+	/// Every OTHER property the filter requires, name → expected value (e.g. <c>{"borderRadius": "medium"}</c>).
+	/// AND-ed with <see cref="Type"/> and with each other; a value matches only on DEEP equality, so an ABSENT
+	/// property never matches and neither does a value that merely has the right shape.
+	/// <para>
+	/// A filter that declares NOTHING — no type, no values — matches nothing. It is a rules-file mistake, and
+	/// reading it as "matches everything" would silently widen the rule it was written to narrow.
+	/// </para>
+	/// <para>
+	/// The property names are matched against whichever object the consuming rule filters: the SOURCE web node
+	/// for <see cref="ComponentEquivalenceRule.Filters"/>, the element's TARGET mobile values for
+	/// <see cref="ComponentPropertyOverrideRule.Filters"/>. Both carry <c>type</c>, so declaring it works on
+	/// either side — though on an override rule it is redundant, since the rule is already selected by its own
+	/// <see cref="ComponentPropertyOverrideRule.Type"/> before any filter is read.
+	/// </para>
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement> Values { get; init; }
 }
 
 /// <summary>
