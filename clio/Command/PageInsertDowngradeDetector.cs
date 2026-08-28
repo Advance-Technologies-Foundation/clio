@@ -25,10 +25,13 @@ using Newtonsoft.Json.Linq;
 /// </list>
 /// All findings are WARNINGS, not errors: the detector inspects only this schema's own prior body, so
 /// it cannot tell an orphaning downgrade from a legitimate one where a parent schema inserts the same
-/// name (full-hierarchy resolution is out of scope). It therefore advises rather than blocks. This is
-/// the failure that append-mode dedupe (<see cref="PageBodyMerger.MergeArrayByName"/>, incoming wins by
-/// <c>name</c>) and a hand-authored replace body both produce; the detector compares the resolved final
-/// body against the prior body, so it covers <c>replace</c> and <c>append</c> identically.
+/// name (full-hierarchy resolution is out of scope). It therefore advises rather than blocks. A
+/// hand-authored <c>replace</c> body is the live producer of this failure. Append mode USED to produce
+/// it too, until GitHub #1132 widened the merge identity to <c>(operation, name)</c>: an incoming
+/// <c>merge</c> no longer replaces a current <c>insert</c> for the same component, so the merge result
+/// keeps both and nothing is downgraded. The detector needs no knowledge of which mode produced the
+/// body — it compares the resolved final body against the prior body, so it covers <c>replace</c> and
+/// <c>append</c> identically.
 /// </remarks>
 internal static class PageInsertDowngradeDetector {
 
@@ -104,8 +107,9 @@ internal static class PageInsertDowngradeDetector {
 		"remove. See docs://mcp/guides/page-modification.";
 
 	private static bool TryExtractOperationsByName(string body, out Dictionary<string, HashSet<string>> operationsByName) {
-		// Names use Ordinal to mirror PageBodyMerger.MergeArrayByName's real dedupe semantics; the
-		// operation sets use OrdinalIgnoreCase because the op vocabulary is a small case-insensitive set.
+		// Names use Ordinal to mirror both the platform differ (JsonDiffApplier.GetObjectNameOperationsGroup)
+		// and the name half of PageBodyMerger's merge identity; the operation sets use OrdinalIgnoreCase
+		// because the op vocabulary is a small case-insensitive set.
 		operationsByName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 		try {
 			JArray viewConfigDiff = ReadViewConfigDiff(body);

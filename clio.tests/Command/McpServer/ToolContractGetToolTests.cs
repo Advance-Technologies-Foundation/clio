@@ -2999,4 +2999,31 @@ public sealed class ToolContractGetToolTests {
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract describes the append merge identity as (operation, name) — the shipped agent-facing claim, since update-page is non-resident and the [Description] attribute is never merged in (GitHub #1132)")]
+	public void ToolContractGet_Should_Describe_UpdatePage_Mode_With_Operation_And_Name_Identity() {
+		// Arrange
+		// update-page is NOT in McpCoreToolProfile.CoreToolTypes, so the curated Contracts entry is the
+		// ENTIRE description an agent ever reads. Pinning it here is mandatory: editing the tool's
+		// [Description] attribute alone ships nothing, and without this assertion the curated string can
+		// silently rot back to the pre-#1132 "dedupe by name" claim the code no longer implements.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("`operation` and `name`",
+			because: "an agent must be told the append merge identity is the operation AND the name, so it can predict which existing entries a fragment replaces");
+		modeField.Description.Should().Contain("preserved in place",
+			because: "the safety guarantee the issue disputed — existing operations survive an append — must be stated on the surface agents actually read");
+		modeField.Description.Should().NotContain("dedupe by `name`",
+			because: "the pre-#1132 claim describes behaviour the merger no longer has and caused the silent loss of an existing move operation");
+	}
 }

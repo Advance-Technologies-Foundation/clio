@@ -260,9 +260,11 @@ public class PageInsertDowngradeDetectorTests {
 	}
 
 	[Test]
-	[Description("Detect warns on an append-merged web body where dedupe left only a merge for an inserted name")]
-	public void Detect_ShouldWarn_WhenAppendMergeResultDropsInsert() {
-		// Arrange — the append merge result keeps only the incoming merge (insert deduped away by name).
+	[Description("Detect warns on a final web body that replaced an inserted name's insert with a merge, leaving it orphaned")]
+	public void Detect_ShouldWarn_WhenFinalBodyReplacesAnInsertWithAMerge() {
+		// Arrange — a hand-authored replace body that swaps the prior insert for a merge. Since GitHub
+		// #1132 an append can no longer produce this shape (identity is (operation, name), so the merge
+		// is kept ALONGSIDE the insert), but a replace body still can, which is why the detector stays.
 		string prior = WebBody(InsertName);
 		string mergedFinal = WebBody(MergeName);
 
@@ -271,7 +273,7 @@ public class PageInsertDowngradeDetectorTests {
 
 		// Assert
 		warnings.Should().HaveCount(1,
-			"because append dedupe by name drops the prior insert, leaving an orphaned merge");
+			"because dropping the prior insert in favour of a merge leaves an orphaned merge, whatever authored the final body");
 	}
 
 	[Test]

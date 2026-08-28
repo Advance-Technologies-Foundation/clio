@@ -1,4 +1,4 @@
-COMMAND TYPE
+﻿COMMAND TYPE
     Development commands
 
 NAME
@@ -122,14 +122,18 @@ DESCRIPTION
 
     WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
-    current schema body from the server and merges your incoming fragment into
-    it (viewConfigDiff dedupes by name, handlers by request). Append requires the
-    diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
-    markers, instead of the *_DIFF markers) cannot be merged and is rejected with
-    an actionable hint — use --mode replace for such a body. The message names which
-    body is full-config: convert your own incoming body to the diff form, but if the
-    current page on the server is full-config (every create-app-section page is), append
-    is not supported against it — use --mode replace.
+    current schema body from the server and merges your incoming fragment into it.
+    A viewConfigDiff entry is replaced only when both operation and name match one
+    of yours (incoming wins, and the replacement keeps the existing entry's
+    position); every other existing operation is preserved verbatim, including a
+    second operation on a component you already target. Handlers dedupe by request.
+    Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
+    / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
+    and is rejected with an actionable hint — use --mode replace for such a body.
+    The message names which body is full-config: convert your own incoming body to
+    the diff form, but if the current page on the server is full-config (every
+    create-app-section page is), append is not supported against it — use
+    --mode replace.
 
 SYNOPSIS
     clio update-page [options]

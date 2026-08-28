@@ -1,4 +1,4 @@
-# update-page
+﻿# update-page
 
 ## Command Type
 
@@ -173,8 +173,13 @@ can report a conflict against a page that has not actually changed. This edge fa
 ## Write modes
 
 `--mode replace` (default) saves the body verbatim. `--mode append` loads the current
-schema body from the server and merges your incoming fragment into it — `viewConfigDiff`
-entries dedupe by `name` (incoming wins), handlers dedupe by `request`.
+schema body from the server and merges your incoming fragment into it.
+
+A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
+yours — incoming wins, and the replacement keeps the existing entry's position. Every other
+existing operation is preserved verbatim and in place, including a second operation on a
+component you already target (a `move` and a `merge` for one name are both valid and both
+survive). Handlers dedupe by `request`.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -3936,7 +3936,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, dedupes by name (incoming wins), and preserves other sections")]
+	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, replaces on an (operation, name) collision (incoming wins), and preserves other sections")]
 	public void PageBodyMerger_Should_Merge_ViewConfigDiff_And_Handlers() {
 		string currentBody = "define(\"P\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"RefreshButton\",\"values\":{\"size\":\"large\"}},{\"operation\":\"insert\",\"name\":\"Existing\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -3955,7 +3955,7 @@ public class PageToolsTests
 
 		merged.Should().Contain("\"name\": \"Existing\"", because: "existing entries without collisions are preserved");
 		merged.Should().Contain("\"name\": \"TestButton\"", because: "new entries are appended");
-		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
+		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when operation AND name both collide (both entries are a merge on RefreshButton, so it gets size:small)");
 		merged.Should().NotContain("\"size\": \"large\"", because: "the colliding entry is superseded");
 		merged.Should().Contain("crt.KeepMeRequest", because: "existing handlers without request collision are preserved");
 		merged.Should().Contain("usr.TestRequest", because: "new handlers are appended");
@@ -4611,7 +4611,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageBodyMerger mobile: merges viewConfigDiff by name, viewModelConfigDiff and modelConfigDiff by append")]
+	[Description("PageBodyMerger mobile: merges viewConfigDiff by (operation, name), viewModelConfigDiff and modelConfigDiff by append")]
 	public void PageBodyMerger_Should_Merge_Mobile_Bodies() {
 		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M1\"}]}";
 		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}},{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"small\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM2\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M2\"}]}";
@@ -4622,8 +4622,8 @@ public class PageToolsTests
 		JArray viewConfigDiff = (JArray)result["viewConfigDiff"];
 		viewConfigDiff.Count.Should().Be(2, because: "existing + new entry, collision replaced");
 		viewConfigDiff.Any(t => t["name"]?.ToString() == "NewButton").Should().BeTrue(because: "new entry is appended");
-		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on name collision");
-		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "old entry with same name is replaced");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on an (operation, name) collision");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "the old entry with the same operation and name is replaced");
 
 		JArray viewModelConfigDiff = (JArray)result["viewModelConfigDiff"];
 		viewModelConfigDiff.Count.Should().Be(2, because: "viewModelConfigDiff uses append, both items kept");
