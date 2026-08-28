@@ -60,40 +60,13 @@ public sealed class MobilePageConversionGuideTool {
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
-		"Detect a page's source type and return an advisory mobile-conversion GUIDE. " +
-		"Supported source type today: Freedom UI WEB (sourceType \"freedom-web\"). Other source types (e.g. Classic UI) " +
-		"are detected and reported as not yet supported (Classic UI must first be converted to a Freedom UI web page " +
-		"with a separate classic-web -> freedom-web converter). " +
-		"ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk. It returns a guide with: " +
-		"sourceType (detected), recommendedMobileTemplate + containerMap (web->mobile container names), sourceStructure " +
-		"(the full resolved component tree incl. inherited template components), componentSuggestions (per source component " +
-		"type: category directMapping/withAdaptation/alternativeAvailable/unsupported/requiresManualDecision + suggested " +
-		"mobile type(s) from the WebToMobilePageConversionRules matrix and registry comparison; for grid -> " +
-		"[crt.List, crt.ListItem] an INSERTED list arrives with the row already built inside its own mobileValues " +
-		"(itemLayout = a crt.ListItem) — paste it, and never emit the row as a separate insert; a list the mobile " +
-		"TEMPLATE provides is a merge twin instead and its row is still yours to configure), mobileContracts (inline " +
-		"allowed properties + example + designer defaults for each suggested mobile type), modelConfigDiff / " +
-		"viewModelConfigDiff (READY-TO-PASTE diffs — paste them verbatim as the page's diffs; never source the " +
-		"data-source section from a pre-existing body or attribute types like ForwardReference get dropped), " +
-		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
-		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
-		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding; " +
-		"on a tabbed record page every web tab inserts as its own new mobile tab (elementMap parentName Tabs) with an explicit `index` right after the template's general tab — apply indexes verbatim, never reorder tabs, and the template's Feed/Attachments tabs stay LAST; a positional insert carries an `index` to sit above/below the mobile Tabs; " +
-		"localized strings (captions AND nested ones like config.title/text.template) are carried verbatim in mobileValues as #ResourceString tokens and collected+resolved into guide.resourceStrings ({key: en-US text}) — register that whole map via update-page resources so every token renders), " +
-		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
-		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
-		"plus requestConversions (component event-binding requests/actions for mobile — supported requests are kept/remapped inside " +
-		"elementMap[].mobileValues; ONLY a crt.Button whose request the mobile app does not support is DROPPED (dead button), appearing as an elementMap `drop` — other component types are NOT dropped for an unsupported request (some use system requests absent from the list): their binding is kept verbatim and flagged; advisory summary only), " +
-		"plus deterministic empty-container removal (containers emptied by the conversion arrive as elementMap drops with reason \"empty container\"; the do/don't rules are in the conversion guide), " +
-		"plus parentExistsOnTemplate on an elementMap insert that RETARGETS into a container the mobile template ALREADY provides (insert ONLY the child; NEVER re-declare, insert, or merge the parent — the template supplies it, and authoring your own overrides the native one; a source element INHERITED FROM THE WEB TEMPLATE (chrome such as Save/Cancel/Close the mobile template provides natively) is DROPPED, not retargeted; do/don't in the conversion guide), " +
-		"plus adaptiveLayout (the responsive layout for each MULTI-column grid container - phone collapses to 1 column and stacks, " +
-			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
-			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +
-			"plus tabAreaLayers (MANDATORY synthesized two-layer tab body, already baked into elementMap as ordinary inserts; semantics in the conversion guide), " +
-			"plus normalizations (SILENT property normalization, one section per standard - each carries a one-line summary, the elements it normalized with the EXACT properties written, and anything it had to skip; read the section rather than assuming which properties a standard sets; spacingNormalization is kept as a back-compat alias of the spacing section; semantics in the conversion guide), " +
-			"plus constraints and ordered nextSteps. " +
-		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
-		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]
+		"Detect a page's source type and return an advisory mobile-conversion GUIDE. Supported source type today: "
+		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
+		+ "supported. ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
+		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
+		+ "validate-page. The guide is self-describing: its own `constraints` and ordered `nextSteps` carry the rules "
+		+ "for applying THIS conversion, composed from what the converter actually did. "
+		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] MobilePageConversionGuideArgs args,
@@ -249,6 +222,7 @@ public sealed class MobilePageConversionGuideTool {
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
 				mobileTemplateUnavailable: mobileTemplateProbe.Unavailable,
 				mobileTemplateTypesByName: mobileTemplateProbe.TypesByName,
+				mobileTemplateLayoutConfigs: mobileTemplateProbe.LayoutConfigsByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateUnavailable: webTemplateBaseline.Unavailable,
 				webTemplateResources: webTemplateBaseline.Resources);
@@ -499,6 +473,7 @@ public sealed class MobilePageConversionGuideTool {
 	/// </summary>
 	private sealed record MobileTemplateProbe(
 		IReadOnlyDictionary<string, string> ContainerParents,
+		IReadOnlyDictionary<string, JsonObject> LayoutConfigsByName,
 		JsonNode ViewModelConfig,
 		JsonNode ModelConfig,
 		bool Unavailable,
@@ -517,8 +492,10 @@ public sealed class MobilePageConversionGuideTool {
 	private MobileTemplateProbe LoadMobileTemplateProbe(string mobileSchemaName, MobilePageConversionGuideArgs args) {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var emptyPlacements = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
-			return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: false, TypesByName: emptyTypes);
+			return new MobileTemplateProbe(emptyParents, emptyPlacements, ViewModelConfig: null, ModelConfig: null,
+				Unavailable: false, TypesByName: emptyTypes);
 		}
 		try {
 			PageGetOptions options = new() {
@@ -540,16 +517,20 @@ public sealed class MobilePageConversionGuideTool {
 			if (templateResponse?.Success == true && templateResponse.Bundle is { } bundle) {
 				IReadOnlyDictionary<string, string> parents = emptyParents;
 				IReadOnlyDictionary<string, string> types = emptyTypes;
+				IReadOnlyDictionary<string, JsonObject> placements = emptyPlacements;
 				if (bundle.ViewConfig is { } viewConfig) {
 					parents = WebToMobileAnalysisService.CollectParentByName(viewConfig);
 					types = WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig);
+					placements = WebToMobileAnalysisService.CollectLayoutConfigByName(viewConfig);
 				}
-				return new MobileTemplateProbe(parents, bundle.ViewModelConfig, bundle.ModelConfig, Unavailable: false, TypesByName: types);
+				return new MobileTemplateProbe(parents, placements, bundle.ViewModelConfig, bundle.ModelConfig,
+					Unavailable: false, TypesByName: types);
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.
 		}
-		return new MobileTemplateProbe(emptyParents, ViewModelConfig: null, ModelConfig: null, Unavailable: true, TypesByName: emptyTypes);
+		return new MobileTemplateProbe(emptyParents, emptyPlacements, ViewModelConfig: null, ModelConfig: null,
+			Unavailable: true, TypesByName: emptyTypes);
 	}
 
 	/// <summary>
