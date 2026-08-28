@@ -1,4 +1,4 @@
-﻿namespace Clio.Command {
+namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
@@ -803,6 +803,18 @@
 
 		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
 		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
+		internal const string MobileValidationFailedPrefix = "Mobile page validation failed: ";
+
+		/// <summary>
+		/// Text appended to every CONTENT-validation failure so the caller learns about the escape hatch at
+		/// the point of failure rather than only from the tool description or the curated contract. Only the
+		/// skippable half of the chain carries it - a structural-floor failure is not bypassable and must not
+		/// advertise a flag that will not help.
+		/// </summary>
+		internal const string ValidationEscapeHatchHint =
+			" If this defect pre-exists on the page and is unrelated to your edit, re-run with validate=false.";
+
+		private static string AppendValidationEscapeHatchHint(string error) => error + ValidationEscapeHatchHint;
 
 		/// <summary>
 		/// Validates the <c>resources</c> and <c>optional-properties</c> argument payloads WITHOUT
@@ -826,26 +838,46 @@
 			return null;
 		}
 
+		/// <summary>
+		/// Runs the input validation chain. The chain has two halves and <c>validate=false</c> only skips
+		/// the second one:
+		/// <list type="bullet">
+		/// <item>the STRUCTURAL floor - marker integrity (replace mode) and JavaScript syntax on web,
+		/// JSON-parses-to-an-object on mobile - always runs, because a body that fails it produces a page
+		/// the tool itself can no longer read back;</item>
+		/// <item>the CONTENT rules - handler structure, field bindings, insert self-consistency, validator
+		/// placement, mobile AMD/shape rules - run only when <see cref="Validate"/> is true.</item>
+		/// </list>
+		/// </summary>
 		private static PageUpdateResponse ValidateInput(
 			PageUpdateOptions options,
 			PageSchemaType schemaType,
 			Dictionary<string, string> explicitResources) {
-			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
-			// client-side content checks here rather than at the call site, so TryUpdatePage stays flat.
-			if (!options.Validate) {
-				return null;
-			}
 			return schemaType == PageSchemaType.Mobile
 				? ValidateMobileInput(options)
 				: ValidateWebInput(options, explicitResources);
 		}
 
 		private static PageUpdateResponse ValidateMobileInput(PageUpdateOptions options) {
+			// Structural floor - runs even behind validate=false. It is the mobile counterpart of the web
+			// syntax gate: a body that is not a JSON object is not a page, and nothing downstream re-checks
+			// it (UpdateSchemaBody's only parse, CollectMobileViewModelPaths, is fail-soft).
+			SchemaValidationResult structureResult = SchemaValidationService.ValidateMobileBodyStructure(options.Body);
+			if (!structureResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = MobileValidationFailedPrefix + string.Join("; ", structureResult.Errors)
+				};
+			}
+			if (!options.Validate) {
+				return null;
+			}
 			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(options.Body);
 			if (!mobileResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "Mobile page validation failed: " + string.Join("; ", mobileResult.Errors)
+					Error = AppendValidationEscapeHatchHint(
+						MobileValidationFailedPrefix + string.Join("; ", mobileResult.Errors))
 				};
 			}
 			return null;
@@ -854,6 +886,10 @@
 		private static PageUpdateResponse ValidateWebInput(
 			PageUpdateOptions options,
 			Dictionary<string, string> explicitResources) {
+			// Structural floor - marker integrity and JS syntax run even behind validate=false. A markerless
+			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
+			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
+			// markers as the "is this still a recognizable page" test for the same reason.
 			bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
 			if (!isAppendMode) {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
@@ -871,32 +907,36 @@
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
 				};
 			}
+			// Content rules - the half the escape hatch skips.
+			if (!options.Validate) {
+				return null;
+			}
 			SchemaValidationResult handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
 			if (!handlerResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = $"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}"
+					Error = AppendValidationEscapeHatchHint($"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}")
 				};
 			}
 			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
+					Error = AppendValidationEscapeHatchHint($"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}")
 				};
 			}
 			SchemaValidationResult insertSelfConsistencyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(options.Body, explicitResources);
 			if (!insertSelfConsistencyResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = $"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}"
+					Error = AppendValidationEscapeHatchHint($"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}")
 				};
 			}
 			SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
 			if (!validatorPlacementResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = $"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}"
+					Error = AppendValidationEscapeHatchHint($"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}")
 				};
 			}
 			return null;

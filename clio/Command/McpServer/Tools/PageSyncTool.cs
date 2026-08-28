@@ -757,9 +757,9 @@ public sealed class PageSyncTool(
 			Resources = page.Resources,
 			OptionalProperties = page.OptionalProperties,
 			Environment = opOptions.EnvironmentName,
-				Force = page.Force ?? false,
-				Validate = opOptions.Validate,
-				NotifyDesignerPresence = false
+			Force = page.Force ?? false,
+			Validate = opOptions.Validate,
+			NotifyDesignerPresence = false
 		};
 		(string metaFilePath, bool baselineArmed) =
 			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
@@ -1091,7 +1091,7 @@ public sealed record PageSyncArgs(
 	IEnumerable<PageSyncPageInput> Pages,
 
 	[property: JsonPropertyName("validate")]
-	[property: Description("Toggle for the regex content-validation chain (markers, field bindings, validator/converter/handler shape, etc.). Default: true. The deterministic JavaScript syntax parser and the AST lint pass ALWAYS run regardless of this flag — they enforce the page-loadability floor and the platform-rejected anti-patterns the regex layer cannot express, so an opt-out for those is intentionally not provided.")]
+	[property: Description("Toggle for the content-validation chain (field bindings, validator/converter/handler shape, mobile AMD/shape rules, etc.) on BOTH the tool-level pass and the command-level pass. Default: true. The structural floor ALWAYS runs regardless of this flag — the deterministic JavaScript syntax parser, the AST lint pass, replace-mode marker integrity, and the mobile JSON-object check enforce the page-loadability floor, so an opt-out for those is intentionally not provided. This flag and force are orthogonal - one gates content checks, the other the baseline/conflict guard - so they can be combined; the response then carries a warning that both are relaxed.")]
 	bool? Validate = null,
 
 	[property: JsonPropertyName("verify")]

@@ -3278,6 +3278,57 @@ public sealed class SchemaValidationServiceTests
 	""";
 
 	[Test]
+	[Description("The caption-binding scanner skips _designOptions too, so the file has ONE rule about designer metadata rather than one scanner that walks it and one that does not.")]
+	public void ValidateInsertedWidgetCaptionResources_DesignerOptionsCaptionMapping_ReturnsValid() {
+		// Arrange - the designer copy carries a resource-key-shaped caption that resolves nowhere.
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"$Resources.Strings.PlaybookDesignerOnlyCaption"}}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "_designOptions is designer bookkeeping - no runtime binding reads it, so an unresolvable key there renders nothing");
+		result.Errors.Should().BeEmpty(
+			because: "both localizable-text scanners must treat designer metadata identically");
+	}
+
+	[TestCase("not json at all", TestName = "ValidateMobileBodyStructure_NotJson_ReturnsInvalid")]
+	[TestCase("{ \"viewConfigDiff\": [ }", TestName = "ValidateMobileBodyStructure_MalformedJson_ReturnsInvalid")]
+	[TestCase("[]", TestName = "ValidateMobileBodyStructure_RootIsNotAnObject_ReturnsInvalid")]
+	[TestCase("", TestName = "ValidateMobileBodyStructure_Empty_ReturnsInvalid")]
+	[Description("The mobile structural floor rejects anything that is not a JSON object - it is the mobile counterpart of the web syntax gate and update-page validate=false does not bypass it.")]
+	public void ValidateMobileBodyStructure_StructurallyBrokenBody_ReturnsInvalid(string body) {
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBodyStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a body that is not a JSON object is not a page and must never be persisted");
+		result.Errors.Should().NotBeEmpty(
+			because: "the caller needs to know why the body was refused");
+	}
+
+	[Test]
+	[Description("The mobile structural floor passes a body that parses to an object even when it carries sections the CONTENT rules would reject - that split is what makes validate=false meaningful.")]
+	public void ValidateMobileBodyStructure_ContentRuleViolation_ReturnsValid() {
+		// Arrange
+		string body = """{"viewConfigDiff":[],"handlers":[]}""";
+
+		// Act
+		SchemaValidationResult structureResult = SchemaValidationService.ValidateMobileBodyStructure(body);
+		SchemaValidationResult contentResult = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		structureResult.IsValid.Should().BeTrue(
+			because: "'handlers' is a CONTENT rule, not a structural one - the body itself is a well-formed JSON object");
+		contentResult.IsValid.Should().BeFalse(
+			because: "the full validator still rejects the AMD-only section when content validation is on");
+	}
+
+	[Test]
 	[Description("Inserted metric widget whose #ResourceString title key is neither registered, DS-bound, nor Usr-derivable and is not passed in resources is rejected (ENG-93098) — the binding would render raw $Resources.Strings.<key>.")]
 	public void ValidateInsertedWidgetCaptionResources_MetricTitleMacroUnregistered_ReturnsInvalid() {
 		// Arrange

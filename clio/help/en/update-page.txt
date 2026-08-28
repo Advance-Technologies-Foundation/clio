@@ -15,9 +15,11 @@ DESCRIPTION
     The MCP update-page tool also accepts validate=false as an explicit escape
     hatch when a full replacement body contains a pre-existing defect unrelated
     to the requested edit. This skips client-side content and run-process
-    validation but does not skip JavaScript syntax, AST loadability, or the page
-    baseline/conflict guard. It cannot be combined with force=true. The CLI
-    command has no equivalent flag.
+    validation. It does NOT skip the structural floor: JavaScript syntax, AST
+    loadability, replace-mode marker integrity, the mobile JSON-object structure
+    check, and the page baseline/conflict guard all still run. It can be combined
+    with force=true - the flags are orthogonal - and the response then warns that
+    both guards are down. The CLI command has no equivalent flag.
 
     After a successful non-dry-run save, update-page also attempts a
     best-effort live Designer Presence notification so active Creatio

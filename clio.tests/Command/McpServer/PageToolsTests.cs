@@ -111,8 +111,8 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("update-page rejects the validation escape hatch when it is combined with force=true, preserving the baseline conflict guard.")]
-	public async System.Threading.Tasks.Task PageUpdateTool_Should_RejectValidationBypassWithForce() {
+	[Description("update-page allows validate=false together with force=true - the flags are orthogonal - but warns that both guards are down, instead of dead-ending a caller who must overwrite an external change on a page carrying a pre-existing defect.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_Should_WarnRatherThanReject_WhenValidationBypassMeetsForce() {
 		// Arrange
 		PageUpdateTool tool = BuildAppendGuardTool();
 		PageUpdateArgs args = new("UsrValidationEscape_FormPage", CreatePageBody(), null, true, null, null, null, null,
@@ -122,10 +122,11 @@ public class PageToolsTests
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
 
 		// Assert
-		response.Success.Should().BeFalse(
-			because: "the validation escape hatch must not also disable optimistic conflict protection");
-		response.Error.Should().Contain("cannot be combined with force=true",
-			because: "the caller needs an actionable explanation of the safety constraint");
+		(response.Error ?? string.Empty).Should().NotContain("cannot be combined",
+			because: "sync-pages already supports this pair through its per-page force flag, so update-page must not "
+				+ "refuse it and leave the caller with no way through");
+		response.Warnings.Should().Contain(warning => warning.Contains("baseline/conflict guard"),
+			because: "relaxing both guards at once must be visible in the response rather than silent");
 	}
 
 	[Test]
@@ -2204,6 +2205,136 @@ public class PageToolsTests
 			because: "the tool's full content-ok composition must accept the reproduction body once the tooltip false-positive is removed");
 		response.Validation.Errors.Should().BeNullOrEmpty(
 			because: "no content validator should report an error for the reproduction body");
+	}
+
+	[Test]
+	[Description("validate=false does NOT disable the mobile structural floor: a body that is not valid JSON is still rejected, so a malformed mobile body can never be persisted.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyIsMalformedJson_AndValidateIsFalse_StillRejects() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			// Unterminated array - valid enough to be recognised as a mobile body, not valid JSON.
+			Body = "{ \"viewConfigDiff\": [ }",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the structural floor is the mobile counterpart of the web syntax gate and is not bypassable; "
+				+ "nothing downstream re-checks it (CollectMobileViewModelPaths is fail-soft)");
+		response.Error.Should().Contain("not valid JSON",
+			because: "the caller must be told the body is structurally broken, not silently get a saved page");
+	}
+
+	[Test]
+	[Description("validate=false skips the mobile CONTENT rules: an AMD-only 'handlers' section no longer blocks the save once the escape hatch is on.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyHasHandlers_AndValidateIsFalse_SkipsContentRules() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the disallowed 'handlers' section is a CONTENT rule, which is the half the escape hatch skips");
+		(response.Error ?? string.Empty).Should().NotContain("handlers",
+			because: "the content rule must not fire once validation is explicitly disabled");
+	}
+
+	[Test]
+	[Description("validate=false does NOT drop replace-mode marker integrity on a web page - a markerless body would produce a page the tool could no longer read back.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenWebReplaceBodyMissesMarkers_AndValidateIsFalse_StillRejects() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray { new JObject { ["UId"] = "web-schema-uid", ["SchemaType"] = 9 } }
+			}.ToString());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger,
+			Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("web-schema-uid"));
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrWeb_FormPage",
+			// Parses as JavaScript, so the syntax gate alone would let it through.
+			Body = "define('UsrWeb_FormPage', [], function() { return { viewConfigDiff: [] }; });",
+			Validate = false,
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "markers are the 'is this still a recognizable page' test - without them PageSchemaSectionReader "
+				+ "cannot extract sections and append-merge is dead on that page");
+		response.Error.Should().Contain("marker",
+			because: "the marker floor, not a downstream failure, must be the reported reason");
+	}
+
+	[Test]
+	[Description("A content-validation failure names the escape hatch, so a caller that trips a pre-existing defect learns about validate=false where the failure happens.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenContentValidationFails_ErrorMentionsTheEscapeHatch() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the content rule still applies with validation on");
+		response.Error.Should().Contain("validate=false",
+			because: "discoverability was the original complaint - the hint belongs where the caller actually is");
 	}
 
 	[Test]
