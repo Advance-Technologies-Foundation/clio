@@ -170,22 +170,45 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			return servicePath;
 		}
 
+		// Stripping has to loop: a single pass over "0/0/odata/Entity" leaves one "0/" layer behind,
+		// which ServiceUrlBuilder.Build then double-adds on .NET Framework environments. The prefix is
+		// purely numeric, so Ordinal is the correct comparison - digits have no case variants.
 		string normalized = servicePath.Trim();
-		if (normalized.StartsWith("/0/", StringComparison.OrdinalIgnoreCase)) {
+		while (normalized.StartsWith("/0/", StringComparison.Ordinal)) {
 			normalized = normalized[3..];
 		}
-		else if (normalized.StartsWith("0/", StringComparison.OrdinalIgnoreCase)) {
+		while (normalized.StartsWith("0/", StringComparison.Ordinal)) {
 			normalized = normalized[2..];
 		}
 
 		return normalized.TrimStart('/');
 	}
 
+	// A timeout-guarded regex throws RegexMatchTimeoutException when the bound fires, and nothing up the
+	// call chain catches it - it would reach Main's top-level handler, report a cryptic regex error and
+	// discard the service response. Treating a timeout as "no error status found" is the conservative
+	// fallback and matches every other timeout-guarded regex site in the codebase.
 	private static bool TryGetErrorStatus(string response, out int statusCode) {
 		statusCode = 0;
-		Match match = Regex.Match(response ?? string.Empty, @"(?:HTTP\s+Error\s+|<title>\s*)(?<status>[45]\d{2})\b",
-			RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, ErrorDetectionRegexTimeout);
-		return match.Success && int.TryParse(match.Groups["status"].Value, out statusCode);
+		try {
+			Match match = Regex.Match(response ?? string.Empty, @"(?:HTTP\s+Error\s+|<title>\s*)(?<status>[45]\d{2})\b",
+				RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, ErrorDetectionRegexTimeout);
+			return match.Success && int.TryParse(match.Groups["status"].Value, out statusCode);
+		}
+		catch (RegexMatchTimeoutException) {
+			return false;
+		}
+	}
+
+	private static bool MatchesErrorPageMarkers(string html) {
+		try {
+			return Regex.IsMatch(html, "server error|file or directory not found|error page",
+				RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, ErrorDetectionRegexTimeout);
+		}
+		catch (RegexMatchTimeoutException) {
+			// Conservative: the response is written normally rather than silently discarded.
+			return false;
+		}
 	}
 
 	private static bool IsErrorResponse(string response) {
@@ -196,9 +219,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		string trimmed = response.TrimStart();
 		if (trimmed.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase)
 			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)) {
-			return TryGetErrorStatus(trimmed, out _)
-				|| Regex.IsMatch(trimmed, "server error|file or directory not found|error page",
-					RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, ErrorDetectionRegexTimeout);
+			return TryGetErrorStatus(trimmed, out _) || MatchesErrorPageMarkers(trimmed);
 		}
 
 		try {

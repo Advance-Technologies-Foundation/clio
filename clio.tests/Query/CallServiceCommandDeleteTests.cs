@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Clio.Common;
 using Clio.Query;
 using Clio.Tests.Command;
@@ -187,6 +187,94 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		// Assert
 		result.Should().Be(1, "an IIS error page is not a successful service response");
 		fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Classifies a Creatio error envelope on the POST branch too, not only on GET")]
+	public void Execute_ShouldFailWithoutSaving_WhenPostReturnsErrorEnvelope() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Code\":-1,\"Exception\":\"request failed\"}");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = Substitute.For<ILogger>()
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/BulkEmailCategory",
+			HttpMethodName = "POST",
+			RequestBody = "{}",
+			ResultFileName = "result.json"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			"the error classification must fire on the POST dispatch branch, not only on GET");
+		fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Classifies an IIS HTML error page on the DELETE branch too, not only on GET")]
+	public void Execute_ShouldFailWithoutSaving_WhenDeleteReturnsHtmlErrorPage() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		applicationClient.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><head><title>500 - Internal server error.</title></head></html>");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = Substitute.For<ILogger>()
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/BulkEmailCategory",
+			HttpMethodName = "DELETE",
+			RequestBody = "{}",
+			ResultFileName = "result.json"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			"the error classification must fire on the DELETE dispatch branch, not only on GET");
+		fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[TestCase("0/0/odata/BulkEmailCategory")]
+	[TestCase("/0/0/odata/BulkEmailCategory")]
+	[Description("Strips every application-root layer, not just the first - one surviving 0/ would be double-added by ServiceUrlBuilder on .NET Framework")]
+	public void Execute_ShouldStripEveryApplicationRootLayer_WhenPrefixIsRepeated(string servicePath) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[]}");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() { ServicePath = servicePath, HttpMethodName = "GET" };
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "a fully normalized service path should execute successfully");
+		serviceUrlBuilder.Received(1).Build("odata/BulkEmailCategory");
 	}
 
 	#endregion
