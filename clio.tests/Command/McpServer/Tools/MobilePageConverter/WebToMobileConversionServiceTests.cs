@@ -6181,6 +6181,802 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
+	#region Excluded components
+
+	private static readonly IReadOnlySet<string> ExcludedComponentsMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ExpansionPanel", "crt.SearchFilter", "usr.Bar"
+		};
+
+	private static readonly ExcludedComponentFilterRule SearchFilterInExpansionPanelToolsFilter = new() {
+		Type = "crt.SearchFilter", ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+	};
+
+	private static readonly ExcludedComponentFilterRule FooInsideBarAnywhereFilter = new() {
+		Type = "usr.Foo", ParentType = "usr.Bar"
+	};
+
+	private static WebToMobilePageConversionRules RulesWithExcludedComponents(
+		params ExcludedComponentFilterRule[] filters) => new() {
+			ExcludedComponents = [new ExcludedComponentGroup { Filters = filters }]
+		};
+
+	private static MobilePageConversionGuide AnalyzeWithExcludedComponents(
+		PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, ExcludedComponentsMobileTypes,
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage",
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+	[Test]
+	[Description("crt.SearchFilter does not fit crt.ExpansionPanel's compact icon-only tools header strip on mobile: it is stripped from tools while its sibling header buttons stay, in the same order, and the removal is recorded as a drop entry so it stays visible in the report.")]
+	public void Analyze_ShouldStripSearchFilter_FromExpansionPanelTools() {
+		// Arrange — 1:1 with the real Leads_MobileFormPage shape: ExpansionPanel.tools[0] (GridContainer)
+		// .items[0] (FlexContainer) .items[] holds the header buttons plus the search filter.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" },
+			            { "name": "ProductsSettingsButton", "type": "crt.Button" } ] } ] } ],
+			    "items": [] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		ElementMapEntry panel = Element(guide, "ProductsExpansionPanel");
+		panel.Operation.Should().Be("insert",
+			because: "the HOST is never a removal candidate — only the banned type inside it is");
+		JsonArray toolsFlexItems = panel.MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray();
+		toolsFlexItems.Should().HaveCount(2, because: "the search filter was stripped, its two button siblings stay");
+		toolsFlexItems.Select(i => i!["name"]!.GetValue<string>()).Should().Equal(
+			["ProductsRefreshButton", "ProductsSettingsButton"],
+			because: "removal must not reorder or duplicate the surviving siblings");
+		ElementMapEntry dropped = Element(guide, "ProductsSearchFilter");
+		dropped.Operation.Should().Be("drop",
+			because: "a stripped component is reported as a drop entry, never removed silently");
+		dropped.WebType.Should().Be("crt.SearchFilter", because: "the report must still say what was removed");
+		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools",
+			because: "the reason must name the rule, the host type and the slot so the reader can trace it back to the rules file");
+	}
+
+	[Test]
+	[Description("The exclusion is scoped to crt.ExpansionPanel.tools, not a blanket ban on the type: a standalone crt.SearchFilter elsewhere on the page is untouched.")]
+	public void Analyze_ShouldKeepSearchFilter_WhenNotInsideExpansionPanelTools() {
+		// Arrange — the real Leads_MobileFormPage also carries SearchFilter_4991fqg directly inside a
+		// FlexContainer's items, outside any ExpansionPanel — that instance must never be touched.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProfileSearchFilter", "type": "crt.SearchFilter" } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		ElementMapEntry field = Element(guide, "ProfileSearchFilter");
+		field.Operation.Should().Be("insert",
+			because: "the exclusion is scoped by parentType — nothing here has that parent, so it is not a candidate");
+		field.MobileType.Should().Be("crt.SearchFilter",
+			because: "the surviving element is genuinely the banned TYPE — only its position spared it");
+	}
+
+	[Test]
+	[Description("propertiesContainerName is optional: when a filter names no property, the search covers the WHOLE host mobileValues subtree, at any depth under any property name — proving the mechanism is not hardcoded to 'tools'.")]
+	public void Analyze_ShouldStripAnywhereInHost_WhenPropertiesContainerNameIsAbsent() {
+		// Arrange — an arbitrary property name ("widgets"), not "tools", to prove the search is generic.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar", "widgets": [
+			    { "name": "Buried", "type": "usr.Foo" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+			because: "with no propertiesContainerName the search is not limited to a hardcoded property name");
+		Element(guide, "Buried").Operation.Should().Be("drop",
+			because: "the nested component is still found and removed even though it sits under an arbitrary property");
+	}
+
+	[Test]
+	[Description("The pass is switched by DATA — without an excludedComponents rules section, crt.SearchFilter inside crt.ExpansionPanel.tools is carried through unchanged, exactly as before the feature.")]
+	public void Analyze_ShouldSkipExcludedComponentsPass_WhenRulesCarryNoSection() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
+			    "items": [] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(bundle, GridRule);
+
+		guide.ElementMap.Should().NotContain(e => e.WebName == "ProductsSearchFilter",
+			because: "with no excludedComponents section the pass never runs — nothing to report about a component it never touched");
+		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
+			.Should().ContainSingle(i => i!["type"]!.GetValue<string>() == "crt.SearchFilter",
+				because: "the search filter is carried through verbatim, exactly as before the feature existed");
+	}
+
+	[Test]
+	[Description("Two independent excludedComponents filters (different type/host/property) apply in the same pass without interfering with each other's host — proving the mechanism generalizes beyond the single SearchFilter/ExpansionPanel case it was built for.")]
+	public void Analyze_ShouldApplyTwoIndependentRules_WithoutInterference() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
+			    "items": [] },
+			  { "name": "CustomHost", "type": "usr.Bar", "widgets": [
+			      { "name": "Buried", "type": "usr.Foo" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter, FooInsideBarAnywhereFilter));
+
+		Element(guide, "ProductsSearchFilter").Operation.Should().Be("drop",
+			because: "the first rule matches independently of the second");
+		Element(guide, "Buried").Operation.Should().Be("drop",
+			because: "the second rule matches independently of the first — two rules do not interfere");
+		Element(guide, "ProductsExpansionPanel").MobileValues!["tools"]![0]!["items"]![0]!["items"]!.AsArray()
+			.Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "ProductsRefreshButton",
+				because: "the second, unrelated rule (usr.Foo inside usr.Bar) must not affect the ExpansionPanel host");
+		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+			because: "the first, unrelated rule (crt.SearchFilter inside crt.ExpansionPanel.tools) must not affect this host");
+	}
+
+	[Test]
+	[Description("A host is found STRUCTURALLY, at any depth: a parentType node buried inside another element's verbatim-carried property — with no elementMap entry of its own — is still a host, and the component inside it is stripped with a drop entry.")]
+	public void Analyze_ShouldStripFromNestedHost_ThatHasNoElementMapEntryOfItsOwn() {
+		// Arrange — usr.Bar sits inside the ExpansionPanel's verbatim-carried "tools" chrome (GridContainer
+		// is not mobile-resolvable here, so the whole subtree is carried as a value, not walked into entries).
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OuterPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "type": "crt.GridContainer", "items": [
+			        { "name": "InnerBar", "type": "usr.Bar", "widgets": [
+			            { "name": "Buried", "type": "usr.Foo" } ] } ] } ],
+			    "items": [] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		JsonNode innerBar = Element(guide, "OuterPanel").MobileValues!["tools"]![0]!["items"]![0]!;
+		innerBar["name"]!.GetValue<string>().Should().Be("InnerBar",
+			because: "the nested host itself must survive — only the banned component inside it is removed");
+		(innerBar as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+			because: "the host is matched by its type anywhere in the tree, not by having an elementMap entry");
+		guide.ElementMap.Where(e => e.WebName == "Buried").Should().ContainSingle(
+			because: "exactly one drop entry per removal — a nested host must not be processed twice")
+			.Which.Operation.Should().Be("drop");
+	}
+
+	[Test]
+	[Description("propertiesContainerName is an explicit boundary on a host that carries the type in TWO properties: only the named one is stripped, the other keeps its component untouched.")]
+	public void Analyze_ShouldStripOnlyTheNamedProperty_WhenHostCarriesTypeInTwoProperties() {
+		// Arrange — the same banned type under both "tools" and "widgets" of one host.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar",
+			    "tools": [ { "name": "ToolsFoo", "type": "usr.Foo" } ],
+			    "widgets": [ { "name": "WidgetsFoo", "type": "usr.Foo" } ] } ]
+			""");
+		var scoped = new ExcludedComponentFilterRule {
+			Type = "usr.Foo", ParentType = "usr.Bar", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(scoped));
+
+		// Assert
+		JsonNode host = Element(guide, "CustomHost").MobileValues!;
+		(host as JsonObject)!.ContainsKey("tools").Should().BeFalse(
+			because: "the named property is the scope, so its component is stripped");
+		host["widgets"]!.AsArray().Should().ContainSingle(i => i!["name"]!.GetValue<string>() == "WidgetsFoo",
+			because: "an explicit scope is an explicit boundary — the un-named sibling property is untouched");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
+			because: "only the in-scope instance produces a drop entry");
+	}
+
+	[Test]
+	[Description("Without propertiesContainerName the scope is the host's WHOLE subtree: the same type under two different properties (tools and widgets) is stripped from both, one drop entry each.")]
+	public void Analyze_ShouldStripFromEveryProperty_WhenPropertiesContainerNameIsAbsent() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar",
+			    "tools": [ { "name": "ToolsFoo", "type": "usr.Foo" } ],
+			    "widgets": [ { "name": "WidgetsFoo", "type": "usr.Foo" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		JsonNode host = Element(guide, "CustomHost").MobileValues!;
+		(host as JsonObject)!.ContainsKey("tools").Should().BeFalse(
+			because: "with no named property the tools branch of the host is in scope");
+		(host as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+			because: "with no named property every property of the host — tools and widgets alike — is in scope");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().HaveCount(2,
+			because: "each removed instance is reported once, and exactly once");
+	}
+
+	[Test]
+	[Description("A propertiesContainerName the host does not carry is a no-op for that host — an explicit scope never falls back to the whole subtree — while the lookup itself is case-insensitive, consistent with every other comparison of the pass.")]
+	public void Analyze_ShouldTreatMissingScopePropertyAsNoOp_AndResolveTheScopeCaseInsensitively() {
+		// Arrange — two hosts: one carries the scope property (different case), one does not carry it at all.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CasedHost", "type": "usr.Bar",
+			    "Tools": [ { "name": "CasedFoo", "type": "usr.Foo" } ] },
+			  { "name": "ScopelessHost", "type": "usr.Bar",
+			    "widgets": [ { "name": "OutOfScopeFoo", "type": "usr.Foo" } ] } ]
+			""");
+		var scoped = new ExcludedComponentFilterRule {
+			Type = "usr.Foo", ParentType = "usr.Bar", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(scoped));
+
+		// Assert
+		(Element(guide, "CasedHost").MobileValues! as JsonObject)!.ContainsKey("Tools").Should().BeFalse(
+			because: "the scope-property lookup is case-insensitive like every other comparison here");
+		Element(guide, "ScopelessHost").MobileValues!["widgets"]!.AsArray().Should().ContainSingle(
+			because: "a host without the named property is a no-op — never a fallback to the whole subtree");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
+			because: "only the host that actually carries the scope property produces a removal");
+	}
+
+	[Test]
+	[Description("type == parentType removes a NESTED host of the same type but never the outer host itself, and components inside the removed subtree are not separately reported — the branch left the page whole.")]
+	public void Analyze_ShouldRemoveNestedSameTypeHost_WithoutTouchingTheOuterHostOrDoubleReporting() {
+		// Arrange — usr.Bar inside usr.Bar; the inner one carries a usr.Foo that must vanish WITH it.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OuterBar", "type": "usr.Bar",
+			    "widgets": [ { "name": "InnerBar", "type": "usr.Bar",
+			        "widgets": [ { "name": "Buried", "type": "usr.Foo" } ] } ] } ]
+			""");
+		var selfRule = new ExcludedComponentFilterRule { Type = "usr.Bar", ParentType = "usr.Bar" };
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(selfRule));
+
+		// Assert
+		ElementMapEntry outer = Element(guide, "OuterBar");
+		outer.Operation.Should().Be("insert",
+			because: "a host never removes itself — the strip searches only INSIDE its scope");
+		(outer.MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+			because: "the nested same-type node is a legitimate match inside the outer host's scope");
+		guide.ElementMap.Where(e => e.WebName == "InnerBar").Should().ContainSingle(
+			because: "the removed nested host is reported once").Which.Operation.Should().Be("drop");
+		guide.ElementMap.Should().NotContain(e => e.WebName == "Buried",
+			because: "a component inside the removed subtree left the page with its parent — reporting it "
+				+ "separately would claim a removal the pass never performed on the live tree");
+	}
+
+	[Test]
+	[Description("A branch nested past the search budget is abandoned rather than followed down — the same defence in depth the template renderer takes — while a match at sane depth in a SIBLING branch of the same host is still stripped.")]
+	public void Analyze_ShouldAbandonPathologicallyDeepBranch_AndStillStripTheSaneSibling() {
+		// Arrange — deep enough to pass the search budget (32), shallow enough that the JSON readers still
+		// accept it (their own limit is 64), so this exercises THIS guard rather than the parser's.
+		var deep = new StringBuilder("""{ "name": "DeepFoo", "type": "usr.Foo" }""");
+		for (int i = 0; i < 40; i++) {
+			deep.Insert(0, "{ \"n\": ").Append(" }");
+		}
+		PageBundleInfo bundle = Bundle($$$"""
+			[ { "name": "CustomHost", "type": "usr.Bar",
+			    "widgets": [ { "name": "SaneFoo", "type": "usr.Foo" } ],
+			    "abyss": [ {{{deep}}} ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		(Element(guide, "CustomHost").MobileValues! as JsonObject)!.ContainsKey("widgets").Should().BeFalse(
+			because: "the guard abandons the offending branch only — a sibling at sane depth still strips");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
+			because: "the pathological branch was abandoned, so only the sane sibling produced a removal");
+		guide.Constraints.Should().Contain(c => c.Contains("depth budget"),
+			because: "a component the search never reached is KEPT with no drop entry — the one outcome the "
+				+ "element map cannot report, so it has to reach the caller as a constraint instead");
+	}
+
+	[Test]
+	[Description("A merge twin's carried values ARE stripped — they are the delta this converter writes over the template element, so a banned component in them is something the converter is about to add — but a collection the strip empties is REMOVED rather than left as [], so the delta cannot erase the template's own non-empty value.")]
+	public void RemoveExcludedComponents_ShouldStripMergeDelta_AndDropTheCollectionItEmpties() {
+		// Arrange — a template twin whose converter-owned delta carries the banned type in 'tools', plus a
+		// second host whose 'tools' keeps a survivor so the emptied-vs-thinned distinction is visible.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "TemplatePanel", MobileName = "TemplatePanel", MobileType = "crt.ExpansionPanel",
+				Operation = "merge",
+				MobileValues = JsonNode.Parse("""
+					{ "caption": "Products",
+					  "tools": [ { "name": "CarriedSearchFilter", "type": "crt.SearchFilter" } ] }
+					""")!.AsObject()
+			},
+			new() {
+				WebName = "ConvertedPanel", MobileName = "ConvertedPanel", MobileType = "crt.ExpansionPanel",
+				Operation = "insert",
+				MobileValues = JsonNode.Parse("""
+					{ "tools": [ { "name": "KeptSearchFilter", "type": "crt.SearchFilter" },
+					             { "name": "RefreshButton", "type": "crt.Button" } ] }
+					""")!.AsObject()
+			}
+		};
+
+		// Act
+		ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> _, out _);
+
+		// Assert
+		var twin = (JsonObject)elementMap[0].MobileValues!;
+		twin.ContainsKey("tools").Should().BeFalse(
+			because: "an emptied collection in a template delta would OVERWRITE the tools strip the template "
+				+ "ships — removing the banned component must not also erase the host's own content");
+		twin["caption"]!.GetValue<string>().Should().Be("Products",
+			because: "only the emptied collection goes; the rest of the delta is untouched");
+		elementMap[0].Operation.Should().Be("merge",
+			because: "the twin itself is still the template's element — the pass strips its delta, never drops it");
+
+		var converted = (JsonObject)elementMap[1].MobileValues!;
+		converted["tools"]!.AsArray().Should().ContainSingle(
+			i => i!["name"]!.GetValue<string>() == "RefreshButton",
+			because: "a collection that merely THINNED keeps its surviving members and stays declared");
+	}
+
+	[Test]
+	[Description("A filter missing parentType is unusable and is skipped — but the rules file can be fetched from the CDN at runtime, so a typo there would otherwise switch an exclusion off with no signal anywhere. The count reaches the caller as a constraint.")]
+	public void Analyze_ShouldConstrain_WhenAFilterIsDiscardedAsMalformed() {
+		// Arrange — one usable filter and one with a misspelled property, exactly the CDN-typo shape.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar",
+			    "widgets": [ { "name": "Foo", "type": "usr.Foo" } ] } ]
+			""");
+		var malformed = new ExcludedComponentFilterRule { Type = "usr.Foo" };
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter, malformed));
+
+		// Assert
+		guide.Constraints.Should().Contain(c => c.Contains("excludedComponents filter"),
+			because: "an exclusion that never ran must say so — silence is indistinguishable from 'nothing matched'");
+		guide.ElementMap.Where(e => e.Operation == "drop" && e.WebType == "usr.Foo").Should().ContainSingle(
+			because: "the usable filter still runs — one malformed entry disables only itself");
+	}
+
+	[Test]
+	[Description("The malformed-filter constraint is raised only when a filter really was discarded: a well-formed rules file must not carry a warning about filters it does not have.")]
+	public void Analyze_ShouldNotConstrain_WhenEveryFilterIsWellFormed() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "CustomHost", "type": "usr.Bar",
+			    "widgets": [ { "name": "Foo", "type": "usr.Foo" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		guide.Constraints.Should().NotContain(c => c.Contains("excludedComponents filter"),
+			because: "a constraint that fires on a healthy page trains the reader to ignore it");
+		guide.Constraints.Should().NotContain(c => c.Contains("depth budget"),
+			because: "no branch was abandoned, so nothing was left unsearched");
+	}
+
+	// ── Entry-graph phase: on a real registry the child-array traversal walks tools/menuItems children
+	// into their OWN element-map entries (the host's mobileValues then carries no nested copy at all), so
+	// the pass must match entries through their ParentName ancestor chain. These fixtures use a mobile-type
+	// set where EVERY member of the tools subtree resolves — the representative shape of a real page — so
+	// they exercise the entry-graph phase, not the verbatim fallback the minimal-set tests above exercise.
+
+	private static readonly IReadOnlySet<string> EntryGraphMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.ExpansionPanel", "crt.GridContainer", "crt.FlexContainer", "crt.Button",
+			"crt.SearchFilter", "crt.QuickFilter", "crt.List", "crt.Input"
+		};
+
+	private static readonly ExcludedComponentFilterRule QuickFilterInExpansionPanelFilter = new() {
+		Type = "crt.QuickFilter", ParentType = "crt.ExpansionPanel"
+	};
+
+	private static MobilePageConversionGuide AnalyzeWithExcludedComponentsEntryGraph(
+		PageBundleInfo bundle, WebToMobilePageConversionRules rules) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, EntryGraphMobileTypes,
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage",
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+	/// <summary>The real Leads_FormPage products-panel shape: every tools element NAMED and mobile-resolvable,
+	/// so the traversal walks the whole subtree into entries instead of carrying it verbatim.</summary>
+	private const string LeadsLikeProductsPanelJson = """
+		[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+		    "tools": [ { "name": "ProductsToolsContainer", "type": "crt.GridContainer", "items": [
+		        { "name": "ProductsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+		            { "name": "ProductsRefreshButton", "type": "crt.Button" },
+		            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" },
+		            { "name": "ProductsSettingsButton", "type": "crt.Button" } ] } ] } ],
+		    "items": [
+		        { "name": "ProductsListContainer", "type": "crt.GridContainer", "items": [
+		            { "name": "QuickFilter_vitfc9y", "type": "crt.QuickFilter" },
+		            { "name": "ProductsList", "type": "crt.List" } ] } ] } ]
+		""";
+
+	[Test]
+	[Description("Entry-graph phase: when the tools subtree is fully mobile-resolvable its children become their OWN entries (the panel carries no verbatim 'tools' copy), and the banned crt.SearchFilter entry — reached through the panel's 'tools' edge — is replaced by a drop while its button siblings stay.")]
+	public void Analyze_ShouldDropSearchFilterEntry_WhenToolsChildrenBecomeTheirOwnEntries() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(LeadsLikeProductsPanelJson);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert — precondition first: the fixture must exercise the ENTRY-GRAPH shape, not the verbatim
+		// fallback, or this test silently regresses into re-testing the other phase.
+		Element(guide, "ProductsToolsContainer").PropertyName.Should().Be("tools",
+			because: "the traversal must have walked the tools subtree into entries — the shape this test exists to cover");
+		(Element(guide, "ProductsExpansionPanel").MobileValues as JsonObject)!["tools"]
+			.Should().BeOfType<JsonArray>(
+				because: "InitializeContainerChildSlots declares the slot the walked children insert into")
+			.Which.Should().BeEmpty(
+				because: "the declared slot is EMPTY — a walked child slot is never also carried verbatim, "
+					+ "so the verbatim fallback has nothing to match here");
+		ElementMapEntry dropped = Element(guide, "ProductsSearchFilter");
+		dropped.Operation.Should().Be("drop",
+			because: "the entry's ancestor chain enters the crt.ExpansionPanel host through its 'tools' edge");
+		dropped.Reason.Should().Contain("excludedComponents").And.Contain("crt.ExpansionPanel").And.Contain("tools",
+			because: "the entry-graph phase must report the same traceable reason the verbatim phase reports");
+		Element(guide, "ProductsRefreshButton").Operation.Should().Be("insert",
+			because: "siblings of the banned component are untouched");
+		Element(guide, "ProductsSettingsButton").Operation.Should().Be("insert",
+			because: "removal must not spill beyond the matched entry");
+	}
+
+	[Test]
+	[Description("A filter with no propertiesContainerName scopes to the WHOLE host: crt.QuickFilter entries reached through the panel's items edge AND through its tools edge both drop, while the non-banned types in both branches survive.")]
+	public void Analyze_ShouldDropQuickFilterEntries_FromItemsAndToolsAlike_WhenRuleNamesNoSlot() {
+		// Arrange — the real Leads shape carries QuickFilter in BOTH branches of the panel.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "ProductsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+			        { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" },
+			        { "name": "QuickFilter_nvc495i", "type": "crt.QuickFilter" } ] } ],
+			    "items": [
+			        { "name": "ProductsListContainer", "type": "crt.GridContainer", "items": [
+			            { "name": "QuickFilter_vitfc9y", "type": "crt.QuickFilter" },
+			            { "name": "ProductsList", "type": "crt.List" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(
+			bundle, RulesWithExcludedComponents(QuickFilterInExpansionPanelFilter));
+
+		// Assert
+		Element(guide, "QuickFilter_vitfc9y").Operation.Should().Be("drop",
+			because: "with no slot named, the items branch of the host is in scope");
+		Element(guide, "QuickFilter_nvc495i").Operation.Should().Be("drop",
+			because: "with no slot named, the tools branch of the host is in scope too");
+		Element(guide, "ProductsSearchFilter").Operation.Should().Be("insert",
+			because: "only the banned type is removed — this rule names crt.QuickFilter, not crt.SearchFilter");
+		Element(guide, "ProductsList").Operation.Should().Be("insert",
+			because: "the list sharing a container with a banned component is untouched");
+	}
+
+	[Test]
+	[Description("propertiesContainerName is checked on the EDGE ENTERING the host: a banned type whose ancestor path enters the host through 'items' does not match a 'tools'-scoped rule, even though the same rule drops the instance entering through 'tools'.")]
+	public void Analyze_ShouldKeepEntry_WhenItsPathEntersTheHostThroughADifferentSlot() {
+		// Arrange — the banned type under BOTH edges of one host; only the tools-side instance is in scope.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "ToolsFlex", "type": "crt.FlexContainer", "items": [
+			        { "name": "ToolsSearchFilter", "type": "crt.SearchFilter" } ] } ],
+			    "items": [
+			        { "name": "ItemsFlex", "type": "crt.FlexContainer", "items": [
+			            { "name": "ItemsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		Element(guide, "ToolsSearchFilter").Operation.Should().Be("drop",
+			because: "its path enters the host through the 'tools' edge the rule names");
+		Element(guide, "ItemsSearchFilter").Operation.Should().Be("insert",
+			because: "an explicit slot is an explicit boundary — the items edge is out of scope even under the same host");
+	}
+
+	[Test]
+	[Description("No ancestor entry of the host type means no match: a crt.SearchFilter whose whole ancestor chain is plain containers survives an ExpansionPanel-scoped rule, however deep it sits.")]
+	public void Analyze_ShouldKeepEntry_WhenNoAncestorEntryIsHost() {
+		// Arrange — the same nesting depth a panel would give it, but no crt.ExpansionPanel anywhere above.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProfileArea", "type": "crt.GridContainer", "items": [
+			    { "name": "ProfileFlex", "type": "crt.FlexContainer", "items": [
+			        { "name": "ProfileSearchFilter", "type": "crt.SearchFilter" } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		Element(guide, "ProfileSearchFilter").Operation.Should().Be("insert",
+			because: "the exclusion is scoped by parentType — no ancestor is a crt.ExpansionPanel, so nothing matches");
+	}
+
+	[Test]
+	[Description("Removing a CONTAINER entry drops its whole subtree: the container's own entry gets the rule reason, and every descendant entry is dropped as orphaned — a surviving insert whose parent no longer exists would silently resurrect the branch.")]
+	public void Analyze_ShouldDropWholeSubtree_WhenBannedTypeIsAContainer() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(LeadsLikeProductsPanelJson);
+		var containerRule = new ExcludedComponentFilterRule {
+			Type = "crt.FlexContainer", ParentType = "crt.ExpansionPanel", PropertiesContainerName = "tools"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(
+			bundle, RulesWithExcludedComponents(containerRule));
+
+		// Assert
+		Element(guide, "ProductsToolsFlexContainer").Operation.Should().Be("drop",
+			because: "the container itself is the banned type reached through the host's tools edge");
+		Element(guide, "ProductsToolsFlexContainer").Reason.Should().Contain("excludedComponents",
+			because: "the container was removed BY the rule, so its reason names the rule — unlike its orphaned children below");
+		foreach (string orphan in new[] { "ProductsRefreshButton", "ProductsSearchFilter", "ProductsSettingsButton" }) {
+			ElementMapEntry entry = Element(guide, orphan);
+			entry.Operation.Should().Be("drop",
+				because: $"'{orphan}' lost its mobile parent — leaving it an insert would orphan it");
+			entry.Reason.Should().Contain("parent removed",
+				because: "an orphan drop must say it fell with its ancestor, not claim its own rule match");
+		}
+		Element(guide, "QuickFilter_vitfc9y").Operation.Should().Be("insert",
+			because: "the items branch does not pass through the removed container and is untouched");
+	}
+
+	[Test]
+	[Description("The pass runs BEFORE empty-container removal, so a tools branch it empties out cascades away: the container chain that held only the banned component is dropped as empty, while the occupied items branch keeps the panel alive.")]
+	public void Analyze_ShouldCascadeEmptiedToolsContainers_AfterEntryGraphRemoval() {
+		// Arrange — tools hold ONLY the banned component; items hold a surviving field.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "ProductsToolsContainer", "type": "crt.GridContainer", "items": [
+			        { "name": "ProductsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+			            { "name": "ProductsSearchFilter", "type": "crt.SearchFilter" } ] } ] } ],
+			    "items": [ { "name": "ProductName", "type": "crt.Input" } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter);
+		rules = new WebToMobilePageConversionRules {
+			ExcludedComponents = rules.ExcludedComponents,
+			EmptyContainerRemoval = new EmptyContainerRemovalRule {
+				RemovableTypes = ["crt.GridContainer", "crt.FlexContainer"]
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, rules);
+
+		// Assert
+		Element(guide, "ProductsSearchFilter").Operation.Should().Be("drop",
+			because: "the banned component is removed by the rule");
+		Element(guide, "ProductsToolsFlexContainer").Operation.Should().Be("drop",
+			because: "with its only child removed, the flex container is empty and cascades away");
+		Element(guide, "ProductsToolsContainer").Operation.Should().Be("drop",
+			because: "emptiness cascades bottom-up through the whole emptied tools chain");
+		Element(guide, "ProductsExpansionPanel").Operation.Should().Be("insert",
+			because: "the items branch still carries a surviving field, so the panel itself stays");
+		Element(guide, "ProductName").Operation.Should().Be("insert",
+			because: "the surviving field is untouched by removals in the sibling branch");
+	}
+
+	[Test]
+	[Description("A removed element's event binding is reconciled: recorded as converted while the element map is built, it is reclassified into droppedRequests with the excludedComponents removal named as the reason — the report must not claim a conversion for an element the map says not to create.")]
+	public void Analyze_ShouldReclassifyRequestBinding_WhenItsElementIsExcluded() {
+		// Arrange — a supported request on a button an excludedComponents rule then removes.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+			    { "name": "SaveButton", "type": "crt.Button", "caption": "Act",
+			      "clicked": { "request": "crt.SaveRecordRequest", "params": { "preventCardClose": false } } } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			Requests = [
+				new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping" }
+			],
+			ExcludedComponents = [new ExcludedComponentGroup {
+				Filters = [new ExcludedComponentFilterRule { Type = "crt.Button", ParentType = "crt.FlexContainer" }]
+			}]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(bundle, rules);
+
+		// Assert
+		Element(guide, "SaveButton").Operation.Should().Be("drop",
+			because: "the button matches the excludedComponents rule through its crt.FlexContainer parent");
+		guide.RequestConversions.Should().NotBeNull(
+			because: "the discarded binding must stay visible in the report, not vanish silently");
+		guide.RequestConversions.ConvertedRequests.Should().NotContain(r => r.ElementName == "SaveButton",
+			because: "a conversion must not be claimed for an element the map says not to create");
+		guide.RequestConversions.DroppedRequests.Should().ContainSingle(r => r.ElementName == "SaveButton")
+			.Which.Reason.Should().Contain("excludedComponents",
+				because: "the reconciliation must name WHICH removal discarded the binding");
+	}
+
+	[Test]
+	[Description("Entry-graph phase, attribute policy: an excludedComponents removal is layout cleanup, not attribute cleanup — a viewModelConfig attribute the removed element referenced survives, exactly as it does for an empty-container removal.")]
+	public void Analyze_ShouldKeepAttributes_WhenOnlyAnExcludedEntryReferencedThem() {
+		// Arrange — the banned entry is the only place on the page that names $SearchOnly.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "ProductsExpansionPanel", "type": "crt.ExpansionPanel",
+			    "tools": [ { "name": "ProductsToolsFlexContainer", "type": "crt.FlexContainer", "items": [
+			        { "name": "ProductsSearchFilter", "type": "crt.SearchFilter", "visible": "$SearchOnly" } ] } ],
+			    "items": [ { "name": "ProductsList", "type": "crt.List" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "SearchOnly": { "type": "Boolean" } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponentsEntryGraph(
+			bundle, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter));
+
+		// Assert
+		Element(guide, "ProductsSearchFilter").Operation.Should().Be("drop",
+			because: "the fixture must actually exercise a removal, or the attribute assertion below is vacuous");
+		guide.ViewModelConfig!["attributes"]!.AsObject().ContainsKey("SearchOnly").Should().BeTrue(
+			because: "the pass removes layout, not attributes — the same policy the empty-container removal follows");
+	}
+
+	[Test]
+	[Description("Verbatim-carry phase, attribute policy: the SAME guarantee holds when the banned component never had an entry of its own and was stripped out of a host's carried property — one rule must not behave two ways depending on which shape the component took.")]
+	public void Analyze_ShouldKeepAttributes_WhenOnlyAVerbatimCarriedExcludedNodeReferencedThem() {
+		// Arrange — usr.Foo resolves to no mobile type, so the whole widgets subtree is carried verbatim.
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "CustomHost", "type": "usr.Bar", "widgets": [
+			    { "name": "FooWidget", "type": "usr.Foo", "visible": "$FooOnly" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "FooOnly": { "type": "Boolean" } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithExcludedComponents(
+			bundle, RulesWithExcludedComponents(FooInsideBarAnywhereFilter));
+
+		// Assert
+		Element(guide, "FooWidget").Operation.Should().Be("drop",
+			because: "the fixture must actually exercise a verbatim-carry removal, or the assertion below is vacuous");
+		guide.ViewModelConfig!["attributes"]!.AsObject().ContainsKey("FooOnly").Should().BeTrue(
+			because: "attribute survival must not depend on which of the two shapes the banned component took");
+	}
+
+	[Test]
+	[Description("Only INSERT entries are removal candidates: a banned type the mobile template already owns arrives as a MERGE entry, survives the pass untouched and produces NO drop entry, while an insert twin of the same type under the same host IS removed — a drop cannot un-create a template-owned element, so reporting one would be a lie.")]
+	public void Analyze_ShouldKeepMergeEntryOfBannedType_AndStillRemoveTheInsertOne() {
+		// Arrange — one host, two children of the banned type through its 'tools' edge: one the template owns
+		// (merge), one the converter creates (insert). Built at the element-map level because the operation of
+		// an entry is what this test is about, and no page shape controls it directly.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "Panel", MobileName = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert"
+			},
+			new() {
+				WebName = "TemplateSearchFilter", MobileName = "TemplateSearchFilter",
+				MobileType = "crt.SearchFilter", Operation = "merge", ParentName = "Panel", PropertyName = "tools"
+			},
+			new() {
+				WebName = "ConvertedSearchFilter", MobileName = "ConvertedSearchFilter",
+				MobileType = "crt.SearchFilter", Operation = "insert", ParentName = "Panel", PropertyName = "tools"
+			}
+		};
+
+		// Act
+		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> _, out _);
+
+		// Assert
+		elementMap.Single(e => e.WebName == "ConvertedSearchFilter").Operation.Should().Be("drop",
+			because: "a converter-created insert of the banned type is exactly what the pass exists to remove");
+		elementMap.Single(e => e.WebName == "TemplateSearchFilter").Operation.Should().Be("merge",
+			because: "a merge entry describes an element the mobile template already owns — a drop cannot un-create it");
+		elementMap.Should().NotContain(e => e.Operation == "drop" && e.WebName == "TemplateSearchFilter",
+			because: "reporting a removal that does not happen is worse than the survivor itself");
+		removedWebNames.Should().BeEquivalentTo(["ConvertedSearchFilter"],
+			because: "only the entry the pass actually removed may feed the downstream reconciliations");
+	}
+
+	[Test]
+	[Description("Both phases report through the SAME web-name channel: an entry-graph removal and a verbatim-carried node stripped from the same host both come back in the removed-web-name set, so the downstream layout-cleanup exemption cannot depend on which shape the banned component took. Only the entry-graph removal carries a MOBILE name — a verbatim-carried node never had one.")]
+	public void RemoveExcludedComponents_ShouldReportBothPhases_ThroughTheWebNameSet() {
+		// Arrange — one host carrying the banned type in both shapes at once: a walked child entry, and a node
+		// left verbatim inside the host's own 'tools' value.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "Panel", MobileName = "Panel", MobileType = "crt.ExpansionPanel", Operation = "insert",
+				MobileValues = JsonNode.Parse("""
+					{ "tools": [ { "name": "CarriedSearchFilter", "type": "crt.SearchFilter" } ] }
+					""")!.AsObject()
+			},
+			new() {
+				WebName = "WalkedSearchFilter", MobileName = "WalkedSearchFilter", MobileType = "crt.SearchFilter",
+				Operation = "insert", ParentName = "Panel", PropertyName = "tools"
+			}
+		};
+
+		// Act
+		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> removedMobileNames, out _);
+
+		// Assert
+		removedWebNames.Should().BeEquivalentTo(["WalkedSearchFilter", "CarriedSearchFilter"],
+			because: "both shapes are the same rule doing the same thing, so both must reach the same reconciliation");
+		removedMobileNames.Should().BeEquivalentTo(["WalkedSearchFilter"],
+			because: "a verbatim-carried node was never walked into an entry, so it has no mobile name to report");
+		elementMap.Should().ContainSingle(e => e.Operation == "drop" && e.WebName == "CarriedSearchFilter",
+			because: "the verbatim strip stays visible in the report as a drop entry, never silent");
+	}
+
+	[Test]
+	[Description("Malformed parent graph: a parentName cycle around a banned-type entry must not hang the ancestor climb — the pass terminates and, finding no host on the (cyclic) path, leaves the candidate untouched.")]
+	public void Analyze_ShouldTerminate_WhenParentNameChainCycles() {
+		// Arrange — the cycle is built at the element-map level, the only place a parentName chain exists.
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "A", MobileName = "A", MobileType = "crt.FlexContainer",
+				Operation = "insert", ParentName = "B", PropertyName = "items"
+			},
+			new() {
+				WebName = "B", MobileName = "B", MobileType = "crt.FlexContainer",
+				Operation = "insert", ParentName = "A", PropertyName = "items"
+			},
+			new() {
+				WebName = "CyclicSearchFilter", MobileName = "CyclicSearchFilter", MobileType = "crt.SearchFilter",
+				Operation = "insert", ParentName = "A", PropertyName = "items"
+			}
+		};
+
+		// Act
+		HashSet<string> removedWebNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, RulesWithExcludedComponents(SearchFilterInExpansionPanelToolsFilter),
+			out HashSet<string> removedMobileNames, out _);
+
+		// Assert
+		elementMap.Should().AllSatisfy(e => e.Operation.Should().Be("insert"),
+			because: "no ancestor on the cyclic path is a crt.ExpansionPanel, so nothing matches the filter");
+		removedWebNames.Should().BeEmpty(because: "an unmatched candidate is not a removal");
+		removedMobileNames.Should().BeEmpty(because: "an unmatched candidate is not a removal");
+	}
+
+	#endregion
+
 	#region Converted tab placement (explicit indexes so template Feed/Attachments stay last)
 
 	[Test]

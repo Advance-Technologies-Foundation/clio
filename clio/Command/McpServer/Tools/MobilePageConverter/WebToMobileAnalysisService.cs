@@ -201,6 +201,21 @@ public static class WebToMobileAnalysisService {
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, webBaselineNodes, webTemplateResources);
 
+		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
+		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
+		// can take: an element-map entry of its own whose ParentName ancestor chain reaches the host (the
+		// primary shape — the child-array traversal walks tools/menuItems children into their own entries),
+		// or a node the generic per-element copy carried verbatim inside a host's OWN property (the fallback
+		// shape, when a subtree member does not resolve to a mobile type). Deliberately BEFORE
+		// RemoveEmptyContainers: a container branch this pass empties out cascades away there, and every
+		// removal is recorded as a "drop" ElementMapEntry the same way EmptyContainerRemoval records its own.
+		// The removed names feed the same two reconciliations the empty-container pass feeds: mobile names →
+		// BuildRequestConversionInfo (a removed element's binding is reported as discarded, not converted),
+		// web names → BuildMobileViewModelConfig (removal is layout cleanup — referenced attributes are KEPT).
+		HashSet<string> excludedRemovedNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, rules, out HashSet<string> excludedRemovedMobileNames,
+			out ExcludedComponentsPass.ExcludedComponentsDiagnostics excludedDiagnostics);
+
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
 		// BEFORE the adaptive and tab-area passes: adaptive then stacks only surviving children, and a tab this
@@ -226,7 +241,8 @@ public static class WebToMobileAnalysisService {
 		// put the first web tab BEFORE the general tab).
 		AssignConvertedTabIndexes(elementMap);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
-			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames);
+			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames,
+			excludedRemovedMobileNames);
 
 		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
 		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
@@ -274,7 +290,12 @@ public static class WebToMobileAnalysisService {
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
 		JsonNode modelConfig = PassthroughModelConfig(bundle);
-		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap, emptyRemovedNames);
+		// Attribute pruning treats BOTH layout-cleanup removals the same way: a name removed by the
+		// empty-container pass or by an excludedComponents rule is layout cleanup, not attribute cleanup,
+		// so the attributes it referenced are kept.
+		var layoutRemovedNames = new HashSet<string>(emptyRemovedNames, StringComparer.OrdinalIgnoreCase);
+		layoutRemovedNames.UnionWith(excludedRemovedNames);
+		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap, layoutRemovedNames);
 		// Prebuilt, ready-to-paste diffs so the caller never hand-builds the data-source section. Each config
 		// is diffed against the mobile template's OWN merged base (the schema the page is created from):
 		// a key whose subtree already exists in the base is recursed into, so only the real delta is emitted
@@ -360,6 +381,8 @@ public static class WebToMobileAnalysisService {
 				normalization: componentPropertyOverrides,
 				webTemplateUnavailable: webTemplateUnavailable,
 				hasComponentTwin: componentMap.Count > 0,
+				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
+				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
 				retargetParentsOnTemplate: elementMap
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
@@ -1541,14 +1564,16 @@ public static class WebToMobileAnalysisService {
 	/// Returns the source page's merged viewModelConfig filtered for mobile: an attribute is removed only
 	/// when EVERY component that references it (via a <c>$Attr</c> binding) was dropped from the mobile
 	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
-	/// consumer, are kept. A container the EMPTY-container pass removed (<paramref name="emptyRemovedNames"/>)
-	/// is deliberately NOT counted as dropped here: that removal is layout cleanup, and the agreed scope
-	/// keeps the attributes it referenced (e.g. a bound <c>visible</c>) untouched. All other
-	/// viewModelConfig sections are passed through unchanged.
+	/// consumer, are kept. An element either LAYOUT-CLEANUP pass removed
+	/// (<paramref name="layoutRemovedNames"/>) is deliberately NOT counted as dropped here — a container the
+	/// empty-container pass removed, or a component an <c>excludedComponents</c> rule banned from its host:
+	/// both are layout cleanup, and the agreed scope keeps the attributes they referenced (e.g. a bound
+	/// <c>visible</c>) untouched. Only a GENUINE drop — an unsupported type, an unsupported button request —
+	/// takes its attributes with it. All other viewModelConfig sections are passed through unchanged.
 	/// </summary>
 	private static JsonNode BuildMobileViewModelConfig(
 		PageBundleInfo bundle, JArray tree, List<ElementMapEntry> elementMap,
-		IReadOnlySet<string> emptyRemovedNames = null) {
+		IReadOnlySet<string> layoutRemovedNames = null) {
 		if (bundle.ViewModelConfig is not { Count: > 0 }) {
 			return null;
 		}
@@ -1565,8 +1590,8 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.WebName)
 					.Where(n => !string.IsNullOrEmpty(n)),
 				StringComparer.OrdinalIgnoreCase);
-			if (emptyRemovedNames is { Count: > 0 }) {
-				dropped.ExceptWith(emptyRemovedNames);
+			if (layoutRemovedNames is { Count: > 0 }) {
+				dropped.ExceptWith(layoutRemovedNames);
 			}
 			Dictionary<string, HashSet<string>> consumers = BuildAttrConsumers(tree);
 			// Attributes referenced by any SURVIVING element-map entry's prebuilt MobileValues are ALWAYS kept, even
@@ -1682,6 +1707,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
+		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1795,6 +1821,23 @@ public static class WebToMobileAnalysisService {
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
 		AppendNormalizationLines(constraints, normalization);
+		if (exclusionSearchTruncated) {
+			// The one outcome the drop entries cannot report: a component that was never removed produces no
+			// entry, so without this line a banned component past the depth budget is indistinguishable from
+			// one no rule targets.
+			constraints.Add(
+				"An excludedComponents search hit its depth budget and abandoned a branch: a banned component nested "
+				+ "deeper than the budget is still on the page and has NO drop entry. Re-check the deepest branches "
+				+ "of the converted page against the rules before treating the exclusion report as complete.");
+		}
+		if (discardedExclusionFilters > 0) {
+			// The rules file can be fetched from the CDN at runtime, so a typo in a published rule silently
+			// switches an exclusion off. Naming the count makes that debuggable from the report alone.
+			constraints.Add(
+				$"{discardedExclusionFilters} excludedComponents filter(s) were ignored because they declare no "
+				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
+				+ "misspelled property name.");
+		}
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
@@ -3600,34 +3643,21 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Assembles the advisory request-conversion summary; null when the page references no requests.
-	/// Reconciles with the empty-container removal pass first: a binding is recorded while the element map
-	/// is built, so a container removed as empty AFTERWARDS would still be reported as converted/flagged —
-	/// contradicting its own drop entry (the binding's payload was discarded with the entry's mobileValues).
-	/// Such records are reclassified into <c>droppedRequests</c> with the removal named as the reason, so
-	/// the report stays consistent and the discarded binding stays visible.
+	/// Reconciles with the element-removal passes first: a binding is recorded while the element map
+	/// is built, so an element removed AFTERWARDS — as an empty container, or by an excludedComponents
+	/// rule — would still be reported as converted/flagged, contradicting its own drop entry (the binding's
+	/// payload was discarded with the entry's mobileValues). Such records are reclassified into
+	/// <c>droppedRequests</c> with the removal named as the reason, so the report stays consistent and the
+	/// discarded binding stays visible.
 	/// </summary>
 	private static RequestConversionInfo BuildRequestConversionInfo(
 		List<ConvertedRequest> converted, List<DroppedRequest> dropped, List<FlaggedRequest> flagged,
-		HashSet<string> emptyRemovedMobileNames) {
-		const string emptyRemovedReason =
-			"its container was removed as an empty container — the binding was discarded with it";
-		for (int i = converted.Count - 1; i >= 0; i--) {
-			if (emptyRemovedMobileNames.Contains(converted[i].ElementName)) {
-				dropped.Add(new DroppedRequest {
-					ElementName = converted[i].ElementName, Binding = converted[i].Binding,
-					WebRequest = converted[i].WebRequest, Reason = emptyRemovedReason
-				});
-				converted.RemoveAt(i);
-			}
-		}
-		for (int i = flagged.Count - 1; i >= 0; i--) {
-			if (emptyRemovedMobileNames.Contains(flagged[i].ElementName)) {
-				dropped.Add(new DroppedRequest {
-					ElementName = flagged[i].ElementName, Binding = flagged[i].Binding,
-					WebRequest = flagged[i].Request, Reason = emptyRemovedReason
-				});
-				flagged.RemoveAt(i);
-			}
+		HashSet<string> emptyRemovedMobileNames, HashSet<string> excludedRemovedMobileNames) {
+		ReclassifyRemovedBindings(converted, flagged, dropped, emptyRemovedMobileNames,
+			"its container was removed as an empty container — the binding was discarded with it");
+		if (excludedRemovedMobileNames is { Count: > 0 }) {
+			ReclassifyRemovedBindings(converted, flagged, dropped, excludedRemovedMobileNames,
+				"its element was removed by an excludedComponents rule — the binding was discarded with it");
 		}
 		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0) {
 			return null;
@@ -3637,6 +3667,33 @@ public static class WebToMobileAnalysisService {
 			DroppedRequests = dropped,
 			FlaggedRequests = flagged
 		};
+	}
+
+	/// <summary>
+	/// Moves every converted/flagged record whose element one of the removal passes dropped into
+	/// <paramref name="dropped"/>, with <paramref name="reason"/> naming which pass discarded the binding.
+	/// </summary>
+	private static void ReclassifyRemovedBindings(
+		List<ConvertedRequest> converted, List<FlaggedRequest> flagged, List<DroppedRequest> dropped,
+		HashSet<string> removedMobileNames, string reason) {
+		for (int i = converted.Count - 1; i >= 0; i--) {
+			if (removedMobileNames.Contains(converted[i].ElementName)) {
+				dropped.Add(new DroppedRequest {
+					ElementName = converted[i].ElementName, Binding = converted[i].Binding,
+					WebRequest = converted[i].WebRequest, Reason = reason
+				});
+				converted.RemoveAt(i);
+			}
+		}
+		for (int i = flagged.Count - 1; i >= 0; i--) {
+			if (removedMobileNames.Contains(flagged[i].ElementName)) {
+				dropped.Add(new DroppedRequest {
+					ElementName = flagged[i].ElementName, Binding = flagged[i].Binding,
+					WebRequest = flagged[i].Request, Reason = reason
+				});
+				flagged.RemoveAt(i);
+			}
+		}
 	}
 
 	// ── Adaptive (per-breakpoint) layout proposal ──────────────────────────────────────────────

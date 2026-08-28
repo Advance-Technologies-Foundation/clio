@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.43",
-  "sequence": 1013043000,
+  "libraryVersion": "1.13.44",
+  "sequence": 1013044000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
