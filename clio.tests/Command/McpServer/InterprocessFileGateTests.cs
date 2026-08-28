@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using NUnit.Framework;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -258,5 +260,77 @@ public sealed class InterprocessFileGateTests {
 			release.Set();
 			holder.Wait(Generous);
 		}
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// Which IOExceptions are worth waiting out. These two use a SUBSTITUTE file system on purpose:
+	// the property under test is which error CODE the retry loop accepts, and the real file system
+	// cannot be asked to produce a disk-full or an ACL denial on demand. The share-mode behaviour
+	// itself stays covered by the real-file-system tests above.
+	// ---------------------------------------------------------------------------------------------
+
+	private const int SharingViolationHResult = unchecked((int)0x80070020);
+	private const int DiskFullHResult = unchecked((int)0x80070070); // ERROR_DISK_FULL
+
+	private static IFileSystem SubstituteFileSystemThatThrows(string lockPath, IOException failure) {
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.Path.GetFullPath(lockPath).Returns(lockPath);
+		fileSystem.Path.GetDirectoryName(lockPath).Returns(Path.GetDirectoryName(lockPath));
+		fileSystem.Directory.Exists(Arg.Any<string>()).Returns(true);
+		fileSystem.File
+			.Open(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
+			.Returns(_ => throw failure);
+		return fileSystem;
+	}
+
+	[Test]
+	[Description("An IOException that is NOT contention - a full disk, a denied ACL, an invalid path - propagates immediately instead of being retried: waiting cannot change any of them, and spinning to the deadline reports \"another clio process may still be using the guarded file\", which names a process that was never there.")]
+	public void Enter_ShouldPropagateImmediately_WhenTheFailureIsNotContention() {
+		// Arrange
+		string lockPath = NewLockPath();
+		IOException diskFull = new("There is not enough space on the disk.", DiskFullHResult);
+		InterprocessFileGate gate = new(SubstituteFileSystemThatThrows(lockPath, diskFull), ShortTimeout);
+		bool actionRan = false;
+
+		// Act
+		Stopwatch elapsed = Stopwatch.StartNew();
+		Action enter = () => gate.Enter(lockPath, () => actionRan = true);
+		IOException thrown = enter.Should().Throw<IOException>(
+			because: "the caller must see the real cause, not a timeout that blames a competing process")
+			.Which;
+		elapsed.Stop();
+
+		// Assert
+		thrown.Should().BeSameAs(diskFull,
+			because: "an error that no amount of waiting resolves must reach the caller unchanged");
+		thrown.Should().NotBeOfType<TimeoutException>(
+			because: "mislabelling a disk-full as lock contention sends diagnosis after a process that does not exist");
+		elapsed.Elapsed.Should().BeLessThan(ShortTimeout,
+			because: "the failure must surface on the FIRST attempt rather than after the whole retry budget is burnt");
+		actionRan.Should().BeFalse(because: "guarded work must never run without the lock");
+	}
+
+	[Test]
+	[Description("A sharing violation IS contention, so it keeps being retried to the deadline and then surfaces as the gate's single TimeoutException - the behaviour the code-filter must not regress.")]
+	public void Enter_ShouldStillRetryToTheDeadline_WhenTheFailureIsASharingViolation() {
+		// Arrange
+		string lockPath = NewLockPath();
+		IOException sharingViolation = new(
+			"The process cannot access the file because it is being used by another process.",
+			SharingViolationHResult);
+		InterprocessFileGate gate = new(SubstituteFileSystemThatThrows(lockPath, sharingViolation), ShortTimeout);
+		bool actionRan = false;
+
+		// Act
+		Action enter = () => gate.Enter(lockPath, () => actionRan = true);
+
+		// Assert
+		enter.Should().Throw<TimeoutException>(
+			because: "contention that outlives the deadline is the one case the gate translates into its own failure type")
+			.WithMessage("*another clio process*",
+				because: "for a real sharing violation that message is accurate, and it is what points the operator at the second clio")
+			.WithInnerException<IOException>(
+				because: "the original violation must stay attached as evidence of what the gate waited on");
+		actionRan.Should().BeFalse(because: "guarded work must never run without the lock");
 	}
 }

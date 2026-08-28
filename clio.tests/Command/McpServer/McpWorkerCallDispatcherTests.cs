@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -533,6 +533,47 @@ public sealed class McpWorkerCallDispatcherTests {
 		structured.GetProperty("error").GetString().Should().NotContain(
 			McpWorkerCallDispatcher.StandardErrorTailLimit.ToString(CultureInfo.InvariantCulture),
 			because: "the caveat sentence must not appear on a message whose diagnosis is whole");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A worker stderr tail carrying a credential is scrubbed before it leaves the parent, and the envelope SAYS it was scrubbed, so the elision is observable without the content travelling with it.")]
+	public void RelayFailureResult_ShouldRedactTheStandardErrorTail_AndSayItDidSo() {
+		// Arrange - the shape story 21 warns about: a connection string reaching stderr from the child.
+		McpWorkerCallDispatcher.WorkerStandardErrorTail tail = new(
+			"SqlException: login failed for data source=db-prod.internal;password=hunter2;database=creatio",
+			Truncated: false);
+
+		// Act
+		CallToolResult result = McpWorkerCallDispatcher.RelayFailureResult(
+			"get-page", "the worker relay failed", detail: null, standardErrorTail: tail);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		string surfaced = structured.GetProperty("worker-stderr").GetString();
+		surfaced.Should().NotContain("hunter2",
+			because: "a secret that reaches the agent is logged and displayed by the MCP client; the worker boundary must not be the hole that carries it there");
+		surfaced.Should().Contain("login failed",
+			because: "scrubbing must leave the diagnosis readable - a tail redacted down to nothing is the same as having dropped it");
+		structured.GetProperty("worker-stderr-redacted").GetBoolean().Should().BeTrue(
+			because: "an elision nobody can see is indistinguishable from the worker never writing the line, and sends the reader hunting in this text for a cause that was removed from it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A clean standard-error tail carries NO redaction marker, so the marker's absence stays a usable signal that the text is the worker's verbatim diagnosis.")]
+	public void RelayFailureResult_ShouldNotClaimRedaction_WhenTheTailCarriesNothingSensitive() {
+		// Arrange
+		McpWorkerCallDispatcher.WorkerStandardErrorTail tail = new(
+			"Unhandled exception: could not load appsettings", Truncated: false);
+
+		// Act
+		CallToolResult result = McpWorkerCallDispatcher.RelayFailureResult(
+			"get-page", "the worker relay failed", detail: null, standardErrorTail: tail);
+
+		// Assert
+		StructuredOf(result).TryGetProperty("worker-stderr-redacted", out JsonElement _).Should().BeFalse(
+			because: "a marker that is always present is not a marker; the agent has to be able to trust its absence");
 	}
 
 	[Test]

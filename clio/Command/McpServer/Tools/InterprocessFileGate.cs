@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -169,20 +169,44 @@ public sealed class InterprocessFileGate : IInterprocessFileGate {
 			try {
 				return _fileSystem.File.Open(
 					lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-			// Measured from when the CALLER started waiting, not from when this loop began: the monitor wait
-			// above already spent part of the budget.
-			} catch (IOException) when (Stopwatch.GetElapsedTime(startedAt) < _timeout) {
+			// ONLY contention is worth waiting out. A denied ACL, a path that is too long, a full disk or an
+			// invalid path reads the same on every retry, so spinning on one burns the whole budget and then
+			// reports "another clio process may still be using the guarded file" — which is untrue, and sends
+			// diagnosis after a process that was never there. Anything that is not contention propagates
+			// immediately and unchanged, so the caller sees the real cause.
+			} catch (IOException exception) when (IsLockContention(exception)) {
+				// Measured from when the CALLER started waiting, not from when this loop began: the monitor wait
+				// above already spent part of the budget.
+				if (Stopwatch.GetElapsedTime(startedAt) >= _timeout) {
+					// The deadline expired while the handle was still held elsewhere. Translate rather than
+					// letting the raw IOException escape, so every caller sees one failure type for "the lock
+					// was not available" regardless of which of the two layers ran out of time.
+					throw new TimeoutException(
+						$"Timed out waiting for the file lock '{lockFilePath}'. Another clio process may still be using the guarded file.",
+						exception);
+				}
 				Thread.Sleep(SpinMilliseconds);
-			} catch (IOException exception) {
-				// The deadline expired while the handle was still held elsewhere. Translate rather than
-				// letting the raw IOException escape, so every caller sees one failure type for "the lock
-				// was not available" regardless of which of the two layers ran out of time.
-				throw new TimeoutException(
-					$"Timed out waiting for the file lock '{lockFilePath}'. Another clio process may still be using the guarded file.",
-					exception);
 			}
 		}
 	}
+
+	// Windows surfaces a conflicting FileShare.None open as ERROR_SHARING_VIOLATION (32) or
+	// ERROR_LOCK_VIOLATION (33), wrapped into an HRESULT under FACILITY_WIN32.
+	private const int ErrorSharingViolationHResult = unchecked((int)0x80070020);
+	private const int ErrorLockViolationHResult = unchecked((int)0x80070021);
+
+	// On Unix the exclusive open goes through flock(LOCK_EX | LOCK_NB) and .NET carries the RAW errno in
+	// HResult, so the contention code is EWOULDBLOCK/EAGAIN — 11 on Linux, 35 on macOS/BSD. EACCES is
+	// deliberately NOT listed: on Unix that is a permissions failure, which is exactly the class of error
+	// this filter exists to stop retrying.
+	private const int UnixErrorAgainLinux = 11;
+	private const int UnixErrorAgainBsd = 35;
+
+	private static bool IsLockContention(IOException exception) =>
+		exception.HResult is ErrorSharingViolationHResult
+			or ErrorLockViolationHResult
+			or UnixErrorAgainLinux
+			or UnixErrorAgainBsd;
 
 	private void EnsureLockDirectory(string lockFilePath) {
 		string directory = _fileSystem.Path.GetDirectoryName(lockFilePath);

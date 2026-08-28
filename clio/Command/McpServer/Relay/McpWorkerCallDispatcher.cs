@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -662,7 +662,16 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		if (!CarriesStandardError(standardErrorTail)) {
 			return;
 		}
-		payload["worker-stderr"] = SensitiveErrorTextRedactor.Redact(standardErrorTail.Text);
+		string redactedText = SensitiveErrorTextRedactor.Redact(standardErrorTail.Text);
+		payload["worker-stderr"] = redactedText;
+		if (!string.Equals(redactedText, standardErrorTail.Text, StringComparison.Ordinal)) {
+			// The elision itself has to be observable, or it is indistinguishable from the worker never having
+			// written the line. A reader who sees worker-stderr with NO marker can take it as the worker's
+			// verbatim diagnosis; a reader who sees the marker knows a credential-shaped run was replaced and
+			// stops hunting in this text for a cause that was removed from it. The marker says THAT something
+			// was removed, never what — the content is exactly what must not travel.
+			payload["worker-stderr-redacted"] = true;
+		}
 		if (!standardErrorTail.Truncated) {
 			// Deliberately absent rather than false: an agent has to be able to read "no marker" as "this is
 			// the worker's whole diagnosis", and a field that is always there says nothing by being there.
