@@ -9,10 +9,7 @@ using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
-/// <summary>
-/// Stand-free end-to-end contract tests for the run-process MCP tool: discoverability, the destructive
-/// flag it is advertised with, and the failure envelope. None of these reach a Creatio instance.
-/// </summary>
+// These reach the real MCP server but never a Creatio instance, so they need no stand.
 [TestFixture]
 [AllureNUnit]
 [AllureFeature(RunProcessTool.ToolName)]
@@ -81,10 +78,7 @@ public sealed class RunProcessContractToolE2ETests : McpContractFixtureBase {
 			because: "the call was rejected before launch, so there is no run state to report");
 	}
 
-	/// <summary>
-	/// Dispatches run-process through <c>clio-run</c>. The tool is not advertised in <c>tools/list</c> (it is
-	/// long tail), so an executor is how a caller reaches it.
-	/// </summary>
+	// Dispatched through clio-run because the tool is not advertised in tools/list.
 	internal static async Task<RunProcessEnvelope> ActAsync(
 		ArrangeContext arrangeContext,
 		string processName,

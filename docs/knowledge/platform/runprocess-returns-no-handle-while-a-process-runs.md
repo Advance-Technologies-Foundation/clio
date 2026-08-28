@@ -27,4 +27,4 @@ a write per element on a long run. Neither is a contract the service exposes mid
 **What breaks if you ignore it** — any promise to hand back a `processId` when answering before Creatio
 does. There is no source to read it from: a newest-row-by-timestamp lookup silently picks another
 caller's run, and a before/after set diff finds nothing because no row exists yet. `run-process` therefore
-answers `status: accepted-still-running` with `processId: null` and says so.
+answers `status: still-running` with `processId: null` and says so.

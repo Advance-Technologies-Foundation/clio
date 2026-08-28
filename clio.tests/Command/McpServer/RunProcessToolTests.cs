@@ -17,10 +17,6 @@ using ProcessModelType = Clio.Command.ProcessModel.ProcessModel;
 
 namespace Clio.Tests.Command.McpServer;
 
-/// <summary>
-/// Covers the <c>run-process</c> tool and the command behind it: pre-call parameter validation, the
-/// projection of the platform response onto the tool contract, and the MCP response-deadline branch.
-/// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class RunProcessToolTests {
@@ -347,7 +343,7 @@ public sealed class RunProcessToolTests {
 	[Description("TryRun's return value tracks the run OUTCOME, not merely that a request was sent: a refusal and a failed run must not be reported as a launch, because the value feeds Execute's exit code.")]
 	public void TryRun_Should_Return_False_When_The_Platform_Refused_Or_The_Run_Failed() {
 		// Arrange
-		Harness refused = BuildHarness(MigratorSignature(),
+		Harness notStarted = BuildHarness(MigratorSignature(),
 			"""
 			{"processId":"00000000-0000-0000-0000-000000000000","processStatus":0,"success":false,
 			 "errorInfo":{"errorCode":"ProcessCannotBeManuallyStartedException","message":"no manual start"}}
@@ -357,12 +353,12 @@ public sealed class RunProcessToolTests {
 		Harness completed = BuildHarness(MigratorSignature());
 
 		// Act
-		bool refusedResult = refused.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
+		bool notStartedResult = notStarted.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
 		bool failedResult = failed.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
 		bool completedResult = completed.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
 
 		// Assert
-		refusedResult.Should().BeFalse(because: "nothing was started, so exiting 0 would misreport the run");
+		notStartedResult.Should().BeFalse(because: "nothing was started, so exiting 0 would misreport the run");
 		failedResult.Should().BeFalse(
 			because: "the run finished with the error status, which must not exit 0 just because the platform "
 				+ "answered success=true");
@@ -448,7 +444,7 @@ public sealed class RunProcessToolTests {
 		RunProcessResponse response = RunProcessCommand.Project(platform, ProcessCode);
 
 		// Assert
-		response.Status.Should().Be("refused",
+		response.Status.Should().Be("not-started",
 			because: "reading only the empty id and the zero status would report this refusal as a successful "
 				+ "background launch — success/errorInfo are the only things that tell the two apart");
 		response.Error.Should().NotBeNullOrWhiteSpace(because: "nothing was started, and the caller must learn why");
@@ -529,7 +525,7 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A run that outlives the MCP response deadline is answered with mode 'accepted-still-running' and no process id: the platform exposes no handle for an in-flight synchronous run.")]
+	[Description("A run that outlives the MCP response deadline is answered with status 'still-running' and no process id: the platform exposes no handle for an in-flight synchronous run.")]
 	public async Task RunProcess_Should_Report_AcceptedStillRunning_When_The_Response_Deadline_Is_Reached() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -548,7 +544,7 @@ public sealed class RunProcessToolTests {
 			new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
 
 		// Assert
-		response.Status.Should().Be("accepted-still-running",
+		response.Status.Should().Be("still-running",
 			because: "answering before Creatio does is not a failure and not a success");
 		response.Error.Should().BeNull(because: "the launch itself was accepted");
 		response.ProcessId.Should().BeNull(

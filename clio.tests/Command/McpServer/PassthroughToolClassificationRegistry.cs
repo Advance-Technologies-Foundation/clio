@@ -363,7 +363,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
-			["run-process"] = PassthroughClassification.NotApplicable, // ENG-95791 runtime process launch; resolves its command through IToolCommandResolver like the rest of the ProcessDesigner family (class a), not part of the ENG-93347 passthrough audit
+			["run-process"] = PassthroughClassification.NotApplicable,
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-logo"] = PassthroughClassification.NotApplicable,

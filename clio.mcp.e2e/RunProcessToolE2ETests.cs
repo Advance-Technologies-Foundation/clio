@@ -8,9 +8,7 @@ using FluentAssertions;
 
 namespace Clio.Mcp.E2E;
 
-/// <summary>
-/// End-to-end tests for the run-process MCP tool against a live sandbox stand.
-/// </summary>
+// These need a live stand; configure Sandbox:EnvironmentName or they skip.
 [TestFixture]
 [AllureNUnit]
 [AllureFeature(RunProcessTool.ToolName)]
@@ -19,13 +17,8 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RunProcessTool.ToolName;
 
-	/// <summary>
-	/// The process this fixture launches, pinned rather than read from <c>Sandbox.ProcessCode</c>. It takes
-	/// one Input and returns one Output, has no side effects and calls nothing external, so the launch
-	/// assertion can check an exact returned VALUE instead of only a status string. A configurable process
-	/// cannot do that: the fixture would not know what to expect back, which is how a launch test ends up
-	/// passing against a process that never launched.
-	/// </summary>
+	// Pinned rather than read from Sandbox.ProcessCode: with a configurable process the fixture cannot know
+	// what to expect back, so the launch test passes on any status - including one where nothing ran.
 	private const string ProcessCode = "TrimHtml";
 
 	private const string InputParameter = "InputText";
