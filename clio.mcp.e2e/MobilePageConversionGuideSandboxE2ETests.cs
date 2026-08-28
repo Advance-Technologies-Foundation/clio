@@ -576,15 +576,20 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// same parent is invisible in Mobile Designer and its whole subtree is lost from the converted page.
 	/// Derived from the serialized guide alone, deliberately NOT by calling the converter's own detection pass,
 	/// so this re-states the invariant over the real transport instead of re-running the implementation.
+	/// <para>
+	/// The strip set is SEEDED with the tabbed mobile template's own strip name, exactly as the unit-level
+	/// statement of this invariant does. Deriving it from converted tabs ALONE makes the check vacuous on the
+	/// very page shape the ticket reported — a page whose only tab is the template's general one authors no
+	/// <c>crt.TabContainer</c> insert, so the set would come back empty and the loss would pass unseen.
+	/// </para>
 	/// </summary>
 	private static void AssertNoNonTabChildOfATabStrip(MobilePageConversionGuide guide, string schemaName) {
-		HashSet<string> strips = [
-			.. guide.ElementMap
-				.Where(e => e.Operation == "insert"
-					&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)
-					&& e.ParentName is { Length: > 0 })
-				.Select(e => e.ParentName!)
-		];
+		HashSet<string> strips = new(StringComparer.OrdinalIgnoreCase) { MobileTabsElementName };
+		strips.UnionWith(guide.ElementMap
+			.Where(e => e.Operation == "insert"
+				&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)
+				&& e.ParentName is { Length: > 0 })
+			.Select(e => e.ParentName!));
 		List<ElementMapEntry> offenders = [
 			.. guide.ElementMap.Where(e => e.Operation == "insert"
 				&& e.ParentName is { Length: > 0 }
@@ -602,6 +607,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 
 	/// <summary>Mobile component type of a single tab; only this type may be a child of a crt.TabPanel.</summary>
 	private const string MobileTabComponentType = "crt.TabContainer";
+
+	/// <summary>The tabbed mobile template's own tab strip, which is a strip whether or not a tab converts.</summary>
+	private const string MobileTabsElementName = "Tabs";
 
 	[Test]
 	[Description("Non-vacuous guard for container types OUTSIDE emptyContainerRemoval.removableTypes: converts seeded pages until one yields a surviving parent-targeted insert whose mobileType the empty-container-removal pass never lists (a crt.Button carrying menuItems children, a crt.Timeline, a crt.ButtonToggleGroup, …), then asserts the slot it is targeted through is declared and the differ applies cleanly — the slot declaration is keyed on 'used as parent through this slot', never on a type list, and a type-list-keyed regression would silently reintroduce exactly this case. The type-list independence itself is additionally pinned off-stand, on every unit run, by WebToMobileConversionServiceTests.Analyze_ContainerTypesOutsideEveryList_StillGetItemsSlot; this test is its full-MCP-path counterpart. When NO seeded page carries such a container it IGNORES with an explicit seed instruction instead of passing silently; a conversion failure always fails the test.")]

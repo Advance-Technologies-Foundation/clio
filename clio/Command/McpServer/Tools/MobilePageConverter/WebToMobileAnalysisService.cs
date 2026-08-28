@@ -3709,9 +3709,12 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, int> gridContainerColumns) {
 		// Grid-container column counts are captured under the WEB container name, but children carry the MOBILE
 		// parent name in their element-map entries — a merge twin or relocated wrapper renames the container
-		// (e.g. GeneralInfoTabContainer -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
+		// (e.g. CardContentWrapper -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
 		// Translate each count to the container's mobile name via its element-map entry so the lookup below
 		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
+		// LAST WINS on a duplicate mobile name, which `containers` allows by design. Harmless as shipped: only
+		// a GRID container has a captured count, so a tab twin (GeneralInfoTab, a crt.TabContainer) never
+		// competes here — but a future many-to-one pair of two GRIDS would need an explicit tie-break.
 		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry e in elementMap) {
 			if (e.WebName is { Length: > 0 } && gridContainerColumns.TryGetValue(e.WebName, out int cols)) {

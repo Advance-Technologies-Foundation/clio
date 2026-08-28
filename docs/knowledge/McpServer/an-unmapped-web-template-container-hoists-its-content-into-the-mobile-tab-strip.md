@@ -26,11 +26,17 @@ entry for `GeneralInfoTabContainer` — a second web name on the same mobile nam
 every by-`MobileName` lookup ambiguous (`containers` is already many-to-one: `CardContentWrapper` also
 targets `GeneralTabContainer`).
 
-**Residual gap, deliberately not closed here:** at the TAB level only the general tab is mapped. The
-Feed and Attachments tabs are covered only through their *containers* (`FeedTabContainer` →
-`FeedContainer`, `AttachmentsTabContainer` → `AttachmentsContainer`), which works because those
-containers are themselves twins. A page that puts its own content directly under web `FeedTab` /
-`AttachmentsTab`, beside the container, reproduces ENG-94951 verbatim.
+**All three tabs of `PageWithTabsFreedomTemplate` are mapped, under the names the WEB template
+actually uses.** Its tab elements are `GeneralInfoTab`, `FeedTabContainer` and
+`AttachmentsTabContainer` — all three `crt.TabContainer`, all three mapped. There are no web
+elements named `FeedTab` / `AttachmentsTab`: those exist only on the MOBILE template
+(`MobilePageWithTabsFreedomTemplate`), where the tab and its content grid are separate elements.
+Do not reason about a residual gap for a web `FeedTab`; it has no such element.
+
+The residual exposure is therefore not in this template but in the general rule: ANY web-template
+container inside a `crt.TabPanel`, in this or a future template family, that reaches the rules file
+without a `containers` entry reproduces ENG-94951 verbatim. That is what
+`CollectNonTabChildrenOfTabPanels` reports.
 
 **Why it is this way** — chrome subtraction is name-based and has no notion of which mobile parent can
 legally host which child; only the rules know a web container's mobile counterpart. Hoisting is the
@@ -44,6 +50,17 @@ identity must not. The page-business-rule survivor map is the one that must not:
 `IsTabToContentContainerTwin` guarding it, "hide `GeneralInfoTab`" converts into "hide
 `GeneralTabContainer`", blanking the tab's body while leaving its header in the strip — an explicit
 `droppedRules` entry turned into a silent wrong conversion.
+
+`IsTabToContentContainerTwin` keys on the twin's SHAPE (a `merge` whose web type is
+`crt.TabContainer` and whose mobile name differs), not on the general tab's name, so it covers
+`FeedTabContainer` → `FeedContainer` and `AttachmentsTabContainer` → `AttachmentsContainer` too.
+That is intentional and it is a behaviour CHANGE beyond ENG-94951's own symptom: before the ticket a
+page rule targeting the web Feed tab was retargeted onto the mobile Feed tab's body; now it is
+reported in `droppedRules`. The identity argument is identical for all three, and a name-keyed
+exclusion would have left two silent wrong conversions behind. Pinned by
+`ConvertPageBusinessRules_FeedTabToContentContainerTwin_DropsRuleForTheSameReason`, with the two
+over-correction guards beside it (a same-name tab twin, and a renaming NON-tab twin, both still
+convert).
 
 **What breaks if you ignore it** — the failure is SILENT end to end. Unit coverage did not catch the
 missing `GeneralInfoTab` entry because `WebToMobileConversionServiceTests` hands the analyzer a

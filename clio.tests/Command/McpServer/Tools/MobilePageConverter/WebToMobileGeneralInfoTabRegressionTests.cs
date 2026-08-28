@@ -312,14 +312,12 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	/// calling the converter's own pass, so this re-states the invariant instead of re-running the implementation.
 	/// </summary>
 	private static IReadOnlyList<ElementMapEntry> NonTabChildrenOfTabStrips(MobilePageConversionGuide guide) {
-		HashSet<string> strips = [
-			.. guide.ElementMap
-				.Where(e => e.Operation == "insert"
-					&& string.Equals(e.MobileType, "crt.TabContainer", StringComparison.OrdinalIgnoreCase)
-					&& !string.IsNullOrEmpty(e.ParentName))
-				.Select(e => e.ParentName)
-		];
-		strips.Add(MobileTabsPanel);
+		HashSet<string> strips = new(StringComparer.OrdinalIgnoreCase) { MobileTabsPanel };
+		strips.UnionWith(guide.ElementMap
+			.Where(e => e.Operation == "insert"
+				&& string.Equals(e.MobileType, "crt.TabContainer", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrEmpty(e.ParentName))
+			.Select(e => e.ParentName));
 		return [.. guide.ElementMap.Where(e => e.Operation == "insert"
 			&& !string.IsNullOrEmpty(e.ParentName)
 			&& strips.Contains(e.ParentName)

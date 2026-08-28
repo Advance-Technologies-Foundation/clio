@@ -2326,6 +2326,98 @@ public sealed class WebToMobileConversionServiceTests {
 			.Select(n => n!.GetValue<string>()).Should().Equal("Feed");
 	}
 
+	/// <summary>
+	/// A <c>containers</c> twin that pairs a web TAB with the mobile tab's CONTENT container, as the shipped
+	/// tabbed rule does for <c>GeneralInfoTab</c>, <c>FeedTabContainer</c> and <c>AttachmentsTabContainer</c>.
+	/// The web side is always a <c>crt.TabContainer</c>; the mobile side is the grid inside that tab.
+	/// </summary>
+	private static ElementMapEntry TabToContentTwin(string web, string mobile) =>
+		new() { WebName = web, WebType = "crt.TabContainer", Operation = "merge", MobileName = mobile };
+
+	[Test]
+	[Description("ENG-94951: a containers twin pairing a web TAB with the mobile tab's CONTENT container is a PLACEMENT map, not an identity map, so a page business rule targeting the TAB is DROPPED rather than silently retargeted onto the tab's body.")]
+	public void ConvertPageBusinessRules_TabToContentContainerTwin_DropsRuleInsteadOfRetargetingOntoTheTabBody() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide general info", ElementAction("hide-element", "GeneralInfoTab")));
+		var elementMap = new List<ElementMapEntry> { TabToContentTwin("GeneralInfoTab", "GeneralTabContainer") };
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.ConvertedRules.Should().BeEmpty(
+			because: "on mobile GeneralInfoTab (the crt.TabContainer with its header) and GeneralTabContainer "
+				+ "(the crt.GridContainer inside it) are DIFFERENT elements — emitting 'hide GeneralTabContainer' "
+				+ "would blank the tab's body while leaving its header in the strip, a wrong conversion nobody sees");
+		result.DroppedRules.Should().ContainSingle(r => r.Caption == "Hide general info",
+			because: "an explicit loss the user can act on is the correct outcome when the mobile element the "
+				+ "rule means has no entry of its own");
+	}
+
+	[Test]
+	[Description("ENG-94951 scope pin: the tab-to-content exclusion is a property of the twin SHAPE, not of the general tab — FeedTabContainer -> FeedContainer is the same shape and a rule targeting it drops too. Deliberate: this widens the pre-ENG-94951 behaviour, where such a rule was retargeted onto the tab's body.")]
+	public void ConvertPageBusinessRules_FeedTabToContentContainerTwin_DropsRuleForTheSameReason() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the feed tab", ElementAction("hide-element", "FeedTabContainer")));
+		var elementMap = new List<ElementMapEntry> { TabToContentTwin("FeedTabContainer", "FeedContainer") };
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.ConvertedRules.Should().BeEmpty(
+			because: "the shipped rules pair the web Feed TAB with the mobile Feed tab's content grid exactly as "
+				+ "they pair GeneralInfoTab with GeneralTabContainer, so the same identity argument applies");
+		result.DroppedRules.Should().ContainSingle(r => r.Caption == "Hide the feed tab",
+			because: "reporting the loss is right; retargeting the tab's header onto its body is not");
+	}
+
+	[Test]
+	[Description("ENG-94951 over-correction guard: only a TAB twin whose mobile name DIFFERS is excluded. A same-name tab twin still identifies one element, so a rule targeting it must keep converting.")]
+	public void ConvertPageBusinessRules_SameNameTabTwin_StillConverts() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the tab", ElementAction("hide-element", "UsrTab")));
+		var elementMap = new List<ElementMapEntry> { TabToContentTwin("UsrTab", "UsrTab") };
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.DroppedRules.Should().BeEmpty(
+			because: "a twin that keeps the name pairs the element with ITSELF — there is no second mobile "
+				+ "element the action could be silently redirected to");
+		result.ConvertedRules.Should().ContainSingle(
+			because: "the tab survives on mobile under the same name, so the rule survives with it");
+	}
+
+	[Test]
+	[Description("ENG-94951 over-correction guard: a NON-tab renaming twin (SideAreaProfileContainer -> AreaProfileContainer, a crt.GridContainer pair) is an ordinary identity twin and must keep converting — the exclusion must not swallow every renaming merge.")]
+	public void ConvertPageBusinessRules_NonTabRenamingTwin_StillConverts() {
+		// Arrange
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Hide the profile", ElementAction("hide-element", "SideAreaProfileContainer")));
+		var elementMap = new List<ElementMapEntry> {
+			new() {
+				WebName = "SideAreaProfileContainer", WebType = "crt.GridContainer",
+				Operation = "merge", MobileName = "AreaProfileContainer"
+			}
+		};
+
+		// Act
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		// Assert
+		result.DroppedRules.Should().BeEmpty(
+			because: "the profile island is ONE element that the mobile template merely names differently — "
+				+ "nothing about it is a tab-header/tab-body split");
+		result.ConvertedRules[0].Rule!["actions"]!.AsArray()[0]!["items"]!.AsArray()
+			.Select(n => n!.GetValue<string>()).Should().Equal(["AreaProfileContainer"],
+				because: "an identity twin is exactly what the survivor map exists to remap");
+	}
+
 	[Test]
 	[Description("A rule whose condition mixes AND and OR across nested groups is dropped (the flat single-operator condition input cannot represent it), even when its actions would otherwise survive.")]
 	public void ConvertPageBusinessRules_MixedAndOrCondition_DropsRule() {
