@@ -119,9 +119,9 @@ internal static class ODataFieldValidation {
 		}
 
 		// The metadata endpoint did not yield a usable type definition (unsupported, empty,
-		// non-XML, or a recognized error). Degrade to the $select probe for NAME validation;
-		// the lookup value check is skipped on this path because the reference-ID set is unknown
-		// (a plain GUID column set to the empty GUID must not be rejected on a guess).
+		// non-XML, or a recognized error). Degrade to the $select probe for name validation.
+		// The lookup value check is skipped on this path, because the reference-ID set is
+		// unknown (a plain GUID column set to the empty GUID must not be rejected on a guess).
 		return ValidateBySelectProbe(client, urlBuilder, entity, id, keys);
 	}
 
@@ -159,7 +159,7 @@ internal static class ODataFieldValidation {
 			// definition resolves the validation; any other parse outcome leaves the fields
 			// unverified (the fallback probe then decides what it can).
 			try {
-				(CSDLType? type, HashSet<string> referenceIds) = ParseCSDLEntity(body, entity);
+				(CsdlType? type, HashSet<string> referenceIds) = ParseCSDLEntity(body, entity);
 				if (type is not null) {
 					return new EntityMetadata(true, type.Properties, referenceIds, null, null);
 				}
@@ -187,7 +187,7 @@ internal static class ODataFieldValidation {
 	/// included - both are legal <c>$select</c> members) and its base type name for inheritance
 	/// resolution.
 	/// </summary>
-	private sealed record CSDLType(string Name, string? BaseType, HashSet<string> Properties,
+	private sealed record CsdlType(string Name, string? BaseType, HashSet<string> Properties,
 		HashSet<string> PartnerReferenceIds);
 
 	/// <summary>
@@ -197,9 +197,9 @@ internal static class ODataFieldValidation {
 	/// inheritance chain), or <c>(null, empty set)</c> when the document carries no
 	/// <c>EntityType</c> matching the entity name.
 	/// </summary>
-	private static (CSDLType? Type, HashSet<string> ReferenceIds) ParseCSDLEntity(string body, string entity) {
-		Dictionary<string, CSDLType> types = ParseCSDLTypes(body);
-		if (!TryResolveEntity(types, entity, out CSDLType? target)) {
+	private static (CsdlType? Type, HashSet<string> ReferenceIds) ParseCSDLEntity(string body, string entity) {
+		Dictionary<string, CsdlType> types = ParseCSDLTypes(body);
+		if (!TryResolveEntity(types, entity, out CsdlType? target)) {
 			return (null, []);
 		}
 		HashSet<string> referenceIds = [];
@@ -212,47 +212,80 @@ internal static class ODataFieldValidation {
 	/// Navigation properties are recorded twice: as legal member names (selectable) and, when
 	/// they declare a <c>Partner</c> reference property, as reference-ID names.
 	/// </summary>
-	private static Dictionary<string, CSDLType> ParseCSDLTypes(string body) {
-		Dictionary<string, CSDLType> types = new(StringComparer.Ordinal);
+	private static Dictionary<string, CsdlType> ParseCSDLTypes(string body) {
+		Dictionary<string, CsdlType> types = new(StringComparer.Ordinal);
 		XmlReaderSettings settings = new() { IgnoreComments = true, IgnoreWhitespace = true, DtdProcessing = DtdProcessing.Prohibit };
 		string? currentTypeName = null;
 		using XmlReader reader = XmlReader.Create(new StringReader(body), settings);
 		while (reader.Read()) {
-			if (reader.NodeType == XmlNodeType.Element) {
-				if (reader.LocalName == "EntityType" && reader.GetAttribute("Name") is string name) {
-					currentTypeName = name;
-					types[name] = new CSDLType(name, reader.GetAttribute("BaseType"), [], []);
-				}
-				else if (currentTypeName is not null && types.TryGetValue(currentTypeName, out CSDLType? type)) {
-					if (reader.LocalName == "Property" && reader.GetAttribute("Name") is string propName) {
-						type.Properties.Add(propName);
-					}
-					else if (reader.LocalName == "NavigationProperty") {
-						if (reader.GetAttribute("Name") is string navName) {
-							type.Properties.Add(navName);
-						}
-						if (reader.GetAttribute("Partner") is string partner) {
-							type.PartnerReferenceIds.Add(partner);
-						}
-					}
-					else if (reader.LocalName is "ComplexType" or "EntityContainer") {
-						// Leaves the EntityType scope: nested elements belong to another construct.
-						currentTypeName = null;
-					}
-				}
-			}
-			else if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "EntityType") {
-				currentTypeName = null;
-			}
+			DispatchNode(reader, types, ref currentTypeName);
 		}
 		return types;
+	}
+
+	/// <summary>
+	/// Dispatches one reader node into the <paramref name="types"/> map: an <c>EntityType</c>
+	/// opens a new entry, its closing tag ends the current scope, and any other element inside the
+	/// current type is a member handled by <see cref="RecordMember"/>.
+	/// </summary>
+	private static void DispatchNode(XmlReader reader, Dictionary<string, CsdlType> types, ref string? currentTypeName) {
+		if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "EntityType") {
+			currentTypeName = null;
+			return;
+		}
+		if (reader.NodeType != XmlNodeType.Element) {
+			return;
+		}
+		if (reader.LocalName == "EntityType" && reader.GetAttribute("Name") is string name) {
+			currentTypeName = name;
+			types[name] = new CsdlType(name, reader.GetAttribute("BaseType"), [], []);
+			return;
+		}
+		if (currentTypeName is null || !types.TryGetValue(currentTypeName, out CsdlType? type)) {
+			return;
+		}
+		RecordMember(reader, type, ref currentTypeName);
+	}
+
+	/// <summary>
+	/// Records one element that belongs to the <paramref name="type"/> currently being read: a
+	/// <c>Property</c> contributes its name to the property set, a <c>NavigationProperty</c> is
+	/// recorded by <see cref="RecordNavigationProperty"/>, and a <c>ComplexType</c>/<c>EntityContainer</c>
+	/// ends the entity scope (the nested elements then belong to another construct).
+	/// </summary>
+	private static void RecordMember(XmlReader reader, CsdlType type, ref string? currentTypeName) {
+		if (reader.LocalName == "Property" && reader.GetAttribute("Name") is string propName) {
+			type.Properties.Add(propName);
+			return;
+		}
+		if (reader.LocalName == "NavigationProperty") {
+			RecordNavigationProperty(reader, type);
+			return;
+		}
+		if (reader.LocalName is "ComplexType" or "EntityContainer") {
+			// Leaves the EntityType scope: nested elements belong to another construct.
+			currentTypeName = null;
+		}
+	}
+
+	/// <summary>
+	/// Records a navigation property's name (a legal <c>$select</c> member) and, when it declares a
+	/// <c>Partner</c> reference property, that reference-ID name as well.
+	/// </summary>
+	private static void RecordNavigationProperty(XmlReader reader, CsdlType type) {
+		if (reader.GetAttribute("Name") is string navName) {
+			type.Properties.Add(navName);
+		}
+		if (reader.GetAttribute("Partner") is string partner) {
+			type.PartnerReferenceIds.Add(partner);
+		}
 	}
 
 	/// <summary>
 	/// Finds the entity type, tolerating case (the entity set name is what the caller supplied;
 	/// the CSDL carries the type's canonical casing) and reporting the single match.
 	/// </summary>
-	private static bool TryResolveEntity(Dictionary<string, CSDLType> types, string entity, out CSDLType? target) {
+	private static bool TryResolveEntity(Dictionary<string, CsdlType> types, string entity, out CsdlType? target) {
 		target = types.Values.FirstOrDefault(type =>
 			string.Equals(type.Name, entity.Trim(), StringComparison.OrdinalIgnoreCase));
 		return target is not null;
@@ -264,8 +297,8 @@ internal static class ODataFieldValidation {
 	/// <paramref name="referenceIds"/>.
 	/// </summary>
 	private static void CollectInherited(
-		CSDLType type,
-		Dictionary<string, CSDLType> types,
+		CsdlType type,
+		Dictionary<string, CsdlType> types,
 		List<string> visited,
 		HashSet<string> referenceIds) {
 		if (visited.Contains(type.Name)) {
@@ -275,7 +308,7 @@ internal static class ODataFieldValidation {
 		foreach (string partner in type.PartnerReferenceIds) {
 			referenceIds.Add(partner);
 		}
-		if (type.BaseType is not null && types.TryGetValue(type.BaseType, out CSDLType? baseType)) {
+		if (type.BaseType is not null && types.TryGetValue(type.BaseType, out CsdlType? baseType)) {
 			CollectInherited(baseType, types, visited, referenceIds);
 			type.Properties.UnionWith(baseType.Properties);
 		}

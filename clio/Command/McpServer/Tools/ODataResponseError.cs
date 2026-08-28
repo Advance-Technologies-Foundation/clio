@@ -44,6 +44,12 @@ internal static class ODataResponseError {
 		+ "shape. Whether the change was actually applied is unverified; confirm with odata-read before retrying.";
 
 	/// <summary>
+	/// Case-insensitive JSON property name carrying a free-text message, shared across the ASP.NET
+	/// exception and routing-error detectors and the non-member guards, so it is defined once.
+	/// </summary>
+	private const string MessagePropertyName = "Message";
+
+	/// <summary>
 	/// Builds the failure text for a write response body that failed to parse as JSON.
 	/// </summary>
 	internal static string DescribeNonJsonResponse(string body) =>
@@ -106,7 +112,7 @@ internal static class ODataResponseError {
 		if (HasNonAspNetErrorMembers(root)) {
 			return false;
 		}
-		message = First(root, "ExceptionMessage", "Message") ?? "Creatio returned a server error.";
+		message = First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error.";
 		return true;
 	}
 
@@ -126,7 +132,7 @@ internal static class ODataResponseError {
 	// carries the same guard (HasNonAspNetErrorMembers) for the same reason.
 	private static bool TryDetectRoutingError(JsonElement root, out string message) {
 		message = string.Empty;
-		if (!(root.TryGetProperty("Message", out JsonElement bareMessage)
+		if (!(root.TryGetProperty(MessagePropertyName, out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
 			&& !HasNonRoutingErrorMembers(root))) {
 			return false;
@@ -167,7 +173,7 @@ internal static class ODataResponseError {
 	/// </summary>
 	private static bool HasNonRoutingErrorMembers(JsonElement root) =>
 		root.EnumerateObject().Any(property =>
-			!property.NameEquals("Message") && !property.NameEquals("MessageDetail"));
+			!property.NameEquals(MessagePropertyName) && !property.NameEquals("MessageDetail"));
 
 	/// <summary>
 	/// Returns true when the object carries any member other than the ASP.NET HttpError keys
@@ -179,7 +185,7 @@ internal static class ODataResponseError {
 	/// </summary>
 	private static bool HasNonAspNetErrorMembers(JsonElement root) =>
 		root.EnumerateObject().Any(property =>
-			!property.NameEquals("Message")
+			!property.NameEquals(MessagePropertyName)
 			&& !property.NameEquals("MessageDetail")
 			&& !property.NameEquals("ExceptionMessage")
 			&& !property.NameEquals("ExceptionType")
