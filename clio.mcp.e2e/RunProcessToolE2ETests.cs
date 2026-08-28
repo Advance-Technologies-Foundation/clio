@@ -19,19 +19,19 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RunProcessTool.ToolName;
 
-	/// <summary>The statuses that come from the platform's own scale.</summary>
-	private static readonly string[] PlatformStatuses = [
-		"completed", "error", "cancelled", "cancelling", "running", "inactive"
-	];
-
 	/// <summary>
-	/// Every status a live launch may legitimately report — the platform's own plus the three its scale
-	/// cannot express. The assertion pins the vocabulary rather than one expected verdict, because which
-	/// process the sandbox is configured with is not this test's business.
+	/// The process this fixture launches, pinned rather than read from <c>Sandbox.ProcessCode</c>. It takes
+	/// one Input and returns one Output, has no side effects and calls nothing external, so the launch
+	/// assertion can check an exact returned VALUE instead of only a status string. A configurable process
+	/// cannot do that: the fixture would not know what to expect back, which is how a launch test ends up
+	/// passing against a process that never launched.
 	/// </summary>
-	private static readonly string[] LaunchStatuses = [
-		.. PlatformStatuses, "queued-background", "refused", "accepted-still-running"
-	];
+	private const string ProcessCode = "TrimHtml";
+
+	private const string InputParameter = "InputText";
+	private const string OutputParameter = "OutputText";
+	private const string InputValue = "<b>hello</b> <i>world</i>";
+	private const string ExpectedOutput = "hello world";
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
@@ -48,9 +48,8 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 		}
 
 		string? environmentName = settings.Sandbox.EnvironmentName;
-		string? processCode = settings.Sandbox.ProcessCode;
-		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ProcessCode to run run-process E2E.");
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run run-process E2E.");
 		}
 
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
@@ -62,14 +61,15 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 		// Act
 		RunProcessEnvelope envelope = await RunProcessContractToolE2ETests.ActAsync(
 			arrangeContext,
-			processCode!,
+			ProcessCode,
 			environmentName!,
 			new Dictionary<string, object?> { ["ThisParameterDoesNotExist"] = "x" });
 
 		// Assert
-		envelope.Error.Should().NotBeNullOrWhiteSpace(
-			because: "an unknown parameter code is a hard error — the platform would silently drop the value, "
-				+ "and the rejection must name the accepted codes so the caller can correct the call");
+		envelope.Error.Should().Contain(InputParameter,
+			because: "an unknown parameter code is a hard error — the platform would silently drop the value — "
+				+ "and the rejection must ENUMERATE the codes the process really accepts, which is the half "
+				+ "that lets a caller correct the call rather than guess again");
 		envelope.Status.Should().BeNull(
 			because: "the call was rejected before launch, so there is no run state to report");
 		envelope.ProcessId.Should().BeNull(
@@ -91,9 +91,8 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 		}
 
 		string? environmentName = settings.Sandbox.EnvironmentName;
-		string? processCode = settings.Sandbox.ProcessCode;
-		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ProcessCode to run run-process E2E.");
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run run-process E2E.");
 		}
 
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
@@ -104,17 +103,26 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 
 		// Act
 		RunProcessEnvelope envelope = await RunProcessContractToolE2ETests.ActAsync(
-			arrangeContext, processCode!, environmentName!, parameters: null);
+			arrangeContext,
+			ProcessCode,
+			environmentName!,
+			new Dictionary<string, object?> { [InputParameter] = InputValue },
+			resultParameters: [OutputParameter]);
 
 		// Assert
-		envelope.Status.Should().BeOneOf(LaunchStatuses,
-			because: "status is the only field carrying the verdict, so it must always be one of the documented "
-				+ $"values. Error: {envelope.Error}");
-		if (envelope.ProcessId is not null) {
-			envelope.Status.Should().BeOneOf(PlatformStatuses,
-				because: "a real process id means the platform reported a real run state, so the status must be "
-					+ "one from its own scale rather than one of the no-handle values");
-		}
+		envelope.Error.Should().BeNull(
+			because: $"a side-effect-free process must launch cleanly. Error: {envelope.Error}");
+		envelope.Status.Should().Be("completed",
+			because: "this process runs straight through with nothing to suspend on, so any other status "
+				+ "means the launch did not do what the contract promises");
+		envelope.ProcessId.Should().NotBeNullOrWhiteSpace(
+			because: "a completed run always carries the instance id, which is also its SysProcessLog key");
+		envelope.ResultParameterValues.Should().ContainKey(OutputParameter,
+			because: "the Output parameter was requested, so its value must come back");
+		envelope.ResultParameterValues![OutputParameter].ToString().Should().Be(ExpectedOutput,
+			because: "the input value reached the process verbatim and its output came back intact — an "
+				+ "exact round trip is what proves the run really happened, which a status string alone "
+				+ "cannot show");
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {

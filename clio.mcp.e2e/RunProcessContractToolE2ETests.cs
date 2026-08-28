@@ -110,6 +110,6 @@ public sealed class RunProcessContractToolE2ETests : McpContractFixtureBase {
 			},
 			arrangeContext.CancellationTokenSource.Token);
 
-		return RunProcessResultParser.Extract(callResult);
+		return EntitySchemaStructuredResultParser.Extract<RunProcessEnvelope>(callResult);
 	}
 }
