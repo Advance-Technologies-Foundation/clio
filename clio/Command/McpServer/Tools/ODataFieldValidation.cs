@@ -51,6 +51,14 @@ internal static class ODataFieldValidation {
 	private const int MaxFollowUpProbes = 10;
 
 	/// <summary>
+	/// Timeout for the per-field follow-up probes only (the initial batch probe keeps
+	/// <see cref="RequestTimeoutMs"/>). A probe that has not answered in a few seconds will not answer
+	/// usefully, and the follow-ups run sequentially, so a shorter per-probe budget bounds the
+	/// worst-case wall time of the capped fan-out well below N x the write timeout.
+	/// </summary>
+	internal const int FollowUpProbeTimeoutMs = 10_000;
+
+	/// <summary>
 	/// A data field to validate: its name and the raw value the caller supplied (the value is
 	/// needed for the lookup empty-GUID check, which is name-blind on its own).
 	/// </summary>
@@ -328,7 +336,7 @@ internal static class ODataFieldValidation {
 				partial = true;
 				break;
 			}
-			ProbeResult single = Probe(client, urlBuilder, entity, id, [key]);
+			ProbeResult single = Probe(client, urlBuilder, entity, id, [key], FollowUpProbeTimeoutMs);
 			if (single.Succeeded) {
 				continue;
 			}
@@ -368,12 +376,22 @@ internal static class ODataFieldValidation {
 		IServiceUrlBuilder urlBuilder,
 		string entity,
 		string id,
-		IReadOnlyList<string> keys) {
+		IReadOnlyList<string> keys,
+		int timeoutMs = RequestTimeoutMs) {
 		string selectList = "Id," + string.Join(",", keys);
 		string path = $"{ODataKeyFormatter.KeyPath(entity, id)}?$select={Uri.EscapeDataString(selectList)}";
 		string url = urlBuilder.Build(path);
-		string body = client.ExecuteGetRequest(url, RequestTimeoutMs, TransientAttempts, TransientDelaySec);
+		string body = client.ExecuteGetRequest(url, timeoutMs, TransientAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
+			// An empty body is read as UNVERIFIED here - the opposite of the write path, where
+			// ODataKeyedWrite.ValidateWriteResponse treats an empty/whitespace body as success. The
+			// readings differ because the operations differ: a keyed read of an existing record must
+			// answer with the record's JSON (or an error) and never legitimately returns empty, so an
+			// empty GET body means the request did not reach the OData pipeline intact (a proxy page,
+			// a session redirect, a gateway that stripped the body) - whereas a PATCH can legitimately
+			// answer a body-less 204 ack. Treating an empty probe body as "fields confirmed" would
+			// recreate the false success this validation exists to remove; both stay fail-closed after
+			// the bounded retry above is exhausted.
 			return new ProbeResult(false, null, "the probe response was empty.");
 		}
 		try {

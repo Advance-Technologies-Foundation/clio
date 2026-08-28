@@ -361,9 +361,15 @@ public sealed class ODataUpdateToolTests {
 			.Contain("Color")
 			.And.Contain("could not be verified against the service");
 		response.Error.Should().NotContain("JobTitle", because: "the follow-up probe confirmed JobTitle exists");
-		f.Client.Received(3).ExecuteGetRequest(
-			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+		// The batch probe (full RequestTimeoutMs) pins the multi-field $select encoding and names only the
+		// FIRST unknown (Color); the two follow-ups (Name, JobTitle) run at the shorter FollowUpProbeTimeoutMs
+		// and both succeed, so only Color is reported.
+		f.Client.Received(1).ExecuteGetRequest(
+			$"{KeyUrl}?$select=Id%2CName%2CJobTitle%2CColor",
 			ODataFieldValidation.RequestTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+		f.Client.Received(2).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			ODataFieldValidation.FollowUpProbeTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -414,5 +420,47 @@ public sealed class ODataUpdateToolTests {
 			.And.NotContain("Sup3rS3cret")
 			.And.NotContain("admin@env.internal");
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts an internal host/credential URI surfaced in a non-JSON (unverified) pre-write probe body.")]
+	public void Update_Should_Redact_Host_In_NonJson_Probe_Body() {
+		const string nonJsonWithHost =
+			"IIS: The request has been routed. See http://admin:Sup3rS3cret@env.internal:80/trace for details.";
+		Fixture f = new(HtmlPage, _ => nonJsonWithHost);
+
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		response.Success.Should().BeFalse();
+		response.Error!.Should()
+			.Contain("could not be verified")
+			.And.Contain("[redacted-uri]")
+			.And.NotContain("Sup3rS3cret")
+			.And.NotContain("env.internal")
+			.And.NotContain("admin@env");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A pre-write probe reading a keyed entity whose column is named after an HttpError key (ExceptionMessage) is data, not a server error; the write proceeds.")]
+	public void Update_Should_Treat_Error_Named_Probe_Column_As_Data() {
+		// A log-shaped entity: the caller selects a column literally named ExceptionMessage, so the keyed
+		// probe response echoes it alongside @odata.context and Id.
+		Fixture f = new(HtmlPage, _ =>
+			"{" +
+			"\"@odata.context\":\"http://creatio/odata/$metadata#Log\"," +
+			"\"Id\":\"" + Guid + "\"," +
+			"\"Name\":\"probe\"," +
+			"\"ExceptionMessage\":\"boom at /home/depot\"}");
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		ODataWriteResponse response = Update(f, """{"Name":"New","ExceptionMessage":"boom at /home/depot"}""");
+
+		response.Success.Should().BeTrue(because:
+			"the probe body carries @odata.context and Id alongside the caller-chosen ExceptionMessage column, so it is a keyed entity read, not a server error; the write must proceed");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New","ExceptionMessage":"boom at /home/depot"}""", 30000);
 	}
 }

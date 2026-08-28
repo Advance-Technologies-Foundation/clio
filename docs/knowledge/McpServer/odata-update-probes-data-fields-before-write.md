@@ -54,9 +54,37 @@ a non-XML body from the metadata endpoint (unregistered package state, proxy pag
 failing the call outright there would make `odata-update` unusable on those environments
 for entities that work fine otherwise.
 
+Observed (work build `394_15918340_0922`, 2026-08-28): a keyed `$select` naming two unknown
+properties (`?$select=Id,labBadOne,labBadTwo`) and one naming three (`Id,labBadOne,labBadTwo,
+labBadThree`) both return the SAME error naming only the FIRST bad name —
+`{"error":{"code":"","message":"The query specified in the URI is not valid. Could not find a
+property named 'labBadOne' on type 'Terrasoft.Configuration.OData.Contact'.","innererror":{"message":
+"Could not find a property named 'labBadOne' on type 'Terrasoft.Configuration.OData.Contact'","type":"",
+"stacktrace":""}}}` — the premise the fallback's per-field re-probe rests on, now anchored to data.
+
+On the empty-body asymmetry: the pre-write READ (the `$metadata` fetch and the probe) treats an
+empty body as unverified-and-fail, while the post-PATCH write path
+(`ODataKeyedWrite.ValidateWriteResponse`) treats an empty/whitespace body as a valid 204 ack. The
+readings differ because the operations differ — a keyed read of an existing record must answer with
+the record's JSON or an error and never legitimately returns empty, so an empty GET body means the
+request did not reach the OData pipeline intact (proxy page, session redirect, gateway that stripped
+the body); a PATCH, by contrast, can legitimately answer a body-less 204. Treating an empty probe
+body as "fields confirmed" would recreate the false success this validation removes; both stay
+fail-closed after the bounded retry.
+
 **What breaks if you ignore it** — any relaxation (skipping validation on "known-safe"
 fields, treating an unverified metadata/probe body as success, moving validation to after
 the PATCH, or dropping the empty-GUID rejection) reintroduces the exact failures of #1212:
 the agent believes a write landed that never happened, or clears a reference it thinks it
-set. Note the probe is specific to `odata-update`'s arbitrary field set: `odata-create`
-shapes its body from the entity type, and `odata-delete` sends no body, so neither needs it.
+set. Scope note: the #1212 silent drop is PATCH-specific, and `odata-create` (POST) is exempt for a
+verified, platform-side reason: Creatio's POST REJECTS an unknown property with a named fault and
+creates no record — observed (work build `394_15918340_0922`, 2026-08-28) a POST body carrying
+`labNope` returned
+`{"error":{"code":"","message":"The request is invalid.","innererror":{"message":"item : The
+property 'labNope' does not exist on type 'Terrasoft.Configuration.OData.Contact'. Make sure to only
+use property names that are defined by the type.","type":"","stacktrace":""}}}`
+with no record created — unlike the PATCH silent drop. `odata-create` therefore gets a loud,
+self-correcting failure rather than a silent no-write and needs no client-side pre-validation;
+`odata-delete` sends no field set and is unaffected. (As with the documented PATCH build divergence,
+this POST strictness is a single-build observation; if a future build loosens POST to a silent drop,
+`odata-create` would inherit the same gap and this note must be revisited.)

@@ -97,6 +97,15 @@ internal static class ODataResponseError {
 		if (!isAspNetError) {
 			return false;
 		}
+		// A genuine OData response always carries a member beyond the HttpError keys - an
+		// @odata.context annotation (default metadata level), a value collection wrapper, a
+		// created record's Id, or a real entity column - so a body whose only members are the
+		// error keys is an error, not data. Without this guard a caller-chosen entity column
+		// named ExceptionMessage/ExceptionType/StackTrace on a keyed read (the odata-update
+		// pre-write probe selects caller fields by name) would be misclassified as a server error.
+		if (HasNonAspNetErrorMembers(root)) {
+			return false;
+		}
 		message = First(root, "ExceptionMessage", "Message") ?? "Creatio returned a server error.";
 		return true;
 	}
@@ -107,11 +116,14 @@ internal static class ODataResponseError {
 	// a genuine OData response always carries another member — an @odata.context annotation
 	// (present under the default OData metadata level this tool relies on), a value collection
 	// wrapper, or the created record's Id — so a body whose only members are Message (+
-	// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata; a
-	// single-entity read served with odata.metadata=none that selected only a Message-named column
-	// would lose its distinguishing member and be misclassified. No current call site does that
-	// (odata-read hits the collection endpoint; odata-create echoes an Id), so the precondition is
-	// safe today — revisit this branch before adding a by-key/metadata=none read path.
+	// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata. A
+	// by-key read path now exists (the odata-update pre-write field probe: $select=Id,<fields> on
+	// one record); under default metadata that keyed read always carries @odata.context, a
+	// non-routing member, so this guard holds. A keyed read served with odata.metadata=none that
+	// selected only a Message-named column would still lose its distinguishing member and be
+	// misclassified — no current call site does that (the probe relies on default metadata); if a
+	// metadata=none by-key read is ever added, revisit this branch. The ASP.NET-exception branch
+	// carries the same guard (HasNonAspNetErrorMembers) for the same reason.
 	private static bool TryDetectRoutingError(JsonElement root, out string message) {
 		message = string.Empty;
 		if (!(root.TryGetProperty("Message", out JsonElement bareMessage)
@@ -156,6 +168,22 @@ internal static class ODataResponseError {
 	private static bool HasNonRoutingErrorMembers(JsonElement root) =>
 		root.EnumerateObject().Any(property =>
 			!property.NameEquals("Message") && !property.NameEquals("MessageDetail"));
+
+	/// <summary>
+	/// Returns true when the object carries any member other than the ASP.NET HttpError keys
+	/// (<c>Message</c> / <c>MessageDetail</c> / <c>ExceptionMessage</c> / <c>ExceptionType</c> /
+	/// <c>StackTrace</c>), which indicates a real OData payload (metadata, <c>value</c>, or entity
+	/// columns) rather than a bare error body. The guard lets a caller-chosen entity column named
+	/// after one of the error keys coexist with the entity's other members without being read as a
+	/// server error.
+	/// </summary>
+	private static bool HasNonAspNetErrorMembers(JsonElement root) =>
+		root.EnumerateObject().Any(property =>
+			!property.NameEquals("Message")
+			&& !property.NameEquals("MessageDetail")
+			&& !property.NameEquals("ExceptionMessage")
+			&& !property.NameEquals("ExceptionType")
+			&& !property.NameEquals("StackTrace"));
 
 	private static string? First(JsonElement root, params string[] names) {
 		foreach (string name in names) {
