@@ -741,6 +741,35 @@ public sealed class ODataReadToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A null response body is classified as a non-JSON read failure rather than raising an NRE inside the parse catch, which would escape the body-suppression invariant as an opaque message.")]
+	public void Read_Should_Report_NonJsonFailure_When_Response_Is_Null() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		// The IApplicationClient contract permits null; reauth and proxy failures do produce it.
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns((string)null);
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a null body is not a successful read");
+		response.Error.Should().Contain("did not return a JSON OData response",
+			because: "the null has to be absorbed as the non-JSON transport failure it is, not surface as an NRE");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects top=0 with a structured validation failure instead of silently returning the default page.")]
 	public void Read_Should_Reject_Top_When_Zero() {
 		// Arrange

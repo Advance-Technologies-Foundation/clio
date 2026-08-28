@@ -301,6 +301,13 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	}
 
 	private static ODataReadResponse ParseODataResponse(string json, string entityName, bool countRequested) {
+		// ExecuteGetRequest may return null (the interface permits it; reauth and proxy failures do produce
+		// it). The absence of a body has to be classified HERE: the IIS-404 probe below dereferences the
+		// string, so a null would raise an NRE that escapes the body-suppression invariant and reaches
+		// Read()'s outer catch as an opaque message. An empty body already resolved to this same failure.
+		if (string.IsNullOrWhiteSpace(json)) {
+			return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
+		}
 		if (ODataResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
 			return ODataReadResponse.Failure(missingEntitySetError);
 		}
@@ -322,7 +329,11 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// Single-entity response (no value wrapper)
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
 		} catch (Exception ex) {
-			string trimmedJson = json.TrimStart();
+			// ExecuteGetRequest may return null (the interface permits it; reauth and proxy failures do
+			// produce it). JsonDocument.Parse then throws ArgumentNullException into this catch, so the
+			// null has to be absorbed HERE - a bare json.TrimStart() would raise an NRE that escapes the
+			// body-suppression invariant and reaches Read()'s outer catch as an opaque message.
+			string trimmedJson = json?.TrimStart() ?? string.Empty;
 			if (trimmedJson.Length == 0 || (trimmedJson[0] != '{' && trimmedJson[0] != '[')) {
 				return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 			}
