@@ -32,7 +32,7 @@ public static class DescribeProcessPrompt {
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
-		   configuration block for a configured element - `email`, `readData`, `openEditPage`),
+		   configuration block for a configured element - `email`, `readData`, `changeData`, `openEditPage`),
 		   `flows` (source, target, kind), and process `parameters` — not raw metadata.
 		2. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
 		3. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
