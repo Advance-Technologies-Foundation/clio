@@ -1977,7 +1977,7 @@ public static class WebToMobileAnalysisService {
 					});
 				} else {
 					(string dropReason, string requestLossReason) = ScopeDropReason(
-						scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
+						ctx, scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
 					ctx.Out.Add(Drop(name, type, dropReason));
 					// Record the lost action so requestConversions surfaces it (BuildMobileValues did not run, so
 					// nothing recorded it yet). None-clicked nodes carry no request and nothing is recorded.
@@ -2298,12 +2298,17 @@ public static class WebToMobileAnalysisService {
 	private enum ClickedConvertibility {
 		/// <summary>No <c>clicked</c> event binding — a container-only node (e.g. a dropdown), not itself an action.</summary>
 		None,
-		/// <summary>The clicked request is NOT supported on mobile — the versioned map clears its target, OR it is
-		/// covered by neither the versioned map nor the bundled supported set (an unknown <c>crt.*</c> or a custom
-		/// <c>usr.*</c> request). A dead action on mobile, so it is NOT retargeted into the FAB.</summary>
+		/// <summary>A <c>crt.Button</c> whose clicked request is NOT supported on mobile — the versioned map clears its
+		/// target, OR it is covered by neither the versioned map nor the bundled supported set (an unknown
+		/// <c>crt.*</c> or a custom <c>usr.*</c> request). A dead button, so it is NOT retargeted into the FAB. Only a
+		/// <c>crt.Button</c> classifies here: another component type (e.g. a <c>crt.MenuItem</c>) with an unsupported
+		/// clicked is <see cref="Convertible"/> — kept and flagged by <see cref="ProcessEventBindings"/>, not dropped,
+		/// matching the leaf policy (<see cref="UnsupportedRequestOf"/> gates on <c>crt.Button</c>) and the tool
+		/// contract.</summary>
 		Unsupported,
 		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or present in the bundled
-		/// supported set) — the action converts.</summary>
+		/// supported set), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
+		/// kept and flagged, not dropped) — the action converts.</summary>
 		Convertible
 	}
 
@@ -2311,11 +2316,13 @@ public static class WebToMobileAnalysisService {
 	/// Classifies a node's OWN <c>clicked</c> binding — the gate for converting an action inside a non-converting
 	/// scope (e.g. a header button → FAB menu item). Only <c>clicked</c> is considered (a DIFFERENT secondary
 	/// binding being unsupported does not disqualify the action). Support is decided by the SAME authoritative
-	/// criterion as <see cref="UnsupportedRequestOf"/> (<see cref="IsRequestSupported"/>): a request the mobile app
-	/// does not support — the versioned map clears it, or it is in neither the versioned map nor the bundled set (an
-	/// unknown <c>crt.*</c> or a custom <c>usr.*</c> request) — is <see cref="ClickedConvertibility.Unsupported"/> and
-	/// is NOT retargeted into the FAB (a dead menu item is not shipped), matching how the leaf path already drops the
-	/// same button outside a scope.
+	/// criterion as <see cref="UnsupportedRequestOf"/> (<see cref="IsRequestSupported"/>) so the leaf and scope paths
+	/// never diverge on WHAT is supported. The DROP policy also matches the leaf path: only a <c>crt.Button</c> with
+	/// an unsupported clicked is <see cref="ClickedConvertibility.Unsupported"/> (a dead button, not retargeted into
+	/// the FAB); another component type (e.g. a <c>crt.MenuItem</c>) may legitimately use a system/custom request
+	/// absent from the supported set, so it stays <see cref="ClickedConvertibility.Convertible"/> and its binding is
+	/// kept and flagged by <see cref="ProcessEventBindings"/> rather than dropped — matching the shipped tool contract
+	/// ("ONLY a crt.Button whose request the mobile app does not support is DROPPED").
 	/// </summary>
 	private static ClickedConvertibility ClassifyClicked(ElementMapContext ctx, JObject node, out string request) {
 		request = null;
@@ -2323,9 +2330,14 @@ public static class WebToMobileAnalysisService {
 			return ClickedConvertibility.None;
 		}
 		request = clicked["request"].ToString();
-		return IsRequestSupported(ctx, request)
-			? ClickedConvertibility.Convertible
-			: ClickedConvertibility.Unsupported;
+		if (IsRequestSupported(ctx, request)) {
+			return ClickedConvertibility.Convertible;
+		}
+		// Same DROP policy as the leaf path: only a crt.Button becomes a dead action worth dropping. Another component
+		// type keeps its unsupported binding (flagged), so it is not disqualified from the FAB here.
+		return string.Equals(node["type"]?.ToString(), "crt.Button", StringComparison.OrdinalIgnoreCase)
+			? ClickedConvertibility.Unsupported
+			: ClickedConvertibility.Convertible;
 	}
 
 	/// <summary>
@@ -2369,21 +2381,30 @@ public static class WebToMobileAnalysisService {
 	/// <summary>
 	/// Builds the element drop reason AND the request-loss reason for a node that did NOT convert inside a
 	/// non-converting scope, from the specific cause — so the report names the scope container and distinguishes an
-	/// absent target, an unsupported action, an unmatched component, and a container-only node instead of collapsing
-	/// them into one string. The mechanism is name-agnostic (any <c>nonConvertingScopeContainers</c> entry), so the
-	/// wording says "scope", not "header".
+	/// absent target, a known-unsupported action, an unknown/custom action, an unmatched component, and a
+	/// container-only node instead of collapsing them into one string. The mechanism is name-agnostic (any
+	/// <c>nonConvertingScopeContainers</c> entry), so the wording says "scope", not "header".
 	/// </summary>
 	private static (string DropReason, string RequestLossReason) ScopeDropReason(
-		string scopeContainer, string name, string scopedType, (string Parent, string Property)? scopedTarget,
-		ClickedConvertibility clicked, string request, bool targetMissing) {
+		ElementMapContext ctx, string scopeContainer, string name, string scopedType,
+		(string Parent, string Property)? scopedTarget, ClickedConvertibility clicked, string request, bool targetMissing) {
 		if (targetMissing && scopedTarget is { } target) {
 			return ($"under non-converting scope '{scopeContainer}'; conversion target '{target.Parent}' is not present on "
 					+ $"the mobile template, so '{name}' cannot be placed — add a '{target.Parent}' to the target template or adjust the rule",
 				$"its element could not be placed (conversion target '{target.Parent}' is absent on the mobile template)");
 		}
 		if (clicked == ClickedConvertibility.Unsupported) {
-			return ($"under non-converting scope '{scopeContainer}'; action '{request}' is not supported on the Creatio Mobile app",
-				$"'{request}' is not supported on the Creatio Mobile app; the action was dropped");
+			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
+			// UNKNOWN/custom one (absent from both the versioned map and the bundled fallback set). clio can assert
+			// "not supported" only for the former; for the latter it can merely say it does not know it, so the
+			// developer can re-add the action manually if that custom request IS implemented on mobile.
+			bool knownUnsupported = ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)
+				&& string.IsNullOrWhiteSpace(rule.Mobile);
+			return knownUnsupported
+				? ($"under non-converting scope '{scopeContainer}'; action '{request}' is not supported on the Creatio Mobile app",
+					$"'{request}' is not supported on the Creatio Mobile app; the action was dropped")
+				: ($"under non-converting scope '{scopeContainer}'; action '{request}' is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it",
+					$"'{request}' is not in the conversion map (custom or unknown); the button was dropped — verify the request exists on mobile before re-adding it");
 		}
 		if (scopedType is null) {
 			return ($"under non-converting scope '{scopeContainer}'; no conversion rule matches this component in scope",
