@@ -4124,6 +4124,14 @@ public static class WebToMobileAnalysisService {
 				if (!string.Equals(child.Operation, "insert", StringComparison.Ordinal)) {
 					continue; // a relocate-children entry is a routing hint, not an element — nothing to place
 				}
+				// The slot travels with the parent. A web crt.TabContainer declares BOTH items and tools (its
+				// header strip — e.g. the Next steps tab's title + "add step" button), and RecurseChildArrays
+				// emits such a child with propertyName "tools". The Area it is retargeted into is a
+				// crt.GridContainer, whose only child collection is items, so carrying the source slot across
+				// the retarget would make InitializeContainerChildSlots declare a "tools" array on the Area and
+				// have the differ insert into a slot the component never renders: the tab shows nothing but an
+				// empty Area, in the designer and at runtime alike (ENG-96153).
+				child.PropertyName = ItemsPropertyName;
 				moved.Add(child.MobileName);
 				PlaceInSingleColumn(child, row);
 				row++;
