@@ -15,14 +15,20 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
 // The version literal states what THIS command's code needs — the newest operation it sends that an
-// older server does not have. Today that is the element-level performer block and the
-// reference-existence guard behind it (bare-Guid Lookup values, performer contact/role), shipped in
-// the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
-// answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
-// cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
-// literal. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
-// demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.3.1.1",
+// older server does not have. Today that is `setFlowCondition` plus the formula validator behind the
+// `expression` mapping source, shipped in the 1.4.0.0 archive (ENG-95891). Both need the literal for the
+// two distinct reasons the bundled-packages article names. `setFlowCondition` is an operation an older
+// server does not carry at all: the token would be rejected by the server's own dispatch registry with a
+// "supported operations are …" message, which reads as a clio bug rather than a stale environment. And the
+// formula validator is a TIGHTENED VALIDATOR — an older server stores an `expression` mapping with no
+// check whatsoever, so the same call that is refused on a current environment silently persists a broken
+// formula on an older one, to fail at run time. A tightened validator is exactly the case the article says
+// must never be left to convergence, because convergence warns and proceeds while only the literal fails
+// closed.
+// This subsumes the previous 1.3.1.1 floor (the element-level performer block and its reference-existence
+// guard), which subsumed the email block's 1.2.0.1 floor before it. The guard fixture asserts the shipped
+// archive satisfies the literal, so clio can never demand a version it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

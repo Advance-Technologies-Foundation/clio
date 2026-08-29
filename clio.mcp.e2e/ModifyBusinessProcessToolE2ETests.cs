@@ -550,6 +550,96 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		]
 		""";
 
+	[Test]
+	[Description("Over the real MCP path, setFlowCondition turns an existing plain flow into a conditional one and the condition reads back through describe. Unit tests cannot reach this: the platform's SaveSchema is non-virtual, so persisting the re-kinded flow and reading it back is only provable against a real server.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process sets a flow condition that reads back")]
+	public async Task ModifyBusinessProcess_Should_SetFlowCondition_ThatReadsBack() {
+		// Arrange - a linear start -> task -> end process, whose task->end flow is a plain sequence flow.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFlowCondE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations("1 == 1")
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "setting a condition on an existing flow is a supported edit; no gateway is needed, the platform "
+				+ "synthesizes one for a conditional flow whose source is an activity");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.Kind.Should().Be("conditional",
+			because: "the flow must be re-kinded to a real conditional flow, not merely carry the condition text");
+		branch.Condition.Should().Be("1 == 1",
+			because: "the condition has to survive the save AND clio's own re-serialize - DescribedFlow has no "
+				+ "extension-data bag, so a missing property would drop it silently on the way out");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, an invalid condition is refused BY THE SERVER and nothing is written. This is the check that proves validation is server-side rather than a client-side convenience an agent could route around.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses an invalid flow condition")]
+	public async Task ModifyBusinessProcess_Should_RefuseInvalidFlowCondition() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadCondE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act - references an identifier that does not exist in this process.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFlowConditionOperations("NoSuchThing == 1")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("NoSuchThing",
+			because: "the refusal must NAME the offending identifier - that is what makes it actionable rather than "
+				+ "a generic 'invalid formula'");
+		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
+		branch.Kind.Should().Be("sequence",
+			because: "a refused edit is atomic: the flow must be left exactly as it was, not half-converted");
+		branch.Condition.Should().BeNull(
+			because: "nothing may be stored when validation refused the condition");
+	}
+
+	// Reads the process back and returns one flow, so a condition assertion can be made against typed fields
+	// instead of substring-matching the escaped MCP envelope.
+	private static async Task<DescribedFlow> ReadFlowAsync(ArrangeContext context, string processName,
+		string source, string target) {
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value)
+				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+		return graph.Flows.Single(flow => flow.Source == source && flow.Target == target);
+	}
+
+	private static string BuildSetFlowConditionOperations(string condition) =>
+		$$"""
+		[
+		  { "op": "setFlowCondition", "source": "task1", "target": "EndEvent1", "condition": "{{condition}}" }
+		]
+		""";
+
 	private static string BuildDescriptor(string processName) =>
 		$$"""
 		{

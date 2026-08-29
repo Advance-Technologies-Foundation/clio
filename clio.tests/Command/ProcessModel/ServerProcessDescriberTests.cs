@@ -629,6 +629,58 @@ public sealed class ServerProcessDescriberTests {
 			because: "the email block's unknown field has to reach the output too, not just the in-memory bag");
 	}
 
+	[Test]
+	[Description("A conditional flow's condition survives deserialization AND the re-serialize the caller actually reads. DescribedFlow has no [JsonExtensionData] overflow bag, so a server field with no property here is dropped silently - the field is mandatory, not polish.")]
+	public void Describe_ShouldRoundTripAConditionalFlowCondition() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value,
+			new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+
+		// Assert
+		result.Value.Flows[0].Kind.Should().Be("conditional",
+			because: "the flow kind tells a caller a branch from a plain connection");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "the condition text is the ticket's read-back criterion and must be deserialized verbatim");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["condition"]!.GetValue<string>().Should().Be("[#Amount#] > 100",
+			because: "deserializing is only half of it - DescribedFlow has no extension-data bag, so without the "
+				+ "property the field would vanish on the way OUT, which is what the caller actually reads");
+	}
+
+	[Test]
+	[Description("A plain sequence flow reports no condition, and the absent value is omitted from the output rather than emitted as an explicit null the caller has to interpret.")]
+	public void Describe_ShouldOmitConditionOnAPlainSequenceFlow() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"s\",\"target\":\"e\",\"kind\":\"sequence\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value,
+			new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+
+		// Assert
+		result.Value.Flows[0].Condition.Should().BeNull(
+			because: "a plain sequence flow has no condition; the server maps its stored literal \"null\" to a real null");
+		JsonNode.Parse(reserialized)["flows"]![0]!.AsObject().ContainsKey("condition").Should().BeFalse(
+			because: "an absent condition is omitted under WhenWritingNull, so a caller never has to tell a null "
+				+ "condition from a missing one");
+	}
+
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)["request"];
 }

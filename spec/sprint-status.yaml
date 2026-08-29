@@ -2795,3 +2795,61 @@ stories:
       - story-localization-ready-packages-1
       - story-localization-ready-packages-2
     blocks: []
+
+  - id: story-eng-95891-formula-expressions-1
+    title: "Validate an 'expression' mapping and author a conditional flow's condition"
+    feature: "eng-95891-formula-expressions"
+    repo: "workspace/ProcessBuilder"
+    size: M
+    status: review
+    jira: ENG-95891
+    file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
+    test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-test-plan.md
+    note: >-
+      S0-S6 on branch feature/ENG-95891-formula-expressions. Adds IProcessFormulaValidator over the
+      platform's own IScriptSession, the setFlowCondition modify operation with an in-place conditional
+      re-kind, condition read-back on DescribeProcessFlow, and the parameter-deletion scan over
+      conditions/execution contexts/sub-processes. 928 unit tests green. The declarative build path
+      (flows[].kind / .condition), the default marker, gateways and branch-aware layout are ENG-91853's.
+      Probes P1-P4 pass; P5-P8 need a live stand and are not run.
+    depends_on: []
+    blocks:
+      - story-eng-95891-formula-expressions-2
+      - story-eng-95891-formula-expressions-3
+
+  - id: story-eng-95891-formula-expressions-2
+    title: "Ship the formula/condition contract through clio's MCP surface and rebundle"
+    feature: "eng-95891-formula-expressions"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95891
+    file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
+    test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-test-plan.md
+    note: >-
+      S4 (clio half), S7 and S9 on branch feature/ENG-95891-formula-expressions. DescribedFlow.condition
+      (mandatory - no JsonExtensionData bag), setFlowCondition documented on the modify tool/prompt/capability
+      map, the phantom described-parameter 'expression' field corrected on both surfaces, CrtProcessBuilder
+      rebundled at 1.4.0.0 with pins refreshed, and the create/modify [RequiresPackage] literals raised to
+      1.4.0.0 for a new operation plus a tightened validator. e2e added (not in CI, needs a stand).
+      ClioRing compatibility reviewed, no Ring-consumed contract changed.
+    depends_on:
+      - story-eng-95891-formula-expressions-1
+    blocks: []
+
+  - id: story-eng-95891-formula-expressions-3
+    title: "Publish the formula vocabulary through clio-knowledge"
+    feature: "eng-95891-formula-expressions"
+    repo: "clio-knowledge"
+    size: S
+    status: in-progress
+    jira: ENG-95891
+    file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
+    note: >-
+      S8. The process-modeling article currently tells agents an 'expression' is passed through
+      UNVALIDATED and that removeParameter is blocked only by parameters and element mappings - both
+      become false with 1.4.0.0. Needs a libraryVersion + sequence bump and a re-pin of
+      clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json.
+    depends_on:
+      - story-eng-95891-formula-expressions-1
+    blocks: []

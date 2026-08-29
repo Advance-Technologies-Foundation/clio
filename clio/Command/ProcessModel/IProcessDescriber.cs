@@ -608,6 +608,20 @@ public sealed class DescribedFlow {
 	/// <summary>Flow kind: <c>sequence</c>, <c>conditional</c>, or <c>default</c>.</summary>
 	[JsonPropertyName("kind")]
 	public string Kind { get; set; }
+
+	/// <summary>
+	/// For a <c>conditional</c> flow: the boolean expression deciding whether the branch is taken, exactly as
+	/// stored. <c>null</c> on every other kind, and on a conditional flow whose branch is chosen by an activity
+	/// result rather than by a formula.
+	/// </summary>
+	/// <remarks>
+	/// This field is NOT optional polish. <see cref="DescribedFlow"/> has no <c>[JsonExtensionData]</c> overflow
+	/// bag, so a server field with no property here is dropped silently on clio's re-serialize and the caller
+	/// never learns the condition exists. The same failure mode is recorded for described filter types in
+	/// <c>docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md</c>.
+	/// </remarks>
+	[JsonPropertyName("condition")]
+	public string Condition { get; set; }
 }
 
 /// <summary>A parameter read back from the schema, with its value source decoded.</summary>
