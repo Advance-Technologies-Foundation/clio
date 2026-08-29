@@ -20,12 +20,14 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class GuidanceGetToolTests {
 	private ServiceProvider _container;
 	private IKnowledgeGuidanceSource _source;
+	private IKnowledgeBundleActivator _activator;
 	private IKnowledgeFeedbackPolicyService _feedbackPolicyService;
 	private GuidanceGetTool _tool;
 
 	[SetUp]
 	public void SetUp() {
 		_source = Substitute.For<IKnowledgeGuidanceSource>();
+		_activator = Substitute.For<IKnowledgeBundleActivator>();
 		_source.GetNames().Returns(["synthetic-guide"]);
 		_feedbackPolicyService = Substitute.For<IKnowledgeFeedbackPolicyService>();
 		_feedbackPolicyService.GetPolicy().Returns(new KnowledgeFeedbackPolicy(
@@ -38,6 +40,7 @@ public sealed class GuidanceGetToolTests {
 			"approved"));
 		ServiceCollection services = new();
 		services.AddSingleton(_source);
+		services.AddSingleton(_activator);
 		services.AddSingleton(_feedbackPolicyService);
 		services.AddTransient<GuidanceGetTool>();
 		_container = services.BuildServiceProvider();

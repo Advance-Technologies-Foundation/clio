@@ -370,14 +370,34 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 		}
 	}
 
+	// Each rejection names the ONE thing that is wrong. Collapsing these into a single sentence made a
+	// location with a stray query string report a scheme problem, which sends the reader to fix the half
+	// that was already right.
 	private static Uri ValidateRemoteUri(string location) {
-		if (!Uri.TryCreate(location, UriKind.Absolute, out Uri? uri)
-				|| (uri.Scheme != Uri.UriSchemeHttps && (uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback))
-				|| !string.IsNullOrEmpty(uri.UserInfo)
-				|| !string.IsNullOrEmpty(uri.Query)
-				|| !string.IsNullOrEmpty(uri.Fragment)) {
+		if (!Uri.TryCreate(location, UriKind.Absolute, out Uri? uri)) {
 			throw new ArgumentException(
-				"Knowledge source location must be a credential-free HTTPS URI (or loopback HTTP URI).",
+				$"Knowledge source location '{location}' is not an absolute URI.", nameof(location));
+		}
+		if (uri.Scheme != Uri.UriSchemeHttps && (uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback)) {
+			throw new ArgumentException(
+				$"Knowledge source location must use HTTPS, or HTTP when the host is loopback; '{uri.Scheme}' "
+				+ $"to host '{uri.Host}' is neither.",
+				nameof(location));
+		}
+		if (!string.IsNullOrEmpty(uri.UserInfo)) {
+			throw new ArgumentException(
+				"Knowledge source location must not carry credentials in the URI (the 'user:password@' part). "
+				+ "Remove them; this transport is credential-free.",
+				nameof(location));
+		}
+		if (!string.IsNullOrEmpty(uri.Query)) {
+			throw new ArgumentException(
+				$"Knowledge source location must not carry a query string, but '{location}' has '{uri.Query}'.",
+				nameof(location));
+		}
+		if (!string.IsNullOrEmpty(uri.Fragment)) {
+			throw new ArgumentException(
+				$"Knowledge source location must not carry a fragment, but '{location}' has '{uri.Fragment}'.",
 				nameof(location));
 		}
 		return uri;

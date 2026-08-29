@@ -619,6 +619,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 					if ((attributes & FileAttributes.ReparsePoint) != 0) {
 						return "The rejected checkout was left inactive because its root is a reparse point.";
 					}
+					ClearReadOnlyAttributes(actualPath);
 					_fileSystem.Directory.Delete(actualPath, recursive: true);
 				}
 				return "The rejected first checkout was discarded so installation can be retried.";
@@ -1083,9 +1084,29 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		return _fileSystem.Path.GetFullPath(root);
 	}
 
+	/// <summary>
+	/// Clears the read-only attribute across a tree so a recursive delete can remove it.
+	/// <para>Git creates pack files read-only, and Windows refuses to delete a read-only file. Without this a
+	/// rejected checkout survives its own cleanup, and the alias it belongs to can then never be re-added:
+	/// the next attempt is refused with "not owned by Clio". Best effort by design — a file that cannot be
+	/// reset is left for the delete to report, so a real permission problem still surfaces as one.</para>
+	/// </summary>
+	private void ClearReadOnlyAttributes(string root) {
+		foreach (string file in _fileSystem.Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)) {
+			try {
+				IFileInfo info = _fileSystem.FileInfo.New(file);
+				if (info.Exists && info.IsReadOnly) {
+					info.IsReadOnly = false;
+				}
+			} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			}
+		}
+	}
+
 	private void DeleteTransportStaging(string path) {
 		try {
 			if (_fileSystem.Directory.Exists(path)) {
+				ClearReadOnlyAttributes(path);
 				_fileSystem.Directory.Delete(path, recursive: true);
 			}
 		} catch (IOException) {
