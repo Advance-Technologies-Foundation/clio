@@ -212,7 +212,8 @@ it.
 **Preconditions:** Any process with a branch.
 
 **Steps:**
-1. Give the agent: *"Set the branch condition to `[#Wat.Something#] != null`."*
+1. Give the agent: *"Set the branch condition to compare `[#[PropertyValue:Caption]#]` against an empty
+   text."*
 2. Read the response, including any warnings.
 
 **Expected result:**
@@ -222,6 +223,13 @@ it.
 * Silence is a defect: the caller must not believe the formula was validated when it was not.
 * Many unknown macros in one expression produce a **short, grouped** warning list, not one warning per
   macro.
+
+**Use a REAL family, not invented text.** `[#Wat.Something#]`, which earlier drafts of this case used, is
+not a macro family at all — the parser reads it as an expression beginning with `Wat` and the platform's
+own pre-save validation refuses it (*"Expression expected (at index 0)"*), which is correct behaviour and
+tests nothing. The families that must round-trip are the four real-but-unadvertised ones listed in the
+vocabulary spec; `[#[PropertyValue:Caption]#]` is the handiest, and Creatio itself ships it as the default
+"Process instance caption".
 
 ---
 
@@ -336,14 +344,22 @@ a Float process parameter `Total`.
 **Preconditions:** A process with a Text parameter `Note`.
 
 **Steps:**
-1. Give the agent: *"Set `Note` to the formula `[#Wat.Something#]`."*
+1. Give the agent: *"Set `Note` to the formula `[#[PropertyValue:Caption]#]`."*
 2. Read the response, including warnings.
+3. Open the process in the designer and look at the parameter.
 
 **Expected result:**
 * Same contract as TC-10 but at the **other use site**: the mapping **succeeds**, and a warning says the
   macro was stored unchecked.
 * The parameter's source reads back as `Script`, and its value is the expression **verbatim** — the
   platform, not the toolkit, decides what it means.
+* In the designer: the parameter shows the macro RESOLVED to its human-readable form — `[#Process name#]`
+  for this one. That is the proof the round-trip is real and not merely tolerated.
+
+**Verified 2026-08-29.** The warning reads: *"The 'expression' mapping for target 'Note' uses the
+unrecognised macro family '[PropertyValue:Caption]'. It is stored unchanged and was NOT checked."* — and
+the designer renders `[#Process name#]`. See TC-10 on why the input must be a real family: an invented
+`[#Wat.Something#]` is refused by the platform's own validation, and that refusal is correct.
 
 ---
 
