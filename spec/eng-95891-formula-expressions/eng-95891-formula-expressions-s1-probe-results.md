@@ -151,3 +151,67 @@ Everything else the analysis asserts held under probe:
 **P5 and P6 need a live stand and a human at a browser** and are not covered here. P5 (does the
 designer blank a condition on a single-result-activity source, trap T-5) remains the one finding
 that could narrow D4.
+
+---
+
+## 4. Stand results (2026-08-29, `krestov-test`, `CrtProcessBuilder 1.4.0.1`)
+
+`install-process-builder` installed and the target compiled the sources itself — the configuration build
+runs INSIDE the package install, so no separate `compile-creatio` is needed for this package.
+
+**P7 — the runtime takes the authored branch. PASSED, and it is the strongest result here.**
+
+`UsrClioCondProbe02`: `signalStart(Contact, modified) → ReadContact → {EndTaken (1 == 1),
+EndNotTaken (1 == 2)}`. Touching a Contact fired it; `SysProcessLog` reports **Completed**, and
+`SysProcessElementLog` holds exactly two rows:
+
+| element | type |
+|---|---|
+| `ReadContact` | `ProcessSchemaUserTask` |
+| **`EndTaken`** | `ProcessSchemaTerminateEvent` |
+
+`EndNotTaken` never executed. **There is no gateway element in that process** — the platform synthesized
+one, which is D4 confirmed on a live stand rather than inferred from source. A toolkit-authored condition
+is evaluated and steers the branch correctly.
+
+**AC4 — read-back. PASSED.** `describe-business-process` on `UsrClioCondProbe01`:
+
+```
+StartEvent1  -> ReadContact      kind=sequence     condition=None
+ReadContact  -> EndTrueBranch    kind=conditional  condition='1 == 1'
+ReadContact  -> EndFalseBranch   kind=conditional  condition='1 == 2'
+```
+
+The plain flow reads back as a real `null`, not the literal `"null"` the platform stores — D3/C19 against
+real platform data. Read with a clio built from this branch: the currently registered clio is older, has no
+`condition` property on `DescribedFlow`, and **drops the field silently** — trap T-14 observed in the wild,
+not just reasoned about.
+
+**AC5 / AC3 — refusals, server-side. PASSED.** Each of these was refused by the SERVER, nothing was stored:
+
+| condition | server message |
+|---|---|
+| `NoSuchThing == 1` | *"…references 'NoSuchThing', which does not exist. Only process parameters, system variables, system settings and the Creatio formula functions may be referenced."* |
+| `1 + 1` | *"…its result cannot be used as Boolean. Cannot convert type "Int32" to "Boolean""* |
+| `""` | *"…requires a non-empty 'condition'. An empty condition is stored as the literal 'true'…"* |
+
+**P8 — both flags answered, empirically.**
+
+- `Feature-UseTypeCastExpressionValidationInProcess` is **ON**. The `1 + 1` refusal carried the
+  `ScriptEngine.Exception.CannotConvertType` text, which `DynamicExpressoEngine.GetLambda` produces **only**
+  in its `isValidation` branch. If the flag were off that branch is not taken.
+- `Feature-UseInterpretableProcessOnly` is effectively **ON**. Both probes were created and ran with no
+  configuration compile between (`compile-creatio not required`), which a compiled-mode process could not do.
+
+**P5 — staged, needs a human.** `UsrClioCondProbeP5` is on the stand: `startEvent → DoTheTask (performTask)
+→ {EndApproved (1 == 1), EndRejected (1 == 2)}`. A Perform task is a single **result-bearing** activity,
+which is the exact shape trap T-5 requires — `readData` is not one, so P7's shape could not have exposed it.
+Steps in the handover note.
+
+**P6 — not run.** Also needs a browser; lower value, it is an insurance check on D3.
+
+### Artifacts left on the stand
+
+`UsrClioCondProbe01`, `UsrClioCondProbe02`, `UsrClioCondProbeP5` (package `Custom`), one Contact
+"Clio ENG-95891 probe contact" (`efe158e6-d5fd-43fd-9970-0e6ffb3c0bdf`), and one completed process log.
+Deliberately not deleted — P5 still needs its process, and the rest are the evidence above.
