@@ -223,11 +223,17 @@ the validator.
 2. After each, read the process back and note the stored expression.
 
 **Expected result:**
-* Each succeeds, and the stored expressions are `RoundUp(...)`, `RoundDown(...)`, `RoundOff(...)`,
-  `Module(...)` over a reference to `Price`.
-* The agent must **not** invent `Math.Ceiling`, `Math.Round`, `Abs` or `ROUND` — those are the C#
-  spellings, not the designer's. An invented name that the server happens to accept is still a
-  **guidance defect**: the designer will not show it the same way.
+* Each succeeds, over a reference to `Price`.
+* The C# spelling is **acceptable**: `Math.Ceiling(...)` is stored and the designer renders it as
+  `RoundUp(...)`. Observed on a stand — the conversion runs in both directions, so writing the C# name is
+  not by itself a defect. What matters is that the expression **references the parameter**, not that it
+  uses the designer's spelling.
+* **Known blocker (2026-08-29).** No agent has yet managed the reference. Five plausible spellings were
+  tried against a live stand and every one was refused: `Math.Ceiling(Price)`, `Math.Ceiling([Price])`,
+  `[#Price#]`, a bare `Price`, and `[#Process parameters.Price#]`. Only a literal (`Math.Ceiling(1.5)`)
+  was accepted. The working form is the full meta-path
+  `[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{guid}]#]`, which nobody guesses. **Until the
+  guidance carries it, this case fails on the reference and everything after it is untestable.**
 
 ---
 
