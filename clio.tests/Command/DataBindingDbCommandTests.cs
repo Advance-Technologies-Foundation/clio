@@ -246,6 +246,48 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Creates a DB-first binding when a requested row references a native Color column, preserving dataValueType 18 in the row write and the Color data-type UId in SaveSchema metadata.")]
+	public void CreateDataBindingDb_Should_Support_Color_Runtime_Column() {
+		// Arrange
+		const string colorDataTypeUId = "dafb71f9-ee9f-4e0b-a4d7-37aa15987155";
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrColor", 18));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = "[{\"values\":{\"Name\":\"Colored account\",\"UsrColor\":\"#009DE3\"}}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a native Color column is a supported string-valued Creatio column");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body =>
+				body.Contains("UsrColor") &&
+				body.Contains("#009DE3") &&
+				body.Contains("\"dataValueType\":18")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains($"\"dataValueTypeUId\":\"{colorDataTypeUId}\"")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Removes the last bound row through remove-data-binding-row-db, deletes the runtime row, and removes the package schema data record when no bound rows remain.")]
 	public void RemoveDataBindingRowDb_Should_Delete_Remote_Row_And_Package_Schema_Data_When_Last_Row_Is_Removed() {
 		// Arrange

@@ -36,6 +36,22 @@ public class SchemaTestFixture{
 	
 	private static Func<string, string> GetExampleFilePath => filename => Path.Join("Examples", "ProcessSchema", filename);
 
+	[Test]
+	[Description("Maps Creatio runtime dataValueType 18 to the native Color data type and its string CLR representation for data-binding serialization.")]
+	public void FromRuntimeValueType_Should_Map_Color_To_StringDataType() {
+		// Arrange
+		const int colorRuntimeDataValueType = 18;
+
+		// Act
+		Guid dataValueTypeUId = DataValueTypeMap.FromRuntimeValueType(colorRuntimeDataValueType);
+
+		// Assert
+		dataValueTypeUId.Should().Be(Guid.Parse("dafb71f9-ee9f-4e0b-a4d7-37aa15987155"),
+			because: "Creatio Color columns use the native Color data-value-type UId");
+		DataValueTypeMap.Resolve(dataValueTypeUId).Should().Be(typeof(string),
+			because: "Creatio stores Color values as hex strings and binding rows must serialize them as strings");
+	}
+
 	[TestCase("ProcessSchemaResponse0.json")]
 	[TestCase("ProcessSchemaResponse1.json")]
 	public async Task Should_Parse_ProcessSchemaResponse(string fileName) {
