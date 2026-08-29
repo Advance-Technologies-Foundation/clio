@@ -62,6 +62,15 @@ proves nothing — it would pass regardless.
 **Do.** For use site (b), validate through the flow-schema generator seam (T-3). Keep
 `GetProcessValidationResult` as the schema-level gate it already is.
 
+> **Corrected 2026-08-29.** "Not one rule inspects a sequence flow" is true of the rule LIST but
+> misleading about the outcome: `ParameterValuesValidationRule.Validate()` FIRST calls
+> `FlowSchemaGeneratorWrapper.TryGenerate` and returns its failure — and generation is exactly where a
+> condition's parameter references are resolved (T-3). So the gate DOES reach conditions, indirectly.
+> It also validates every `Source == Script` parameter value through the public
+> `ProcessParameterValueProvider.ValidateExpression`, which means the platform already validated
+> formula MAPPINGS before this ticket. See
+> [core-reuse-analysis 3](eng-95891-formula-expressions-core-reuse-analysis.md).
+
 ---
 
 ## T-3 — `TryGenerate`'s result object is `internal`, so only `Generate()` yields a message
@@ -125,8 +134,13 @@ So on a common topology — a gateway fed by a single user task — a formula co
 practice: the designer replaces it on the next open. 334 of the 1 365 corpus conditional flows are exactly
 this activity-result shape (`CI3 = "null"` plus a `GV2` result map).
 
-**Do.** Treat this as a validator rule and a documented constraint, not something a user discovers.
-**Unverified end to end** — see [plan](eng-95891-formula-expressions-plan.md) probe **P5**.
+> **RESOLVED 2026-08-29 on a stand — the damaging half does NOT happen.** Opening such a flow does show
+> the RESULTS editor instead of the formula editor, and saving raises *"Required fields of some elements
+> are not filled in"* naming that flow. But **the stored condition SURVIVES the save**: a re-describe
+> after "Successfully saved" returned `1 == 1` and `1 == 2` unchanged. So this needs no validator rule
+> and D4 does not narrow. What remains is a USABILITY caveat for the guidance: on that topology a human
+> cannot see or edit the formula in the designer, though it works. Full record in
+> [core-reuse-analysis 8](eng-95891-formula-expressions-core-reuse-analysis.md).
 
 ---
 

@@ -4,7 +4,7 @@ Analysis and implementation plan for
 [ENG-95891](https://creatio.atlassian.net/browse/ENG-95891) (component *bpms tools*; split from ENG-91844;
 blocks ENG-91853 and ENG-95889; relates to ENG-92729).
 
-Seven documents, written to be attached to the ticket. Read them in this order.
+Eight documents, written to be attached to the ticket. Read them in this order.
 
 | # | Document | What it settles |
 |---|---|---|
@@ -15,6 +15,7 @@ Seven documents, written to be attached to the ticket. Read them in this order.
 | 5 | [plan](eng-95891-formula-expressions-plan.md) | Gaps, design decisions, S0–S9, estimate, Definition of Done |
 | 6 | [test-plan](eng-95891-formula-expressions-test-plan.md) | Harness, mocking recipes, and the full case matrix |
 | 7 | [s1-probe-results](eng-95891-formula-expressions-s1-probe-results.md) | **What the S1 probes actually measured** — read this before implementing; it corrects the plan in seven places |
+| 8 | [core-reuse-analysis](eng-95891-formula-expressions-core-reuse-analysis.md) | **How much of the platform we reuse and where we differ from the designer** — corrects trap T-2, resolves P5, and records the one place we disagreed with the platform (a bug, now fixed) |
 
 ---
 
