@@ -19,6 +19,9 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFile
 
 	internal const string ToolName = "odata-update";
 
+	private const string DataRequiredMessage =
+		"data is required and must be a non-empty object of field/value pairs.";
+
 	/// <summary>Updates a single Creatio record using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description(
@@ -37,35 +40,13 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFile
 			if (invalidTarget is not null) {
 				return invalidTarget;
 			}
-			if (args.Data is not null && !string.IsNullOrWhiteSpace(args.RowsFile)) {
-				return ODataWriteResponse.Failure("Provide either data or rows-file, not both.");
-			}
-			if (args.Data is null && string.IsNullOrWhiteSpace(args.RowsFile)) {
-				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
-			}
 			// The confirmation gate runs BEFORE the file is touched. It is the first meaningful guard, so an
 			// exploratory confirm=false call must answer "here is what would change", not "rows-file was not
 			// found" - and an exploratory call should not read and parse a payload it will not send.
 			ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, args.Entity, args.Id, "update", "change");
-			JsonElement? fileData = null;
-			if (args.Data is null) {
-				if (notConfirmed is not null) {
-					return notConfirmed;
-				}
-				if (!ODataFileContract.TryReadJson(_fileSystem, args.RowsFile, "rows-file", out string dataJson, out string fileError)) {
-					return ODataWriteResponse.Failure(fileError);
-				}
-				try {
-					// JsonDocument rents from ArrayPool<byte>; Clone() detaches the element, so dispose here.
-					using JsonDocument document = JsonDocument.Parse(dataJson);
-					fileData = document.RootElement.Clone();
-				} catch (JsonException ex) {
-					return ODataWriteResponse.Failure($"rows-file must contain valid JSON: {ex.Message}");
-				}
-			}
-			JsonElement? requestedData = args.Data ?? fileData;
-			if (requestedData is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
-				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
+			ODataWriteResponse payloadFailure = ResolveData(args, notConfirmed, out JsonElement data);
+			if (payloadFailure is not null) {
+				return payloadFailure;
 			}
 			if (notConfirmed is not null) {
 				return notConfirmed;
@@ -80,6 +61,60 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFile
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
+		}
+	}
+
+	/// <summary>
+	/// Resolves the field/value payload from either the inline <c>data</c> argument or <c>rows-file</c>,
+	/// and returns the failure response to send back when the payload is unusable.
+	/// </summary>
+	/// <param name="args">Tool arguments.</param>
+	/// <param name="notConfirmed">Confirmation refusal to return instead of reading the file, or <c>null</c>.</param>
+	/// <param name="data">Resolved non-empty JSON object payload when the method returns <c>null</c>.</param>
+	/// <returns><c>null</c> when the payload is valid; otherwise the response to return to the caller.</returns>
+	private ODataWriteResponse ResolveData(ODataUpdateArgs args, ODataWriteResponse notConfirmed, out JsonElement data) {
+		data = default;
+		bool hasRowsFile = !string.IsNullOrWhiteSpace(args.RowsFile);
+		if (args.Data is not null && hasRowsFile) {
+			return ODataWriteResponse.Failure("Provide either data or rows-file, not both.");
+		}
+		if (args.Data is null && !hasRowsFile) {
+			return ODataWriteResponse.Failure(DataRequiredMessage);
+		}
+		JsonElement? requestedData = args.Data;
+		if (requestedData is null) {
+			if (notConfirmed is not null) {
+				return notConfirmed;
+			}
+			ODataWriteResponse fileFailure = ReadFileData(args.RowsFile, out JsonElement fileData);
+			if (fileFailure is not null) {
+				return fileFailure;
+			}
+			requestedData = fileData;
+		}
+		if (requestedData is not { ValueKind: JsonValueKind.Object } payload || !payload.EnumerateObject().MoveNext()) {
+			return ODataWriteResponse.Failure(DataRequiredMessage);
+		}
+		data = payload;
+		return null;
+	}
+
+	/// <summary>Reads and parses the JSON payload held in <paramref name="rowsFile"/>.</summary>
+	/// <param name="rowsFile">Path supplied through the <c>rows-file</c> argument.</param>
+	/// <param name="fileData">Parsed payload when the method returns <c>null</c>.</param>
+	/// <returns><c>null</c> on success; otherwise the failure response to return to the caller.</returns>
+	private ODataWriteResponse ReadFileData(string rowsFile, out JsonElement fileData) {
+		fileData = default;
+		if (!ODataFileContract.TryReadJson(_fileSystem, rowsFile, "rows-file", out string dataJson, out string fileError)) {
+			return ODataWriteResponse.Failure(fileError);
+		}
+		try {
+			// JsonDocument rents from ArrayPool<byte>; Clone() detaches the element, so dispose here.
+			using JsonDocument document = JsonDocument.Parse(dataJson);
+			fileData = document.RootElement.Clone();
+			return null;
+		} catch (JsonException ex) {
+			return ODataWriteResponse.Failure($"rows-file must contain valid JSON: {ex.Message}");
 		}
 	}
 }
