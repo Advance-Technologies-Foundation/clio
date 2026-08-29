@@ -307,6 +307,29 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("InsertSysSetting fails before posting the create request when the authenticated DataService probe reports ErrorCode 5, so an expired password is not reduced to a generic create failure.")]
+	public void InsertSysSetting_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}");
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.InsertSysSetting("UsrAuthFailure", "UsrAuthFailure", "Text");
+
+		// Assert
+		AuthenticationException exception = act.Should().Throw<AuthenticationException>(
+			because: "a rejected authenticated probe must stop the create before the insert request is sent").Which;
+		exception.Message.Should().Contain("password has expired",
+			because: "the actionable platform cause must be preserved so the operator knows what to fix");
+		exception.Message.Should().Contain("Verify the environment credentials",
+			because: "auth errors must carry a recovery action, not just a type marker");
+		applicationClient.ReceivedCalls().Should().ContainSingle(
+			because: "the rejected probe must stop the create before a second write request is sent");
+	}
+
+	[Test]
 	[Description("GetAllSysSettingsWithValues maps an HTTP 401 thrown by the application client to an authentication failure instead of leaking a generic error to MCP callers.")]
 	public void GetAllSysSettingsWithValues_ShouldMapHttpUnauthorizedException() {
 		// Arrange

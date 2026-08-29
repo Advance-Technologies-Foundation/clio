@@ -142,6 +142,23 @@ public sealed class SysSettingsToolTests {
 			because: "the CategorizeError fallback maps HttpRequestException to the canonical 'Network error' message");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("get-sys-setting maps an HTTP 401 raised during environment resolution to an authentication diagnostic instead of a generic network failure.")]
+	public void GetSysSetting_Should_Categorize_Http401_As_Authentication_Failure() {
+		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException(
+			"Response status code does not indicate success: 401 (Unauthorized).")));
+
+		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
+
+		result.Success.Should().BeFalse(
+			because: "an HTTP 401 means the configured credentials were rejected");
+		result.Value.Should().BeEmpty(
+			because: "no value could be read after credentials were rejected");
+		result.Error.Should().Be("Authentication error reading sys-setting.",
+			because: "the caller needs a credential-repair diagnostic rather than a misleading network error");
+	}
+
 	#endregion
 
 	#region list-sys-settings

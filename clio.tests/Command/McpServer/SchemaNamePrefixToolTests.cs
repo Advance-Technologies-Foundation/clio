@@ -13,6 +13,20 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class SchemaNamePrefixToolTests {
 
+	/// <summary>
+	/// Builds a <see cref="SysSettingsManager"/> whose only meaningful collaborator is the data provider.
+	/// The read path exercised here (<c>GetSysSettingValueByCode</c>) resolves the value through the
+	/// provider, so the remaining constructor dependencies are inert substitutes.
+	/// </summary>
+	private static SysSettingsManager BuildSysSettingsManager(IDataProvider dataProvider) =>
+		new(Substitute.For<IApplicationClient>(),
+			Substitute.For<IServiceUrlBuilder>(),
+			dataProvider,
+			Substitute.For<IWorkingDirectoriesProvider>(),
+			Substitute.For<IFileSystem>(),
+			Substitute.For<System.IO.Abstractions.IFileSystem>(),
+			Substitute.For<ILogger>());
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name so callers and tests share the same production identifier.")]
@@ -32,7 +46,7 @@ public sealed class SchemaNamePrefixToolTests {
 		// Arrange
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("SchemaNamePrefix").Returns("Usr");
-		SysSettingsManager manager = new(dataProvider);
+		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
 		SchemaNamePrefixTool tool = new(commandResolver);
@@ -56,7 +70,7 @@ public sealed class SchemaNamePrefixToolTests {
 		// Arrange
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("SchemaNamePrefix").Returns(string.Empty);
-		SysSettingsManager manager = new(dataProvider);
+		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
 		SchemaNamePrefixTool tool = new(commandResolver);
@@ -124,7 +138,7 @@ public sealed class SchemaNamePrefixToolTests {
 		// Arrange
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("SchemaNamePrefix").Returns("\"Usr\"");
-		SysSettingsManager manager = new(dataProvider);
+		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
 		SchemaNamePrefixTool tool = new(commandResolver);
