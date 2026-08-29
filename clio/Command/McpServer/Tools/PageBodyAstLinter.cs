@@ -64,6 +64,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
 	internal const string RuleEntityDataSourceStaticFilters = "entity-data-source-static-filters";
 	internal const string RuleHandlerAttributeChangeUnscopedWrite = "handler-attribute-change-unscoped-write";
+	internal const string RuleUndefinedSectionCall = "undefined-section-call";
 
 	#endregion
 
@@ -78,6 +79,7 @@ internal static class PageBodyAstLinter {
 		}
 		var findings = new List<PageBodyLintFinding>();
 		Visit(ast, default, depth: 0, findings);
+		CheckUndefinedSectionCalls(ast, findings);
 		return findings;
 	}
 
@@ -216,6 +218,100 @@ internal static class PageBodyAstLinter {
 			return currentCtx with { EnclosingFunctionIsValidatorInstance = isValidatorInstance, EnclosingPropertyKey = null };
 		}
 		return currentCtx with { EnclosingPropertyKey = null };
+	}
+
+	#endregion
+
+	#region Undefined section calls
+
+	private static readonly HashSet<string> KnownJavaScriptGlobals = new(StringComparer.Ordinal) {
+		"Array", "Boolean", "BigInt", "Date", "Error", "EvalError", "Function", "Infinity", "Intl", "JSON",
+		"Map", "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError", "ReferenceError",
+		"Reflect", "RegExp", "Set", "String", "Symbol", "SyntaxError", "TypeError", "URIError", "URL",
+		"WeakMap", "WeakSet", "console", "crt", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent",
+		"Terrasoft", "XMLHttpRequest", "document", "fetch", "globalThis", "isFinite", "isNaN", "parseFloat", "parseInt", "sdk", "setTimeout", "setInterval",
+		"clearTimeout", "clearInterval", "window", "undefined"
+	};
+
+	private static void CheckUndefinedSectionCalls(Script ast, List<PageBodyLintFinding> findings) {
+		HashSet<string> declared = CollectDeclaredNames(ast);
+		ScanForUndefinedSectionCalls(ast, declared, insideSection: false, depth: 0, findings);
+	}
+
+	private static HashSet<string> CollectDeclaredNames(Node root) {
+		var declared = new HashSet<string>(KnownJavaScriptGlobals, StringComparer.Ordinal);
+		CollectDeclaredNames(root, declared, depth: 0);
+		return declared;
+	}
+
+	private static void CollectDeclaredNames(Node node, HashSet<string> declared, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		switch (node) {
+			case VariableDeclarator variable when variable.Id is not null:
+				CollectBindingNames(variable.Id, declared, depth + 1);
+				break;
+			case FunctionDeclaration function when function.Id is not null:
+				CollectBindingNames(function.Id, declared, depth + 1);
+				CollectFunctionParameters(function, declared, depth + 1);
+				break;
+			case FunctionExpression function:
+				CollectFunctionParameters(function, declared, depth + 1);
+				break;
+			case ArrowFunctionExpression function:
+				CollectFunctionParameters(function, declared, depth + 1);
+				break;
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectDeclaredNames(child, declared, depth + 1);
+		}
+	}
+
+	private static void CollectFunctionParameters(IFunction function, HashSet<string> declared, int depth) {
+		foreach (Node parameter in function.Params) {
+			CollectBindingNames(parameter, declared, depth + 1);
+		}
+	}
+
+	private static void CollectBindingNames(Node node, HashSet<string> declared, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (node is Identifier identifier) {
+			declared.Add(identifier.Name);
+			return;
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectBindingNames(child, declared, depth + 1);
+		}
+	}
+
+	private static void ScanForUndefinedSectionCalls(
+		Node node,
+		HashSet<string> declared,
+		bool insideSection,
+		int depth,
+		List<PageBodyLintFinding> findings) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		bool childInsideSection = insideSection;
+		if (!insideSection && node is Property property && TryGetStaticPropertyName(property) is string key) {
+			childInsideSection = key is "handlers" or "converters" or "validators";
+		}
+		if (insideSection && node is CallExpression { Callee: Identifier identifier }
+			&& !declared.Contains(identifier.Name)) {
+			findings.Add(new PageBodyLintFinding(
+				Rule: RuleUndefinedSectionCall,
+				Severity: LintSeverity.Error,
+				Line: identifier.Location.Start.Line,
+				Column: identifier.Location.Start.Column + 1,
+				Message: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in this page body and is not a known JavaScript or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement."));
+		}
+		foreach (Node child in node.ChildNodes) {
+			ScanForUndefinedSectionCalls(child, declared, childInsideSection, depth + 1, findings);
+		}
 	}
 
 	#endregion

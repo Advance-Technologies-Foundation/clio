@@ -46,6 +46,45 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
+	[Description("A handler call to an undeclared module-scope helper raises an undefined-section-call Error — this is the Page Designer failure mode where the helper is removed but the handler survives")]
+	public void Lint_ShouldEmitError_WhenHandlerCallsUndeclaredHelper() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [{ " +
+			"request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { await missingModuleHelper(request); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Severity == LintSeverity.Error,
+			because: "a handler that calls a helper absent from the page body fails at runtime with ReferenceError and must be blocked before sync-pages saves it");
+		findings.Single(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall).Message.Should()
+			.Contain("missingModuleHelper", because: "the finding must name the missing helper so the operator can restore it");
+	}
+
+	[Test]
+	[Description("A handler call to a module-scope helper declared before the return object is accepted — declarations in the factory scope are visible to handler callbacks")]
+	public void Lint_ShouldNotEmitError_WhenHandlerCallsDeclaredFactoryHelper() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { var applyFilter = async function(request) { return request; }; " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { await applyFilter(request); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "a helper declared in the AMD factory scope is available to handlers and must not be reported as missing");
+	}
+
+	[Test]
 	[Description("Validator declaration with `return null` inside the inner async function is allowed — null signals \"no error\" per the validator contract and must NOT be flagged as validator-bad-return-literal")]
 	public void Lint_ShouldAllowNullReturn_InValidatorFactory() {
 		string body =
