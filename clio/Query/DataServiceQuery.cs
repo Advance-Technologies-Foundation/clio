@@ -175,6 +175,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 					"POST" => ApplicationClient.ExecutePostRequest(url, requestData),
 					"GET" => ApplicationClient.ExecuteGetRequest(url),
 					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData),
+					"PATCH" => ApplicationClient.ExecutePatchRequest(url, requestData),
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
 
