@@ -152,8 +152,12 @@ public sealed partial class McpWorkerCallDispatcher {
 		string toolName, IWorkerLease lease, IParentMcpSession parentSession, WorkerRelayOptions relayOptions,
 		WorkerStandardErrorDrain standardError, CancellationToken cancellationToken) {
 		// Tracked outside the try so the failure path can release a transport the session never took
-		// ownership of; OpenAsync is what transfers that ownership.
+		// ownership of; OpenAsync is what transfers that ownership. The finally below covers EVERY
+		// failure, not only the handshake-timeout branch — a non-cancellation OpenAsync failure (a
+		// protocol error, say) must release the same transport, and keying disposal on "was a session
+		// obtained" is the shape DispatchPerCallAsync already uses for this same problem.
 		ITransport childTransport = null;
+		WorkerRelaySession session = null;
 		try {
 			using CancellationTokenSource handshakeSource =
 				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -161,13 +165,12 @@ public sealed partial class McpWorkerCallDispatcher {
 			childTransport = await _transportOwner
 				.ConnectAsync(lease.StandardInput, lease.StandardOutput, handshakeSource.Token)
 				.ConfigureAwait(false);
-			WorkerRelaySession session = await _relay
+			session = await _relay
 				.OpenAsync(childTransport, parentSession, relayOptions, handshakeSource.Token)
 				.ConfigureAwait(false);
 			return (session, null);
 		}
 		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-			await DisposeTransportQuietly(childTransport, toolName).ConfigureAwait(false);
 			KillQuietly(lease, toolName);
 			_logger.WriteWarning(
 				$"MCP worker for '{toolName}' (pid {lease.ProcessId}) did not complete its handshake within "
@@ -175,6 +178,11 @@ public sealed partial class McpWorkerCallDispatcher {
 			return (null, RelayFailureResult(toolName,
 				"the worker did not complete its MCP handshake, so the operation never started",
 				detail: null, standardError.Tail()));
+		}
+		finally {
+			if (session is null) {
+				await DisposeTransportQuietly(childTransport, toolName).ConfigureAwait(false);
+			}
 		}
 	}
 
