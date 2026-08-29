@@ -78,6 +78,24 @@ priority.
 * Note for the tester: `1.5` into a **Float** parameter is legitimate and must succeed — a Float
   parameter's type is decimal.
 
+**Observed 2026-08-29 — the refusal half passes, the acceptance half exposes a guidance defect.**
+The `1.5` refusal is exactly as specified: the message names `Amount`, quotes `1.5` **as written** (not the
+converted `1.5m`), says `Cannot convert type "Decimal" to "Int32"`, and the designer shows the parameter
+still unset. But on the `1 + 1` half, two agents reading the same guidance took **opposite routes**:
+
+* one sent `addMapping` with `targetProcessParameter` + `expression` — the route the server engages with,
+  which is how the `1.5` refusal was obtained at all;
+* the other read the guidance line that a parameter's `value` is *"a literal constant, not a formula"*,
+  concluded no mechanism exists for an arithmetic default on an Integer parameter, **evaluated `1 + 1`
+  itself and stored the constant `2`**.
+
+The second is the dangerous one, and it is not the agent being careless — it disclosed the substitution in
+its answer. The guidance describes what `value` cannot hold without saying that `addMapping` +
+`expression` is how a COMPUTED default is authored, so a reasonable reader concludes the feature is
+absent. The result reads as success while the process holds a frozen constant where the author asked for
+an expression; nothing recomputes. **Treat a stored constant here as a FAILURE of this case**, and read
+the two routes as the guidance defect to fix.
+
 ---
 
 ### `TC-04` A formula referencing a parameter that does not exist is refused, naming it
