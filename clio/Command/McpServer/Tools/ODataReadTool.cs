@@ -329,15 +329,14 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// Single-entity response (no value wrapper)
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
 		} catch (Exception ex) {
-			// ExecuteGetRequest may return null (the interface permits it; reauth and proxy failures do
-			// produce it). JsonDocument.Parse then throws ArgumentNullException into this catch, so the
-			// null has to be absorbed HERE - a bare json.TrimStart() would raise an NRE that escapes the
-			// body-suppression invariant and reaches Read()'s outer catch as an opaque message.
-			string trimmedJson = json?.TrimStart() ?? string.Empty;
+			// A null or blank body is already classified by the guard above, so json is non-null here and
+			// only its shape still matters: a body that does not start with '{' or '[' is not JSON at all
+			// (an IIS/proxy HTML page, for instance) and gets the same non-JSON classification.
+			string trimmedJson = json.TrimStart();
 			if (trimmedJson.Length == 0 || (trimmedJson[0] != '{' && trimmedJson[0] != '[')) {
 				return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 			}
-			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json;
+			string preview = json;
 			if (preview.Length > 500) {
 				preview = preview[..500] + "...";
 			}
