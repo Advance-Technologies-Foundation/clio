@@ -50,7 +50,7 @@ public static class ModifyBusinessProcessPrompt {
 		 the assignment); `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare
-		 non-empty record Guid (the route ships from CrtProcessBuilder 1.4.0.0, and this clio additionally
+		 non-empty record Guid (the route ships from CrtProcessBuilder 1.4.0.1, and this clio additionally
 		 refuses any environment older than the version it bundles — up front, via the package-convergence
 		 message — while an older clio surfaces the old package's `[#Lookup…#]`-macro rejection; either refusal
 		 means the environment's package is behind, so update it rather than concluding the parameter is

@@ -16,7 +16,7 @@ namespace Clio.Command;
 /// </summary>
 // The version literal states what THIS command's code needs — the newest operation it sends that an
 // older server does not have. Today that is `setFlowCondition` plus the formula validator behind the
-// `expression` mapping source, shipped in the 1.4.0.0 archive (ENG-95891). Both need the literal for the
+// `expression` mapping source, shipped in the 1.4.0.1 archive (ENG-95891). Both need the literal for the
 // two distinct reasons the bundled-packages article names. `setFlowCondition` is an operation an older
 // server does not carry at all: the token would be rejected by the server's own dispatch registry with a
 // "supported operations are …" message, which reads as a clio bug rather than a stale environment. And the
@@ -28,7 +28,7 @@ namespace Clio.Command;
 // This subsumes the previous 1.3.1.1 floor (the element-level performer block and its reference-existence
 // guard), which subsumed the email block's 1.2.0.1 floor before it. The guard fixture asserts the shipped
 // archive satisfies the literal, so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.0",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

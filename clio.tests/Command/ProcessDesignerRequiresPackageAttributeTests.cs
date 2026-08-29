@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today `setFlowCondition` and the formula validator behind an `expression` mapping, shipped in the 1.4.0.0 archive — an older server does not carry the operation at all, and it stores an `expression` mapping with NO validation, so the same call that is refused on a current environment silently persists a broken formula on an older one; presence alone cannot express either (the performer 1.3.1.1 floor and the 1.2.0.1 email floor set the precedent and are subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today `setFlowCondition` and the formula validator behind an `expression` mapping, shipped in the 1.4.0.1 archive — an older server does not carry the operation at all, and it stores an `expression` mapping with NO validation, so the same call that is refused on a current environment silently persists a broken formula on an older one; presence alone cannot express either (the performer 1.3.1.1 floor and the 1.2.0.1 email floor set the precedent and are subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,9 +77,9 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.0.0",
+            requirement!.Version.Should().Be("1.4.0.1",
                 because: "the performer block and the reference-existence guard these commands send were "
-                    + "introduced in the 1.4.0.0 archive — an older server does not carry setFlowCondition at all, and "
+                    + "introduced in the 1.4.0.1 archive — an older server does not carry setFlowCondition at all, and "
                     + "and still answers success, so the literal is what fails CLOSED (the convergence rule only "
                     + "WARNS when it cannot read the archive or the version carries a pre-release suffix); "
                     + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");

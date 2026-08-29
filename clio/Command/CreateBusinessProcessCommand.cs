@@ -20,13 +20,13 @@ namespace Clio.Command;
 // the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
 // answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
 // cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
-// literal. Raised to 1.4.0.0 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
+// literal. Raised to 1.4.0.1 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
 // the formula validator behind it is a TIGHTENED VALIDATOR — an older server stores such a mapping with
 // no check at all, so the same descriptor that is refused on a current environment silently persists a
 // broken formula on an older one, to fail at run time. The article is explicit that a tightened validator
 // takes a literal rather than being left to convergence, because convergence only warns. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
 // demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.0",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -98,7 +98,7 @@ public sealed class CreateBusinessProcessService(
 			throw new InvalidOperationException(result.ErrorMessage ?? "BuildProcess failed.");
 		}
 
-		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId);
+		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId, result.Warnings);
 	}
 
 	private static JsonObject ParseDescriptor(string descriptorJson) {
@@ -133,6 +133,9 @@ public sealed class CreateBusinessProcessService(
 
 		[JsonPropertyName("errorMessage")]
 		public string? ErrorMessage { get; set; }
+
+		[JsonPropertyName("warnings")]
+		public List<string>? Warnings { get; set; }
 	}
 
 	#endregion
@@ -162,6 +165,12 @@ public class CreateBusinessProcessCommand(
 				options.Environment,
 				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
+			// Written as WARNINGS on a SUCCESSFUL build, the same way the modify path reports its own: these are
+			// outcomes that applied and are not what a caller would assume, so dropping them would leave the caller
+			// believing the formula was checked when it was not.
+			foreach (string warning in result.Warnings ?? []) {
+				logger.WriteWarning(warning);
+			}
 			WarnOnDiscardedEmailBlocks(options, result.SchemaName);
 			return 0;
 		} catch (Exception exception) {
@@ -218,4 +227,10 @@ public sealed record CreateBusinessProcessRequest(string DescriptorJson, string?
 /// </summary>
 /// <param name="SchemaName">Final schema name of the created process.</param>
 /// <param name="SchemaUId">UId of the created process schema.</param>
-public sealed record CreateBusinessProcessResult(string? SchemaName, string? SchemaUId);
+/// <param name="Warnings">
+/// Caveats about a build that SUCCEEDED — an unrecognised macro family in a formula, or an expression whose
+/// macros could not be resolved on this environment so its result type went unchecked. <c>null</c> or empty
+/// when there are none, and always <c>null</c> against a server predating the member.
+/// </param>
+public sealed record CreateBusinessProcessResult(string? SchemaName, string? SchemaUId,
+	IReadOnlyList<string>? Warnings = null);
