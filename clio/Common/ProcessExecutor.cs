@@ -344,7 +344,12 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			CreateNoWindow = true,
 			UseShellExecute = false,
 			WorkingDirectory = options.WorkingDirectory ?? Environment.CurrentDirectory,
-			RedirectStandardInput = !string.IsNullOrEmpty(options.StandardInput),
+			// Redirected whenever output is, and NOT only when there is input to write. A capturing call is by
+			// definition non-interactive, so the child has no business inheriting ours - and when the parent is
+			// the MCP server, "ours" is the JSON-RPC pipe: a child holding it can block on it and could in
+			// principle consume protocol bytes. The stream is closed immediately after start when no input was
+			// supplied, so the child sees EOF rather than a handle that never closes.
+			RedirectStandardInput = redirectOutput || !string.IsNullOrEmpty(options.StandardInput),
 			RedirectStandardOutput = redirectOutput,
 			RedirectStandardError = redirectOutput
 		};
@@ -509,6 +514,10 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				if (!string.IsNullOrEmpty(options.StandardInput)) {
 					await process.StandardInput.WriteAsync(options.StandardInput.AsMemory(), linkedCts.Token);
 					await process.StandardInput.FlushAsync(linkedCts.Token);
+					process.StandardInput.Close();
+				} else if (process.StartInfo.RedirectStandardInput) {
+					// No input to send: close at once so the child reads EOF instead of waiting on a handle
+					// nobody will ever write to.
 					process.StandardInput.Close();
 				}
 				await process.WaitForExitAsync(linkedCts.Token);
