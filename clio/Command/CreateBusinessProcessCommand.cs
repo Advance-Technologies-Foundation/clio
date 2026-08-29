@@ -20,13 +20,13 @@ namespace Clio.Command;
 // the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
 // answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
 // cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
-// literal. Raised to 1.4.0.1 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
+// literal. Raised to 1.4.0.2 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
 // the formula validator behind it is a TIGHTENED VALIDATOR — an older server stores such a mapping with
 // no check at all, so the same descriptor that is refused on a current environment silently persists a
 // broken formula on an older one, to fail at run time. The article is explicit that a tightened validator
 // takes a literal rather than being left to convergence, because convergence only warns. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
 // demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.1",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.0.2",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
