@@ -86,10 +86,17 @@ order plan D2 lists them in.
 `Feature-UseTypeCastExpressionValidationInProcess` is confirmed `true` by default (probe P2.0), so
 this is the shipping behaviour, not a stand quirk.
 
-A `Float`-typed process parameter is ordinary, and `1` is an ordinary thing to write into one. So
-S2 must **coerce the target type** before calling `Validate` — widen `float` to `double` for
-validation purposes — and document it. Plan §9.2b priced this swing at **+0.25 d**; it is now
-certain rather than possible.
+A `Float`-typed process parameter is ordinary, and `1` is an ordinary thing to write into one, so the
+target type must be coerced before calling `Validate`. Plan §9.2b priced this swing at **+0.25 d**; it is
+now certain rather than possible.
+
+> **Superseded during S2 — the fix is broader than this finding implied.** Widening `float` to `double`
+> is not enough, because the platform's own converter chain retypes numeric constants as `decimal`
+> (`1.5` → `1.5m`, a divisor → `((decimal)…)`), and `decimal` widens to **nothing**. `int`→`float` is one
+> special case of that. The validator therefore maps **every** numeric target onto `decimal`. Probes
+> P2.5/P2.6 pin the conversion behaviour, and the knowledge record
+> `docs/knowledge/ProcessModel/process-formula-conversion-retypes-numeric-constants-as-decimal.md`
+> carries the measured table.
 
 ### F-6 — Every validation failure is a `ValidateExpressionException`
 
