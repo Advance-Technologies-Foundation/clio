@@ -640,6 +640,134 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		]
 		""";
 
+	[Test]
+	[Description("Over the real MCP path, an 'expression' mapping is validated, stored and read back. This is the OTHER use site of a formula and the one that justifies the [RequiresPackage] floor on BOTH tools - an older server stores such a mapping with no check at all. Unit tests cannot reach it: SaveSchema is non-virtual, so persisting a Script value and reading it back is only provable against a real server.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process stores a formula mapping that reads back")]
+	public async Task ModifyBusinessProcess_Should_StoreAndReadBackAFormulaMapping() {
+		// Arrange - a Float parameter, so a decimal-valued formula fits it.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFormulaE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildFormulaMappingOperations("FormulaUtilities.Max(1, 2, 3)")
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "FormulaUtilities.Max is one of the four Creatio formula functions and fits a Float parameter");
+		DescribedParameter parameter = await ReadParameterAsync(context, processName, "Sum");
+		parameter.Source.Should().Be("Script",
+			because: "a formula is stored as a Script source, not a constant - that is how the runtime knows to evaluate it");
+		parameter.Value.Should().Be("FormulaUtilities.Max(1, 2, 3)",
+			because: "the formula text must survive the save verbatim; the platform, not clio, decides its meaning");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a formula whose result cannot become the target's declared type is refused BY THE SERVER and nothing is stored. This check must agree with the platform's own pre-save gate: accepting here would only defer the same failure to save time with a worse message.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a formula that does not fit the target type")]
+	public async Task ModifyBusinessProcess_Should_RefuseFormulaMapping_WhenResultTypeDoesNotFitTheTarget() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFormulaTypeE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
+		});
+
+		// Act - a fractional literal into the INTEGER parameter. Conversion retypes it as decimal, which an
+		// Integer target cannot hold; the same expression into the Float parameter is legitimate.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildAmountMappingOperations("1.5")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Int32",
+			because: "the refusal must name the TARGET type, so a caller can tell a type failure from a syntax one");
+		callResultJson.Should().Contain("1.5",
+			because: "it must quote the expression AS WRITTEN, not the converted '1.5m' the caller never typed");
+		DescribedParameter parameter = await ReadParameterAsync(context, processName, "Amount");
+		parameter.Source.Should().NotBe("Script",
+			because: "a refused mapping must leave the parameter unbound, not half-applied");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a formula referencing a parameter that is not in the process is refused and the offending token is NAMED - the ticket's AC5. The reference layer is what a caller cannot check for itself, so this is the refusal that carries the most weight.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a formula with a dangling parameter reference")]
+	public async Task ModifyBusinessProcess_Should_RefuseFormulaMapping_WhenItReferencesAMissingParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFormulaRefE2e{Guid.NewGuid():N}";
+		string missing = Guid.NewGuid().ToString();
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaTargetDescriptor(processName)
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildFormulaMappingOperations("[#[Parameter:{" + missing + "}]#]")
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain(missing,
+			because: "AC5 requires the refusal to NAME the reference that does not resolve, not merely to refuse");
+		DescribedParameter parameter = await ReadParameterAsync(context, processName, "Sum");
+		parameter.Source.Should().NotBe("Script",
+			because: "nothing may be stored when the reference layer refused the formula");
+	}
+
+	// Reads one process parameter back, so a formula assertion can be made against typed fields instead of
+	// substring-matching the escaped MCP envelope.
+	private static async Task<DescribedParameter> ReadParameterAsync(ArrangeContext context, string processName,
+		string parameterName) {
+		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			});
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value)
+				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+		return graph.Parameters.Single(parameter => parameter.Name == parameterName);
+	}
+
+	// A process carrying one Integer and one Float process parameter - the pair that makes the type rule
+	// observable: the same fractional formula is refused for Integer and accepted for Float.
+	private static string BuildFormulaTargetDescriptor(string processName) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Formula E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"EndEvent1\"}],"
+		+ "\"parameters\":[{\"name\":\"Amount\",\"type\":\"Integer\",\"direction\":\"Variable\"},"
+		+ "{\"name\":\"Sum\",\"type\":\"Float\",\"direction\":\"Variable\"}]}";
+
+	private static string BuildFormulaMappingOperations(string expression) =>
+		"[{\"op\":\"addMapping\",\"mapping\":{\"targetProcessParameter\":\"Sum\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}}]";
+
+	private static string BuildAmountMappingOperations(string expression) =>
+		"[{\"op\":\"addMapping\",\"mapping\":{\"targetProcessParameter\":\"Amount\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}}]";
+
 	private static string BuildDescriptor(string processName) =>
 		$$"""
 		{
