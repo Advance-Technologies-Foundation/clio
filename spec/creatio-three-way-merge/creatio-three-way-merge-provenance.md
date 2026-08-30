@@ -48,6 +48,11 @@ The current test project exercises the `net8.0` resolver output while the Creati
 `netstandard2.0` output. The transfer removes that gap by targeting the canonical resolver library
 only at `netstandard2.0`, then running its fixture suite through clio's supported .NET test hosts.
 
+After excluding the three standalone-CLI integration tests, the transferred suite contains 167
+tests. All 167 pass against the clio-owned `netstandard2.0` resolver project. A current
+`dotnet list ... package --vulnerable --include-transitive` check reports no known vulnerable
+packages from NuGet.org.
+
 Before enabling cross-platform CI, normalize fixture identifiers containing Windows path separators.
 The semantic assertions and 232 fixture files remain the behavioral source of truth.
 

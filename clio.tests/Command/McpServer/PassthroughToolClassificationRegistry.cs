@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E;
 
 namespace Clio.Tests.Command.McpServer;
@@ -212,6 +213,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["configure-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-tool-contract"] = PassthroughClassification.NotEnvironmentSensitive,
+			[CreatioArtifactMergeTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
 			["assert-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["show-passing-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments

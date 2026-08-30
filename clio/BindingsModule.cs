@@ -818,6 +818,10 @@ public class BindingsModule {
 		services.AddTransient<UnregisterCommand>();
 		
 		services.AddTransient<IUserPromptService, UserPromptService>();
+		services.AddSingleton<Creatio.ConflictResolver.IConflictResolver,
+			Creatio.ConflictResolver.ConflictResolver>();
+		services.AddSingleton<ICreatioArtifactMergeService, CreatioArtifactMergeService>();
+		services.AddTransient<CreatioArtifactMergeCommand>();
 		services.AddTransient<DeletePackageCommand>();
 		services.AddTransient<GetPkgListCommand>();
 		services.AddTransient<RestoreWorkspaceCommand>();

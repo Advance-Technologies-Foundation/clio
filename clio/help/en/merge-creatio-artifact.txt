@@ -1,0 +1,44 @@
+NAME
+    merge-creatio-artifact - Semantically merge three versions of a supported Creatio artifact
+
+DESCRIPTION
+    Reads explicit Git stage files and prints a semantic three-way merge result as JSON.
+    The command does not inspect a repository or write the merged artifact.
+    This command and its resident MCP tool are available by default.
+    EntitySchema column type conflicts include the exact user question in diagnostics.
+    Ask the user before selecting a conflict side.
+    ProcessSchema metadata, descriptors, and resources, plus C# and SQL, are not implemented.
+    Combined content/output is limited to 4 MiB. Flat metadata is limited to 2,500 operations per stage.
+
+SYNOPSIS
+    clio merge-creatio-artifact --artifact-path <PATH> --base-file <FILE>
+        --ours-file <FILE> --theirs-file <FILE> [--descriptor-file <FILE>]
+
+OPTIONS
+    --artifact-path <PATH>
+        Repository-relative artifact path used to classify the artifact.
+
+    --base-file <FILE>
+        File containing the common-base content (Git stage 1).
+
+    --ours-file <FILE>
+        File containing the current-branch content (Git stage 2).
+
+    --theirs-file <FILE>
+        File containing the incoming-branch content (Git stage 3).
+
+    --descriptor-file <FILE>
+        Resolved sibling descriptor file. Required for metadata and data-binding artifacts.
+
+EXIT CODES
+    0   The merge status is resolved.
+    1   Conflicts remain, the artifact is unsupported or not implemented, or input is invalid.
+
+EXAMPLES
+    clio merge-creatio-artifact --artifact-path packages/MyApp/Schemas/UsrOrder/metadata.json \
+        --base-file .merge/base.json --ours-file .merge/ours.json \
+        --theirs-file .merge/theirs.json --descriptor-file .merge/descriptor.json
+        Preview an EntitySchema merge and print the structured result.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

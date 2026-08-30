@@ -1,0 +1,41 @@
+{
+  "Items": [
+    {
+      "OperationType": "Equal",
+      "UId": "MetaData.Schema.UId.{hasBody:true}",
+      "Body": "219cf6d6-c8b2-4499-ae09-35df80410776",
+      "Inline": true
+    },
+    {
+      "OperationType": "Add",
+      "UId": "MetaData.Schema.EG1.B7.{hasBody:true}",
+      "Body": true,
+      "Inline": true
+    },
+    {
+      "OperationType": "Add",
+      "UId": "MetaData.Schema.EG1.BK15.[\"21bba300-9454-47e2-bda9-dbb8890ba9db\"].{hasBody:true}",
+      "Body": {
+        "BL1": "Terrasoft.Core.Process.ProcessSchemaMapping",
+        "UId": "21bba300-9454-47e2-bda9-dbb8890ba9db",
+        "A2": "SynchronizeSubjectRemindingOwner",
+        "GT1": {}
+      },
+      "Inline": false
+    },
+    {
+      "OperationType": "Reordering",
+      "UId": "~MetaData.Schema.EG1.BK15.{hasBody:true}",
+      "Body": [
+        "21bba300-9454-47e2-bda9-dbb8890ba9db",
+        "4d859192-9127-4401-a767-70119d02745e"
+      ],
+      "Inline": true
+    },
+    {
+      "OperationType": "Remove",
+      "UId": "MetaData.Schema.D2.[\"004b1104-cc46-4865-b079-f23d2665c922\"].E16.{hasBody:false}",
+      "Inline": true
+    }
+  ]
+}

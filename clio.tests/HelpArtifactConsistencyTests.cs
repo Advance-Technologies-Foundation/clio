@@ -78,6 +78,21 @@ internal class HelpArtifactConsistencyTests {
 	}
 
 	[Test]
+	[Description("The Creatio artifact merge command is explicitly classified under Development.")]
+	public void MergeCreatioArtifact_ShouldUseDevelopmentGroup_WhenCatalogBuilt() {
+		// Arrange
+		CommandHelpCatalog catalog = new();
+
+		// Act
+		bool found = catalog.TryGetCommand("merge-creatio-artifact", out HelpCommandMetadata command);
+
+		// Assert
+		found.Should().BeTrue(because: "the CLI-first merge command must be present in the canonical help catalog");
+		command.GroupId.Should().Be(HelpGroupId.Development,
+			because: "semantic package-artifact merging is a development workflow and must not use positional fallback grouping");
+	}
+
+	[Test]
 	[Description("Every Classic->Freedom schema migration verb is classified in the Development group with an explicit description so the catalog does not fall back to source-index classification.")]
 	public void ClassicToFreedomSchemaCommands_ShouldBeClassifiedWithDescription_WhenCatalogBuilt() {
 		// Arrange

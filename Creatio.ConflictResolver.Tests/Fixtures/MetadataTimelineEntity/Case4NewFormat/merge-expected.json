@@ -1,0 +1,67 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "AddonSchemaManager",
+      "UId": "2457273c-95a6-488c-a61d-9b955e37c0a3",
+      "A2": "Entity_af8057fTimelineEntity",
+      "A5": "cef12a3d-32be-46ae-92eb-f8f1f3dbf969",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "4c807b5a-b6c1-4905-965c-fc769f915662",
+      "B8": "0.0.0.0",
+      "AD1": "098c7380-c8eb-401e-b872-6e4a5fd47696",
+      "AD2": "EntitySchemaManager",
+      "AD3": "TimelineEntity",
+      "AD5": "3a2d6f51-1bfc-4c17-aacb-b53de4866b7c",
+      "AD4": {
+        "SchemaName": "Entity_af8057f",
+        "TypeColumnUId": "00000000-0000-0000-0000-000000000000",
+        "TimelineEntityValues": [
+          {
+            "UId": "5643fb4a-2a13-5404-a29e-c8859f017474",
+            "TypeColumnValue": "00000000-0000-0000-0000-000000000000",
+            "IsDefault": true,
+            "ComparisonType": null,
+            "TileName": null,
+            "SortColumn": null,
+            "OwnerColumn": "CreatedBy",
+            "IconId": null,
+            "ColumnLayouts": [
+              {
+                "ColumnName": "CreatedOn",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 4,\"rowSpan\": 1}"
+              },
+              {
+                "ColumnName": "StartDate",
+                "ColumnLayout": "{\"column\": 5,\"row\": 1,\"colSpan\": 4,\"rowSpan\": 1}"
+              },
+              {
+                "ColumnName": "EndDate",
+                "ColumnLayout": "{\"column\": 9,\"row\": 1,\"colSpan\": 4,\"rowSpan\": 1}"
+              }
+            ]
+          },
+          {
+            "UId": "11892ed4-81c6-4819-99d2-d5224a1baef0",
+            "TypeColumnValue": "00000000-0000-0000-0000-000000000000",
+            "IsDefault": true,
+            "ComparisonType": null,
+            "OwnerColumn": "CreatedBy",
+            "IconId": null,
+            "ColumnLayouts": [
+              {
+                "ColumnName": "CreatedOn",
+                "ColumnLayout": null
+              },
+              {
+                "ColumnName": "Column7tet",
+                "ColumnLayout": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
