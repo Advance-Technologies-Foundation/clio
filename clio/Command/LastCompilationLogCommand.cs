@@ -16,6 +16,9 @@ public class LastCompilationLogOptions : RemoteCommandOptions {
 
 }
 
+/// <summary>
+/// Retrieves and displays Creatio's most recently persisted compilation result.
+/// </summary>
 public class LastCompilationLogCommand : RemoteCommand<LastCompilationLogOptions> {
 
 	#region Fields: Private
@@ -44,8 +47,7 @@ public class LastCompilationLogCommand : RemoteCommand<LastCompilationLogOptions
 	/// <returns>Returns 0 if successful, otherwise returns 1.</returns>
 	public override int Execute(LastCompilationLogOptions opts){
 		try {
-			ServicePath = "/api/ConfigurationStatus/GetLastCompilationResult";
-			string result = ApplicationClient.ExecuteGetRequest(ServiceUri);
+			string result = GetLastCompilationResultJson();
 			if (opts.IsRaw) {
 				Logger.WriteLine(result);
 			} else {
@@ -57,6 +59,23 @@ public class LastCompilationLogCommand : RemoteCommand<LastCompilationLogOptions
 			Logger.WriteError(e.Message);
 			return 1;
 		}
+	}
+
+	/// <summary>
+	/// Retrieves Creatio's most recently persisted compilation result as structured data.
+	/// </summary>
+	/// <returns>The typed result returned by Creatio.</returns>
+	public CreatioCompilationLogResponse GetLastCompilationResult(){
+		return _compilationLogParser.DeserializeCreatioCompilationLog(GetLastCompilationResultJson());
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private string GetLastCompilationResultJson(){
+		ServicePath = "/api/ConfigurationStatus/GetLastCompilationResult";
+		return ApplicationClient.ExecuteGetRequest(ServiceUri);
 	}
 
 	#endregion
