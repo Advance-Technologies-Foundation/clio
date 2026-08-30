@@ -16,7 +16,6 @@ using Terrasoft.Web.Http.Abstractions;
 
 namespace cliogate.tests
 {
-	[Category("Unit")]
 	[Author("Kirill Krylov")]
 	[MockSettings(RequireMock.All)]
 	public class CreatioApiGatewayTestFixture : BaseMarketplaceTestFixture
@@ -219,6 +218,7 @@ namespace cliogate.tests
 		}
 
 		[Test]
+		[Category("Unit")]
 		[Description("BuildUnlockDescription treats a null Description column as empty and appends the maintainer marker instead of throwing.")]
 		public void BuildUnlockDescription_ShouldAppendMarkerWithMaintainer_WhenDescriptionIsNull(){
 			//Arrange
@@ -231,6 +231,7 @@ namespace cliogate.tests
 		}
 
 		[Test]
+		[Category("Unit")]
 		[Description("BuildUnlockDescription preserves the original Description when it already carries the maintainer marker.")]
 		public void BuildUnlockDescription_ShouldReturnOriginal_WhenMarkerAlreadyPresent(){
 			//Arrange
@@ -245,6 +246,7 @@ namespace cliogate.tests
 		}
 
 		[Test]
+		[Category("Unit")]
 		[Description("BuildUnlockDescription truncates only the human description so the reversible maintainer marker fits the SysPackage column.")]
 		public void BuildUnlockDescription_ShouldTruncateDescriptionAndPreserveMarker_WhenValueWouldOverflow(){
 			// Arrange
@@ -263,6 +265,7 @@ namespace cliogate.tests
 		}
 
 		[Test]
+		[Category("Unit")]
 		[Description("BuildUnlockDescription avoids leaving an unmatched UTF-16 surrogate when truncation lands inside an emoji.")]
 		public void BuildUnlockDescription_ShouldNotSplitSurrogatePair_WhenTruncatingDescription(){
 			// Arrange
@@ -279,6 +282,7 @@ namespace cliogate.tests
 		}
 
 		[Test]
+		[Category("Unit")]
 		[Description("BuildUnlockDescription rejects a maintainer marker that cannot fit even after the human description is removed.")]
 		public void BuildUnlockDescription_ShouldThrow_WhenMaintainerMarkerExceedsColumnLimit(){
 			// Arrange
