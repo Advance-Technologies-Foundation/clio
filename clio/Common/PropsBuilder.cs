@@ -30,9 +30,20 @@ public readonly record struct PropsBuildResult(bool Net472PropsCreated, bool Net
 	/// True when the given nuget package name matches an assembly that was materialized.
 	/// </summary>
 	/// <param name="nugetPackageName">Nuget package name as written in the csproj.</param>
-	public bool IsMaterialized(string nugetPackageName) =>
-		MaterializedAssemblies is not null
-		&& MaterializedAssemblies.Contains(nugetPackageName, StringComparer.OrdinalIgnoreCase);
+	/// <remarks>
+	/// A heuristic: a package id is not always its assembly name (NUnit ships
+	/// nunit.framework.dll), so an assembly whose name starts with the package id counts as
+	/// a match. When a package id genuinely matches nothing, its PackageReference is kept -
+	/// the package still restores, which is safer than dropping a dependency.
+	/// </remarks>
+	public bool IsMaterialized(string nugetPackageName){
+		if (MaterializedAssemblies is null || string.IsNullOrWhiteSpace(nugetPackageName)) {
+			return false;
+		}
+		return MaterializedAssemblies.Any(assembly =>
+			assembly.Equals(nugetPackageName, StringComparison.OrdinalIgnoreCase)
+			|| assembly.StartsWith(nugetPackageName + ".", StringComparison.OrdinalIgnoreCase));
+	}
 
 	/// <summary>
 	/// Builds the props file name clio generates for a package and a target moniker.

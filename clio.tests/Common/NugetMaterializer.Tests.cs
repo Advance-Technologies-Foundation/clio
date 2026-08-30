@@ -295,6 +295,23 @@ public class NugetMaterializerTests
 	}
 
 	[Test]
+	[Description("Treats an assembly named after the package id as materialized, as NUnit ships nunit.framework.dll (issue 263)")]
+	public void Materializer_CommentsOutPackageReference_When_AssemblyNameExtendsPackageId(){
+		// Arrange
+		_fileSystem.ReadAllText(CsprojFileName)
+			.Returns(MockCsProjWithNugetContent());
+		_propsBuilder.Build(PackageName)
+			.Returns(new PropsBuildResult(true, true, ["Nuget1.Core", "Nuget2", "Nuget3"]));
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(0, because: "every package reference was materialized");
+		_logger.Received(0).WriteWarning(Arg.Is<string>(m => m.Contains("Keeping the Nuget1")));
+	}
+
+	[Test]
 	[Description("Keeps a package reference that produced no assembly, such as an analyzer (issue 263)")]
 	public void Materializer_KeepsPackageReference_When_NugetProducedNoAssembly(){
 		// Arrange

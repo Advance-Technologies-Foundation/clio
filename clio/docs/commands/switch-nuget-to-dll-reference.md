@@ -32,7 +32,9 @@ no `<Import>` is added, because MSBuild fails the whole project when it imports 
 no root element. A warning names the skipped props file.
 
 A NuGet package that contributes no assembly at all — an analyzer, for example — keeps its
-`PackageReference` in the csproj instead of being commented out.
+`PackageReference` in the csproj instead of being commented out. A package is considered
+materialized when a copied assembly is named after it, which also covers packages whose assembly
+name extends the package id (`NUnit` ships `nunit.framework.dll`).
 
 When neither target framework produced a props file, the csproj is left completely unchanged
 and the command exits with code `1`.
