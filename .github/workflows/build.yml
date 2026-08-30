@@ -149,7 +149,7 @@ jobs:
           & .\.github\scripts\Invoke-TestShard.ps1 @arguments
 
       - name: Run ConflictResolver tests
-        if: matrix.name == 'unit-1' || matrix.shardingDisabled
+        if: matrix.runConflictResolverTests
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'

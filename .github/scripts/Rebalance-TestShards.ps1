@@ -5,6 +5,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string[]] $IntegrationTrx,
 
+    [Parameter(Mandatory = $true)]
+    [double[]] $UnitFixedSeconds,
+
     [string] $ManifestPath = "clio.tests/TestSharding/test-shards.json"
 )
 
@@ -57,18 +60,35 @@ function New-BalancedShards {
     param(
         [Parameter(Mandatory = $true)][object[]] $Fixtures,
         [Parameter(Mandatory = $true)][int] $Count,
-        [Parameter(Mandatory = $true)][string] $Prefix
+        [Parameter(Mandatory = $true)][string] $Prefix,
+        [double[]] $FixedSeconds = @(0, 0, 0, 0)
     )
 
     $bins = @(0..($Count - 1) | ForEach-Object {
         [pscustomobject]@{
             name = "$Prefix-$($_ + 1)"
             fixtures = [System.Collections.Generic.List[string]]::new()
-            seconds = 0.0
+            fixedSeconds = [double]$FixedSeconds[$_]
+            seconds = [double]$FixedSeconds[$_]
         }
     })
 
+    $remaining = [System.Collections.Generic.List[object]]::new()
     foreach ($fixture in $Fixtures | Sort-Object @{ Expression = "seconds"; Descending = $true }, fixture) {
+        $remaining.Add($fixture)
+    }
+
+    foreach ($target in $bins | Sort-Object @{ Expression = "fixedSeconds"; Descending = $true }, name) {
+        if ($remaining.Count -eq 0) {
+            throw "Suite '$Prefix' has fewer fixtures than shards."
+        }
+        $fixture = $remaining[$remaining.Count - 1]
+        $remaining.RemoveAt($remaining.Count - 1)
+        $target.fixtures.Add([string]$fixture.fixture)
+        $target.seconds += [double]$fixture.seconds
+    }
+
+    foreach ($fixture in $remaining) {
         $target = $bins | Sort-Object seconds, @{ Expression = { $_.fixtures.Count } }, name | Select-Object -First 1
         $target.fixtures.Add([string]$fixture.fixture)
         $target.seconds += [double]$fixture.seconds
@@ -77,6 +97,7 @@ function New-BalancedShards {
     @($bins | ForEach-Object {
         [ordered]@{
             name = $_.name
+            fixedSeconds = [Math]::Round($_.fixedSeconds, 3)
             estimatedSeconds = [Math]::Round($_.seconds, 3)
             fixtures = @($_.fixtures | Sort-Object)
         }
@@ -85,10 +106,17 @@ function New-BalancedShards {
 
 $resolvedUnitTrx = @($UnitTrx | ForEach-Object { Resolve-Path -Path $_ } | ForEach-Object Path | Sort-Object -Unique)
 $resolvedIntegrationTrx = @($IntegrationTrx | ForEach-Object { Resolve-Path -Path $_ } | ForEach-Object Path | Sort-Object -Unique)
-if ($resolvedUnitTrx.Count -ne 4 -or @($resolvedUnitTrx | Where-Object { (Split-Path -Leaf $_) -notmatch '^unit-[1-4]\.trx$' }).Count -gt 0) {
+$expectedUnitNames = @(1..4 | ForEach-Object { "unit-$_.trx" })
+$expectedIntegrationNames = @(1..3 | ForEach-Object { "integration-$_.trx" })
+$unitNames = @($resolvedUnitTrx | ForEach-Object { Split-Path -Leaf $_ } | Sort-Object)
+$integrationNames = @($resolvedIntegrationTrx | ForEach-Object { Split-Path -Leaf $_ } | Sort-Object)
+if ($UnitFixedSeconds.Count -ne 4 -or @($UnitFixedSeconds | Where-Object { $_ -lt 0 }).Count -gt 0) {
+    throw "UnitFixedSeconds must contain four non-negative values for unit-1 through unit-4."
+}
+if ((Compare-Object $expectedUnitNames $unitNames).Count -gt 0) {
     throw "Unit timings must contain unit-1.trx through unit-4.trx."
 }
-if ($resolvedIntegrationTrx.Count -ne 3 -or @($resolvedIntegrationTrx | Where-Object { (Split-Path -Leaf $_) -notmatch '^integration-[1-3]\.trx$' }).Count -gt 0) {
+if ((Compare-Object $expectedIntegrationNames $integrationNames).Count -gt 0) {
     throw "Integration timings must contain integration-1.trx through integration-3.trx."
 }
 
@@ -97,11 +125,11 @@ $manifest = [ordered]@{
     suites = [ordered]@{
         unit = [ordered]@{
             baseFilter = "Category!=Integration"
-            shards = New-BalancedShards -Fixtures (Get-FixtureDurations $resolvedUnitTrx) -Count 4 -Prefix "unit"
+            shards = New-BalancedShards -Fixtures (Get-FixtureDurations $resolvedUnitTrx) -Count 4 -Prefix "unit" -FixedSeconds $UnitFixedSeconds
         }
         integration = [ordered]@{
             baseFilter = "Category=Integration"
-            shards = New-BalancedShards -Fixtures (Get-FixtureDurations $resolvedIntegrationTrx) -Count 3 -Prefix "integration"
+            shards = New-BalancedShards -Fixtures (Get-FixtureDurations $resolvedIntegrationTrx) -Count 3 -Prefix "integration" -FixedSeconds @(0, 0, 0)
         }
     }
 }

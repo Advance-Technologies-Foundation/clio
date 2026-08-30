@@ -28,6 +28,11 @@ function Get-TestInventory {
 
 $resolvedBaselineTrx = @(Resolve-Path -Path $BaselineTrx | ForEach-Object Path | Sort-Object -Unique)
 $resolvedShardTrx = @($ShardTrx | ForEach-Object { Resolve-Path -Path $_ } | ForEach-Object Path | Sort-Object -Unique)
+$overlappingPaths = @($resolvedBaselineTrx | Where-Object { $_ -in $resolvedShardTrx })
+if ($overlappingPaths.Count -gt 0) {
+    throw "The unsharded baseline cannot also be a shard input: $($overlappingPaths -join ', ')"
+}
+
 $baseline = Get-TestInventory $resolvedBaselineTrx
 $shards = Get-TestInventory $resolvedShardTrx
 $allKeys = @($baseline.Keys + $shards.Keys | Sort-Object -Unique)

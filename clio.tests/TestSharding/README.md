@@ -5,8 +5,9 @@ workers. Each worker uses the same `dotnet test clio.tests.csproj` path as the u
 TeamCity does not read this manifest or these scripts, so its unit, integration, and MCP end-to-end
 configuration is unchanged.
 
-The first unit worker also preserves the existing NET8 compatibility build and
-`Creatio.ConflictResolver.Tests` run. In unsharded mode, the single unit worker runs both.
+The first unit worker preserves the existing NET8 compatibility build, while the second runs
+`Creatio.ConflictResolver.Tests` so their fixed costs can be balanced independently. In unsharded
+mode, the single unit worker runs both.
 
 The first shards select their listed fixtures. The final shard is a catch-all: it runs the base
 predicate and excludes fixtures assigned to earlier shards. A newly added fixture therefore runs
@@ -31,12 +32,15 @@ TRX files from a representative GitHub run, then run:
 ```powershell
 ./.github/scripts/Rebalance-TestShards.ps1 `
   -UnitTrx ./timings/unit-*.trx `
-  -IntegrationTrx ./timings/integration-*.trx
+  -IntegrationTrx ./timings/integration-*.trx `
+  -UnitFixedSeconds 130,5,0,0
 ```
 
 The script aggregates elapsed time by NUnit fixture and applies deterministic longest-processing-
-time-first balancing. Review and commit the updated `test-shards.json`. Use timings from the same
-successful run so the manifest represents one coherent test inventory.
+time-first balancing. `UnitFixedSeconds` accounts for work outside `clio.tests`: in the example,
+unit-1 spent 130 seconds on NET8 compatibility and unit-2 spent 5 seconds on ConflictResolver.
+Replace those values with timings from the same representative run as the TRX files. Review and
+commit the updated `test-shards.json` so the manifest represents one coherent test inventory.
 
 When changing the filter mechanism, run the unsharded switch once and compare its TRX with the
 sharded TRX files:

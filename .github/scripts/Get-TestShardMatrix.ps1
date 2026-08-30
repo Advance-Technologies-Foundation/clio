@@ -16,6 +16,7 @@ if ($DisableSharding) {
             @{
                 name = "$Suite-unsharded"
                 runNet8Compatibility = $Suite -eq "unit"
+                runConflictResolverTests = $Suite -eq "unit"
                 shardingDisabled = $true
             }
         )
@@ -33,6 +34,7 @@ $include = @($suiteDefinition.shards | ForEach-Object {
     @{
         name = $_.name
         runNet8Compatibility = $Suite -eq "unit" -and $_.name -eq "unit-1"
+        runConflictResolverTests = $Suite -eq "unit" -and $_.name -eq "unit-2"
         shardingDisabled = $false
     }
 })
