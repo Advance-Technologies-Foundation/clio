@@ -224,12 +224,14 @@ internal static class PageBodyAstLinter {
 
 	#region Undefined section calls
 
+	private const string FetchGlobalName = "fetch";
+
 	private static readonly HashSet<string> KnownJavaScriptGlobals = new(StringComparer.Ordinal) {
 		"Array", "Boolean", "BigInt", "Date", "Error", "EvalError", "Function", "Infinity", "Intl", "JSON",
 		"Map", "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError", "ReferenceError",
 		"Reflect", "RegExp", "Set", "String", "Symbol", "SyntaxError", "TypeError", "URIError", "URL",
 		"WeakMap", "WeakSet", "console", "crt", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent",
-		"Terrasoft", "XMLHttpRequest", "document", "fetch", "globalThis", "isFinite", "isNaN", "parseFloat", "parseInt", "sdk", "setTimeout", "setInterval",
+		"Terrasoft", "XMLHttpRequest", "document", FetchGlobalName, "globalThis", "isFinite", "isNaN", "parseFloat", "parseInt", "sdk", "setTimeout", "setInterval",
 		"clearTimeout", "clearInterval", "window", "undefined"
 	};
 
@@ -606,9 +608,9 @@ internal static class PageBodyAstLinter {
 
 	private static bool IsFetchCall(Node callee) =>
 		callee switch {
-			Identifier { Name: "fetch" } => true,
-			MemberExpression { Property: Identifier { Name: "fetch" }, Computed: false, Object: Identifier { Name: "globalThis" } } => true,
-			MemberExpression { Property: Identifier { Name: "fetch" }, Computed: false, Object: Identifier { Name: "window" } } => true,
+			Identifier { Name: FetchGlobalName } => true,
+			MemberExpression { Property: Identifier { Name: FetchGlobalName }, Computed: false, Object: Identifier { Name: "globalThis" } } => true,
+			MemberExpression { Property: Identifier { Name: FetchGlobalName }, Computed: false, Object: Identifier { Name: "window" } } => true,
 			_ => false
 		};
 
