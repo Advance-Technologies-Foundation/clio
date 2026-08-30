@@ -61,7 +61,9 @@ successful `SonarCloud Code Analysis` check on that exact SHA, queries every
 page of Sonar PR issues with statuses `OPEN`, `CONFIRMED`, and `ACCEPTED`, and
 then re-reads the head to detect a concurrent push. Public projects are queried
 anonymously. When `SONAR_TOKEN` is present, it is sent only as a Bearer header
-and is never printed.
+to the fixed `https://sonarcloud.io` origin and is never printed. The checker is
+Clio-specific: its GitHub repository, Sonar project, trusted GitHub App, and
+Sonar origin are fixed, and authenticated redirects are rejected.
 
 - Exit `0`: analysis completed on the stable latest head and no new issues remain.
 - Exit `1`: new issues remain; every issue is printed with its rule, severity, status, file, line, and message.

@@ -46,8 +46,9 @@ For every repository that owns required work:
 
 1. Search for an existing issue before creating a duplicate.
 2. When no suitable issue exists, create one with the original Clio issue link, evidence, acceptance criteria, and exclusions when the target is owned by `Advance-Technologies-Foundation`. Require explicit user confirmation before writing to any third-party, customer-owned, or personal repository.
-3. Mark the original Clio issue as `blocked by` the downstream issue with `gh issue edit ORIGINAL --add-blocked-by DOWNSTREAM_URL`. Use `relates to` only when the downstream work is informative rather than required.
-4. Add a concise diagnosis comment to the original issue with the owning repository and downstream issue link. Do not duplicate the full downstream issue body.
+3. Before handoff, apply the same metadata normalization and readback gate to every existing or created downstream issue that owns repair work. If its repository has no relevant enabled Issue Type or existing label, or the workflow lacks authority to set them, stop and report the exact metadata blocker rather than starting repair from an unclassified issue.
+4. Mark the original Clio issue as `blocked by` the downstream issue with `gh issue edit ORIGINAL --add-blocked-by DOWNSTREAM_URL`. Use `relates to` only when the downstream work is informative rather than required.
+5. Add a concise diagnosis comment to the original issue with the owning repository and downstream issue link. Do not duplicate the full downstream issue body.
 
 Do not use parent-child relationships unless the original issue intentionally represents a larger planned body of work. For multiple required repositories, the original issue may be blocked by multiple downstream issues.
 

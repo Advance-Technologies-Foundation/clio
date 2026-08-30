@@ -9,7 +9,7 @@ Implement the smallest complete repair in each repository identified by the `inv
 
 ## Preconditions
 
-Confirm that the original issue is open, assigned to the current GitHub user, has one verified Development branch, has an evidence-backed ownership diagnosis, has exactly one relevant enabled Issue Type and at least one relevant existing repository label verified by the investigation, and has a verified `Mitigation stage = Fixing` using the `clio-issue-workflow` skill. If metadata is missing or contradicts the diagnosis, return to the `investigate-clio-issue` metadata gate instead of guessing during repair. Stop on mismatch rather than bypassing claim or investigation.
+Confirm that the original issue is open, assigned to the current GitHub user, has one verified Development branch, has an evidence-backed ownership diagnosis, and has a verified `Mitigation stage = Fixing` using the `clio-issue-workflow` skill. Confirm that the original issue and every downstream issue that owns repair work have exactly one relevant enabled Issue Type and at least one relevant existing repository label verified by the investigation. If metadata is missing or contradicts the diagnosis, return to the `investigate-clio-issue` metadata gate instead of guessing during repair. Stop on mismatch rather than bypassing claim or investigation.
 
 ## Establish each repair branch
 
@@ -48,8 +48,8 @@ Close an unwanted draft PR rather than claiming it was deleted. Remove only its 
 
 ## Complete
 
-Make the draft ready only when the repair is complete, validation is recorded, and no blocking review findings remain. For Clio pull requests, hand delivery to the repository's `pr-delivery-flow` skill when available; for other repositories, follow their equivalent delivery policy. Keep the original issue open while any required downstream issue or repair PR is unresolved. After all required PRs are merged and the reported outcome is verified, set the original issue's `Completion date` to the current date and verify the stored value. Then close the issue if it did not close through the merged PR.
+Make the draft ready only when the repair is complete, validation is recorded, and no blocking review findings remain. For Clio pull requests, hand delivery to the repository's `pr-delivery-flow` skill when available; for other repositories, follow their equivalent delivery policy. Keep the original issue open while any required downstream issue or repair PR is unresolved. Close it only after all required PRs are merged and the reported outcome is verified.
 
-Report each issue, repository, branch, worktree, PR, start date, completion date when finished, mitigation stage, validation result, cross-agent result or unavailability, final review result, and remaining external dependency.
+Report each issue, repository, branch, worktree, PR, mitigation stage, validation result, cross-agent result or unavailability, final review result, and remaining external dependency.
 
 Do not add coordination artifacts beyond those defined by the `clio-issue-workflow` skill.

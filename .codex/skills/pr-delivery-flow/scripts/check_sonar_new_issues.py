@@ -14,14 +14,15 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 DEFAULT_REPO = "Advance-Technologies-Foundation/clio"
 DEFAULT_PROJECT_KEY = "Advance-Technologies-Foundation_clio"
 DEFAULT_SONAR_URL = "https://sonarcloud.io"
 SONAR_CHECK = "SonarCloud Code Analysis"
+SONAR_APP_SLUG = "sonarqubecloud"
 BLOCKING_STATUSES = "OPEN,CONFIRMED,ACCEPTED"
 
 
@@ -29,7 +30,17 @@ class Unverified(RuntimeError):
     """The zero-new-issues result could not be proven."""
 
 
-def gh(*arguments: str) -> str:
+class NoRedirectHandler(HTTPRedirectHandler):
+    """Prevent authenticated Sonar requests from crossing origins."""
+
+    def redirect_request(self, request: Request, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+SONAR_OPENER = build_opener(NoRedirectHandler)
+
+
+def gh(*arguments: str, timeout: int) -> str:
     try:
         result = subprocess.run(
             ["gh", *arguments],
@@ -38,38 +49,43 @@ def gh(*arguments: str) -> str:
             encoding="utf-8",
             errors="replace",
             check=False,
+            timeout=timeout,
         )
     except FileNotFoundError as error:
         raise Unverified("GitHub CLI 'gh' is not installed or not on PATH.") from error
+    except subprocess.TimeoutExpired as error:
+        raise Unverified(f"GitHub CLI timed out after {timeout} seconds.") from error
     if result.returncode:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown gh error"
         raise Unverified(f"GitHub CLI failed: {detail}")
     return result.stdout
 
 
-def pr_head(repository: str, pull_request: int) -> str:
+def pr_head(pull_request: int, timeout: int) -> str:
     head = gh(
         "pr",
         "view",
         str(pull_request),
         "--repo",
-        repository,
+        DEFAULT_REPO,
         "--json",
         "headRefOid",
         "--jq",
         ".headRefOid",
+        timeout=timeout,
     ).strip()
     if not head:
         raise Unverified("GitHub returned an empty PR head SHA.")
     return head
 
 
-def sonar_check(repository: str, head: str) -> dict[str, Any]:
+def sonar_check(head: str, pull_request: int, timeout: int) -> dict[str, Any]:
     raw = gh(
         "api",
-        f"repos/{repository}/commits/{head}/check-runs?per_page=100",
+        f"repos/{DEFAULT_REPO}/commits/{head}/check-runs?per_page=100",
         "--paginate",
         "--slurp",
+        timeout=timeout,
     )
     try:
         pages = json.loads(raw)
@@ -77,14 +93,21 @@ def sonar_check(repository: str, head: str) -> dict[str, Any]:
             check
             for page in pages
             for check in page.get("check_runs", [])
-            if check.get("name") == SONAR_CHECK
+            if isinstance(check, dict)
+            and check.get("name") == SONAR_CHECK
+            and isinstance(check.get("app"), dict)
+            and check["app"].get("slug") == SONAR_APP_SLUG
         ]
-    except (AttributeError, json.JSONDecodeError, TypeError) as error:
+        if not checks:
+            raise Unverified(
+                f"No trusted '{SONAR_CHECK}' check exists on head {head}."
+            )
+        check = max(checks, key=lambda item: int(item.get("id") or 0))
+    except Unverified:
+        raise
+    except (AttributeError, ValueError, json.JSONDecodeError, TypeError) as error:
         raise Unverified("GitHub check-run response had an unexpected shape.") from error
-    if not checks:
-        raise Unverified(f"No '{SONAR_CHECK}' check exists on head {head}.")
 
-    check = max(checks, key=lambda item: int(item.get("id") or 0))
     check_head = str(check.get("head_sha") or "")
     if check_head != head:
         raise Unverified(
@@ -96,17 +119,30 @@ def sonar_check(repository: str, head: str) -> dict[str, Any]:
         raise Unverified(f"Sonar analysis on head {head} is not complete ({status}).")
     if conclusion != "success":
         raise Unverified(f"Sonar analysis on head {head} did not succeed ({conclusion}).")
+    details = urlparse(str(check.get("details_url") or ""))
+    details_query = parse_qs(details.query)
+    if (
+        details.scheme != "https"
+        or details.netloc != "sonarcloud.io"
+        or details.path != "/dashboard"
+        or details_query.get("id") != [DEFAULT_PROJECT_KEY]
+        or details_query.get("pullRequest") != [str(pull_request)]
+    ):
+        raise Unverified("Sonar check details do not match the expected project and PR.")
     return check
 
 
 def get_json(url: str, timeout: int) -> dict[str, Any]:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc != "sonarcloud.io":
+        raise Unverified("Sonar API URL is outside the trusted SonarCloud origin.")
     headers = {"Accept": "application/json"}
     token = os.environ.get("SONAR_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, headers=headers, method="GET")
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with SONAR_OPENER.open(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace").strip()[:500]
@@ -115,26 +151,22 @@ def get_json(url: str, timeout: int) -> dict[str, Any]:
         ) from error
     except (URLError, TimeoutError) as error:
         raise Unverified(f"Sonar API request failed: {error}") from error
-    except json.JSONDecodeError as error:
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise Unverified("Sonar API response was not valid JSON.") from error
     if not isinstance(payload, dict):
         raise Unverified("Sonar API response had an unexpected shape.")
     return payload
 
 
-def sonar_issues(
-    sonar_url: str,
-    project_key: str,
-    pull_request: int,
-    timeout: int,
-) -> list[dict[str, Any]]:
+def sonar_issues(pull_request: int, timeout: int) -> list[dict[str, Any]]:
     found: dict[str, dict[str, Any]] = {}
     expected: int | None = None
+    expected_page_size: int | None = None
     page = 1
-    while expected is None or len(found) < expected:
+    while True:
         query = urlencode(
             {
-                "componentKeys": project_key,
+                "componentKeys": DEFAULT_PROJECT_KEY,
                 "pullRequest": pull_request,
                 "issueStatuses": BLOCKING_STATUSES,
                 "inNewCodePeriod": "true",
@@ -142,22 +174,35 @@ def sonar_issues(
                 "ps": 500,
             }
         )
-        payload = get_json(f"{sonar_url.rstrip('/')}/api/issues/search?{query}", timeout)
+        payload = get_json(f"{DEFAULT_SONAR_URL}/api/issues/search?{query}", timeout)
         paging, issues = payload.get("paging"), payload.get("issues")
         if not isinstance(paging, dict) or not isinstance(issues, list):
             raise Unverified("Sonar response omitted paging or issues data.")
         try:
             total = int(paging["total"])
+            page_index = int(paging["pageIndex"])
+            page_size = int(paging["pageSize"])
         except (KeyError, TypeError, ValueError) as error:
-            raise Unverified("Sonar response omitted a valid issue total.") from error
+            raise Unverified("Sonar response omitted valid pagination data.") from error
+        if total < 0 or page_size <= 0 or page_index != page:
+            raise Unverified("Sonar returned inconsistent pagination data.")
         if expected is not None and total != expected:
             raise Unverified("Sonar issue total changed during pagination.")
+        if expected_page_size is not None and page_size != expected_page_size:
+            raise Unverified("Sonar page size changed during pagination.")
         expected = total
+        expected_page_size = page_size
+        if len(issues) > page_size:
+            raise Unverified("Sonar returned more issues than the declared page size.")
         for issue in issues:
             if not isinstance(issue, dict) or not issue.get("key"):
                 raise Unverified("Sonar returned a malformed issue.")
-            found[str(issue["key"])] = issue
-        if len(found) >= expected:
+            key = str(issue["key"])
+            if key in found:
+                raise Unverified("Sonar returned a duplicate issue during pagination.")
+            found[key] = issue
+        page_count = max(1, (expected + page_size - 1) // page_size)
+        if page >= page_count:
             break
         if not issues:
             raise Unverified("Sonar pagination ended before every issue was returned.")
@@ -167,16 +212,16 @@ def sonar_issues(
     return list(found.values())
 
 
-def issue_text(issue: dict[str, Any], project_key: str) -> str:
+def issue_text(issue: dict[str, Any]) -> str:
     component = str(issue.get("component") or "unknown-component")
-    prefix = f"{project_key}:"
+    prefix = f"{DEFAULT_PROJECT_KEY}:"
     if component.startswith(prefix):
         component = component[len(prefix) :]
     line = issue.get("line")
     location = f"{component}:{line}" if line is not None else component
     return (
         f"[{issue.get('severity', 'UNKNOWN')}] {issue.get('rule', 'unknown-rule')} "
-        f"{issue.get('status', 'UNKNOWN')} {location} - "
+        f"{issue.get('issueStatus', issue.get('status', 'UNKNOWN'))} {location} - "
         f"{issue.get('message', 'No message supplied.')} ({issue.get('key')})"
     )
 
@@ -184,12 +229,9 @@ def issue_text(issue: dict[str, Any], project_key: str) -> str:
 def arguments(values: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--pr", type=int, required=True, help="GitHub pull request number.")
-    parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub OWNER/REPO.")
     parser.add_argument(
-        "--project-key", default=DEFAULT_PROJECT_KEY, help="Sonar project key."
+        "--timeout", type=int, default=30, help="GitHub and Sonar timeout in seconds."
     )
-    parser.add_argument("--sonar-url", default=DEFAULT_SONAR_URL, help="Sonar base URL.")
-    parser.add_argument("--timeout", type=int, default=30, help="API timeout in seconds.")
     parsed = parser.parse_args(values)
     if parsed.pr <= 0 or parsed.timeout <= 0:
         parser.error("--pr and --timeout must be positive integers")
@@ -199,14 +241,15 @@ def arguments(values: Sequence[str]) -> argparse.Namespace:
 def main(values: Sequence[str] | None = None) -> int:
     options = arguments(values if values is not None else sys.argv[1:])
     try:
-        head = pr_head(options.repo, options.pr)
-        check = sonar_check(options.repo, head)
-        issues = sonar_issues(
-            options.sonar_url, options.project_key, options.pr, options.timeout
-        )
-        current_head = pr_head(options.repo, options.pr)
+        head = pr_head(options.pr, options.timeout)
+        check = sonar_check(head, options.pr, options.timeout)
+        issues = sonar_issues(options.pr, options.timeout)
+        current_head = pr_head(options.pr, options.timeout)
         if current_head != head:
             raise Unverified(f"PR head changed during verification: {head} -> {current_head}.")
+        current_check = sonar_check(head, options.pr, options.timeout)
+        if current_check.get("id") != check.get("id"):
+            raise Unverified("Sonar analysis changed during verification; run the check again.")
     except Unverified as error:
         print(f"UNVERIFIED: {error}", file=sys.stderr)
         return 2
@@ -217,7 +260,7 @@ def main(values: Sequence[str] | None = None) -> int:
         if details_url:
             print(f"Sonar analysis: {details_url}")
         for issue in issues:
-            print(issue_text(issue, options.project_key))
+            print(issue_text(issue))
         return 1
 
     print(f"PASSED: PR #{options.pr} head {head} has zero new Sonar issues.")
