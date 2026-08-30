@@ -132,10 +132,16 @@ public class PropsBuilder : IPropsBuilder
 
 	#region Fields: Private
 
-	//Matches '$(TargetFramework)' == 'net472' and its negated and unspaced forms
-	private static readonly Regex TargetFrameworkConditionRegex = new(
-		@"'\$\(TargetFramework\)'\s*(?<operator>==|!=)\s*'(?<framework>[^']*)'",
+	//Matches a whole condition that is a single $(TargetFramework) comparison, in either
+	//operand order: '$(TargetFramework)' == 'net472' and 'net472' != '$(TargetFramework)'
+	private static readonly Regex SimpleTargetFrameworkConditionRegex = new(
+		@"^\s*(?:'\$\(TargetFramework\)'\s*(?<operator>==|!=)\s*'(?<framework>[^']*)'"
+		+ @"|'(?<framework2>[^']*)'\s*(?<operator2>==|!=)\s*'\$\(TargetFramework\)')\s*$",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+	//Any mention of the property, used to tell "no opinion" from "an expression we cannot evaluate"
+	private static readonly Regex TargetFrameworkMentionRegex = new(
+		@"\$\(TargetFramework[^)]*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
@@ -213,8 +219,12 @@ public class PropsBuilder : IPropsBuilder
 	/// Choose/When - says nothing about the others. Treating it as "already referenced"
 	/// everywhere drops the dependency from the props file of every other target framework,
 	/// and the package then fails to compile for them.
-	/// Only conditions written against $(TargetFramework) are interpreted; any other condition
-	/// is assumed to apply, which keeps the previous behaviour for conditions clio cannot read.
+	/// Only a condition that is a single $(TargetFramework) comparison is interpreted. A
+	/// condition that mentions the property inside something more complex - And, Or, a negation,
+	/// a property function - is treated as NOT applying, so the dll is written into the props
+	/// file. That direction is deliberate: a duplicate reference is an MSBuild warning, while a
+	/// missing one is a compile error. A condition that does not mention $(TargetFramework) at
+	/// all is assumed to apply, as before.
 	/// </remarks>
 	private static bool AppliesToTargetFramework(XElement element, string targetFramework){
 		for (XElement current = element; current is not null; current = current.Parent) {
@@ -222,13 +232,22 @@ public class PropsBuilder : IPropsBuilder
 			if (string.IsNullOrWhiteSpace(condition)) {
 				continue;
 			}
-			Match match = TargetFrameworkConditionRegex.Match(condition);
+			Match match = SimpleTargetFrameworkConditionRegex.Match(condition);
 			if (!match.Success) {
+				if (TargetFrameworkMentionRegex.IsMatch(condition)) {
+					//The condition depends on the target framework in a way clio cannot evaluate
+					return false;
+				}
 				continue;
 			}
-			bool negated = match.Groups["operator"].Value == "!=";
-			bool matchesFramework = string.Equals(match.Groups["framework"].Value, targetFramework,
-				StringComparison.OrdinalIgnoreCase);
+			string comparisonOperator = match.Groups["operator"].Success
+				? match.Groups["operator"].Value
+				: match.Groups["operator2"].Value;
+			string framework = match.Groups["framework"].Success
+				? match.Groups["framework"].Value
+				: match.Groups["framework2"].Value;
+			bool negated = comparisonOperator == "!=";
+			bool matchesFramework = string.Equals(framework, targetFramework, StringComparison.OrdinalIgnoreCase);
 			if (matchesFramework == negated) {
 				return false;
 			}
