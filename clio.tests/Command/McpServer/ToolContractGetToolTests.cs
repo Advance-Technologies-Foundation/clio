@@ -580,8 +580,13 @@ public sealed class ToolContractGetToolTests {
 			because: "a successful query reports the number of returned rows");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "success",
 			because: "the envelope must expose the success flag");
+		contract.OutputContract.Fields.Should().Contain(field =>
+			field.Name == "error-class" && field.Description.Contains("result-too-large", StringComparison.Ordinal),
+			because: "the contract must advertise the machine-readable oversized-result recovery signal");
 		contract.Description.Should().Contain("get-guidance",
 			because: "the contract should steer callers to read the esq guidance before composing a query");
+		contract.Description.Should().Contain(ExecuteEsqTool.MaxResponseSizeBytes.ToString(),
+			because: "the agent-facing contract must state the executable response budget");
 	}
 
 	[Test]
