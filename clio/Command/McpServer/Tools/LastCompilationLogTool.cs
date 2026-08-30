@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -23,6 +24,9 @@ public sealed class LastCompilationLogTool(
 	/// </summary>
 	internal const string ToolName = "last-compilation-log";
 
+	private static readonly Dictionary<string, string> LegacyAliases =
+		new(McpToolArgumentSupport.EnvironmentNameAliases, System.StringComparer.Ordinal);
+
 	/// <summary>
 	/// Reads the last compilation result persisted by Creatio without starting a compilation.
 	/// </summary>
@@ -37,6 +41,11 @@ public sealed class LastCompilationLogTool(
 		[Description("last-compilation-log parameters")]
 		[Required]
 		LastCompilationLogArgs args) {
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".", "Valid: environment-name.");
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return new LastCompilationLogResponse(false, false, null, [], aliasError);
+		}
 		LastCompilationLogOptions options = new() { Environment = args.EnvironmentName };
 		return ExecuteResolved<LastCompilationLogCommand, LastCompilationLogResponse>(
 			options,
@@ -65,7 +74,12 @@ public sealed class LastCompilationLogTool(
 public sealed record LastCompilationLogArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name. Preferred for stdio; omit when HTTP credential passthrough supplies the target.")]
-	string? EnvironmentName = null);
+	string? EnvironmentName = null) {
+
+	/// <summary>Overflow bag for unknown JSON fields; drives legacy-alias rename hints.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>
 /// Structured result returned by <c>last-compilation-log</c>.

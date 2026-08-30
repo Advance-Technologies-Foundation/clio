@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Clio.Common;
 
@@ -31,28 +32,43 @@ public interface ICompilationLogParser {
 /// </summary>
 public class CompilationLogParser : ICompilationLogParser {
 
+	private sealed class CompilationLogPayload {
+
+		private CreatioCompilationError[] _errors;
+
+		[JsonPropertyName("errors")]
+		public CreatioCompilationError[] Errors {
+			get => _errors;
+			set {
+				_errors = value;
+				ErrorsPresent = true;
+			}
+		}
+
+		[JsonIgnore]
+		public bool ErrorsPresent { get; private set; }
+
+		[JsonPropertyName("buildResult")]
+		public int? BuildResult { get; set; }
+
+		[JsonPropertyName("success")]
+		public bool? Success { get; set; }
+	}
+
 	#region Methods: Public
 
 	/// <inheritdoc />
 	public CreatioCompilationLogResponse DeserializeCreatioCompilationLog(string jsonInput){
-		using JsonDocument document = JsonDocument.Parse(jsonInput);
-		JsonElement root = document.RootElement;
-		bool hasErrors = root.ValueKind == JsonValueKind.Object
-			&& root.TryGetProperty("errors", out JsonElement errors)
-			&& errors.ValueKind is JsonValueKind.Array or JsonValueKind.Null;
-		bool hasBuildResult = root.ValueKind == JsonValueKind.Object
-			&& root.TryGetProperty("buildResult", out JsonElement buildResult)
-			&& buildResult.ValueKind == JsonValueKind.Number;
-		bool hasSuccess = root.ValueKind == JsonValueKind.Object
-			&& root.TryGetProperty("success", out JsonElement success)
-			&& success.ValueKind is JsonValueKind.True or JsonValueKind.False;
-		if (!hasErrors || !hasBuildResult || !hasSuccess) {
+		CompilationLogPayload payload = JsonSerializer.Deserialize<CompilationLogPayload>(jsonInput)
+			?? throw new JsonException("Creatio returned an empty compilation-result payload.");
+		if (!payload.ErrorsPresent || !payload.BuildResult.HasValue || !payload.Success.HasValue) {
 			throw new JsonException(
 				"Creatio returned an unexpected compilation-result payload. Expected errors, buildResult, and success fields.");
 		}
-		CreatioCompilationLogResponse response = JsonSerializer.Deserialize<CreatioCompilationLogResponse>(jsonInput)
-			?? throw new JsonException("Creatio returned an empty compilation-result payload.");
-		return response with { errors = response.errors ?? Array.Empty<CreatioCompilationError>() };
+		return new CreatioCompilationLogResponse(
+			payload.Errors ?? Array.Empty<CreatioCompilationError>(),
+			payload.BuildResult.Value,
+			payload.Success.Value);
 	}
 
 	/// <inheritdoc />

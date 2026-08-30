@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
@@ -115,6 +117,29 @@ public sealed class LastCompilationLogToolTests {
 			because: "the resolver may obtain the target from an authorized credential-passthrough context");
 		resolver.Received(1).Resolve<LastCompilationLogCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == null));
+	}
+
+	[Test]
+	[Description("Rejects a misspelled camelCase environment key instead of silently resolving the default environment.")]
+	public void GetLastCompilationLog_ShouldRejectLegacyEnvironmentAlias(){
+		// Arrange
+		(_, IToolCommandResolver resolver, LastCompilationLogTool tool) = CreateTool(
+			"""{"errors":[],"buildResult":0,"success":true}""");
+		LastCompilationLogArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["environmentName"] = JsonSerializer.SerializeToElement("prod")
+			}
+		};
+
+		// Act
+		LastCompilationLogResponse result = tool.GetLastCompilationLog(args);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an ignored environment alias could otherwise read a different default target");
+		result.Error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "the caller needs the exact supported kebab-case replacement");
+		resolver.DidNotReceive().Resolve<LastCompilationLogCommand>(Arg.Any<EnvironmentOptions>());
 	}
 
 	private static (IApplicationClient Client, IToolCommandResolver Resolver, LastCompilationLogTool Tool)

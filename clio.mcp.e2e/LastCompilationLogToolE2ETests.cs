@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -28,6 +29,7 @@ public sealed class LastCompilationLogToolE2ETests : McpContractFixtureBase {
 	[Description("last-compilation-log is discoverable but not resident, so clients invoke it through clio-run.")]
 	[AllureTag(ToolName)]
 	[AllureName("Last compilation log is a long-tail clio-run tool")]
+	[AllureDescription("Verifies that last-compilation-log is absent from the resident tools/list surface but remains discoverable through get-tool-contract for clio-run callers.")]
 	public async Task LastCompilationLog_ShouldBeDiscoverableButNotResident(){
 		// Arrange
 		await using var context = Arrange();
@@ -62,6 +64,7 @@ public sealed class LastCompilationLogToolE2ETests : McpContractFixtureBase {
 	[Description("last-compilation-log returns a structured failure through clio-run for an unknown environment.")]
 	[AllureTag(ToolName)]
 	[AllureName("Last compilation log reports invalid environments through clio-run")]
+	[AllureDescription("Invokes last-compilation-log through clio-run with an unknown environment and verifies a structured, actionable failure without fabricated diagnostics.")]
 	public async Task LastCompilationLog_ShouldReturnStructuredFailure_WhenEnvironmentIsUnknown(){
 		// Arrange
 		await using var context = Arrange();
@@ -90,35 +93,49 @@ public sealed class LastCompilationLogToolE2ETests : McpContractFixtureBase {
 	[Description("last-compilation-log returns Creatio's persisted result as structured data through clio-run.")]
 	[AllureTag(ToolName)]
 	[AllureName("Last compilation log returns a structured sandbox result through clio-run")]
+	[AllureDescription("Invokes last-compilation-log through clio-run against the configured sandbox and verifies the typed persisted compilation-result contract.")]
 	public async Task LastCompilationLog_ShouldReturnStructuredResult_WhenEnvironmentIsReachable(){
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		McpE2ESettings settings = await AllureApi.Step("Arrange sandbox MCP settings", () => {
+			McpE2ESettings configuredSettings = TestConfiguration.Load();
+			configuredSettings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			return Task.FromResult(configuredSettings);
+		});
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(3));
-		string environmentName = await ResolveReachableEnvironmentOrIgnoreAsync(settings);
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cts.Token);
+		string environmentName = await AllureApi.Step("Resolve the configured reachable sandbox environment", () =>
+			ResolveReachableEnvironmentOrIgnoreAsync(settings));
+		await using McpServerSession session = await AllureApi.Step("Start the sandbox MCP server session", () =>
+			McpServerSession.StartAsync(settings, cts.Token));
 
 		// Act
-		CallToolResult callResult = await InvokeAsync(session, cts.Token, environmentName);
+		CallToolResult callResult = await AllureApi.Step("Invoke last-compilation-log through clio-run", () =>
+			InvokeAsync(session, cts.Token, environmentName));
 		LastCompilationLogResponse response = ExtractResponse(callResult);
 		string serializedResult = JsonSerializer.Serialize(callResult.StructuredContent);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "reading the configured sandbox compilation result should not fail at the MCP transport layer");
-		response.Success.Should().BeTrue(
-			because: $"the configured sandbox should expose its persisted compilation result. Error: {response.Error}");
-		response.BuildResult.Should().NotBeNull(
-			because: "the typed MCP response must preserve Creatio's numeric build result");
-		response.Diagnostics.Should().NotBeNull(
-			because: "the typed MCP response must always carry a diagnostics collection, including when it is empty");
-		response.Diagnostics.Should().OnlyContain(
-			diagnostic => diagnostic.Severity == "error" || diagnostic.Severity == "warning",
-			because: "every compiler diagnostic must retain its error or warning classification");
-		serializedResult.Should().Contain("compilation-succeeded",
-			because: "the clio-run response must serialize compilation outcome explicitly even when it is false");
-		serializedResult.Should().Contain("build-result",
-			because: "the clio-run response must serialize Creatio's build-result field");
+		AllureApi.Step("Assert the MCP transport call succeeds", () =>
+			callResult.IsError.Should().NotBeTrue(
+				because: "reading the configured sandbox compilation result should not fail at the MCP transport layer"));
+		AllureApi.Step("Assert Creatio's persisted result was retrieved", () =>
+			response.Success.Should().BeTrue(
+				because: $"the configured sandbox should expose its persisted compilation result. Error: {response.Error}"));
+		AllureApi.Step("Assert the numeric build result is preserved", () =>
+			response.BuildResult.Should().NotBeNull(
+				because: "the typed MCP response must preserve Creatio's numeric build result"));
+		AllureApi.Step("Assert the diagnostics collection is always present", () =>
+			response.Diagnostics.Should().NotBeNull(
+				because: "the typed MCP response must always carry a diagnostics collection, including when it is empty"));
+		AllureApi.Step("Assert every diagnostic retains its severity", () =>
+			response.Diagnostics.Should().OnlyContain(
+				diagnostic => diagnostic.Severity == "error" || diagnostic.Severity == "warning",
+				because: "every compiler diagnostic must retain its error or warning classification"));
+		AllureApi.Step("Assert compilation outcome is serialized explicitly", () =>
+			serializedResult.Should().Contain("compilation-succeeded",
+				because: "the clio-run response must serialize compilation outcome explicitly even when it is false"));
+		AllureApi.Step("Assert build result is serialized explicitly", () =>
+			serializedResult.Should().Contain("build-result",
+				because: "the clio-run response must serialize Creatio's build-result field"));
 	}
 
 	private static LastCompilationLogResponse ExtractResponse(CallToolResult callResult) {
