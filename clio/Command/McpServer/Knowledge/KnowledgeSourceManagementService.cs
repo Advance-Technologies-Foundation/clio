@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -30,6 +31,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private readonly IFileSystem _fileSystem;
 	private readonly IKnowledgeManagedTreeDeleter _treeDeleter;
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The service coordinates seven existing knowledge collaborators plus the shared managed-tree deletion boundary; grouping independent services into a parameter object would hide the DI contract without reducing behavior.")]
 	public KnowledgeSourceManagementService(
 		ISettingsRepository settingsRepository,
 		IKnowledgeSourceInstallationStore store,

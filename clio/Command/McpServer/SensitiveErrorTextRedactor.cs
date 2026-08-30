@@ -130,7 +130,7 @@ internal static partial class SensitiveErrorTextRedactor {
 			// char.IsControl alone is NOT enough on any of the three counts:
 			//  - U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are category Zl/Zp, not control
 			//    characters, yet render as line breaks and survive JSON as U+2028/U+2029 - so the
-			//    "cannot forge a message block" property would be false without IsSeparator;
+			//    separator handling is required to prevent a diagnostic from forging a rendered block;
 			//  - a lone surrogate would reach System.Text.Json, which THROWS on invalid UTF-16, taking
 			//    down the whole response of a tool that is mandatory on every operation;
 			//  - format characters (bidi overrides) can reverse the visible order of the marker and the

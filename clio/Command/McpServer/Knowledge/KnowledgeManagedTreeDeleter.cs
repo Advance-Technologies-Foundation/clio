@@ -113,11 +113,13 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 					ClearReadOnlyAttributes(abandoned);
 					_fileSystem.Directory.Delete(abandoned, recursive: true);
 				} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+					// A quarantined tree is already detached; leave it for a later best-effort sweep.
 				}
 			}
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException
 				or ArgumentException) {
+			// Failure to enumerate abandoned quarantines must not block deletion of the requested tree.
 		}
 	}
 

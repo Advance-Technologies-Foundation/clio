@@ -524,24 +524,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			Task monitorTask = MonitorDirectoryAsync(operationContext, monitorCts.Token);
 
 			try {
-				if (!string.IsNullOrEmpty(options.StandardInput)) {
-					try {
-						await process.StandardInput.WriteAsync(options.StandardInput.AsMemory(), linkedCts.Token);
-						await process.StandardInput.FlushAsync(linkedCts.Token);
-					} catch (IOException) {
-						// The child read what it wanted and closed its end. That is its answer, not a launch
-						// failure - and without this the IOException escapes the only catch filter here
-						// (OperationCanceledException), so ExecuteAndCaptureAsync throws instead of returning
-						// a result its callers can read the exit code from.
-					}
-					TryCloseStandardInput(process);
-				} else {
-					// No input to send: close at once so the child reads EOF instead of waiting on a handle
-					// nobody will ever write to. Unconditional because CreateStartInfo always redirects stdin.
-					// Through the swallowing helper: the only catch filter here is OperationCanceledException,
-					// so a raw Close() would report an IOException as a LAUNCH failure for a running process.
-					TryCloseStandardInput(process);
-				}
+				await CompleteStandardInputAsync(process, options.StandardInput, linkedCts.Token);
 				await process.WaitForExitAsync(linkedCts.Token);
 			}
 			catch (OperationCanceledException) when (linkedCts.IsCancellationRequested) {
@@ -599,6 +582,23 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				StartedAtUtc = startedAt,
 				FinishedAtUtc = DateTimeOffset.UtcNow
 			};
+		}
+	}
+
+	private static async Task CompleteStandardInputAsync(
+		Process process,
+		string? standardInput,
+		CancellationToken cancellationToken) {
+		try {
+			if (!string.IsNullOrEmpty(standardInput)) {
+				await process.StandardInput.WriteAsync(standardInput.AsMemory(), cancellationToken);
+				await process.StandardInput.FlushAsync(cancellationToken);
+			}
+		} catch (IOException) {
+			// The child read what it wanted and closed its end. Its exit code remains the operation result.
+		} finally {
+			// Close even when there is no input so the child sees EOF instead of inheriting the MCP stdin pipe.
+			TryCloseStandardInput(process);
 		}
 	}
 
