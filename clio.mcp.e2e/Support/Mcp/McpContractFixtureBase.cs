@@ -23,7 +23,9 @@ public abstract class McpContractFixtureBase {
 	[OneTimeSetUp]
 	public async Task StartSharedMcpServerAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ClioProcessPath = string.IsNullOrWhiteSpace(settings.ClioProcessPath)
+			? TestConfiguration.ResolveFreshClioProcessPath()
+			: Path.GetFullPath(settings.ClioProcessPath);
 		ConfigureMcpServerSettings(settings);
 		using CancellationTokenSource startupCts = new(TimeSpan.FromMinutes(5));
 		_session = await McpServerSession.StartAsync(settings, startupCts.Token);

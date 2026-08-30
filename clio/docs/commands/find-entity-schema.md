@@ -12,7 +12,9 @@ clio find-entity-schema --uid <guid> -e <env>
 
 ## Description
 
-Searches for entity schemas in the remote Creatio environment using a single DataService query on `SysSchema`. Returns schema name, owning package, package maintainer, and parent schema for every match.
+Searches for entity schemas in the remote Creatio environment using DataService queries on `SysSchema`. Returns schema name, owning package, package maintainer, and parent schema for every match.
+
+A substring search normally uses one filtered query. If Creatio returns no rows, clio cross-checks once with a broader query and filters schema names locally before reporting that no matching schema exists. If the broader query reaches its 10,000-row safety bound, the command fails instead of returning a potentially incomplete result; use `--schema-name` or `--uid` for an exact lookup.
 
 Exactly one of `--schema-name`, `--search-pattern`, or `--uid` must be provided.
 
@@ -68,7 +70,7 @@ The `| Parent: …` suffix is omitted when there is no parent.
 
 ## Notes
 
-- A single DataService request is used — no N+1 package enumeration.
+- The filtered query is the normal fast path. Only an empty substring result triggers one broader cross-check; no per-package enumeration is used.
 - The search does not require cliogate to be installed.
 - The CLI output is labeled for easier log and AI parsing. Read the `Package:` segment directly instead of inferring ownership from the maintainer text.
 - The MCP tool already returns structured `package-name`, `package-maintainer`, and `parent-schema-name` fields. MCP callers should use those fields directly instead of parsing CLI-style text.

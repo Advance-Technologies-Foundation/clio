@@ -99,7 +99,6 @@ namespace Clio.Tests
 
         [Ignore("RequiresPackageAttribute added in error, restorew command does not require cliogate")]
         [TestCase(typeof(LockPackageOptions), "2.0.0.42")]
-        [TestCase(typeof(UnlockPackageOptions), "2.0.0.42")]
         [TestCase(typeof(RestoreWorkspaceOptions), "2.0.0.0")]
         [TestCase(typeof(Clio.Command.SqlScriptCommand.ExecuteSqlScriptOptions), "2.0.0.41")]
         [Test]
@@ -117,6 +116,22 @@ namespace Clio.Tests
                 because: "the migrated version must match the legacy ClioGateMinVersion value");
             requirement.Hint.Should().Be(ExpectedCliogateHint,
                 because: "the cliogate install hint must be restored so the unmet-requirement error tells the user to run install-gate");
+        }
+
+        [Test]
+        [Description("unlock-package requires the cliogate version that prevents SysPackage.Description overflow.")]
+        public void UnlockPackageOptions_ShouldRequireCliogateVersion_AfterDescriptionOverflowFix()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetCliogateRequirement(typeof(UnlockPackageOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "unlock-package must reject a gate version that can overflow SysPackage.Description");
+            requirement!.Version.Should().Be("2.0.0.48",
+                because: "cliogate 2.0.0.48 introduced the bounded unlock description format");
+            requirement.Hint.Should().Be(ExpectedCliogateHint,
+                because: "the version failure must tell the user how to update cliogate");
         }
 
         [Test]
