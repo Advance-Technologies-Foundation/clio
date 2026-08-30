@@ -31,7 +31,7 @@ clio merge-creatio-artifact --artifact-path <PATH> --base-file <FILE> \
 
 ## Result and exit codes
 
-The JSON result contains `status`, `artifact-kind`, `resolver-version`, `content`, `report`, and `diagnostics`. For a recognized EntitySchema column type conflict, `diagnostics` includes a human-readable question such as `Which type should UsrColumn keep: Number or Date/Time?`. Ask the user before selecting either marker side. Only a `resolved` result returns exit code `0`. `conflicts-remain`, `not-implemented`, `unsupported`, and `invalid-input` return exit code `1` so automation fails closed.
+The JSON result contains `status`, `artifact-kind`, `resolver-version`, `content`, `report`, and `diagnostics`. For a recognized EntitySchema column type conflict, `diagnostics` includes a human-readable question such as `Which type should UsrColumn keep: Number or Date/Time?`. Ask the user before selecting either marker side. Only a `resolved` result returns exit code `0`. `conflicts-remain`, `not-implemented`, `unsupported`, `invalid-input`, and transient `busy` return exit code `1` so automation fails closed. Retry `busy` with the same input.
 
 ## Example
 

@@ -1110,9 +1110,9 @@ internal static class ToolContractCatalog {
 			new ToolOutputContract(
 				"domain-status",
 				"status",
-				["status is invalid-input, unsupported, or not-implemented"],
+				["status is invalid-input, unsupported, not-implemented, or busy"],
 				[
-					Field("status", StringType, "One of resolved, conflicts-remain, not-implemented, unsupported, or invalid-input."),
+					Field("status", StringType, "One of resolved, conflicts-remain, not-implemented, unsupported, invalid-input, or busy. Retry busy without changing input."),
 					Field("artifact-kind", StringType, "The explicit classified Creatio artifact kind."),
 					Field("resolver-version", StringType, "The embedded resolver assembly informational version."),
 					Field("content", StringType, "Present only for resolved or conflicts-remain outcomes."),

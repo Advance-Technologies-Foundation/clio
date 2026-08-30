@@ -32,7 +32,8 @@ OPTIONS
 
 EXIT CODES
     0   The merge status is resolved.
-    1   Conflicts remain, the artifact is unsupported or not implemented, or input is invalid.
+    1   Conflicts remain, the artifact is unsupported or not implemented, input is invalid,
+        or bounded merge capacity is busy. Retry busy with the same input.
 
 EXAMPLES
     clio merge-creatio-artifact --artifact-path packages/MyApp/Schemas/UsrOrder/metadata.json \

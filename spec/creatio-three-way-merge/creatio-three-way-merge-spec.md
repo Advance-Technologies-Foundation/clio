@@ -63,7 +63,7 @@ invocation error.
 
 | Field | Meaning |
 |---|---|
-| `status` | `resolved`, `conflicts-remain`, `not-implemented`, `unsupported`, or `invalid-input`. |
+| `status` | `resolved`, `conflicts-remain`, `not-implemented`, `unsupported`, `invalid-input`, or transient `busy`. |
 | `artifact-kind` | The detected Creatio artifact family. |
 | `resolver-version` | Version of the resolver assembly used for the result. |
 | `content` | Present for `resolved` or `conflicts-remain`; contains the verified merge or explicit logical conflict markers respectively. |
@@ -124,13 +124,15 @@ tests derive their exact vocabulary and behavior from this table.
 | `unsupported-client-unit-source` | ClientUnit source without supported markers | `unsupported` |
 | `unknown-artifact` | unrecognized path shape | `unsupported` |
 
-Semantic kinds may return `resolved`, `conflicts-remain`, or `invalid-input`. Recognized
+Semantic kinds may return `resolved`, `conflicts-remain`, or `invalid-input`. Any valid request may
+return transient `busy` before classification when bounded merge capacity is occupied; retry the
+same request without changing its content. Recognized
 not-implemented kinds always return `not-implemented` and the fixed diagnostic
 `Merge for <artifact-kind> is not implemented yet.` Unknown schema metadata and unclassifiable
 ClientUnit source return `unsupported` with no content. Missing, conflicted, stale, or
 identity-mismatched descriptor evidence returns `invalid-input` with no content.
 
-No content is returned for `not-implemented`, `unsupported`, or `invalid-input` because the caller
+No content is returned for `not-implemented`, `unsupported`, `invalid-input`, or `busy` because the caller
 already has all three inputs and clio has no semantic result to contribute.
 
 ## Placement

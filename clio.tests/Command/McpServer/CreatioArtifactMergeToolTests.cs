@@ -728,8 +728,8 @@ public sealed class CreatioArtifactMergeServiceContractTests : BaseClioModuleTes
 		}
 
 		// Assert
-		excess.Status.Should().Be(CreatioArtifactMergeResult.InvalidInputStatus,
-			because: "the stable contract has no queueing status and callers can retry a busy request");
+		excess.Status.Should().Be(CreatioArtifactMergeResult.BusyStatus,
+			because: "transient capacity exhaustion must be machine-readable without blaming valid input");
 		excess.Diagnostics.Should().ContainSingle().Which.Should().Contain("busy",
 			because: "the caller needs a clear retry signal instead of waiting without a bound");
 	}

@@ -64,7 +64,7 @@ public sealed partial class CreatioArtifactMergeService(Resolver.IConflictResolv
 
 		if (!await Capacity.WaitAsync(0, cancellationToken).ConfigureAwait(false)) {
 			return Result(
-				CreatioArtifactMergeResult.InvalidInputStatus,
+				CreatioArtifactMergeResult.BusyStatus,
 				UnknownArtifactKind,
 				"Merge capacity is busy; retry.");
 		}

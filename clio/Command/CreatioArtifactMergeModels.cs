@@ -57,6 +57,9 @@ public sealed record CreatioArtifactMergeResult(
 
 	/// <summary>Stable result status returned when a request cannot be merged safely.</summary>
 	public const string InvalidInputStatus = "invalid-input";
+
+	/// <summary>Stable result status returned when bounded merge capacity is temporarily unavailable.</summary>
+	public const string BusyStatus = "busy";
 }
 
 /// <summary>A stable projection of the resolver report.</summary>

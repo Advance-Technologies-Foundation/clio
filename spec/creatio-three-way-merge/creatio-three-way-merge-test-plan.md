@@ -225,6 +225,7 @@ control; it does not recreate every negative case through Creatio.
 | Missing or conflicted descriptor evidence | `invalid-input`; no result content. |
 | Descriptor manager, schema name, or schema UId does not match any metadata input | `invalid-input`; no result content. |
 | Resolver verification fails | `invalid-input`; no result content. |
+| Bounded resolver capacity is occupied | `busy`; no result content; retry the identical request. |
 
 For every non-resolved status, capture the working-tree hash and `git ls-files -u` before and after the
 CLI and MCP calls and prove that clio changed neither.

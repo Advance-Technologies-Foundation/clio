@@ -27,7 +27,8 @@ public sealed class CreatioArtifactMergeTool(ICreatioArtifactMergeService mergeS
 	             "ServiceSchema, Addon, descriptor, properties, resource, and data-binding artifacts. " +
 	             "ProcessSchema metadata, descriptor, and resources, plus C# and SQL merge, are recognized but not implemented. Uses inline content " +
 	             "only; never reads or changes a repository. Read get-guidance name=creatio-three-way-merge before use. " +
-	             "When an EntitySchema column type conflicts, ask the user the question returned in diagnostics before choosing a side.")]
+	             "When an EntitySchema column type conflicts, ask the user the question returned in diagnostics before choosing a side. " +
+	             "A busy status is transient; retry the same request.")]
 	public Task<CreatioArtifactMergeResult> Merge(
 		[Description("Inline Git stage contents and a repository-relative classification path.")]
 		[Required]
