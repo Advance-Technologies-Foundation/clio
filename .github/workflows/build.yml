@@ -18,6 +18,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
 
   # ── Detect which areas of the codebase changed ────────────────────────
@@ -29,10 +33,13 @@ jobs:
       tests:       ${{ steps.filter.outputs.tests }}
       analyzers:   ${{ steps.filter.outputs.analyzers }}
       cliogate:    ${{ steps.filter.outputs.cliogate }}
+      unit-matrix: ${{ steps.plan.outputs.unit-matrix }}
+      integration-matrix: ${{ steps.plan.outputs.integration-matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # full history needed for accurate path diffing
+          persist-credentials: false
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -56,86 +63,49 @@ jobs:
               - 'cliogate/**'
               - 'cliogate.tests/**'
 
-  # TEST_SHARDING_DISABLED=true collapses each suite to one matrix row that uses
-  # the exact pre-sharding predicate. The required check names stay unchanged.
-  test-shard-plan:
-    name: Plan test shards
-    needs: changes
-    runs-on: ubuntu-latest
-    outputs:
-      unit-matrix: ${{ steps.plan.outputs.unit-matrix }}
-      integration-matrix: ${{ steps.plan.outputs.integration-matrix }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
       - name: Build matrices
         id: plan
         shell: pwsh
+        env:
+          TEST_SHARDING_DISABLED: ${{ vars.TEST_SHARDING_DISABLED }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $disabled = '${{ vars.TEST_SHARDING_DISABLED }}' -eq 'true'
+          $disabled = $env:TEST_SHARDING_DISABLED -eq 'true'
           $arguments = if ($disabled) { @{ DisableSharding = $true } } else { @{} }
           $unit = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite unit @arguments
           $integration = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite integration @arguments
           "unit-matrix=$unit" >> $env:GITHUB_OUTPUT
           "integration-matrix=$integration" >> $env:GITHUB_OUTPUT
 
-  test-assembly:
-    name: Build test assembly
+  # ── Unit tests (four hosted runners; fast gate runs on every push) ────
+  unit-test-shards:
+    name: Unit Test Shard (${{ matrix.name }})
     needs: changes
     if: >-
       needs.changes.outputs.clio-src == 'true' ||
       needs.changes.outputs.tests   == 'true' ||
       github.ref == 'refs/heads/master'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.unit-matrix) }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
-      - name: Build once for all seven test runners
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-Location $env:GITHUB_WORKSPACE
-          dotnet build .\clio.tests\clio.tests.csproj `
-            --configuration Release `
-            --framework net10.0 `
-            -p:RunAnalyzers=false
-
-      - name: Upload compiled test assembly
-        uses: actions/upload-artifact@v4
-        with:
-          name: clio-tests-net10
-          path: clio.tests/bin/Release/net10.0
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 1
-
-  net8-compatibility:
-    name: NET8 Product Compatibility
-    needs: changes
-    if: >-
-      needs.changes.outputs.clio-src == 'true' ||
-      needs.changes.outputs.tests   == 'true' ||
-      github.ref == 'refs/heads/master'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
       - uses: actions/setup-dotnet@v4
+        if: matrix.runNet8Compatibility
         with:
           dotnet-version: 8.0.x
 
       - name: Build NET8 product compatibility
+        if: matrix.runNet8Compatibility
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -144,32 +114,6 @@ jobs:
             --framework net8.0 `
             -p:RunAnalyzers=false
 
-  # ── Unit tests (four hosted runners; fast gate runs on every push) ────
-  unit-test-shards:
-    name: Unit Test Shard (${{ matrix.name }})
-    needs: [changes, test-shard-plan, test-assembly]
-    if: >-
-      needs.changes.outputs.clio-src == 'true' ||
-      needs.changes.outputs.tests   == 'true' ||
-      github.ref == 'refs/heads/master'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.test-shard-plan.outputs.unit-matrix) }}
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - uses: actions/download-artifact@v5
-        with:
-          name: clio-tests-net10
-          path: clio.tests/bin/Release/net10.0
-
       # Anchor the working directory: `shell: powershell` loads the user profile (there is no -NoProfile) and
       # every project path in these steps is relative, so the step should not depend on the cwd it inherits.
       # Hygiene only — the MSB1009 incident this looks like a fix for is diagnosed in the step body below, and
@@ -177,6 +121,9 @@ jobs:
 
       - name: Run unit test shard
         shell: powershell
+        env:
+          SHARD_NAME: ${{ matrix.name }}
+          SHARDING_DISABLED: ${{ matrix.shardingDisabled }}
         run: |
           $ErrorActionPreference = 'Stop';
           Set-Location $env:GITHUB_WORKSPACE;
@@ -193,10 +140,10 @@ jobs:
           # not because it addresses the above.
           $arguments = @{
             Suite = 'unit'
-            ShardName = '${{ matrix.name }}'
-            ResultsDirectory = 'TestResults/${{ matrix.name }}'
+            ShardName = $env:SHARD_NAME
+            ResultsDirectory = "TestResults/$($env:SHARD_NAME)"
           }
-          if ('${{ matrix.shardingDisabled }}' -eq 'true') {
+          if ($env:SHARDING_DISABLED -eq 'true') {
             $arguments.DisableSharding = $true
           }
           & .\.github\scripts\Invoke-TestShard.ps1 @arguments
@@ -222,7 +169,7 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    needs: [changes, net8-compatibility, unit-test-shards]
+    needs: [changes, unit-test-shards]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -231,8 +178,7 @@ jobs:
           (needs.changes.outputs.clio-src == 'true' ||
            needs.changes.outputs.tests   == 'true' ||
            github.ref == 'refs/heads/master') &&
-          (needs.net8-compatibility.result != 'success' ||
-           needs.unit-test-shards.result != 'success')
+          needs.unit-test-shards.result != 'success'
         run: exit 1
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
@@ -263,40 +209,39 @@ jobs:
   # ── Integration tests (three hosted runners in parallel with unit tests) ──
   integration-test-shards:
     name: Integration Test Shard (${{ matrix.name }})
-    needs: [changes, test-shard-plan, test-assembly]
+    needs: changes
     if: >-
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&
       github.event_name == 'pull_request'
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.test-shard-plan.outputs.integration-matrix) }}
+      matrix: ${{ fromJSON(needs.changes.outputs.integration-matrix) }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
-      - uses: actions/download-artifact@v5
-        with:
-          name: clio-tests-net10
-          path: clio.tests/bin/Release/net10.0
-
       - name: Run integration test shard
         shell: powershell
+        env:
+          SHARD_NAME: ${{ matrix.name }}
+          SHARDING_DISABLED: ${{ matrix.shardingDisabled }}
         run: |
           $ErrorActionPreference = 'Stop'
           Set-Location $env:GITHUB_WORKSPACE
           $arguments = @{
             Suite = 'integration'
-            ShardName = '${{ matrix.name }}'
-            ResultsDirectory = 'TestResults/${{ matrix.name }}'
+            ShardName = $env:SHARD_NAME
+            ResultsDirectory = "TestResults/$($env:SHARD_NAME)"
           }
-          if ('${{ matrix.shardingDisabled }}' -eq 'true') {
+          if ($env:SHARDING_DISABLED -eq 'true') {
             $arguments.DisableSharding = $true
           }
           & .\.github\scripts\Invoke-TestShard.ps1 @arguments
@@ -334,6 +279,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@v4
         with:

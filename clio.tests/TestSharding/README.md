@@ -1,8 +1,9 @@
 # GitHub test sharding
 
-GitHub Actions builds `clio.tests.dll` once, then runs the existing predicates across four unit
-workers and three integration workers. TeamCity does not read this manifest or these scripts, so
-its unit, integration, and MCP end-to-end configuration is unchanged.
+GitHub Actions runs the existing predicates across four unit workers and three integration
+workers. Each worker uses the same `dotnet test clio.tests.csproj` path as the unsharded workflow.
+TeamCity does not read this manifest or these scripts, so its unit, integration, and MCP end-to-end
+configuration is unchanged.
 
 The first shards select their listed fixtures. The final shard is a catch-all: it runs the base
 predicate and excludes fixtures assigned to earlier shards. A newly added fixture therefore runs

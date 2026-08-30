@@ -10,17 +10,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-$suiteDefinition = $manifest.suites.$Suite
-if ($null -eq $suiteDefinition) {
-    throw "Suite '$Suite' is missing from $ManifestPath."
-}
-
 if ($DisableSharding) {
     @{
         include = @(
             @{
                 name = "$Suite-unsharded"
+                runNet8Compatibility = $Suite -eq "unit"
                 shardingDisabled = $true
             }
         )
@@ -28,9 +23,16 @@ if ($DisableSharding) {
     exit 0
 }
 
+$manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+$suiteDefinition = $manifest.suites.$Suite
+if ($null -eq $suiteDefinition) {
+    throw "Suite '$Suite' is missing from $ManifestPath."
+}
+
 $include = @($suiteDefinition.shards | ForEach-Object {
     @{
         name = $_.name
+        runNet8Compatibility = $Suite -eq "unit" -and $_.name -eq "unit-1"
         shardingDisabled = $false
     }
 })
@@ -39,8 +41,10 @@ $expectedCount = if ($Suite -eq "unit") { 4 } else { 3 }
 if ($include.Count -ne $expectedCount) {
     throw "Suite '$Suite' must define $expectedCount shards, but defines $($include.Count)."
 }
-if (@($include.name | Group-Object | Where-Object Count -gt 1).Count -gt 0) {
-    throw "Suite '$Suite' contains duplicate shard names."
+$expectedNames = @(1..$expectedCount | ForEach-Object { "$Suite-$_" })
+$actualNames = @($include.name | Sort-Object)
+if ((Compare-Object $expectedNames $actualNames).Count -gt 0) {
+    throw "Suite '$Suite' must use shard names: $($expectedNames -join ', ')."
 }
 
 @{ include = $include } | ConvertTo-Json -Compress -Depth 4
