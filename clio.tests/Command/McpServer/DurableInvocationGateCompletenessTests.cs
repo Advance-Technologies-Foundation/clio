@@ -108,6 +108,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-environments",
 		"list-knowledge-examples",
 		"list-knowledge-sources",
+		// Reads Creatio's persisted compilation-result endpoint and never starts or tracks a compilation.
+		"last-compilation-log",
 		"list-packages",
 		"list-page-templates",
 		// Inventories materialized package files through the read-only ClioGate endpoint.
