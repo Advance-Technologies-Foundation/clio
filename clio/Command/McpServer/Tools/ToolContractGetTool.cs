@@ -499,7 +499,9 @@ internal static class ToolContractCatalog {
 	private const string ObjectType = "object";
 	private const string ComponentTypeFieldName = "component-type";
 	private const string OperationsFieldName = "operations";
+	private const string OffsetFieldName = "offset";
 	private const string PackageNameFieldName = "package-name";
+	private const string PackagesFieldName = "packages";
 	private const string PasswordFieldName = "password";
 	private const string PagesFieldName = "pages";
 	private const string PageSchemaNameFieldName = "page-schema-name";
@@ -606,6 +608,7 @@ internal static class ToolContractCatalog {
 			[ODataDeleteTool.ToolName] = BuildODataDelete(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
+			[GetPkgListTool.GetPkgListToolName] = BuildGetPkgList(),
 			[PageListTool.ToolName] = BuildPageList(),
 			[PageGetTool.ToolName] = BuildPageGet(),
 			[CreateLookupTool.CreateLookupToolName] = BuildCreateLookup(),
@@ -687,6 +690,7 @@ internal static class ToolContractCatalog {
 		ODataDeleteTool.ToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
+		GetPkgListTool.GetPkgListToolName,
 		PageListTool.ToolName,
 		PageGetTool.ToolName,
 		CreateLookupTool.CreateLookupToolName,
@@ -3898,6 +3902,60 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildGetPkgList() {
+		return new ToolContractDefinition(
+			GetPkgListTool.GetPkgListToolName,
+			"Lists packages installed in a registered Creatio environment as bounded, name-ordered pages. " +
+			"The response always reports the full filtered total and whether more matches remain after the returned page.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("filter", StringType, "Optional case-insensitive package-name substring filter applied before paging."),
+					Field(LimitFieldName, NumberType,
+						$"Maximum packages in one page. Omit or pass 0 to use the default of {GetPkgListTool.DefaultLimit}; negative values are rejected."),
+					Field(OffsetFieldName, NumberType,
+						"Number of matching packages to skip before returning the page. Defaults to 0; negative values are rejected.")
+				]),
+			new ToolOutputContract(
+				"package-list-page",
+				null,
+				["MCP tool result isError == true"],
+				[
+					Field(PackagesFieldName, ArrayType,
+						"Packages in this page, each with name, version, maintainer, and uId."),
+					Field(CountFieldName, NumberType, "Number of packages returned in this page."),
+					Field("total", NumberType, "Total packages matching the filter before paging."),
+					Field(OffsetFieldName, NumberType, "Applied zero-based offset."),
+					Field(LimitFieldName, NumberType, "Applied page size, including the effective default."),
+					Field("truncated", BooleanType,
+						"True when more matching packages remain after this page. Advance offset by count and call again until false.")
+				]),
+			CommonErrorContract,
+			[],
+			[
+				Default(LimitFieldName, GetPkgListTool.DefaultLimit.ToString(),
+					"Keeps package discovery payloads bounded when the caller omits a page size."),
+				Default(OffsetFieldName, "0", "Starts from the first matching package.")
+			],
+			[
+				Example("Read the first package page", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[LimitFieldName] = GetPkgListTool.DefaultLimit,
+					[OffsetFieldName] = 0
+				}),
+				Example("Read the next package page", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[LimitFieldName] = GetPkgListTool.DefaultLimit,
+					[OffsetFieldName] = GetPkgListTool.DefaultLimit
+				})
+			],
+			Flow([GetPkgListTool.GetPkgListToolName],
+				"Read one bounded page. While truncated is true, add count to offset and call list-packages again with the same filter and limit."),
+			[],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
@@ -5402,6 +5460,7 @@ internal static class ToolContractCatalog {
 	private const string IdentitySitePortFieldName = "identitySitePort";
 	private const string IdentitySiteNameFieldName = "identitySiteName";
 	private const string IdentityPathFieldName = "identityPath";
+	private const string OverwriteFieldName = "overwrite";
 	private const string IdentityArchivePathInBundleFieldName = "identityArchivePathInBundle";
 	private const string ConfigurationModeFieldName = "configurationMode";
 	private const string ClientNameFieldName = "clientName";
@@ -5558,7 +5617,8 @@ internal static class ToolContractCatalog {
 					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
 					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
 					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
-					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files."),
+					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files. Filesystem reparse points are refused anywhere in the target path."),
+					Field(OverwriteFieldName, BooleanType, "Overwrite IdentityService files in an empty or recognized existing target directory."),
 					Field(ConfigurationModeFieldName, StringType, "Creatio connection mode: db-first, rest, or db. db-first currently falls back to REST/sys-settings until direct DB seeding is proven."),
 					Field(ClientNameFieldName, StringType, "OAuth client display name created for clio."),
 					Field(ClientApplicationUrlFieldName, StringType, "OAuth client application URL."),
