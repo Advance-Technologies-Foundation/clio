@@ -78,7 +78,7 @@ public class VSProject : IVsProject{
 			body = body.Replace("<Namespace>", Namespace);
 		}
 
-		File.WriteAllText($"{DestPath}\\{name}.cs", body);
+		File.WriteAllText(Path.Combine(DestPath, $"{name}.cs"), body);
 	}
 
 	public void Reload() {
