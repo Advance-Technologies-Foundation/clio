@@ -111,7 +111,7 @@ public sealed class LastCompilationLogToolE2ETests : McpContractFixtureBase {
 		CallToolResult callResult = await AllureApi.Step("Invoke last-compilation-log through clio-run", () =>
 			InvokeAsync(session, cts.Token, environmentName));
 		LastCompilationLogResponse response = ExtractResponse(callResult);
-		string serializedResult = JsonSerializer.Serialize(callResult.StructuredContent);
+		string serializedResult = JsonSerializer.Serialize(callResult);
 
 		// Assert
 		AllureApi.Step("Assert the MCP transport call succeeds", () =>
