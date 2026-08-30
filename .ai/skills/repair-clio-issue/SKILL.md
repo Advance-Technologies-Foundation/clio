@@ -9,7 +9,7 @@ Implement the smallest complete repair in each repository identified by the `inv
 
 ## Preconditions
 
-Confirm that the original issue is open, assigned to the current GitHub user, has one verified Development branch, has an evidence-backed ownership diagnosis, and has a verified `Mitigation stage = Fixing` using the `clio-issue-workflow` skill. Stop on mismatch rather than bypassing claim or investigation.
+Confirm that the original issue is open, assigned to the current GitHub user, has one verified Development branch, has an evidence-backed ownership diagnosis, and has a verified `Mitigation stage = Fixing` using the `clio-issue-workflow` skill. Confirm that the original issue and every downstream issue that owns repair work have exactly one relevant enabled Issue Type and at least one relevant existing repository label verified by the investigation. If metadata is missing or contradicts the diagnosis, return to the `investigate-clio-issue` metadata gate instead of guessing during repair. Stop on mismatch rather than bypassing claim or investigation.
 
 ## Establish each repair branch
 
@@ -28,7 +28,7 @@ Verify the original Clio issue's `Mitigation stage = Fixing` through the `clio-i
 ## Design and implement
 
 1. Restate the failure and smallest sufficient end-to-end fix.
-2. If Collab is available, ask the other coding agent for an independent, read-only design review after the local diagnosis and before editing: Claude when running as Codex, or Codex when running as Claude. Verify and disposition its advice; do not treat it as implementation authority. If unavailable, record that and continue.
+2. Do not add a routine pre-edit cross-agent review. Use one only when the user explicitly requests it or the investigation identified an unresolved high-risk ambiguity that could materially change the repair. Do not repeat an investigation consultation with the same target and focus. Verify and disposition any advice; do not treat it as implementation authority. If unavailable or quota-limited, record that and continue without retrying.
 3. Implement only the confirmed repair and required tests, documentation, generated artifacts, MCP alignment, or compatibility work mandated by the affected repository.
 4. Follow all repository-specific validation, review, and delivery policies.
 
@@ -39,9 +39,10 @@ After the first meaningful commit, run the affected repository's mandatory pre-P
 1. Run the proportionate tests and real-boundary validation required by the change.
 2. When implementation is complete and validation or final review begins, set and verify the original issue's `Mitigation stage = QA` through the `clio-issue-workflow` skill.
 3. If a genuine product decision or human approval is required, set and verify `Waiting for human approval`, state the exact question in the issue or PR, and stop. After approval, return to `Fixing` or `QA` according to the remaining work.
-4. If Collab is available, ask the other coding agent for an independent, read-only review of the final complete diff: Claude when running as Codex, or Codex when running as Claude. Verify every finding locally and record accepted, rejected, and unresolved findings.
-5. Run the repository-required agentic review and resolve all blocking findings before marking the PR ready.
-6. Do not wait for human review unless a repository rule or the user explicitly requires it.
+4. Run the repository-required agentic review first, resolve blocking findings, rerun affected tests, and stabilize the complete diff.
+5. If Collab is available, use one focused cross-agent review of that stable final diff: Claude when running as Codex, or Codex when running as Claude. Supply the exact revision and the load-bearing claims to challenge. Request only actionable correctness or security findings with exact evidence, not optional refactors. Verify every finding locally and record accepted, rejected, and unresolved findings.
+6. Do not automatically repeat the cross-agent review after ordinary corrections. Request one narrow recheck only when an accepted Blocker/High finding caused a material change to security, destructive behavior, architecture, or a public contract. If Collab is unavailable or quota-limited, record that and continue unless the user or affected repository explicitly made cross-provider review a blocking gate. Never retry an unchanged request.
+7. Do not wait for human review unless a repository rule or the user explicitly requires it.
 
 Close an unwanted draft PR rather than claiming it was deleted. Remove only its abandoned branch and worktree when authorized and safe.
 
