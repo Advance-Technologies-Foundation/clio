@@ -85,6 +85,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-identity-public-jwk",
 		"get-identity-service-config",
 		"get-mobile-page-conversion-guide",
+		// Reads an exact package-relative file and its generated project; never writes package content.
+		"get-package-file",
 		"get-page-hierarchy",
 		"get-process-signature",
 		"get-record-rights",
@@ -108,6 +110,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-knowledge-sources",
 		"list-packages",
 		"list-page-templates",
+		// Inventories materialized package files through the read-only ClioGate endpoint.
+		"list-package-files",
 		"list-pages",
 		"list-printables",
 		"list-sys-settings",
