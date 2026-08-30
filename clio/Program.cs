@@ -1460,14 +1460,24 @@ internal class Program {
 	/// </summary>
 	/// <param name="args">Command line arguments to process</param>
 	/// <returns>Exit code from the executed command, or a parse error code</returns>
-	internal static int ExecuteCommands(string[] args){
+	internal static int ExecuteCommands(string[] args) => ExecuteCommands(args, additionalRegistrations: null);
+
+	/// <summary>
+	/// Executes commands with optional service-registration overrides for a host or test boundary.
+	/// </summary>
+	/// <param name="args">Command line arguments to process.</param>
+	/// <param name="additionalRegistrations">Optional registrations applied after the default Clio services.</param>
+	/// <returns>Exit code from the executed command, or a parse error code.</returns>
+	internal static int ExecuteCommands(string[] args, Action<IServiceCollection> additionalRegistrations){
 		CreatioEnvironment creatioEnv = new();
 		const string helpFolderName = "help";
 		string envPath = creatioEnv.GetAssemblyFolderPath();
 		string helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
-		IServiceProvider bm = new BindingsModule().Register(applyBootstrapRepairs: false);
+		IServiceProvider bm = new BindingsModule().Register(
+			additionalRegistrations: additionalRegistrations,
+			applyBootstrapRepairs: false);
 		if (TryHandleBuiltInHelp(args, bm, out int helpExitCode)) {
 			return helpExitCode;
 		}
