@@ -125,10 +125,6 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
       - name: Run ClioGate tests
         shell: powershell
         run: |
