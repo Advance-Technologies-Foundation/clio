@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.44",
-  "sequence": 1013044000,
+  "libraryVersion": "1.13.48",
+  "sequence": 1013048000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
@@ -53,6 +53,7 @@
     "creatio.deploy-lifecycle",
     "creatio.describe-environment",
     "creatio.desktop-page",
+    "creatio.email-templates",
     "creatio.esq",
     "creatio.esq.filter-parsing",
     "creatio.esq.filters",
@@ -108,6 +109,7 @@
     "deploy-lifecycle",
     "describe-environment",
     "desktop-page",
+    "email-templates",
     "esq",
     "esq-filter-parsing",
     "esq-filters",
