@@ -15,7 +15,9 @@ DESCRIPTION
 
     A substring search normally uses one filtered query. If Creatio returns no rows,
     clio cross-checks once with a broader query and filters schema names locally before
-    reporting that no matching schema exists.
+    reporting that no matching schema exists. If the broader query reaches its
+    10,000-row safety bound without a match, the command fails instead of claiming
+    the schema is absent; use --schema-name or --uid for an exact lookup.
 
     Exactly one of --schema-name, --search-pattern, or --uid must be provided.
 

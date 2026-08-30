@@ -513,11 +513,9 @@ public sealed class FindEntitySchemaTool(
 	[McpServerTool(Name = FindEntitySchemaToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description(
-		"Searches for entity schemas in a Creatio environment without needing to know the package name. "
-		+ "Returns schema name, package, maintainer, and parent schema for each match. "
-		+ "An empty search-pattern result is cross-checked once with a broader query before absence is reported. "
-		+ "Use the returned 'package-name' field directly for follow-up MCP calls. "
-		+ "Use 'schema-name' for exact lookup, 'search-pattern' for substring search, or 'uid' for Guid lookup.")]
+		"Finds Creatio entity schemas without a package name. Returns schema, package, maintainer, and parent. "
+		+ "Empty pattern results get one broader check; capped checks fail. Use package-name in follow-ups. "
+		+ "Select by exact schema-name, substring search-pattern, or uid.")]
 	public IReadOnlyList<EntitySchemaSearchResult> FindEntitySchema(
 		[Description(
 			"Parameters: environment-name (required); exactly one of schema-name (exact match), "

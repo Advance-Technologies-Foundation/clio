@@ -28,7 +28,8 @@ A package-name lookup normally uses one filtered query. If Creatio returns no
 rows, clio cross-checks once with a broader bounded query and matches returned
 package names locally before reporting an empty package. If the broader query
 reaches its safety bound, `truncated` is `true` because completeness cannot be
-proven.
+proven. If the broader query fails or returns an unusable response, the command
+fails instead of confirming that the package has no pages.
 
 ## Synopsis
 

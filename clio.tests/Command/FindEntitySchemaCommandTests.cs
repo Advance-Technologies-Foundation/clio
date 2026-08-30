@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Common;
@@ -146,6 +147,32 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 			"the fast-path request should retain the requested server-side contains filter");
 		requests[1].Should().NotContain("reserv",
 			"the fallback request must remove the unreliable contains filter before filtering locally");
+	}
+
+	[Test]
+	[Description("FindSchemas refuses to confirm absence when the broader cross-check reaches its safety bound without a match.")]
+	public void FindSchemas_ShouldThrow_WhenBroaderCrossCheckReachesSafetyBoundWithoutMatch() {
+		// Arrange
+		FindEntitySchemaOptions options = new() { SearchPattern = "missing" };
+		IEnumerable<FindSchemaRow> cappedRows = Enumerable.Range(0, 10000)
+			.Select(index => new FindSchemaRow(
+				$"UsrSchema{index}",
+				Guid.NewGuid().ToString(),
+				"UsrPackage",
+				"Advance",
+				"BaseEntity"));
+		_applicationClient
+			.ExecutePostRequest("http://localhost/select", Arg.Any<string>())
+			.Returns(BuildSuccessJson([]), BuildSuccessJson(cappedRows));
+
+		// Act
+		Action act = () => _command.FindSchemas(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "a saturated broader query cannot prove that a non-returned schema is absent")
+			.WithMessage("*10000-row safety bound*--schema-name or --uid*",
+				because: "the failure should explain the bound and direct callers to an exact lookup");
 	}
 
 	[Test]

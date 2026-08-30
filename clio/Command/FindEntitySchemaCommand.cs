@@ -56,6 +56,7 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 {
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
 	private const int ContainsComparisonType = 11;
+	private const int EmptyFilterFallbackRowCount = 10000;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -116,10 +117,15 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 			// server-side contains filter. Cross-check only an empty pattern result and apply the
 			// advertised ordinal-ignore-case substring comparison locally.
 			string searchPattern = options.SearchPattern.Trim();
-			results = ExecuteFindSchemasQuery(
-				BuildFindSchemasQuery(options, includeSearchPattern: false))
+			IReadOnlyList<EntitySchemaSearchResult> broaderResults = ExecuteFindSchemasQuery(
+				BuildFindSchemasQuery(options, includeSearchPattern: false));
+			results = broaderResults
 				.Where(result => result.SchemaName.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
 				.ToList();
+			if (results.Count == 0 && broaderResults.Count >= EmptyFilterFallbackRowCount) {
+				throw new InvalidOperationException(
+					$"No match for search pattern '{searchPattern}' could be confirmed because the broader verification query reached its {EmptyFilterFallbackRowCount}-row safety bound. Use --schema-name or --uid for an exact lookup.");
+			}
 		}
 		return results;
 	}
@@ -169,7 +175,7 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 		if (!string.IsNullOrWhiteSpace(options.Uid)) {
 			filters.Add(new("UId", options.Uid.Trim(), GuidDataValueType));
 		}
-		return BuildSelectQuery("SysSchema", SchemaColumns, filters);
+		return BuildSelectQuery("SysSchema", SchemaColumns, filters, EmptyFilterFallbackRowCount);
 	}
 
 	private sealed class FindSchemasResponse : SelectQueryResponseBaseDto

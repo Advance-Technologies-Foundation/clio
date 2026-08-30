@@ -78,27 +78,18 @@ namespace Clio.Command {
 					packageName = ResolvePrimaryPackageName(options.AppCode);
 				}
 				string nameFilter = options.SearchPattern?.Trim('*', ' ') ?? string.Empty;
-				var selectQuery = new JObject {
-					["rootSchemaName"] = "SysSchema",
-					["operationType"] = 0,
-					["filters"] = BuildPageFilters(packageName, nameFilter, options.UId),
-					["columns"] = new JObject {
-						[ItemsKey] = BuildPageColumns()
-					},
-					["rowCount"] = effectiveLimit
-				};
 				string url = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-				string requestBody = selectQuery.ToString(Formatting.None);
-				string responseJson = _applicationClient.ExecutePostRequest(url, requestBody);
-				var rawResponse = JObject.Parse(responseJson);
-				if (!(rawResponse[SuccessKey]?.Value<bool>() ?? false)) {
+				List<PageListItem>? queriedPages = TryQueryPages(
+					url,
+					packageName,
+					nameFilter,
+					options.UId,
+					effectiveLimit);
+				if (queriedPages is null) {
 					response = new PageListResponse { Success = false, Error = "Query failed" };
 					return false;
 				}
-				JArray rows = rawResponse["rows"] as JArray ?? [];
-				List<PageListItem> pages = rows
-					.Select(MapPage)
-					.ToList();
+				List<PageListItem> pages = queriedPages;
 				int? fallbackTotal = null;
 				bool fallbackMayBeCapped = false;
 				if (pages.Count == 0 && !string.IsNullOrWhiteSpace(packageName)) {
@@ -106,23 +97,34 @@ namespace Clio.Command {
 					// relation filter while the same rows were already visible through an unscoped read.
 					// Cross-check an empty result once and filter the returned package names locally before
 					// treating the package as absent. The normal filtered query remains the fast path.
-					List<PageListItem>? broaderPages = TryQueryPages(
-						url,
-						packageName: string.Empty,
-						nameFilter,
-						options.UId,
-						EmptyFilterFallbackRowCount);
-					if (broaderPages is not null) {
-						fallbackMayBeCapped = broaderPages.Count >= EmptyFilterFallbackRowCount;
-						List<PageListItem> packageMatches = broaderPages
-							.Where(page => string.Equals(
-								page.PackageName,
-								packageName,
-								StringComparison.OrdinalIgnoreCase))
-							.ToList();
-						fallbackTotal = packageMatches.Count;
-						pages = packageMatches.Take(effectiveLimit).ToList();
+					List<PageListItem>? broaderPages;
+					try {
+						broaderPages = TryQueryPages(
+							url,
+							packageName: string.Empty,
+							nameFilter,
+							options.UId,
+							EmptyFilterFallbackRowCount);
 					}
+					catch (Exception) {
+						broaderPages = null;
+					}
+					if (broaderPages is null) {
+						response = new PageListResponse {
+							Success = false,
+							Error = "The package-filtered query returned no rows, and the broader verification query failed."
+						};
+						return false;
+					}
+					fallbackMayBeCapped = broaderPages.Count >= EmptyFilterFallbackRowCount;
+					List<PageListItem> packageMatches = broaderPages
+						.Where(page => string.Equals(
+							page.PackageName,
+							packageName,
+							StringComparison.OrdinalIgnoreCase))
+						.ToList();
+					fallbackTotal = packageMatches.Count;
+					pages = packageMatches.Take(effectiveLimit).ToList();
 				}
 				// The capped data query cannot reveal how many pages matched in total, so a caller
 				// could not otherwise tell a 50-item page from a complete result. Only when the page
@@ -195,28 +197,26 @@ namespace Clio.Command {
 			string nameFilter,
 			string uId,
 			int rowCount) {
-			try {
-				var query = new JObject {
-					["rootSchemaName"] = "SysSchema",
-					["operationType"] = 0,
-					["filters"] = BuildPageFilters(packageName, nameFilter, uId),
-					["columns"] = new JObject {
-						[ItemsKey] = BuildPageColumns()
-					},
-					["rowCount"] = rowCount
-				};
-				string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-				var rawResponse = JObject.Parse(responseJson);
-				if (!(rawResponse[SuccessKey]?.Value<bool>() ?? false)) {
-					return null;
-				}
-				return (rawResponse["rows"] as JArray ?? [])
-					.Select(MapPage)
-					.ToList();
-			}
-			catch (Newtonsoft.Json.JsonException) {
+			var query = new JObject {
+				["rootSchemaName"] = "SysSchema",
+				["operationType"] = 0,
+				["filters"] = BuildPageFilters(packageName, nameFilter, uId),
+				["columns"] = new JObject {
+					[ItemsKey] = BuildPageColumns()
+				},
+				["rowCount"] = rowCount
+			};
+			string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
+			var rawResponse = JObject.Parse(responseJson);
+			if (!(rawResponse[SuccessKey]?.Value<bool>() ?? false)) {
 				return null;
 			}
+			if (rawResponse["rows"] is not JArray rows) {
+				return null;
+			}
+			return rows
+				.Select(MapPage)
+				.ToList();
 		}
 
 		private static JObject BuildPageColumns() {
