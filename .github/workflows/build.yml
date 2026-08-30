@@ -41,6 +41,7 @@ jobs:
               - 'clio/**'
               - 'Directory.Packages.props'
             tests:
+              - '.github/workflows/build.yml'
               - 'clio.tests/**'
               - 'clio.mcp.e2e/**'
               - 'clio.process.fixture/**'
@@ -133,10 +134,10 @@ jobs:
           dotnet test .\cliogate.tests\cliogate.tests.csproj `
             --configuration Release;
 
-  # ── Integration tests (run on PRs and master, after unit tests pass) ──
+  # ── Integration tests (run on PRs in parallel with unit tests) ──
   integration-tests:
     name: Integration Tests
-    needs: [changes, unit-tests]
+    needs: changes
     if: >-
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&
