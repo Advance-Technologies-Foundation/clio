@@ -44,14 +44,33 @@ public sealed class SysImageUploaderTests
 	private static HttpResponseMessage RespondUploadThenEcho(HttpRequestMessage request) =>
 		request.Method == HttpMethod.Post ? Ok() : OkBytes(PngPayload);
 
-	private static StorageStateResult Session(bool withCsrf = true) {
+	private static StorageStateResult Session(string csrfCookieName = "BPMCSRF") {
 		List<BrowserCookie> cookies = [
 			new(".ASPXAUTH", "auth-token", "dev.creatio.com", "/", true, false, "Lax", -1)
 		];
-		if (withCsrf) {
-			cookies.Add(new BrowserCookie("BPMCSRF", "csrf-token", "dev.creatio.com", "/", false, false, "Lax", -1));
+		if (csrfCookieName is not null) {
+			cookies.Add(new BrowserCookie(csrfCookieName, "csrf-token", "dev.creatio.com", "/", false, false, "Lax", -1));
 		}
 		return new StorageStateResult(cookies);
+	}
+
+	[Test]
+	[Description("Echoes a current-runtime CRT_CSRF login cookie under the matching CRT_CSRF request header instead of assuming the legacy BPMCSRF name.")]
+	public async Task UploadAsync_ShouldSendModernCsrfHeader_WhenLoginCarriesModernCookie() {
+		// Arrange
+		(SysImageUploader sut, RecordingHandler handler, _) = BuildSut(isNetCore: true,
+			session: Session("CRT_CSRF"));
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync("C:/brand/background.png");
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the current-runtime CSRF cookie must authenticate the image write");
+		HttpRequestMessage upload = handler.Requests[0];
+		upload.Headers.GetValues("CRT_CSRF").Single().Should().Be("csrf-token",
+			because: "the CSRF token must be echoed under the same name the environment issued");
+		upload.Headers.Contains("BPMCSRF").Should().BeFalse(
+			because: "a current-runtime session must not be rewritten to the legacy header name");
 	}
 
 	private static (SysImageUploader sut, RecordingHandler handler, IFileSystem fileSystem) BuildSut(
@@ -370,18 +389,41 @@ public sealed class SysImageUploaderTests
 	}
 
 	[Test]
-	[Description("Fails with an explicit message when the login response carries no BPMCSRF cookie, since the image API rejects CSRF-less writes.")]
-	public async Task UploadAsync_ShouldFail_WhenLoginCarriesNoCsrfCookie() {
+	[Description("Allows the image API to decide a write when login carries no CSRF cookie, because environments with server-side CSRF disabled accept the authenticated session without one.")]
+	public async Task UploadAsync_ShouldProceed_WhenLoginCarriesNoCsrfCookie() {
 		// Arrange
-		(SysImageUploader sut, RecordingHandler handler, _) = BuildSut(isNetCore: false, session: Session(withCsrf: false));
+		(SysImageUploader sut, RecordingHandler handler, _) = BuildSut(isNetCore: false, session: Session(null));
 
 		// Act
 		SysImageUploadResult result = await sut.UploadAsync("C:/brand/background.png");
 
 		// Assert
-		result.Success.Should().BeFalse(because: "the image API write cannot be made without the CSRF token");
-		result.Error.Should().Contain("BPMCSRF", because: "the failure must name the missing prerequisite");
-		handler.Requests.Should().BeEmpty(because: "without the CSRF token no request is attempted");
+		result.Success.Should().BeTrue(because: "a CSRF-disabled environment can authorize the session cookie alone");
+		handler.Requests.Should().HaveCount(2,
+			because: "the uploader must let the server accept the upload and then verify the stored bytes");
+		HttpRequestMessage upload = handler.Requests[0];
+		upload.Headers.Contains("CRT_CSRF").Should().BeFalse(
+			because: "clio must not invent a current-runtime token the environment did not issue");
+		upload.Headers.Contains("BPMCSRF").Should().BeFalse(
+			because: "clio must not invent a legacy token the environment did not issue");
+	}
+
+	[Test]
+	[Description("Adds a targeted CSRF recovery hint when a tokenless image write receives HTTP 401 or 403 from an environment that enforces CSRF protection.")]
+	public async Task UploadAsync_ShouldExplainMissingCsrfCookie_WhenTokenlessWriteIsForbidden() {
+		// Arrange
+		(SysImageUploader sut, RecordingHandler handler, _) = BuildSut(isNetCore: false,
+			responder: _ => new HttpResponseMessage(HttpStatusCode.Forbidden), session: Session(null));
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync("C:/brand/background.png");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the environment rejected the tokenless image write");
+		result.Error.Should().Contain("CRT_CSRF or BPMCSRF",
+			because: "the caller needs the supported cookie names to diagnose the rejected session");
+		handler.Requests.Should().ContainSingle(
+			because: "a rejected upload must not proceed to the verification read");
 	}
 
 	[Test]
