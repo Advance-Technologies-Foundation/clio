@@ -110,12 +110,29 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Verify local .NET SDKs
+        if: needs.changes.outputs.use-kirill-runner == 'true'
+        shell: powershell
+        env:
+          REQUIRE_NET8: ${{ matrix.runNet8Compatibility }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdks = @(dotnet --list-sdks)
+          if ($LASTEXITCODE -ne 0 -or -not ($sdks -match '^10\.')) {
+            throw '.NET 10 SDK is not installed or is unavailable to the runner service account.'
+          }
+          if ($env:REQUIRE_NET8 -eq 'true' -and -not ($sdks -match '^8\.')) {
+            throw '.NET 8 SDK is not installed or is unavailable to the runner service account.'
+          }
+          $sdks
+
       - uses: actions/setup-dotnet@v4
+        if: needs.changes.outputs.use-kirill-runner != 'true'
         with:
           dotnet-version: 10.0.x
 
       - uses: actions/setup-dotnet@v4
-        if: matrix.runNet8Compatibility
+        if: matrix.runNet8Compatibility && needs.changes.outputs.use-kirill-runner != 'true'
         with:
           dotnet-version: 8.0.x
 
@@ -243,7 +260,19 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Verify local .NET 10 SDK
+        if: needs.changes.outputs.use-kirill-runner == 'true'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdks = @(dotnet --list-sdks)
+          if ($LASTEXITCODE -ne 0 -or -not ($sdks -match '^10\.')) {
+            throw '.NET 10 SDK is not installed or is unavailable to the runner service account.'
+          }
+          $sdks
+
       - uses: actions/setup-dotnet@v4
+        if: needs.changes.outputs.use-kirill-runner != 'true'
         with:
           dotnet-version: 10.0.x
 
