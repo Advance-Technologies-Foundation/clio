@@ -5460,6 +5460,7 @@ internal static class ToolContractCatalog {
 	private const string IdentitySitePortFieldName = "identitySitePort";
 	private const string IdentitySiteNameFieldName = "identitySiteName";
 	private const string IdentityPathFieldName = "identityPath";
+	private const string OverwriteFieldName = "overwrite";
 	private const string IdentityArchivePathInBundleFieldName = "identityArchivePathInBundle";
 	private const string ConfigurationModeFieldName = "configurationMode";
 	private const string ClientNameFieldName = "clientName";
@@ -5616,7 +5617,8 @@ internal static class ToolContractCatalog {
 					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
 					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
 					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
-					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files."),
+					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files. Filesystem reparse points are refused anywhere in the target path."),
+					Field(OverwriteFieldName, BooleanType, "Overwrite IdentityService files in an empty or recognized existing target directory."),
 					Field(ConfigurationModeFieldName, StringType, "Creatio connection mode: db-first, rest, or db. db-first currently falls back to REST/sys-settings until direct DB seeding is proven."),
 					Field(ClientNameFieldName, StringType, "OAuth client display name created for clio."),
 					Field(ClientApplicationUrlFieldName, StringType, "OAuth client application URL."),
