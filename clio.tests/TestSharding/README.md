@@ -5,6 +5,9 @@ workers. Each worker uses the same `dotnet test clio.tests.csproj` path as the u
 TeamCity does not read this manifest or these scripts, so its unit, integration, and MCP end-to-end
 configuration is unchanged.
 
+The first unit worker also preserves the existing NET8 compatibility build and
+`Creatio.ConflictResolver.Tests` run. In unsharded mode, the single unit worker runs both.
+
 The first shards select their listed fixtures. The final shard is a catch-all: it runs the base
 predicate and excludes fixtures assigned to earlier shards. A newly added fixture therefore runs
 exactly once even before the manifest is rebalanced.
