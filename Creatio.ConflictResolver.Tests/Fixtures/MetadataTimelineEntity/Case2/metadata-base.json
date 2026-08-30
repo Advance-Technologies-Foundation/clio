@@ -1,0 +1,49 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "AddonSchemaManager",
+      "UId": "36f1c75a-9514-4ca3-a9ad-236b67de4000",
+      "A2": "CallTimelineEntity",
+      "A5": "0f0b57ce-3155-4876-a7bb-8a901e434b75",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "9310225d-1ff8-45f2-9f34-9faf094d635a",
+      "B8": "0.0.0.0",
+      "AD1": "2f81fa05-11ae-400d-8e07-5ef6a620d1ad",
+      "AD2": "EntitySchemaManager",
+      "AD3": "TimelineEntity",
+      "AD5": "3a2d6f51-1bfc-4c17-aacb-b53de4866b7c",
+      "AD4": {
+        "SchemaName": "Call",
+        "TypeColumnUId": "00000000-0000-0000-0000-000000000000",
+        "TimelineEntityValues": [
+          {
+            "TypeColumnValue": "00000000-0000-0000-0000-000000000000",
+            "IsDefault": true,
+            "SortColumn": "CreatedOn",
+            "OwnerColumn": "Contact",
+            "ColumnLayouts": [
+              {
+                "ColumnName": "Direction",
+                "ColumnLayout": "{\"column\": 1,\"row\": 1,\"colSpan\": 4,\"rowSpan\": 1}"
+              },
+              {
+                "ColumnName": "StartDate",
+                "ColumnLayout": "{\"column\": 5,\"row\": 1,\"colSpan\": 4,\"rowSpan\": 1}"
+              },
+              {
+                "ColumnName": "EndDate",
+                "ColumnLayout": "{\"column\": 9,\"row\": 1,\"colSpan\": 4,\"rowSpan\": 1}"
+              },
+              {
+                "ColumnName": "Duration",
+                "ColumnLayout": "{\"column\": 13,\"row\": 1,\"colSpan\": 4,\"rowSpan\": 1}"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

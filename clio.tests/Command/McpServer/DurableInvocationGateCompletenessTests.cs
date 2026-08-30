@@ -119,6 +119,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-sys-settings",
 		"list-themes",
 		"list-user-tasks",
+		// Merges only caller-supplied strings in memory; it has no repository, filesystem, or environment authority.
+		"merge-creatio-artifact",
 		// Reads SysPackageSchemaData and the bound rows; writes nothing.
 		"read-data-binding-db",
 		"read-entity-business-rules",

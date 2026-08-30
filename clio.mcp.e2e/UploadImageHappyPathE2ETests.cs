@@ -14,7 +14,8 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// Hermetic happy-path end-to-end coverage for the upload-image MCP tool: the real clio MCP server
 /// resolves a registered environment (isolated clio home) that points at a loopback fake of the
-/// Creatio image surface (forms-auth login, upload endpoint, verification read), so the full
+/// Creatio image surface (forms-auth login without a CSRF cookie, upload endpoint, verification
+/// read), so the full
 /// login → upload → byte-verified read flow runs without a live Creatio environment.
 /// </summary>
 [TestFixture]
@@ -66,9 +67,9 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(UploadImageTool.ToolName)]
-	[AllureName("upload-image uploads and verifies an image end to end against a loopback Creatio fake")]
-	[AllureDescription("Registers an isolated environment pointing at a loopback fake of the Creatio image surface, calls upload-image through the real clio MCP server, and verifies the structured { success=true, image-id } result plus the login → upload → byte-verified read call sequence on the fake.")]
-	[Description("Registers an isolated environment pointing at a loopback fake of the Creatio image surface, calls upload-image through the real clio MCP server, and verifies the structured { success=true, image-id } result plus the login → upload → byte-verified read call sequence on the fake.")]
+	[AllureName("upload-image accepts a tokenless CSRF-disabled session and verifies the image end to end")]
+	[AllureDescription("Registers an isolated environment pointing at a CSRF-disabled loopback fake whose login returns only a session cookie, calls upload-image through the real clio MCP server, and verifies the structured result plus the login → upload → byte-verified read sequence.")]
+	[Description("Registers an isolated environment pointing at a CSRF-disabled loopback fake whose login returns only a session cookie, calls upload-image through the real clio MCP server, and verifies the structured result plus the login → upload → byte-verified read sequence.")]
 	public async Task UploadImage_Should_Upload_And_Verify_Image_When_Environment_Is_Reachable() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -101,9 +102,9 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 	}
 
 	/// <summary>
-	/// Loopback fake of the Creatio surface the upload needs: forms-auth login (issues the session and
-	/// CSRF cookies), the image upload endpoint, and the image verification read that serves the exact
-	/// uploaded bytes back.
+	/// Loopback fake of the Creatio surface the upload needs: forms-auth login on a CSRF-disabled
+	/// environment (issues only the session cookie), the image upload endpoint, and the verification
+	/// read that serves the exact uploaded bytes back.
 	/// </summary>
 	private sealed class FakeCreatioImageStub : IAsyncDisposable {
 		public static readonly byte[] PngPayload = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4];
@@ -177,9 +178,8 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 			byte[] bytes;
 			if (path.EndsWith("/ServiceModel/AuthService.svc/Login", StringComparison.Ordinal)) {
 				// The auth client harvests Set-Cookie headers itself (its HTTP client has no cookie
-				// jar), and the uploader requires the BPMCSRF cookie for the write.
+				// jar). This fake deliberately issues no CSRF cookie to model a CSRF-disabled site.
 				context.Response.Headers.Add("Set-Cookie", ".ASPXAUTH=stub-session; path=/");
-				context.Response.Headers.Add("Set-Cookie", "BPMCSRF=stub-csrf; path=/");
 				context.Response.ContentType = "application/json";
 				bytes = Encoding.UTF8.GetBytes("{\"Code\":0}");
 			} else if (path.EndsWith("/ImageAPIService/upload", StringComparison.Ordinal)) {

@@ -272,6 +272,44 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 			because: "every returned page summary should expose stable schema and package selectors");
 	}
 
+	[Test]
+	[Description("Starts the real clio MCP server and verifies package-name page discovery using a package returned by the seeded application.")]
+	[AllureFeature(PageListTool.ToolName)]
+	[AllureTag(PageListTool.ToolName)]
+	[AllureName("list-pages discovers pages by package name")]
+	[AllureDescription("Resolves a seeded application page, calls list-pages again with that page's package-name, and verifies the package-scoped structured response.")]
+	public async Task PageListTool_Should_Return_Pages_By_PackageName() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		PageDiscoveryCandidate candidate = await ResolveSeededPageCandidateOrIgnoreAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			ApplicationCode);
+
+		// Act
+		(CallToolResult callResult, PageListResponse response) = await CallPageListByPackageAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			candidate.Page.PackageName!);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid package-name query should complete through the real MCP transport");
+		response.Success.Should().BeTrue(
+			because: $"list-pages should accept a package returned by its own discovery response. Error: {response.Error}");
+		response.Pages.Should().NotBeNullOrEmpty(
+			because: "the selected package already contributed the seeded page used to arrange the test");
+		response.Pages.Should().OnlyContain(page => string.Equals(
+			page.PackageName,
+			candidate.Page.PackageName,
+			StringComparison.OrdinalIgnoreCase),
+			because: "package-name discovery must not leak pages owned by another package");
+	}
+
 	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
@@ -332,6 +370,24 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 			},
 			cancellationToken);
 		return EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
+	}
+
+	private static async Task<(CallToolResult CallResult, PageListResponse Response)> CallPageListByPackageAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string packageName) {
+		CallToolResult callResult = await session.CallToolAsync(
+			PageListTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName
+				}
+			},
+			cancellationToken);
+		PageListResponse response = EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
+		return (callResult, response);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {

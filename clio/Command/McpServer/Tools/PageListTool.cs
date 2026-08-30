@@ -39,7 +39,7 @@ public sealed class PageListTool(
 	};
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("List Freedom UI pages in Creatio with package and parent schema context. Results are capped (default 50); the response always reports total (full match count) and truncated so an incomplete result is observable. A negative limit is rejected. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("Lists Freedom UI pages with package and parent context. Empty package results get one bounded cross-check; failed checks return success:false. Results default to 50 and report total/truncated. Negative limits fail. Prefer environment-name; direct connection args are emergency fallback.")]
 	public PageListResponse ListPages([Description("Parameters: package-name, code, search-pattern, limit (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageListArgs args) {
 		string? legacyAliasError = GetLegacyAliasError(args);
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
