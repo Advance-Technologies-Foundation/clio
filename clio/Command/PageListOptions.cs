@@ -44,6 +44,18 @@ namespace Clio.Command {
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
 
+		private sealed record PageQueryContext(
+			string Url,
+			string PackageName,
+			string NameFilter,
+			string UId,
+			int EffectiveLimit);
+
+		private sealed record PageFallbackResult(
+			List<PageListItem> Pages,
+			int Total,
+			bool MayBeCapped);
+
 		public PageListCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
@@ -55,97 +67,33 @@ namespace Clio.Command {
 
 		public bool TryListPages(PageListOptions options, out PageListResponse response) {
 			try {
-				if (!string.IsNullOrWhiteSpace(options.PackageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
-					response = new PageListResponse {
-						Success = false,
-						Error = "Provide either package-name or app-code, not both."
-					};
+				if (!TryCreateQueryContext(options, out PageQueryContext context, out response)) {
 					return false;
 				}
-				// A negative limit must NOT silently disable the result cap (Creatio treats a
-				// negative rowCount as "no limit", which would return every page on the
-				// environment). Reject it; treat 0 as "use the default".
-				if (options.Limit < 0) {
-					response = new PageListResponse {
-						Success = false,
-						Error = $"limit must be zero or greater (got {options.Limit}). Omit limit or pass 0 to use the default of {DefaultLimit}."
-					};
-					return false;
-				}
-				int effectiveLimit = options.Limit == 0 ? DefaultLimit : options.Limit;
-				string packageName = options.PackageName;
-				if (string.IsNullOrWhiteSpace(packageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
-					packageName = ResolvePrimaryPackageName(options.AppCode);
-				}
-				string nameFilter = options.SearchPattern?.Trim('*', ' ') ?? string.Empty;
-				string url = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
 				List<PageListItem>? queriedPages = TryQueryPages(
-					url,
-					packageName,
-					nameFilter,
-					options.UId,
-					effectiveLimit);
+					context.Url,
+					context.PackageName,
+					context.NameFilter,
+					context.UId,
+					context.EffectiveLimit);
 				if (queriedPages is null) {
 					response = new PageListResponse { Success = false, Error = "Query failed" };
 					return false;
 				}
 				List<PageListItem> pages = queriedPages;
-				int? fallbackTotal = null;
-				bool fallbackMayBeCapped = false;
-				if (pages.Count == 0 && !string.IsNullOrWhiteSpace(packageName)) {
-					if (!TryCrossCheckEmptyPackagePages(
-						url,
-						packageName,
-						nameFilter,
-						options.UId,
-						effectiveLimit,
-						out pages,
-						out int verifiedTotal,
-						out fallbackMayBeCapped)) {
+				PageFallbackResult? fallback = null;
+				if (pages.Count == 0 && !string.IsNullOrWhiteSpace(context.PackageName)) {
+					fallback = CrossCheckEmptyPackagePages(context);
+					if (fallback is null) {
 						response = new PageListResponse {
 							Success = false,
 							Error = "The package-filtered query returned no rows, and the broader verification query failed."
 						};
 						return false;
 					}
-					fallbackTotal = verifiedTotal;
+					pages = fallback.Pages;
 				}
-				// The capped data query cannot reveal how many pages matched in total, so a caller
-				// could not otherwise tell a 50-item page from a complete result. Only when the page
-				// is provably full (count >= the cap) is a separate COUNT(Id) round-trip worth its
-				// cost: a short page (count < cap) is already complete, so issuing the count there is
-				// pure waste. When the page IS capped and the count query fails, we cannot prove
-				// completeness, so the result must be reported as truncated.
-				int total;
-				bool truncated;
-				if (fallbackTotal.HasValue) {
-					total = fallbackTotal.Value;
-					truncated = fallbackMayBeCapped || total > pages.Count;
-				}
-				else if (pages.Count < effectiveLimit) {
-					total = pages.Count;
-					truncated = false;
-				}
-				else {
-					(bool countSucceeded, int countTotal) = QueryTotalPageCount(url, packageName, nameFilter, options.UId, pages.Count);
-					if (countSucceeded) {
-						total = Math.Max(countTotal, pages.Count);
-						truncated = total > pages.Count;
-					}
-					else {
-						// The page filled the cap but the supplementary count failed, so completeness
-						// is unprovable — surface it as truncated rather than wrongly claiming a full set.
-						total = pages.Count;
-						truncated = true;
-					}
-				}
-				response = new PageListResponse {
-					Success = true,
-					Count = pages.Count,
-					Total = total,
-					Truncated = truncated,
-					Pages = pages
-				};
+				response = CreateSuccessResponse(pages, context, fallback);
 				return true;
 			}
 			catch (Exception ex) {
@@ -154,15 +102,43 @@ namespace Clio.Command {
 			}
 		}
 
-		private bool TryCrossCheckEmptyPackagePages(
-			string url,
-			string packageName,
-			string nameFilter,
-			string uId,
-			int effectiveLimit,
-			out List<PageListItem> pages,
-			out int total,
-			out bool mayBeCapped) {
+		private bool TryCreateQueryContext(
+			PageListOptions options,
+			out PageQueryContext context,
+			out PageListResponse response) {
+			context = null!;
+			if (!string.IsNullOrWhiteSpace(options.PackageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
+				response = new PageListResponse {
+					Success = false,
+					Error = "Provide either package-name or app-code, not both."
+				};
+				return false;
+			}
+			// A negative limit must NOT silently disable the result cap (Creatio treats a
+			// negative rowCount as "no limit", which would return every page on the
+			// environment). Reject it; treat 0 as "use the default".
+			if (options.Limit < 0) {
+				response = new PageListResponse {
+					Success = false,
+					Error = $"limit must be zero or greater (got {options.Limit}). Omit limit or pass 0 to use the default of {DefaultLimit}."
+				};
+				return false;
+			}
+			string packageName = options.PackageName;
+			if (string.IsNullOrWhiteSpace(packageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
+				packageName = ResolvePrimaryPackageName(options.AppCode);
+			}
+			context = new PageQueryContext(
+				_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery"),
+				packageName,
+				options.SearchPattern?.Trim('*', ' ') ?? string.Empty,
+				options.UId,
+				options.Limit == 0 ? DefaultLimit : options.Limit);
+			response = null!;
+			return true;
+		}
+
+		private PageFallbackResult? CrossCheckEmptyPackagePages(PageQueryContext context) {
 			// Issue #1213: a freshly-created package returned no rows through the package-name
 			// relation filter while the same rows were already visible through an unscoped read.
 			// Cross-check an empty result once and filter the returned package names locally before
@@ -170,10 +146,10 @@ namespace Clio.Command {
 			List<PageListItem>? broaderPages;
 			try {
 				broaderPages = TryQueryPages(
-					url,
+					context.Url,
 					packageName: string.Empty,
-					nameFilter,
-					uId,
+					context.NameFilter,
+					context.UId,
 					EmptyFilterFallbackRowCount);
 			}
 			catch (Exception exception) when (exception is System.Net.Http.HttpRequestException
@@ -183,21 +159,57 @@ namespace Clio.Command {
 				broaderPages = null;
 			}
 			if (broaderPages is null) {
-				pages = [];
-				total = 0;
-				mayBeCapped = false;
-				return false;
+				return null;
 			}
-			mayBeCapped = broaderPages.Count >= EmptyFilterFallbackRowCount;
 			List<PageListItem> packageMatches = broaderPages
 				.Where(page => string.Equals(
 					page.PackageName,
-					packageName,
+					context.PackageName,
 					StringComparison.OrdinalIgnoreCase))
 				.ToList();
-			total = packageMatches.Count;
-			pages = packageMatches.Take(effectiveLimit).ToList();
-			return true;
+			return new PageFallbackResult(
+				packageMatches.Take(context.EffectiveLimit).ToList(),
+				packageMatches.Count,
+				broaderPages.Count >= EmptyFilterFallbackRowCount);
+		}
+
+		private PageListResponse CreateSuccessResponse(
+			List<PageListItem> pages,
+			PageQueryContext context,
+			PageFallbackResult? fallback) {
+			// The capped data query cannot reveal how many pages matched in total, so a caller
+			// could not otherwise tell a 50-item page from a complete result. Only when the page
+			// is provably full (count >= the cap) is a separate COUNT(Id) round-trip worth its
+			// cost: a short page (count < cap) is already complete, so issuing the count there is
+			// pure waste. When the page IS capped and the count query fails, we cannot prove
+			// completeness, so the result must be reported as truncated.
+			if (fallback is not null) {
+				return CreateSuccessResponse(pages, fallback.Total, fallback.MayBeCapped || fallback.Total > pages.Count);
+			}
+			if (pages.Count < context.EffectiveLimit) {
+				return CreateSuccessResponse(pages, pages.Count, truncated: false);
+			}
+			(bool countSucceeded, int countTotal) = QueryTotalPageCount(
+				context.Url,
+				context.PackageName,
+				context.NameFilter,
+				context.UId,
+				pages.Count);
+			int total = countSucceeded ? Math.Max(countTotal, pages.Count) : pages.Count;
+			return CreateSuccessResponse(pages, total, !countSucceeded || total > pages.Count);
+		}
+
+		private static PageListResponse CreateSuccessResponse(
+			List<PageListItem> pages,
+			int total,
+			bool truncated) {
+			return new PageListResponse {
+				Success = true,
+				Count = pages.Count,
+				Total = total,
+				Truncated = truncated,
+				Pages = pages
+			};
 		}
 
 		private static JObject BuildPageFilters(string packageName, string nameFilter, string uId) {
