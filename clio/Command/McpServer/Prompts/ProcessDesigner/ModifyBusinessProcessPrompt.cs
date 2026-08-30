@@ -36,7 +36,10 @@ public static class ModifyBusinessProcessPrompt {
 		 place, keeping its position, which decides precedence: sibling branches off one element are evaluated in
 		 the order their flows were added and the first true one wins. No gateway is needed — the platform
 		 synthesizes one for a conditional flow whose source is an activity. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
-		 and every `[#…#]` parameter reference in it must resolve in that process; an EMPTY condition is refused
+		 and every `[#…#]` parameter reference in it must resolve in that process. A condition on a DEFAULT branch
+		 is refused. There is no clear-condition operation: to drop one, `removeFlow` then `addFlow` a plain flow
+		 — but the replacement lands LAST, and since precedence IS insertion order that silently changes which
+		 sibling branch runs, so re-add every sibling in the intended order. An EMPTY condition is refused
 		 because the platform stores one as the literal `true`. `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
 		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
@@ -51,8 +54,9 @@ public static class ModifyBusinessProcessPrompt {
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare
 		 non-empty record Guid (the route ships from CrtProcessBuilder 1.3.1.1, and this clio additionally
-		 refuses any environment older than the version it bundles — up front, via the package-convergence
-		 message — while an older clio surfaces the old package's `[#Lookup…#]`-macro rejection; either refusal
+		 refuses, up front, any environment below the version it needs — and, when that floor is below what it
+		 bundles, refuses the gap to the bundled version instead — while an older clio surfaces the old
+		 package's `[#Lookup…#]`-macro rejection; either refusal
 		 means the environment's package is behind, so update it rather than concluding the parameter is
 		 unsettable). Any failed operation aborts the whole edit
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,

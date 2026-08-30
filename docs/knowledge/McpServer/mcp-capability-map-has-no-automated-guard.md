@@ -23,9 +23,9 @@ instance and pays a configuration build per run; "runs offline" for a tool whose
 flipped to `true`. When you change a tool attribute, a description, or a behaviour claim, grep this
 file for the tool name in the same change — it is the only control there is.
 
-One narrow slice is now guarded (ENG-91846): `ToolContractVersionLiterals_ShouldMatchTheBundledArchiveVersion`
+One narrow slice is now guarded (ENG-91846): `ToolContractVersionLiterals_ShouldNotExceedTheBundledArchiveVersion`
 in `BundledProcessBuilderPackageTests` pins every `CrtProcessBuilder <version>` literal in the
-process-designer tool descriptions and the modify prompt to the bundled archive's version. It pins
+process-designer tool descriptions and the modify prompt at or below the bundled archive's version. It pins
 compiled-in strings only, by scoping choice — no test walks up to this docs file (tests CAN reach
 repo files by walking from `AppContext.BaseDirectory`, as `ClioGuidanceDevelopmentSkillTests` does) —
 so the map's own version literals and every other hand-copied claim here remain uncontrolled.

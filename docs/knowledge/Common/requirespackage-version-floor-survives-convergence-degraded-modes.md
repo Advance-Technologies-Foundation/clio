@@ -36,3 +36,5 @@ opposite error is accepting a floor as a REPLACEMENT for convergence: the litera
 names the feature threshold, while convergence tracks every rebundle; both are needed. The ADR
 (`spec/adr/adr-bundled-package-version-source-of-truth.md`) permits a hand-typed literal added in
 the commit that creates the need - it forbids only deriving the literal from the archive.
+
+**Updated by ENG-95891.** The Create/Modify floor moved from 1.3.1.1 to 1.4.0.3, and 1.4.0.3 is also the version clio bundles. While a floor EQUALS the bundled version the two refusals stop being nested: `installed >= floor` already implies `installed >= bundled`, so `TryGetConvergenceRefusal` cannot fire on that command at all and the sentence above about the floor's refusal set being a subset of convergence's is true only in the degenerate sense that the sets are equal. Agent-facing text must therefore not promise "the convergence message naming both versions" as the refusal a caller will see — it names one. The nesting returns by itself at the next rebundle, when the bundled version moves ahead of the floor again.

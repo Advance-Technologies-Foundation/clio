@@ -120,9 +120,10 @@ public class BundledProcessBuilderPackageTests {
 	/// (<c>core.autocrlf=true</c>). Identical content, different bytes, unreproducible hash. So the reference
 	/// is only verifiable if the archive is packed from a CLEAN checkout: pack from a tree carrying
 	/// just-written files and the pin records bytes nobody can reproduce, which leaves this constant detecting
-	/// change while establishing nothing about provenance. The bytes pinned below were verified entry-by-entry
-	/// against a checkout of the commit named above — identical, the only file not in the archive being the
-	/// <c>.DotSettings</c> that <c>clioignore</c> excludes.
+	/// change while establishing nothing about provenance. That entry-by-entry audit was run for the 1.3.1.1
+	/// cut and is what caught the line-ending case; it was NOT re-run for the 1.4.0.3 archive pinned below.
+	/// Two statements about the same bytes, one reassuring and one not, is exactly the shape this file exists
+	/// to prevent, so read the summary above as authoritative on what was and was not checked for THIS cut.
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
