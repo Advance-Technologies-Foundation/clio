@@ -120,8 +120,8 @@ namespace Clio.Tests
         }
 
         [Test]
-        [Description("show-package-file-content relied on the implicit ServicePath trigger that never enforced a version, so its migrated requirement must be presence-only (no version).")]
-        public void ShowPackageFileContentOptions_ShouldDeclarePresenceOnlyCliogateRequirement_WhenMigrated()
+        [Description("show-package-file-content requires the path-confinement fix introduced in cliogate 2.0.0.47.")]
+        public void ShowPackageFileContentOptions_ShouldDeclareVersionedCliogateRequirement_AfterPathConfinementFix()
         {
             // Arrange & Act
             RequiresPackageAttribute requirement = GetCliogateRequirement(typeof(ShowPackageFileContentOptions));
@@ -129,10 +129,10 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: "show-package-file-content requires cliogate to be installed");
-            requirement!.Version.Should().BeNullOrEmpty(
-                because: "the legacy implicit ServicePath trigger never enforced a version, so the requirement is presence-only");
+            requirement!.Version.Should().Be("2.0.0.47",
+                because: "older cliogate versions do not confine package file paths to the package Files directory");
             requirement.Hint.Should().Be(ExpectedCliogateHint,
-                because: "the cliogate install hint must be restored even for the presence-only requirement");
+                because: "the cliogate install hint must explain how to satisfy the versioned requirement");
         }
 
         [Test]
