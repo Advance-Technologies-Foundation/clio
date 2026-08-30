@@ -26,12 +26,14 @@ Use GitHub's existing primitives only:
 
 - Assignee: who coordinates the issue.
 - `Mitigation stage` issue field: `Investigating`, `Fixing`, `QA`, or `Waiting for human approval`.
+- `Start date`: the date the issue was first claimed for active work.
+- `Completion date`: the date the completed repair was verified after merge.
 - Development: the linked branch and later the draft pull request.
 - Relationships: the original issue is `blocked by` an issue in another repository when that downstream issue owns work required to resolve the report.
 
 Do not introduce claim records, leases, receipts, lock files, custom refs, or a separate state store.
 
-The original issue's `Mitigation stage` is authoritative for the overall workflow. A closed issue needs no `Done` field value.
+The original issue's `Mitigation stage` is authoritative for the overall workflow. A closed issue needs no `Done` stage value; `Completion date` records when delivery actually finished.
 
 ### Canonical stage field
 
@@ -48,14 +50,16 @@ The provisioning contract is:
 
 Display order and pinning are administrator-facing presentation settings, not runtime readiness gates. The recommended display order is `Investigating`, `Fixing`, `QA`, `Waiting for human approval`. GitHub options carry a `priority` for display ordering; their position in the REST response array does not establish that order. Pinning is not returned by the issue-field REST list response.
 
-Before the first GitHub write in every workflow, perform one read-only readiness check. Stop without assigning, branching, or commenting unless the field exists with the required type, visibility, and all four exact option names. Check option names by membership, not by array position or priority. A different response order or display order must not block claiming an issue. Report the mismatched property; do not try to repair organization settings.
+The workflow also requires the organization-level `Start date` and `Completion date` fields. Both must have type `date`. Their pinning and visibility control presentation, not workflow readiness; a field with a stored value appears on the issue even when it is not pinned to that issue type.
+
+Before the first GitHub write in every workflow, perform one read-only readiness check. Stop without assigning, branching, or commenting unless `Mitigation stage` exists with the required type, visibility, and all four exact option names, and both date fields exist with type `date`. Check option names by membership, not by array position or priority. A different response order or display order must not block claiming an issue. Report the mismatched property; do not try to repair organization settings.
 
 Read and update it through GitHub's issue-field REST API:
 
 1. Send `X-GitHub-Api-Version: 2026-03-10` on every issue-field request.
-2. `GET /orgs/Advance-Technologies-Foundation/issue-fields`; select the exact field name and perform the readiness check above. Resolve the field id dynamically; do not hardcode it.
-3. `POST /repos/OWNER/REPO/issues/NUMBER/issue-field-values` with only `{"issue_field_values":[{"field_id":FIELD_ID,"value":"STAGE"}]}`. Do not use `PUT`, which replaces all issue-field values.
-4. `GET /repos/OWNER/REPO/issues/NUMBER/issue-field-values` and verify the stored value.
+2. `GET /orgs/Advance-Technologies-Foundation/issue-fields`; select the exact field names and perform the readiness check above. Resolve field ids dynamically; do not hardcode them.
+3. `POST /repos/OWNER/REPO/issues/NUMBER/issue-field-values` with only the values being added or updated, for example `{"issue_field_values":[{"field_id":FIELD_ID,"value":"STAGE"}]}`. Date values use `YYYY-MM-DD`. Do not use `PUT`, which replaces all issue-field values.
+4. `GET /repos/OWNER/REPO/issues/NUMBER/issue-field-values` and verify every stored value written by the workflow.
 
 If the field, option, permission, or API support is missing, report the exact failure. Do not silently substitute a label or a Projects field, and do not claim the stage changed when verification failed.
 

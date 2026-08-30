@@ -47,8 +47,8 @@ Close an unwanted draft PR rather than claiming it was deleted. Remove only its 
 
 ## Complete
 
-Make the draft ready only when the repair is complete, validation is recorded, and no blocking review findings remain. For Clio pull requests, hand delivery to the repository's `pr-delivery-flow` skill when available; for other repositories, follow their equivalent delivery policy. Keep the original issue open while any required downstream issue or repair PR is unresolved. Close it only after all required PRs are merged and the reported outcome is verified.
+Make the draft ready only when the repair is complete, validation is recorded, and no blocking review findings remain. For Clio pull requests, hand delivery to the repository's `pr-delivery-flow` skill when available; for other repositories, follow their equivalent delivery policy. Keep the original issue open while any required downstream issue or repair PR is unresolved. After all required PRs are merged and the reported outcome is verified, set the original issue's `Completion date` to the current date and verify the stored value. Then close the issue if it did not close through the merged PR.
 
-Report each issue, repository, branch, worktree, PR, mitigation stage, validation result, cross-agent result or unavailability, final review result, and remaining external dependency.
+Report each issue, repository, branch, worktree, PR, start date, completion date when finished, mitigation stage, validation result, cross-agent result or unavailability, final review result, and remaining external dependency.
 
 Do not add coordination artifacts beyond those defined by the `clio-issue-workflow` skill.

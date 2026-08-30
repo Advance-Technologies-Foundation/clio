@@ -40,7 +40,8 @@ Always inspect all three sources below:
    - fetch review thread state explicitly, preferably including `isResolved` and `isOutdated`
    - treat AI comments the same as human comments until validated
 2. Checks and quality gates
-   - inspect `gh pr checks`
+   - inspect `gh pr checks --required` to identify the merge gates for the current head
+   - inspect other checks only for useful diagnostics; pending or failing advisory checks do not block merge
    - inspect GitHub Actions runs and logs for failures
    - inspect Sonar or other quality gate outputs directly when available
    - if Sonar says the quality gate passed, still inspect the issue list directly when the user expects the PR to be fully clean
@@ -54,7 +55,7 @@ For every actionable comment or failing check:
 1. Verify whether the finding is still valid against the latest branch head.
 2. If valid, implement the fix.
 3. Run the smallest useful local verification first, then broader verification when needed.
-4. Push the fix and wait for the fresh PR checks on the new head commit.
+4. Push the fix and wait only for the fresh required PR checks on the new head commit.
 5. Re-read the PR head SHA from GitHub after the push and make sure subsequent checks/comments are evaluated against that latest head, not against an older green run.
 
 Do not treat old feedback as closed just because the code was updated locally.
@@ -86,20 +87,26 @@ Before merging, confirm all of the following on the latest PR head:
 
 If any of these are false, continue the loop from section 3.
 
+Do not wait for TeamCity or any other advisory check unless it is currently returned by `gh pr checks --required` or the user explicitly asks for it. Repository documentation calling a check advisory is useful context, but the live required-check result is the merge authority.
+
 ## 7. Polling guidance
 
-When the repository uses self-hosted runners or slow quality tools:
+When the repository uses self-hosted runners or slow required quality tools:
 
 1. Expect checks to sit in `QUEUED` or `IN_PROGRESS` for a while.
-2. Poll run status deliberately instead of assuming a hang.
-3. If a job completes successfully, still re-read the PR checks and quality tools once more before merging.
+2. Poll required run status deliberately instead of assuming a hang.
+3. Do not poll advisory TeamCity jobs merely to delay delivery.
+4. If a required job completes successfully, re-read the required PR checks and quality tools once more before merging.
 
 ## 8. Merge and verify
 
-1. Merge the PR only after the final re-check passes.
-2. Verify on GitHub that the PR state is actually `MERGED`.
-3. Record the merge commit SHA.
-4. If the user asked for release follow-up, continue with the release flow only after merge verification succeeds.
+1. Once the pull request is ready, validation and review are complete, and no known blocker remains, enable GitHub auto-merge whenever the repository allows it. Auto-merge may be armed while required checks are still pending; never arm it while the PR is a draft.
+2. Use the repository-approved merge method, for example `gh pr merge <number> --auto --merge`, and verify that auto-merge is enabled.
+3. Wait only for the required gates. Do not wait for advisory checks such as TeamCity unless they are live required gates or the user explicitly requested them.
+4. If auto-merge is unavailable, merge manually only after the final required-gate re-check passes.
+5. Verify on GitHub that the PR state is actually `MERGED`.
+6. Record the merge commit SHA.
+7. If the user asked for release follow-up, continue with the release flow only after merge verification succeeds.
 
 ## 9. Optional release follow-up
 
@@ -115,7 +122,7 @@ If the user asks for a release after merge:
 Do not say the PR is done if any of the following are still pending:
 
 - an AI or human review thread is unresolved
-- a check is pending or failing
+- a required check is pending or failing
 - Sonar/quality gate has unresolved blocking findings
 - the PR checks are green but belong to an older head commit than the latest pushed fix
 - the PR was "ready to merge" but not actually merged yet
