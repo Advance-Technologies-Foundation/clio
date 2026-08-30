@@ -571,7 +571,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`hosts`](docs/commands/hosts.md) - List all Creatio hosts and their status, `list-hosts`
 <a id="last-compilation-log"></a>
 <a id="lcl"></a>
-- [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
+- [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get the most recently persisted compilation result, `lcl`
 <a id="prune-db-templates"></a>
 - [`prune-db-templates`](docs/commands/prune-db-templates.md) - Interactively prune clio-managed PostgreSQL templates
 <a id="restart-web-app"></a>
