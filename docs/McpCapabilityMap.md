@@ -519,6 +519,8 @@ This part makes the MCP useful for real development work, not just runtime inspe
 - `pkg-to-db`
 - `push-workspace`
 - `restore-workspace`
+- `list-package-files`
+- `get-package-file`
 - `delete-schema`
 - `add-item-model`
 - `generate-process-model`
@@ -533,10 +535,18 @@ What an external AI can practically do here:
 - sync package storage between DB and file system
 - push local source to Creatio
 - restore local source from Creatio
+- inspect files materialized by remote package compilation and read exact source together with the
+  generated non-FSM package project
 - delete a schema while validating workspace ownership
 - generate model code from environment artifacts
 
 This is where the MCP stops being a pure remote API and becomes a source-delivery assistant.
+
+`list-package-files` and `get-package-file` are read-only, environment-sensitive, non-resident tools
+reachable through the lazy MCP surface. They require cliogate `2.0.0.47` or newer. The list returns
+normalized package-relative paths; the content tool accepts one of those paths and also returns the
+generated `<package>.csproj`, so an agent can inspect the actual project Creatio compiled without
+assuming file design mode is enabled.
 
 ### 7. Environment Registry And Local Configuration
 
