@@ -106,7 +106,7 @@ namespace Clio.Command {
 			PageListOptions options,
 			out PageQueryContext context,
 			out PageListResponse response) {
-			context = null!;
+			context = null;
 			if (!string.IsNullOrWhiteSpace(options.PackageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
 				response = new PageListResponse {
 					Success = false,
@@ -134,7 +134,7 @@ namespace Clio.Command {
 				options.SearchPattern?.Trim('*', ' ') ?? string.Empty,
 				options.UId,
 				options.Limit == 0 ? DefaultLimit : options.Limit);
-			response = null!;
+			response = null;
 			return true;
 		}
 
