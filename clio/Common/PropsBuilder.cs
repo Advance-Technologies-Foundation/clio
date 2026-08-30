@@ -9,6 +9,21 @@ using Clio.Workspaces;
 namespace Clio.Common;
 
 /// <summary>
+/// Describes which props files the <see cref="IPropsBuilder"/> produced.
+/// </summary>
+/// <param name="Net472PropsCreated">True when the net472 props file was written.</param>
+/// <param name="NetStandardPropsCreated">True when the netstandard props file was written.</param>
+public readonly record struct PropsBuildResult(bool Net472PropsCreated, bool NetStandardPropsCreated)
+{
+
+	/// <summary>
+	/// True when at least one props file was written.
+	/// </summary>
+	public bool HasAnyProps => Net472PropsCreated || NetStandardPropsCreated;
+
+}
+
+/// <summary>
 /// Build .props file for the main csproj file of a package 
 /// </summary>
 public interface IPropsBuilder
@@ -21,6 +36,10 @@ public interface IPropsBuilder
 	/// nuget/bin folder to the package Libs folder
 	/// </summary>
 	/// <param name="packageName">Package name to convert</param>
+	/// <returns>
+	/// Which target monikers actually received a usable props file. A moniker without
+	/// referenced dlls produces no props file, and its caller must not import one.
+	/// </returns>
 	/// <remarks>
 	/// It add Libs folder with the following structure : <br/>
 	/// 📦Files                                <br/>
@@ -30,7 +49,7 @@ public interface IPropsBuilder
 	/// ┣ 📜PKG_NAME-net472.nuget.props        <br/>
 	/// ┣ 📜PKG_NAME-netstandard.nuget.props   <br/>
 	/// </remarks>
-	void Build(string packageName);
+	PropsBuildResult Build(string packageName);
 
 	#endregion
 
@@ -94,29 +113,47 @@ public class PropsBuilder : IPropsBuilder
 
 	#region Methods: Private
 
-	private void BuildNet472Props(string packageName){
+	private bool BuildNet472Props(string packageName){
 		string net472BinDir = GetPathTo(ItemType.Net472BinDir, packageName);
-		IEnumerable<string> net472Files = _fileSystem
-			.GetFiles(net472BinDir, "*.dll", SearchOption.TopDirectoryOnly)
-			.Where(f => !f.EndsWith(packageName + ".dll"));
+		IEnumerable<string> net472Files = GetDependencyDlls(net472BinDir, packageName);
 
 		string net472PropsContent = Process(net472Files, packageName, Moniker.net472);
 		string net472PropsFilePath = GetPathTo(ItemType.Net472PropsFilePath, packageName);
-
-		_logger.WriteLine("Saving props file to " + net472PropsFilePath);
-		_fileSystem.WriteAllTextToFile(net472PropsFilePath, net472PropsContent);
+		return SavePropsFile(net472PropsFilePath, net472PropsContent, Moniker.net472);
 	}
-	private void BuildNetStdProps(string packageName){
+	private bool BuildNetStdProps(string packageName){
 		string netStdBinDir = GetPathTo(ItemType.NetStdBinDir, packageName);
-		IEnumerable<string> netStdFiles = _fileSystem
-			.GetFiles(netStdBinDir, "*.dll", SearchOption.TopDirectoryOnly)
-			.Where(f => !f.EndsWith(packageName + ".dll"));
+		IEnumerable<string> netStdFiles = GetDependencyDlls(netStdBinDir, packageName);
 
 		string netStdPropsContent = Process(netStdFiles, packageName, Moniker.netstandard);
 		string netStdPropsFilePath = GetPathTo(ItemType.NetStdPropsFilePath, packageName);
+		return SavePropsFile(netStdPropsFilePath, netStdPropsContent, Moniker.netstandard);
+	}
 
-		_logger.WriteLine("Saving props file to " + netStdPropsFilePath);
-		_fileSystem.WriteAllTextToFile(netStdPropsFilePath, netStdPropsContent);
+	/// <summary>
+	/// Returns the dlls the package depends on, excluding the package assembly itself.
+	/// Compares file names, so a dependency whose name merely ends with the package
+	/// name (Contoso.MyPkg.dll for package MyPkg) is kept.
+	/// </summary>
+	private IEnumerable<string> GetDependencyDlls(string binDir, string packageName) =>
+		_fileSystem
+			.GetFiles(binDir, "*.dll", SearchOption.TopDirectoryOnly)
+			.Where(f => !string.Equals(Path.GetFileNameWithoutExtension(f), packageName,
+				StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// Writes the props file, or reports that there is nothing to write.
+	/// An empty file must never be written: the csproj imports it, and MSBuild
+	/// fails the whole project with "Root element is missing".
+	/// </summary>
+	private bool SavePropsFile(string propsFilePath, string propsContent, Moniker moniker){
+		if (string.IsNullOrWhiteSpace(propsContent)) {
+			_logger.WriteWarning($"No {moniker} dependencies found, skipping {propsFilePath}");
+			return false;
+		}
+		_logger.WriteLine("Saving props file to " + propsFilePath);
+		_fileSystem.WriteAllTextToFile(propsFilePath, propsContent);
+		return true;
 	}
 	private string GetPathTo(ItemType itemType, string packageName){
 		return itemType switch {
@@ -200,9 +237,10 @@ public class PropsBuilder : IPropsBuilder
 
 	#region Methods: Public
 
-	public void Build(string packageName){
-		BuildNet472Props(packageName);
-		BuildNetStdProps(packageName);
+	public PropsBuildResult Build(string packageName){
+		bool net472PropsCreated = BuildNet472Props(packageName);
+		bool netStandardPropsCreated = BuildNetStdProps(packageName);
+		return new PropsBuildResult(net472PropsCreated, netStandardPropsCreated);
 	}
 
 	#endregion

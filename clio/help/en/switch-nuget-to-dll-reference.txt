@@ -10,6 +10,13 @@ SYNOPSIS
 OPTIONS
     Supports the canonical switch-nuget-to-dll-reference command options.
 
+NOTES
+    A props file is written only for a target framework that has dlls to reference.
+    A target framework without dependency dlls is skipped with a warning, and no
+    <Import> is added for it, because MSBuild cannot import an empty props file.
+    When no props file could be created at all, the csproj is left unchanged and
+    the command exits with code 1.
+
 EXAMPLES
     clio switch-nuget-to-dll-reference --help
         Display canonical options and usage examples

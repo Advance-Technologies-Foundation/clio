@@ -26,6 +26,9 @@ public class NugetMaterializer : INugetMaterializer
 	#region Constants: Private
 
 	private const string Tag = "PackageReference";
+	private const string Net472Moniker = "net472";
+	private const string NetStandardMoniker = "netstandard";
+	private const string NetStandardTargetFramework = "netstandard2.0";
 
 	#endregion
 
@@ -145,7 +148,7 @@ public class NugetMaterializer : INugetMaterializer
 		return csProjContent;
 	}
 
-	private void UpdateCsProjFile(string packageName, IEnumerable<XElement> xElements){
+	private void UpdateCsProjFile(string packageName, IEnumerable<XElement> xElements, PropsBuildResult propsBuildResult){
 		bool needsBackUp = false;
 		
 		//comment out PackageReference from the main csproj file
@@ -155,43 +158,11 @@ public class NugetMaterializer : INugetMaterializer
 			element.ReplaceWith(comment);
 		}
 		
-		//Look in csproj for the following line
 		//<Import Condition="'$(TargetFramework)' == 'net472'" Project="MrktApolloApp-net472.nuget.props" />
-		IEnumerable<XElement> importElementsNet472 = _csproj.Descendants("Import")
-			.Where(e=> 
-				e.Attribute("Project")?.Value == $"{packageName}-net472.nuget.props"
-				&& e.Attribute("Condition")?.Value == "'$(TargetFramework)' == 'net472'");
+		needsBackUp |= AddPropsImport(packageName, Net472Moniker, propsBuildResult.Net472PropsCreated);
 		
-		if(!importElementsNet472.Any()){
-			XElement importElementNet472 = new("Import");
-			importElementNet472.SetAttributeValue("Condition", "'$(TargetFramework)' == 'net472'");
-			importElementNet472.SetAttributeValue("Project", $"{packageName}-net472.nuget.props");
-			
-			//This will not be null, since csproj MUST have Project element
-			_csproj.Element("Project")!.Add(importElementNet472); 
-			needsBackUp = true;
-		}else {
-			_logger.WriteWarning($"Could not add {packageName}-net472.nuget.props import to the {_csprojPath} file. Import already exists");
-		}
-		
-		//Look in csproj for the following line
 		//<Import Condition="'$(TargetFramework)' == 'netstandard2.0'" Project="MrktApolloApp-netstandard.nuget.props" />
-		IEnumerable<XElement> importElementsNetStandard = _csproj.Descendants("Import")
-			.Where(e=> 
-				e.Attribute("Project")?.Value == $"{packageName}-netstandard.nuget.props"
-				&& e.Attribute("Condition")?.Value == "'$(TargetFramework)' == 'netstandard2.0'");
-
-		if(!importElementsNetStandard.Any()) {
-			XElement importElementNetStandard = new("Import");
-			importElementNetStandard.SetAttributeValue("Condition", "'$(TargetFramework)' == 'netstandard2.0'");
-			importElementNetStandard.SetAttributeValue("Project", $"{packageName}-netstandard.nuget.props");
-			
-			//This will not be null, since csproj MUST have Project element
-			_csproj.Element("Project")!.Add(importElementNetStandard);
-			needsBackUp = true;
-		}else {
-			_logger.WriteWarning($"Could not add {packageName}-netstandard.nuget.props import to the {_csprojPath} file. Import already exists");
-		}
+		needsBackUp |= AddPropsImport(packageName, NetStandardMoniker, propsBuildResult.NetStandardPropsCreated);
 
 		if (!needsBackUp) {
 			return;
@@ -200,6 +171,41 @@ public class NugetMaterializer : INugetMaterializer
 		_logger.WriteInfo($"Creating csproj backup file {_csprojPath}.bak");
 		_fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
 		_csproj.Save(_csprojPath);
+	}
+
+	/// <summary>
+	/// Adds an Import element for the props file of the given moniker.
+	/// An import is added only when the props file was actually written; importing
+	/// a missing or empty props file makes MSBuild fail the whole project.
+	/// </summary>
+	/// <returns>True when the csproj was modified.</returns>
+	private bool AddPropsImport(string packageName, string moniker, bool propsFileCreated){
+		string propsFileName = $"{packageName}-{moniker}.nuget.props";
+		string targetFramework = moniker == Net472Moniker ? Net472Moniker : NetStandardTargetFramework;
+		string condition = $"'$(TargetFramework)' == '{targetFramework}'";
+		
+		if (!propsFileCreated) {
+			_logger.WriteWarning($"Skipping {propsFileName} import in the {_csprojPath} file, " +
+				$"because the props file was not created");
+			return false;
+		}
+		
+		bool importExists = _csproj.Descendants("Import")
+			.Any(e => e.Attribute("Project")?.Value == propsFileName
+				&& e.Attribute("Condition")?.Value == condition);
+		
+		if (importExists) {
+			_logger.WriteInfo($"{propsFileName} import already exists in the {_csprojPath} file, skipping");
+			return false;
+		}
+		
+		XElement importElement = new("Import");
+		importElement.SetAttributeValue("Condition", condition);
+		importElement.SetAttributeValue("Project", propsFileName);
+		
+		//This will not be null, since csproj MUST have Project element
+		_csproj.Element("Project")!.Add(importElement);
+		return true;
 	}
 
 	#endregion
@@ -219,8 +225,13 @@ public class NugetMaterializer : INugetMaterializer
 		CreateNugetProjectIfNotExists(packageName);
 		AddNugetReferences(packageName, xElements);
 		BuildNugetProject(packageName);
-		_propsBuilder.Build(packageName);
-		UpdateCsProjFile(packageName, xElements);
+		PropsBuildResult propsBuildResult = _propsBuilder.Build(packageName);
+		if (!propsBuildResult.HasAnyProps) {
+			_logger.WriteError($"Could not find any dll to reference for {packageName}. "
+				+ $"The {_csprojPath} file was left unchanged");
+			return 1;
+		}
+		UpdateCsProjFile(packageName, xElements, propsBuildResult);
 		return 0;
 	}
 
