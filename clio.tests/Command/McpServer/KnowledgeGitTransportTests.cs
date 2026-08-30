@@ -383,6 +383,84 @@ public sealed class KnowledgeGitTransportTests {
 		fileSystem.AddFile(fileSystem.Path.Combine(gitPath, "config"), config);
 	}
 
+	[Test]
+	[Description("Reports why git failed, naming the cause and carrying git's own neutralized message.")]
+	public void Synchronize_ShouldReportWhyGitFailed_WhenTheCloneExitsNonZero() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(
+			Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 128,
+				StandardError = "fatal: could not read from remote repository\nremote: access denied\n"
+			}));
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
+		string stagingRoot = TestFileSystem.GetRootedPath("clio", "knowledge-staging");
+		KnowledgeTransportRequest request = new(
+			"partner",
+			GitSource(),
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			null,
+			null,
+			null,
+			null,
+			stagingRoot);
+
+		// Act
+		KnowledgeTransportResult result = transport.Synchronize(request, stagingRoot);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeTransportStatus.Failed,
+			because: "a clone that exits non-zero cannot produce a checkout");
+		result.Diagnostic.Should().Contain("git exited with code 128",
+			because: "four different causes - failed to start, non-zero exit, canceled, resource limit - used "
+				+ "to collapse into one sentence, so the reader could not tell which had happened");
+		result.Diagnostic.Should().Contain("could not read from remote repository",
+			because: "git's stderr is captured in full and was then discarded, which left reconstructing the "
+				+ "command by hand as the only way to learn why a clone failed");
+		result.Diagnostic.Should().NotContain("\n",
+			because: "git's message is partly repository-authored, so it is neutralized rather than raw");
+	}
+
+	[TestCase("start", "git could not be started")]
+	[TestCase("cancel", "the operation was canceled")]
+	[TestCase("limit", "the checkout exceeded its size limit")]
+	[Description("Reports the precise process failure cause when Git does not return a non-zero exit code.")]
+	public void Synchronize_ShouldReportPreciseCause_WhenGitDoesNotExitNormally(
+		string failure, string expectedCause) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		ProcessExecutionResult execution = failure switch {
+			"start" => new ProcessExecutionResult { Started = false },
+			"cancel" => new ProcessExecutionResult { Started = true, Canceled = true },
+			_ => new ProcessExecutionResult {
+				Started = true,
+				ResourceLimitExceeded = true,
+				DescendantTerminationUncertain = true
+			}
+		};
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(execution));
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
+		string stagingRoot = TestFileSystem.GetRootedPath("clio", "knowledge-staging");
+		KnowledgeTransportRequest request = new(
+			"partner", GitSource(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			null, null, null, null, stagingRoot);
+
+		// Act
+		KnowledgeTransportResult result = transport.Synchronize(request, stagingRoot);
+
+		// Assert
+		result.Diagnostic.Should().Contain(expectedCause,
+			because: "failed start, cancellation, and resource exhaustion require different operator actions");
+		if (failure == "limit") {
+			result.Diagnostic.Should().Contain("reparented descendants",
+				because: "resource-limit cleanup must disclose when descendant termination is uncertain");
+		}
+	}
+
 	private static ProcessExecutionResult Success(string output = "") => new() {
 		Started = true,
 		ExitCode = 0,

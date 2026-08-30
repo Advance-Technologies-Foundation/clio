@@ -16,7 +16,6 @@ using Terrasoft.Web.Http.Abstractions;
 
 namespace cliogate.tests
 {
-	[System.ComponentModel.Category("UnitTest")]
 	[Author("Kirill Krylov")]
 	[MockSettings(RequireMock.All)]
 	public class CreatioApiGatewayTestFixture : BaseMarketplaceTestFixture
@@ -219,6 +218,7 @@ namespace cliogate.tests
 		}
 
 		[Test]
+		[Category("Unit")]
 		[Description("BuildUnlockDescription treats a null Description column as empty and appends the maintainer marker instead of throwing.")]
 		public void BuildUnlockDescription_ShouldAppendMarkerWithMaintainer_WhenDescriptionIsNull(){
 			//Arrange
@@ -231,6 +231,7 @@ namespace cliogate.tests
 		}
 
 		[Test]
+		[Category("Unit")]
 		[Description("BuildUnlockDescription preserves the original Description when it already carries the maintainer marker.")]
 		public void BuildUnlockDescription_ShouldReturnOriginal_WhenMarkerAlreadyPresent(){
 			//Arrange
@@ -242,6 +243,60 @@ namespace cliogate.tests
 			//Assert
 			actual.Should().Be(original,
 				because: "an already-marked Description must be preserved untouched");
+		}
+
+		[Test]
+		[Category("Unit")]
+		[Description("BuildUnlockDescription truncates only the human description so the reversible maintainer marker fits the SysPackage column.")]
+		public void BuildUnlockDescription_ShouldTruncateDescriptionAndPreserveMarker_WhenValueWouldOverflow(){
+			// Arrange
+			string originalDescription = new string('D', 250);
+			const string marker = "#OriginalMaintainer:";
+			const string maintainer = "Vendor";
+
+			// Act
+			string actual = CreatioApiGateway.BuildUnlockDescription(originalDescription, maintainer, marker);
+
+			// Assert
+			actual.Should().HaveLength(250,
+				because: "the value written to SysPackage.Description must respect its varchar(250) limit");
+			actual.Should().EndWith(marker + maintainer,
+				because: "lock-package needs the complete marker and maintainer to restore the original owner");
+		}
+
+		[Test]
+		[Category("Unit")]
+		[Description("BuildUnlockDescription avoids leaving an unmatched UTF-16 surrogate when truncation lands inside an emoji.")]
+		public void BuildUnlockDescription_ShouldNotSplitSurrogatePair_WhenTruncatingDescription(){
+			// Arrange
+			const string marker = "#OriginalMaintainer:";
+			const string maintainer = "Vendor";
+			string originalDescription = new string('D', 223) + "\U0001F600";
+
+			// Act
+			string actual = CreatioApiGateway.BuildUnlockDescription(originalDescription, maintainer, marker);
+
+			// Assert
+			actual.Should().Be(new string('D', 223) + marker + maintainer,
+				because: "truncation must remove the whole surrogate pair rather than persist an invalid half-character");
+		}
+
+		[Test]
+		[Category("Unit")]
+		[Description("BuildUnlockDescription rejects a maintainer marker that cannot fit even after the human description is removed.")]
+		public void BuildUnlockDescription_ShouldThrow_WhenMaintainerMarkerExceedsColumnLimit(){
+			// Arrange
+			const string marker = "#OriginalMaintainer:";
+			string maintainer = new string('M', 231);
+
+			// Act
+			Action act = () => CreatioApiGateway.BuildUnlockDescription("Description", maintainer, marker);
+
+			// Assert
+			act.Should().Throw<InvalidOperationException>(
+				because: "silently truncating the maintainer would make lock-package restore the wrong owner")
+				.WithMessage("*requires 251 characters*allows only 250*",
+					because: "the Creatio Error.log should identify the exact storage constraint");
 		}
 
 		[Test]
