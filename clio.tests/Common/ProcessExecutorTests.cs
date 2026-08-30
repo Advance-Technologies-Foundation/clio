@@ -17,6 +17,43 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 public class ProcessExecutorTests {
 
+	[TestCase(true, null, TestName = "Capture path, no input supplied")]
+	[TestCase(true, "payload", TestName = "Capture path, input supplied")]
+	[TestCase(false, null, TestName = "Detached path, no input supplied")]
+	[TestCase(false, "payload", TestName = "Detached path, input supplied")]
+	[Description("Verifies standard input is redirected on every launch path whether or not input is supplied.")]
+	public void CreateStartInfo_ShouldAlwaysRedirectStandardInput(bool redirectOutput, string standardInput) {
+		// Arrange
+		ProcessExecutionOptions options = new("dotnet", "--info") { StandardInput = standardInput };
+
+		// Act
+		ProcessStartInfo startInfo = ProcessExecutor.CreateStartInfo(options, redirectOutput);
+
+		// Assert
+		startInfo.RedirectStandardInput.Should().BeTrue(
+			because: "a child that inherits clio's stdin inherits the MCP server's JSON-RPC pipe - it can "
+				+ "block on it and can consume protocol bytes - and that must not depend on whether the "
+				+ "caller happened to have input to send, nor on whether output is captured");
+	}
+
+	[TestCase(true, TestName = "Capture path redirects output")]
+	[TestCase(false, TestName = "Detached path leaves output inherited")]
+	[Description("Verifies standard output and error follow the capture flag and are never redirected for a detached child.")]
+	public void CreateStartInfo_ShouldRedirectOutputOnlyWhenCapturing(bool redirectOutput) {
+		// Arrange
+		ProcessExecutionOptions options = new("dotnet", "--info");
+
+		// Act
+		ProcessStartInfo startInfo = ProcessExecutor.CreateStartInfo(options, redirectOutput);
+
+		// Assert
+		startInfo.RedirectStandardOutput.Should().Be(redirectOutput,
+			because: "nobody drains a detached child's output pipe, so redirecting it would trade the stdin "
+				+ "hang this class prevents for a stdout hang - do not symmetrise the stdin rule onto output");
+		startInfo.RedirectStandardError.Should().Be(redirectOutput,
+			because: "standard error shares the drain, so it must share the rule");
+	}
+
 	[Test]
 	[Description("Verifies that fire-and-forget mode starts a process and returns launch metadata without waiting for completion.")]
 	public async Task FireAndForgetAsync_StartsProcess() {

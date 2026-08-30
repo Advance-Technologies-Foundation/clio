@@ -1,0 +1,8 @@
+= MetaData.Schema.UId "d00315d6-7205-48b4-949b-d3b49c051fe1"
+= MetaData.Schema.A2 "UsrGitiM3_FormPage"
+= MetaData.Schema.A5 "6f71e54c-1960-40c9-94f6-073fd67699ab"
+~ MetaData.Schema.B2 ["35c84959-cddf-45ca-b7b4-c85547d7d110","55dd4df2-9fb7-4344-83ab-3f66aad5c476","870dbb98-04ff-4689-8ac8-58846006c997","23206019-1d00-4b26-b743-8d2f1fa189e1"]
+= MetaData.Schema.B6 "5530927f-22ea-e7c9-4ccf-506d3a6c2ed2"
+= MetaData.Schema.HD1 "3b2e117f-8c6b-4ca5-80a2-7ebb497cddf9"
+- MetaData.Schema.B7
++ MetaData.Schema.B7 false

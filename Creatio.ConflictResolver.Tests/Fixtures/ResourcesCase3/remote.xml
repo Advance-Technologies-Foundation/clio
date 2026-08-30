@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="en-US">
+	<Group Type="String">
+		<Items>
+			<Item Name="Caption" Value="ParallelDev" />
+			<Item Name="Columns.Column25.Caption" Value="Email address 3" />
+			<Item Name="Columns.ColumnCheckbox1.Caption" Value="Checkbox 1" />
+			<Item Name="Columns.ColumnColour22.Caption" Value="Color 2" />
+			<Item Name="Columns.ColumnLocalphone.Caption" Value="Phone Text" />
+			<Item Name="Columns.ColumnNumber2.Caption" Value="Colu Number 222" />
+			<Item Name="Columns.ColumnNumber222.Caption" Value="Number 2" />
+			<Item Name="Columns.ColumnRichTextR.Caption" Value="Rich text 3R" />
+			<Item Name="Columns.ColumnText2local.Caption" Value="Text 2" />
+			<Item Name="Columns.ColumnWebLink111111.Caption" Value="Web link 111111" />
+			<Item Name="Columns.ColumnWebLink22.Caption" Value="Web link 2" />
+			<Item Name="Columns.Columncoluor1.Caption" Value="Color 1" />
+			<Item Name="Columns.Columnemail1.Caption" Value="Email address 1" />
+			<Item Name="Columns.Columnemail11.Caption" Value="Email address 2433" />
+			<Item Name="Columns.Columnphone1.Caption" Value="Phone number 1" />
+			<Item Name="Columns.Name.Caption" Value="Name" />
+		</Items>
+	</Group>
+</Resources>
