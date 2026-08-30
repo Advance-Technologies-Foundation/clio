@@ -526,6 +526,15 @@ Every Group-1 agent saw that example. Only the ones that ALSO reached the rule g
 
 `TC-08`'s agent found the contradiction unaided and named it in its own report.
 
+**Re-run after the fix — `TC-02b`, same case, same stand, fresh agent.** The article now opens that
+section with the reference rule and states that the short names describe the decision rather than the
+text to write (clio-knowledge `5542aa7`, 1.13.56). The agent wrote
+`[#[Parameter:{75c8d5c5-…}]#] > 1000` first try, stored both branches, and added the more specific one
+FIRST on purpose, explaining why. Five wrong forms became zero; 55 tool calls became 43; the case
+passes. What it still does NOT establish is precedence at RUNTIME — the agent answered from the rule
+and from the order it chose, not from a run, because the Perform task blocks the process the same way
+it blocks `TC-01`. Precedence needs its own `TC-19`-shaped case to be observed rather than reasoned.
+
 **The delivery defect underneath it.** `get-guidance name=process-modeling` returns ~113 KB on ONE line.
 It exceeded the tool-result token cap in **every** agent session of every round - 16 of 16 earlier logs and
 all 8 of this one - so the result is spilled to a file and each agent greps its own guidance back out.
