@@ -18,6 +18,44 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
+	[Description("Returns the list-packages paging inputs, defaults, and completeness fields through the real MCP contract endpoint.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises list-packages paging")]
+	[AllureDescription("Starts the real clio MCP server without a Creatio environment, requests the list-packages contract, and verifies that limit, offset, total, count, and truncated are discoverable before a live call.")]
+	public async Task ToolContractGet_ShouldAdvertisePackagePaging_WhenListPackagesIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { GetPkgListTool.GetPkgListToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the resident list-packages tool must expose a named full contract");
+		ToolContractDefinition contract = response.Tools.Should().ContainSingle(
+			because: "the named lookup should return exactly the requested list-packages contract").Which;
+		contract.InputSchema.Required.Should().Equal(["environment-name"],
+			because: "paging and filtering are optional while the registered environment remains required");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(["filter", "limit", "offset"],
+			because: "agents must discover both page controls alongside the existing filter");
+		contract.Defaults.Should().Contain(value => value.Name == "limit" && value.Value == "50",
+			because: "the bounded default must be explicit before a caller invokes a large environment");
+		contract.Defaults.Should().Contain(value => value.Name == "offset" && value.Value == "0",
+			because: "the first-page offset must be explicit in the contract");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(
+			["packages", "count", "total", "offset", "limit", "truncated"],
+			because: "the response contract must expose the data page and every completeness field needed to continue paging");
+		contract.OutputContract.Fields.Single(field => field.Name == "truncated").Description.Should()
+			.Contain("Advance offset by count",
+				because: "the contract must explain the deterministic continuation rule instead of leaving callers to guess");
+	}
+
+	[Test]
 	[Description("Returns the virtual entity create defaults and readback fields for both standalone and batched schema tools.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises virtual entity schema support")]

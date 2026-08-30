@@ -3,7 +3,8 @@ description: a failing ClioGate endpoint answers with an IIS/Creatio HTML error 
 applies-to:
   - clio/Package/PackageUnlocker.cs
   - clio/Common/ServiceUrlBuilder.cs
-date: 2026-08-19
+  - clio/Command/ShowPackageFileContentCommand.cs
+date: 2026-08-30
 ---
 
 **What is true** — when a `/rest/CreatioApiGateway/<Method>` call throws server-side, the response
