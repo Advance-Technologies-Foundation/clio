@@ -20,8 +20,3 @@ on any platform.
 `EmptyClass.cs`, created through `Path.Combine`) and a junk `Files\cs` directory holding the
 placeholder. The package still installs, so the damage surfaces later, in the repository and in the
 package archive.
-
-A separate trap in the same command: `ReferenceOptions.Path` is loaded with `XElement.Load`, so it
-must be the package **project file**, not the package directory. Passing the directory raises
-`UnauthorizedAccessException` — reported as `Access to the path ... is denied`, which reads like a
-permission problem and is not one.

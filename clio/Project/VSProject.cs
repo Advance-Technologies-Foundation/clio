@@ -51,10 +51,13 @@ public class VSProject : IVsProject{
 					_logger?.WriteInfo($"Detected namespace {Namespace}");
 				}
 
-				if (string.IsNullOrEmpty(DestPath)) {
-					DestPath = Path.Combine(curDir, "Files", "cs");
-				}
 			}
+		}
+		
+		if (string.IsNullOrEmpty(DestPath)) {
+			//Also needed when the namespace was supplied explicitly, otherwise AddFile
+			//would compose a path from a null DestPath
+			DestPath = Path.Combine(Environment.CurrentDirectory, "Files", "cs");
 		}
 	}
 

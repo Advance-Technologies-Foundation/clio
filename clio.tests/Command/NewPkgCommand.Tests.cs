@@ -41,8 +41,19 @@ public class NewPkgCommandTestCase
 		ILogger logger = Substitute.For<ILogger>();
 		NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand, logger);
 		NewPkgOptions options = new NewPkgOptions { Name = "Test", Rebase = "src" };
-		command.Execute(options);
-		referenceCommand.Received(1).Execute(Arg.Is<ReferenceOptions>(e => e.ReferenceType == options.Rebase));
+		try {
+			command.Execute(options);
+			referenceCommand.Received(1).Execute(Arg.Is<ReferenceOptions>(e => e.ReferenceType == options.Rebase));
+		} finally {
+			DeletePackageDirectory(options.Name);
+		}
+	}
+
+	private static void DeletePackageDirectory(string packageName){
+		string packagePath = Path.Combine(Directory.GetCurrentDirectory(), packageName);
+		if (Directory.Exists(packagePath)) {
+			Directory.Delete(packagePath, true);
+		}
 	}
 
 	[Test, Category("Unit")]
@@ -64,6 +75,8 @@ public class NewPkgCommandTestCase
 			logger.DidNotReceive().WriteError(Arg.Is<string>(s => s.Contains("   at ")));
 		} finally {
 			Program.IsDebugMode = originalDebugMode;
+			DeletePackageDirectory("TestNewPkgNormalMode");
+			DeletePackageDirectory("TestNewPkgDebugMode");
 		}
 	}
 
@@ -84,6 +97,8 @@ public class NewPkgCommandTestCase
 			logger.Received(1).WriteError(Arg.Is<string>(s => s.Contains("   at ")));
 		} finally {
 			Program.IsDebugMode = originalDebugMode;
+			DeletePackageDirectory("TestNewPkgNormalMode");
+			DeletePackageDirectory("TestNewPkgDebugMode");
 		}
 	}
 
@@ -142,16 +157,21 @@ public class NewPkgCommandTestCase
 		NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand, logger);
 		NewPkgOptions options = new NewPkgOptions {Name = "TestProjectFilePathPkg", Rebase = "src"};
 		string packagePath = Path.Combine(Directory.GetCurrentDirectory(), options.Name);
+		ReferenceOptions captured = null;
+		referenceCommand.When(c => c.Execute(Arg.Any<ReferenceOptions>()))
+			.Do(ci => captured = ci.ArgAt<ReferenceOptions>(0));
 
 		try {
 			// Act
 			command.Execute(options);
 
 			// Assert
-			//The reference command loads the path as an XML project file; passing the package
-			//directory instead fails with "Access to the path ... is denied"
-			referenceCommand.Received(1).Execute(Arg.Is<ReferenceOptions>(
-				e => e.Path.EndsWith(Path.Combine(options.Name, $"{options.Name}.csproj"))));
+			referenceCommand.Received(1).Execute(Arg.Any<ReferenceOptions>());
+			captured.Should().NotBeNull(because: "the reference command must be invoked for -r/--References");
+			captured.Path.Should().Be(
+				Path.Combine(packagePath, $"{options.Name}.csproj"),
+				because: "the reference command loads the path with XElement.Load; a directory "
+					+ "raises UnauthorizedAccessException, reported as 'Access to the path is denied'");
 		} finally {
 			if (Directory.Exists(packagePath)) {
 				Directory.Delete(packagePath, true);
@@ -179,10 +199,11 @@ public class NewPkgCommandTestCase
 			command.Execute(new NewPkgOptions {Name = packageName});
 
 			// Assert
-			Directory.GetDirectories(packagePath).Should().NotContain(
-				d => Path.GetFileName(d).Contains('\\'),
+			//CreateEmptyClass creates Files/cs through Path.Combine anyway, so only the
+			//placeholder proves that CreatePackageDirectories used the nested path
+			File.Exists(Path.Combine(packagePath, "Files", "cs", "placeholder.txt")).Should().BeTrue(
 				because: "a backslash is a legal file-name character on Unix, so a hard-coded "
-					+ "Windows separator silently creates a directory literally named 'Files\\cs'");
+					+ "Windows separator put the placeholder in a directory named 'Files\\cs'");
 		} finally {
 			if (Directory.Exists(packagePath)) {
 				Directory.Delete(packagePath, true);

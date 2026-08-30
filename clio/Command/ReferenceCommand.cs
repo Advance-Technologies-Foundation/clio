@@ -49,6 +49,13 @@ namespace Clio.Command
 			if (string.IsNullOrEmpty(options.Path)) {
 				throw new ArgumentNullException(nameof(options.Path));
 			}
+			if (_fileSystem.Directory.Exists(options.Path)) {
+				//XElement.Load on a directory raises UnauthorizedAccessException, which the user
+				//sees as "Access to the path ... is denied" - a permission error that is not one
+				_logger.WriteError($"'{options.Path}' is a directory. "
+					+ "Pass the package project file (.csproj) instead.");
+				return 1;
+			}
 			if (!string.IsNullOrEmpty(options.RefPattern)) {
 				options.ReferenceType = "custom";
 			}
