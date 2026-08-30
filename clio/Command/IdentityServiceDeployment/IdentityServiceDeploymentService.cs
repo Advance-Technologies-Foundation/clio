@@ -219,35 +219,12 @@ public sealed class IdentityServiceRoleGrantService : IIdentityServiceRoleGrantS
 		if (!Guid.TryParse(systemUserId, out Guid userId) || userId == Guid.Empty) {
 			throw new ArgumentException("System user id must be a non-empty GUID.", nameof(systemUserId));
 		}
-		string connectionString = ReadCreatioDbConnectionString(environment);
-		if (IsPostgres(connectionString)) {
+		string connectionString = IdentityServiceDeploymentService.ReadCreatioDbConnectionString(environment);
+		if (IdentityServiceDeploymentService.IsPostgres(connectionString)) {
 			GrantSystemAdministratorRolePostgres(connectionString, userId);
 		} else {
 			GrantSystemAdministratorRoleSqlServer(connectionString, userId);
 		}
-	}
-
-	private static bool IsPostgres(string connectionString) =>
-		connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase)
-		|| (connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase)
-			&& connectionString.Contains("Port=", StringComparison.OrdinalIgnoreCase)
-			&& !connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase));
-
-	private static string ReadCreatioDbConnectionString(EnvironmentSettings environment) {
-		if (string.IsNullOrWhiteSpace(environment.EnvironmentPath)) {
-			throw new InvalidOperationException("The target environment does not have EnvironmentPath configured.");
-		}
-		string connectionStringsPath = Path.Combine(environment.EnvironmentPath, "ConnectionStrings.config");
-		if (!File.Exists(connectionStringsPath)) {
-			throw new FileNotFoundException("Creatio ConnectionStrings.config was not found.", connectionStringsPath);
-		}
-		XDocument document = XDocument.Load(connectionStringsPath);
-		XElement element = document.Root?.Elements("add")
-			.FirstOrDefault(item => string.Equals(item.Attribute("name")?.Value, "dbPostgreSql", StringComparison.OrdinalIgnoreCase))
-			?? document.Root?.Elements("add")
-				.FirstOrDefault(item => string.Equals(item.Attribute("name")?.Value, "db", StringComparison.OrdinalIgnoreCase));
-		return element?.Attribute("connectionString")?.Value
-			?? throw new InvalidOperationException("ConnectionStrings.config does not contain db/dbPostgreSql.");
 	}
 
 	private static void GrantSystemAdministratorRolePostgres(string connectionString, Guid userId) {
@@ -370,6 +347,7 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 	private readonly IIdentityServiceArchiveResolver _archiveResolver;
 	private readonly IAvailableIisPortService _availableIisPortService;
 	private readonly IIdentityServiceCreatioClient _creatioClient;
+	private readonly IDeploymentTargetReservation _deploymentTargetReservation;
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly ILogger _logger;
 	private readonly IProcessExecutor _processExecutor;
@@ -391,6 +369,7 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		IAvailableIisPortService availableIisPortService,
 		IIdentityServiceRoleGrantService roleGrantService,
 		IIdentityServiceSystemUserResolver systemUserResolver,
+		IDeploymentTargetReservation deploymentTargetReservation,
 		ILogger logger) {
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_archiveResolver = archiveResolver ?? throw new ArgumentNullException(nameof(archiveResolver));
@@ -402,6 +381,8 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 			?? throw new ArgumentNullException(nameof(availableIisPortService));
 		_roleGrantService = roleGrantService ?? throw new ArgumentNullException(nameof(roleGrantService));
 		_systemUserResolver = systemUserResolver ?? throw new ArgumentNullException(nameof(systemUserResolver));
+		_deploymentTargetReservation = deploymentTargetReservation
+			?? throw new ArgumentNullException(nameof(deploymentTargetReservation));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 	}
 
@@ -427,8 +408,8 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 
 		string zipFile = ResolveZipFile(options, environment, identityArchivePathInBundle);
 		string standaloneArchive = _archiveResolver.Resolve(zipFile, identityArchivePathInBundle);
-		ExtractIdentityService(standaloneArchive, identityPath, options.Overwrite);
-		ConfigureAppSettings(identityPath, environment);
+		using IDisposable targetReservation = _deploymentTargetReservation.Acquire(identityPath);
+		ExtractIdentityService(standaloneArchive, identityPath, options.Overwrite, environment);
 		GenerateCertificateIfScriptExists(identityPath);
 		CreateIisSite(identityPath, siteName, identitySitePort);
 		VerifyIdentityDiscovery(identityUrl);
@@ -559,16 +540,120 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		return Path.Combine(Environment.CurrentDirectory, siteName);
 	}
 
-	private static void ExtractIdentityService(string archivePath, string identityPath, bool overwrite) {
-		if (Directory.Exists(identityPath)) {
-			if (!overwrite) {
+	internal void ExtractIdentityService(
+		string archivePath,
+		string identityPath,
+		bool overwrite,
+		EnvironmentSettings environment) {
+		EnsurePathHasNoReparsePoints(identityPath);
+		ValidateExistingIdentityTarget(identityPath, overwrite);
+		string parentPath = Directory.GetParent(identityPath)?.FullName
+			?? throw new InvalidOperationException("IdentityService cannot replace a filesystem root directory.");
+		string directoryName = Path.GetFileName(identityPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		string operationId = Guid.NewGuid().ToString("N");
+		string stagingPath = Path.Combine(parentPath, $".{directoryName}.staging-{operationId}");
+		string backupPath = Path.Combine(parentPath, $".{directoryName}.backup-{operationId}");
+		Directory.CreateDirectory(stagingPath);
+		try {
+			EnsurePathHasNoReparsePoints(stagingPath);
+			ZipFile.ExtractToDirectory(archivePath, stagingPath, overwriteFiles: false);
+			if (!IsIdentityServiceDirectory(stagingPath)) {
 				throw new InvalidOperationException(
-					$"IdentityService target '{identityPath}' already exists. Pass --overwrite to replace files.");
+					"The replacement archive does not contain IdentityService.dll and appsettings.json at its root.");
 			}
-			Directory.Delete(identityPath, recursive: true);
+			ConfigureAppSettings(stagingPath, environment);
+			EnsurePathHasNoReparsePoints(identityPath);
+			bool targetExists = Directory.Exists(identityPath);
+			bool replaceRecognizedTarget = targetExists && IsIdentityServiceDirectory(identityPath);
+			ValidateExistingIdentityTarget(identityPath, overwrite);
+			if (replaceRecognizedTarget) {
+				Directory.Move(identityPath, backupPath);
+			}
+			else if (targetExists) {
+				Directory.Delete(identityPath);
+			}
+			try {
+				Directory.Move(stagingPath, identityPath);
+			}
+			catch {
+				if (Directory.Exists(backupPath) && !Directory.Exists(identityPath)) {
+					Directory.Move(backupPath, identityPath);
+				}
+				throw;
+			}
+			if (Directory.Exists(backupPath)) {
+				DeleteBackupBestEffort(backupPath);
+			}
 		}
-		Directory.CreateDirectory(identityPath);
-		ZipFile.ExtractToDirectory(archivePath, identityPath, overwriteFiles: true);
+		finally {
+			if (Directory.Exists(stagingPath)) {
+				Directory.Delete(stagingPath, recursive: true);
+			}
+		}
+	}
+
+	private static void ValidateExistingIdentityTarget(string identityPath, bool overwrite) {
+		if (!Directory.Exists(identityPath)) {
+			return;
+		}
+		if (!overwrite) {
+			throw new InvalidOperationException(
+				$"IdentityService target '{identityPath}' already exists. Pass --overwrite to replace files.");
+		}
+		bool hasContent = Directory.EnumerateFileSystemEntries(identityPath).Any();
+		if (hasContent && !IsIdentityServiceDirectory(identityPath)) {
+			throw new InvalidOperationException(
+				$"IdentityService target '{identityPath}' is not empty and is not a recognized IdentityService deployment.");
+		}
+	}
+
+	private void DeleteBackupBestEffort(string backupPath) {
+		try {
+			Directory.Delete(backupPath, recursive: true);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			try {
+				ClearReadOnlyAttributes(backupPath);
+				Directory.Delete(backupPath, recursive: true);
+			}
+			catch (Exception retryException) when (retryException is IOException or UnauthorizedAccessException) {
+				_logger.WriteWarning(
+					$"IdentityService was replaced, but the previous deployment backup '{backupPath}' could not be removed: {retryException.Message}");
+			}
+		}
+	}
+
+	private static void ClearReadOnlyAttributes(string path) {
+		EnumerationOptions options = new() {
+			RecurseSubdirectories = true,
+			AttributesToSkip = FileAttributes.ReparsePoint
+		};
+		foreach (string filePath in Directory.EnumerateFiles(path, "*", options)) {
+			FileAttributes attributes = File.GetAttributes(filePath);
+			if (attributes.HasFlag(FileAttributes.ReadOnly)) {
+				File.SetAttributes(filePath, attributes & ~FileAttributes.ReadOnly);
+			}
+		}
+	}
+
+	private static bool IsIdentityServiceDirectory(string path) =>
+		File.Exists(Path.Combine(path, "IdentityService.dll"))
+		&& File.Exists(Path.Combine(path, "appsettings.json"));
+
+	private static void EnsurePathHasNoReparsePoints(string path) {
+		for (string? currentPath = Path.GetFullPath(path);
+			currentPath is not null;
+			currentPath = Directory.GetParent(currentPath)?.FullName) {
+			try {
+				if (File.GetAttributes(currentPath).HasFlag(FileAttributes.ReparsePoint)) {
+					throw new InvalidOperationException(
+						$"IdentityService target '{path}' cannot be inside or be a filesystem reparse point.");
+				}
+			}
+			catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) {
+				// Continue with the nearest existing ancestor.
+			}
+		}
 	}
 
 	private static void ConfigureAppSettings(string identityPath, EnvironmentSettings environment) {
@@ -601,9 +686,9 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		}
 		XDocument document = XDocument.Load(connectionStringsPath);
 		XElement element = document.Root?.Elements("add")
-			.FirstOrDefault(item => string.Equals(item.Attribute("name")?.Value, "dbPostgreSql", StringComparison.OrdinalIgnoreCase))
+			.FirstOrDefault(item => string.Equals(item.Attribute("name")?.Value, "db", StringComparison.OrdinalIgnoreCase))
 			?? document.Root?.Elements("add")
-				.FirstOrDefault(item => string.Equals(item.Attribute("name")?.Value, "db", StringComparison.OrdinalIgnoreCase));
+				.FirstOrDefault(item => string.Equals(item.Attribute("name")?.Value, "dbPostgreSql", StringComparison.OrdinalIgnoreCase));
 		return element?.Attribute("connectionString")?.Value
 			?? throw new InvalidOperationException("ConnectionStrings.config does not contain db/dbPostgreSql.");
 	}

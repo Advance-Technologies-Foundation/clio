@@ -69,7 +69,7 @@ EXAMPLES
         clio unlock-package MyPackage --uri https://myapp.com -l admin -p pass
 
 REQUIREMENTS
-    This command requires cliogate package version 2.0.0.42 or higher installed
+    This command requires cliogate package version 2.0.0.48 or higher installed
     on the target Creatio environment.
 
     To install or update cliogate:
@@ -85,9 +85,11 @@ NOTES
     - Package names are case-sensitive and must match exactly
     - After unlock, the package Maintainer is set to the environment's Maintainer
       sys setting; the original maintainer is preserved in the Description field
+    - If the stored value would exceed 250 characters, only the human-readable
+      description prefix is truncated; the maintainer marker remains complete
     - Use environment configuration for easier command usage
     - Remember to lock packages after completing changes
-    - ClioGate must be installed on the target environment (version >= 2.0.0.42)
+    - ClioGate must be installed on the target environment (version >= 2.0.0.48)
 
 SEE ALSO
     lock-package      Lock packages to prevent modifications

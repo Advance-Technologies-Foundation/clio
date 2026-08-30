@@ -1,0 +1,62 @@
+= MetaData.Schema.UId "083e5e88-a59e-40f5-b3db-ad32831a435e"
+= MetaData.Schema.A5 "719d52fc-76bc-4899-ac87-c234f0e1ffce"
+= MetaData.Schema.B6 "cc936d2e-ee9a-1bfb-c460-51bb2bf739b3"
++ MetaData.Schema.B7 true
+= MetaData.Schema.AD5 "6b4b4d15-a39b-4a07-a7aa-8c61b3bb9477"
++ MetaData.Schema.AD4.Pages {
+  "UId": "a2a6bca2-34d6-1e39-aa17-66a8b856599e",
+  "PageSchemaUId": "40aeae76-7e0a-4af3-a2e1-1f35b57b5341",
+  "IsDefault": false,
+  "IsSspDefault": false,
+  "Actions": {
+    "Add": true
+  },
+  "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+  "TypeColumnValue": "a57e726d-5924-4d1d-94e7-fdecb44a2494"
+}
+= MetaData.Schema.AD4.Pages.["4e586e63-7559-5e34-feee-2d0fbda580a1"].PageSchemaUId "ec5fd902-66ce-4139-a241-10ebd8addc40"
++ MetaData.Schema.AD4.Pages {
+  "UId": "c08627ec-3c2c-c0d8-05bc-4476a41860a1",
+  "PageSchemaUId": "2022b003-12ac-4511-9d30-d59f78fdc8aa",
+  "IsDefault": true,
+  "IsSspDefault": false,
+  "Actions": null,
+  "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+  "TypeColumnValue": null
+}
++ MetaData.Schema.AD4.Pages {
+  "UId": "4be6089e-0200-cb5f-1502-e5d711367852",
+  "PageSchemaUId": "d6b541cd-a467-44ef-9c3f-5854449998e4",
+  "IsDefault": true,
+  "IsSspDefault": false,
+  "Actions": null,
+  "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+  "TypeColumnValue": "654826e6-aa77-4223-ae29-00c937b7c7e0"
+}
++ MetaData.Schema.AD4.Pages {
+  "UId": "a059e03e-60f8-da56-5e09-cb65ac86a436",
+  "PageSchemaUId": "d85807c8-81b5-47de-b39e-1434a640f40d",
+  "IsDefault": false,
+  "IsSspDefault": false,
+  "Actions": {
+    "Add": true
+  },
+  "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+  "TypeColumnValue": "654826e6-aa77-4223-ae29-00c937b7c7e0"
+}
+- MetaData.Schema.AD4.Pages.["23a48874-7602-6a36-a9d2-ec479168882a"]
+- MetaData.Schema.AD4.Pages.["6159514c-90c4-1dfb-c725-1181a4247f2e"]
+- MetaData.Schema.AD4.Pages.["84254028-5188-fcd4-5b0e-833ac0a8018b"]
+~ MetaData.Schema.AD4.Pages [
+  "a2a6bca2-34d6-1e39-aa17-66a8b856599e",
+  "c0c3cf91-cc8c-49dc-196c-6c1cb0507b72",
+  "6f83d285-9649-4654-855b-569635c69f8b",
+  "4e586e63-7559-5e34-feee-2d0fbda580a1",
+  "c08627ec-3c2c-c0d8-05bc-4476a41860a1",
+  "c3e5d44b-a162-91dd-94fc-33dcfa6b0b47",
+  "1e49f023-45fc-bd91-8a5b-108d4b9f3be8",
+  "78991501-ba32-5ec4-76d6-1845f391df36",
+  "4be6089e-0200-cb5f-1502-e5d711367852",
+  "a059e03e-60f8-da56-5e09-cb65ac86a436"
+]
++ MetaData.Schema.B7 true

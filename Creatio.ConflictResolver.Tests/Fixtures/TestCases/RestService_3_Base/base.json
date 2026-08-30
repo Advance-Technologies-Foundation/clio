@@ -1,0 +1,67 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "ServiceSchemaManager",
+      "UId": "1f940603-3f2e-4da6-b1cc-13c8f31a3b4f",
+      "A2": "RestService_3_Base",
+      "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "6bbbf8ec-3042-49f8-b273-5eb50b9d2473",
+      "B8": "8.3.3.2060",
+      "IQ1": "http://localhost/rest3Base",
+      "IQ2": 1,
+      "IQ3": 5,
+      "IQ7": [],
+      "IQ4": [
+        {
+          "UId": "1ebcd0ff-8e1b-4429-9f1b-bbc21dbba70f",
+          "A2": "RestMethod4",
+          "A3": "1f940603-3f2e-4da6-b1cc-13c8f31a3b4f",
+          "A4": "1f940603-3f2e-4da6-b1cc-13c8f31a3b4f",
+          "IR3": 2500,
+          "IR5": "null",
+          "IR1": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "a34ac30f-5cf4-4f7a-9efa-cf4d0424c27f",
+                "A2": "preq4",
+                "IU1": "preq4",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 3,
+                "IU5": {
+                  "IV1": "preq4",
+                  "IV2": 1
+                },
+                "IU6": []
+              }
+            ],
+            "IT2": 4,
+            "IT1": "/rest4/"
+          },
+          "IR2": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "05ec450c-5624-483b-9049-67c8eb884d6e",
+                "A2": "param4",
+                "IU1": "param4",
+                "IU2": "Float",
+                "IU8": "item",
+                "IU4": 5,
+                "IU5": {
+                  "IV1": "1",
+                  "IV2": 1
+                },
+                "IU6": []
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
