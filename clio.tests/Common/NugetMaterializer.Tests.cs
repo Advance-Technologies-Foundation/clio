@@ -18,11 +18,23 @@ public class NugetMaterializerTests
 
 	[SetUp]
 	public void Setup(){
+		_workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		_workspacePathBuilder.BuildPackageProjectPath(Arg.Is(PackageName)).Returns(CsprojFileName);
+		_workspacePathBuilder.RootPath.Returns(RootPath);
+		_workspacePathBuilder.BuildPackagePropsPath(Arg.Is(PackageName), Arg.Any<string>())
+			.Returns(ci => $"{PackageName}-{ci.ArgAt<string>(1)}.nuget.props");
 		_logger = Substitute.For<ILogger>();
 		_fileSystem = Substitute.For<IFileSystem>();
 		_processExecutor= Substitute.For<IProcessExecutor>();
 		_propsBuilder = Substitute.For<IPropsBuilder>();
 		_sut = new NugetMaterializer(_workspacePathBuilder, _fileSystem, _logger, _processExecutor, _propsBuilder);
+	}
+
+	[TearDown]
+	public void TearDown(){
+		_fileSystem?.ClearReceivedCalls();
+		_logger?.ClearReceivedCalls();
+		_propsBuilder?.ClearReceivedCalls();
 	}
 
 	#endregion
@@ -88,20 +100,11 @@ public class NugetMaterializerTests
 		";
 
 	private ILogger _logger;
-	private readonly IWorkspacePathBuilder _workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+	private IWorkspacePathBuilder _workspacePathBuilder;
 	private IFileSystem _fileSystem;
 	private IProcessExecutor _processExecutor;
 	private NugetMaterializer _sut;
 	private IPropsBuilder _propsBuilder;
-
-	#endregion
-
-	#region Constructors: Public
-
-	public NugetMaterializerTests(){
-		_workspacePathBuilder.BuildPackageProjectPath(Arg.Is(PackageName)).Returns(CsprojFileName);
-		_workspacePathBuilder.RootPath.Returns(RootPath);
-	}
 
 	#endregion
 
@@ -182,7 +185,7 @@ public class NugetMaterializerTests
 		);
 		
 		_propsBuilder.Received(1).Build(PackageName);
-		actual.Should().Be(0);
+		actual.Should().Be(0, because: "the package was converted successfully");
 	}
 
 	[Test]
@@ -215,7 +218,7 @@ public class NugetMaterializerTests
 			
 		}
 
-		actual.Should().Be(0);
+		actual.Should().Be(0, because: "the package was converted successfully");
 		_propsBuilder.Received(1).Build(PackageName);
 	}
 
@@ -253,7 +256,7 @@ public class NugetMaterializerTests
 		_fileSystem.Received(0).CopyFile(CsprojFileName, $"{CsprojFileName}.bak", true);
 		_logger.Received(1).WriteError(
 			$"Could not find any dll to reference for {PackageName}. "
-			+ $"The {CsprojFileName} file was left unchanged");
+			+ "No package reference was converted");
 	}
 
 	[Test]
@@ -355,9 +358,8 @@ public class NugetMaterializerTests
 		// Arrange
 		_fileSystem.ReadAllText(CsprojFileName)
 			.Returns(MockCsProjWithoutNugetButWithImports());
-		string propsDirectory = Path.GetDirectoryName(CsprojFileName) ?? string.Empty;
-		string net472Props = Path.Combine(propsDirectory, $"{PackageName}-net472.nuget.props");
-		string netStandardProps = Path.Combine(propsDirectory, $"{PackageName}-netstandard.nuget.props");
+		string net472Props = $"{PackageName}-net472.nuget.props";
+		string netStandardProps = $"{PackageName}-netstandard.nuget.props";
 		_fileSystem.ExistsFile(net472Props).Returns(true);
 		_fileSystem.ReadAllText(net472Props).Returns(string.Empty);
 		_fileSystem.ExistsFile(netStandardProps).Returns(false);
@@ -373,6 +375,94 @@ public class NugetMaterializerTests
 			+ "because the props file does not exist");
 		_logger.Received(1).WriteInfo(
 			$"Removed the {PackageName}-netstandard.nuget.props import from the {CsprojFileName} file, "
+			+ "because the props file does not exist");
+	}
+
+	[Test]
+	[Description("Writes a csproj that imports the created props file and comments out the converted reference (issue 263)")]
+	public void Materializer_WritesExpectedCsprojXml(){
+		// Arrange
+		string savedCsproj = null;
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithNugetContent());
+		_propsBuilder.Build(PackageName).Returns(new PropsBuildResult(true, true, MaterializedNugets));
+		_fileSystem.When(fs => fs.WriteAllTextToFile(CsprojFileName, Arg.Any<string>()))
+			.Do(ci => savedCsproj = ci.ArgAt<string>(1));
+
+		//Act
+		_sut.Materialize(PackageName);
+
+		//Assert
+		savedCsproj.Should().NotBeNull(because: "the csproj must be written through the file system");
+		savedCsproj.Should().Contain(
+			$"<Import Condition=\"'$(TargetFramework)' == 'net472'\" Project=\"{PackageName}-net472.nuget.props\" />",
+			because: "the net472 props file was created and must be imported");
+		savedCsproj.Should().Contain(
+			$"<Import Condition=\"'$(TargetFramework)' == 'netstandard2.0'\" Project=\"{PackageName}-netstandard.nuget.props\" />",
+			because: "the netstandard props file was created and must be imported");
+		savedCsproj.Should().Contain("<!--<PackageReference Include=\"Nuget1\" Version=\"1.1.1\" />-->",
+			because: "a materialized package reference is replaced by a comment");
+	}
+
+	[Test]
+	[Description("Never leaves an import of a props file that was not created (issue 263)")]
+	public void Materializer_WritesNoImport_ForPropsFileThatWasNotCreated(){
+		// Arrange
+		string savedCsproj = null;
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithExistingImports());
+		_propsBuilder.Build(PackageName).Returns(new PropsBuildResult(true, false, MaterializedNugets));
+		_fileSystem.When(fs => fs.WriteAllTextToFile(CsprojFileName, Arg.Any<string>()))
+			.Do(ci => savedCsproj = ci.ArgAt<string>(1));
+
+		//Act
+		_sut.Materialize(PackageName);
+
+		//Assert
+		savedCsproj.Should().NotContain($"{PackageName}-netstandard.nuget.props",
+			because: "importing a props file that does not exist fails the whole project with MSB4019");
+		savedCsproj.Should().Contain($"{PackageName}-net472.nuget.props",
+			because: "the net472 props file was created and its import must stay");
+	}
+
+	[Test]
+	[Description("Removes stale imports when nothing could be materialized at all (issue 263)")]
+	public void Materializer_RemovesStaleImports_When_NothingMaterialized(){
+		// Arrange
+		string savedCsproj = null;
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithExistingImports());
+		_propsBuilder.Build(PackageName).Returns(new PropsBuildResult(false, false, Array.Empty<string>()));
+		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(false);
+		_fileSystem.When(fs => fs.WriteAllTextToFile(CsprojFileName, Arg.Any<string>()))
+			.Do(ci => savedCsproj = ci.ArgAt<string>(1));
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(1, because: "no package reference could be converted");
+		savedCsproj.Should().NotBeNull(because: "the stale imports had to be removed");
+		savedCsproj.Should().NotContain(".nuget.props",
+			because: "both props files are gone, so neither import may survive");
+	}
+
+	[Test]
+	[Description("Keeps a usable props file and its import untouched while repairing (issue 263)")]
+	public void Materializer_KeepsUsablePropsFile_WhileRepairing(){
+		// Arrange
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithoutNugetButWithImports());
+		string net472Props = $"{PackageName}-net472.nuget.props";
+		string netStandardProps = $"{PackageName}-netstandard.nuget.props";
+		_fileSystem.ExistsFile(net472Props).Returns(true);
+		_fileSystem.ReadAllText(net472Props).Returns("<Project></Project>");
+		_fileSystem.ExistsFile(netStandardProps).Returns(false);
+
+		//Act
+		_sut.Materialize(PackageName);
+
+		//Assert
+		_fileSystem.Received(0).DeleteFileIfExists(net472Props);
+		_logger.Received(0).WriteInfo(Arg.Is<string>(m => m.Contains($"Removed the {net472Props}")));
+		_logger.Received(1).WriteInfo(
+			$"Removed the {netStandardProps} import from the {CsprojFileName} file, "
 			+ "because the props file does not exist");
 	}
 

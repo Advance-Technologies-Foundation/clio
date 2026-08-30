@@ -175,9 +175,18 @@ public class NugetMaterializer : INugetMaterializer
 			return;
 		}
 		
+		SaveCsProjFile();
+	}
+
+	/// <summary>
+	/// Backs up the csproj and writes the current document over it.
+	/// Goes through IFileSystem so the written content is part of the testable contract.
+	/// </summary>
+	private void SaveCsProjFile(){
 		_logger.WriteInfo($"Creating csproj backup file {_csprojPath}.bak");
 		_fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
-		_csproj.Save(_csprojPath);
+		string declaration = _csproj.Declaration is null ? string.Empty : _csproj.Declaration + Environment.NewLine;
+		_fileSystem.WriteAllTextToFile(_csprojPath, declaration + _csproj);
 	}
 
 	/// <summary>
@@ -193,8 +202,8 @@ public class NugetMaterializer : INugetMaterializer
 		
 		bool repaired = false;
 		foreach (string moniker in new[] {Net472Moniker, NetStandardMoniker}) {
-			string propsFileName = PropsBuildResult.BuildPropsFileName(packageName, moniker);
-			string propsFilePath = Path.Combine(Path.GetDirectoryName(_csprojPath) ?? string.Empty, propsFileName);
+			string propsFileName = WorkspacePathBuilder.BuildPackagePropsFileName(packageName, moniker);
+			string propsFilePath = _workspacePathBuilder.BuildPackagePropsPath(packageName, moniker);
 			bool propsFileUsable = _fileSystem.ExistsFile(propsFilePath)
 				&& !string.IsNullOrWhiteSpace(_fileSystem.ReadAllText(propsFilePath));
 			if (propsFileUsable) {
@@ -208,9 +217,7 @@ public class NugetMaterializer : INugetMaterializer
 			return;
 		}
 		
-		_logger.WriteInfo($"Creating csproj backup file {_csprojPath}.bak");
-		_fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
-		_csproj.Save(_csprojPath);
+		SaveCsProjFile();
 	}
 
 	/// <summary>
@@ -239,7 +246,7 @@ public class NugetMaterializer : INugetMaterializer
 	/// </summary>
 	/// <returns>True when the csproj was modified.</returns>
 	private bool AddPropsImport(string packageName, string moniker, bool propsFileCreated){
-		string propsFileName = PropsBuildResult.BuildPropsFileName(packageName, moniker);
+		string propsFileName = WorkspacePathBuilder.BuildPackagePropsFileName(packageName, moniker);
 		string targetFramework = moniker == Net472Moniker ? Net472Moniker : NetStandardTargetFramework;
 		string condition = $"'$(TargetFramework)' == '{targetFramework}'";
 		
@@ -290,7 +297,10 @@ public class NugetMaterializer : INugetMaterializer
 		PropsBuildResult propsBuildResult = _propsBuilder.Build(packageName);
 		if (!propsBuildResult.HasAnyProps) {
 			_logger.WriteError($"Could not find any dll to reference for {packageName}. "
-				+ $"The {_csprojPath} file was left unchanged");
+				+ $"No package reference was converted");
+			//Both props files are gone; an import left by an earlier run would now point at a
+			//missing file and fail the whole project with MSB4019.
+			RepairUnusablePropsImports(packageName);
 			return 1;
 		}
 		UpdateCsProjFile(packageName, xElements, propsBuildResult);

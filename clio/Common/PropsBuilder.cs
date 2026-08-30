@@ -22,6 +22,13 @@ public readonly record struct PropsBuildResult(bool Net472PropsCreated, bool Net
 {
 
 	/// <summary>
+	/// Names, without extension, of the assemblies actually copied into the package Libs folder.
+	/// Never null, so default(PropsBuildResult) stays enumerable.
+	/// </summary>
+	public IReadOnlyCollection<string> MaterializedAssemblies { get; init; } =
+		MaterializedAssemblies ?? Array.Empty<string>();
+
+	/// <summary>
 	/// True when at least one props file was written.
 	/// </summary>
 	public bool HasAnyProps => Net472PropsCreated || NetStandardPropsCreated;
@@ -33,8 +40,10 @@ public readonly record struct PropsBuildResult(bool Net472PropsCreated, bool Net
 	/// <remarks>
 	/// A heuristic: a package id is not always its assembly name (NUnit ships
 	/// nunit.framework.dll), so an assembly whose name starts with the package id counts as
-	/// a match. When a package id genuinely matches nothing, its PackageReference is kept -
-	/// the package still restores, which is safer than dropping a dependency.
+	/// a match. It errs in both directions - a package whose assembly is named differently
+	/// keeps its reference and simply restores as before, while a package named Foo is treated
+	/// as materialized when an unrelated Foo.Something.dll appears. The accurate mapping lives
+	/// in the nuget project's project.assets.json and is not read here.
 	/// </remarks>
 	public bool IsMaterialized(string nugetPackageName){
 		if (MaterializedAssemblies is null || string.IsNullOrWhiteSpace(nugetPackageName)) {
@@ -44,15 +53,6 @@ public readonly record struct PropsBuildResult(bool Net472PropsCreated, bool Net
 			assembly.Equals(nugetPackageName, StringComparison.OrdinalIgnoreCase)
 			|| assembly.StartsWith(nugetPackageName + ".", StringComparison.OrdinalIgnoreCase));
 	}
-
-	/// <summary>
-	/// Builds the props file name clio generates for a package and a target moniker.
-	/// Both the props writer and the csproj import must derive the name here.
-	/// </summary>
-	/// <param name="packageName">Creatio package name.</param>
-	/// <param name="moniker">Target moniker: net472 or netstandard.</param>
-	public static string BuildPropsFileName(string packageName, string moniker) =>
-		$"{packageName}-{moniker}.nuget.props";
 
 }
 
@@ -200,10 +200,10 @@ public class PropsBuilder : IPropsBuilder
 			ItemType.PackageFolder => FilePathGetter(_workspacePathBuilder.PackagesFolderPath),
 			ItemType.Net472BinDir => FolderPathGetter(_workspacePathBuilder.NugetFolderPath, Moniker.net472),
 			ItemType.NetStdBinDir => FolderPathGetter(_workspacePathBuilder.NugetFolderPath, Moniker.netstandard),
-			ItemType.Net472PropsFilePath => PackageFolderPathGetter(_workspacePathBuilder.PackagesFolderPath,
-				Moniker.net472),
-			ItemType.NetStdPropsFilePath => PackageFolderPathGetter(_workspacePathBuilder.PackagesFolderPath,
-				Moniker.netstandard),
+			ItemType.Net472PropsFilePath =>
+				_workspacePathBuilder.BuildPackagePropsPath(packageName, Moniker.net472.ToString()),
+			ItemType.NetStdPropsFilePath =>
+				_workspacePathBuilder.BuildPackagePropsPath(packageName, Moniker.netstandard.ToString()),
 			ItemType.Net472PackageLibsPath => PackageLibsPath(_workspacePathBuilder.PackagesFolderPath, Moniker.net472),
 			ItemType.NetStdPackageLibsPath => PackageLibsPath(_workspacePathBuilder.PackagesFolderPath,
 				Moniker.netstandard),
@@ -214,9 +214,6 @@ public class PropsBuilder : IPropsBuilder
 			Path.Combine(path, packageName, "Files", "Libs", moniker.ToString());
 
 		string FilePathGetter(string path) => Path.Combine(path, packageName, packageName + ProjExtension);
-
-		string PackageFolderPathGetter(string path, Moniker moniker) =>
-			Path.Combine(path, packageName, "Files", packageName + "-" + moniker + ".nuget" + PropsExtension);
 
 		string FolderPathGetter(string path, Moniker moniker) =>
 			Path.Combine(path, packageName, "bin", moniker.ToString());
@@ -240,6 +237,7 @@ public class PropsBuilder : IPropsBuilder
 		StringBuilder sb = new StringBuilder()
 			.AppendLine("<!-- THIS FILE IS AUTO GENERATED USE CLIO CLI FOR HELP-->")
 			.AppendLine("<Project>");
+		int referencedDllCount = 0;
 
 		string destinationFolder = moniker switch {
 			Moniker.net472 => GetPathTo(ItemType.Net472PackageLibsPath, packageName),
@@ -269,9 +267,12 @@ public class PropsBuilder : IPropsBuilder
 			string fullDllPath = Path.Combine(binFolder, dll);
 			_fileSystem.CopyFiles(new[] {fullDllPath}, destinationFolder, true);
 			materializedAssemblies.Add(dllName);
+			referencedDllCount++;
 		}
 		sb.AppendLine("</Project>");
-		return sb.ToString();
+		//A props file that references nothing is legal MSBuild but pointless, and importing it
+		//only hides that no dependency was materialized for this moniker.
+		return referencedDllCount == 0 ? string.Empty : sb.ToString();
 	}
 
 	#endregion

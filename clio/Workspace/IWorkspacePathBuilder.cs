@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Clio.Workspaces
 {
@@ -47,6 +47,15 @@ namespace Clio.Workspaces
 		/// <param name="packageName"></param>
 		/// <returns></returns>
 		string BuildPackageProjectPath(string packageName);
+
+		/// <summary>
+		/// Builds the path of the props file clio generates for a package and a target moniker.
+		/// Both the props writer and the csproj import must derive the path here, because an
+		/// import pointing at a path nobody wrote fails the whole project with MSB4019.
+		/// </summary>
+		/// <param name="packageName">Creatio package name.</param>
+		/// <param name="moniker">Target moniker: net472 or netstandard.</param>
+		string BuildPackagePropsPath(string packageName, string moniker);
 		string BuildFrameworkCreatioSdkPath(Version nugetVersion);
 		string BuildCoreCreatioSdkPath(Version nugetVersion);
 		string BuildRelativePathRegardingPackageProjectPath(string destinationPath);

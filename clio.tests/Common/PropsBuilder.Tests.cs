@@ -50,6 +50,8 @@ public class PropsBuilder_Tests
 		_workspacePathBuilder.RootPath.Returns(RootPath);
 		_workspacePathBuilder.NugetFolderPath.Returns(Path.Combine(RootPath, NugetFolderPath));
 		_workspacePathBuilder.PackagesFolderPath.Returns(Path.Combine(RootPath, PackageFolderPath));
+		_workspacePathBuilder.BuildPackagePropsPath(Arg.Is(PackageName), Arg.Any<string>())
+			.Returns(ci => ExpectedPropsPath(ci.ArgAt<string>(1)));
 		_workspacePathBuilder.BuildPackageProjectPath(Arg.Is(PackageName))
 			.Returns(Path.Combine(RootPath, PackageFolderPath, PackageName, PackageName + ".csproj"));
 		_sut = new PropsBuilder(_fileSystem, _logger, _workspacePathBuilder);
@@ -70,7 +72,7 @@ public class PropsBuilder_Tests
 	[Description("Reads the dlls of both monikers from the nuget bin folders")]
 	public void Build_ReadsDllsOfBothMonikers(){
 		//Arrange
-		string[] files = new []{"ATF.Repository.dll", "Castle.Core.dll", $"{PackageName}.dll", "Terrasoft.Common.dll"};
+		string[] files = ["ATF.Repository.dll", "Castle.Core.dll", $"{PackageName}.dll", "Terrasoft.Common.dll"];
 		_fileSystem.GetFiles(
 			Arg.Is(ExpectedPath("net472")),
 			Arg.Is("*.dll"), 
@@ -82,9 +84,7 @@ public class PropsBuilder_Tests
 			Arg.Is(SearchOption.TopDirectoryOnly)
 		).Returns(files);
 		
-		_fileSystem
-			.ReadAllText(Arg.Is<string>(s=>!string.IsNullOrEmpty(s)))
-			.Returns(MockCsProjWithNugetContent());
+		MockCsProjAndTemplateReads();
 		
 		//Act
 		_sut.Build(PackageName);
@@ -151,7 +151,7 @@ public class PropsBuilder_Tests
 		//Arrange
 		_fileSystem.GetFiles(Arg.Is(ExpectedBinPath("net472")), Arg.Is("*.dll"),
 				Arg.Is(SearchOption.TopDirectoryOnly))
-			.Returns(new[] {"ATF.Repository.dll"});
+			.Returns(new[] {Path.Combine(ExpectedBinPath("net472"), "ATF.Repository.dll")});
 		_fileSystem.GetFiles(Arg.Is(ExpectedBinPath("netstandard")), Arg.Is("*.dll"),
 				Arg.Is(SearchOption.TopDirectoryOnly))
 			.Returns(Array.Empty<string>());
@@ -177,7 +177,10 @@ public class PropsBuilder_Tests
 	public void Build_KeepsDependency_WhoseNameEndsWithPackageName(){
 		//Arrange
 		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
-			.Returns(new[] {$"Contoso.{PackageName}.dll", $"{PackageName}.dll"});
+			.Returns(new[] {
+				Path.Combine(ExpectedBinPath("net472"), $"Contoso.{PackageName}.dll"),
+				Path.Combine(ExpectedBinPath("net472"), $"{PackageName}.dll")
+			});
 		MockCsProjAndTemplateReads();
 
 		//Act
