@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using Clio.Common;
@@ -52,7 +52,7 @@ public class VSProject : IVsProject{
 				}
 
 				if (string.IsNullOrEmpty(DestPath)) {
-					DestPath = $"{curDir}\\Files\\cs";
+					DestPath = Path.Combine(curDir, "Files", "cs");
 				}
 			}
 		}

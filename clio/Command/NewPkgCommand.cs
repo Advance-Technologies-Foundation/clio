@@ -48,7 +48,8 @@ namespace Clio.Command
 				package.Create();
 				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
 					_referenceCommand.Execute(new ReferenceOptions {
-						Path = package.FullPath,
+						//The reference command loads a project file, not the package directory
+						Path = package.ProjectFilePath,
 						ReferenceType = options.Rebase
 					});
 					package.RemovePackageConfig();

@@ -27,11 +27,19 @@ namespace Clio
 		public static string AssemblyInfoTpl => $"tpl{Path.DirectorySeparatorChar}{AssemblyInfoName}.tpl";
 		public static string IgnoreFileTpl => $"tpl{Path.DirectorySeparatorChar}package{Path.DirectorySeparatorChar}{IgnoreFileName}";
 
-		private readonly string[] _pkgDirectories = { "Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", "Files\\cs" };
+		private readonly string[] _pkgDirectories = {
+			"Assemblies", "Data", "Schemas", "SqlScripts", "Resources", "Files", Path.Combine("Files", "cs")
+		};
 
 		private static string DescriptorTpl => $"tpl{Path.DirectorySeparatorChar}{DescriptorName}.tpl";
 		private static string ProjTpl => $"tpl{Path.DirectorySeparatorChar}Proj.{CsprojExtension}.tpl";
 		private string ProjectFileName => $"{PackageName}.{CsprojExtension}";
+
+		/// <summary>
+		/// Full path of the package project file. Callers that need to load the project
+		/// must use this, not <see cref="FullPath"/>, which is the package directory.
+		/// </summary>
+		public string ProjectFilePath => Path.Combine(FullPath, ProjectFileName);
 		private string SolutionName => PackageName;
 		private string SolutionFileName => $"{SolutionName}.{SlnExtension}";
 

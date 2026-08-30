@@ -129,4 +129,59 @@ public class NewPkgCommandTestCase
 			because: "NewPkgCommand depends on Command<ReferenceOptions> and issue #674 broke exactly this mapping");
 	}
 
+	[Test, Category("Unit")]
+	[Description("Passes the package project file to the reference command, not the package directory (issue 1279)")]
+	public void Execute_PassesProjectFilePath_ToReferenceCommand() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment().Returns(new EnvironmentSettings {
+			Maintainer = "TestMaintainer"
+		});
+		Command<ReferenceOptions> referenceCommand = Substitute.For<Command<ReferenceOptions>>();
+		ILogger logger = Substitute.For<ILogger>();
+		NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand, logger);
+		NewPkgOptions options = new NewPkgOptions {Name = "TestProjectFilePathPkg", Rebase = "src"};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		//The reference command loads the path as an XML project file; passing the package
+		//directory instead fails with "Access to the path ... is denied"
+		referenceCommand.Received(1).Execute(Arg.Is<ReferenceOptions>(
+			e => e.Path.EndsWith(Path.Combine(options.Name, $"{options.Name}.csproj"))));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Creates a nested Files/cs directory instead of a directory literally named 'Files\\cs' (issue 1279)")]
+	public void Execute_CreatesNestedFilesCsDirectory() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment().Returns(new EnvironmentSettings {
+			Maintainer = "TestMaintainer"
+		});
+		Command<ReferenceOptions> referenceCommand = Substitute.For<Command<ReferenceOptions>>();
+		ILogger logger = Substitute.For<ILogger>();
+		NewPkgCommand command = new NewPkgCommand(settingsRepository, referenceCommand, logger);
+		string packageName = "TestNestedCsPkg";
+		string packagePath = Path.Combine(Directory.GetCurrentDirectory(), packageName);
+
+		try {
+			// Act
+			command.Execute(new NewPkgOptions {Name = packageName});
+
+			// Assert
+			Directory.Exists(Path.Combine(packagePath, "Files", "cs")).Should().BeTrue(
+				because: "the package template declares a cs directory nested in Files");
+			Directory.GetDirectories(packagePath).Should().NotContain(
+				d => Path.GetFileName(d).Contains('\\'),
+				because: "a backslash is a legal file-name character on Unix, so a hard-coded "
+					+ "Windows separator silently creates a directory literally named 'Files\\cs'");
+		} finally {
+			if (Directory.Exists(packagePath)) {
+				Directory.Delete(packagePath, true);
+			}
+		}
+	}
+
 }
