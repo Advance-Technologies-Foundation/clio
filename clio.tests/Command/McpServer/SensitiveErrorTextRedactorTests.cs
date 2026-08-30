@@ -378,6 +378,23 @@ public sealed class SensitiveErrorTextRedactorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Leaves already-fenced text untouched so a second boundary does not wrap it again.")]
+	public void RedactUntrustedOrNull_ShouldBeIdempotent_WhenTextIsAlreadyFenced() {
+		// Arrange
+		string once = SensitiveErrorTextRedactor.RedactUntrustedOrNull("git exited with code 128.");
+
+		// Act
+		string twice = SensitiveErrorTextRedactor.RedactUntrustedOrNull(once);
+
+		// Assert
+		twice.Should().Be(once,
+			because: "text is neutralized where it enters clio's prose and again at the boundary that emits "
+				+ "it; wrapping twice would bury the real fence inside '(fence removed)' markers and read as "
+				+ "if the payload had forged them");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Clamps an over-long diagnostic so a repository cannot flood the response.")]
 	public void RedactUntrustedOrNull_ShouldClamp_WhenTextIsOverlong() {
 		// Arrange

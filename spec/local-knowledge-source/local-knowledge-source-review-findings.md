@@ -197,3 +197,22 @@ All five findings above are fixed. Three further adversarial review rounds ran o
 - A detached child still inherits stdout, which under `mcp-server` is the JSON-RPC framing. Unreachable
   today, and the obvious fix is worse than the bug: closing a browser's or updater's stdout hands it a
   broken pipe. Recorded in the stdin knowledge record.
+
+## Follow-up: the diagnostic that was never produced
+
+Found by a parallel session while trying to stand up a local source for unrelated manual testing, and
+verified here in the code.
+
+`KnowledgeGitTransport.Execute` captured git's stderr in full — `SuppressErrors` silences only the logger —
+and then discarded it, throwing a constant `"Git knowledge synchronization failed."` for **four different
+causes**: git failed to start, exited non-zero, was canceled, or blew the checkout size limit. So the
+branch's headline improvement was only half-delivered: `get-guidance` now reports the diagnostic that
+exists, but for the most common concrete failure — the clone itself failed — there was no diagnostic to
+report, and reconstructing the git command by hand was the only way to learn anything.
+
+Note the tension this sits in. The security review counted "git stderr never reaches the diagnostic" as a
+*positive*, because git echoes remote branch names and server messages that a repository chooses. Both
+readings are right, and the answer is not to pick one: the failure now names which of the four causes
+fired and carries git's message through `RedactUntrustedOrNull`, which is exactly the machinery this branch
+added for text whose prose a third party controls. `RedactUntrustedOrNull` is now idempotent so the
+boundary that finally emits the message does not fence it a second time.

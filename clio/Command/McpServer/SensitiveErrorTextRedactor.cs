@@ -116,6 +116,13 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (string.IsNullOrWhiteSpace(text)) {
 			return null;
 		}
+		// Idempotent. Text is neutralized at the point it enters clio's own prose, and the boundary that
+		// finally emits it neutralizes again without knowing that - wrapping a second time would bury the
+		// real fence inside "(fence removed)" markers and read as if the payload had forged them.
+		if (text.StartsWith(UntrustedDiagnosticPrefix, StringComparison.Ordinal)
+				&& text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal)) {
+			return text;
+		}
 		string redacted = Redact(text);
 		StringBuilder collapsed = new(redacted.Length);
 		bool lastWasSpace = false;

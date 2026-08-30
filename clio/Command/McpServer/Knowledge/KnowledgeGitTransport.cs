@@ -587,7 +587,24 @@ internal sealed class KnowledgeGitTransport : IKnowledgeRepositoryTransport {
 				$"The operation-wide Git knowledge synchronization deadline elapsed.{cleanupDiagnostic}");
 		}
 		if (!result.Started || result.ExitCode != 0 || result.Canceled || result.ResourceLimitExceeded) {
-			throw new InvalidOperationException($"Git knowledge synchronization failed.{cleanupDiagnostic}");
+			// Four distinct causes used to collapse into one sentence, and git's own stderr - captured here in
+			// full, because SuppressErrors only silences the logger - was discarded. The result was that a
+			// clone which failed for ANY reason reported "Git knowledge synchronization failed" and nothing
+			// else, so the only way to learn why was to reconstruct the command and run it by hand.
+			// Neutralized rather than raw: git echoes remote branch names and server messages, so a
+			// repository chooses part of this prose. RedactUntrustedOrNull is idempotent, so the boundary
+			// that finally emits this does not wrap it twice.
+			string cause = !result.Started
+				? "git could not be started"
+				: result.ResourceLimitExceeded
+					? "the checkout exceeded its size limit"
+					: result.Canceled
+						? "the operation was canceled"
+						: $"git exited with code {result.ExitCode}";
+			string? reported = SensitiveErrorTextRedactor.RedactUntrustedOrNull(result.StandardError);
+			throw new InvalidOperationException(
+				$"Git knowledge synchronization failed: {cause}.{cleanupDiagnostic}"
+				+ (reported is null ? string.Empty : $" {reported}"));
 		}
 		return result;
 	}
