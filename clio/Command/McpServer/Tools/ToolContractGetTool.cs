@@ -3834,7 +3834,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageList() {
 		return new ToolContractDefinition(
 			PageListTool.ToolName,
-			"Lists Freedom UI pages for the requested package or installed app with schema, package, and parent schema context so the caller can discover candidate page schemas before inspection or mutation.",
+			"Lists Freedom UI pages for the requested package or installed app with schema, package, and parent schema context so the caller can discover candidate page schemas before inspection or mutation. An empty package-name result is cross-checked once with a broader bounded query before absence is reported; failed verification returns success:false.",
 			new ToolInputSchemaContract(
 				[],
 				EnvironmentOrExplicitConnectionFields(
@@ -3863,8 +3863,8 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(CountFieldName, NumberType, "Number of pages returned (after the result cap is applied)."),
-				Field("total", NumberType, "Total pages matching the query before the cap. Compare to count to detect an incomplete result."),
-				Field("truncated", BooleanType, "True when total is greater than count, meaning more pages match than were returned. Raise limit or add a filter to retrieve the rest."),
+				Field("total", NumberType, "Known pages matching the query before the requested limit. When truncated is true because a bounded fallback reached its safety cap, this is the number observed rather than a proven complete total."),
+				Field("truncated", BooleanType, "True when more pages match than were returned or a bounded fallback reached its safety cap and completeness cannot be proved. Raise limit or add a filter to retrieve the rest."),
 				Field(PagesFieldName, ArrayType, "Discovered pages using `schema-name`, `uId`, `packageName`, and `parentSchemaName`."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -5139,7 +5139,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildFindEntitySchema() {
 		return new ToolContractDefinition(
 			FindEntitySchemaTool.FindEntitySchemaToolName,
-			"Finds entity schemas in a Creatio environment by exact name, substring pattern, or UId without requiring the package name.",
+			"Finds entity schemas in a Creatio environment by exact name, substring pattern, or UId without requiring the package name. An empty substring result is cross-checked once with a broader query before absence is reported; a saturated cross-check fails and directs the caller to an exact lookup.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
