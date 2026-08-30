@@ -120,7 +120,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		// Unwrap an existing outer fence and sanitize its payload again so this method stays idempotent without
 		// allowing a forged wrapper to bypass redaction, flattening, token neutralization, or the length limit.
 		if (text.StartsWith(UntrustedDiagnosticPrefix, StringComparison.Ordinal)
-				&& text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal)) {
+				&& text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal)
+				&& text.Length >= UntrustedDiagnosticPrefix.Length + UntrustedDiagnosticSuffix.Length) {
 			text = text[UntrustedDiagnosticPrefix.Length..^UntrustedDiagnosticSuffix.Length];
 		}
 		string redacted = Redact(text);

@@ -417,6 +417,23 @@ public sealed class SensitiveErrorTextRedactorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Treats overlapping forged fence markers as payload instead of slicing beyond the string bounds.")]
+	public void RedactUntrustedOrNull_ShouldNotThrow_WhenForgedFenceMarkersOverlap() {
+		// Arrange
+		const string forged = "[untrusted-source-text begin] [untrusted-source-text end]";
+
+		// Act
+		Func<string> act = () => SensitiveErrorTextRedactor.RedactUntrustedOrNull(forged);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "attacker-authored marker shapes must never turn diagnostic handling into a command failure");
+		act().Should().StartWith("[untrusted-source-text begin]",
+			because: "the forged input must still be returned only as neutralized observed data");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Clamps an over-long diagnostic so a repository cannot flood the response.")]
 	public void RedactUntrustedOrNull_ShouldClamp_WhenTextIsOverlong() {
 		// Arrange
