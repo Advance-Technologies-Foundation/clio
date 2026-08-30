@@ -31,8 +31,8 @@ TRX files from a representative GitHub run, then run:
 
 ```powershell
 ./.github/scripts/Rebalance-TestShards.ps1 `
-  -UnitTrx ./timings/unit-*.trx `
-  -IntegrationTrx ./timings/integration-*.trx `
+  -UnitTrx ./timings/unit-[1-4].trx `
+  -IntegrationTrx ./timings/integration-[1-3].trx `
   -UnitFixedSeconds 130,5,0,0
 ```
 
@@ -41,6 +41,8 @@ time-first balancing. `UnitFixedSeconds` accounts for work outside `clio.tests`:
 unit-1 spent 130 seconds on NET8 compatibility and unit-2 spent 5 seconds on ConflictResolver.
 Replace those values with timings from the same representative run as the TRX files. Review and
 commit the updated `test-shards.json` so the manifest represents one coherent test inventory.
+The initial manifest uses successful local shard TRX timings; the 130-second NET8 value comes from
+GitHub run `33315720186`, and the 5-second ConflictResolver value comes from its local test run.
 
 When changing the filter mechanism, run the unsharded switch once and compare its TRX with the
 sharded TRX files:
@@ -48,7 +50,7 @@ sharded TRX files:
 ```powershell
 ./.github/scripts/Compare-TestShardCoverage.ps1 `
   -BaselineTrx ./timings/unit-unsharded.trx `
-  -ShardTrx ./timings/unit-*.trx
+  -ShardTrx ./timings/unit-[1-4].trx
 ```
 
 The comparison is multiplicity-aware, so both missing tests and tests selected by multiple shards

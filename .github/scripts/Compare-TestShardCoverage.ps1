@@ -15,7 +15,7 @@ function Get-TestInventory {
     $inventory = @{}
     foreach ($path in $resolvedPaths) {
         [xml]$trx = Get-Content -LiteralPath $path -Raw
-        foreach ($result in @($trx.TestRun.Results.UnitTestResult)) {
+        foreach ($result in @($trx.TestRun.Results.UnitTestResult | Where-Object { $null -ne $_ })) {
             $key = "$($result.testId)|$($result.testName)"
             if (-not $inventory.ContainsKey($key)) {
                 $inventory[$key] = 0
