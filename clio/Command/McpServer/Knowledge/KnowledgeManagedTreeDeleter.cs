@@ -11,15 +11,24 @@ namespace Clio.Command.McpServer.Knowledge;
 internal interface IKnowledgeManagedTreeDeleter {
 
 	/// <summary>
-	/// Removes the tree rooted at <paramref name="root"/>, and does nothing when it does not exist.
-	/// <para>The tree is first renamed to a sibling scratch name, and only then emptied. A recursive delete is
+	/// Removes the tree rooted at <paramref name="root"/> directly, and does nothing when it does not exist.
+	/// Read-only attributes are cleared first. Use <see cref="DeleteRecoverably"/> when a partially removed root
+	/// would make later retries impossible.
+	/// </summary>
+	/// <param name="root">Path of the tree to remove.</param>
+	void Delete(string root);
+
+	/// <summary>
+	/// Removes the tree rooted at <paramref name="root"/> after renaming it to a source-specific sibling scratch
+	/// name, and does nothing when it does not exist.
+	/// <para>A recursive delete is
 	/// not atomic, and the ownership marker <c>.clio-knowledge-source</c> is a dot-prefixed direct child, so it
 	/// sorts first on NTFS and is removed before the payload. A delete that fails half way therefore used to
 	/// leave a source root with no marker — after which every command is refused with "not owned by Clio" and
 	/// nothing can re-create the marker, because it is written only when the directory does not exist.</para>
 	/// <para>Renaming first narrows the failure modes to two, and neither is that dead end. A failed rename
 	/// leaves the tree exactly as it was, so the caller's retry is meaningful. A failed <em>empty</em> leaves it
-	/// renamed but complete, which the next call to this method sweeps up before doing anything else — so the
+	/// renamed but complete, which the next call for the same root sweeps up before doing anything else — so the
 	/// scratch tree is not a leak, but do not describe the outcome as "nothing happened": between the two steps
 	/// the alias is already free, and a caller that reports failure has in fact detached the cache.</para>
 	/// <para>Read-only attributes are cleared before the delete. Git marks pack files (<c>*.pack</c>,
@@ -34,7 +43,7 @@ internal interface IKnowledgeManagedTreeDeleter {
 	/// enumerator before the delete that would have succeeded is ever reached.</para>
 	/// </summary>
 	/// <param name="root">Path of the tree to remove.</param>
-	void Delete(string root);
+	void DeleteRecoverably(string root);
 }
 
 /// <inheritdoc cref="IKnowledgeManagedTreeDeleter"/>
@@ -53,21 +62,22 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 	/// <inheritdoc />
 	public void Delete(string root) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(root);
-		// Finish what a previous call started. If a Move succeeded and the Delete then failed, the tree is
-		// sitting under a scratch name that nothing else in the knowledge subsystem ever enumerates - so
-		// without this it is stranded forever, and under generations/ each publish would re-quarantine it and
-		// append another 42 characters until the name exceeds the NTFS component limit.
-		SweepAbandonedQuarantines(root);
 		if (!_fileSystem.Directory.Exists(root)) {
 			return;
 		}
-		if (IsQuarantine(root)) {
-			// Already a scratch tree - empty it where it stands. KnowledgeSourceInstallationStore.Prune hands
-			// us exactly this: it enumerates everything under generations/ that is not retained, so a scratch
-			// tree left by a failed delete arrives here as if it were a generation. Renaming it again would
-			// nest one scratch name inside another for no gain.
-			ClearReadOnlyAttributes(root);
-			_fileSystem.Directory.Delete(root, recursive: true);
+		ClearReadOnlyAttributes(root);
+		_fileSystem.Directory.Delete(root, recursive: true);
+	}
+
+	/// <inheritdoc />
+	public void DeleteRecoverably(string root) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(root);
+		// Finish what a previous call started. If a Move succeeded and the Delete then failed, the tree is
+		// sitting under a source-specific scratch name that nothing else enumerates. The source mutation lock
+		// serializes calls for the same root, while the source-specific prefix prevents parallel operations for
+		// different sources from deleting each other's active quarantine.
+		SweepAbandonedQuarantines(root);
+		if (!_fileSystem.Directory.Exists(root)) {
 			return;
 		}
 		// A sibling, so the rename stays on one volume and is a metadata operation. If it fails - Windows
@@ -75,27 +85,18 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 		// caller sees a failure it can retry, which is the whole point of doing it first.
 		string quarantine = _fileSystem.Path.Combine(
 			ParentOf(root) ?? string.Empty,
-			$"{QuarantinePrefix}{Guid.NewGuid():N}");
+			$"{QuarantinePrefix}{RootKey(root)}-{Guid.NewGuid():N}");
 		_fileSystem.Directory.Move(root, quarantine);
 		ClearReadOnlyAttributes(quarantine);
 		_fileSystem.Directory.Delete(quarantine, recursive: true);
 	}
 
 	/// <summary>
-	/// Fixed prefix for a scratch tree, deliberately NOT derived from the name being deleted.
+	/// Fixed prefix for scratch trees owned by Clio.
 	/// </summary>
-	/// <remarks>
-	/// A name-derived suffix only reclaims a scratch tree whose originating name recurs, and two of the four
-	/// call sites never repeat one: a staging root is <c>&lt;generation&gt;-&lt;fresh guid&gt;</c> per publish,
-	/// so a scratch tree left there would be matched by no future pattern and nothing else enumerates
-	/// <c>staging/</c> - stranding a whole extracted generation permanently. Owning the prefix means one
-	/// pattern reclaims every abandoned tree in a directory regardless of what it was called before.
-	/// </remarks>
 	internal const string QuarantinePrefix = ".clio-deleting-";
 
-	private bool IsQuarantine(string path) =>
-		(_fileSystem.Path.GetFileName(path) ?? string.Empty)
-			.StartsWith(QuarantinePrefix, StringComparison.Ordinal);
+	private string RootKey(string path) => _fileSystem.Path.GetFileName(path) ?? string.Empty;
 
 	private string? ParentOf(string path) => _fileSystem.Path.GetDirectoryName(path);
 
@@ -108,7 +109,7 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 				return;
 			}
 			foreach (string abandoned in _fileSystem.Directory.EnumerateDirectories(
-					parent, QuarantinePrefix + "*")) {
+					parent, $"{QuarantinePrefix}{RootKey(root)}-*")) {
 				try {
 					ClearReadOnlyAttributes(abandoned);
 					_fileSystem.Directory.Delete(abandoned, recursive: true);

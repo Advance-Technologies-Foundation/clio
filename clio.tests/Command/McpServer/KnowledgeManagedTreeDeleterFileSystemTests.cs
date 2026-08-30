@@ -61,6 +61,23 @@ public sealed class KnowledgeManagedTreeDeleterFileSystemTests {
 	}
 
 	[Test]
+	[Description("Deletes a knowledge checkout whose nested directory is read-only or non-writable.")]
+	public void Delete_ShouldRemoveTheTree_WhenItContainsAReadOnlyDirectory() {
+		// Arrange
+		string nested = Path.Combine(_root, "repository", "objects");
+		Directory.CreateDirectory(nested);
+		File.WriteAllText(Path.Combine(nested, "object.bin"), "content");
+		File.SetAttributes(nested, File.GetAttributes(nested) | FileAttributes.ReadOnly);
+
+		// Act
+		_deleter.Delete(_root);
+
+		// Assert
+		Directory.Exists(_root).Should().BeFalse(
+			because: "Unix requires directory write permission to unlink children, while Windows carries the attribute too");
+	}
+
+	[Test]
 	[Description("Leaves read-only files beyond a directory reparse point untouched, because the delete never reaches them.")]
 	public void Delete_ShouldNotClearReadOnlyBeyondADirectoryReparsePoint() {
 		// Arrange

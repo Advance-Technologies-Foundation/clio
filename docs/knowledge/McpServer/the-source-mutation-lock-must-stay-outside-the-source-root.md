@@ -8,7 +8,7 @@ date: 2026-08-30
 
 **What is true** — `ExecuteWithSourceMutationLock` opens `sources/.locks/<sourceKey>.lock`, a **sibling** of
 `sources/<sourceKey>/`, never a file under it. That placement is load-bearing, not incidental:
-`KnowledgeManagedTreeDeleter.Delete` runs inside that lock and begins by renaming the source root aside
+`KnowledgeManagedTreeDeleter.DeleteRecoverably` runs inside that lock and begins by renaming the source root aside
 (`Directory.Move`), and Windows refuses to rename a directory that contains an open handle. A lock file
 inside the source root would therefore be held open by clio itself at the exact moment clio tries to move
 the tree.

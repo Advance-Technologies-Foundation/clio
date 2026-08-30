@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -79,40 +80,48 @@ public sealed class GuidanceGetDiagnosticsE2ETests : McpContractFixtureBase {
 	[Description("Verifies the diagnostics field reaches the client marked as untrusted data, single-line, and free of the knowledge cache path.")]
 	public async Task GuidanceGet_ShouldShipANeutralizedDiagnostic_WhenNoBundleIsActive() {
 		// Arrange
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+		ArrangeContext context = null!;
+		await AllureApi.Step("Arrange an MCP server with an unreadable Git knowledge checkout", async () => {
+			context = Arrange(TimeSpan.FromMinutes(3));
+			await Task.CompletedTask;
+		});
+		await using (context) {
 
-		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			GuidanceGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> { ["name"] = "routing" }
-			},
-			context.CancellationTokenSource.Token);
-		using JsonDocument document = JsonDocument.Parse(ExtractRawText(callResult));
+			// Act
+			CallToolResult callResult = await AllureApi.Step("Invoke get-guidance through the real MCP server", async () =>
+				await context.Session.CallToolAsync(
+					GuidanceGetTool.ToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> { ["name"] = "routing" }
+					},
+					context.CancellationTokenSource.Token));
+			using JsonDocument document = JsonDocument.Parse(ExtractRawText(callResult));
 
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "an inactive knowledge bundle is a structured failure, not a protocol-level error");
-		document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse(
-			because: "no verified bundle can be active when the only enabled source cannot be read");
-		document.RootElement.TryGetProperty("diagnostics", out JsonElement diagnostics).Should().BeTrue(
-			because: "the reason a bundle is inactive was previously reachable only from "
-				+ "list-knowledge-examples, which nobody calls when guidance is missing - and without this "
-				+ "assertion firing, everything below it would be vacuous");
-		diagnostics.ValueKind.Should().Be(JsonValueKind.String,
-			because: "WhenWritingNull must omit the field rather than serialize a null, which would read as a "
-				+ "diagnostic nobody wrote");
-		string text = diagnostics.GetString()!;
-		text.Should().StartWith(UntrustedMarker,
-			because: "this text is composed partly from strings supplied by the configured knowledge "
-				+ "repository, and get-guidance is mandatory on every operation - without the marker it is an "
-				+ "injection channel into the first thing an agent reads");
-		text.Should().NotContain(_clioHome,
-			because: "the response is copied verbatim into a transcript a third-party model may read, and an "
-				+ "absolute cache path carries the OS account name with it");
-		text.Should().NotContain("\n").And.NotContain("\r",
-			because: "a repository can put line breaks in the text it contributes, and a multi-line diagnostic "
-				+ "can be forged to read as its own message block");
+			// Assert
+			AllureApi.Step("Assert the inactive bundle is a structured tool failure", () => {
+				callResult.IsError.Should().NotBeTrue(
+					because: "an inactive knowledge bundle is a structured failure, not a protocol-level error");
+				document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse(
+					because: "no verified bundle can be active when the only enabled source cannot be read");
+			});
+			JsonElement diagnostics = default;
+			AllureApi.Step("Assert the wire response contains a string diagnostic", () => {
+				document.RootElement.TryGetProperty("diagnostics", out diagnostics).Should().BeTrue(
+					because: "the activation reason must be observable when guidance is unavailable");
+				diagnostics.ValueKind.Should().Be(JsonValueKind.String,
+					because: "WhenWritingNull must omit the field rather than serialize a null");
+			});
+			string text = diagnostics.GetString()!;
+			AllureApi.Step("Assert the diagnostic is fenced as untrusted data", () =>
+				text.Should().StartWith(UntrustedMarker,
+					because: "repository-authored text must not read as server-authored instructions"));
+			AllureApi.Step("Assert the diagnostic does not disclose the cache path", () =>
+				text.Should().NotContain(_clioHome,
+					because: "an absolute cache path carries the OS account name into third-party transcripts"));
+			AllureApi.Step("Assert the diagnostic is a single line", () =>
+				text.Should().NotContain("\n").And.NotContain("\r",
+					because: "a repository must not forge a separate rendered message block"));
+		}
 	}
 
 	// A source root that exists and is owned but holds no usable Git checkout: activation reads it, fails,

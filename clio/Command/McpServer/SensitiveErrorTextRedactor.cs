@@ -116,12 +116,12 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (string.IsNullOrWhiteSpace(text)) {
 			return null;
 		}
-		// Idempotent. Text is neutralized at the point it enters clio's own prose, and the boundary that
-		// finally emits it neutralizes again without knowing that - wrapping a second time would bury the
-		// real fence inside "(fence removed)" markers and read as if the payload had forged them.
+		// Fencing is a representation, not proof of provenance: an untrusted source can forge both markers.
+		// Unwrap an existing outer fence and sanitize its payload again so this method stays idempotent without
+		// allowing a forged wrapper to bypass redaction, flattening, token neutralization, or the length limit.
 		if (text.StartsWith(UntrustedDiagnosticPrefix, StringComparison.Ordinal)
 				&& text.EndsWith(UntrustedDiagnosticSuffix, StringComparison.Ordinal)) {
-			return text;
+			text = text[UntrustedDiagnosticPrefix.Length..^UntrustedDiagnosticSuffix.Length];
 		}
 		string redacted = Redact(text);
 		StringBuilder collapsed = new(redacted.Length);

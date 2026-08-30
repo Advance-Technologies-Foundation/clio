@@ -217,6 +217,31 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 	}
 
 	[Test]
+	[Description("Pruning removes a legacy quarantine even when there is no ordinary obsolete generation.")]
+	public void Publish_ShouldPruneLegacyQuarantine_WhenOnlyRetainedGenerationsRemain() {
+		// Arrange
+		byte[] firstBundle = Bundle(("article.md", "first"));
+		byte[] secondBundle = Bundle(("article.md", "second"));
+		Publish("alpha", "com.example.alpha", 1, firstBundle);
+		KnowledgeSourceGenerationPointer first = _store.ReadCurrent("alpha", out _)!.Active;
+		string generationsRoot = Path.GetDirectoryName(GenerationPath("alpha", first))!;
+		string quarantine = Path.Combine(
+			generationsRoot, KnowledgeManagedTreeDeleter.QuarantinePrefix + "legacy-deadbeef");
+		Directory.CreateDirectory(quarantine);
+		File.WriteAllText(Path.Combine(quarantine, "leftover.bin"), "leftover");
+
+		// Act
+		KnowledgeInstallationResult result = _store.Publish(
+			Update("1.0.0", 2, "1.0.2", secondBundle, first));
+
+		// Assert
+		result.Status.Should().Be(KnowledgeInstallationStatus.Updated,
+			because: "the forward publication should complete while pruning its obsolete siblings");
+		Directory.Exists(quarantine).Should().BeFalse(
+			because: "a quarantine-only generations directory must not strand failed-delete debris forever");
+	}
+
+	[Test]
 	[Description("Retains the library sequence high-water mark after cache deletion and alias changes so signed rollbacks cannot be reinstalled as fresh content.")]
 	public void Publish_ShouldRejectLibraryRollback_WhenSourceCacheWasDeletedAndAliasChanged() {
 		// Arrange

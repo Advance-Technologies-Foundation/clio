@@ -423,6 +423,44 @@ public sealed class KnowledgeGitTransportTests {
 			because: "git's message is partly repository-authored, so it is neutralized rather than raw");
 	}
 
+	[TestCase("start", "git could not be started")]
+	[TestCase("cancel", "the operation was canceled")]
+	[TestCase("limit", "the checkout exceeded its size limit")]
+	[Description("Reports the precise process failure cause when Git does not return a non-zero exit code.")]
+	public void Synchronize_ShouldReportPreciseCause_WhenGitDoesNotExitNormally(
+		string failure, string expectedCause) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		ProcessExecutionResult execution = failure switch {
+			"start" => new ProcessExecutionResult { Started = false },
+			"cancel" => new ProcessExecutionResult { Started = true, Canceled = true },
+			_ => new ProcessExecutionResult {
+				Started = true,
+				ResourceLimitExceeded = true,
+				DescendantTerminationUncertain = true
+			}
+		};
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(execution));
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem, TimeProvider.System);
+		string stagingRoot = TestFileSystem.GetRootedPath("clio", "knowledge-staging");
+		KnowledgeTransportRequest request = new(
+			"partner", GitSource(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			null, null, null, null, stagingRoot);
+
+		// Act
+		KnowledgeTransportResult result = transport.Synchronize(request, stagingRoot);
+
+		// Assert
+		result.Diagnostic.Should().Contain(expectedCause,
+			because: "failed start, cancellation, and resource exhaustion require different operator actions");
+		if (failure == "limit") {
+			result.Diagnostic.Should().Contain("reparented descendants",
+				because: "resource-limit cleanup must disclose when descendant termination is uncertain");
+		}
+	}
+
 	private static ProcessExecutionResult Success(string output = "") => new() {
 		Started = true,
 		ExitCode = 0,

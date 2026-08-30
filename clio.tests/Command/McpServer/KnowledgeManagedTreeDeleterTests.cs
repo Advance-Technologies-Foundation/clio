@@ -70,6 +70,22 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 	}
 
 	[Test]
+	[Description("Clears the read-only attribute on a directory before deleting its children.")]
+	public void Delete_ShouldClearReadOnly_OnDirectories() {
+		// Arrange
+		IDirectoryInfo root = Directory(Root, FileAttributes.Directory | FileAttributes.ReadOnly);
+		IFileSystem fileSystem = FileSystemFor(root);
+		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
+
+		// Act
+		deleter.Delete(Root);
+
+		// Assert
+		root.ReceivedCalls().Should().Contain(call => call.GetMethodInfo().Name == "set_Attributes",
+			because: "Unix requires write permission on a directory before its entries can be removed");
+	}
+
+	[Test]
 	[Description("Renames the tree before emptying it so a partial delete cannot strip the ownership marker.")]
 	public void Delete_ShouldMoveTheTreeAside_BeforeRemovingIt() {
 		// Arrange
@@ -79,7 +95,7 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
 
 		// Act
-		deleter.Delete(Root);
+		deleter.DeleteRecoverably(Root);
 
 		// Assert
 		fileSystem.Directory.ReceivedCalls()
@@ -95,17 +111,17 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 	[Description("Removes a scratch tree left behind by an earlier delete that failed after its rename.")]
 	public void Delete_ShouldSweepAnAbandonedQuarantine_BeforeDoingAnythingElse() {
 		// Arrange
-		string abandoned = Parent + "/" + KnowledgeManagedTreeDeleter.QuarantinePrefix + "deadbeef";
+		string abandoned = Parent + "/" + KnowledgeManagedTreeDeleter.QuarantinePrefix + "root-deadbeef";
 		IDirectoryInfo root = Directory(Root, FileAttributes.Directory);
 		IDirectoryInfo scratch = Directory(abandoned, FileAttributes.Directory);
 		IFileSystem fileSystem = FileSystemFor(root, scratch);
 		fileSystem.Directory
-			.EnumerateDirectories(Parent, KnowledgeManagedTreeDeleter.QuarantinePrefix + "*")
+			.EnumerateDirectories(Parent, KnowledgeManagedTreeDeleter.QuarantinePrefix + "root-*")
 			.Returns([abandoned]);
 		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
 
 		// Act
-		deleter.Delete(Root);
+		deleter.DeleteRecoverably(Root);
 
 		// Assert
 		fileSystem.Directory.ReceivedCalls()
@@ -114,6 +130,29 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 				because: "nothing else in the knowledge subsystem enumerates a scratch tree, so unless the "
 					+ "next delete in the same directory reclaims it, a whole extracted generation is "
 					+ "stranded on disk permanently");
+	}
+
+	[Test]
+	[Description("Does not sweep an active quarantine belonging to a different source root.")]
+	public void DeleteRecoverably_ShouldNotSweepQuarantine_ForAnotherRoot() {
+		// Arrange
+		string other = Parent + "/" + KnowledgeManagedTreeDeleter.QuarantinePrefix + "other-live";
+		IDirectoryInfo root = Directory(Root, FileAttributes.Directory);
+		IDirectoryInfo active = Directory(other, FileAttributes.Directory);
+		IFileSystem fileSystem = FileSystemFor(root, active);
+		fileSystem.Directory
+			.EnumerateDirectories(Parent, KnowledgeManagedTreeDeleter.QuarantinePrefix + "root-*")
+			.Returns([]);
+		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
+
+		// Act
+		deleter.DeleteRecoverably(Root);
+
+		// Assert
+		fileSystem.Directory.ReceivedCalls().Should().NotContain(call =>
+			call.GetMethodInfo().Name == nameof(IDirectory.Delete)
+			&& (string)call.GetArguments()[0] == other,
+			because: "parallel source operations use different locks and must not delete each other's live quarantine");
 	}
 
 	[Test]
@@ -150,12 +189,12 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 		IDirectoryInfo root = Directory(Root, FileAttributes.Directory);
 		IFileSystem fileSystem = FileSystemFor(root);
 		fileSystem.Directory
-			.EnumerateDirectories(Parent, KnowledgeManagedTreeDeleter.QuarantinePrefix + "*")
+			.EnumerateDirectories(Parent, KnowledgeManagedTreeDeleter.QuarantinePrefix + "root-*")
 			.Returns(_ => throw new UnauthorizedAccessException("Access to the path is denied."));
 		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
 
 		// Act
-		deleter.Delete(Root);
+		deleter.DeleteRecoverably(Root);
 
 		// Assert
 		fileSystem.Directory.ReceivedCalls()
@@ -176,7 +215,7 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
 
 		// Act
-		Action act = () => deleter.Delete(Root);
+		Action act = () => deleter.DeleteRecoverably(Root);
 
 		// Assert
 		act.Should().Throw<IOException>(
@@ -197,7 +236,7 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
 
 		// Act
-		deleter.Delete(Root);
+		deleter.DeleteRecoverably(Root);
 
 		// Assert
 		ICall move = fileSystem.Directory.ReceivedCalls()
@@ -205,11 +244,9 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 		move.GetArguments()[0].Should().Be(Root,
 			because: "the managed root is what moves aside");
 		string quarantine = (string)move.GetArguments()[1];
-		quarantine.Should().StartWith(Parent + "/" + KnowledgeManagedTreeDeleter.QuarantinePrefix,
+		quarantine.Should().StartWith(Parent + "/" + KnowledgeManagedTreeDeleter.QuarantinePrefix + "root-",
 			because: "the scratch name must be a SIBLING so the rename stays on one volume and is a metadata "
-				+ "operation, and its prefix must be owned by the deleter rather than derived from the name "
-				+ "being deleted - a staging root never repeats its name, so a derived pattern would never "
-				+ "reclaim what it left behind");
+				+ "operation, while the root-specific segment keeps parallel source deletes isolated");
 		fileSystem.Directory.ReceivedCalls()
 			.Should().Contain(call => call.GetMethodInfo().Name == nameof(IDirectory.Delete)
 					&& (string)call.GetArguments()[0] == quarantine,
@@ -231,7 +268,7 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
 
 		// Act
-		deleter.Delete(Root);
+		deleter.DeleteRecoverably(Root);
 
 		// Assert
 		fileSystem.Directory.ReceivedCalls()

@@ -636,7 +636,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		ValidateSourceRoot(sourceAlias, sourceRoot);
 		return WithMutationLock(sourceRoot, () => {
 			ValidateSourceRoot(sourceAlias, sourceRoot);
-			_treeDeleter.Delete(sourceRoot);
+			_treeDeleter.DeleteRecoverably(sourceRoot);
 			return new KnowledgeInstallationResult(
 				KnowledgeInstallationStatus.Deleted,
 				$"Installed knowledge for source '{sourceAlias}' was deleted.",
@@ -1010,12 +1010,8 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			.ToArray();
 		// Materialize the victims before the first delete so the directory is never mutated mid-enumeration.
 		string[] obsolete = _fileSystem.Directory.EnumerateDirectories(generationsRoot)
-			// A scratch tree left by a delete that failed after its rename is not a generation. Passing one
-			// here would be harmless now that the deleter empties a scratch name in place, but it would also
-			// hide it from the deleter's own sweep, which is what is supposed to reclaim it.
-			.Where(directory => !_fileSystem.Path.GetFileName(directory)
-					.StartsWith(KnowledgeManagedTreeDeleter.QuarantinePrefix, StringComparison.Ordinal)
-				&& !retained.Contains(_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal))
+			.Where(directory => !retained.Contains(
+				_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal))
 			.ToArray();
 		foreach (string directory in obsolete) {
 			EnsureNoReparsePoint(generationsRoot, directory);

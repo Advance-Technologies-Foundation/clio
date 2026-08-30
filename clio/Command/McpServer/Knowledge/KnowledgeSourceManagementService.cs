@@ -529,7 +529,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				out string? diagnostic)) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
-				$"{diagnostic ?? "Git knowledge repository is invalid."} {rollback}".Trim());
+				$"{Untrusted(diagnostic) ?? "Git knowledge repository is invalid."} {rollback}".Trim());
 		}
 		if (previousSnapshot is not null && IsSequenceRegression(snapshot, previousSnapshot)) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
@@ -644,7 +644,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			if (!_gitReader.TryRead(repositoryPath, source.LibraryId, out KnowledgeGitRepositorySnapshot? restored,
 					out string? diagnostic)) {
 				_runtime.DeactivateLibrary(alias);
-				return $"The previous checkout was restored but could not be reactivated: {diagnostic}";
+				return "The previous checkout was restored but could not be reactivated: "
+					+ (Untrusted(diagnostic) ?? "no reason was reported.");
 			}
 			KnowledgeBundleActivationResult activation = _runtime.ActivateGitRepository(
 				alias,
@@ -758,7 +759,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			resolvedRevision ?? metadata?.ResolvedRevision,
 			activePath,
 			update,
-			diagnostic);
+			Untrusted(diagnostic));
 	}
 
 	/// <summary>
@@ -786,7 +787,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 					remoteCandidate.Status == KnowledgeTransportStatus.NoCandidate ? UpToDateState : UnknownState,
 					remoteCandidate.Status is KnowledgeTransportStatus.Rejected
 						or KnowledgeTransportStatus.Failed
-						? Safe(remoteCandidate.Diagnostic ?? "The remote knowledge source could not be checked.")
+						? Untrusted(remoteCandidate.Diagnostic ?? "The remote knowledge source could not be checked.")
 						: null);
 			}
 			byte[] candidateBytes = ReadCandidate(remoteCandidate);
@@ -804,7 +805,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				trustedCandidate ? "available" : RejectedState,
 				trustedCandidate
 					? null
-					: validation.Diagnostic ?? "The remote candidate failed verification.");
+					: Untrusted(validation.Diagnostic) ?? "The remote candidate failed verification.");
 		} catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException) {
 			return new ArtifactUpdateProbe(fallbackAvailability, Safe(exception.Message));
 		} finally {
@@ -848,7 +849,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			inspection.Revision,
 			installed ? repositoryPath : null,
 			inspection.Availability,
-			inspection.Diagnostic);
+			Untrusted(inspection.Diagnostic));
 	}
 
 	/// <summary>
@@ -895,7 +896,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 					_ => UnknownState
 				};
 				if (remote.Status is KnowledgeTransportStatus.Failed or KnowledgeTransportStatus.Rejected) {
-					diagnostic ??= Safe(remote.Diagnostic
+					diagnostic ??= Untrusted(remote.Diagnostic
 						?? "The remote Git knowledge source could not be checked.");
 				}
 			}
