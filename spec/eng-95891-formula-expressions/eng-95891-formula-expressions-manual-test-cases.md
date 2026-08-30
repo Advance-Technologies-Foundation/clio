@@ -304,10 +304,14 @@ a Float process parameter `Total`.
 2. Give the agent: *"Set `Limit` from the system setting whose code is `MaxFileSize`."*
 
 **Expected result:**
-* `Started` stores a `[#SysVariable.CurrentDateTime#]` reference — **not** a C# `DateTime.Now`.
-* `Limit` stores a `[#SysSettings.MaxFileSize<Integer>#]`-shaped reference.
-* Note for the tester: the legacy form `[#SysSettings.MaxFileSize#]` (no type) also exists in the field
-  and must round-trip; the agent is expected to write the modern one.
+* `Started` stores a `[#SysVariable.CurrentDateTime#]` reference — **not** a C# `DateTime.Now`. This half
+  is the point of the case and it passes.
+* `Limit` stores a `SysSettings` reference. **Either spelling counts** — `[#SysSettings.MaxFileSize#]` or
+  `[#SysSettings.MaxFileSize<Integer>#]`. Both round-trip, the family is accepted unchecked either way
+  (its value type cannot be read at design time), and both appear in shipped schemas.
+* Earlier wording here required the typed form. Nothing supports that: a rerun produced the untyped one,
+  another section of the guide shows it, and no failure mode was ever demonstrated for it. Do not fail the
+  case on the spelling.
 
 ---
 
@@ -319,9 +323,18 @@ a Float process parameter `Total`.
 1. Give the agent: *"Set the parameter to the `Call` activity category."*
 
 **Expected result:**
-* Stored as `[#Lookup.<schema>.<record>#]`, with both halves resolving.
-* The agent does **not** invent a raw Guid constant: an arbitrary Guid written into a lookup column
-  passes every type check and then reads back as a value nobody can see.
+* Stored as a **bare record Guid in `value`** (a `ConstValue`) — that is the route the toolkit prefers from
+  `CrtProcessBuilder` 1.3.1.1, and the encoding an `ActivityUserTask` category REQUIRES.
+* The `[#Lookup.<schema>.<record>#]` macro is correct only for a pre-1.3.1.1 package that rejects the bare
+  Guid. Seeing the macro here is not a pass; seeing the bare Guid is.
+* What this case really checks is that the agent **resolves the right record** — `ActivityCategory` has more
+  than one row named "Call", differing by `ActivityType`. It must say which it chose and why.
+
+**This case was inverted until 2026-08-30, and the correction came from the runs.** It demanded the macro
+and called the bare Guid a trap. Two independent agents stored the bare Guid, cited the version rationale
+back, and were right: the guide says so two hundred lines above the macro table. A case written from a
+specification can be wrong about the product — this one was, and so was the guidance "fix" made to satisfy
+it (reverted in library 1.13.55).
 
 ---
 
@@ -390,8 +403,8 @@ test had caught. Six agent sessions, one per case, each fresh and with no memory
 | `TC-11` | pass | `Math.Ceiling`/`Math.Abs` stored; designer renders `RoundUp`/`Module` |
 | `TC-12` | pass | designer renders `Maximum` / `Minimum` / `Average` / `RemainderAfterDivision` |
 | `TC-13` | **FAIL** | the three-segment element-column reference is mishandled — see below |
-| `TC-14` | partial | `[#SysVariable.CurrentDateTime#]` correct; `SysSettings` written in the LEGACY untyped form |
-| `TC-15` | **FAIL** | a bare record Guid stored as `ConstValue` — the exact silent failure this case warns of |
+| `TC-14` | pass | `[#SysVariable.CurrentDateTime#]` correct; either `SysSettings` spelling is valid — the case was wrong to require one |
+| `TC-15` | pass | a bare record Guid as `ConstValue` — which is the PREFERRED route; the case was inverted |
 | `TC-16` | pass | `DateTimeUtilities.Day/Month/DayOfWeek`, no `Get` prefix |
 | `TC-18` | **FAIL** | the delete guard misses MAPPING references; the platform catches it and leaks a blob |
 
