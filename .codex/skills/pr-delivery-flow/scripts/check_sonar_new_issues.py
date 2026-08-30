@@ -179,11 +179,13 @@ def sonar_issues(pull_request: int, timeout: int) -> list[dict[str, Any]]:
         if not isinstance(paging, dict) or not isinstance(issues, list):
             raise Unverified("Sonar response omitted paging or issues data.")
         try:
-            total = int(paging["total"])
-            page_index = int(paging["pageIndex"])
-            page_size = int(paging["pageSize"])
-        except (KeyError, TypeError, ValueError) as error:
+            total = paging["total"]
+            page_index = paging["pageIndex"]
+            page_size = paging["pageSize"]
+        except KeyError as error:
             raise Unverified("Sonar response omitted valid pagination data.") from error
+        if not all(type(value) is int for value in (total, page_index, page_size)):
+            raise Unverified("Sonar response contained invalid pagination types.")
         if total < 0 or page_size <= 0 or page_index != page:
             raise Unverified("Sonar returned inconsistent pagination data.")
         if expected is not None and total != expected:

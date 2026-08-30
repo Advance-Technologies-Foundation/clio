@@ -82,6 +82,16 @@ class SonarNewIssueTests(unittest.TestCase):
 
         self.assertEqual(2, calls)
 
+    def test_sonar_issues_rejects_boolean_pagination_values(self) -> None:
+        payload = {
+            "paging": {"pageIndex": True, "pageSize": True, "total": False},
+            "issues": [],
+        }
+
+        with patch.object(checker, "get_json", return_value=payload):
+            with self.assertRaisesRegex(checker.Unverified, "pagination types"):
+                checker.sonar_issues(1264, 30)
+
     def test_main_rejects_replaced_analysis_on_same_head(self) -> None:
         error = io.StringIO()
 
