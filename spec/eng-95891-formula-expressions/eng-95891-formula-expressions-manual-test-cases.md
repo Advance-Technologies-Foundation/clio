@@ -11,9 +11,10 @@ installed (`install-process-builder`), an agent with the clio MCP server connect
 tool names, no JSON. That is the point: these cases test whether the shipped guidance is enough for an
 agent to get it right unaided.
 
-**Two groups.** `TC-01`…`TC-10` cover branch conditions and the refusal set. `TC-11`…`TC-18` cover
+**Three groups.** `TC-01`…`TC-10` cover branch conditions and the refusal set. `TC-11`…`TC-18` cover
 formulas in **parameters**, which is the other use site and the one reachable today without gateways
-(ENG-91853). The vocabulary they exercise is defined in
+(ENG-91853). `TC-19`–`TC-20` are Group 3: they carry a formula past storage into the RUNTIME and read
+the result off the Activity card. The vocabulary they exercise is defined in
 [eng-95891-formula-expressions-supported-vocabulary.md](eng-95891-formula-expressions-supported-vocabulary.md).
 
 ---
@@ -435,6 +436,116 @@ met. The caller gets a UId instead of the parameter name and no route to a fix.
 wrote what it was shown. The primary example should be the modern typed form.
 
 ---
+
+---
+
+## Group 3 — a formula reaching the runtime
+
+`TC-01`...`TC-18` stop at what is STORED. These two carry a formula all the way through: authored, saved,
+evaluated by the process engine, and read off the Activity card a user actually sees. They exist because
+the branch cases cannot do it - a branch condition off a Perform task cannot be observed until somebody
+closes the task, while an Activity carries its computed values the moment it is created.
+
+### `TC-19` A computed subject reaches the Activity card
+
+**Preconditions:** none beyond a writable `Custom` package.
+
+**Steps:**
+1. Give the agent: *"In `<process>`, make the Perform task's subject read `Order total with VAT: <the
+   amount plus 20 percent>` - computed from the `Amount` parameter, not typed in as a constant. Then
+   start the process."* Precondition for the agent to build: a process shaped start -> Perform task ->
+   end, with an Integer parameter `Amount` defaulting to `500`.
+2. Open the Activity from the **Business process tasks** panel on the right of the shell.
+
+**Expected result:**
+* `describe-business-process` reports the binding with `"source": "Script"` - a live formula. A `value`
+  source holding `600` is a FAILURE even though the number is right: the agent evaluated it instead of
+  the engine. Say "computed, not a constant" in the assignment, or this is what you get (see `TC-03`).
+* The Activity's subject reads **`Order total with VAT: 600`**, on the card, not merely in a read-back.
+* The task is left OPEN. Closing it lets the process move on and there is nothing left to inspect.
+
+### `TC-20` A typed formula, and the timezone it is evaluated in
+
+**Preconditions:** as `TC-19`.
+
+**Steps:**
+1. Give the agent: *"Set the Perform task's due date to the end of the current working day - computed,
+   not a constant - and put the day of the week into the task subject. Then start the process."*
+2. Open the Activity card and read **Start** and **Due**.
+
+**Expected result:**
+* The subject carries the weekday as TEXT. `DayOfWeek` is an enum, so the expression needs `.ToString()`;
+  an agent that omits it is refused, which is correct.
+* There is no due-date parameter on a Perform task. Due date is `StartDate + Duration`, so the only route
+  is a computed `Duration` (with `DurationPeriod`). An agent that reports "no due date parameter exists"
+  has read the platform correctly, not failed.
+* **The formula is evaluated in the SERVER's zone and the card renders in the PROFILE's zone.** Check the
+  arithmetic rather than the wall clock: on the run of 2026-08-30 the card showed Start `11:31 PM` and Due
+  `2:59 AM`, i.e. 208 minutes, which the expression `(18:00 - now)` yields only if the engine saw `14:32`
+  - nine hours from what the card displayed. A rule phrased "until 18:00" therefore means 18:00 SERVER
+  time, silently. Any case that anchors on "today", "end of day" or "now" must state which zone it means.
+
+---
+
+## Round-3 results — 2026-08-30, the branch group and the runtime group
+
+`TC-01`...`TC-10` had never been run, `TC-03` and `TC-10` excepted. This round ran the rest of Group 1
+plus the two new runtime cases. One agent session per case, fresh, memory disabled, driven through the
+clio MCP server against a stand carrying `CrtProcessBuilder 1.4.0.8` and a locally served guidance
+library at `1.13.55`.
+
+| Case | Result | What it showed |
+|---|---|---|
+| `TC-01` | pass | conditional flows drawn, NO gateway on the diagram, designer save clean |
+| `TC-02` | **FAIL** | no condition referencing a parameter could be stored - see below |
+| `TC-04` | pass | refused before writing, names `Total`, echoes the expression, flow untouched |
+| `TC-05` | pass | refused, names BOTH flows, readable - not the raw platform blob the case warns about |
+| `TC-06` | pass | empty condition refused and the reason given; flow left plain, not always-true |
+| `TC-07` | pass | `1 + 1` refused as `Cannot convert type "Int32" to "Boolean"` |
+| `TC-08` | pass | condition stored and read back unchanged off a Perform task |
+| `TC-09` | **not run** | needs a package older than 1.4.0.3; the stand is at 1.4.0.8 and the downgrade guard refuses |
+| `TC-19` | pass | `Order total with VAT: 600` on the Activity card, from a live `Script` binding |
+| `TC-20` | pass | weekday in the subject; exposed the server/profile timezone split above |
+
+**`TC-02` failed on the guidance, not on the feature - and the article's own example is why.** The agent
+tried `Amount > 1000`, `[#Amount#] > 1000`, `[Amount] > 1000`, `[#Parameter.Amount#] > 1000` and a bare
+`TestFlag`, and never tried the form that works. It was not guessing: the "Conditional flows and branch
+conditions" section of `process-modeling` illustrates precedence with **`Amount > 100` and
+`Amount > 1000`**, spelled by NAME - while `REFERENCING A PARAMETER`, ninety lines earlier in a different
+section, states that a bare name is always refused. The agent copied the example in front of it. It then
+concluded, reasonably and wrongly, that the environment's validator disagreed with clio's documentation;
+`TC-01` had stored such conditions on the same stand and the same package version minutes earlier.
+
+Every Group-1 agent saw that example. Only the ones that ALSO reached the rule got it right:
+
+| | saw `Amount > 100` | saw the rule | outcome |
+|---|---|---|---|
+| `TC-01` | yes | yes | correct UId meta-path first try |
+| `TC-02` | yes | no | five wrong forms, objective not reached |
+| `TC-04` | yes | no | bare name - enough for a case that only needs a refusal |
+
+`TC-08`'s agent found the contradiction unaided and named it in its own report.
+
+**The delivery defect underneath it.** `get-guidance name=process-modeling` returns ~113 KB on ONE line.
+It exceeded the tool-result token cap in **every** agent session of every round - 16 of 16 earlier logs and
+all 8 of this one - so the result is spilled to a file and each agent greps its own guidance back out.
+Across this round that cost 68 of 190 tool calls (36%); only 56 (29%) acted on the process at all. The
+consequence is not merely cost: each agent reads a self-selected FRAGMENT, and `TC-02` shows the outcome
+of an operation turning on which fragment that was. The MCP server instructions make this guide mandatory
+reading before every operation.
+
+**Smaller things the runs kept repeating.**
+
+* **No tool starts a process.** `TC-19`'s agent reached `ProcessEngineService.svc/RunProcess` through
+  `clio call-service`; `TC-20`'s agent looked for a supported route, found none, and stopped and asked.
+  Same toolset, same task, opposite outcomes - and every runtime case needs that detour.
+* **No tool returns a designer link.** Four agents produced four different invented URL schemes;
+  `/0/ProcessModuleEdit.aspx?id=...` answers `HttpException`. The working form is
+  `/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/<uid>` and it appears nowhere in the guidance.
+* **A Perform task's subject is the `Recommendation` parameter**, which becomes `Activity.Title`. Not
+  `Subject`, not `Title`. Discovered by the agent; absent from the guidance.
+* The stand enforces a `Usr` schema-name prefix, so every process is created twice - once refused, once
+  accepted. The refusal is clear and every agent recovered from it unaided.
 
 ## What these cases deliberately do not cover
 
