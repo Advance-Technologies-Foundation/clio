@@ -71,6 +71,51 @@ public sealed class GuidanceGetToolTests {
 	}
 
 	[Test]
+	[Description("Redacts the activation diagnostic before it leaves the server on the unavailable response.")]
+	public async Task GetGuidance_ShouldRedactActivationDiagnostic_WhenNoBundleIsActive() {
+		// Arrange
+		_source.FindByName("synthetic-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Unavailable, null, null));
+		_activator.LastDiagnostic.Returns("Git knowledge source 'local' could not be refreshed: Access to the "
+			+ @"path 'C:\Users\jane.doe\.clio\knowledge\9f2c\repository\.git\index' is denied.");
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "no compatible verified bundle is active for this lookup");
+		response.Diagnostics.Should().NotContain("jane.doe",
+			because: "the diagnostic is composed from IOException text carrying an absolute cache path, and "
+				+ "this response is copied verbatim into a transcript a third-party model may read");
+		response.Diagnostics.Should().Contain("[redacted-path]",
+			because: "the redactor replaces an absolute path with a stable placeholder rather than dropping "
+				+ "the sentence that explains the failure");
+		response.Diagnostics.Should().Contain("could not be refreshed",
+			because: "the reason an agent needs in order to self-correct must survive redaction");
+	}
+
+	[Test]
+	[Description("Omits the diagnostics field entirely when the activator recorded no reason.")]
+	public async Task GetGuidance_ShouldOmitDiagnostics_WhenActivatorRecordedNothing() {
+		// Arrange
+		_source.FindByName("synthetic-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Unavailable, null, null));
+		_activator.LastDiagnostic.Returns((string)null);
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+
+		// Assert
+		response.Diagnostics.Should().BeNull(
+			because: "redaction must preserve null so the serializer keeps omitting the field, rather than "
+				+ "emitting an empty string that reads as a diagnostic nobody wrote");
+		JsonSerializer.Serialize(response).Should().NotContain("diagnostics",
+			because: "WhenWritingNull must omit the field on the wire, which the CLR property alone does "
+				+ "not prove");
+	}
+
+	[Test]
 	[Description("Maps an active synthetic article through get-guidance without changing its stable identity or text.")]
 	public async Task GetGuidance_ShouldReturnSyntheticArticle_WhenSourceIsActive() {
 		// Arrange

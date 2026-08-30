@@ -28,6 +28,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeArtifactTransport> _artifactTransports;
 	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeRepositoryTransport> _repositoryTransports;
 	private readonly IFileSystem _fileSystem;
+	private readonly IKnowledgeManagedTreeDeleter _treeDeleter;
 
 	public KnowledgeSourceManagementService(
 		ISettingsRepository settingsRepository,
@@ -36,7 +37,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		IKnowledgeGitRepositoryReader gitReader,
 		IEnumerable<IKnowledgeArtifactTransport> artifactTransports,
 		IEnumerable<IKnowledgeRepositoryTransport> repositoryTransports,
-		IFileSystem fileSystem) {
+		IFileSystem fileSystem,
+		IKnowledgeManagedTreeDeleter treeDeleter) {
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_store = store ?? throw new ArgumentNullException(nameof(store));
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -44,6 +46,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		_artifactTransports = IndexTransports(artifactTransports);
 		_repositoryTransports = IndexTransports(repositoryTransports);
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		_treeDeleter = treeDeleter ?? throw new ArgumentNullException(nameof(treeDeleter));
 	}
 
 	private static IReadOnlyDictionary<KnowledgeSourceType, TTransport> IndexTransports<TTransport>(
@@ -357,7 +360,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return new ArtifactCandidateAttempt(
 				FailedOperation(
 					context.Alias,
-					retrieved.Diagnostic ?? $"Knowledge source '{context.Alias}' could not be retrieved."),
+					Untrusted(retrieved.Diagnostic)
+						?? $"Knowledge source '{context.Alias}' could not be retrieved."),
 				StopSearch: true);
 		}
 		if (string.IsNullOrWhiteSpace(retrieved.ResolvedRevision)) {
@@ -448,7 +452,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		ArtifactCandidateSearch search) {
 		if (search.LastRejectedRevision is not null) {
 			return FailedOperation(context.Alias,
-				$"No compatible knowledge candidate was found after rejecting {search.LastRejectedRevision}: {search.LastDiagnostic}",
+				$"No compatible knowledge candidate was found after rejecting {search.LastRejectedRevision}: "
+				+ Untrusted(search.LastDiagnostic),
 				status: RejectedState);
 		}
 		if (context.Current is not null && !context.Repair) {
@@ -456,7 +461,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				$"Knowledge source '{context.Alias}' is up to date at {context.Current.Active.ResolvedRevision}.");
 		}
 		return FailedOperation(context.Alias,
-			search.LastDiagnostic ?? $"Knowledge source '{context.Alias}' returned no installable candidate.");
+			Untrusted(search.LastDiagnostic)
+				?? $"Knowledge source '{context.Alias}' returned no installable candidate.");
 	}
 
 	private KnowledgeSourceOperationResult InstallOrUpdateRepository(
@@ -513,7 +519,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		if (result.Status is KnowledgeTransportStatus.Failed or KnowledgeTransportStatus.Rejected) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
-				$"{result.Diagnostic ?? "Git knowledge synchronization failed."} {rollback}".Trim(),
+				$"{Untrusted(result.Diagnostic) ?? "Git knowledge synchronization failed."} {rollback}".Trim(),
 				status: ResolveRepositoryStatus(result.Status, isUpdate));
 		}
 		if (!_gitReader.TryRead(repositoryPath, source.LibraryId, out KnowledgeGitRepositorySnapshot? snapshot,
@@ -537,7 +543,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
 			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
 			return FailedOperation(alias,
-				$"{activation.Diagnostic ?? "Git knowledge repository activation was rejected."} {rollback}".Trim(),
+				$"{Untrusted(activation.Diagnostic) ?? "Git knowledge repository activation was rejected."} {rollback}".Trim(),
 				status: RejectedState);
 		}
 		if (source.Branch is null && source.Tag is null && source.Commit is null
@@ -619,8 +625,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 					if ((attributes & FileAttributes.ReparsePoint) != 0) {
 						return "The rejected checkout was left inactive because its root is a reparse point.";
 					}
-					ClearReadOnlyAttributes(actualPath);
-					_fileSystem.Directory.Delete(actualPath, recursive: true);
+					_treeDeleter.Delete(actualPath);
 				}
 				return "The rejected first checkout was discarded so installation can be retried.";
 			} catch (Exception exception) when (exception is IOException
@@ -645,7 +650,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				restored);
 			if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
 				_runtime.DeactivateLibrary(alias);
-				return $"The previous checkout was restored but could not be reactivated: {activation.Diagnostic}";
+				return "The previous checkout was restored but could not be reactivated: "
+					+ (Untrusted(activation.Diagnostic) ?? "no reason was reported.");
 			}
 			return $"The previous revision {previousRevision} was restored.";
 		} catch (Exception exception) when (exception is IOException
@@ -1076,39 +1082,27 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	}
 
 	private string CreateTransportStaging(string alias) {
+		// The GUID sits in the FIRST component clio creates. A fixed "clio-knowledge-transport" parent
+		// under a world-writable /tmp is pre-creatable by another local user, who then owns the directory
+		// clio downloads into for the whole transfer - CWE-379. Nothing here is guessable now.
+		//
+		// The GUID directory itself is what gets returned and therefore what gets deleted. Returning the
+		// alias child instead would leave one empty GUID directory behind per install, update and update
+		// probe, with nothing in the codebase ever reaping them - CWE-459.
 		string root = _fileSystem.Path.Combine(
 			_fileSystem.Path.GetTempPath(),
-			"clio-knowledge-transport",
-			$"{alias}-{Guid.NewGuid():N}");
-		_fileSystem.Directory.CreateDirectory(root);
+			$"clio-knowledge-transport-{Guid.NewGuid():N}");
+		_fileSystem.Directory.CreateDirectory(_fileSystem.Path.Combine(root, alias));
 		return _fileSystem.Path.GetFullPath(root);
 	}
 
-	/// <summary>
-	/// Clears the read-only attribute across a tree so a recursive delete can remove it.
-	/// <para>Git creates pack files read-only, and Windows refuses to delete a read-only file. Without this a
-	/// rejected checkout survives its own cleanup, and the alias it belongs to can then never be re-added:
-	/// the next attempt is refused with "not owned by Clio". Best effort by design — a file that cannot be
-	/// reset is left for the delete to report, so a real permission problem still surfaces as one.</para>
-	/// </summary>
-	private void ClearReadOnlyAttributes(string root) {
-		foreach (string file in _fileSystem.Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)) {
-			try {
-				IFileInfo info = _fileSystem.FileInfo.New(file);
-				if (info.Exists && info.IsReadOnly) {
-					info.IsReadOnly = false;
-				}
-			} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-			}
-		}
-	}
-
+	// Both call sites invoke this from a finally, where an escaping exception would replace the in-flight
+	// one and hide the real failure. Nothing here is allowed out, including the deleter's argument guard.
 	private void DeleteTransportStaging(string path) {
 		try {
-			if (_fileSystem.Directory.Exists(path)) {
-				ClearReadOnlyAttributes(path);
-				_fileSystem.Directory.Delete(path, recursive: true);
-			}
+			_treeDeleter.Delete(path);
+		} catch (ArgumentException) {
+			// Best-effort cleanup of non-active transport staging; a later OS temp cleanup can remove it.
 		} catch (IOException) {
 			// Best-effort cleanup of non-active transport staging; a later OS temp cleanup can remove it.
 		} catch (UnauthorizedAccessException) {
@@ -1144,6 +1138,15 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		new(false, Safe(message), alias);
 
 	private static string Safe(string message) => SensitiveErrorTextRedactor.Redact(message);
+
+	// For any diagnostic whose PROSE a knowledge repository chooses. KnowledgeBundleRuntime.Validate
+	// returns raw exception text for a malformed bundle, and System.Text.Json quotes the offending
+	// property NAME verbatim - decoding \u000A and \u2028 escapes on the way - so an attacker-authored
+	// manifest can put a multi-line block that reads as clio's own prose into install-knowledge's
+	// message. Redact alone does not help: it scrubs paths, URIs and credentials and has no opinion
+	// about prose, line breaks or length. Clio's own framing stays OUTSIDE the fence.
+	private static string? Untrusted(string? diagnostic) =>
+		SensitiveErrorTextRedactor.RedactUntrustedOrNull(diagnostic);
 
 	private static StringComparison PathComparison => OperatingSystem.IsWindows()
 		? StringComparison.OrdinalIgnoreCase

@@ -79,7 +79,16 @@ while it is on the content-integrity check does not apply.
 
 ## State when this was handed over
 
-- Branch pushed; `feature/ENG-95891-formula-expressions` is forked from it and carries unrelated work.
+- Branch pushed. The claim that `feature/ENG-95891-formula-expressions` is forked from this branch was
+  **wrong**: its merge-base with this branch is `cbaf1ee0b`, the common ancestor with master, and it
+  contains neither fix commit. Nothing depends on this branch.
 - `dotnet test clio.tests --filter "Category=Unit&(Module=Common|Module=McpServer)"` — 4945 passed.
-- The review in `local-knowledge-source-review-findings.md` has NOT been addressed. Two findings are
-  blockers, and one of them is a regression this branch introduced.
+- The review in `local-knowledge-source-review-findings.md` had NOT been addressed at that point.
+
+## What happened next
+
+All five findings are fixed, plus everything three further adversarial review rounds turned up — including
+a prompt-injection channel the branch itself opened (repository-authored text reaching `get-guidance`,
+which the server instructions make mandatory on every operation), an ownership-marker ordering bug that
+recreated the very "not owned by Clio" dead end this branch exists to remove, and an uncatchable
+`StackOverflowException` on an attacker-supplied tree. See the findings document for the resolution log.

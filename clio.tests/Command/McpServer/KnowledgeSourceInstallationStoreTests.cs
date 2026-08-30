@@ -29,6 +29,7 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		ServiceCollection services = new();
 		services.AddSingleton(rootProvider);
 		services.AddSingleton<IFileSystem, FileSystem>();
+		services.AddSingleton<IKnowledgeManagedTreeDeleter, KnowledgeManagedTreeDeleter>();
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 5_000));
 		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
 		_container = services.BuildServiceProvider();

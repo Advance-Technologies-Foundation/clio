@@ -80,6 +80,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		services.AddSingleton(_gitTransport);
 		services.AddSingleton(_gitReader);
 		services.AddSingleton<System.IO.Abstractions.IFileSystem>(_fileSystem);
+		services.AddSingleton<IKnowledgeManagedTreeDeleter, KnowledgeManagedTreeDeleter>();
 		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
 		_container = services.BuildServiceProvider();
 		_service = _container.GetRequiredService<IKnowledgeSourceManagementService>();

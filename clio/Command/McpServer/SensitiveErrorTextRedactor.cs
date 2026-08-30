@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Clio.Command.McpServer;
@@ -72,6 +75,90 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// <returns>The redacted lines in input order, safe to surface to the MCP client.</returns>
 	public static List<string> RedactAll(IEnumerable<string> texts) {
 		return texts.Select(Redact).ToList();
+	}
+
+	// Any bracketed token that starts with the fence name, whatever case or trailing words it carries.
+	[GeneratedRegex(@"\[\s*untrusted-source-text[^\]]*\]",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+	private static partial Regex FenceTokenRegex();
+
+	/// <summary>Maximum length of a diagnostic composed from repository-controlled text.</summary>
+	private const int UntrustedDiagnosticLimit = 300;
+
+	/// <summary>Opens the fenced region that marks the diagnostic as observed data, not an instruction.</summary>
+	private const string UntrustedDiagnosticPrefix = "[untrusted-source-text begin] ";
+
+	/// <summary>Closes the fenced region so the payload cannot pass its own text off as the framing.</summary>
+	private const string UntrustedDiagnosticSuffix = " [untrusted-source-text end]";
+
+	/// <summary>
+	/// Redacts <paramref name="text"/> and additionally neutralizes it as a carrier of instructions, returning
+	/// <see langword="null"/> — never an empty string — when there is nothing to report.
+	/// </summary>
+	/// <remarks>
+	/// Use this, not <see cref="Redact"/>, for any text that a third party can influence the CONTENT of rather
+	/// than merely the values inside. A knowledge-source diagnostic is composed from exception messages that
+	/// interpolate strings taken straight out of a remote repository — a duplicate JSON property name in
+	/// <c>bundle-source.json</c>, an invalid resource item id — so a repository the operator does not control
+	/// can choose the prose. That text then lands on <c>get-guidance</c>, which the server instructions make
+	/// mandatory on every operation, in a server whose tool surface includes destructive tools: an injection
+	/// channel into the first thing an agent reads. <see cref="Redact"/> alone does not close it, because it
+	/// scrubs paths, URIs and credentials and has no opinion about prose, line breaks or length.
+	/// <para>So: line breaks and control characters collapse to spaces (a multi-line instruction block cannot
+	/// be forged), the result is clamped, and it is prefixed with a marker naming it as data. Returning
+	/// <see langword="null"/> rather than <see cref="string.Empty"/> keeps a
+	/// <c>JsonIgnoreCondition.WhenWritingNull</c> field omitted instead of emitting a diagnostic nobody wrote.
+	/// </para>
+	/// </remarks>
+	/// <param name="text">The raw, possibly attacker-authored diagnostic.</param>
+	/// <returns>The neutralized text, or <see langword="null"/> when there is nothing to report.</returns>
+	public static string? RedactUntrustedOrNull(string? text) {
+		if (string.IsNullOrWhiteSpace(text)) {
+			return null;
+		}
+		string redacted = Redact(text);
+		StringBuilder collapsed = new(redacted.Length);
+		bool lastWasSpace = false;
+		foreach (char character in redacted) {
+			// char.IsControl alone is NOT enough on any of the three counts:
+			//  - U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are category Zl/Zp, not control
+			//    characters, yet render as line breaks and survive JSON as U+2028/U+2029 - so the
+			//    "cannot forge a message block" property would be false without IsSeparator;
+			//  - a lone surrogate would reach System.Text.Json, which THROWS on invalid UTF-16, taking
+			//    down the whole response of a tool that is mandatory on every operation;
+			//  - format characters (bidi overrides) can reverse the visible order of the marker and the
+			//    payload in a terminal.
+			char normalized = char.IsControl(character)
+				|| char.IsSeparator(character)
+				|| char.IsSurrogate(character)
+				|| CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format
+					? ' '
+					: character;
+			if (normalized == ' ') {
+				if (lastWasSpace) {
+					continue;
+				}
+				lastWasSpace = true;
+			} else {
+				lastWasSpace = false;
+			}
+			collapsed.Append(normalized);
+		}
+		string flattened = collapsed.ToString().Trim();
+		if (flattened.Length == 0) {
+			return null;
+		}
+		// The payload cannot be allowed to close the fence and open a section of its own. Only the fence
+		// tokens themselves are neutralized - stripping every bracket would also mangle this class's own
+		// [redacted-path] / [redacted-uri] placeholders, which callers and tests read.
+		// Case-INSENSITIVE and shape-based: an ordinal match on the exact lowercase token lets
+		// "[UNTRUSTED-SOURCE-TEXT END]" through verbatim, and a reader that treats the delimiter
+		// case-insensitively would then read everything after it as server-authored.
+		flattened = FenceTokenRegex().Replace(flattened, "(fence removed)");
+		if (flattened.Length > UntrustedDiagnosticLimit) {
+			flattened = string.Concat(flattened.AsSpan(0, UntrustedDiagnosticLimit), "…");
+		}
+		return UntrustedDiagnosticPrefix + flattened + UntrustedDiagnosticSuffix;
 	}
 
 	/// <summary>

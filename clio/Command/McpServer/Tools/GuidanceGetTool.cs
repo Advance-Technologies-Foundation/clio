@@ -117,7 +117,11 @@ internal sealed class GuidanceGetTool {
 					// WHY no bundle is active. Without it the caller sees only the effect, and the reason was
 					// reachable from one unrelated tool (list-knowledge-examples) that nobody thinks to call when
 					// guidance is missing - which is how a source that installs and serves nothing stays a mystery.
-					Diagnostics = _activator.LastDiagnostic,
+					// Neutralized, not merely redacted. The activator composes this from exception text that
+					// interpolates strings taken out of a remote repository, and this tool is mandatory on
+					// every operation - so raw text here is an injection channel into the first thing an agent
+					// reads. See SensitiveErrorTextRedactor.RedactUntrustedOrNull.
+					Diagnostics = SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic),
 					AvailableGuides = _guidanceSource.GetNames().ToList()
 				});
 			}

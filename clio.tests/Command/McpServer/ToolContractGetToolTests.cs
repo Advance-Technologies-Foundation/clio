@@ -610,6 +610,10 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should advertise the stable guidance-name selector");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "guidance",
 			because: "successful lookups should return the resolved article payload");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "diagnostics" && field.Description.Contains("observed data", StringComparison.Ordinal),
+			because: "an agent reading this field must be told by the contract that its content comes from "
+				+ "the configured repository rather than from clio");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "available-guides",
 			because: "failed lookups should expose recovery names");
 		contract.Examples.Any(example =>

@@ -131,3 +131,69 @@ class, and it cost this investigation most of a day.
   `file:///…` and `C:\path` all still reject.
 - **`LastDiagnostic` is not stale.** `GuidanceGetTool` reads it without calling `EnsureActivated`, but
   `_guidanceSource.FindByName` calls it first and both are root singletons.
+
+---
+
+# Resolution log
+
+All five findings above are fixed. Three further adversarial review rounds ran over the resulting diff
+(correctness / security / testing, in parallel); everything they rated Blocker or High is also fixed.
+
+## The original five
+
+| # | Resolution |
+|---|---|
+| 1 | Ported into one shared `IKnowledgeManagedTreeDeleter` (new file), replacing the copy in both classes. Manual `TopDirectoryOnly` walk, reparse-point skip on directories and on files, catch around the *enumeration* rather than per entry. Verified the premise on Windows: `AllDirectories` really does return a file behind a directory symlink; `TopDirectoryOnly` returns none. |
+| 2 | `CreateStartInfo` made `internal` and pinned directly by unit tests, plus four integration tests and a new `--read-standard-input-to-end` fixture mode. |
+| 3 | Both sites now go through `SensitiveErrorTextRedactor.RedactUntrustedOrNull` — see below; plain redaction proved insufficient. |
+| 4 | Decided: redirect on the fire-and-forget path too, closing the handle at launch. No `InheritStandardInput` opt-in — it would be the dead parameter finding 5 objects to. All six detached call sites are GUI/detached launchers that never read stdin. **Input only** is redirected: stdout stays inherited, or a detached child would block on a pipe nobody drains. |
+| 5 | Gone by construction — the shared deleter has no `recursive` parameter. |
+| 6 | Two records: `docs/knowledge/Common/a-child-process-inherits-clios-stdin-unless-it-is-redirected.md` and `docs/knowledge/McpServer/the-read-only-walk-must-stop-where-directory-delete-stops.md`. |
+
+## What the later rounds found that this document missed
+
+- **A prompt-injection channel this branch opened.** `LastDiagnostic` is composed from exception text that
+  interpolates strings taken out of the configured repository — a duplicate JSON property name in
+  `bundle-source.json`, an invalid resource item id. Surfacing it on `get-guidance`, which
+  `McpServerInstructions` makes mandatory on every operation, put attacker-chosen prose into the first
+  thing an agent reads, in a server whose tool surface includes destructive tools. Fixed with
+  `RedactUntrustedOrNull`: redact, collapse control characters **and** `Zl`/`Zp`/`Cf`/surrogates (only
+  `char.IsControl` misses U+2028/U+2029, and a lone surrogate makes `System.Text.Json` throw), clamp, and
+  fence the region at both ends with the payload's own copies of either token neutralized case-insensitively.
+  The same treatment was applied to the six `install-knowledge` / `update-knowledge` message sites, which
+  carry `JsonException` text quoting an attacker-authored property name verbatim.
+- **The delete recreated the dead end it exists to remove.** A recursive delete is not atomic, and
+  `.clio-knowledge-source` is a dot-prefixed direct child, so it sorts first on NTFS and goes before the
+  payload. A half-completed delete left a source root with no ownership marker — after which every command
+  is refused with "not owned by Clio" and nothing can rewrite it, because the marker is written only when
+  the directory does not exist. The tree is now renamed to a scratch sibling first.
+- **Unbounded recursion on attacker-supplied content.** The ported walk recursed once per directory level;
+  `StackOverflowException` cannot be caught and would take down the whole MCP session. Now iterative.
+- **The scratch name must be owned by the sweeper.** The first attempt derived it from the name being
+  deleted, which reclaims nothing under `staging/` — that name carries a fresh GUID per publish, so no
+  future pattern would ever match it and a whole extracted generation would be stranded.
+- **Messages that the redactor itself destroys.** `'https://host/path'` and `'user@host:path'`, written as
+  examples in a rejection message, are matched by `UriRegex` and `CredentialPairRegex`. The operator saw
+  `'[redacted-uri]'` and `'user@host=[redacted]'` — the latter falsely implying clio had scrubbed a secret
+  out of their input. Angle-bracket placeholders survive both.
+
+## Verification
+
+- `dotnet test clio.tests --filter "Category=Unit&(Module=Common|Module=McpServer)"` — 4988 passed, 0 failed.
+- `dotnet test clio.tests --filter "Category=Unit"` — 9863 passed, 0 failed (required: `clio/Common/` changed).
+- `dotnet test clio.tests --filter "Category=Integration"` — 44 passed, 0 failed.
+- `dotnet test clio.mcp.e2e --filter "Category=McpE2E.NoEnvironment"` — 379/379 and 378/379; the single
+  failure is a pre-existing flake unrelated to this branch (a hard-coded port shared by the two
+  concurrently-running target-framework hosts), filed separately.
+- The original bug re-verified end to end: bare repo → smart HTTP `upload-pack` wrapper on loopback →
+  `install-knowledge` → `get-guidance` served the local library in 0.28 s through a real `clio mcp` process
+  whose stdin was a live JSON-RPC pipe with concurrent traffic.
+
+## Known residuals, deliberately not fixed here
+
+- `get-guidance` returns `article.localPath` — an absolute cache path carrying the OS account name — on
+  every **successful** call, while this branch adds tests forbidding exactly that on the failure path.
+  Pre-existing; changing it is a contract change that deserves its own review.
+- A detached child still inherits stdout, which under `mcp-server` is the JSON-RPC framing. Unreachable
+  today, and the obvious fix is worse than the bug: closing a browser's or updater's stdout hands it a
+  broken pipe. Recorded in the stdin knowledge record.

@@ -222,14 +222,17 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 
 	private readonly IKnowledgeRootPathProvider _rootPathProvider;
 	private readonly IFileSystem _fileSystem;
+	private readonly IKnowledgeManagedTreeDeleter _treeDeleter;
 	private readonly KnowledgeInstallationStoreOptions _options;
 
 	public KnowledgeSourceInstallationStore(
 		IKnowledgeRootPathProvider rootPathProvider,
 		IFileSystem fileSystem,
+		IKnowledgeManagedTreeDeleter treeDeleter,
 		KnowledgeInstallationStoreOptions options) {
 		_rootPathProvider = rootPathProvider ?? throw new ArgumentNullException(nameof(rootPathProvider));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		_treeDeleter = treeDeleter ?? throw new ArgumentNullException(nameof(treeDeleter));
 		_options = options ?? throw new ArgumentNullException(nameof(options));
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.LockTimeoutMilliseconds);
 	}
@@ -633,7 +636,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		ValidateSourceRoot(sourceAlias, sourceRoot);
 		return WithMutationLock(sourceRoot, () => {
 			ValidateSourceRoot(sourceAlias, sourceRoot);
-			DeleteManagedTree(sourceRoot);
+			_treeDeleter.Delete(sourceRoot);
 			return new KnowledgeInstallationResult(
 				KnowledgeInstallationStatus.Deleted,
 				$"Installed knowledge for source '{sourceAlias}' was deleted.",
@@ -791,7 +794,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			_fileSystem.Directory.Move(stagingRoot, location.GenerationRoot);
 		} finally {
 			if (_fileSystem.Directory.Exists(stagingRoot)) {
-				DeleteManagedTree(stagingRoot);
+				_treeDeleter.Delete(stagingRoot);
 			}
 		}
 		diagnostic = null;
@@ -833,7 +836,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 				diagnostic = $"Immutable knowledge generation '{location.Name}' already exists with unexpected content.";
 				return false;
 			}
-			DeleteManagedTree(location.GenerationRoot);
+			_treeDeleter.Delete(location.GenerationRoot);
 			diagnostic = null;
 			return true;
 		} catch (Exception exception) when (IsStorageException(exception)) {
@@ -1007,11 +1010,16 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			.ToArray();
 		// Materialize the victims before the first delete so the directory is never mutated mid-enumeration.
 		string[] obsolete = _fileSystem.Directory.EnumerateDirectories(generationsRoot)
-			.Where(directory => !retained.Contains(_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal))
+			// A scratch tree left by a delete that failed after its rename is not a generation. Passing one
+			// here would be harmless now that the deleter empties a scratch name in place, but it would also
+			// hide it from the deleter's own sweep, which is what is supposed to reclaim it.
+			.Where(directory => !_fileSystem.Path.GetFileName(directory)
+					.StartsWith(KnowledgeManagedTreeDeleter.QuarantinePrefix, StringComparison.Ordinal)
+				&& !retained.Contains(_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal))
 			.ToArray();
 		foreach (string directory in obsolete) {
 			EnsureNoReparsePoint(generationsRoot, directory);
-			DeleteManagedTree(directory);
+			_treeDeleter.Delete(directory);
 		}
 	}
 
@@ -1158,38 +1166,6 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			throw new InvalidDataException("Knowledge path escapes its managed root.");
 		}
 		return candidate;
-	}
-
-	/// <summary>
-	/// Deletes a managed directory tree, clearing the read-only attribute first.
-	/// <para>Git marks pack files (<c>*.pack</c>, <c>*.idx</c>) read-only on creation, and on Windows
-	/// <see cref="System.IO.Directory.Delete(string, bool)"/> refuses a read-only file. Every Git knowledge
-	/// checkout therefore contains files that a plain recursive delete cannot remove — and the failure is worse
-	/// than it looks: the source is unregistered but its cache survives, and the next attempt to add the same
-	/// alias is refused with "not owned by Clio", a state no command can clear.</para>
-	/// </summary>
-	private void DeleteManagedTree(string path, bool recursive = true) {
-		if (!_fileSystem.Directory.Exists(path)) {
-			return;
-		}
-		if (recursive) {
-			ClearReadOnlyAttributes(path);
-		}
-		_fileSystem.Directory.Delete(path, recursive);
-	}
-
-	// Best effort: a file that cannot be reset is left for the delete itself to report, so a genuine
-	// permission problem still surfaces as one rather than being masked here.
-	private void ClearReadOnlyAttributes(string root) {
-		foreach (string file in _fileSystem.Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)) {
-			try {
-				IFileInfo info = _fileSystem.FileInfo.New(file);
-				if (info.Exists && info.IsReadOnly) {
-					info.IsReadOnly = false;
-				}
-			} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-			}
-		}
 	}
 
 	private void EnsureNoReparsePoint(string root, string path) {

@@ -305,6 +305,13 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			process.StartInfo = CreateStartInfo(options, redirectOutput: false);
 
 			bool started = process.Start();
+			if (started) {
+				// Closed explicitly rather than left to Process.Dispose, which only closes an unread
+				// StandardInput as an undocumented side effect of Close(). A detached child must reach EOF the
+				// moment it is launched: it outlives this method, and until the write end is closed it is
+				// holding a handle to whatever stdin this process has - the MCP server's JSON-RPC pipe included.
+				TryCloseStandardInput(process);
+			}
 			return Task.FromResult(new ProcessLaunchResult {
 				Started = started,
 				ProcessId = started ? process.Id : null,
@@ -334,7 +341,10 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 
 	#region Methods: Private
 
-	private static ProcessStartInfo CreateStartInfo(ProcessExecutionOptions options, bool redirectOutput) {
+	// internal so the redirection invariants below can be pinned directly. Behavioural tests cannot pin them:
+	// whether an inherited stdin blocks depends on what the TEST HOST's own stdin happens to be, which is a
+	// live pipe under an interactive console and already at EOF under most CI runners.
+	internal static ProcessStartInfo CreateStartInfo(ProcessExecutionOptions options, bool redirectOutput) {
 		string program = options.ResolveProgramPath
 			? ResolveExecutablePath(options.Program)
 			: options.Program;
@@ -344,12 +354,15 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			CreateNoWindow = true,
 			UseShellExecute = false,
 			WorkingDirectory = options.WorkingDirectory ?? Environment.CurrentDirectory,
-			// Redirected whenever output is, and NOT only when there is input to write. A capturing call is by
-			// definition non-interactive, so the child has no business inheriting ours - and when the parent is
-			// the MCP server, "ours" is the JSON-RPC pipe: a child holding it can block on it and could in
-			// principle consume protocol bytes. The stream is closed immediately after start when no input was
-			// supplied, so the child sees EOF rather than a handle that never closes.
-			RedirectStandardInput = redirectOutput || !string.IsNullOrEmpty(options.StandardInput),
+			// ALWAYS redirected, and NOT only when there is input to write. No child clio launches is
+			// interactive on stdin, so none has any business inheriting ours - and when the parent is the MCP
+			// server, "ours" is the JSON-RPC pipe: a child holding it can block on it and could in principle
+			// consume protocol bytes. A detached fire-and-forget child is the worse case of the two, because it
+			// holds the handle for the rest of the session rather than for one command. The stream is closed
+			// immediately after start when no input was supplied, so the child sees EOF rather than a handle
+			// that never closes. Note this redirects INPUT only: stdout/stderr still follow redirectOutput, so
+			// a detached child can never block on an output pipe nobody drains.
+			RedirectStandardInput = true,
 			RedirectStandardOutput = redirectOutput,
 			RedirectStandardError = redirectOutput
 		};
@@ -512,13 +525,22 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 
 			try {
 				if (!string.IsNullOrEmpty(options.StandardInput)) {
-					await process.StandardInput.WriteAsync(options.StandardInput.AsMemory(), linkedCts.Token);
-					await process.StandardInput.FlushAsync(linkedCts.Token);
-					process.StandardInput.Close();
-				} else if (process.StartInfo.RedirectStandardInput) {
+					try {
+						await process.StandardInput.WriteAsync(options.StandardInput.AsMemory(), linkedCts.Token);
+						await process.StandardInput.FlushAsync(linkedCts.Token);
+					} catch (IOException) {
+						// The child read what it wanted and closed its end. That is its answer, not a launch
+						// failure - and without this the IOException escapes the only catch filter here
+						// (OperationCanceledException), so ExecuteAndCaptureAsync throws instead of returning
+						// a result its callers can read the exit code from.
+					}
+					TryCloseStandardInput(process);
+				} else {
 					// No input to send: close at once so the child reads EOF instead of waiting on a handle
-					// nobody will ever write to.
-					process.StandardInput.Close();
+					// nobody will ever write to. Unconditional because CreateStartInfo always redirects stdin.
+					// Through the swallowing helper: the only catch filter here is OperationCanceledException,
+					// so a raw Close() would report an IOException as a LAUNCH failure for a running process.
+					TryCloseStandardInput(process);
 				}
 				await process.WaitForExitAsync(linkedCts.Token);
 			}

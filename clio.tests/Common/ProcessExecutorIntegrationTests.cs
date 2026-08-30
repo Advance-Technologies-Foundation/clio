@@ -264,6 +264,210 @@ public class ProcessExecutorIntegrationTests {
 			because: "the deterministic carriage-return fixture should complete normally");
 	}
 
+	[Test]
+	[Description("Verifies that a captured child reading standard input to completion sees end-of-file and exits.")]
+	public async Task ExecuteAndCaptureAsync_ShouldGiveTheChildEndOfFileOnStandardInput_WhenNoInputIsSupplied() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		string markerPath = Path.Combine(Path.GetTempPath(), $"clio-process-stdin-eof-{Guid.NewGuid():N}.marker");
+		ProcessExecutionOptions options = new(ResolveFixtureExecutable(),
+			$"--read-standard-input-to-end \"{markerPath}\"") {
+			Timeout = TimeSpan.FromSeconds(20)
+		};
+
+		try {
+			// Act
+			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+
+			// Assert
+			// NOTE: on a host whose own stdin is already at EOF - which is what dotnet test gives a CAPTURED
+			// child on Windows - this passes with the fix reverted too. The invariant itself is pinned by
+			// ProcessExecutorTests.CreateStartInfo_ShouldAlwaysRedirectStandardInput; this test covers the
+			// end-to-end behaviour and the write/close path.
+			result.TimedOut.Should().BeFalse(
+				because: "a child that reads standard input to completion must reach end-of-file rather than "
+					+ "block on a handle nobody will write to");
+			result.ExitCode.Should().Be(0,
+				because: "the child completes normally once its standard input reaches end-of-file");
+			result.StandardOutput.Should().Be("stdin:0:",
+				because: "a child launched without StandardInput must read an empty stream, never bytes from "
+					+ "whatever handle this process happens to hold");
+		} finally {
+			TryDeleteFile(markerPath);
+		}
+	}
+
+	[Test]
+	[Description("Verifies that redirecting standard input for every captured child still delivers a supplied payload.")]
+	public async Task ExecuteAndCaptureAsync_ShouldWriteAndCloseStandardInput_WhenInputIsSupplied() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		string markerPath = Path.Combine(Path.GetTempPath(), $"clio-process-stdin-write-{Guid.NewGuid():N}.marker");
+		ProcessExecutionOptions options = new(ResolveFixtureExecutable(),
+			$"--read-standard-input-to-end \"{markerPath}\"") {
+			StandardInput = "payload",
+			Timeout = TimeSpan.FromSeconds(20)
+		};
+
+		try {
+			// Act
+			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
+
+			// Assert
+			result.TimedOut.Should().BeFalse(
+				because: "writing the payload must be followed by a close so the child still reaches end-of-file");
+			result.StandardOutput.Should().Be("stdin:7:payload",
+				because: "the supplied payload must reach the child unchanged now that stdin is always redirected");
+		} finally {
+			TryDeleteFile(markerPath);
+		}
+	}
+
+	[Test]
+	[Description("Verifies that a detached child reading standard input to completion is released instead of holding the parent handle.")]
+	public async Task FireAndForgetAsync_ShouldGiveTheDetachedChildEndOfFileOnStandardInput() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		string markerPath = Path.Combine(Path.GetTempPath(), $"clio-process-stdin-detached-{Guid.NewGuid():N}.marker");
+		ProcessExecutionOptions options = new(ResolveFixtureExecutable(),
+			$"--read-standard-input-to-end \"{markerPath}\"");
+
+		ProcessLaunchResult launch = null;
+		try {
+			// Act
+			launch = await sut.FireAndForgetAsync(options);
+			launch.Started.Should().BeTrue(
+				because: "the fixture must launch before its standard input behaviour can be observed");
+			string marker = await WaitForMarkerAsync(markerPath, TimeSpan.FromSeconds(20));
+
+			// Assert
+			marker.Should().NotBeNull(
+				because: "a detached child outlives the launch call, so a standard input handle it inherits is "
+					+ "held for the rest of the session - the worse case of the bug this rule exists to prevent");
+			marker.Should().Be("0",
+				because: "the detached child must read an empty stream rather than bytes from this process handle");
+		} finally {
+			// The subject of this test is a detached child that never exits. When it fails, that child is
+			// still blocked on stdin and still holds the test host's handles, which turns a failed test into
+			// a hung run. Identity-checked so a recycled PID is never killed.
+			await TerminateFixtureAsync(launch?.ProcessId);
+			TryDeleteFile(markerPath);
+		}
+	}
+
+	[Test]
+	[Description("Verifies the fixture itself blocks on an open standard input handle, so the end-of-file assertions above are not vacuous.")]
+	public async Task ReadStandardInputFixture_ShouldBlock_UntilTheParentClosesStandardInput() {
+		// Arrange
+		string markerPath = Path.Combine(Path.GetTempPath(), $"clio-process-stdin-control-{Guid.NewGuid():N}.marker");
+		ProcessStartInfo startInfo = new(ResolveFixtureExecutable()) {
+			UseShellExecute = false,
+			CreateNoWindow = true,
+			RedirectStandardInput = true
+		};
+		startInfo.ArgumentList.Add("--read-standard-input-to-end");
+		startInfo.ArgumentList.Add(markerPath);
+		using Process process = Process.Start(startInfo)
+			?? throw new InvalidOperationException("The standard input fixture did not start.");
+
+		try {
+			// Act
+			string whileHeld = await WaitForMarkerAsync(markerPath, TimeSpan.FromSeconds(2));
+			process.StandardInput.Close();
+			string afterClose = await WaitForMarkerAsync(markerPath, TimeSpan.FromSeconds(20));
+
+			// Assert
+			whileHeld.Should().BeNull(
+				because: "an open standard input handle that is never written to and never closed must hold the "
+					+ "child indefinitely - this is the negative control that keeps the tests above honest");
+			afterClose.Should().Be("0",
+				because: "closing the write end must deliver end-of-file and release the child");
+		} finally {
+			TryKill(process);
+			TryDeleteFile(markerPath);
+		}
+	}
+
+	// Waits for marker CONTENT, not for the file to exist: File.Exists goes true when the writer creates the
+	// handle, so an existence poll races the byte and reads an empty string on a loaded agent - a flake that
+	// reads exactly like the stdin bug coming back.
+	private static async Task<string> WaitForMarkerAsync(string path, TimeSpan timeout) {
+		Stopwatch elapsed = Stopwatch.StartNew();
+		while (elapsed.Elapsed < timeout) {
+			string content = TryReadMarker(path);
+			if (content is not null) {
+				return content;
+			}
+			await Task.Delay(50);
+		}
+		return TryReadMarker(path);
+	}
+
+	private static string TryReadMarker(string path) {
+		try {
+			string content = File.ReadAllText(path);
+			return content.Length == 0 ? null : content;
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			return null;
+		}
+	}
+
+	// Cleanup runs from a finally, where a throw would replace the assertion failure that matters.
+	private static void TryDeleteFile(string path) {
+		try {
+			File.Delete(path);
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+		}
+	}
+
+	private static void TryKill(Process process) {
+		try {
+			if (!process.HasExited) {
+				process.Kill(entireProcessTree: true);
+			}
+		} catch (Exception exception) when (exception is InvalidOperationException
+				or System.ComponentModel.Win32Exception
+				or NotSupportedException) {
+		}
+	}
+
+	private static async Task TerminateFixtureAsync(int? processId) {
+		if (processId is not { } id) {
+			return;
+		}
+		using Process process = TryGetProcess(id);
+		if (process is null || process.HasExited) {
+			return;
+		}
+		// Identity check before the kill: a bare PID races reuse, and the fixture masquerades as "git".
+		string actual = TryGetExecutablePath(process);
+		if (actual is null || !string.Equals(
+				Path.GetFullPath(ResolveFixtureExecutable()),
+				Path.GetFullPath(actual),
+				OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) {
+			return;
+		}
+		TryKill(process);
+		using CancellationTokenSource cleanupDeadline = new(TimeSpan.FromSeconds(5));
+		try {
+			await process.WaitForExitAsync(cleanupDeadline.Token);
+		} catch (OperationCanceledException) {
+		}
+	}
+
+	private static string TryGetExecutablePath(Process process) {
+		try {
+			return process.MainModule?.FileName;
+		} catch (Exception exception) when (exception is InvalidOperationException
+				or System.ComponentModel.Win32Exception
+				or NotSupportedException) {
+			return null;
+		}
+	}
+
 	private static string ResolveFixtureExecutable() {
 		DirectoryInfo testDirectory = new(TestContext.CurrentContext.TestDirectory);
 		string targetFramework = testDirectory.Name;
