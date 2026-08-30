@@ -255,12 +255,14 @@ the validator.
   `RoundUp(...)`. Observed on a stand — the conversion runs in both directions, so writing the C# name is
   not by itself a defect. What matters is that the expression **references the parameter**, not that it
   uses the designer's spelling.
-* **Known blocker (2026-08-29).** No agent has yet managed the reference. Five plausible spellings were
-  tried against a live stand and every one was refused: `Math.Ceiling(Price)`, `Math.Ceiling([Price])`,
-  `[#Price#]`, a bare `Price`, and `[#Process parameters.Price#]`. Only a literal (`Math.Ceiling(1.5)`)
-  was accepted. The working form is the full meta-path
-  `[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{guid}]#]`, which nobody guesses. **Until the
-  guidance carries it, this case fails on the reference and everything after it is untestable.**
+* **Closed 2026-08-30, and the note it replaces was misleading.** The 2026-08-29 run recorded five refused
+  spellings and concluded the working form was the full meta-path
+  `[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{guid}]#]`. The SHORT form works and is what the
+  guidance now teaches: `TC-02b` stored `[#[Parameter:{75c8d5c5-…}]#] > 1000` on two flows first try, and
+  `TC-19` carried `[#[Parameter:{41f5e6d6-…}]#]` through a mapping expression that the ENGINE evaluated at
+  run time — the Activity card read `Order total with VAT: 600`. The prefix the corpus stores is the
+  platform's own serialization, not something an author has to write. Leaving the old note standing cost a
+  review round: it was read as current and produced a Blocker against guidance that is correct.
 
 ---
 
