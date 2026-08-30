@@ -1,0 +1,35 @@
+COMMAND TYPE
+    Remote commands
+
+NAME
+    call-service - Call a Creatio service endpoint
+
+SYNOPSIS
+    clio call-service [OPTIONS]
+
+DESCRIPTION
+    Calls a Creatio service endpoint. The HTTP method defaults to POST and can
+    be set to GET, POST, DELETE, PATCH, or PUT. Request data can be read from
+    a file or supplied inline with --body.
+
+OPTIONS
+    -m, --method              HTTP method. Defaults to POST.
+    -f, --input               Request file.
+    -b, --body                Request body JSON.
+    -d, --destination         Destination file for the response.
+    --service-path             Route service path.
+    -v, --variables           Variables to replace in the request body.
+    --timeout                  Request timeout in milliseconds. Defaults to 100000.
+
+EXAMPLES
+    clio call-service -e dev --service-path "odata/Contact(<id>)" \
+        --method PATCH --body '{"Name":"Updated"}'
+
+    clio call-service -e dev --service-path "odata/Contact(<id>)" \
+        --method PUT --input contact.json
+
+SEE ALSO
+    dataservice
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

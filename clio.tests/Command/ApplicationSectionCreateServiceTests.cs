@@ -3106,6 +3106,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 		public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 			int maxAttempts = 1, int delaySec = 1) => throw new NotSupportedException();
 
+		public string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+			int maxAttempts = 1, int delaySec = 1) => throw new NotSupportedException();
+
 		public void Listen(CancellationToken cancellationToken) => throw new NotSupportedException();
 
 		public void Login() => throw new NotSupportedException();

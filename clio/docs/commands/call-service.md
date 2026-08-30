@@ -27,7 +27,7 @@ clio call-service -e dev
 
 ```bash
 -m, --method <VALUE>
-HTTP method: GET, POST, DELETE, or PATCH. Defaults to POST.
+HTTP method: GET, POST, DELETE, PATCH, or PUT. Defaults to POST.
 -f, --input <VALUE>
 Request file
 -b, --body <VALUE>

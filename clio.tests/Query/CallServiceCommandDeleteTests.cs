@@ -102,6 +102,36 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	}
 
 	[Test]
+	[Description("Executes PUT when method is put and passes body")]
+	public void Execute_Should_Call_Put_When_Method_Put() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			HttpMethodName = "put",
+			RequestBody = "{\"id\":1}"
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient
+			.Received(1)
+			.ExecutePutRequest("http://host/svc", "{\"id\":1}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Throws on unsupported HTTP method to avoid silent defaulting")]
 	public void Execute_Should_Throw_For_Unsupported_Method() {
 		// Arrange
@@ -114,7 +144,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
 		CallServiceCommandOptions options = new() {
 			ServicePath = "svc",
-			HttpMethodName = "put",
+			HttpMethodName = "options",
 			RequestBody = "{}"
 		};
 
@@ -123,15 +153,17 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 
 		// Assert
 		action.Should()
-			  .Throw<ArgumentException>("because only GET/POST/DELETE/PATCH are supported")
+			  .Throw<ArgumentException>("because only GET/POST/DELETE/PATCH/PUT are supported")
 			  .WithParameterName("httpMethod")
-			  .WithMessage("Unsupported HTTP method 'put'*");
+			  .WithMessage("Unsupported HTTP method 'options'*");
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs()
-						 .ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+							 .ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePutRequest(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	#endregion

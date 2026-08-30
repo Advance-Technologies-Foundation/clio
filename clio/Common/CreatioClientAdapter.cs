@@ -194,6 +194,12 @@ public class CreatioClientAdapter : IApplicationClient{
 			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
 	}
 
+	public string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int maxAttempts = 1, int delaySec = 1) {
+		return ExecuteRequest(
+			() => Client.ExecutePutRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
+	}
+
 	public void Listen(CancellationToken cancellationToken) {
 		Client.ConnectionStateChanged += (sender, state) => { ConnectionStateChanged?.Invoke(sender, state); };
 

@@ -33,6 +33,18 @@ public interface IApplicationClient{
 	string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1);
 
+	/// <summary>
+	/// Executes an authenticated HTTP PUT request against the Creatio application.
+	/// </summary>
+	/// <param name="url">The absolute request URL.</param>
+	/// <param name="requestData">The request body.</param>
+	/// <param name="requestTimeout">The request timeout in milliseconds.</param>
+	/// <param name="maxAttempts">The maximum number of attempts.</param>
+	/// <param name="delaySec">The delay between retry attempts in seconds.</param>
+	/// <returns>The raw response body.</returns>
+	string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int maxAttempts = 1, int delaySec = 1);
+
 	void Listen(CancellationToken cancellationToken);
 	void Login();
 	string UploadAlmFile(string url, string filePath);
