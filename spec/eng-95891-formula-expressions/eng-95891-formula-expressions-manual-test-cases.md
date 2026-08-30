@@ -529,7 +529,8 @@ Every Group-1 agent saw that example. Only the ones that ALSO reached the rule g
 **The delivery defect underneath it.** `get-guidance name=process-modeling` returns ~113 KB on ONE line.
 It exceeded the tool-result token cap in **every** agent session of every round - 16 of 16 earlier logs and
 all 8 of this one - so the result is spilled to a file and each agent greps its own guidance back out.
-Across this round that cost 68 of 190 tool calls (36%); only 56 (29%) acted on the process at all. The
+Across the nine runs that cost 119 of 319 tool calls (37%), against 92 (28%) that acted on a process at
+all, and a further 47 (14%) spent in `ToolSearch` loading deferred tool schemas. The
 consequence is not merely cost: each agent reads a self-selected FRAGMENT, and `TC-02` shows the outcome
 of an operation turning on which fragment that was. The MCP server instructions make this guide mandatory
 reading before every operation.
