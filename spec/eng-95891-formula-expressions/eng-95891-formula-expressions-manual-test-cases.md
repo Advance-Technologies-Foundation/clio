@@ -379,6 +379,50 @@ leaves one).
 
 ---
 
+## Round-2 results — 2026-08-30, against the corrected guidance
+
+The reference rule reached the agent for the first time (the guidance fix, served through `get-guidance`).
+Group 2 became runnable, and running it found three defects in the shipped feature that no unit or E2E
+test had caught. Six agent sessions, one per case, each fresh and with no memory.
+
+| Case | Result | What it showed |
+|---|---|---|
+| `TC-11` | pass | `Math.Ceiling`/`Math.Abs` stored; designer renders `RoundUp`/`Module` |
+| `TC-12` | pass | designer renders `Maximum` / `Minimum` / `Average` / `RemainderAfterDivision` |
+| `TC-13` | **FAIL** | the three-segment element-column reference is mishandled — see below |
+| `TC-14` | partial | `[#SysVariable.CurrentDateTime#]` correct; `SysSettings` written in the LEGACY untyped form |
+| `TC-15` | **FAIL** | a bare record Guid stored as `ConstValue` — the exact silent failure this case warns of |
+| `TC-16` | pass | `DateTimeUtilities.Day/Month/DayOfWeek`, no `Get` prefix |
+| `TC-18` | **FAIL** | the delete guard misses MAPPING references; the platform catches it and leaks a blob |
+
+**TC-13 — the validator drops the column half.** An element-column reference
+`[#[Element:{e}].[Parameter:{p}].[EntityColumn:{c}]#] + 1` is refused with *"Formula value error: Invalid
+Operation (at index 15)"*. The reference is well formed and the corpus carries 318 of them, so the refusal
+is wrong. Cause: `ProcessFormulaValidator.SubstituteParameterReferences` replaces the WHOLE `[# … #]` token
+with one placeholder typed from the PARAMETER (`ResultEntity`, an object) — the `[EntityColumn:…]` segment
+is swallowed, so the engine sees `object + 1`. The message names neither the column nor the real problem.
+Fix: type the placeholder from the referenced COLUMN when the third segment is present.
+
+**TC-15 — the lookup macro is unreachable in practice.** Asked for "the Call activity category", the agent
+stored a bare Guid as a `ConstValue` rather than `[#Lookup.{schemaUId}.{recordId}#]`. It disclosed the
+substitution, so this is not carelessness: the macro needs TWO Guids the agent has no documented way to
+resolve, while the mapping guidance separately says a Guid into a lookup target is allowed. The value type-
+checks, saves, and then reads back as a record nobody can see. The guidance must either give the resolution
+route or say the macro is not authorable.
+
+**TC-18 — the delete guard is half a guard.** Removing a parameter still used by a mapping formula is
+refused, but by the PLATFORM, not by the toolkit:
+`Process validation failed: Invalid value for the parameter "Largest". Internal error:
+"{ErrorType:2,ErrorData:{ParameterUId:"585de4ad-…"}}"`. `IProcessParameterService.FindParameterUsages` scans
+flow CONDITIONS (added for this ticket) but not mapping EXPRESSIONS, so the case's own defect criterion is
+met. The caller gets a UId instead of the parameter name and no route to a fix.
+
+**TC-14's caveat is a guidance defect, not an agent error.** The macro table shows
+`[#SysSettings.Code#]` as the example and mentions the typed form only as a parenthetical, so the agent
+wrote what it was shown. The primary example should be the modern typed form.
+
+---
+
 ## What these cases deliberately do not cover
 
 * **Designer-only rendering** beyond what TC-08 states. Whether a formula field is editable in a given
