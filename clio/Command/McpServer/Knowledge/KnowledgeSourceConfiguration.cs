@@ -370,14 +370,46 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 		}
 	}
 
+	// Each rejection names the ONE rule that is broken. Collapsing these into a single sentence made a
+	// location with a stray query string report a scheme problem, which sends the reader to fix the half
+	// that was already right.
+	//
+	// None of them echoes the location or the host back. These messages travel out through the MCP boundary,
+	// and the redactor cannot help here: it keys on "scheme://", on absolute paths and on host:port, so a
+	// scp-style remote (git@ssh.internal.corp:team/kb.git, which is not an absolute URI at all) and a bare
+	// internal hostname both pass through it untouched. The operator can read back the value they just typed;
+	// naming the rule is what they cannot derive.
 	private static Uri ValidateRemoteUri(string location) {
-		if (!Uri.TryCreate(location, UriKind.Absolute, out Uri? uri)
-				|| (uri.Scheme != Uri.UriSchemeHttps && (uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback))
-				|| !string.IsNullOrEmpty(uri.UserInfo)
-				|| !string.IsNullOrEmpty(uri.Query)
-				|| !string.IsNullOrEmpty(uri.Fragment)) {
+		if (!Uri.TryCreate(location, UriKind.Absolute, out Uri? uri)) {
 			throw new ArgumentException(
-				"Knowledge source location must be a credential-free HTTPS URI (or loopback HTTP URI).",
+				// Angle brackets on purpose: this message reaches the caller through Safe()/Redact(), whose
+				// UriRegex matches any "scheme://..." token - a literal 'https://host/path' example would be
+				// replaced with [redacted-uri], deleting the one thing the message exists to show. The regex
+				// character class excludes '<' and '>', so the placeholder survives.
+				"Knowledge source location is not an absolute URI. Give a full 'https://<host>/<path>' form; "
+				+ "an scp-style Git remote such as 'user@<host>:<path>' is not one.",
+				nameof(location));
+		}
+		if (uri.Scheme != Uri.UriSchemeHttps && (uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback)) {
+			throw new ArgumentException(
+				"Knowledge source location must use HTTPS, or HTTP only when the host is loopback. This "
+				+ "location's scheme and host are neither.",
+				nameof(location));
+		}
+		if (!string.IsNullOrEmpty(uri.UserInfo)) {
+			throw new ArgumentException(
+				"Knowledge source location must not carry credentials in the URI (the 'user:password@' part). "
+				+ "Remove them; this transport is credential-free.",
+				nameof(location));
+		}
+		if (!string.IsNullOrEmpty(uri.Query)) {
+			throw new ArgumentException(
+				"Knowledge source location must not carry a query string. Remove everything from the '?'.",
+				nameof(location));
+		}
+		if (!string.IsNullOrEmpty(uri.Fragment)) {
+			throw new ArgumentException(
+				"Knowledge source location must not carry a fragment. Remove everything from the '#'.",
 				nameof(location));
 		}
 		return uri;

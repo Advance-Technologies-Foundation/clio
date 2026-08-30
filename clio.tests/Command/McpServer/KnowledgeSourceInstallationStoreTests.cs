@@ -29,6 +29,7 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 		ServiceCollection services = new();
 		services.AddSingleton(rootProvider);
 		services.AddSingleton<IFileSystem, FileSystem>();
+		services.AddSingleton<IKnowledgeManagedTreeDeleter, KnowledgeManagedTreeDeleter>();
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 5_000));
 		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
 		_container = services.BuildServiceProvider();
@@ -213,6 +214,31 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 			because: "the retained rollback generation must survive pruning after a repair");
 		Directory.Exists(GenerationPath("alpha", second)).Should().BeFalse(
 			because: "the replaced generation is what the repair distrusts and must never become the rollback target");
+	}
+
+	[Test]
+	[Description("Pruning removes a legacy quarantine even when there is no ordinary obsolete generation.")]
+	public void Publish_ShouldPruneLegacyQuarantine_WhenOnlyRetainedGenerationsRemain() {
+		// Arrange
+		byte[] firstBundle = Bundle(("article.md", "first"));
+		byte[] secondBundle = Bundle(("article.md", "second"));
+		Publish("alpha", "com.example.alpha", 1, firstBundle);
+		KnowledgeSourceGenerationPointer first = _store.ReadCurrent("alpha", out _)!.Active;
+		string generationsRoot = Path.GetDirectoryName(GenerationPath("alpha", first))!;
+		string quarantine = Path.Combine(
+			generationsRoot, KnowledgeManagedTreeDeleter.QuarantinePrefix + "legacy-deadbeef");
+		Directory.CreateDirectory(quarantine);
+		File.WriteAllText(Path.Combine(quarantine, "leftover.bin"), "leftover");
+
+		// Act
+		KnowledgeInstallationResult result = _store.Publish(
+			Update("1.0.0", 2, "1.0.2", secondBundle, first));
+
+		// Assert
+		result.Status.Should().Be(KnowledgeInstallationStatus.Updated,
+			because: "the forward publication should complete while pruning its obsolete siblings");
+		Directory.Exists(quarantine).Should().BeFalse(
+			because: "a quarantine-only generations directory must not strand failed-delete debris forever");
 	}
 
 	[Test]
