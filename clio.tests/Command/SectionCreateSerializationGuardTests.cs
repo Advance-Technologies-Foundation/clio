@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -299,48 +300,55 @@ public sealed class SectionCreateSerializationGuardTests {
 		using ManualResetEventSlim otherKeyEntered = new(false);
 		using SemaphoreSlim enteredWork = new(0);
 
+		// LongRunning tasks use dedicated threads rather than the thread pool: every participant here blocks
+		// inside its work or on the gate, so callerCount + 2 threads must exist simultaneously. On a small CI
+		// agent, thread-pool injection can otherwise push the first best-effort entry past SignalWait and fail
+		// the test on scheduling rather than behavior. Keeping Task wrappers also captures participant
+		// exceptions so guard regressions fail this test instead of terminating the whole test host.
 		// The holder occupies the per-key gate (in-flight = 1) so every subsequent same-key caller must queue.
-		Task holder = Task.Run(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
+		Task holder = Task.Factory.StartNew(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
 			holderEntered.Set();
 			releaseHolder.Wait(GenerousWait);
 			return 0;
-		}));
-		holderEntered.Wait(SignalWait).Should().BeTrue(
-			because: "the holder must occupy the per-key gate before the fan-out queues behind it");
+		}), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+		List<Task> participants = [holder];
+		try {
+			holderEntered.Wait(SignalWait).Should().BeTrue(
+				because: "the holder must occupy the per-key gate before the fan-out queues behind it");
 
-		// Act — fan out callerCount same-key callers; each signals when it ENTERS its work, then parks.
-		Task[] callers = new Task[callerCount];
-		for (int i = 0; i < callerCount; i++) {
-			callers[i] = Task.Run(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
-				enteredWork.Release();
-				releaseCallers.Wait(GenerousWait);
+			// Act — fan out callerCount same-key callers; each signals when it ENTERS its work, then parks.
+			for (int i = 0; i < callerCount; i++) {
+				Task caller = Task.Factory.StartNew(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
+					enteredWork.Release();
+					releaseCallers.Wait(GenerousWait);
+					return 0;
+				}), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+				participants.Add(caller);
+			}
+
+			// A different application key must never be affected by the same-key back-pressure.
+			Task otherKey = Task.Factory.StartNew(() => guard.Run("prod", "UsrOther", GenerousWait, () => {
+				otherKeyEntered.Set();
 				return 0;
-			}));
+			}), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+			participants.Add(otherKey);
+
+			// Assert
+			for (int i = 0; i < expectedBestEffort; i++) {
+				enteredWork.Wait(SignalWait).Should().BeTrue(
+					because: "each excess same-key caller past the bound must run best-effort without waiting for the holder to release");
+			}
+
+			enteredWork.Wait(NonEntryWindow).Should().BeFalse(
+				because: "callers within the bound must stay parked on the gate while the holder still holds it (serialization is preserved for them)");
+			otherKeyEntered.Wait(SignalWait).Should().BeTrue(
+				because: "a different application key must overlap freely — the same-key waiter bound must not spill onto it");
+		} finally {
+			releaseHolder.Set();
+			releaseCallers.Set();
+			Task.WaitAll([.. participants], GenerousWait).Should().BeTrue(
+				because: "releasing the holder must let every participant complete and surface any guard exception on the test thread");
 		}
-
-		// A different application key must never be affected by the same-key back-pressure.
-		Task otherKey = Task.Run(() => guard.Run("prod", "UsrOther", GenerousWait, () => {
-			otherKeyEntered.Set();
-			return 0;
-		}));
-
-		// Assert
-		for (int i = 0; i < expectedBestEffort; i++) {
-			enteredWork.Wait(SignalWait).Should().BeTrue(
-				because: "each excess same-key caller past the bound must run best-effort without waiting for the holder to release");
-		}
-
-		enteredWork.Wait(NonEntryWindow).Should().BeFalse(
-			because: "callers within the bound must stay parked on the gate while the holder still holds it (serialization is preserved for them)");
-		otherKeyEntered.Wait(SignalWait).Should().BeTrue(
-			because: "a different application key must overlap freely — the same-key waiter bound must not spill onto it");
-
-		releaseHolder.Set();
-		releaseCallers.Set();
-		Task[] all = [holder, otherKey, .. callers];
-		Action drain = () => Task.WaitAll(all, GenerousWait);
-		drain.Should().NotThrow(
-			because: "releasing the holder must let the parked callers complete with no SemaphoreFullException — the gate is never over-released");
 		logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("without serialization", StringComparison.OrdinalIgnoreCase)));
 	}

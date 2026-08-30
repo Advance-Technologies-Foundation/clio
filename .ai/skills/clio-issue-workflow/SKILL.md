@@ -25,11 +25,14 @@ Do not duplicate the phase procedures here. Use the phase skills as the source o
 Use GitHub's existing primitives only:
 
 - Assignee: who coordinates the issue.
+- Issue Type and labels: the evidence-backed classification, normalized before investigation hands work to repair or another owner.
 - `Mitigation stage` issue field: `Investigating`, `Fixing`, `QA`, or `Waiting for human approval`.
 - Development: the linked branch and later the draft pull request.
 - Relationships: the original issue is `blocked by` an issue in another repository when that downstream issue owns work required to resolve the report.
 
 Do not introduce claim records, leases, receipts, lock files, custom refs, or a separate state store.
+
+Missing Issue Type or labels do not block intake or claim. The `investigate-clio-issue` skill must set and verify exactly one relevant enabled Issue Type and at least one relevant existing repository label after diagnosis. Do not invent a type, create a label, or use a placeholder classification merely to satisfy the gate.
 
 The original issue's `Mitigation stage` is authoritative for the overall workflow. A closed issue needs no `Done` field value.
 
@@ -43,17 +46,17 @@ The provisioning contract is:
 - Name: `Mitigation stage`.
 - Type: `single_select`.
 - Visibility: `all` (Public).
-- Options, in order: `Investigating`, `Fixing`, `QA`, `Waiting for human approval`.
+- Required option names, regardless of order: `Investigating`, `Fixing`, `QA`, `Waiting for human approval`.
 - Pinned issue types: `Bug` and `Task`.
 
-Pinning is an administrator-facing presentation setting and is not returned by the issue-field REST list response. Treat it as provisioning guidance, not as a runtime readiness gate.
+Display order and pinning are administrator-facing presentation settings, not runtime readiness gates. The recommended display order is `Investigating`, `Fixing`, `QA`, `Waiting for human approval`. GitHub options carry a `priority` for display ordering; their position in the REST response array does not establish that order. Pinning is not returned by the issue-field REST list response.
 
-Before the first GitHub write in every workflow, perform one read-only readiness check. Stop without assigning, branching, or commenting unless the field exists with the required type, visibility, and all four exact option names. Report the mismatched property; do not try to repair organization settings.
+Before the first GitHub write in every workflow, perform one read-only readiness check. Stop without assigning, branching, or commenting unless the field exists with the required type, visibility, and all four exact option names. Check option names by membership, not by array position or priority. A different response order or display order must not block claiming an issue. Report the mismatched property; do not try to repair organization settings.
 
 Read and update it through GitHub's issue-field REST API:
 
 1. Send `X-GitHub-Api-Version: 2026-03-10` on every issue-field request.
-2. `GET /orgs/Advance-Technologies-Foundation/issue-fields`; select the exact field name and verify the provisioning contract. Resolve the field id dynamically; do not hardcode it.
+2. `GET /orgs/Advance-Technologies-Foundation/issue-fields`; select the exact field name and perform the readiness check above. Resolve the field id dynamically; do not hardcode it.
 3. `POST /repos/OWNER/REPO/issues/NUMBER/issue-field-values` with only `{"issue_field_values":[{"field_id":FIELD_ID,"value":"STAGE"}]}`. Do not use `PUT`, which replaces all issue-field values.
 4. `GET /repos/OWNER/REPO/issues/NUMBER/issue-field-values` and verify the stored value.
 
@@ -63,4 +66,4 @@ If the field, option, permission, or API support is missing, report the exact fa
 
 Report the original issue, assignee, current stage, linked branch or PR, owning repositories, blocking downstream issues, validation state, and any genuine human decision still required.
 
-Do not add coordination artifacts beyond the assignee, stage field, Development link, issue relationships, and normal issue or PR comments required to explain a blocker.
+Do not add coordination artifacts beyond the assignee, Issue Type, labels, stage field, Development link, issue relationships, and normal issue or PR comments required to explain a blocker.

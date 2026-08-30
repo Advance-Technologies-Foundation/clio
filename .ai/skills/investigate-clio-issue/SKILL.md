@@ -27,7 +27,18 @@ Confirm that the original issue is open, assigned to the current GitHub user, li
    - Insufficient evidence.
 7. Form the smallest evidence-backed diagnosis and explicit acceptance criteria.
 
-If the Collab MCP server is available, engage the other coding agent after forming the initial diagnosis: Claude when running as Codex, or Codex when running as Claude. Ask for an independent, read-only challenge to the root cause, repository ownership, missing evidence, and smallest sufficient repair. Verify its claims locally and distinguish accepted, rejected, and unresolved findings. If Collab is unavailable, record that and continue; cross-agent consultation is conditional, not a blocker.
+Do not routinely spend a cross-provider review during investigation. Engage the other coding agent only when the user explicitly requests it or a concrete high-risk ambiguity could materially change repository ownership or the repair: destructive/security/authentication behavior, concurrency, migration, public protocol compatibility, or unfamiliar Creatio platform behavior. Claude is the consultant when running as Codex; Codex is the consultant when running as Claude. Ask for a narrow, independent challenge to the current root cause and smallest repair, with concrete evidence rather than a broad audit. Verify its claims locally and distinguish accepted, rejected, and unresolved findings. If Collab is unavailable or quota-limited, record that and continue without retrying; investigation consultation is optional and is not a blocker.
+
+## Normalize issue metadata
+
+After the diagnosis is evidence-backed and before handing work to repair or another owner:
+
+1. Read the repository's current labels and the organization's enabled Issue Types. Do not rely on remembered names or ids.
+2. Set exactly one Issue Type that matches the diagnosis. Use `Bug` for a confirmed product defect and `Task` for actionable non-defect work when those enabled types apply; otherwise select the relevant enabled type without inventing one.
+3. Ensure the issue has at least one relevant existing repository label. For a confirmed Clio defect, apply the existing `bug` label as well as Issue Type `Bug`. Add labels that communicate the confirmed classification or affected area, remove labels contradicted by the diagnosis, and preserve other still-relevant labels.
+4. Re-read the issue and verify both the Issue Type and labels. Treat a successful write without matching readback as a failure.
+
+Missing metadata is allowed during intake and investigation, but a completed investigation cannot hand off to `Fixing`, downstream repair, or closure until this gate passes. If the evidence cannot support a relevant type or label, do not guess; keep the issue in `Investigating` or set `Waiting for human approval`, state the exact classification question, and report the metadata gate as unresolved.
 
 ## Route downstream work
 
@@ -35,8 +46,9 @@ For every repository that owns required work:
 
 1. Search for an existing issue before creating a duplicate.
 2. When no suitable issue exists, create one with the original Clio issue link, evidence, acceptance criteria, and exclusions when the target is owned by `Advance-Technologies-Foundation`. Require explicit user confirmation before writing to any third-party, customer-owned, or personal repository.
-3. Mark the original Clio issue as `blocked by` the downstream issue with `gh issue edit ORIGINAL --add-blocked-by DOWNSTREAM_URL`. Use `relates to` only when the downstream work is informative rather than required.
-4. Add a concise diagnosis comment to the original issue with the owning repository and downstream issue link. Do not duplicate the full downstream issue body.
+3. Before handoff, apply the same metadata normalization and readback gate to every existing or created downstream issue that owns repair work. If its repository has no relevant enabled Issue Type or existing label, or the workflow lacks authority to set them, stop and report the exact metadata blocker rather than starting repair from an unclassified issue.
+4. Mark the original Clio issue as `blocked by` the downstream issue with `gh issue edit ORIGINAL --add-blocked-by DOWNSTREAM_URL`. Use `relates to` only when the downstream work is informative rather than required.
+5. Add a concise diagnosis comment to the original issue with the owning repository and downstream issue link. Do not duplicate the full downstream issue body.
 
 Do not use parent-child relationships unless the original issue intentionally represents a larger planned body of work. For multiple required repositories, the original issue may be blocked by multiple downstream issues.
 
@@ -58,4 +70,4 @@ Set and verify the original issue's stage using the `clio-issue-workflow` skill:
 - `Waiting for human approval` when investigation is complete but a human decision, permission, or missing answer blocks progress.
 - `Investigating` only while evidence gathering can still continue without human input.
 
-Return the diagnosis, evidence, affected repositories, existing or created downstream issues, relationships added, proposed repair boundary, cross-agent contribution or unavailability, and unresolved questions.
+Return the diagnosis, evidence, verified Issue Type and labels, affected repositories, existing or created downstream issues, relationships added, proposed repair boundary, cross-agent contribution or unavailability, and unresolved questions.

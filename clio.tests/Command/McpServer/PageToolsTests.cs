@@ -785,7 +785,9 @@ public class PageToolsTests
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
 		var dataServiceResponse = new JObject {
 			["success"] = true,
-			["rows"] = new JArray()
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "MyPage", ["UId"] = "page-uid", ["PackageName"] = "MyPackage" }
+			}
 		};
 		applicationClient.ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -793,12 +795,128 @@ public class PageToolsTests
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "MyPackage", Limit = 50 };
 		command.TryListPages(options, out PageListResponse response);
-		// The data query returns zero rows (count 0 < limit 50), so the page is provably complete and
+		// The data query returns one row (count 1 < limit 50), so the page is provably complete and
 		// the supplementary count round-trip is skipped — only the single data query carries the filter.
 		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages cross-checks an empty package filter with a broader query and filters package names case-insensitively")]
+	public void TryListPages_ShouldCrossCheckBroaderQuery_WhenPackageFilterReturnsEmpty() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		};
+		var broaderResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "labReservation_FormPage", ["UId"] = "page-1", ["PackageName"] = "labFORENOM" },
+				new JObject { ["Name"] = "Other_FormPage", ["UId"] = "page-2", ["PackageName"] = "OtherPackage" }
+			}
+		};
+		List<string> requests = [];
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Do<string>(body => requests.Add(body)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(filteredResponse.ToString(), broaderResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labforenom", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the broader cross-check returned a page from the requested package");
+		response.Pages.Should().ContainSingle(
+			page => page.SchemaName == "labReservation_FormPage",
+			because: "package-name comparison should be ordinal-ignore-case and exclude other packages");
+		response.Total.Should().Be(1,
+			because: "the fallback total should count all locally matched package rows");
+		response.Truncated.Should().BeFalse(
+			because: "one matching page fits within the requested limit");
+		requests.Should().HaveCount(2,
+			because: "the broader query should run only after the filtered query returns no rows");
+		JObject.Parse(requests[0])["filters"]!["items"]!["PackageName"].Should().NotBeNull(
+			because: "the fast path should retain the server-side package filter");
+		JObject.Parse(requests[1])["filters"]!["items"]!["PackageName"].Should().BeNull(
+			because: "the fallback must remove the unreliable package filter before filtering locally");
+	}
+
+	[TestCase("{\"success\":false}")]
+	[TestCase("not-json")]
+	[TestCase("{\"success\":true}")]
+	[Description("TryListPages refuses to confirm an empty package when its broader verification response is unsuccessful or malformed")]
+	public void TryListPages_ShouldFail_WhenBroaderVerificationCannotBeRead(string fallbackResponse) {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		string filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		}.ToString();
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(filteredResponse, fallbackResponse);
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labFORENOM", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "absence cannot be confirmed when the broader verification response is unusable");
+		response.Success.Should().BeFalse(
+			because: "the response must not encode an unverified empty package as success");
+		response.Error.Should().Be(
+			"The package-filtered query returned no rows, and the broader verification query failed.",
+			because: "the caller needs an actionable but non-sensitive verification failure");
+	}
+
+	[Test]
+	[Description("TryListPages redacts fallback transport failures by returning a stable verification error")]
+	public void TryListPages_ShouldReturnStableError_WhenBroaderVerificationThrows() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		string filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		}.ToString();
+		int requestCount = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => ++requestCount == 1
+				? filteredResponse
+				: throw new System.Net.WebException("https://user:secret@example.test?token=sensitive"));
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labFORENOM", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a fallback transport exception prevents absence from being verified");
+		response.Error.Should().Be(
+			"The package-filtered query returned no rows, and the broader verification query failed.",
+			because: "connection details from the transport exception must not cross the command or MCP boundary");
+		response.Error.Should().NotContain("secret",
+			because: "credential material must not be exposed in the structured error");
 	}
 
 	[Test]

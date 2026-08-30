@@ -1,0 +1,20 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "ServiceSchemaManager",
+      "UId": "1f940603-3f2e-4da6-b1cc-13c8f31a3b4f",
+      "A2": "RestService_3_Base",
+      "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "6bbbf8ec-3042-49f8-b273-5eb50b9d2473",
+      "B8": "8.3.3.2060",
+      "IQ1": "http://localhost/rest3Base",
+      "IQ2": 1,
+      "IQ3": 5,
+      "IQ7": [],
+      "IQ4": []
+    }
+  }
+}
