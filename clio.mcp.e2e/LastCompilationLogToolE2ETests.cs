@@ -127,9 +127,9 @@ public sealed class LastCompilationLogToolE2ETests : McpContractFixtureBase {
 			response.Diagnostics.Should().NotBeNull(
 				because: "the typed MCP response must always carry a diagnostics collection, including when it is empty"));
 		AllureApi.Step("Assert every diagnostic retains its severity", () =>
-			response.Diagnostics.Should().OnlyContain(
-				diagnostic => diagnostic.Severity == "error" || diagnostic.Severity == "warning",
-				because: "every compiler diagnostic must retain its error or warning classification"));
+			response.Diagnostics.Should().NotContain(
+				diagnostic => diagnostic.Severity != "error" && diagnostic.Severity != "warning",
+				because: "every returned compiler diagnostic must retain its error or warning classification"));
 		AllureApi.Step("Assert compilation outcome is serialized explicitly", () =>
 			serializedResult.Should().Contain("compilation-succeeded",
 				because: "the clio-run response must serialize compilation outcome explicitly even when it is false"));
