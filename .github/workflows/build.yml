@@ -108,6 +108,29 @@ jobs:
             --filter "Category!=Integration" `
             -p:RunAnalyzers=false;
 
+  # ── ClioGate tests (only when the bundled service changes) ──────────
+  cliogate-tests:
+    name: ClioGate Tests
+    needs: changes
+    if: needs.changes.outputs.cliogate == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run ClioGate tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
+          dotnet test .\cliogate.tests\cliogate.tests.csproj `
+            --configuration Release;
+
   # ── Integration tests (run on PRs and master, after unit tests pass) ──
   integration-tests:
     name: Integration Tests

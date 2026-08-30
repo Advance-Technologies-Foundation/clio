@@ -10,7 +10,7 @@ namespace Clio.Command;
 #region Class: UnlockPackageOptions
 
 [Verb("unlock-package", Aliases = ["up"], HelpText = "Unlock package")]
-[RequiresPackage("cliogate", "2.0.0.42", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
+[RequiresPackage("cliogate", "2.0.0.48", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 public class UnlockPackageOptions : EnvironmentOptions{
 	#region Properties: Public
 
