@@ -1123,6 +1123,32 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			because: "find-entity-schema should return package-name and package-maintainer directly so callers can chain follow-up MCP requests without list-packages");
 	}
 
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Finds an entity schema through a case-insensitive substring search over the real MCP server.")]
+	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
+	[AllureName("Find entity schema supports substring discovery")]
+	[AllureDescription("Calls find-entity-schema with a case-insensitive substring of Contact and verifies that the structured MCP response contains the matching schema.")]
+	public async Task FindEntitySchema_Should_Return_Substring_Matches() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallFindEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			searchPattern: "ontac",
+			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaSearchResult[] results = EntitySchemaStructuredResultParser.Extract<EntitySchemaSearchResult[]>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"a valid substring search should return structured MCP data without a transport error. Content: {JsonSerializer.Serialize(callResult.Content)}");
+		results.Should().Contain(result =>
+			string.Equals(result.SchemaName, "Contact", StringComparison.OrdinalIgnoreCase),
+			because: "case-insensitive substring discovery should find the sandbox Contact schema");
+	}
+
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when find-entity-schema is invoked with an unknown environment name.")]
