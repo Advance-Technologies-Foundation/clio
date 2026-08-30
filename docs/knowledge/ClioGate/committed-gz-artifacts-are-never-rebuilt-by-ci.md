@@ -5,7 +5,7 @@ applies-to:
   - clio/cliogate/cliogate.gz
   - clio/cliogate/cliogate_netcore.gz
   - build.ps1
-date: 2026-08-23
+date: 2026-08-30
 ---
 
 **What is true** — `clio/cliogate/cliogate.gz` and `cliogate_netcore.gz` are the artifacts a user
@@ -30,3 +30,5 @@ where three merged fixes (an S1168 pair, the `DescribeAmbiguity` refusal rewrite
 payload for a symbol the change introduced, using an untouched sibling symbol as the sensitivity
 control. Rebuilding needs no version bump: `version.txt` and `descriptor.json` stay as they are
 unless the gate is being released.
+
+Re-verified while rebuilding both runtime archives for the package-file path-confinement release.

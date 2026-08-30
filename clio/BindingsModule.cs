@@ -726,6 +726,7 @@ public class BindingsModule {
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
+		services.AddTransient<PackageFileTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
