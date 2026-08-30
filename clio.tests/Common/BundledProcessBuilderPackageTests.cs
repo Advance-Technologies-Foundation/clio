@@ -71,11 +71,14 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.3</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.11</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95891-formula-expressions</c>, at commit
-	/// <c>bf0523413af978074cb47f5a7c3d4781b53d788a</c> — "ENG-95891: fix three defects the pre-PR review found,
-	/// two of them functional", the last commit of that branch to touch the package sources before the cut).
+	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
+	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
+	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
+	/// by hand. 1.4.0.9 is deliberately skipped: two different archives were cut under that number on the same
+	/// day, one from this branch and one from the branch that forks off it, so the number is burned and the gap
+	/// is cheaper than the ambiguity.
 	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
@@ -84,10 +87,10 @@ public class BundledProcessBuilderPackageTests {
 	/// case found, and each raised so a stand still carrying an earlier one is DETECTABLY behind — same-version
 	/// re-cuts make equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
-	/// ONE of the two prescribed cross-checks was re-run for this cut, and saying which matters more than the
-	/// reassurance: the <c>ModifiedOnUtc</c> pinned below was read out of that commit's <c>descriptor.json</c>
-	/// and equals it. The byte-for-byte comparison of every archive entry against the commit's CHECKOUT
-	/// rendering was NOT re-run here. It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
+	/// The cut ran with the package's own gate tests (958 passing) rather than under <c>-SkipTests</c>, and the
+	/// script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
+	/// against the commit's CHECKOUT rendering was NOT re-run here; the clean-tree refusal now covers the
+	/// failure that check was added for. It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
 	/// where a checkout on a <c>core.autocrlf=true</c> host produces CRLF, an archive corresponding to no commit
 	/// at all — so re-run the line-ending audit whenever the archive is cut from a tree with just-written files,
 	/// and do not read its absence here as a clean result.
@@ -127,7 +130,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"369624C8A3A996A3DA5824282A0BD83D02E903346D54988CFDFAF581234ED8B4";
+		"6D65265CE56FE8B8CDC62DBE27FC842E98E48C1DC074C5FC0A610EB3A560CF15";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -155,7 +158,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.0.3";
+	private const string ExpectedArchiveVersion = "1.4.0.11";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -167,7 +170,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "bf0523413af978074cb47f5a7c3d4781b53d788a";
+	private const string ExpectedProducingCommit = "6de30841df2f48c502b18a7ccd1c030426751e3c";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -193,7 +196,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1787999048000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788112949000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
