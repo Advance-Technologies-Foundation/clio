@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using Clio.Common;
 using FluentAssertions;
@@ -38,10 +39,36 @@ public class PropsBuilder_Tests
 				<PackageReference Include=""ATF.Repository"" Version=""2.0.1.5"" />
 			</ItemGroup>
 		</Project>";
+	private static readonly Func<string> MockCsProjWithConditionalReferences = () => @"
+		<Project Sdk=""Microsoft.NET.Sdk"">
+			<PropertyGroup>
+				<TargetFrameworks>net472;netstandard2.0</TargetFrameworks>
+			</PropertyGroup>
+			<ItemGroup>
+				<Reference Condition=""'$(TargetFramework)' == 'net472'"" Include=""System.Text.Json"">
+					<HintPath>$(CoreLibPath)/System.Text.Json.dll</HintPath>
+				</Reference>
+				<PackageReference Condition=""'$(TargetFramework)' == 'netstandard2.0'"" Include=""System.Text.Json"" Version=""8.0.0"" />
+				<Reference Include=""Terrasoft.Common"">
+					<HintPath>$(CoreLibPath)/Terrasoft.Common.dll</HintPath>
+				</Reference>
+			</ItemGroup>
+			<Choose>
+				<When Condition=""'$(TargetFramework)' == 'net472'"">
+					<ItemGroup>
+						<Reference Include=""Castle.Core"">
+							<HintPath>$(CoreLibPath)/Castle.Core.dll</HintPath>
+						</Reference>
+					</ItemGroup>
+				</When>
+			</Choose>
+		</Project>";
+
 	#region Setup/Teardown
 
 	[SetUp]
 	public void SetUp(){
+		_writtenPropsFiles.Clear();
 		_fileSystem = Substitute.For<IFileSystem>();
 		_fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		_logger = Substitute.For<ILogger>();
@@ -65,6 +92,7 @@ public class PropsBuilder_Tests
 	private IFileSystem _fileSystem;
 	private ILogger _logger;
 	private IWorkspacePathBuilder _workspacePathBuilder;
+	private readonly Dictionary<string, string> _writtenPropsFiles = new();
 
 	#endregion
 
@@ -210,5 +238,64 @@ public class PropsBuilder_Tests
 	private static string ExpectedPropsPath(string moniker) =>
 		Path.Combine(RootPath, PackageFolderPath, PackageName, "Files",
 			$"{PackageName}-{moniker}.nuget.props");
+
+	[Test]
+	[Description("References a dll that is only declared for another target framework (issue 1283)")]
+	public void Build_ReferencesDll_When_ExistingReferenceIsScopedToAnotherTargetFramework(){
+		//Arrange
+		MockConditionalCsProjAndTemplateReads();
+		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
+			.Returns(ci => [
+				Path.Combine(ci.ArgAt<string>(0), "System.Text.Json.dll"),
+				Path.Combine(ci.ArgAt<string>(0), "Castle.Core.dll"),
+				Path.Combine(ci.ArgAt<string>(0), "Terrasoft.Common.dll")
+			]);
+
+		//Act
+		_sut.Build(PackageName);
+
+		//Assert
+		string netStandardProps = CapturedPropsContent("netstandard");
+		netStandardProps.Should().Contain("System.Text.Json",
+			because: "the existing reference to it applies to net472 only");
+		netStandardProps.Should().Contain("Castle.Core",
+			because: "its reference lives in a Choose/When scoped to net472");
+	}
+
+	[Test]
+	[Description("Skips a dll that is already referenced for the target framework being built (issue 1283)")]
+	public void Build_SkipsDll_When_ExistingReferenceAppliesToTargetFramework(){
+		//Arrange
+		MockConditionalCsProjAndTemplateReads();
+		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
+			.Returns(ci => [
+				Path.Combine(ci.ArgAt<string>(0), "System.Text.Json.dll"),
+				Path.Combine(ci.ArgAt<string>(0), "Terrasoft.Common.dll")
+			]);
+
+		//Act
+		_sut.Build(PackageName);
+
+		//Assert
+		string net472Props = CapturedPropsContent("net472");
+		net472Props.Should().NotContain("System.Text.Json",
+			because: "it is already referenced under a matching net472 condition");
+		net472Props.Should().NotContain("Terrasoft.Common",
+			because: "it is referenced unconditionally, so it applies to net472 too");
+	}
+
+	private string CapturedPropsContent(string moniker) =>
+		_writtenPropsFiles.TryGetValue(ExpectedPropsPath(moniker), out string content)
+			? content
+			: string.Empty;
+
+	private void MockConditionalCsProjAndTemplateReads(){
+		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
+			.Do(ci => _writtenPropsFiles[ci.ArgAt<string>(0)] = ci.ArgAt<string>(1));
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".tpl")))
+			.Returns(MockPropItemTemplate);
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".csproj")))
+			.Returns(MockCsProjWithConditionalReferences());
+	}
 
 }
