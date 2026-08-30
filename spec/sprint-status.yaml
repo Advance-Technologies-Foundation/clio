@@ -2830,8 +2830,11 @@ stories:
       S4 (clio half), S7 and S9 on branch feature/ENG-95891-formula-expressions. DescribedFlow.condition
       (mandatory - no JsonExtensionData bag), setFlowCondition documented on the modify tool/prompt/capability
       map, the phantom described-parameter 'expression' field corrected on both surfaces, CrtProcessBuilder
-      rebundled at 1.4.0.0 with pins refreshed, and the create/modify [RequiresPackage] literals raised to
-      1.4.0.0 for a new operation plus a tightened validator. e2e added (not in CI, needs a stand).
+      rebundled at 1.4.0.3 with pins refreshed, and the create/modify [RequiresPackage] literals raised to
+      1.4.0.3 for a new operation plus a tightened validator. e2e added (not in CI, needs a stand).
+      1.4.0.4 through 1.4.0.8 exist on stands from the ENG-96176 branch that forks off this one; none of
+      them changes formula behaviour (the only edit to the validator in that range is a doc comment and one
+      message reworded), so the 1.4.0.3 floor is the version the tightened validator actually ships in.
       ClioRing compatibility reviewed, no Ring-consumed contract changed.
     depends_on:
       - story-eng-95891-formula-expressions-1

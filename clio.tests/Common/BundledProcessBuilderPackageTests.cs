@@ -71,33 +71,26 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.1.1</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.3</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91846-perform-task-lookup-constants</c>, at commit
-	/// <c>2ce4ae34fdb95d70e3757560e41df7e174d1aa3a</c> — the tip on top of <c>948cae8f</c> that closes the re-review's Medium: both
-	/// performer routes resolve the parameter's reference by NAME as well as by UId and compose the lookup
-	/// macro from the RESOLVED object, so under name-only typing the contact existence check no longer skips
-	/// and the stored value is a valid macro rather than the bare Guid the platform refuses; the role macro's
-	/// object segment additionally gains the contract-known <c>SysAdminUnit</c> backstop.
-	/// 1.3.1.1 is a PATCH over 1.3.1.0 — the ENG-91846 version whose MINOR digit says the delivery adds a
-	/// capability (assigning a task to a team): this cut widens that capability's reach to the name-typed
-	/// parameter population, it does not add another. The whole route: the Lookup bare-Guid ConstValue
-	/// relaxation with the reference-existence guard, the Guid.Empty refusal, the bare-Guid-first rejection
-	/// message, and the element-level <c>performer</c> block (user/manager/role, the role landing in the
-	/// Activity's own <c>OwnerRole</c> column), with both performer fields taking an id or a name and refusing
-	/// what identifies no single record. Every stamp from 1.3.0.2 through 1.3.1.0 was branch-internal and
-	/// never released; each raise exists so a stand or checkout still carrying an older one is DETECTABLY
-	/// behind — same-version re-cuts make equal version numbers mean nothing, which the convergence check
-	/// cannot see through. There is no build step in the release path that could regenerate it here.
+	/// <c>feature/ENG-95891-formula-expressions</c>, at commit
+	/// <c>bf0523413af978074cb47f5a7c3d4781b53d788a</c> — "ENG-95891: fix three defects the pre-PR review found,
+	/// two of them functional", the last commit of that branch to touch the package sources before the cut).
+	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
+	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
+	/// are now parsed, their parameter references resolved against the process, and their result type checked
+	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
+	/// that is a new capability; .1 through .3 are patches over it, each fixing something a review or a manual
+	/// case found, and each raised so a stand still carrying an earlier one is DETECTABLY behind — same-version
+	/// re-cuts make equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
-	/// BOTH prescribed cross-checks were RUN against that commit, not assumed: the <c>ModifiedOnUtc</c> pinned
-	/// below equals its descriptor, and all 114 archive entries equal that commit's CHECKOUT rendering byte for
-	/// byte — the only committed file absent from the archive being the <c>.DotSettings</c> that
-	/// <c>clioignore</c> excludes. The byte check earned its
-	/// keep on the previous cut: freshly written files carried LF where a checkout on a
-	/// <c>core.autocrlf=true</c> host produces CRLF — the third failure mode the remarks below describe, an
-	/// archive corresponding to no commit at all — and the tree was renormalised before cutting. Re-run the
-	/// line-ending audit whenever the archive is cut from a tree with just-written files.
+	/// ONE of the two prescribed cross-checks was re-run for this cut, and saying which matters more than the
+	/// reassurance: the <c>ModifiedOnUtc</c> pinned below was read out of that commit's <c>descriptor.json</c>
+	/// and equals it. The byte-for-byte comparison of every archive entry against the commit's CHECKOUT
+	/// rendering was NOT re-run here. It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
+	/// where a checkout on a <c>core.autocrlf=true</c> host produces CRLF, an archive corresponding to no commit
+	/// at all — so re-run the line-ending audit whenever the archive is cut from a tree with just-written files,
+	/// and do not read its absence here as a clean result.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>

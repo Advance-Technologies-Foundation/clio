@@ -35,7 +35,7 @@ public static class ModifyBusinessProcessPrompt {
 		 (`source` + `target` + a non-empty `condition`) turns an existing plain flow into a CONDITIONAL branch in
 		 place, keeping its position, which decides precedence: sibling branches off one element are evaluated in
 		 the order their flows were added and the first true one wins. No gateway is needed — the platform
-		 synthesizes one. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
+		 synthesizes one for a conditional flow whose source is an activity. The condition must be a bool (an int is refused; the interpreted engine does not coerce)
 		 and every `[#…#]` parameter reference in it must resolve in that process; an EMPTY condition is refused
 		 because the platform stores one as the literal `true`. `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger

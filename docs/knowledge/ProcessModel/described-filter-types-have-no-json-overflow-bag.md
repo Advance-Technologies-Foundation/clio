@@ -1,5 +1,5 @@
 ---
-description: DescribedFilter / DescribedFilterGroup / DescribedFilterCondition in IProcessDescriber.cs carry no [JsonExtensionData], so a filter field the ProcessBuilder package emits and clio does not declare is dropped on re-serialize with no error
+description: DescribedFilter / DescribedFilterGroup / DescribedFilterCondition / DescribedFlow in IProcessDescriber.cs carry no [JsonExtensionData], so a filter or flow field the ProcessBuilder package emits and clio does not declare is dropped on re-serialize with no error
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
@@ -27,3 +27,5 @@ dropped member, so the condition simply reads back incomplete — which looks li
 to persist it. This already happened live to macro read-back with green unit tests on both sides; the
 same property was added pre-emptively for `datePart`. A DTO change also needs clio rebuilt and the
 MCP server restarted, or a stale process keeps serving the old shape.
+
+**Widened by ENG-95891.** `DescribedFlow` joined the same shape when it gained `condition`: the package emits a flow's condition text, clio declares one property for it, and anything else the package starts emitting on a flow — a label, a precedence hint — vanishes the same silent way. The next field added to a flow needs a property here, not just a read on the server side.

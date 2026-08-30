@@ -597,11 +597,11 @@ public sealed class DescribedFilterElementRef {
 
 /// <summary>A sequence flow between two nodes.</summary>
 public sealed class DescribedFlow {
-	/// <summary>Source node UId.</summary>
+	/// <summary>Source node NAME — not its UId, despite what an earlier revision of this comment said.</summary>
 	[JsonPropertyName("source")]
 	public string Source { get; set; }
 
-	/// <summary>Target node UId.</summary>
+	/// <summary>Target node NAME — not its UId, despite what an earlier revision of this comment said.</summary>
 	[JsonPropertyName("target")]
 	public string Target { get; set; }
 
