@@ -41,13 +41,30 @@ function Get-FixtureDurations {
             }
         }
 
-        foreach ($result in $trx.SelectNodes("//t:Results/t:UnitTestResult", $namespace)) {
+        $results = @($trx.SelectNodes("//t:Results/t:UnitTestResult", $namespace))
+        $recordedSeconds = 0.0
+        foreach ($result in $results) {
+            if ($result.duration) {
+                $recordedSeconds += [TimeSpan]::Parse([string]$result.duration).TotalSeconds
+            }
+        }
+        $startedAt = [DateTimeOffset]::Parse([string]$trx.TestRun.Times.start)
+        $finishedAt = [DateTimeOffset]::Parse([string]$trx.TestRun.Times.finish)
+        $wallSeconds = ($finishedAt - $startedAt).TotalSeconds
+        $unattributedPerTestSeconds = if ($results.Count -gt 0) {
+            [Math]::Max(0.0, $wallSeconds - $recordedSeconds) / $results.Count
+        }
+        else {
+            0.0
+        }
+
+        foreach ($result in $results) {
             $fixture = $fixtureByTestId[[string]$result.testId]
             if ([string]::IsNullOrWhiteSpace($fixture)) {
                 continue
             }
             $duration = if ($result.duration) { [TimeSpan]::Parse([string]$result.duration).TotalSeconds } else { 0.0 }
-            $secondsByFixture[$fixture] += $duration
+            $secondsByFixture[$fixture] += $duration + $unattributedPerTestSeconds
         }
     }
 
