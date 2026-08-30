@@ -270,7 +270,10 @@ public class PropsBuilder_Tests
 		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
 			.Returns(ci => [
 				Path.Combine(ci.ArgAt<string>(0), "System.Text.Json.dll"),
-				Path.Combine(ci.ArgAt<string>(0), "Terrasoft.Common.dll")
+				Path.Combine(ci.ArgAt<string>(0), "Terrasoft.Common.dll"),
+				//An unreferenced dll, so the props file is written and the assertions below
+				//are made against real content instead of a file that never existed
+				Path.Combine(ci.ArgAt<string>(0), "ATF.Repository.dll")
 			]);
 
 		//Act
@@ -278,16 +281,21 @@ public class PropsBuilder_Tests
 
 		//Assert
 		string net472Props = CapturedPropsContent("net472");
+		net472Props.Should().Contain("ATF.Repository",
+			because: "an unreferenced dll must be written into the props file");
 		net472Props.Should().NotContain("System.Text.Json",
 			because: "it is already referenced under a matching net472 condition");
 		net472Props.Should().NotContain("Terrasoft.Common",
 			because: "it is referenced unconditionally, so it applies to net472 too");
 	}
 
-	private string CapturedPropsContent(string moniker) =>
-		_writtenPropsFiles.TryGetValue(ExpectedPropsPath(moniker), out string content)
-			? content
-			: string.Empty;
+	private string CapturedPropsContent(string moniker){
+		//Returning string.Empty for a file that was never written would turn "nothing was
+		//written" into a passing NotContain assertion
+		_writtenPropsFiles.TryGetValue(ExpectedPropsPath(moniker), out string content).Should().BeTrue(
+			because: $"the {moniker} props file had to be written for this assertion to mean anything");
+		return content;
+	}
 
 	private void MockConditionalCsProjAndTemplateReads(){
 		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
@@ -296,6 +304,73 @@ public class PropsBuilder_Tests
 			.Returns(MockPropItemTemplate);
 		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".csproj")))
 			.Returns(MockCsProjWithConditionalReferences());
+	}
+
+	[TestCase("'$(TargetFramework)' == 'net472' Or '$(TargetFramework)' == 'netstandard2.0'")]
+	[TestCase("!('$(TargetFramework)' == 'net472')")]
+	[TestCase("'$(TargetFramework)' == 'net472' And '$(Configuration)' == 'Debug'")]
+	[TestCase("'$(TargetFrameworkVersion)' == 'v4.7.2'")]
+	[Description("Writes the dll into the props file when the existing reference carries a condition clio cannot evaluate (issue 1283)")]
+	public void Build_ReferencesDll_When_ConditionCannotBeEvaluated(string condition){
+		//Arrange
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".tpl"))).Returns(MockPropItemTemplate);
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".csproj"))).Returns($@"
+			<Project Sdk=""Microsoft.NET.Sdk"">
+				<ItemGroup>
+					<Reference Condition=""{condition}"" Include=""ATF.Repository"">
+						<HintPath>$(CoreLibPath)/ATF.Repository.dll</HintPath>
+					</Reference>
+				</ItemGroup>
+			</Project>");
+		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
+			.Do(ci => _writtenPropsFiles[ci.ArgAt<string>(0)] = ci.ArgAt<string>(1));
+		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
+			.Returns(ci => [Path.Combine(ci.ArgAt<string>(0), "ATF.Repository.dll")]);
+
+		//Act
+		_sut.Build(PackageName);
+
+		//Assert
+		CapturedPropsContent("net472").Should().Contain("ATF.Repository",
+			because: "a duplicate reference is an MSBuild warning, while a missing one is a "
+				+ "compile error, so an unreadable condition must not drop the dependency");
+	}
+
+	[TestCase("'net472' == '$(TargetFramework)'")]
+	[TestCase("  '$(TargetFramework)'=='net472'  ")]
+	[TestCase("'$(TargetFramework)' != 'netstandard2.0'")]
+	[Description("Understands the operand orders, spacing and negation of a simple target-framework condition (issue 1283)")]
+	public void Build_SkipsDll_When_SimpleConditionMatchesTargetFramework(string condition){
+		//Arrange
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".tpl"))).Returns(MockPropItemTemplate);
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".csproj"))).Returns($@"
+			<Project Sdk=""Microsoft.NET.Sdk"">
+				<ItemGroup>
+					<Reference Condition=""{condition}"" Include=""ATF.Repository"">
+						<HintPath>$(CoreLibPath)/ATF.Repository.dll</HintPath>
+					</Reference>
+					<Reference Include=""Castle.Core"">
+						<HintPath>$(CoreLibPath)/Castle.Core.dll</HintPath>
+					</Reference>
+				</ItemGroup>
+			</Project>");
+		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
+			.Do(ci => _writtenPropsFiles[ci.ArgAt<string>(0)] = ci.ArgAt<string>(1));
+		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
+			.Returns(ci => [
+				Path.Combine(ci.ArgAt<string>(0), "ATF.Repository.dll"),
+				Path.Combine(ci.ArgAt<string>(0), "Newtonsoft.Json.dll")
+			]);
+
+		//Act
+		_sut.Build(PackageName);
+
+		//Assert
+		string net472Props = CapturedPropsContent("net472");
+		net472Props.Should().NotContain("ATF.Repository",
+			because: "the condition resolves to net472, so the reference already applies");
+		net472Props.Should().Contain("Newtonsoft.Json",
+			because: "an unreferenced dll must still be written");
 	}
 
 }
