@@ -175,10 +175,11 @@ jobs:
     steps:
       - name: Preserve the required unit-test gate
         if: >-
-          (needs.changes.outputs.clio-src == 'true' ||
-           needs.changes.outputs.tests   == 'true' ||
-           github.ref == 'refs/heads/master') &&
-          needs.unit-test-shards.result != 'success'
+          needs.changes.result != 'success' ||
+          ((needs.changes.outputs.clio-src == 'true' ||
+            needs.changes.outputs.tests   == 'true' ||
+            github.ref == 'refs/heads/master') &&
+           needs.unit-test-shards.result != 'success')
         run: exit 1
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
@@ -263,10 +264,11 @@ jobs:
     steps:
       - name: Preserve the required integration-test gate
         if: >-
-          (needs.changes.outputs.clio-src == 'true' ||
-           needs.changes.outputs.tests   == 'true') &&
           github.event_name == 'pull_request' &&
-          needs.integration-test-shards.result != 'success'
+          (needs.changes.result != 'success' ||
+           ((needs.changes.outputs.clio-src == 'true' ||
+             needs.changes.outputs.tests   == 'true') &&
+            needs.integration-test-shards.result != 'success'))
         run: exit 1
 
   # ── Analyzer tests (only when analyzer code changes) ──────────────────
