@@ -15,7 +15,9 @@ NOTES
     A target framework without dependency dlls is skipped with a warning, and no
     <Import> is added for it, because MSBuild cannot import an empty props file.
     When no props file could be created at all, the csproj is left unchanged and
-    the command exits with code 1.
+    the command exits with code 1. A nuget package that contributes no assembly,
+    such as an analyzer, keeps its PackageReference. An unusable props file left
+    by an older clio version, and its import, are removed on the next run.
 
 EXAMPLES
     clio switch-nuget-to-dll-reference --help

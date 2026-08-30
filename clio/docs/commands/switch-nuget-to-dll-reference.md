@@ -31,8 +31,15 @@ references an analyzer or tooling-only NuGet package — no props file is writte
 no `<Import>` is added, because MSBuild fails the whole project when it imports a file with
 no root element. A warning names the skipped props file.
 
+A NuGet package that contributes no assembly at all — an analyzer, for example — keeps its
+`PackageReference` in the csproj instead of being commented out.
+
 When neither target framework produced a props file, the csproj is left completely unchanged
 and the command exits with code `1`.
+
+A package broken by a clio version older than this fix — an empty props file plus its `<Import>` —
+is repaired the next time the command runs against it: the unusable props file is deleted and its
+import removed, so the package builds again.
 
 ## Examples
 

@@ -151,8 +151,15 @@ public class NugetMaterializer : INugetMaterializer
 	private void UpdateCsProjFile(string packageName, IEnumerable<XElement> xElements, PropsBuildResult propsBuildResult){
 		bool needsBackUp = false;
 		
-		//comment out PackageReference from the main csproj file
+		//Comment out only the PackageReference elements that were actually materialized.
+		//A nuget package that produced no dll (an analyzer, for instance) is still needed.
 		foreach (XElement element in xElements) {
+			string nugetPackageName = element.Attribute("Include")?.Value;
+			if (!propsBuildResult.IsMaterialized(nugetPackageName)) {
+				_logger.WriteWarning($"Keeping the {nugetPackageName} package reference in the "
+					+ $"{_csprojPath} file, because it produced no assembly to reference");
+				continue;
+			}
 			needsBackUp = true;
 			XComment comment = new(element.ToString());
 			element.ReplaceWith(comment);
@@ -174,20 +181,74 @@ public class NugetMaterializer : INugetMaterializer
 	}
 
 	/// <summary>
+	/// Removes imports of props files that do not exist or are empty, and saves the csproj.
+	/// A clio version before the empty-props fix could leave such an import behind, and MSBuild
+	/// then fails the whole project with "Root element is missing" on every build.
+	/// </summary>
+	private void RepairUnusablePropsImports(string packageName){
+		if (_csproj is null) {
+			//The csproj is empty or could not be parsed; there is nothing to repair here
+			return;
+		}
+		
+		bool repaired = false;
+		foreach (string moniker in new[] {Net472Moniker, NetStandardMoniker}) {
+			string propsFileName = PropsBuildResult.BuildPropsFileName(packageName, moniker);
+			string propsFilePath = Path.Combine(Path.GetDirectoryName(_csprojPath) ?? string.Empty, propsFileName);
+			bool propsFileUsable = _fileSystem.ExistsFile(propsFilePath)
+				&& !string.IsNullOrWhiteSpace(_fileSystem.ReadAllText(propsFilePath));
+			if (propsFileUsable) {
+				continue;
+			}
+			_fileSystem.DeleteFileIfExists(propsFilePath);
+			repaired |= RemovePropsImport(propsFileName);
+		}
+		
+		if (!repaired) {
+			return;
+		}
+		
+		_logger.WriteInfo($"Creating csproj backup file {_csprojPath}.bak");
+		_fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
+		_csproj.Save(_csprojPath);
+	}
+
+	/// <summary>
+	/// Removes every Import element of the given props file from the csproj.
+	/// </summary>
+	/// <returns>True when the csproj was modified.</returns>
+	private bool RemovePropsImport(string propsFileName){
+		List<XElement> staleImports = _csproj.Descendants("Import")
+			.Where(e => e.Attribute("Project")?.Value == propsFileName)
+			.ToList();
+		
+		if (staleImports.Count == 0) {
+			return false;
+		}
+		
+		staleImports.ForEach(i => i.Remove());
+		_logger.WriteInfo($"Removed the {propsFileName} import from the {_csprojPath} file, "
+			+ "because the props file does not exist");
+		return true;
+	}
+
+	/// <summary>
 	/// Adds an Import element for the props file of the given moniker.
 	/// An import is added only when the props file was actually written; importing
 	/// a missing or empty props file makes MSBuild fail the whole project.
 	/// </summary>
 	/// <returns>True when the csproj was modified.</returns>
 	private bool AddPropsImport(string packageName, string moniker, bool propsFileCreated){
-		string propsFileName = $"{packageName}-{moniker}.nuget.props";
+		string propsFileName = PropsBuildResult.BuildPropsFileName(packageName, moniker);
 		string targetFramework = moniker == Net472Moniker ? Net472Moniker : NetStandardTargetFramework;
 		string condition = $"'$(TargetFramework)' == '{targetFramework}'";
 		
 		if (!propsFileCreated) {
 			_logger.WriteWarning($"Skipping {propsFileName} import in the {_csprojPath} file, " +
 				$"because the props file was not created");
-			return false;
+			//An import left by an earlier run now points at a file that no longer exists,
+			//and MSBuild fails the whole project on it.
+			return RemovePropsImport(propsFileName);
 		}
 		
 		bool importExists = _csproj.Descendants("Import")
@@ -219,6 +280,7 @@ public class NugetMaterializer : INugetMaterializer
 		IEnumerable<XElement> xElements = elements as XElement[] ?? elements.ToArray();
 		if (!xElements.Any()) {
 			_logger.WriteWarning($"Could not find any {Tag} references in the {_csprojPath} file");
+			RepairUnusablePropsImports(packageName);
 			return 1;
 		}
 

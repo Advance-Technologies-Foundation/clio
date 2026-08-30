@@ -43,6 +43,7 @@ public class PropsBuilder_Tests
 	[SetUp]
 	public void SetUp(){
 		_fileSystem = Substitute.For<IFileSystem>();
+		_fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		_logger = Substitute.For<ILogger>();
 		_workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		
@@ -109,6 +110,21 @@ public class PropsBuilder_Tests
 	}
 
 	[Test]
+	[Description("Reports no props and does not throw when the nuget bin folder does not exist (issue 263)")]
+	public void Build_ReturnsNoProps_When_BinFolderMissing(){
+		//Arrange
+		_fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(false);
+
+		//Act
+		PropsBuildResult actual = _sut.Build(PackageName);
+
+		//Assert
+		actual.HasAnyProps.Should().BeFalse(
+			because: "a nuget project that failed to build produces no bin folder to read");
+		_fileSystem.Received(0).GetFiles(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>());
+	}
+
+	[Test]
 	[Description("Does not write a props file when the moniker has no dependency dll (issue 263)")]
 	public void Build_DoesNotWritePropsFile_When_NoDllsFound(){
 		//Arrange
@@ -125,6 +141,8 @@ public class PropsBuilder_Tests
 			because: "there is nothing to reference for netstandard");
 		actual.HasAnyProps.Should().BeFalse(because: "no props file was written at all");
 		_fileSystem.Received(0).WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+		_fileSystem.Received(1).DeleteFileIfExists(Arg.Is(ExpectedPropsPath("net472")));
+		_fileSystem.Received(1).DeleteFileIfExists(Arg.Is(ExpectedPropsPath("netstandard")));
 	}
 
 	[Test]
@@ -146,6 +164,8 @@ public class PropsBuilder_Tests
 		actual.Net472PropsCreated.Should().BeTrue(because: "net472 has a dependency dll");
 		actual.NetStandardPropsCreated.Should().BeFalse(because: "netstandard has none");
 		actual.HasAnyProps.Should().BeTrue(because: "one props file was written");
+		actual.MaterializedAssemblies.Should().Contain("ATF.Repository",
+			because: "the copied assembly must be reported so its package reference can be commented out");
 		_fileSystem.Received(1).WriteAllTextToFile(
 			Arg.Is(ExpectedPropsPath("net472")),
 			Arg.Is<string>(c => c.Contains("<Project>") && c.Contains("ATF.Repository")));

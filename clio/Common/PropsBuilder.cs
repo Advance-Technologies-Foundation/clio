@@ -13,13 +13,35 @@ namespace Clio.Common;
 /// </summary>
 /// <param name="Net472PropsCreated">True when the net472 props file was written.</param>
 /// <param name="NetStandardPropsCreated">True when the netstandard props file was written.</param>
-public readonly record struct PropsBuildResult(bool Net472PropsCreated, bool NetStandardPropsCreated)
+/// <param name="MaterializedAssemblies">
+/// Names, without extension, of the assemblies actually copied into the package Libs folder.
+/// A nuget package that contributed nothing here is still needed as a PackageReference.
+/// </param>
+public readonly record struct PropsBuildResult(bool Net472PropsCreated, bool NetStandardPropsCreated,
+	IReadOnlyCollection<string> MaterializedAssemblies)
 {
 
 	/// <summary>
 	/// True when at least one props file was written.
 	/// </summary>
 	public bool HasAnyProps => Net472PropsCreated || NetStandardPropsCreated;
+
+	/// <summary>
+	/// True when the given nuget package name matches an assembly that was materialized.
+	/// </summary>
+	/// <param name="nugetPackageName">Nuget package name as written in the csproj.</param>
+	public bool IsMaterialized(string nugetPackageName) =>
+		MaterializedAssemblies is not null
+		&& MaterializedAssemblies.Contains(nugetPackageName, StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Builds the props file name clio generates for a package and a target moniker.
+	/// Both the props writer and the csproj import must derive the name here.
+	/// </summary>
+	/// <param name="packageName">Creatio package name.</param>
+	/// <param name="moniker">Target moniker: net472 or netstandard.</param>
+	public static string BuildPropsFileName(string packageName, string moniker) =>
+		$"{packageName}-{moniker}.nuget.props";
 
 }
 
@@ -113,21 +135,17 @@ public class PropsBuilder : IPropsBuilder
 
 	#region Methods: Private
 
-	private bool BuildNet472Props(string packageName){
-		string net472BinDir = GetPathTo(ItemType.Net472BinDir, packageName);
-		IEnumerable<string> net472Files = GetDependencyDlls(net472BinDir, packageName);
+	private bool BuildProps(string packageName, Moniker moniker, ICollection<string> materializedAssemblies){
+		ItemType binDirItem = moniker == Moniker.net472 ? ItemType.Net472BinDir : ItemType.NetStdBinDir;
+		ItemType propsFileItem = moniker == Moniker.net472
+			? ItemType.Net472PropsFilePath
+			: ItemType.NetStdPropsFilePath;
+		string binDir = GetPathTo(binDirItem, packageName);
+		IEnumerable<string> dlls = GetDependencyDlls(binDir, packageName);
 
-		string net472PropsContent = Process(net472Files, packageName, Moniker.net472);
-		string net472PropsFilePath = GetPathTo(ItemType.Net472PropsFilePath, packageName);
-		return SavePropsFile(net472PropsFilePath, net472PropsContent, Moniker.net472);
-	}
-	private bool BuildNetStdProps(string packageName){
-		string netStdBinDir = GetPathTo(ItemType.NetStdBinDir, packageName);
-		IEnumerable<string> netStdFiles = GetDependencyDlls(netStdBinDir, packageName);
-
-		string netStdPropsContent = Process(netStdFiles, packageName, Moniker.netstandard);
-		string netStdPropsFilePath = GetPathTo(ItemType.NetStdPropsFilePath, packageName);
-		return SavePropsFile(netStdPropsFilePath, netStdPropsContent, Moniker.netstandard);
+		string propsContent = Process(dlls, packageName, moniker, materializedAssemblies);
+		string propsFilePath = GetPathTo(propsFileItem, packageName);
+		return SavePropsFile(propsFilePath, propsContent, moniker);
 	}
 
 	/// <summary>
@@ -135,11 +153,18 @@ public class PropsBuilder : IPropsBuilder
 	/// Compares file names, so a dependency whose name merely ends with the package
 	/// name (Contoso.MyPkg.dll for package MyPkg) is kept.
 	/// </summary>
-	private IEnumerable<string> GetDependencyDlls(string binDir, string packageName) =>
-		_fileSystem
+	private IEnumerable<string> GetDependencyDlls(string binDir, string packageName){
+		if (!_fileSystem.ExistsDirectory(binDir)) {
+			//The nuget project failed to build for this moniker, or was never built.
+			//GetFiles would throw DirectoryNotFoundException and hide that.
+			_logger.WriteWarning($"Directory {binDir} does not exist, no dependencies to reference");
+			return Array.Empty<string>();
+		}
+		return _fileSystem
 			.GetFiles(binDir, "*.dll", SearchOption.TopDirectoryOnly)
 			.Where(f => !string.Equals(Path.GetFileNameWithoutExtension(f), packageName,
 				StringComparison.OrdinalIgnoreCase));
+	}
 
 	/// <summary>
 	/// Writes the props file, or reports that there is nothing to write.
@@ -149,6 +174,9 @@ public class PropsBuilder : IPropsBuilder
 	private bool SavePropsFile(string propsFilePath, string propsContent, Moniker moniker){
 		if (string.IsNullOrWhiteSpace(propsContent)) {
 			_logger.WriteWarning($"No {moniker} dependencies found, skipping {propsFilePath}");
+			//A props file left over from an earlier run no longer describes anything,
+			//and an empty one from a clio version before this fix breaks every build.
+			_fileSystem.DeleteFileIfExists(propsFilePath);
 			return false;
 		}
 		_logger.WriteLine("Saving props file to " + propsFilePath);
@@ -183,7 +211,8 @@ public class PropsBuilder : IPropsBuilder
 			Path.Combine(path, packageName, "bin", moniker.ToString());
 	}
 
-	private string Process(IEnumerable<string> dlls, string packageName, Moniker moniker){
+	private string Process(IEnumerable<string> dlls, string packageName, Moniker moniker,
+		ICollection<string> materializedAssemblies){
 		IEnumerable<string> enumerableDlls = dlls as string[] ?? dlls.ToArray();
 		if (!enumerableDlls.Any()) {
 			return string.Empty;
@@ -228,6 +257,7 @@ public class PropsBuilder : IPropsBuilder
 			};
 			string fullDllPath = Path.Combine(binFolder, dll);
 			_fileSystem.CopyFiles(new[] {fullDllPath}, destinationFolder, true);
+			materializedAssemblies.Add(dllName);
 		}
 		sb.AppendLine("</Project>");
 		return sb.ToString();
@@ -238,9 +268,10 @@ public class PropsBuilder : IPropsBuilder
 	#region Methods: Public
 
 	public PropsBuildResult Build(string packageName){
-		bool net472PropsCreated = BuildNet472Props(packageName);
-		bool netStandardPropsCreated = BuildNetStdProps(packageName);
-		return new PropsBuildResult(net472PropsCreated, netStandardPropsCreated);
+		HashSet<string> materializedAssemblies = new(StringComparer.OrdinalIgnoreCase);
+		bool net472PropsCreated = BuildProps(packageName, Moniker.net472, materializedAssemblies);
+		bool netStandardPropsCreated = BuildProps(packageName, Moniker.netstandard, materializedAssemblies);
+		return new PropsBuildResult(net472PropsCreated, netStandardPropsCreated, materializedAssemblies);
 	}
 
 	#endregion

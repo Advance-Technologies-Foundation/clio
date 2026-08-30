@@ -25,6 +25,10 @@ target moniker. An analyzer or tooling-only package (`StyleCop.Analyzers`), or a
 single moniker, leaves `.nuget/<Pkg>/bin/<moniker>` with nothing to reference. Before this was
 handled, `Process` returned an empty string and the file was written anyway.
 
+A package already broken this way is repaired on the next run: `RepairUnusablePropsImports` deletes
+the unusable props file and removes its import even when every `PackageReference` is already
+commented out and there is nothing left to materialize.
+
 **What breaks if you ignore it** — `switch-nuget-to-dll-reference` reports success, and the package
 it just converted no longer builds at all: every build of that csproj dies at project-load time,
 before any target runs. The user gets no warning connecting the broken build to the command.
