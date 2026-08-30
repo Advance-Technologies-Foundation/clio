@@ -13,7 +13,7 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 
 	/// <summary>
 	/// Prefix of the message <c>Creatio.Client.CreatioClient.Login()</c> throws when the login response
-	/// body contains <c>"Code":1</c> (verified against creatio.client 1.0.38, which builds it as
+	/// body contains <c>"Code":1</c> (verified against creatio.client 1.0.40, which builds it as
 	/// <c>"Unauthorized " + userName + " for " + AppUrl</c>). Matching it is how an implicit login
 	/// rejection is told apart from an ordinary request failure — the NuGet client offers no typed
 	/// signal for it. A future client that reworded the message would simply stop the implicit-login
