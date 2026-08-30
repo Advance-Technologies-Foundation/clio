@@ -149,14 +149,15 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 			"the fallback request must remove the unreliable contains filter before filtering locally");
 	}
 
-	[Test]
-	[Description("FindSchemas refuses to confirm absence when the broader cross-check reaches its safety bound without a match.")]
-	public void FindSchemas_ShouldThrow_WhenBroaderCrossCheckReachesSafetyBoundWithoutMatch() {
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("FindSchemas refuses to return an incomplete result when the broader cross-check reaches its safety bound.")]
+	public void FindSchemas_ShouldThrow_WhenBroaderCrossCheckReachesSafetyBound(bool includesMatch) {
 		// Arrange
 		FindEntitySchemaOptions options = new() { SearchPattern = "missing" };
 		IEnumerable<FindSchemaRow> cappedRows = Enumerable.Range(0, 10000)
 			.Select(index => new FindSchemaRow(
-				$"UsrSchema{index}",
+				includesMatch && index == 0 ? "UsrMissingSchema" : $"UsrSchema{index}",
 				Guid.NewGuid().ToString(),
 				"UsrPackage",
 				"Advance",
@@ -170,7 +171,7 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
-			because: "a saturated broader query cannot prove that a non-returned schema is absent")
+			because: "a saturated broader query cannot prove that all matching schemas were returned")
 			.WithMessage("*10000-row safety bound*--schema-name or --uid*",
 				because: "the failure should explain the bound and direct callers to an exact lookup");
 	}

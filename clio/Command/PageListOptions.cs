@@ -106,7 +106,10 @@ namespace Clio.Command {
 							options.UId,
 							EmptyFilterFallbackRowCount);
 					}
-					catch (Exception) {
+					catch (Exception exception) when (exception is System.Net.Http.HttpRequestException
+						or System.Net.WebException
+						or TimeoutException
+						or Newtonsoft.Json.JsonException) {
 						broaderPages = null;
 					}
 					if (broaderPages is null) {

@@ -122,9 +122,9 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 			results = broaderResults
 				.Where(result => result.SchemaName.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
 				.ToList();
-			if (results.Count == 0 && broaderResults.Count >= EmptyFilterFallbackRowCount) {
+			if (broaderResults.Count >= EmptyFilterFallbackRowCount) {
 				throw new InvalidOperationException(
-					$"No match for search pattern '{searchPattern}' could be confirmed because the broader verification query reached its {EmptyFilterFallbackRowCount}-row safety bound. Use --schema-name or --uid for an exact lookup.");
+					$"Complete results for search pattern '{searchPattern}' could not be confirmed because the broader verification query reached its {EmptyFilterFallbackRowCount}-row safety bound. Use --schema-name or --uid for an exact lookup.");
 			}
 		}
 		return results;

@@ -14,7 +14,7 @@ clio find-entity-schema --uid <guid> -e <env>
 
 Searches for entity schemas in the remote Creatio environment using DataService queries on `SysSchema`. Returns schema name, owning package, package maintainer, and parent schema for every match.
 
-A substring search normally uses one filtered query. If Creatio returns no rows, clio cross-checks once with a broader query and filters schema names locally before reporting that no matching schema exists. If the broader query reaches its 10,000-row safety bound without a match, the command fails instead of claiming the schema is absent; use `--schema-name` or `--uid` for an exact lookup.
+A substring search normally uses one filtered query. If Creatio returns no rows, clio cross-checks once with a broader query and filters schema names locally before reporting that no matching schema exists. If the broader query reaches its 10,000-row safety bound, the command fails instead of returning a potentially incomplete result; use `--schema-name` or `--uid` for an exact lookup.
 
 Exactly one of `--schema-name`, `--search-pattern`, or `--uid` must be provided.
 

@@ -647,7 +647,7 @@ public class PageToolsTests
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "MyPackage", Limit = 50 };
 		command.TryListPages(options, out PageListResponse response);
-		// The data query returns zero rows (count 0 < limit 50), so the page is provably complete and
+		// The data query returns one row (count 1 < limit 50), so the page is provably complete and
 		// the supplementary count round-trip is skipped — only the single data query carries the filter.
 		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
@@ -754,7 +754,7 @@ public class PageToolsTests
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(_ => ++requestCount == 1
 				? filteredResponse
-				: throw new InvalidOperationException("https://user:secret@example.test?token=sensitive"));
+				: throw new System.Net.WebException("https://user:secret@example.test?token=sensitive"));
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "labFORENOM", Limit = 50 };
 
