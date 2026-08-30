@@ -116,7 +116,7 @@ jobs:
       needs.changes.outputs.cliogate == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     # ClioGate restores Creatio packages from the private Nexus feed, which is unreachable from hosted runners.
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     permissions:
       contents: read
     steps:
