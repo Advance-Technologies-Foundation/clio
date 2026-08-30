@@ -34,6 +34,7 @@ jobs:
       tests:       ${{ steps.filter.outputs.tests }}
       analyzers:   ${{ steps.filter.outputs.analyzers }}
       cliogate:    ${{ steps.filter.outputs.cliogate }}
+      use-kirill-runner: ${{ steps.plan.outputs.use-kirill-runner }}
       unit-matrix: ${{ steps.plan.outputs.unit-matrix }}
       integration-matrix: ${{ steps.plan.outputs.integration-matrix }}
     steps:
@@ -69,12 +70,23 @@ jobs:
         shell: pwsh
         env:
           TEST_SHARDING_DISABLED: ${{ vars.TEST_SHARDING_DISABLED }}
+          USE_KIRILL_RUNNER: >-
+            ${{
+              vars.KIRILL_RUNNER_ENABLED == 'true' &&
+              github.event_name == 'pull_request' &&
+              github.event.pull_request.user.login == 'kirillkrylov' &&
+              github.actor == 'kirillkrylov' &&
+              github.triggering_actor == 'kirillkrylov' &&
+              github.event.pull_request.head.repo.full_name == github.repository
+            }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $disabled = $env:TEST_SHARDING_DISABLED -eq 'true'
+          $useKirillRunner = $env:USE_KIRILL_RUNNER -eq 'true'
+          $disabled = $env:TEST_SHARDING_DISABLED -eq 'true' -or $useKirillRunner
           $arguments = if ($disabled) { @{ DisableSharding = $true } } else { @{} }
           $unit = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite unit @arguments
           $integration = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite integration @arguments
+          "use-kirill-runner=$($useKirillRunner.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "unit-matrix=$unit" >> $env:GITHUB_OUTPUT
           "integration-matrix=$integration" >> $env:GITHUB_OUTPUT
 
@@ -91,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.unit-matrix) }}
-    runs-on: windows-latest
+    runs-on: ${{ needs.changes.outputs.use-kirill-runner == 'true' && 'kirill-clio' || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -224,7 +236,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.integration-matrix) }}
-    runs-on: windows-latest
+    runs-on: ${{ needs.changes.outputs.use-kirill-runner == 'true' && 'kirill-clio' || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v5
         with:
