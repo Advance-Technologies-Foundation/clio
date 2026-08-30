@@ -122,6 +122,21 @@ Typical examples:
 - `list-environments`
 - `find-empty-iis-port`
 - `list-knowledge-examples`
+- `merge-creatio-artifact`
+
+`merge-creatio-artifact` is a resident, pure in-memory preview tool (`ReadOnly=true`,
+`Destructive=false`, `Idempotent=true`, `OpenWorld=false`). It accepts inline Git stage 1/2/3
+content and a repository-relative classification path; it never reads or changes a repository.
+It is present in MCP discovery by default.
+For recognized EntitySchema column type conflicts, `diagnostics` contains the exact question the
+agent must ask before selecting a marker side.
+Supported now: EntitySchema, ClientUnit, ServiceSchema, supported Addon metadata
+(AppearanceSettings, BusinessRule, RelatedPage, TimelineEntity), non-process descriptor/properties JSON,
+non-process resource XML, data bindings, and supported ClientUnit JavaScript. ProcessSchema metadata,
+descriptor, and resources, plus C# and SQL, return `status: not-implemented` with
+`Merge for <artifact-kind> is not implemented yet.` Unknown artifact shapes return
+`status: unsupported`. Metadata and data-binding calls also require inline resolved
+`descriptor-content`.
 
 ### 4. HTTP credential-passthrough edge (multi-tenant) + standard OAuth authorization
 

@@ -67,6 +67,51 @@ public sealed class ToolContractGetToolTests {
 			because: "the MCP tool name must stay stable for clients that bootstrap from the contract tool");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Publishes the explicit supported and not-implemented Creatio merge surface through get-tool-contract.")]
+	public void ToolContractGet_Should_Return_Canonical_Creatio_Merge_Contract() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			CreatioArtifactMergeTool.ToolName
+		]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.Name.Should().Be(CreatioArtifactMergeTool.ToolName,
+			because: "the resident merge tool must have a stable discoverable contract");
+		contract.InputSchema.Required.Should().BeEquivalentTo(
+			["artifact-path", "base-content", "ours-content", "theirs-content"],
+			because: "all three Git stages and the classification path are the minimal merge input");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain("descriptor-content",
+			because: "metadata and data bindings require explicit inline descriptor evidence");
+		contract.Description.Should().Contain("EntitySchema",
+			because: "agents must see the supported schema slice before calling");
+		contract.Description.Should().Contain("ProcessSchema metadata/descriptors/resources, C#, and SQL return status 'not-implemented'",
+			because: "agents must see the recognized roadmap exclusions before calling");
+		contract.Description.Should().Contain("Merge for <artifact-kind> is not implemented yet.",
+			because: "agents must see the exact roadmap refusal before calling");
+		contract.Description.Should().Contain("do not choose a side before the user answers",
+			because: "agents must preserve the human decision boundary for true semantic conflicts");
+		contract.OutputContract.Fields.Single(field => field.Name == "diagnostics").Description.Should()
+			.Contain("ready-to-ask question",
+				because: "the agent must know where the human-readable conflict question is returned");
+		contract.OutputContract.Fields.Single(field => field.Name == "status").Description.Should()
+			.Contain("resolved",
+				because: "the caller must branch on the documented domain-status set");
+		contract.OutputContract.Fields.Single(field => field.Name == "status").Description.Should()
+			.Contain("conflicts-remain",
+				because: "the caller must distinguish marker content from clean resolved content");
+		contract.OutputContract.Fields.Single(field => field.Name == "status").Description.Should()
+			.Contain("not-implemented",
+				because: "the caller must distinguish planned schema support from unknown shapes");
+		contract.Preconditions.Should().Contain(item => item.Contains("4 MiB", StringComparison.Ordinal),
+			because: "the bounded inline input contract should be discoverable before execution");
+	}
+
 	// Codex review #1 (PR #743): in lazy mode the long tail is hidden from tools/list but stays
 	// invokable via clio-run / clio-run-destructive. The review claimed high-impact hidden tools have
 	// NO discoverable contract. They DO: get-tool-contract resolves a contract entry for every one

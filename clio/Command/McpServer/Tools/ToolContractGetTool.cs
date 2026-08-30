@@ -581,6 +581,7 @@ internal static class ToolContractCatalog {
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
 		new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
+			[CreatioArtifactMergeTool.ToolName] = BuildCreatioArtifactMerge(),
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[ExecuteEsqTool.ToolName] = BuildExecuteEsq(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
@@ -658,6 +659,7 @@ internal static class ToolContractCatalog {
 
 	private static readonly string[] CanonicalToolNames = [
 		GuidanceGetTool.ToolName,
+		CreatioArtifactMergeTool.ToolName,
 		ExecuteEsqTool.ToolName,
 		SettingsHealthTool.ToolName,
 		GetTelemetryConsentTool.ToolName,
@@ -1083,6 +1085,65 @@ internal static class ToolContractCatalog {
 			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for full schemas before execution."),
 			[],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildCreatioArtifactMerge() {
+		return new ToolContractDefinition(
+			CreatioArtifactMergeTool.ToolName,
+			"Previews a semantic three-way merge from inline Git base, ours, and theirs content. " +
+			"Supported now: EntitySchema, ClientUnit, ServiceSchema, supported Addon metadata " +
+			"(AppearanceSettings, BusinessRule, RelatedPage, TimelineEntity), descriptor.json, " +
+			"properties.json, non-process resource XML, data bindings, and supported ClientUnit JavaScript. " +
+			"ProcessSchema metadata/descriptors/resources, C#, and SQL return status 'not-implemented' with the " +
+			"diagnostic 'Merge for <artifact-kind> is not implemented yet.' Unknown shapes return 'unsupported'. " +
+			"For a recognized EntitySchema column type conflict, diagnostics includes the exact question to ask the user; " +
+			"do not choose a side before the user answers. The tool is preview-only and never reads or changes a repository.",
+			new ToolInputSchemaContract(
+				["artifact-path", "base-content", "ours-content", "theirs-content"],
+				[
+					Field("artifact-path", StringType, "Safe repository-relative path used only to classify the artifact; rooted paths and '.' or '..' segments are rejected."),
+					Field("base-content", StringType, "Git stage 1 content."),
+					Field("ours-content", StringType, "Git stage 2 content."),
+					Field("theirs-content", StringType, "Git stage 3 content."),
+					Field("descriptor-content", StringType, "Resolved sibling descriptor.json content. Required for metadata and data-binding merges; supplied inline and never read from disk.")
+				]),
+			new ToolOutputContract(
+				"domain-status",
+				"status",
+				["status is invalid-input, unsupported, not-implemented, or busy"],
+				[
+					Field("status", StringType, "One of resolved, conflicts-remain, not-implemented, unsupported, invalid-input, or busy. Retry busy without changing input."),
+					Field("artifact-kind", StringType, "The explicit classified Creatio artifact kind."),
+					Field("resolver-version", StringType, "The embedded resolver assembly informational version."),
+					Field("content", StringType, "Present only for resolved or conflicts-remain outcomes."),
+					Field("report", ObjectType, "Stable semantic change and verification report."),
+					Field("diagnostics", ArrayType, "Caller-facing reasons for non-resolved outcomes, including a ready-to-ask question for recognized EntitySchema column type conflicts.")
+				]),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Preview an EntitySchema metadata merge", new Dictionary<string, object?> {
+					["artifact-path"] = "packages/MyPackage/Schemas/UsrOrder/metadata.json",
+					["base-content"] = "<git-stage-1-content>",
+					["ours-content"] = "<git-stage-2-content>",
+					["theirs-content"] = "<git-stage-3-content>",
+					["descriptor-content"] = "<resolved-descriptor-json>"
+				})
+			],
+			Flow([CreatioArtifactMergeTool.ToolName], "Call directly with inline Git stage content; write returned content to the worktree only after checking status."),
+			[],
+			[],
+			[
+				new ToolAntiPattern("Passing a repository path and expecting clio to read conflict stages or write the merge result.", "Extract Git stages in the agent, call this preview-only tool with inline content, then apply the returned content only when status is resolved or conflicts-remain."),
+				new ToolAntiPattern("Treating recognized ProcessSchema, C#, or SQL output as a generic resolver failure.", "Read status and artifact-kind; these types intentionally return not-implemented with an explicit diagnostic.")
+			],
+			[
+				"Combined UTF-8 input, including descriptor-content, must not exceed 4 MiB.",
+				"Flat metadata must not exceed 2,500 operations per Git stage.",
+				"Metadata identity (UId, Name, and ManagerName when present) must match descriptor-content across base, ours, and theirs.",
+				"Resolved content is returned only when resolver verification passes and no conflict marker remains."
+			]);
 	}
 
 	private static ToolContractDefinition BuildSettingsHealth() {

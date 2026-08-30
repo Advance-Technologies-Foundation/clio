@@ -39,10 +39,12 @@ jobs:
           filters: |
             clio-src:
               - 'clio/**'
+              - 'Creatio.ConflictResolver/**'
               - 'Directory.Packages.props'
             tests:
               - '.github/workflows/build.yml'
               - 'clio.tests/**'
+              - 'Creatio.ConflictResolver.Tests/**'
               - 'clio.mcp.e2e/**'
               - 'clio.process.fixture/**'
             analyzers:
@@ -107,6 +109,10 @@ jobs:
           dotnet test .\clio.tests\clio.tests.csproj `
             --framework net10.0 `
             --filter "Category!=Integration" `
+            -p:RunAnalyzers=false;
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test .\Creatio.ConflictResolver.Tests\Creatio.ConflictResolver.Tests.csproj `
+            --configuration Release `
             -p:RunAnalyzers=false;
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
