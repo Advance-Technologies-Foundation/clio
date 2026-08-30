@@ -68,7 +68,7 @@ public class ModifyBusinessProcessTool(
 		 + "macro family the package does not recognise is accepted with a warning rather than refused. Must be "
 		 + "one line; "
 		 + "a Lookup target's 'value' takes a bare non-empty record Guid, stored as the ConstValue the runtime "
-		 + "actually reads (the route ships from CrtProcessBuilder 1.4.0.3; THIS clio additionally refuses any "
+		 + "actually reads (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio additionally refuses any "
 		 + "environment older than the version it BUNDLES — up front, via the package-convergence message naming "
 		 + "both versions — while an older clio surfaces the old package's [#Lookup…#]-macro rejection; either "
 		 + "refusal means the ENVIRONMENT IS BEHIND, not that the parameter is unsettable: update the package); "

@@ -881,8 +881,8 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("Every 'CrtProcessBuilder <version>' literal the process-designer tool descriptions and the modify prompt hand out to agents equals the version the bundled archive actually carries. The contract text is restated on several surfaces by design (each surface reads in isolation), and this delivery re-aligned them twice by review rather than by a check — this is the check. A version bump now fails here until every shipped literal moves with the pin.")]
-	public void ToolContractVersionLiterals_ShouldMatchTheBundledArchiveVersion() {
+	[Description("No 'CrtProcessBuilder <version>' literal the process-designer tool descriptions and the modify prompt hand out to agents may name a version NEWER than the archive clio bundles. Each literal is a capability floor — the version a route or a check first shipped in — so it is expected to lag, sometimes by several releases; what it may never do is promise a version this distribution cannot install, because the remedy those same sentences hand the agent ('update the package') would then be unperformable. This pin previously demanded EQUALITY, and equality is what walked the bare-Guid lookup route's honest 1.3.1.1 through 1.4.0.0, .1, .2 and .3 — four consecutive rebundle commits, not one of them a change in the fact, while McpCapabilityMap.md went on saying 1.3.1.1 for the same route.")]
+	public void ToolContractVersionLiterals_ShouldNotExceedTheBundledArchiveVersion() {
 		// Arrange — the shipped agent-facing texts that name the package version
 		var surfaces = new Dictionary<string, string> {
 			["create-business-process description"] =
@@ -904,19 +904,31 @@ public class BundledProcessBuilderPackageTests {
 				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
 					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
 			foreach (System.Text.RegularExpressions.Match match in matches) {
-				match.Groups[1].Value.Should().Be(ExpectedArchiveVersion,
-					because: $"the {surface.Key} names a package version an agent will trust; a literal that "
-						+ "lags the bundled archive re-creates the exact drift this pin exists to end");
+				AssertInstallableFromThisDistribution(match.Groups[1].Value, surface.Key);
 			}
 			// The wide net behind the shaped one: ANY four-part version on these surfaces is the package
 			// version (nothing else four-part belongs in them), so a mention that drifts into a different
 			// shape — 'CrtProcessBuilder >= X', 'pre-X', a bare number — cannot hide beside a matching literal.
 			foreach (System.Text.RegularExpressions.Match match in anyVersionPattern.Matches(surface.Value)) {
-				match.Value.Should().Be(ExpectedArchiveVersion,
-					because: $"every four-part version on the {surface.Key} is a CrtProcessBuilder version "
-						+ "whatever sentence shape carries it; a stray one is drift the shaped pattern cannot see");
+				AssertInstallableFromThisDistribution(match.Value, surface.Key);
 			}
 		}
+	}
+
+	/// <summary>
+	/// A version literal shipped on an agent-facing surface must be satisfiable by the archive this distribution
+	/// carries. It may LAG it — a capability floor records when something first shipped and freezes there — but it
+	/// may not exceed it: the surfaces carrying these literals also tell the agent to update the package when an
+	/// environment is behind, and a number no clio-installable archive reaches turns that instruction into a dead
+	/// end.
+	/// </summary>
+	private static void AssertInstallableFromThisDistribution(string literal, string surfaceKey) {
+		Version named = Version.Parse(literal);
+		var bundled = Version.Parse(ExpectedArchiveVersion);
+		(named <= bundled).Should().BeTrue(
+			because: $"the {surfaceKey} hands an agent '{literal}' as the version to be on and tells it to update "
+				+ $"the package to get there, but this clio bundles {bundled} — so no archive it can install "
+				+ "would ever satisfy the claim");
 	}
 
 	/// <summary>The [Description] text of the type's MCP tool method (the agent-facing contract).</summary>
