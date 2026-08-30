@@ -2,7 +2,7 @@
 description: System.Net.WebException derives from InvalidOperationException, so `is InvalidOperationException` as a "resource not found" discriminator also swallows DNS, TLS and connection-reset faults - use exact-type equality, and unwrap AggregateException because Creatio's client runs via Task.Result
 applies-to:
   - clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs
-  - clio/Command/EntitySchemaDesigner/EntitySchemaPublishHelper.cs
+  - clio/Command/EntitySchemaDesigner/EntitySchemaPublisher.cs
 date: 2026-08-19
 ---
 
@@ -12,7 +12,7 @@ no such resource" therefore also matches every transport fault raised as a `WebE
 failure, TLS failure, connection reset. Where the distinction matters the test must be exact-type
 equality — `exception.GetType() == typeof(InvalidOperationException)` — which is what
 `RemoteEntitySchemaColumnManager` does for its "no runtime schema came back" branch. An allow-list
-that genuinely wants transport faults included (`EntitySchemaPublishHelper.IsExpectedODataBuildFault`)
+that genuinely wants transport faults included (`EntitySchemaPublisher.IsExpectedODataBuildFault`)
 enumerates `WebException` explicitly instead of relying on the inheritance.
 
 **Why it is this way** — the .NET type hierarchy, nothing clio chose. Compounding it, Creatio's

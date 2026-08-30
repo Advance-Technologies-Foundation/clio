@@ -37,6 +37,20 @@ internal interface IRemoteEntitySchemaDesignerClient
 	/// asynchronously, so OData access appears shortly after publish rather than synchronously.
 	/// </summary>
 	BaseResponse RunODataBuild(RemoteCommandOptions options);
+
+	/// <summary>
+	/// Reports whether the background OData entities build started by <see cref="RunODataBuild"/> is still
+	/// running, so a caller can hold a publish back instead of colliding with it.
+	/// </summary>
+	/// <remarks>
+	/// Returns <see langword="null"/> when the server does not expose the method at all - it answers with an
+	/// HTML error page rather than JSON, the same shape <c>TryGetSchemaDesignItem</c> already treats as
+	/// "this server cannot answer that". Callers must read <see langword="null"/> as "unknown", never as
+	/// "not running": on such a stand the collision this check exists to prevent is simply undetectable.
+	/// </remarks>
+	/// <param name="options">Remote command options identifying the target environment.</param>
+	/// <returns>Whether a build is running, or <see langword="null"/> when the server has no such method.</returns>
+	bool? TryGetIsODataBuildRunning(RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
 	IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options);
 	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
@@ -164,6 +178,15 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		// RunODataBuild takes no parameters; the server accepts an empty JSON body, so an empty object ("{}") is posted.
 		return PostToUrl<object, BaseResponse>(url, new object(), options.TimeOut, maxAttempts: 1, options.RetryDelay,
 			"RunODataBuild");
+	}
+
+	public bool? TryGetIsODataBuildRunning(RemoteCommandOptions options) {
+		// Same URL shape as RunODataBuild, and the same single attempt: this is a status read whose answer is
+		// stale the moment it arrives, so a retry buys nothing a later poll does not.
+		string url = $"{_serviceUrlBuilder.Build(WorkspaceExplorerServicePath)}/IsODataBuildRunning";
+		BoolResponse? response = TryPostToUrl<object, BoolResponse>(url, new object(), options,
+			"IsODataBuildRunning");
+		return response?.Value;
 	}
 
 	public RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options) {

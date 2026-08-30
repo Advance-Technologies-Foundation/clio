@@ -240,6 +240,49 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Returns the reported running state when the server answers IsODataBuildRunning with JSON.")]
+	public void TryGetIsODataBuildRunning_ReturnsValue_WhenServerRespondsWithJson() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":true,\"value\":true}");
+
+		// Act
+		bool? isRunning = _client.TryGetIsODataBuildRunning(new RemoteCommandOptions());
+
+		// Assert
+		isRunning.Should().Be(true,
+			because: "a JSON response must surface the server-reported running state");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/ServiceModel/WorkspaceExplorerService.svc/IsODataBuildRunning",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		// because: the status probe must hit the same WorkspaceExplorerService.svc method RunODataBuild starts
+	}
+
+	[Test]
+	[Description("Returns null when the server has no IsODataBuildRunning method and answers with an HTML error page, so a caller can tell 'unknown' apart from 'not running'.")]
+	public void TryGetIsODataBuildRunning_ReturnsNull_WhenServerReturnsHtmlErrorPage() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><body>Server Error in '/' Application.</body></html>");
+
+		// Act
+		bool? isRunning = _client.TryGetIsODataBuildRunning(new RemoteCommandOptions());
+
+		// Assert
+		isRunning.Should().BeNull(
+			because: "an HTML error page means the server has no such method, which must read as unknown rather than 'not running'");
+	}
+
+	[Test]
 	[Description("Loads runtime entity schemas by UId so callers can verify DB-first availability after SaveSchemaDBStructure.")]
 	public void GetRuntimeEntitySchema_PostsRuntimeSchemaRequest() {
 		// Arrange

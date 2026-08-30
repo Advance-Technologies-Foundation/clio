@@ -16,12 +16,15 @@ DESCRIPTION
     modify-entity-schema-column, but several mutations can be applied in one
     request.
 
-    After saving the batch, the configuration is published and the OData entities
-    are rebuilt (once for the whole batch), so changed columns become visible to
-    lookup pickers and reachable over OData (/0/odata/<Entity>) without a manual
-    compile. The rebuild runs in the background (~1-2 min); a 404 from OData right
-    after the change is the expected async gap, so wait and retry rather than
-    compiling.
+    After saving the batch, the configuration is always published (once for the
+    whole batch), so changed columns become visible to lookup pickers without a
+    manual compile. The OData entities are rebuilt only if at least one operation
+    in the batch changes the published OData contract - adding or removing a
+    column, or changing its type or reference schema. A batch made only of
+    caption, description, default value, mask, usage type, or required changes
+    does not trigger a rebuild. When a rebuild is requested, it runs in the
+    background (~1-2 min); a 404 from OData right after the change is the
+    expected async gap, so wait and retry rather than compiling.
 
     Supported operation types include Binary, Image, ImageLookup,
     File, SecureText, and Email. Blob is accepted as an alias for Binary.

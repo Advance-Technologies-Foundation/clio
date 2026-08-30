@@ -34,6 +34,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private IEntitySchemaDependencyResolver _dependencyResolver;
+	private IEntitySchemaPublisher _entitySchemaPublisher;
 	private ILogger _logger;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
@@ -59,6 +60,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
 			.Returns("en-US");
 		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
+		_entitySchemaPublisher = Substitute.For<IEntitySchemaPublisher>();
 		_savedSchema = null;
 		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
@@ -124,6 +126,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			_designerClient,
 			_runtimeEntitySchemaReader,
 			_dependencyResolver,
+			_entitySchemaPublisher,
 			_logger);
 	}
 
@@ -158,7 +161,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_savedSchema.PrimaryDisplayColumn.Name.Should().Be("Name",
 			because: "the first text column should become primary display when none exists");
 		_designerClient.Received(1).SaveSchemaDbStructure(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
-		_designerClient.Received(1).GetRuntimeEntitySchema(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: adding a column changes the OData property list, so the publisher must be asked to rebuild
+		_designerClient.DidNotReceive().GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>());
+		// because: publishing already refreshes the schema manager; a separate runtime-availability probe is not taken on the normal path
 	}
 
 	[Test]
@@ -413,18 +420,17 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Publishes the configuration and requests the OData entities rebuild after saving a column, in that order, so the column is reachable over OData.")]
-	public void ModifyColumn_PublishesAndRequestsODataRebuild_AfterSaving() {
-		// Arrange — capture the order the designer client is called in.
+	[Description("Materializes the DB structure before asking the publisher to publish the saved column, in that order, since the publisher's rebuild only makes sense once the DB structure exists.")]
+	public void ModifyColumn_CallsPublisher_AfterSavingDbStructure() {
+		// Arrange — capture the order the designer client and publisher are called in.
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
 		SetupLoadedSchema();
 		List<string> calls = [];
 		_designerClient.When(c => c.SaveSchemaDbStructure(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>()))
 			.Do(_ => calls.Add("save-db"));
-		_designerClient.When(c => c.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>()))
+		_entitySchemaPublisher.When(p => p.PublishSavedChanges(
+				Arg.Any<Clio.Command.RemoteCommandOptions>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ODataContractImpact>()))
 			.Do(_ => calls.Add("publish"));
-		_designerClient.When(c => c.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>()))
-			.Do(_ => calls.Add("rebuild"));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
 		};
@@ -433,23 +439,18 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		calls.Should().Equal(["save-db", "publish", "rebuild"],
-			because: "a saved column is invisible over OData until the configuration is published and the OData entities assembly is rebuilt; the rebuild must follow the publish");
+		calls.Should().Equal(["save-db", "publish"],
+			because: "the DB structure must exist before the publisher publishes and decides whether to rebuild the OData entities");
 	}
 
 	[Test]
-	[Description("Publishes and rebuilds OData exactly once for a multi-operation (add + modify) batch, not once per operation.")]
-	public void ModifyColumns_PublishesAndRebuildsOnce_ForMultiOperationBatch() {
+	[Description("Asks the publisher to publish exactly once for a multi-operation (add + modify) batch, not once per operation, with the batch-wide impact.")]
+	public void ModifyColumns_CallsPublisherOnce_ForMultiOperationBatch() {
 		// Arrange
 		_loadedSchema = CreateSchema(
 			columns: [CreateGuidColumn("Id", IdColumnUId), CreateTextColumn("Status", CodeColumnUId)],
 			primaryDisplayColumn: null);
 		SetupLoadedSchema();
-		int publishCount = 0, rebuildCount = 0;
-		_designerClient.When(c => c.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>()))
-			.Do(_ => publishCount++);
-		_designerClient.When(c => c.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>()))
-			.Do(_ => rebuildCount++);
 		ModifyEntitySchemaColumnOptions[] batch = [
 			new() { Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name" },
 			new() { Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "Status", Title = "Vehicle status" }
@@ -459,10 +460,117 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumns(batch);
 
 		// Assert
-		publishCount.Should().Be(1,
-			because: "a multi-column batch must publish the configuration exactly once, not once per operation");
-		rebuildCount.Should().Be(1,
-			because: "the OData entities rebuild must be requested once per batch, after publishing");
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: a multi-column batch must publish exactly once, not once per operation, and the add in the batch changes the OData contract
+	}
+
+	[Test]
+	[Description("Resolves the OData contract impact as Changed when a column is added, since adding a column changes the OData property list.")]
+	public void ModifyColumn_ResolvesChangedImpact_WhenColumnIsAdded() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "UsrProbe", Type = "Text"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: adding a column changes the OData property list
+	}
+
+	[Test]
+	[Description("Resolves the OData contract impact as Changed when a column is removed, since removing a column changes the OData property list.")]
+	public void ModifyColumn_ResolvesChangedImpact_WhenColumnIsRemoved() {
+		// Arrange
+		const string columnName = "UsrProbe";
+		_loadedSchema = CreateSchema(columns: [
+			CreateGuidColumn("Id", IdColumnUId),
+			CreateGuidColumn(columnName, CodeColumnUId)
+		], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "remove", ColumnName = columnName
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: removing a column changes the OData property list
+	}
+
+	[Test]
+	[Description("Resolves the OData contract impact as Changed when a modify supplies a new type, since changing a column's type changes its EDM type in the contract.")]
+	public void ModifyColumn_ResolvesChangedImpact_WhenModifySuppliesType() {
+		// Arrange
+		EntitySchemaColumnDto column = CreateTextColumn("Status", CodeColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), column], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "Status", Type = "Integer"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: changing a column's type changes its EDM type in the OData contract
+	}
+
+	[Test]
+	[Description("Resolves the OData contract impact as Changed when a modify supplies a reference schema, since changing a lookup's reference schema changes a navigation property in the contract.")]
+	public void ModifyColumn_ResolvesChangedImpact_WhenModifySuppliesReferenceSchema() {
+		// Arrange
+		EntitySchemaColumnDto column = CreateLookupColumn("Owner", NameColumnUId, "Account");
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), column], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "Owner", ReferenceSchemaName = "Contact"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: changing a lookup's reference schema changes a navigation property in the OData contract
+	}
+
+	[TestCase(nameof(ModifyEntitySchemaColumnOptions.Title), "Vehicle status")]
+	[TestCase(nameof(ModifyEntitySchemaColumnOptions.Description), "Status description")]
+	[TestCase(nameof(ModifyEntitySchemaColumnOptions.DefaultValue), "1")]
+	[TestCase(nameof(ModifyEntitySchemaColumnOptions.Masked), true)]
+	[TestCase(nameof(ModifyEntitySchemaColumnOptions.UsageType), "Advanced")]
+	[TestCase(nameof(ModifyEntitySchemaColumnOptions.Required), true)]
+	[Description("Resolves the OData contract impact as Unchanged when a modify touches only a designer-level property absent from the OData contract: caption, description, default value, mask, usage type, or required.")]
+	public void ModifyColumn_ResolvesUnchangedImpact_ForDesignerOnlyProperty(string propertyName, object value) {
+		// Arrange
+		EntitySchemaColumnDto column = CreateTextColumn("Status", CodeColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), column], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "Status"
+		};
+		typeof(ModifyEntitySchemaColumnOptions).GetProperty(propertyName)!.SetValue(options, value);
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Unchanged);
+		// because: a caption, description, default value, mask, usage type, or required flag is absent from the published OData contract
 	}
 
 	[Test]
@@ -496,36 +604,14 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Succeeds with a warning when the OData rebuild request fails, because a rebuild-request fault must not fail an already-saved column change.")]
-	public void ModifyColumn_SucceedsWithWarning_WhenODataRebuildRequestFails() {
+	[Description("Propagates a publish failure raised by the publisher, since fault handling for the publish/rebuild pipeline lives entirely in IEntitySchemaPublisher and must not be duplicated or swallowed here.")]
+	public void ModifyColumn_Throws_WhenPublisherThrows() {
 		// Arrange
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
 		SetupLoadedSchema();
-		_designerClient.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>())
-			.Returns(_ => throw new HttpRequestException("connection reset"));
-		var options = new ModifyEntitySchemaColumnOptions {
-			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
-		};
-
-		// Act
-		Action act = () => _manager.ModifyColumn(options);
-
-		// Assert
-		act.Should().NotThrow(
-			because: "a rebuild-request failure must not fail a column change that was already saved");
-		_logger.Received().WriteWarning(Arg.Is<string>(message =>
-			message.Contains(EntitySchemaPublishHelper.ODataBuildRequestFailedWarningFragment, StringComparison.Ordinal)));
-		// because: the rebuild-request failure must be surfaced as a warning so it is visible, not silent
-	}
-
-	[Test]
-	[Description("Throws an actionable error when publishing the configuration fails after saving a column.")]
-	public void ModifyColumn_Throws_WhenPublishFails() {
-		// Arrange
-		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
-		SetupLoadedSchema();
-		_designerClient.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>())
-			.Returns(_ => throw new InvalidOperationException("Compilation failed."));
+		_entitySchemaPublisher.When(p => p.PublishSavedChanges(
+				Arg.Any<Clio.Command.RemoteCommandOptions>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ODataContractImpact>()))
+			.Do(_ => throw new InvalidOperationException("Compilation failed."));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
 		};
@@ -535,8 +621,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("*publishing the configuration failed*Compilation failed.*",
-				because: "a publish failure leaves the column invisible and must surface to the caller");
+			.WithMessage("*Compilation failed.*",
+				because: "a publish failure must surface to the caller, not be swallowed by the column manager");
 	}
 
 	[Test]
@@ -577,7 +663,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 		savedColumn.RequirementType.Should().Be((int)EntitySchemaColumnRequirementType.ApplicationLevel,
 			because: "unspecified required settings must be preserved");
 		_designerClient.Received(1).SaveSchemaDbStructure(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
-		_designerClient.Received(1).GetRuntimeEntitySchema(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "columns were saved", ODataContractImpact.Changed);
+		// because: changing a column's reference schema changes a navigation property in the OData contract
+		_designerClient.DidNotReceive().GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>());
+		// because: publishing already refreshes the schema manager; a separate runtime-availability probe is not taken on the normal path
 	}
 
 	[Test]
@@ -2756,6 +2846,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "the primary-display column should be the column named in the request");
 		_savedSchema.PrimaryDisplayColumn.UId.Should().Be(NameColumnUId,
 			because: "the modern designer contract matches the primary-display column by its uId");
+		_entitySchemaPublisher.Received(1).PublishSavedChanges(
+			Arg.Any<Clio.Command.RemoteCommandOptions>(), "UsrVehicle", "schema properties were saved", ODataContractImpact.Unchanged);
+		// because: the primary-display column is a designer-level property absent from the OData contract, so no rebuild is needed
 	}
 
 	[Test]

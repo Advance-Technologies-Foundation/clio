@@ -786,6 +786,8 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
+		services.AddTransient<IODataBuildGate, ODataBuildGate>();
+		services.AddTransient<IEntitySchemaPublisher, EntitySchemaPublisher>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataCreateTool>();
