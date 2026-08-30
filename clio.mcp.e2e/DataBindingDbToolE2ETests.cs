@@ -396,7 +396,7 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		string workspaceName = $"workspace-{System.Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		string packageName = $"Pkg{System.Guid.NewGuid():N}".Substring(0, 18);
-		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(5));
+		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(8));
 
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 			settings,
@@ -418,14 +418,22 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 				["pkg-hotfix", packageName, "true", "-e", environmentName],
 				workingDirectory: workspacePath,
 				cancellationToken: cancellationTokenSource.Token);
+			await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(
+				settings,
+				environmentName,
+				cancellationTokenSource.Token);
 		}
 
-		McpServerSession session = Session;
+		bool ownsSession = requireEnvironment;
+		McpServerSession session = ownsSession
+			? await McpServerSession.StartAsync(settings, cancellationTokenSource.Token)
+			: Session;
 		return new DataBindingDbArrangeContext(
 			rootDirectory,
 			workspacePath,
 			packageName,
 			environmentName,
+			ownsSession,
 			session,
 			cancellationTokenSource);
 	}
@@ -525,14 +533,17 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		string WorkspacePath,
 		string PackageName,
 		string? EnvironmentName,
+		bool OwnsSession,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
-		public System.Threading.Tasks.ValueTask DisposeAsync() {
+		public async System.Threading.Tasks.ValueTask DisposeAsync() {
+			if (OwnsSession) {
+				await Session.DisposeAsync();
+			}
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
-			return System.Threading.Tasks.ValueTask.CompletedTask;
 		}
 	}
 

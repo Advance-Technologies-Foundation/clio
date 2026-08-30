@@ -147,14 +147,14 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 	public async Task SchemaTransfer_Should_RoundTrip_Export_And_Import_Against_A_Live_Environment() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(15));
-		SandboxSchema sandbox = await ArrangeSandboxSchemaAsync(arrangeContext);
+		await using SandboxSchema sandbox = await ArrangeSandboxSchemaAsync(arrangeContext);
 		string destination = Path.Combine(Path.GetTempPath(), $"clio-schema-bundle-{Guid.NewGuid():N}");
 		string bundleDirectory = Path.Combine(destination, sandbox.SchemaName);
 		string foreignPackageName = $"Pkg{Guid.NewGuid():N}"[..18];
 
 		// Act
 		CommandExecutionEnvelope export = McpCommandExecutionParser.Extract(
-			await arrangeContext.Session.CallToolAsync(
+			await sandbox.Session.CallToolAsync(
 				ExportToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
@@ -167,7 +167,7 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 				arrangeContext.CancellationTokenSource.Token));
 
 		CommandExecutionEnvelope replaceImport = McpCommandExecutionParser.Extract(
-			await arrangeContext.Session.CallToolAsync(
+			await sandbox.Session.CallToolAsync(
 				ImportToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
@@ -179,7 +179,7 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 				arrangeContext.CancellationTokenSource.Token));
 
 		CommandExecutionEnvelope refusedImport = McpCommandExecutionParser.Extract(
-			await arrangeContext.Session.CallToolAsync(
+			await sandbox.Session.CallToolAsync(
 				ImportToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
@@ -279,35 +279,44 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 			["pkg-hotfix", packageName, "true", "-e", environmentName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationToken);
+		await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(settings, environmentName, cancellationToken);
 
 		string schemaName = $"Usr{Guid.NewGuid():N}";
-		CallToolResult syncResult = await context.Session.CallToolAsync(
-			SchemaSyncTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["package-name"] = packageName,
-					["operations"] = new object?[] {
-						new Dictionary<string, object?> {
-							["type"] = "create-entity",
-							["schema-name"] = schemaName,
-							["title-localizations"] = new Dictionary<string, object?> { ["en-US"] = "Schema Transfer Entity" },
-							["columns"] = new object?[] {
-								new Dictionary<string, object?> {
-									["name"] = "UsrTitle",
-									["type"] = "Text",
-									["title-localizations"] = new Dictionary<string, object?> { ["en-US"] = "Title" }
+		// Package provisioning recycles Creatio. Authenticate a new MCP process only after that recycle,
+		// then keep the same fresh process for create/export/import so the round trip is coherent.
+		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationToken);
+		try {
+			CallToolResult syncResult = await session.CallToolAsync(
+				SchemaSyncTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["package-name"] = packageName,
+						["operations"] = new object?[] {
+							new Dictionary<string, object?> {
+								["type"] = "create-entity",
+								["schema-name"] = schemaName,
+								["title-localizations"] = new Dictionary<string, object?> { ["en-US"] = "Schema Transfer Entity" },
+								["columns"] = new object?[] {
+									new Dictionary<string, object?> {
+										["name"] = "UsrTitle",
+										["type"] = "Text",
+										["title-localizations"] = new Dictionary<string, object?> { ["en-US"] = "Title" }
+									}
 								}
 							}
 						}
 					}
-				}
-			},
-			cancellationToken);
-		syncResult.IsError.Should().NotBeTrue(
-			because: "the round-trip needs a schema of its own on the stand; without it there is nothing to export");
+				},
+				cancellationToken);
+			syncResult.IsError.Should().NotBeTrue(
+				because: "the round-trip needs a schema of its own on the stand; without it there is nothing to export");
 
-		return new SandboxSchema(environmentName, packageName, schemaName);
+			return new SandboxSchema(environmentName, packageName, schemaName, session);
+		} catch {
+			await session.DisposeAsync();
+			throw;
+		}
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(
@@ -330,7 +339,13 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 	}
 
 	/// <summary>The live fixture the round-trip runs against.</summary>
-	private sealed record SandboxSchema(string EnvironmentName, string PackageName, string SchemaName);
+	private sealed record SandboxSchema(
+		string EnvironmentName,
+		string PackageName,
+		string SchemaName,
+		McpServerSession Session) : IAsyncDisposable {
+		public async ValueTask DisposeAsync() => await Session.DisposeAsync();
+	}
 
 	private static string DescribeExecution(CommandExecutionEnvelope execution) {
 		string messages = execution.Output is null

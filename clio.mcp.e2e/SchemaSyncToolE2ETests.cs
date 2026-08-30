@@ -47,9 +47,13 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	private string? _sharedWorkspacePath;
 	private string? _sharedEnvironmentName;
 	private string? _sharedPackageName;
+	private McpServerSession? _sharedEnvironmentSession;
 
 	[OneTimeTearDown]
-	public void CleanupSharedSandboxPackage() {
+	public async Task CleanupSharedSandboxPackage() {
+		if (_sharedEnvironmentSession is not null) {
+			await _sharedEnvironmentSession.DisposeAsync();
+		}
 		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
 			Directory.Delete(_sharedRootDirectory, recursive: true);
 		}
@@ -670,6 +674,11 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 		(string environmentName, string packageName) =
 			await EnsureSharedSandboxPackageAsync(settings, cancellationTokenSource.Token);
+		// push-workspace/pkg-hotfix recycle Creatio. Start the environment-bound MCP process only after
+		// provisioning so it cannot retain an authentication session invalidated by that recycle.
+		_sharedEnvironmentSession ??=
+			await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		session = _sharedEnvironmentSession;
 
 		// Each environment-bound test gets its own entity and lookup schemas inside the shared package so
 		// concurrent creates never collide; the schema names are unique guids while the column names are
@@ -720,6 +729,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
 		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
 		await PushWorkspaceAsync(settings, workspacePath, environmentName, packageName, cancellationToken);
+		await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(settings, environmentName, cancellationToken);
 
 		_sharedRootDirectory = rootDirectory;
 		_sharedWorkspacePath = workspacePath;
