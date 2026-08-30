@@ -7,18 +7,31 @@ namespace Clio.Mcp.E2E.Support.Results;
 internal sealed record GetPkgListEnvelope(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("version")] string Version,
-	[property: JsonPropertyName("maintainer")] string Maintainer);
+	[property: JsonPropertyName("maintainer")] string Maintainer,
+	[property: JsonPropertyName("uId")] string UId);
+
+internal sealed record GetPkgListResponseEnvelope(
+	[property: JsonPropertyName("packages")] GetPkgListEnvelope[] Packages,
+	[property: JsonPropertyName("count")] int Count,
+	[property: JsonPropertyName("total")] int Total,
+	[property: JsonPropertyName("offset")] int Offset,
+	[property: JsonPropertyName("limit")] int Limit,
+	[property: JsonPropertyName("truncated")] bool Truncated);
 
 internal static class GetPkgListResultParser {
 	public static IReadOnlyList<GetPkgListEnvelope> Extract(CallToolResult callResult) {
+		return ExtractResponse(callResult).Packages;
+	}
+
+	public static GetPkgListResponseEnvelope ExtractResponse(CallToolResult callResult) {
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent) &&
-			TryExtractEnvelopeList(structuredContent, out IReadOnlyList<GetPkgListEnvelope>? structuredEnvelopes)) {
-			return structuredEnvelopes!;
+			TryExtractResponse(structuredContent, out GetPkgListResponseEnvelope? structuredResponse)) {
+			return structuredResponse!;
 		}
 
 		if (TrySerializeToJsonElement(callResult.Content, out JsonElement content) &&
-			TryExtractEnvelopeList(content, out IReadOnlyList<GetPkgListEnvelope>? contentEnvelopes)) {
-			return contentEnvelopes!;
+			TryExtractResponse(content, out GetPkgListResponseEnvelope? contentResponse)) {
+			return contentResponse!;
 		}
 
 		throw new InvalidOperationException("Could not parse list-packages MCP result.");
@@ -34,8 +47,8 @@ internal static class GetPkgListResultParser {
 		return true;
 	}
 
-	private static bool TryExtractEnvelopeList(JsonElement element, out IReadOnlyList<GetPkgListEnvelope>? envelopes) {
-		if (TryDeserializeList(element, out envelopes)) {
+	private static bool TryExtractResponse(JsonElement element, out GetPkgListResponseEnvelope? response) {
+		if (TryDeserializeResponse(element, out response)) {
 			return true;
 		}
 
@@ -44,7 +57,7 @@ internal static class GetPkgListResultParser {
 				if (TryGetTextPayload(item, out string? textPayload) &&
 					!string.IsNullOrWhiteSpace(textPayload) &&
 					TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-					TryDeserializeList(textPayloadElement, out envelopes)) {
+					TryDeserializeResponse(textPayloadElement, out response)) {
 					return true;
 				}
 			}
@@ -54,39 +67,32 @@ internal static class GetPkgListResultParser {
 			string? textPayload = element.GetString();
 			if (!string.IsNullOrWhiteSpace(textPayload) &&
 				TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-				TryDeserializeList(textPayloadElement, out envelopes)) {
+				TryDeserializeResponse(textPayloadElement, out response)) {
 				return true;
 			}
 		}
 
-		envelopes = null;
+		response = null;
 		return false;
 	}
 
-	private static bool TryDeserializeList(JsonElement element, out IReadOnlyList<GetPkgListEnvelope>? envelopes) {
+	private static bool TryDeserializeResponse(JsonElement element, out GetPkgListResponseEnvelope? response) {
 		try {
-			GetPkgListEnvelope[]? items = JsonSerializer.Deserialize<GetPkgListEnvelope[]>(
+			GetPkgListResponseEnvelope? parsed = JsonSerializer.Deserialize<GetPkgListResponseEnvelope>(
 				element.GetRawText(),
 				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-			if (items is null || items.Length == 0 || !ContainsUsableEnvelope(items)) {
-				envelopes = null;
+			if (parsed?.Packages is null) {
+				response = null;
 				return false;
 			}
 
-			envelopes = items;
+			response = parsed;
 			return true;
 		}
 		catch (JsonException) {
-			envelopes = null;
+			response = null;
 			return false;
 		}
-	}
-
-	private static bool ContainsUsableEnvelope(IEnumerable<GetPkgListEnvelope> items) {
-		return items.Any(item =>
-			!string.IsNullOrWhiteSpace(item.Name) ||
-			!string.IsNullOrWhiteSpace(item.Version) ||
-			item.Maintainer is not null);
 	}
 
 	private static bool TryGetTextPayload(JsonElement element, out string? textPayload) {

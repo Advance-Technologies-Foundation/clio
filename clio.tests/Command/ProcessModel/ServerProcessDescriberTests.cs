@@ -204,6 +204,54 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a Perform task's TOP-LEVEL performer block (kind, the stored role formula, the resolved role name, the show-page flag) into DescribedElement.Performer, so the team assignment survives read-back instead of being dropped by the clio DTO — the same failure class that once dropped four email fields.")]
+	public void Describe_ShouldReadTopLevelPerformer_WhenServerReportsIt() {
+		// Arrange — a Perform task carrying a role performer, as CrtProcessBuilder reports it
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000002\",\"name\":\"Task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\",\"userTaskName\":\"ActivityUserTask\","
+			+ "\"performer\":{\"type\":\"role\",\"role\":\"[#Lookup.84f44b9a-4bc3-4cbf-a1a8-cec02c1c029c.a29a3ba5-4b0d-de11-9a51-005056c00008#]\",\"roleDisplay\":\"All employees\",\"showPage\":false}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedPerformer performer = result.Value.Elements[0].Performer;
+		performer.Should().NotBeNull(
+			because: "the top-level performer must be deserialized, not dropped — it is the only read-back of a "
+				+ "team assignment, and a dropped member fails silently rather than loudly");
+		performer.Type.Should().Be("role", because: "the performer kind maps to the DTO");
+		performer.Role.Should().Contain("a29a3ba5-4b0d-de11-9a51-005056c00008",
+			because: "the stored role formula is the re-appliable value create/modify accept back");
+		performer.RoleDisplay.Should().Be("All employees",
+			because: "roleDisplay carries the resolved role name for a human reader");
+		performer.ShowPage.Should().BeFalse(
+			because: "the show-execution-page flag is part of the block, and false is its designer-parity value "
+				+ "for a role performer — reading it as null would lose a written value");
+	}
+
+	[Test]
+	[Description("Leaves a Perform task's performer null when the server (an older CrtProcessBuilder, or an element with no assignment) reports no block, so absence stays absent instead of materializing an empty performer a caller could mistake for a configured one.")]
+	public void Describe_ShouldLeavePerformerNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000003\",\"name\":\"Task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\",\"userTaskName\":\"ActivityUserTask\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].Performer.Should().BeNull(
+			because: "no reported block means no assignment; inventing an empty one would read as configured");
+	}
+
+	[Test]
 	[Description("Leaves the email block's hasBody unset (null) when an older server omits it, so the absent flag serializes away instead of defaulting to false and reading as a verified 'no body'.")]
 	public void Describe_ShouldLeaveEmailHasBodyNull_WhenServerOmitsIt() {
 		// Arrange — an older CrtProcessBuilder that reports an email block without the hasBody flag

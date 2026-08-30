@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using cliogate.Files.cs;
 using FluentAssertions;
 using NSubstitute;
@@ -283,6 +286,232 @@ namespace cliogate.tests
 			//Assert
 			actual.Should().Be("Safe  Forged  Line Paragraph, Second",
 				because: "control, bidirectional formatting, and Unicode separator characters must not alter gateway log structure");
+		}
+
+		[Test]
+		[Description("PackageExplorer rejects rooted file paths so package-file reads cannot escape the package Files directory.")]
+		public void GetPackageFileContent_ShouldRejectPath_WhenPathIsRooted(){
+			// Arrange
+			string baseDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+			PackageExplorer sut = new PackageExplorer("TestPackage", baseDirectory);
+			string rootedPath = Path.Combine(Path.GetPathRoot(baseDirectory), "outside.txt");
+
+			// Act
+			Action act = () => sut.GetPackageFileContent(rootedPath);
+
+			// Assert
+			act.Should().Throw<ArgumentException>()
+				.WithMessage("*relative to the package Files directory*",
+					because: "a rooted path would otherwise make Path.Combine discard the package root");
+		}
+
+		[Test]
+		[Description("PackageExplorer rejects parent traversal so package-file reads stay inside the package Files directory.")]
+		public void GetPackageFileContent_ShouldRejectPath_WhenPathTraversesParent(){
+			// Arrange
+			string baseDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+			PackageExplorer sut = new PackageExplorer("TestPackage", baseDirectory);
+
+			// Act
+			Action act = () => sut.GetPackageFileContent("../outside.txt");
+
+			// Assert
+			act.Should().Throw<ArgumentException>()
+				.WithMessage("*stay inside the package Files directory*",
+					because: "canonical containment must reject traversal after resolving the full path");
+		}
+
+		[Test]
+		[Description("PackageExplorer returns stable forward-slash relative paths for files below the package Files directory.")]
+		public void GetPackageFilesDirectoryContent_ShouldReturnNormalizedRelativePaths_WhenFilesExist(){
+			// Arrange
+			string baseDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+			string filesDirectory = Path.Combine(baseDirectory, "Terrasoft.Configuration", "Pkg", "TestPackage", "Files");
+			string sourceDirectory = Path.Combine(filesDirectory, "src", "cs");
+			Directory.CreateDirectory(sourceDirectory);
+			File.WriteAllText(Path.Combine(sourceDirectory, "Probe.cs"), "public class Probe {}");
+			File.WriteAllText(Path.Combine(filesDirectory, "TestPackage.csproj"), "<Project />");
+			PackageExplorer sut = new PackageExplorer("TestPackage", baseDirectory);
+
+			try {
+				// Act
+				string[] actual = sut.GetPackageFilesDirectoryContent().ToArray();
+
+				// Assert
+				actual.Should().Equal(new[] {"src/cs/Probe.cs", "TestPackage.csproj"},
+					because: "agents need deterministic relative paths that can be passed back to get-package-file");
+			}
+			finally {
+				Directory.Delete(baseDirectory, recursive: true);
+			}
+		}
+
+		[Test]
+		[Description("PackageExplorer rejects package names that contain directory separators so package selection cannot escape the package root.")]
+		public void Constructor_ShouldRejectPackageName_WhenNameContainsDirectorySeparator(){
+			// Arrange
+			string invalidPackageName = $"Parent{Path.DirectorySeparatorChar}Child";
+
+			// Act
+			Action act = () => new PackageExplorer(invalidPackageName, Path.GetTempPath());
+
+			// Assert
+			act.Should().Throw<ArgumentException>()
+				.WithMessage("*single directory name*",
+					because: "the package name is one path segment below Terrasoft.Configuration/Pkg");
+		}
+
+		[Test]
+		[Description("PackageExplorer rejects child junctions for both direct reads and recursive listing so reparse points cannot escape or cycle below Files.")]
+		public void PackageFileOperations_ShouldRejectPath_WhenChildDirectoryIsJunction(){
+			if (Path.DirectorySeparatorChar != '\\') {
+				Assert.Ignore("Directory-junction coverage runs on Windows; other platforms use the same ReparsePoint guard.");
+			}
+
+			// Arrange
+			string testRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+			string baseDirectory = Path.Combine(testRoot, "application");
+			string filesDirectory = Path.Combine(baseDirectory, "Terrasoft.Configuration", "Pkg", "TestPackage", "Files");
+			string outsideDirectory = Path.Combine(testRoot, "outside");
+			string junctionPath = Path.Combine(filesDirectory, "linked");
+			Directory.CreateDirectory(filesDirectory);
+			Directory.CreateDirectory(outsideDirectory);
+			File.WriteAllText(Path.Combine(outsideDirectory, "secret.txt"), "outside");
+			CreateDirectoryJunction(junctionPath, outsideDirectory);
+			PackageExplorer sut = new PackageExplorer("TestPackage", baseDirectory);
+
+			try {
+				// Act
+				Action read = () => sut.GetPackageFileContent("linked/secret.txt");
+				Action list = () => sut.GetPackageFilesDirectoryContent().ToArray();
+
+				// Assert
+				read.Should().Throw<ArgumentException>().WithMessage("*symbolic links*",
+					because: "canonical string containment does not resolve a child junction's external target");
+				list.Should().Throw<InvalidOperationException>().WithMessage("*symbolic link*",
+					because: "recursive listing must fail closed before descending into an external tree or cycle");
+			}
+			finally {
+				if (Directory.Exists(junctionPath)) {
+					Directory.Delete(junctionPath);
+				}
+				Directory.Delete(testRoot, recursive: true);
+			}
+		}
+
+		[Test]
+		[Description("PackageExplorer rejects a package-root junction so the package name cannot redirect the trusted Files root outside Pkg.")]
+		public void GetPackageFileContent_ShouldRejectPath_WhenPackageDirectoryIsJunction(){
+			if (Path.DirectorySeparatorChar != '\\') {
+				Assert.Ignore("Directory-junction coverage runs on Windows; other platforms use the same ReparsePoint guard.");
+			}
+
+			// Arrange
+			string testRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+			string baseDirectory = Path.Combine(testRoot, "application");
+			string packagesDirectory = Path.Combine(baseDirectory, "Terrasoft.Configuration", "Pkg");
+			string outsidePackage = Path.Combine(testRoot, "outside-package");
+			string outsideFiles = Path.Combine(outsidePackage, "Files");
+			string packageJunction = Path.Combine(packagesDirectory, "TestPackage");
+			Directory.CreateDirectory(packagesDirectory);
+			Directory.CreateDirectory(outsideFiles);
+			File.WriteAllText(Path.Combine(outsideFiles, "secret.txt"), "outside");
+			CreateDirectoryJunction(packageJunction, outsidePackage);
+			PackageExplorer sut = new PackageExplorer("TestPackage", baseDirectory);
+
+			try {
+				// Act
+				Action act = () => sut.GetPackageFileContent("secret.txt");
+
+				// Assert
+				act.Should().Throw<ArgumentException>().WithMessage("*symbolic links*",
+					because: "the package directory itself is attacker-selectable below the trusted Pkg root");
+			}
+			finally {
+				if (Directory.Exists(packageJunction)) {
+					Directory.Delete(packageJunction);
+				}
+				Directory.Delete(testRoot, recursive: true);
+			}
+		}
+
+		[Test]
+		[Description("PackageExplorer rejects a junction used as the shared Pkg root so trusted application-relative resolution cannot be redirected.")]
+		public void GetPackageFileContent_ShouldRejectPath_WhenPackagesRootIsJunction(){
+			if (Path.DirectorySeparatorChar != '\\') {
+				Assert.Ignore("Directory-junction coverage runs on Windows; other platforms use the same ReparsePoint guard.");
+			}
+
+			// Arrange
+			string testRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+			string baseDirectory = Path.Combine(testRoot, "application");
+			string configurationDirectory = Path.Combine(baseDirectory, "Terrasoft.Configuration");
+			string packagesJunction = Path.Combine(configurationDirectory, "Pkg");
+			string outsidePackages = Path.Combine(testRoot, "outside-packages");
+			string outsideFiles = Path.Combine(outsidePackages, "TestPackage", "Files");
+			Directory.CreateDirectory(configurationDirectory);
+			Directory.CreateDirectory(outsideFiles);
+			File.WriteAllText(Path.Combine(outsideFiles, "secret.txt"), "outside");
+			CreateDirectoryJunction(packagesJunction, outsidePackages);
+			PackageExplorer sut = new PackageExplorer("TestPackage", baseDirectory);
+
+			try {
+				// Act
+				Action act = () => sut.GetPackageFileContent("secret.txt");
+
+				// Assert
+				act.Should().Throw<ArgumentException>().WithMessage("*symbolic links*",
+					because: "the configured Pkg root must remain below the trusted application directory");
+			}
+			finally {
+				if (Directory.Exists(packagesJunction)) {
+					Directory.Delete(packagesJunction);
+				}
+				Directory.Delete(testRoot, recursive: true);
+			}
+		}
+
+		[Test]
+		[Description("PackageExplorer refuses an oversized text file before decoding it so package reads cannot amplify memory and response size without a bound.")]
+		public void GetPackageFileContent_ShouldRejectFile_WhenFileExceedsReadLimit(){
+			// Arrange
+			string baseDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+			string filesDirectory = Path.Combine(baseDirectory, "Terrasoft.Configuration", "Pkg", "TestPackage", "Files");
+			string largeFilePath = Path.Combine(filesDirectory, "large.txt");
+			Directory.CreateDirectory(filesDirectory);
+			using (FileStream stream = File.Create(largeFilePath)) {
+				stream.SetLength(PackageExplorer.MaxPackageTextFileBytes + 1);
+			}
+			PackageExplorer sut = new PackageExplorer("TestPackage", baseDirectory);
+
+			try {
+				// Act
+				Action act = () => sut.GetPackageFileContent("large.txt");
+
+				// Assert
+				act.Should().Throw<InvalidOperationException>().WithMessage("*10 MiB read limit*",
+					because: "the service must reject an oversized response before allocating decoded content");
+			}
+			finally {
+				Directory.Delete(baseDirectory, recursive: true);
+			}
+		}
+
+		private static void CreateDirectoryJunction(string junctionPath, string targetPath) {
+			var startInfo = new ProcessStartInfo("cmd.exe",
+				$"/c mklink /J \"{junctionPath}\" \"{targetPath}\"") {
+				CreateNoWindow = true,
+				UseShellExecute = false,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
+			};
+			using (Process process = Process.Start(startInfo)) {
+				process.Should().NotBeNull(
+					because: "the Windows junction setup process must start for the reparse-point test");
+				process.WaitForExit();
+				process.ExitCode.Should().Be(0,
+					because: $"the junction fixture must be created before testing it: {process.StandardError.ReadToEnd()}");
+			}
 		}
 
 		public static IEnumerable<TestDataItem> DateTimeData = new List<TestDataItem> {
