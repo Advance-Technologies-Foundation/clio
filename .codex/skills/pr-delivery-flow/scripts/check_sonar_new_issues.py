@@ -105,7 +105,7 @@ def sonar_check(head: str, pull_request: int, timeout: int) -> dict[str, Any]:
         check = max(checks, key=lambda item: int(item.get("id") or 0))
     except Unverified:
         raise
-    except (AttributeError, ValueError, json.JSONDecodeError, TypeError) as error:
+    except (AttributeError, ValueError, TypeError) as error:
         raise Unverified("GitHub check-run response had an unexpected shape.") from error
 
     check_head = str(check.get("head_sha") or "")
@@ -158,59 +158,83 @@ def get_json(url: str, timeout: int) -> dict[str, Any]:
     return payload
 
 
+def pagination(
+    payload: dict[str, Any],
+    requested_page: int,
+    expected_total: int | None,
+    expected_page_size: int | None,
+) -> tuple[int, int, list[Any]]:
+    paging, issues = payload.get("paging"), payload.get("issues")
+    if not isinstance(paging, dict) or not isinstance(issues, list):
+        raise Unverified("Sonar response omitted paging or issues data.")
+    try:
+        total = paging["total"]
+        page_index = paging["pageIndex"]
+        page_size = paging["pageSize"]
+    except KeyError as error:
+        raise Unverified("Sonar response omitted valid pagination data.") from error
+    if not all(type(value) is int for value in (total, page_index, page_size)):
+        raise Unverified("Sonar response contained invalid pagination types.")
+    if total < 0 or page_size <= 0 or page_index != requested_page:
+        raise Unverified("Sonar returned inconsistent pagination data.")
+    if expected_total is not None and total != expected_total:
+        raise Unverified("Sonar issue total changed during pagination.")
+    if expected_page_size is not None and page_size != expected_page_size:
+        raise Unverified("Sonar page size changed during pagination.")
+    if len(issues) > page_size:
+        raise Unverified("Sonar returned more issues than the declared page size.")
+    return total, page_size, issues
+
+
+def add_issues(
+    found: dict[str, dict[str, Any]], issues: list[Any]
+) -> None:
+    for issue in issues:
+        if not isinstance(issue, dict) or not issue.get("key"):
+            raise Unverified("Sonar returned a malformed issue.")
+        key = str(issue["key"])
+        if key in found:
+            raise Unverified("Sonar returned a duplicate issue during pagination.")
+        found[key] = issue
+
+
+def sonar_query(pull_request: int, page: int) -> str:
+    return urlencode(
+        {
+            "componentKeys": DEFAULT_PROJECT_KEY,
+            "pullRequest": pull_request,
+            "issueStatuses": BLOCKING_STATUSES,
+            "inNewCodePeriod": "true",
+            "p": page,
+            "ps": 500,
+        }
+    )
+
+
 def sonar_issues(pull_request: int, timeout: int) -> list[dict[str, Any]]:
     found: dict[str, dict[str, Any]] = {}
-    expected: int | None = None
+    expected_total: int | None = None
     expected_page_size: int | None = None
     page = 1
     while True:
-        query = urlencode(
-            {
-                "componentKeys": DEFAULT_PROJECT_KEY,
-                "pullRequest": pull_request,
-                "issueStatuses": BLOCKING_STATUSES,
-                "inNewCodePeriod": "true",
-                "p": page,
-                "ps": 500,
-            }
-        )
+        query = sonar_query(pull_request, page)
         payload = get_json(f"{DEFAULT_SONAR_URL}/api/issues/search?{query}", timeout)
-        paging, issues = payload.get("paging"), payload.get("issues")
-        if not isinstance(paging, dict) or not isinstance(issues, list):
-            raise Unverified("Sonar response omitted paging or issues data.")
-        try:
-            total = paging["total"]
-            page_index = paging["pageIndex"]
-            page_size = paging["pageSize"]
-        except KeyError as error:
-            raise Unverified("Sonar response omitted valid pagination data.") from error
-        if not all(type(value) is int for value in (total, page_index, page_size)):
-            raise Unverified("Sonar response contained invalid pagination types.")
-        if total < 0 or page_size <= 0 or page_index != page:
-            raise Unverified("Sonar returned inconsistent pagination data.")
-        if expected is not None and total != expected:
-            raise Unverified("Sonar issue total changed during pagination.")
-        if expected_page_size is not None and page_size != expected_page_size:
-            raise Unverified("Sonar page size changed during pagination.")
-        expected = total
-        expected_page_size = page_size
-        if len(issues) > page_size:
-            raise Unverified("Sonar returned more issues than the declared page size.")
-        for issue in issues:
-            if not isinstance(issue, dict) or not issue.get("key"):
-                raise Unverified("Sonar returned a malformed issue.")
-            key = str(issue["key"])
-            if key in found:
-                raise Unverified("Sonar returned a duplicate issue during pagination.")
-            found[key] = issue
-        page_count = max(1, (expected + page_size - 1) // page_size)
+        expected_total, expected_page_size, issues = pagination(
+            payload, page, expected_total, expected_page_size
+        )
+        add_issues(found, issues)
+        page_count = max(
+            1, (expected_total + expected_page_size - 1) // expected_page_size
+        )
         if page >= page_count:
             break
         if not issues:
             raise Unverified("Sonar pagination ended before every issue was returned.")
         page += 1
-    if len(found) != expected:
-        raise Unverified(f"Sonar reported {expected} issues but returned {len(found)}.")
+    if len(found) != expected_total:
+        raise Unverified(
+            f"Sonar reported {expected_total} issues but returned {len(found)}."
+        )
     return list(found.values())
 
 
