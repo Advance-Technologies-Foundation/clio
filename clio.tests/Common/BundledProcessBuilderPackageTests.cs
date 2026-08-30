@@ -71,14 +71,15 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.11</c> from
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.4.0.13</c> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
 	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
-	/// by hand. 1.4.0.9 is deliberately skipped: two different archives were cut under that number on the same
-	/// day, one from this branch and one from the branch that forks off it, so the number is burned and the gap
-	/// is cheaper than the ambiguity.
+	/// by hand. 1.4.0.9 and 1.4.0.12 are deliberately skipped: two archives were cut under .9 on the same day, one
+	/// from this branch and one from the branch that forks off it, and .12 belongs to that other branch. Two
+	/// branches drawing from one monotonic sequence collide unless the number is claimed before it is cut, so a
+	/// burned number is always cheaper than an ambiguous one.
 	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
@@ -130,7 +131,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"6D65265CE56FE8B8CDC62DBE27FC842E98E48C1DC074C5FC0A610EB3A560CF15";
+		"FCC2E7C89D02F61080CF42307693E1FDBD4D0B916A1C08BE0E7E3B51410530BF";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -158,7 +159,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.0.11";
+	private const string ExpectedArchiveVersion = "1.4.0.13";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -170,7 +171,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "6de30841df2f48c502b18a7ccd1c030426751e3c";
+	private const string ExpectedProducingCommit = "a429d3ae226dbc2ff892215d57e7184463d26ddb";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -196,7 +197,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788112949000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788114389000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
