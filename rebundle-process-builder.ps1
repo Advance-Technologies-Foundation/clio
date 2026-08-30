@@ -134,6 +134,28 @@ $chosen  = $candidates[0]
 $clioDll = $chosen.Dll
 Write-Host "Using clio $($chosen.Configuration)/$($chosen.Framework)" -ForegroundColor Cyan
 
+# ---------------------------------------------------------------- 0b. provenance, mechanically
+# The pins this script writes are all derived from the archive it just produced, so they agree with any
+# bytes from any tree - which is why the producing commit has been recorded in PROSE, and why that prose
+# has already been wrong three times (a commit whose descriptor could not yield the bytes; a commit that
+# was behind because the restamp was left uncommitted; bytes that corresponded to no commit at all, when a
+# tree with just-written LF files was packed on a core.autocrlf host). Two lines of git close the whole
+# class: refuse to cut from a dirty tree, and write the commit into a constant instead of a sentence.
+$dirty = git -C $PackageRepoPath status --porcelain 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Die "Cannot read git status in $PackageRepoPath. The producing commit has to be recordable, or the archive has no provenance at all."
+}
+if ($dirty) {
+    Die ("The package repository has uncommitted changes, so the archive would correspond to no commit:`n" +
+        ($dirty -join "`n") +
+        "`n`nCommit them first. This is the failure that shipped an unreproducible hash once already.")
+}
+$producingCommit = (git -C $PackageRepoPath rev-parse HEAD).Trim()
+if ($producingCommit -notmatch '^[0-9a-f]{40}$') {
+    Die "git rev-parse HEAD did not return a commit id in $PackageRepoPath."
+}
+Ok "producing commit $producingCommit (tree clean)"
+
 # ---------------------------------------------------------------- 1. sources compile, tests pass
 if ($SkipTests) {
     Write-Host "`n=== 1. SKIPPED: package build and tests" -ForegroundColor Yellow
@@ -472,6 +494,7 @@ if ($SkipTests) {
 # cannot shorten it.
 Replace-InFile $pinsFile 'ExpectedArchiveVersion = "[^"]*";' "ExpectedArchiveVersion = `"$($parsedNew.ToString())`";" 'ExpectedArchiveVersion'
 Replace-InFile $pinsFile 'ExpectedDescriptorModifiedOnUtc = "[^"]*";' "ExpectedDescriptorModifiedOnUtc = `"$stamp`";" 'ExpectedDescriptorModifiedOnUtc'
+Replace-InFile $pinsFile 'ExpectedProducingCommit = "[^"]*";' "ExpectedProducingCommit = `"$producingCommit`";" 'ExpectedProducingCommit'
 # There is deliberately no version constant to update. clio reads the shipped version out of this very
 # archive (IBundledPackageCatalog), so nothing on the clio side has to be kept in step with it - which is
 # what made raising the version cheap enough to require on every rebundle.

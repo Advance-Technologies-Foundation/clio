@@ -20,8 +20,10 @@ namespace Clio.Command;
 // two distinct reasons the bundled-packages article names. `setFlowCondition` is an operation an older
 // server does not carry at all: the token would be rejected by the server's own dispatch registry with a
 // "supported operations are …" message, which reads as a clio bug rather than a stale environment. And the
-// formula validator is a TIGHTENED VALIDATOR — an older server stores an `expression` mapping with no
-// check whatsoever, so the same call that is refused on a current environment silently persists a broken
+// formula validator is a TIGHTENED VALIDATOR — a server older than 1.4.0.0 stores an `expression` mapping
+// with no check at all, and 1.4.0.0 through .2 check it against a rule that disagrees with the platform's
+// own pre-save gate, which is why this literal is .3 and not .0. Either way the same call that is refused
+// on a current environment silently persists a broken
 // formula on an older one, to fail at run time. A tightened validator is exactly the case the article says
 // must never be left to convergence, because convergence warns and proceeds while only the literal fails
 // closed.

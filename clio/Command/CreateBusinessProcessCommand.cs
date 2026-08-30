@@ -21,8 +21,10 @@ namespace Clio.Command;
 // answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
 // cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
 // literal. Raised to 1.4.0.3 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
-// the formula validator behind it is a TIGHTENED VALIDATOR — an older server stores such a mapping with
-// no check at all, so the same descriptor that is refused on a current environment silently persists a
+// the formula validator behind it is a TIGHTENED VALIDATOR — a server older than 1.4.0.0 stores such a
+// mapping with no check at all, and 1.4.0.0 through .2 check it against a rule that disagrees with the
+// platform's own pre-save gate, which is why this literal is .3 and not .0. Either way the same
+// descriptor that is refused on a current environment silently persists a
 // broken formula on an older one, to fail at run time. The article is explicit that a tightened validator
 // takes a literal rather than being left to convergence, because convergence only warns. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
 // demand a version it does not itself carry.

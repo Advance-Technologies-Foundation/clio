@@ -158,6 +158,18 @@ public class BundledProcessBuilderPackageTests {
 	private const string ExpectedArchiveVersion = "1.4.0.3";
 
 	/// <summary>
+	/// The commit of the PRODUCING repository the archive was cut from, written by
+	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here.
+	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
+	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
+	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
+	/// behind, or named no commit at all. The script now also refuses to cut from a dirty tree, so "an archive
+	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
+	/// verify the rest with one `git checkout`.</para>
+	/// </summary>
+	private const string ExpectedProducingCommit = "bf0523413af978074cb47f5a7c3d4781b53d788a";
+
+	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
 	/// </summary>
 	/// <remarks>
@@ -653,7 +665,7 @@ public class BundledProcessBuilderPackageTests {
 		declared.Should().HaveCountGreaterThanOrEqualTo(5,
 			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
 				+ "reflection is broken and the version loop below is silently inspecting nothing");
-		// The loop is vacuous today — every declaration is presence-only — and that is the intended state.
+		// The loop is vacuous today — two of the five now carry a version literal (create/modify, 1.4.0.3), so the loop below EXECUTES — and that is the intended state.
 		// It asserts an invariant that must hold WHEN a literal appears, and the commit that adds the first
 		// one is exactly when it must already be in place. It replaces the old pin (descriptor version == a
 		// constant), which needed hand-synchronising on every rebundle and asserted a coincidence, not a rule.
@@ -923,6 +935,15 @@ public class BundledProcessBuilderPackageTests {
 			because: $"the {surfaceKey} hands an agent '{literal}' as the version to be on and tells it to update "
 				+ $"the package to get there, but this clio bundles {bundled} — so no archive it can install "
 				+ "would ever satisfy the claim");
+	}
+
+	[Test]
+	[Description("The producing-commit pin is a full commit id. It is written by the rebundle script from git rev-parse HEAD, so a value that is not 40 hex characters means it was hand-edited - which is the failure this pin exists to replace, and the one the prose above records happening three times.")]
+	public void ExpectedProducingCommit_ShouldBeAFullCommitId() {
+		// Arrange & Act & Assert
+		ExpectedProducingCommit.Should().MatchRegex("^[0-9a-f]{40}$",
+			because: "a short id, a branch name or a placeholder cannot be checked out by a reviewer, which is the "
+				+ "only thing this pin is for");
 	}
 
 	/// <summary>The [Description] text of the type's MCP tool method (the agent-facing contract).</summary>
