@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Linq;
 using System.Xml.Linq;
 using Clio;
@@ -13,7 +13,7 @@ namespace Clio.Tests.Project;
 
 [TestFixture]
 [Category("Unit")]
-[Property("Module", "Core")]
+[Property("Module", "Command")]
 public class CreatioPkgProjectReferenceTests
 {
 
@@ -101,10 +101,74 @@ public class CreatioPkgProjectReferenceTests
 	}
 
 	[Test]
+	[Description("Rewrites references whose HintPath uses forward slashes (issue 1280)")]
+	public void RefToBin_RebasesReferencesWithForwardSlashes(){
+		// Arrange
+		string projectPath = CreateProject("packages/CreatioSDK.7.15.2.501/lib/net40/Terrasoft.Core.dll");
+		CreatioPkgProject sut = CreatioPkgProject.LoadFromFile(projectPath);
+
+		// Act
+		sut.RefToBin();
+		sut.SaveChanges();
+
+		// Assert
+		sut.ChangedReferencesCount.Should().Be(1,
+			because: "MSBuild accepts either separator, and a csproj edited on macOS carries forward slashes");
+		ReadHintPath(projectPath).Should().Be(@"..\..\..\Bin\Terrasoft.Core.dll",
+			because: "bin references point at the local Creatio Bin folder");
+	}
+
+	[Test]
+	[Description("Rewrites every reference when the project mixes both SDK folder names (issue 1280)")]
+	public void RefToBin_RebasesMixedSdkStyles(){
+		// Arrange
+		string projectPath = Path.Combine(_workingDirectory, "TestPkg.csproj");
+		File.WriteAllText(projectPath, @"<?xml version=""1.0"" encoding=""utf-8""?>
+<Project ToolsVersion=""15.0"">
+  <ItemGroup>
+    <Reference Include=""Terrasoft.Core"">
+      <HintPath>packages\CreatioSDK.7.15.2.501\lib\net40\Terrasoft.Core.dll</HintPath>
+    </Reference>
+    <Reference Include=""Terrasoft.Common"">
+      <HintPath>packages\BpmonlineSDK.7.13.0\lib\net40\Terrasoft.Common.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>");
+		CreatioPkgProject sut = CreatioPkgProject.LoadFromFile(projectPath);
+
+		// Act
+		sut.RefToBin();
+
+		// Assert
+		sut.ChangedReferencesCount.Should().Be(2,
+			because: "leaving half the references on the nuget folder is the silent breakage of issue 1280");
+	}
+
+	[Test]
+	[Description("Reports success without changes when the project is already in the requested style (issue 1280)")]
+	public void Execute_ReportsSuccess_When_ProjectIsAlreadyInRequestedStyle(){
+		// Arrange
+		string projectPath = CreateProject(@"..\..\..\Bin\Terrasoft.Core.dll");
+		ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
+		creator.CreateFromFile(projectPath).Returns(CreatioPkgProject.LoadFromFile(projectPath));
+		ILogger logger = Substitute.For<ILogger>();
+		ReferenceCommand command = new(creator, logger);
+
+		// Act
+		int actual = command.Execute(new ReferenceOptions {Path = projectPath, ReferenceType = "bin"});
+
+		// Assert
+		actual.Should().Be(0,
+			because: "running ref-to twice, or on an already rebased project, is not a failure");
+		File.ReadAllText(projectPath).Should().Contain("packages.config",
+			because: "a run that changes nothing must not strip packages.config");
+	}
+
+	[Test]
 	[Description("Reports an unrecognized reference style instead of silently changing nothing (issue 1280)")]
 	public void Execute_ReportsFailure_When_NoReferenceWasChanged(){
 		// Arrange
-		string projectPath = CreateProject(@"..\..\..\Bin\Terrasoft.Core.dll");
+		string projectPath = CreateProject(@"some\unknown\layout\Terrasoft.Core.dll");
 		ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
 		creator.CreateFromFile(projectPath).Returns(CreatioPkgProject.LoadFromFile(projectPath));
 		ILogger logger = Substitute.For<ILogger>();
@@ -117,6 +181,8 @@ public class CreatioPkgProjectReferenceTests
 		actual.Should().Be(1,
 			because: "changing nothing is a failure, not a success the user should act on");
 		logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("Could not recognize the reference style")));
+		File.ReadAllText(projectPath).Should().Contain("packages.config",
+			because: "a failed rebase must not strip packages.config from the project");
 	}
 
 }

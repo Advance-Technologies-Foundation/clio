@@ -9,6 +9,12 @@
 		/// </summary>
 		int ChangedReferencesCount { get; }
 
+		/// <summary>
+		/// Reference style the project carried when it was loaded, or the style set by the last
+		/// RefTo* call. <see cref="RefType.Undef"/> means the style was not recognized.
+		/// </summary>
+		RefType CurrentRefType { get; }
+
 		CreatioPkgProject RefToBin();
 
 		CreatioPkgProject RefToCoreSrc();

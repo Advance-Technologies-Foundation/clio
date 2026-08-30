@@ -13,6 +13,13 @@ pre-rename `BpmonlineSDK` for the nuget style, `..\..\..\..\..\..\..\Bin\Debug\`
 `UnitTest`, `$(TsCoreBinPath)`. When none matches, `CurrentRefType` stays `Undef`,
 `GetSearchPattern` returns the literal string `"undefined"`, and the rewrite touches nothing.
 
+The bin style is detected **after** the core-source style, because `..\..\..\Bin\` is a substring of
+`..\..\..\..\..\..\..\Bin\Debug\` and would otherwise classify every core-source project as bin.
+
+`ChangedReferencesCount` counts references whose `HintPath` actually changed, not those that matched
+the pattern. A `HintPath` written with forward slashes matched the pattern but was never rewritten,
+which reproduced this very defect while reporting success.
+
 `ChangedReferencesCount` exists so that outcome is visible: `ReferenceCommand` fails instead of
 reporting `Done`, and `new-pkg` does not delete `packages.config` after a rebase that did nothing.
 

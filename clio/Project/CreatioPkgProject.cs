@@ -26,7 +26,6 @@ namespace Clio
 
 
 		private string _activeHint;
-		private string _detectedSearchPattern;
 
 		private CreatioPkgProject(string path)
 		{
@@ -89,11 +88,18 @@ namespace Clio
 			var hintValue = element.Element(HintPath)?.Value;
 			if (hintValue != null)
 			{
-				int index = hintValue.LastIndexOf("\\", StringComparison.Ordinal);
-				if (index > 0)
+				//Both separators occur in the wild: MSBuild accepts either, and a csproj edited
+				//on macOS or Linux carries forward slashes
+				int index = hintValue.LastIndexOfAny(new[] {'\\', '/'});
+				if (index >= 0)
 				{
-					hintValue = string.Concat(_activeHint, hintValue.Substring(index).TrimStart('\\'));
-					element.SetElementValue(HintPath, hintValue);
+					string newHintValue = string.Concat(_activeHint,
+						hintValue.Substring(index).TrimStart('\\', '/'));
+					if (newHintValue != hintValue)
+					{
+						element.SetElementValue(HintPath, newHintValue);
+						ChangedReferencesCount++;
+					}
 				}
 			}
 		}
@@ -109,16 +115,17 @@ namespace Clio
 
 		private void DetermineCurrentRef()
 		{
-			string sdkPattern = SdkSearchPatterns
-				.FirstOrDefault(pattern => RecurseDetermineCurrentRef(Document, pattern));
-			if (sdkPattern != null)
+			if (SdkSearchPatterns.Any(pattern => RecurseDetermineCurrentRef(Document, pattern)))
 			{
 				CurrentRefType = RefType.Sdk;
-				_detectedSearchPattern = sdkPattern;
 			}
 			else if (RecurseDetermineCurrentRef(Document, PathToCoreDebug))
 			{
 				CurrentRefType = RefType.CoreSrc;
+			}
+			else if (RecurseDetermineCurrentRef(Document, PathToBinDebug))
+			{
+				CurrentRefType = RefType.Bin;
 			}
 			else if (RecurseDetermineCurrentRef(Document, UnitTestSearchPattern))
 			{
@@ -150,20 +157,23 @@ namespace Clio
 			return false;
 		}
 
-		private string GetSearchPattern(RefType type)
+		private string[] GetSearchPatterns(RefType type)
 		{
 			switch (type)
 			{
 				case RefType.Sdk:
-				return _detectedSearchPattern ?? SdkSearchPatterns[0];
+				//A project can mix both styles after a partial manual update
+				return SdkSearchPatterns;
 				case RefType.CoreSrc:
-				return PathToCoreDebug;
+				return new[] {PathToCoreDebug};
+				case RefType.Bin:
+				return new[] {PathToBinDebug};
 				case RefType.UnitTest:
-				return UnitTestSearchPattern;
+				return new[] {UnitTestSearchPattern};
 				case RefType.TsCoreBinPath:
-				return TsCoreBinPathSearchPattern;
+				return new[] {TsCoreBinPathSearchPattern};
 				default:
-				return "undefined";
+				return new[] {"undefined"};
 			}
 		}
 
@@ -171,8 +181,8 @@ namespace Clio
 		{
 			List<XElement> refElements = new List<XElement>();
 			RecurseSearchItemGroup(Document, ref refElements);
+			ChangedReferencesCount = 0;
 			refElements.ForEach(ChangeHint);
-			ChangedReferencesCount = refElements.Count;
 		}
 
 		private void RecurseSearchItemGroup(XElement element, ref List<XElement> refElements)
@@ -186,9 +196,10 @@ namespace Clio
 			}
 			foreach (var el in element.Elements(ItemGroup))
 			{
+				string[] searchPatterns = GetSearchPatterns(CurrentRefType);
 				refElements.AddRange(el.Elements(Reference)
 					.Where(elem => elem.Element(HintPath) != null &&
-						((string)elem.Element(HintPath)).Contains(GetSearchPattern(CurrentRefType))));
+						searchPatterns.Any(pattern => ((string)elem.Element(HintPath)).Contains(pattern))));
 			}
 		}
 

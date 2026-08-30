@@ -44,6 +44,20 @@ namespace Clio.Command
 		private string CurrentProj =>
 			_fileSystem.DirectoryInfo.New(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
+		/// <summary>
+		/// Reference style a given --ReferenceType asks for, used to tell a project that is
+		/// already in that style from one whose style was not recognized.
+		/// </summary>
+		private static RefType RequestedRefType(string referenceType) =>
+			referenceType switch {
+				"bin" => RefType.Bin,
+				"src" => RefType.CoreSrc,
+				"unit-bin" => RefType.UnitTest,
+				"unit-src" => RefType.UnitTest,
+				"custom" => RefType.Custom,
+				_ => RefType.Undef
+			};
+
 		public override int Execute(ReferenceOptions options) {
 			options.Path = options.Path ?? CurrentProj;
 			if (string.IsNullOrEmpty(options.Path)) {
@@ -60,6 +74,7 @@ namespace Clio.Command
 				options.ReferenceType = "custom";
 			}
 			ICreatioPkgProject project = _projectCreator.CreateFromFile(options.Path);
+			RefType initialRefType = project.CurrentRefType;
 			try {
 				switch (options.ReferenceType) {
 					case "bin":
@@ -81,9 +96,15 @@ namespace Clio.Command
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 				}
 				if (project.ChangedReferencesCount == 0) {
+					if (initialRefType == RequestedRefType(options.ReferenceType)) {
+						//Already in the requested style: running the command twice is not a failure
+						_logger.WriteLine($"{options.Path} already references {options.ReferenceType}, "
+							+ "nothing to change");
+						return 0;
+					}
 					//Nothing was rewritten: the project's reference style was not recognized.
-					//Saving here would only strip packages.config and leave references that
-					//point at assemblies nothing restores any more.
+					//Saving here would strip packages.config for RefToBin and RefToCoreSrc and
+					//leave references pointing at assemblies nothing restores any more.
 					_logger.WriteError($"Could not recognize the reference style of {options.Path}. "
 						+ "No reference was changed and the project was left unchanged.");
 					return 1;
