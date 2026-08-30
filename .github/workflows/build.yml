@@ -43,6 +43,7 @@ jobs:
               - 'Directory.Packages.props'
             tests:
               - '.github/workflows/build.yml'
+              - '.github/scripts/*TestShard*.ps1'
               - 'clio.tests/**'
               - 'Creatio.ConflictResolver.Tests/**'
               - 'clio.mcp.e2e/**'
@@ -55,9 +56,34 @@ jobs:
               - 'cliogate/**'
               - 'cliogate.tests/**'
 
-  # ── Unit tests (fast gate — runs on every push) ───────────────────────
-  unit-tests:
-    name: Unit Tests
+  # TEST_SHARDING_DISABLED=true collapses each suite to one matrix row that uses
+  # the exact pre-sharding predicate. The required check names stay unchanged.
+  test-shard-plan:
+    name: Plan test shards
+    needs: changes
+    runs-on: ubuntu-latest
+    outputs:
+      unit-matrix: ${{ steps.plan.outputs.unit-matrix }}
+      integration-matrix: ${{ steps.plan.outputs.integration-matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Build matrices
+        id: plan
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $disabled = '${{ vars.TEST_SHARDING_DISABLED }}' -eq 'true'
+          $arguments = if ($disabled) { @{ DisableSharding = $true } } else { @{} }
+          $unit = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite unit @arguments
+          $integration = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite integration @arguments
+          "unit-matrix=$unit" >> $env:GITHUB_OUTPUT
+          "integration-matrix=$integration" >> $env:GITHUB_OUTPUT
+
+  test-assembly:
+    name: Build test assembly
     needs: changes
     if: >-
       needs.changes.outputs.clio-src == 'true' ||
@@ -71,25 +97,85 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+          dotnet-version: 10.0.x
+
+      - name: Build once for all seven test runners
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          dotnet build .\clio.tests\clio.tests.csproj `
+            --configuration Release `
+            --framework net10.0 `
+            -p:RunAnalyzers=false
+
+      - name: Upload compiled test assembly
+        uses: actions/upload-artifact@v4
+        with:
+          name: clio-tests-net10
+          path: clio.tests/bin/Release/net10.0
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  net8-compatibility:
+    name: NET8 Product Compatibility
+    needs: changes
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
 
       - name: Build NET8 product compatibility
         shell: powershell
         run: |
-          $ErrorActionPreference = 'Stop';
-          Set-Location $env:GITHUB_WORKSPACE;
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:GITHUB_WORKSPACE
           dotnet build .\clio\clio.csproj `
             --framework net8.0 `
-            -p:RunAnalyzers=false;
+            -p:RunAnalyzers=false
+
+  # ── Unit tests (four hosted runners; fast gate runs on every push) ────
+  unit-test-shards:
+    name: Unit Test Shard (${{ matrix.name }})
+    needs: [changes, test-shard-plan, test-assembly]
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.test-shard-plan.outputs.unit-matrix) }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: clio-tests-net10
+          path: clio.tests/bin/Release/net10.0
 
       # Anchor the working directory: `shell: powershell` loads the user profile (there is no -NoProfile) and
       # every project path in these steps is relative, so the step should not depend on the cwd it inherits.
       # Hygiene only — the MSB1009 incident this looks like a fix for is diagnosed in the step body below, and
       # its cause is on the runner host.
 
-      - name: Run unit tests
+      - name: Run unit test shard
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
@@ -105,15 +191,49 @@ jobs:
           # fresh clone) and clearing those variables is the fix, and no workflow change can substitute for it.
           # The Set-Location stays because a relative path in a profile-loading shell should not be trusted,
           # not because it addresses the above.
-          dotnet build-server shutdown;
-          dotnet test .\clio.tests\clio.tests.csproj `
-            --framework net10.0 `
-            --filter "Category!=Integration" `
-            -p:RunAnalyzers=false;
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $arguments = @{
+            Suite = 'unit'
+            ShardName = '${{ matrix.name }}'
+            ResultsDirectory = 'TestResults/${{ matrix.name }}'
+          }
+          if ('${{ matrix.shardingDisabled }}' -eq 'true') {
+            $arguments.DisableSharding = $true
+          }
+          & .\.github\scripts\Invoke-TestShard.ps1 @arguments
+
+      - name: Run ConflictResolver tests
+        if: matrix.name == 'unit-1' || matrix.shardingDisabled
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:GITHUB_WORKSPACE
           dotnet test .\Creatio.ConflictResolver.Tests\Creatio.ConflictResolver.Tests.csproj `
             --configuration Release `
-            -p:RunAnalyzers=false;
+            -p:RunAnalyzers=false
+
+      - name: Upload unit test timing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.name }}
+          path: TestResults/${{ matrix.name }}/*.trx
+          if-no-files-found: warn
+          retention-days: 14
+
+  unit-tests:
+    name: Unit Tests
+    needs: [changes, net8-compatibility, unit-test-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preserve the required unit-test gate
+        if: >-
+          (needs.changes.outputs.clio-src == 'true' ||
+           needs.changes.outputs.tests   == 'true' ||
+           github.ref == 'refs/heads/master') &&
+          (needs.net8-compatibility.result != 'success' ||
+           needs.unit-test-shards.result != 'success')
+        run: exit 1
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
   cliogate-tests:
@@ -140,14 +260,17 @@ jobs:
           dotnet test .\cliogate.tests\cliogate.tests.csproj `
             --configuration Release;
 
-  # ── Integration tests (run on PRs in parallel with unit tests) ──
-  integration-tests:
-    name: Integration Tests
-    needs: changes
+  # ── Integration tests (three hosted runners in parallel with unit tests) ──
+  integration-test-shards:
+    name: Integration Test Shard (${{ matrix.name }})
+    needs: [changes, test-shard-plan, test-assembly]
     if: >-
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&
       github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.test-shard-plan.outputs.integration-matrix) }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -158,15 +281,48 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Run integration tests
+      - uses: actions/download-artifact@v5
+        with:
+          name: clio-tests-net10
+          path: clio.tests/bin/Release/net10.0
+
+      - name: Run integration test shard
         shell: powershell
         run: |
-          $ErrorActionPreference = 'Stop';
-          Set-Location $env:GITHUB_WORKSPACE;
-          dotnet test .\clio.tests\clio.tests.csproj `
-            --framework net10.0 `
-            --filter "Category=Integration" `
-            -p:RunAnalyzers=false;
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          $arguments = @{
+            Suite = 'integration'
+            ShardName = '${{ matrix.name }}'
+            ResultsDirectory = 'TestResults/${{ matrix.name }}'
+          }
+          if ('${{ matrix.shardingDisabled }}' -eq 'true') {
+            $arguments.DisableSharding = $true
+          }
+          & .\.github\scripts\Invoke-TestShard.ps1 @arguments
+
+      - name: Upload integration test timing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.name }}
+          path: TestResults/${{ matrix.name }}/*.trx
+          if-no-files-found: warn
+          retention-days: 14
+
+  integration-tests:
+    name: Integration Tests
+    needs: [changes, integration-test-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preserve the required integration-test gate
+        if: >-
+          (needs.changes.outputs.clio-src == 'true' ||
+           needs.changes.outputs.tests   == 'true') &&
+          github.event_name == 'pull_request' &&
+          needs.integration-test-shards.result != 'success'
+        run: exit 1
 
   # ── Analyzer tests (only when analyzer code changes) ──────────────────
   analyzer-tests:
