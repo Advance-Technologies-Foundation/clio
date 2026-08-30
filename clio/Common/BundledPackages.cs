@@ -21,17 +21,17 @@ namespace Clio.Common;
 /// and only one pair of them is duplication:
 /// <list type="bullet">
 /// <item><description>
-/// the PACKAGE version <c>2.0.0.44</c> — <c>cliogate/descriptor.json</c> and the <c>_gateVersion</c> constant
+/// the PACKAGE version — <c>cliogate/descriptor.json</c> and the <c>_gateVersion</c> constant
 /// in <c>InfoCommand</c>. Both are written from one variable at the top of <c>build.ps1</c>, and these two
 /// ARE the genuine duplication.
 /// </description></item>
 /// <item><description>
-/// the ASSEMBLY version <c>1.1.1.2</c> — <c>cliogate/Properties/AssemblyInfo.cs</c> and
+/// the ASSEMBLY version — <c>cliogate/Properties/AssemblyInfo.cs</c> and
 /// <c>clio/cliogate/version.txt</c>, both hand-maintained and NOT touched by <c>build.ps1</c>.
 /// </description></item>
 /// <item><description>
-/// seven <c>[RequiresPackage("cliogate", …)]</c> sites, which are NOT copies of either. Four require only
-/// presence; the other three carry <c>2.0.0.41</c> and <c>2.0.0.42</c> — deliberately not <c>2.0.0.44</c>,
+/// <c>[RequiresPackage("cliogate", …)]</c> sites, which are NOT copies of either. Some require only
+/// presence; the others carry operation-specific minimum versions — deliberately not all the current package version —
 /// because each states the version that introduced the operation ITS command calls. That is a requirement,
 /// not a fact about what ships, and keeping the two apart is the whole point of the version ADR. Add a
 /// literal when a command starts needing one; do not "align" the existing ones.
@@ -41,7 +41,7 @@ namespace Clio.Common;
 /// and need not track the package version. <c>Program.CheckApiVersion</c> compares <c>version.txt</c> against
 /// <c>rest/CreatioApiGateway/GetApiVersion</c>, which returns <c>Assembly.GetName().Version</c> — assembly
 /// against assembly, so the upgrade nudge is consistent and works. Do not "fix" <c>version.txt</c> to
-/// <c>2.0.0.44</c>; that would break it.
+/// match the package version; that would break it.
 /// </para>
 /// </remarks>
 public static class BundledPackages {

@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="en-US">
+	<Group Type="String">
+		<Items>
+			<Item Name="Caption" Value="ParallelDev form page" />
+			<Item Name="LocalizableStrings.IndicatorWidget_891zt1i_title.Value" Value="New metric" />
+			<Item Name="LocalizableStrings.Label_j55o3f2_caption.Value" Value="Labelfdfd" />
+			<Item Name="LocalizableStrings.TabContainer_0z71xnq_caption.Value" Value="MyAwesomeTab" />
+			<Item Name="LocalizableStrings.TabContainer_5l508m3_caption.Value" Value="Tab 2" />
+			<Item Name="LocalizableStrings.TabContainer_kd6mkum_caption.Value" Value="Tab 1" />
+			<Item Name="LocalizableStrings.TabContainer_xhi61dk_caption.Value" Value="localtabWithAdditionals" />
+		</Items>
+	</Group>
+</Resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="en-US">
+	<Group Type="String">
+		<Items>
+<<<<<<< Local
+			<Item Name="Caption" Value="Local" />
+=======
+			<Item Name="Caption" Value="Remote" />
+>>>>>>> Remote
+			<Item Name="LocalOnly" Value="L" />
+			<Item Name="RemoteOnly" Value="R" />
+		</Items>
+	</Group>
+</Resources>
