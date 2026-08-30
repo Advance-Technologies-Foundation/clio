@@ -112,12 +112,18 @@ jobs:
   cliogate-tests:
     name: ClioGate Tests
     needs: changes
-    if: needs.changes.outputs.cliogate == 'true'
-    runs-on: windows-latest
+    if: >-
+      needs.changes.outputs.cliogate == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    # ClioGate restores Creatio packages from the private Nexus feed, which is unreachable from hosted runners.
+    runs-on: self-hosted
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@v4
         with:
