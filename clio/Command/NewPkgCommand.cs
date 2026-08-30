@@ -47,11 +47,16 @@ namespace Clio.Command
 				CreatioPackage package = CreatioPackage.CreatePackage(options.Name, settings.Maintainer);
 				package.Create();
 				if (!string.IsNullOrEmpty(options.Rebase) && options.Rebase != "nuget") {
-					_referenceCommand.Execute(new ReferenceOptions {
+					int referenceResult = _referenceCommand.Execute(new ReferenceOptions {
 						//The reference command loads a project file, not the package directory
 						Path = package.ProjectFilePath,
 						ReferenceType = options.Rebase
 					});
+					if (referenceResult != 0) {
+						//Removing packages.config after a failed rebase would leave a package that
+						//neither restores its assemblies nor points at local ones
+						return referenceResult;
+					}
 					package.RemovePackageConfig();
 				}
 				_logger.WriteInfo("Done");

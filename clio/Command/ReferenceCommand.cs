@@ -80,7 +80,16 @@ namespace Clio.Command
 					default:
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 				}
+				if (project.ChangedReferencesCount == 0) {
+					//Nothing was rewritten: the project's reference style was not recognized.
+					//Saving here would only strip packages.config and leave references that
+					//point at assemblies nothing restores any more.
+					_logger.WriteError($"Could not recognize the reference style of {options.Path}. "
+						+ "No reference was changed and the project was left unchanged.");
+					return 1;
+				}
 				project.SaveChanges();
+				_logger.WriteLine($"Changed {project.ChangedReferencesCount} references");
 				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
