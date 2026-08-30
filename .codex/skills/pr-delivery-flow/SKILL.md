@@ -6,7 +6,7 @@ description: Update a working branch from `master`, create or refresh a pull req
 # PR Delivery Flow
 
 Canonical-Source: docs/agent-instructions/pr-delivery-flow.md
-Canonical-Version: 2
+Canonical-Version: 4
 
 Follow the canonical instructions in `docs/agent-instructions/pr-delivery-flow.md`.
 
@@ -15,4 +15,4 @@ Skill-specific requirements:
 - After each push, re-check both PR comments and review thread state on the latest head commit.
 - Treat AI review feedback as real review feedback: validate it, fix it if needed, reply, and resolve the thread.
 - Resolve outdated review threads too if they are still unresolved and the feedback was addressed.
-- If the user wants the PR fully clean, inspect Sonar issues directly instead of relying only on the green quality gate badge.
+- Run `python .codex/skills/pr-delivery-flow/scripts/check_sonar_new_issues.py --pr <number>` on the latest head and require exit code `0`. A green quality-gate badge is insufficient: no unresolved or accepted new Sonar issues are allowed before merge.

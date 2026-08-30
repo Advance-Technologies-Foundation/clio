@@ -80,6 +80,7 @@ namespace cliogate.Files.cs
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
 		private readonly string splitName = "#OriginalMaintainer:";
 		private const string DescriptionColumnName = "Description";
+		private const int PackageDescriptionMaxLength = 250;
 
 		#endregion
 
@@ -178,14 +179,30 @@ namespace cliogate.Files.cs
 		/// <summary>
 		/// Builds the value stored in the <c>SysPackage.Description</c> column when unlocking a package,
 		/// preserving the original maintainer marker. A null <paramref name="originalDescription"/>
-		/// (the column is nullable) is treated as an empty string.
+		/// (the column is nullable) is treated as an empty string. The human-readable prefix is truncated
+		/// when necessary so the complete marker remains within the 250-character database column.
 		/// </summary>
 		internal static string BuildUnlockDescription(string originalDescription, string originalMaintainer,
 			string splitMarker){
 			originalDescription = originalDescription ?? string.Empty;
-			return originalDescription.Contains(splitMarker)
-				? originalDescription
-				: originalDescription + splitMarker + originalMaintainer;
+			if (originalDescription.Contains(splitMarker)) {
+				return originalDescription;
+			}
+			string maintainerMarker = splitMarker + (originalMaintainer ?? string.Empty);
+			if (maintainerMarker.Length > PackageDescriptionMaxLength) {
+				throw new InvalidOperationException(
+					$"The original maintainer marker requires {maintainerMarker.Length} characters, but " +
+					$"SysPackage.{DescriptionColumnName} allows only {PackageDescriptionMaxLength}.");
+			}
+			int prefixLength = PackageDescriptionMaxLength - maintainerMarker.Length;
+			if (originalDescription.Length > prefixLength) {
+				originalDescription = originalDescription.Substring(0, prefixLength);
+				if (originalDescription.Length > 0 &&
+					char.IsHighSurrogate(originalDescription[originalDescription.Length - 1])) {
+					originalDescription = originalDescription.Substring(0, originalDescription.Length - 1);
+				}
+			}
+			return originalDescription + maintainerMarker;
 		}
 
 		/// <summary>

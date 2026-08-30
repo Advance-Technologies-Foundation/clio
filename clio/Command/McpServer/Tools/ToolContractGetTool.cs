@@ -1316,7 +1316,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildExecuteEsq() {
 		return new ToolContractDefinition(
 			ExecuteEsqTool.ToolName,
-			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape. A requested columns.items alias whose columnPath does not resolve fails the call with success:false instead of silently omitting that column from the rows.",
+			$"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape. A requested columns.items alias whose columnPath does not resolve fails the call with success:false instead of silently omitting that column from the rows. DataService responses larger than {ExecuteEsqTool.MaxResponseSizeBytes} UTF-8 bytes fail with error-class=result-too-large; select explicit columns, lower rowCount, or page the query.",
 			new ToolInputSchemaContract(
 				[QueryFieldName, EnvironmentNameFieldName],
 				[
@@ -1332,7 +1332,8 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(CountFieldName, NumberType, "Number of rows returned."),
 				Field("rows", ArrayType, "Rows returned by the SelectQuery."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("error-class", StringType, $"Stable failure classification. result-too-large means the DataService response exceeded the {ExecuteEsqTool.MaxResponseSizeBytes} UTF-8 byte budget.")),
 			CommonErrorContract,
 			[],
 			[],

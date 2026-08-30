@@ -6,7 +6,9 @@ using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Command;
 using Clio.Tests.Extensions;
+using Clio.Utilities;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests;
@@ -519,16 +521,28 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Keeps a disabled experimental command's --help output empty so the shared dispatch fix cannot leak feature-toggled-off command help (ENG-93886 risk: shared chokepoint blast radius).")]
 	public void ExecuteCommands_WithDisabledExperimentalCommandHelpSwitch_ShouldNotLeakCommandHelp() {
+		// Arrange
+		const string expectedUrl
+			= "https://github.com/Advance-Technologies-Foundation/clio/blob/master/clio/Commands.md#";
 		ThreadSafeStringWriter consoleOutput = new();
+		IWebBrowser webBrowser = Substitute.For<IWebBrowser>();
+		webBrowser.Enabled.Returns(true);
+		webBrowser.CheckUrl(Arg.Any<string>()).Returns(true);
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
-		int exitCode = Program.ExecuteCommands(["ring", "--help"]);
+		// Act
+		int exitCode = Program.ExecuteCommands(
+			["ring", "--help"],
+			services => services.AddSingleton(webBrowser));
 		string output = consoleOutput.ToString();
 
+		// Assert
 		exitCode.Should().Be(1, because: "a feature-toggled-off command must remain indistinguishable from an unknown verb even through the new --help dispatch short-circuit");
 		output.Should().NotContain("Install, update, launch",
 			because: "the disabled ring command's help text must not leak through the new --help dispatch short-circuit");
+		webBrowser.Received(1).CheckUrl(expectedUrl);
+		webBrowser.Received(1).OpenUrl(expectedUrl);
 	}
 
 	[Test]
