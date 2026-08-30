@@ -93,41 +93,22 @@ namespace Clio.Command {
 				int? fallbackTotal = null;
 				bool fallbackMayBeCapped = false;
 				if (pages.Count == 0 && !string.IsNullOrWhiteSpace(packageName)) {
-					// Issue #1213: a freshly-created package returned no rows through the package-name
-					// relation filter while the same rows were already visible through an unscoped read.
-					// Cross-check an empty result once and filter the returned package names locally before
-					// treating the package as absent. The normal filtered query remains the fast path.
-					List<PageListItem>? broaderPages;
-					try {
-						broaderPages = TryQueryPages(
-							url,
-							packageName: string.Empty,
-							nameFilter,
-							options.UId,
-							EmptyFilterFallbackRowCount);
-					}
-					catch (Exception exception) when (exception is System.Net.Http.HttpRequestException
-						or System.Net.WebException
-						or TimeoutException
-						or Newtonsoft.Json.JsonException) {
-						broaderPages = null;
-					}
-					if (broaderPages is null) {
+					if (!TryCrossCheckEmptyPackagePages(
+						url,
+						packageName,
+						nameFilter,
+						options.UId,
+						effectiveLimit,
+						out pages,
+						out int verifiedTotal,
+						out fallbackMayBeCapped)) {
 						response = new PageListResponse {
 							Success = false,
 							Error = "The package-filtered query returned no rows, and the broader verification query failed."
 						};
 						return false;
 					}
-					fallbackMayBeCapped = broaderPages.Count >= EmptyFilterFallbackRowCount;
-					List<PageListItem> packageMatches = broaderPages
-						.Where(page => string.Equals(
-							page.PackageName,
-							packageName,
-							StringComparison.OrdinalIgnoreCase))
-						.ToList();
-					fallbackTotal = packageMatches.Count;
-					pages = packageMatches.Take(effectiveLimit).ToList();
+					fallbackTotal = verifiedTotal;
 				}
 				// The capped data query cannot reveal how many pages matched in total, so a caller
 				// could not otherwise tell a 50-item page from a complete result. Only when the page
@@ -171,6 +152,52 @@ namespace Clio.Command {
 				response = new PageListResponse { Success = false, Error = ex.Message };
 				return false;
 			}
+		}
+
+		private bool TryCrossCheckEmptyPackagePages(
+			string url,
+			string packageName,
+			string nameFilter,
+			string uId,
+			int effectiveLimit,
+			out List<PageListItem> pages,
+			out int total,
+			out bool mayBeCapped) {
+			// Issue #1213: a freshly-created package returned no rows through the package-name
+			// relation filter while the same rows were already visible through an unscoped read.
+			// Cross-check an empty result once and filter the returned package names locally before
+			// treating the package as absent. The normal filtered query remains the fast path.
+			List<PageListItem>? broaderPages;
+			try {
+				broaderPages = TryQueryPages(
+					url,
+					packageName: string.Empty,
+					nameFilter,
+					uId,
+					EmptyFilterFallbackRowCount);
+			}
+			catch (Exception exception) when (exception is System.Net.Http.HttpRequestException
+				or System.Net.WebException
+				or TimeoutException
+				or Newtonsoft.Json.JsonException) {
+				broaderPages = null;
+			}
+			if (broaderPages is null) {
+				pages = [];
+				total = 0;
+				mayBeCapped = false;
+				return false;
+			}
+			mayBeCapped = broaderPages.Count >= EmptyFilterFallbackRowCount;
+			List<PageListItem> packageMatches = broaderPages
+				.Where(page => string.Equals(
+					page.PackageName,
+					packageName,
+					StringComparison.OrdinalIgnoreCase))
+				.ToList();
+			total = packageMatches.Count;
+			pages = packageMatches.Take(effectiveLimit).ToList();
+			return true;
 		}
 
 		private static JObject BuildPageFilters(string packageName, string nameFilter, string uId) {
