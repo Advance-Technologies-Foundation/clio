@@ -18,9 +18,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: read
+permissions: {}
 
 jobs:
 
@@ -28,6 +26,9 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       clio-src:    ${{ steps.filter.outputs.clio-src }}
       tests:       ${{ steps.filter.outputs.tests }}
@@ -81,6 +82,8 @@ jobs:
   unit-test-shards:
     name: Unit Test Shard (${{ matrix.name }})
     needs: changes
+    permissions:
+      contents: read
     if: >-
       needs.changes.outputs.clio-src == 'true' ||
       needs.changes.outputs.tests   == 'true' ||
@@ -172,6 +175,7 @@ jobs:
     needs: [changes, unit-test-shards]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Preserve the required unit-test gate
         if: >-
@@ -211,6 +215,8 @@ jobs:
   integration-test-shards:
     name: Integration Test Shard (${{ matrix.name }})
     needs: changes
+    permissions:
+      contents: read
     if: >-
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&
@@ -261,6 +267,7 @@ jobs:
     needs: [changes, integration-test-shards]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Preserve the required integration-test gate
         if: >-
@@ -277,6 +284,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.analyzers == 'true'
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
