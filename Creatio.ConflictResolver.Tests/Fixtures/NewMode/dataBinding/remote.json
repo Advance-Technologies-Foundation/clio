@@ -1,0 +1,9 @@
+{
+  "PackageData": [
+    { "Row": [
+      { "SchemaColumnUId": "id-col-1", "Value": "row" },
+      { "SchemaColumnUId": "id-col-2", "Value": "1" },
+      { "SchemaColumnUId": "name-col", "Value": "remote" }
+    ]}
+  ]
+}
