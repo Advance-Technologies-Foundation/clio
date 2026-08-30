@@ -41,6 +41,7 @@ jobs:
               - 'clio/**'
               - 'Directory.Packages.props'
             tests:
+              - '.github/workflows/build.yml'
               - 'clio.tests/**'
               - 'clio.mcp.e2e/**'
               - 'clio.process.fixture/**'
