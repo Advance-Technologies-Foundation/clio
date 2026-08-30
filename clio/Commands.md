@@ -274,6 +274,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="merge-workspaces"></a>
 <a id="mergew"></a>
 - [`merge-workspaces`](docs/commands/merge-workspaces.md) - Merge packages from multiple workspaces and install them to the environment, `mergew`
+<a id="merge-creatio-artifact"></a>
+- [`merge-creatio-artifact`](docs/commands/merge-creatio-artifact.md) - Preview a semantic merge and expose user questions for supported Creatio conflicts
 <a id="pkg-to-db"></a>
 <a id="2db"></a>
 <a id="todb"></a>

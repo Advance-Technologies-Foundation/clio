@@ -25,11 +25,14 @@ Do not duplicate the phase procedures here. Use the phase skills as the source o
 Use GitHub's existing primitives only:
 
 - Assignee: who coordinates the issue.
+- Issue Type and labels: the evidence-backed classification, normalized before investigation hands work to repair or another owner.
 - `Mitigation stage` issue field: `Investigating`, `Fixing`, `QA`, or `Waiting for human approval`.
 - Development: the linked branch and later the draft pull request.
 - Relationships: the original issue is `blocked by` an issue in another repository when that downstream issue owns work required to resolve the report.
 
 Do not introduce claim records, leases, receipts, lock files, custom refs, or a separate state store.
+
+Missing Issue Type or labels do not block intake or claim. The `investigate-clio-issue` skill must set and verify exactly one relevant enabled Issue Type and at least one relevant existing repository label after diagnosis. Do not invent a type, create a label, or use a placeholder classification merely to satisfy the gate.
 
 The original issue's `Mitigation stage` is authoritative for the overall workflow. A closed issue needs no `Done` field value.
 
@@ -63,4 +66,4 @@ If the field, option, permission, or API support is missing, report the exact fa
 
 Report the original issue, assignee, current stage, linked branch or PR, owning repositories, blocking downstream issues, validation state, and any genuine human decision still required.
 
-Do not add coordination artifacts beyond the assignee, stage field, Development link, issue relationships, and normal issue or PR comments required to explain a blocker.
+Do not add coordination artifacts beyond the assignee, Issue Type, labels, stage field, Development link, issue relationships, and normal issue or PR comments required to explain a blocker.

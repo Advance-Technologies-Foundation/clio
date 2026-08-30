@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -76,8 +77,12 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 		IReadOnlyList<KnowledgeRoleArticle> articles = _runtime.GetArticlesByRole(ReferenceExampleRole);
 		List<KnowledgeReferenceExample> examples = [];
 		List<string> diagnostics = [];
-		if (!string.IsNullOrWhiteSpace(_activator.LastDiagnostic)) {
-			diagnostics.Add(_activator.LastDiagnostic);
+		// Read ONCE. LastDiagnostic is a plain auto-property written under the activator's lock and read
+		// without one, so a guard and a second read can straddle a concurrent reset to null.
+		string? activationDiagnostic =
+			SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic);
+		if (activationDiagnostic is not null) {
+			diagnostics.Add(activationDiagnostic);
 		}
 		foreach (KnowledgeRoleArticle item in articles) {
 			// Reference examples honour requiredFeatures exactly like guidance articles do in
@@ -92,11 +97,26 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 			}
 			if (!_parser.TryParse(item.Article.Text, out KnowledgeReferenceExampleDocument? document, out string? parseDiagnostic)
 					|| document is null) {
-				diagnostics.Add($"Catalog item '{item.Article.Uri}' is invalid YAML: {Safe(parseDiagnostic)}");
+				// Neutralized, not merely trimmed. parseDiagnostic is a YamlException message, which embeds
+				// the offending document's own keys - so a knowledge repository chooses this prose, exactly
+				// like the activation diagnostic above. The local Safe() is only a blank-guard; the
+				// same-named helper in KnowledgeSourceManagementService is the redactor, which is how this
+				// site was missed once already.
+				// Only the PARSER's message is neutralized, not the whole sentence. The item URI is
+				// clio-authored framing and pattern-validated, and running it through Redact would replace
+				// the "docs://..." token with [redacted-uri] - deleting the one thing that says WHICH item
+				// is broken.
+				diagnostics.Add($"Catalog item '{item.Article.Uri}' is invalid YAML: "
+					+ (SensitiveErrorTextRedactor.RedactUntrustedOrNull(parseDiagnostic)
+						?? "unknown parsing error."));
 				continue;
 			}
 			if (!TryMap(item, document, out KnowledgeReferenceExample? example, out string? validationDiagnostic)) {
-				diagnostics.Add($"Catalog item '{item.Article.Uri}' is invalid: {validationDiagnostic}");
+				// Literal today, but it goes through the same door so it stays true if a value is ever
+				// interpolated into a validation message.
+				diagnostics.Add($"Catalog item '{item.Article.Uri}' is invalid: "
+					+ (SensitiveErrorTextRedactor.RedactUntrustedOrNull(validationDiagnostic)
+						?? "unknown validation error."));
 				continue;
 			}
 			if (Matches(example, normalized)) {
@@ -293,7 +313,15 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 	private static bool SafeText(string? value) =>
 		!Blank(value) && !TooLong(value) && !HasControlCharacters(value);
 
-	private static bool HasControlCharacters(string value) => value.Any(char.IsControl);
+	// Same classification as SensitiveErrorTextRedactor uses for untrusted text, and for the same
+	// reason: U+2028/U+2029 are Zl/Zp rather than control characters but render as line breaks, and a
+	// format character can reorder what a reader sees. These fields are repository-authored and are
+	// copied verbatim into the tool response - up to 4096 characters each, 128 notes per example.
+	private static bool HasControlCharacters(string value) => value.Any(character =>
+		char.IsControl(character)
+		|| char.IsSurrogate(character)
+		|| (character != ' ' && char.IsSeparator(character))
+		|| CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format);
 
 	private static bool Stable(string? value) =>
 		!Blank(value) && value.Trim().Length <= 160 && StableIdPattern.IsMatch(value.Trim());
@@ -303,7 +331,6 @@ internal sealed class KnowledgeReferenceExampleService : IKnowledgeReferenceExam
 
 	private static string? TrimToNull(string? value) => Blank(value) ? null : value.Trim();
 
-	private static string Safe(string? value) => Blank(value) ? "unknown parsing error" : value.Trim();
 }
 
 internal sealed class KnowledgeReferenceExampleDocument {

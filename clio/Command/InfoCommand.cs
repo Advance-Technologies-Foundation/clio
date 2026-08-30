@@ -42,7 +42,7 @@ namespace Clio.Command
 
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.47";
+		private const string _gateVersion = "2.0.0.48";
 		private readonly ILogger _logger;
 		private readonly IBundledPackageCatalog _bundledPackageCatalog;
 

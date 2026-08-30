@@ -1,0 +1,21 @@
+﻿{
+  "SqlScript": {
+    "UId": "f63784c8-edc4-cc56-8249-e1761ea1f98d",
+    "Name": "UsrAkhSql",
+    "DBEngineType": 0,
+    "InstallType": 1,
+    "ModifiedOnUtc": "\/Date(1774635866000)\/",
+    "BackwardCompatibilityConfirmed": false,
+    "DependsOn": [
+      {
+        "UId": "e48facd5-a405-41c7-8b5f-1ae987bf3b25",
+        "Name": "DeleteOldSysAdminOperationGranteeMSSQL"
+      },
+      {
+        "IX_EmailMessageData_MailboxSyncSettings_PanelData_Mssql": null,
+        "UId": "9e031cca-ad9e-406d-bdcb-be6a2e8a381c",
+        "Name": "CreateVwPageTemplateMSSql"
+      }
+    ]
+  }
+}

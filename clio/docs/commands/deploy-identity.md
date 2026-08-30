@@ -61,10 +61,12 @@ Default: <environment>-identity
 
 --identity-path PATH
 Target IdentityService directory.
+Filesystem reparse points are refused anywhere in the target path.
 Default: sibling <environment>-identity folder next to the Creatio EnvironmentPath
 
 --overwrite
-Replace the existing IdentityService target directory.
+Overwrite IdentityService files in an empty or recognized existing target directory.
+Unrelated non-empty directories are refused and are never recursively deleted.
 Default: false
 
 --configuration-mode MODE
