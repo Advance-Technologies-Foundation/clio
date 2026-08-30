@@ -48,8 +48,9 @@ public sealed record EntitySchemaSearchResult(
 );
 
 /// <summary>
-/// Finds entity schemas in a Creatio environment using a single DataService query on SysSchema.
-/// Accepts exact name, case-insensitive substring pattern, or UId as search criteria.
+/// Finds entity schemas in a Creatio environment using DataService queries on SysSchema.
+/// Accepts exact name, case-insensitive substring pattern, or UId as search criteria. An empty
+/// substring result is cross-checked once with a broader query before absence is reported.
 /// </summary>
 public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 {
@@ -108,7 +109,22 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 	public virtual IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		Validate(options);
-		object query = BuildFindSchemasQuery(options);
+		IReadOnlyList<EntitySchemaSearchResult> results = ExecuteFindSchemasQuery(
+			BuildFindSchemasQuery(options, includeSearchPattern: true));
+		if (results.Count == 0 && !string.IsNullOrWhiteSpace(options.SearchPattern)) {
+			// Issue #1213: a just-created schema was visible by exact identity but not by the
+			// server-side contains filter. Cross-check only an empty pattern result and apply the
+			// advertised ordinal-ignore-case substring comparison locally.
+			string searchPattern = options.SearchPattern.Trim();
+			results = ExecuteFindSchemasQuery(
+				BuildFindSchemasQuery(options, includeSearchPattern: false))
+				.Where(result => result.SchemaName.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
+				.ToList();
+		}
+		return results;
+	}
+
+	private IReadOnlyList<EntitySchemaSearchResult> ExecuteFindSchemasQuery(object query) {
 		FindSchemasResponse response = ExecuteSelectQuery<FindSchemasResponse>(
 			_applicationClient,
 			_serviceUrlBuilder,
@@ -136,7 +152,9 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 		}
 	}
 
-	private static object BuildFindSchemasQuery(FindEntitySchemaOptions options) {
+	private static object BuildFindSchemasQuery(
+		FindEntitySchemaOptions options,
+		bool includeSearchPattern) {
 		List<SelectQueryFilterDefinition> filters =
 		[
 			new("ManagerName", EntitySchemaManagerName, TextDataValueType)
@@ -144,7 +162,7 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 		if (!string.IsNullOrWhiteSpace(options.SchemaName)) {
 			filters.Add(new("Name", options.SchemaName.Trim(), TextDataValueType));
 		}
-		if (!string.IsNullOrWhiteSpace(options.SearchPattern)) {
+		if (includeSearchPattern && !string.IsNullOrWhiteSpace(options.SearchPattern)) {
 			filters.Add(new("Name", options.SearchPattern.Trim(), TextDataValueType,
 				ContainsComparisonType));
 		}

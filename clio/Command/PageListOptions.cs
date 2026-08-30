@@ -33,6 +33,7 @@ namespace Clio.Command {
 		private const string ExpressionKey = "expression";
 		private const string SuccessKey = "success";
 		private const int ContainsComparisonType = 11;
+		private const int EmptyFilterFallbackRowCount = 10000;
 
 		/// <summary>
 		/// Result cap applied when <c>limit</c> is omitted or supplied as 0 ("use the default").
@@ -82,44 +83,7 @@ namespace Clio.Command {
 					["operationType"] = 0,
 					["filters"] = BuildPageFilters(packageName, nameFilter, options.UId),
 					["columns"] = new JObject {
-						[ItemsKey] = new JObject {
-							["Name"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "Name"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							},
-							["UId"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "UId"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							},
-							["PackageName"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "SysPackage.Name"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							},
-							["ParentSchemaName"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "[SysSchema:Id:Parent].Name"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
-							}
-						}
+						[ItemsKey] = BuildPageColumns()
 					},
 					["rowCount"] = effectiveLimit
 				};
@@ -133,13 +97,33 @@ namespace Clio.Command {
 				}
 				JArray rows = rawResponse["rows"] as JArray ?? [];
 				List<PageListItem> pages = rows
-					.Select(row => new PageListItem {
-						SchemaName = row["Name"]?.ToString(),
-						UId = row["UId"]?.ToString(),
-						PackageName = row["PackageName"]?.ToString(),
-						ParentSchemaName = row["ParentSchemaName"]?.ToString()
-					})
+					.Select(MapPage)
 					.ToList();
+				int? fallbackTotal = null;
+				bool fallbackMayBeCapped = false;
+				if (pages.Count == 0 && !string.IsNullOrWhiteSpace(packageName)) {
+					// Issue #1213: a freshly-created package returned no rows through the package-name
+					// relation filter while the same rows were already visible through an unscoped read.
+					// Cross-check an empty result once and filter the returned package names locally before
+					// treating the package as absent. The normal filtered query remains the fast path.
+					List<PageListItem>? broaderPages = TryQueryPages(
+						url,
+						packageName: string.Empty,
+						nameFilter,
+						options.UId,
+						EmptyFilterFallbackRowCount);
+					if (broaderPages is not null) {
+						fallbackMayBeCapped = broaderPages.Count >= EmptyFilterFallbackRowCount;
+						List<PageListItem> packageMatches = broaderPages
+							.Where(page => string.Equals(
+								page.PackageName,
+								packageName,
+								StringComparison.OrdinalIgnoreCase))
+							.ToList();
+						fallbackTotal = packageMatches.Count;
+						pages = packageMatches.Take(effectiveLimit).ToList();
+					}
+				}
 				// The capped data query cannot reveal how many pages matched in total, so a caller
 				// could not otherwise tell a 50-item page from a complete result. Only when the page
 				// is provably full (count >= the cap) is a separate COUNT(Id) round-trip worth its
@@ -148,7 +132,11 @@ namespace Clio.Command {
 				// completeness, so the result must be reported as truncated.
 				int total;
 				bool truncated;
-				if (pages.Count < effectiveLimit) {
+				if (fallbackTotal.HasValue) {
+					total = fallbackTotal.Value;
+					truncated = fallbackMayBeCapped || total > pages.Count;
+				}
+				else if (pages.Count < effectiveLimit) {
 					total = pages.Count;
 					truncated = false;
 				}
@@ -199,6 +187,66 @@ namespace Clio.Command {
 				filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", uId, 0, 3);
 			}
 			return filters;
+		}
+
+		private List<PageListItem>? TryQueryPages(
+			string url,
+			string packageName,
+			string nameFilter,
+			string uId,
+			int rowCount) {
+			try {
+				var query = new JObject {
+					["rootSchemaName"] = "SysSchema",
+					["operationType"] = 0,
+					["filters"] = BuildPageFilters(packageName, nameFilter, uId),
+					["columns"] = new JObject {
+						[ItemsKey] = BuildPageColumns()
+					},
+					["rowCount"] = rowCount
+				};
+				string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
+				var rawResponse = JObject.Parse(responseJson);
+				if (!(rawResponse[SuccessKey]?.Value<bool>() ?? false)) {
+					return null;
+				}
+				return (rawResponse["rows"] as JArray ?? [])
+					.Select(MapPage)
+					.ToList();
+			}
+			catch (Newtonsoft.Json.JsonException) {
+				return null;
+			}
+		}
+
+		private static JObject BuildPageColumns() {
+			return new JObject {
+				["Name"] = BuildPageColumn("Name"),
+				["UId"] = BuildPageColumn("UId"),
+				["PackageName"] = BuildPageColumn("SysPackage.Name"),
+				["ParentSchemaName"] = BuildPageColumn("[SysSchema:Id:Parent].Name")
+			};
+		}
+
+		private static JObject BuildPageColumn(string columnPath) {
+			return new JObject {
+				[ExpressionKey] = new JObject {
+					[ExpressionTypeKey] = 0,
+					[ColumnPathKey] = columnPath
+				},
+				["orderDirection"] = 0,
+				["orderPosition"] = -1,
+				["isVisible"] = true
+			};
+		}
+
+		private static PageListItem MapPage(JToken row) {
+			return new PageListItem {
+				SchemaName = row["Name"]?.ToString(),
+				UId = row["UId"]?.ToString(),
+				PackageName = row["PackageName"]?.ToString(),
+				ParentSchemaName = row["ParentSchemaName"]?.ToString()
+			};
 		}
 
 		/// <summary>

@@ -637,7 +637,9 @@ public class PageToolsTests
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
 		var dataServiceResponse = new JObject {
 			["success"] = true,
-			["rows"] = new JArray()
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "MyPage", ["UId"] = "page-uid", ["PackageName"] = "MyPackage" }
+			}
 		};
 		applicationClient.ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -651,6 +653,55 @@ public class PageToolsTests
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages cross-checks an empty package filter with a broader query and filters package names case-insensitively")]
+	public void TryListPages_ShouldCrossCheckBroaderQuery_WhenPackageFilterReturnsEmpty() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var filteredResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray()
+		};
+		var broaderResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "labReservation_FormPage", ["UId"] = "page-1", ["PackageName"] = "labFORENOM" },
+				new JObject { ["Name"] = "Other_FormPage", ["UId"] = "page-2", ["PackageName"] = "OtherPackage" }
+			}
+		};
+		List<string> requests = [];
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Do<string>(body => requests.Add(body)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(filteredResponse.ToString(), broaderResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "labforenom", Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the broader cross-check returned a page from the requested package");
+		response.Pages.Should().ContainSingle(
+			page => page.SchemaName == "labReservation_FormPage",
+			because: "package-name comparison should be ordinal-ignore-case and exclude other packages");
+		response.Total.Should().Be(1,
+			because: "the fallback total should count all locally matched package rows");
+		response.Truncated.Should().BeFalse(
+			because: "one matching page fits within the requested limit");
+		requests.Should().HaveCount(2,
+			because: "the broader query should run only after the filtered query returns no rows");
+		JObject.Parse(requests[0])["filters"]!["items"]!["PackageName"].Should().NotBeNull(
+			because: "the fast path should retain the server-side package filter");
+		JObject.Parse(requests[1])["filters"]!["items"]!["PackageName"].Should().BeNull(
+			because: "the fallback must remove the unreliable package filter before filtering locally");
 	}
 
 	[Test]

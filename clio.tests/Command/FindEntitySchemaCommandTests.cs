@@ -81,19 +81,23 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 		// Arrange
 		const int containsComparisonType = 11;
 		FindEntitySchemaOptions options = new() { SearchPattern = "Task" };
-		string json = BuildSuccessJson([]);
-		string? requestJson = null;
+		string json = BuildSuccessJson([
+			new FindSchemaRow("UsrTask", "aaa", "UsrTaskApp", "Advance", "BaseEntity")
+		]);
+		List<string> requests = [];
 		_applicationClient
-			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(request => requestJson = request))
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(request => requests.Add(request)))
 			.Returns(json);
 
 		// Act
 		_command.FindSchemas(options);
 
 		// Assert
-		requestJson.Should().NotBeNullOrWhiteSpace(
+		requests.Should().NotBeEmpty(
 			"the command should send a SelectQuery request to DataService");
-		using JsonDocument document = JsonDocument.Parse(requestJson!);
+		requests.Should().ContainSingle(
+			"a non-empty filtered result should remain on the normal one-query fast path");
+		using JsonDocument document = JsonDocument.Parse(requests[0]);
 		JsonElement? searchPatternFilter = null;
 		foreach (JsonProperty item in document
 			.RootElement
@@ -112,6 +116,36 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 		searchPatternFilter.Value.GetProperty("comparisonType").GetInt32().Should().Be(
 			containsComparisonType,
 			"search-pattern must use Creatio's contains comparison type");
+	}
+
+	[Test]
+	[Description("FindSchemas cross-checks an empty server-side pattern result with a broader query and filters it case-insensitively.")]
+	public void FindSchemas_ShouldCrossCheckBroaderQuery_WhenSearchPatternReturnsEmpty() {
+		// Arrange
+		FindEntitySchemaOptions options = new() { SearchPattern = "reserv" };
+		List<string> requests = [];
+		_applicationClient
+			.ExecutePostRequest("http://localhost/select", Arg.Do<string>(request => requests.Add(request)))
+			.Returns(
+				BuildSuccessJson([]),
+				BuildSuccessJson([
+					new FindSchemaRow("labReservation", "aaa", "labFORENOM", "Creatio", "BaseEntity"),
+					new FindSchemaRow("labOffer", "bbb", "labFORENOM", "Creatio", "BaseEntity")
+				]));
+
+		// Act
+		IReadOnlyList<EntitySchemaSearchResult> results = _command.FindSchemas(options);
+
+		// Assert
+		results.Should().ContainSingle(
+			result => result.SchemaName == "labReservation",
+			"an empty server-side contains result must be cross-checked before reporting the schema absent");
+		requests.Should().HaveCount(2,
+			"the broader read should run only after the filtered query returns no rows");
+		requests[0].Should().Contain("reserv",
+			"the fast-path request should retain the requested server-side contains filter");
+		requests[1].Should().NotContain("reserv",
+			"the fallback request must remove the unreliable contains filter before filtering locally");
 	}
 
 	[Test]

@@ -18,10 +18,17 @@ package names, and parent schema names. Use this command to discover
 candidate schema names before calling get-page.
 
 Results are capped by `--limit` (default 50). The response always reports
-`count` (pages returned), `total` (full number of matching pages before the
-cap), and `truncated` (true when `total` is greater than `count`), so an
-incomplete result is observable. Omit `--limit` or pass `0` to use the
-default of 50; a negative limit is rejected and never disables the cap.
+`count` (pages returned), `total` (known number of matching pages before the
+requested limit), and `truncated` (true when the result is incomplete or
+completeness cannot be proved), so a capped result is observable. Omit
+`--limit` or pass `0` to use the default of 50; a negative limit is rejected
+and never disables the cap.
+
+A package-name lookup normally uses one filtered query. If Creatio returns no
+rows, clio cross-checks once with a broader bounded query and matches returned
+package names locally before reporting an empty package. If the broader query
+reaches its safety bound, `truncated` is `true` because completeness cannot be
+proven.
 
 ## Synopsis
 

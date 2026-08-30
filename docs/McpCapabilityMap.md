@@ -311,7 +311,8 @@ Implication for external AI:
 This is one of the strongest and most AI-friendly parts of the MCP surface.
 
 - `list-pages`
-  Discover candidate Freedom UI pages by package or schema pattern.
+  Discover candidate Freedom UI pages by package or schema pattern. An empty package-filtered
+  result is cross-checked once with a broader bounded read before absence is reported.
 - `get-page`
   Read a page as a merged bundle plus raw editable JavaScript body.
 - `update-page`
