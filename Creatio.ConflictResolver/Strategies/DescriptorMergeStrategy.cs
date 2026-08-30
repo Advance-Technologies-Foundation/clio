@@ -9,7 +9,8 @@ internal sealed class DescriptorMergeStrategy : IMergeStrategy
 {
 	private static readonly Regex TimestampRegex = new(
 		"^/Date\\((\\d+)\\)/$",
-		RegexOptions.CultureInvariant | RegexOptions.Compiled);
+		RegexOptions.CultureInvariant | RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
 
 	private static readonly JsonSerializerOptions PrettyJsonOptions = new()
 	{

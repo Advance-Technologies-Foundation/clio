@@ -9,11 +9,13 @@ internal sealed class DescriptorAutomergeFormatter : IAutomergeConflictFormatter
 {
 	private static readonly Regex TimestampRegex = new(
 		"^/Date\\((\\d+)\\)/$",
-		RegexOptions.CultureInvariant | RegexOptions.Compiled);
+		RegexOptions.CultureInvariant | RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
 
 	private static readonly Regex ColumnConflictRegex = new(
 		"^Columns\\[(.+)\\]\\.(.+)$",
-		RegexOptions.CultureInvariant | RegexOptions.Compiled);
+		RegexOptions.CultureInvariant | RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
 
 	public bool CanFormat(MergeRequest request, MergeResult result) =>
 		request.FileType == ConflictFileType.DescriptorJson;

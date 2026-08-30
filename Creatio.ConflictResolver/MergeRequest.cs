@@ -35,7 +35,8 @@ public sealed record MergeRequest(
 
 	private static readonly Regex ProcessSchemaManagerRegex = new(
 		"\"ManagerName\"\\s*:\\s*\"ProcessSchemaManager\"",
-		RegexOptions.CultureInvariant | RegexOptions.Compiled);
+		RegexOptions.CultureInvariant | RegexOptions.Compiled,
+		TimeSpan.FromSeconds(1));
 
 	private static readonly Func<string, string?> DefaultSiblingFileReader =
 		static path => File.Exists(path) ? File.ReadAllText(path) : null;

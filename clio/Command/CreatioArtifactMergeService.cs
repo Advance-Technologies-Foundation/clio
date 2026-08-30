@@ -344,7 +344,7 @@ public sealed partial class CreatioArtifactMergeService(Resolver.IConflictResolv
 		}
 		string normalized = path.Replace('\\', '/');
 		if (normalized.StartsWith("/", StringComparison.Ordinal) ||
-		    Regex.IsMatch(normalized, "^[A-Za-z]:", RegexOptions.CultureInvariant)) {
+		    (normalized.Length >= 2 && char.IsAsciiLetter(normalized[0]) && normalized[1] == ':')) {
 			return false;
 		}
 

@@ -20,11 +20,13 @@ internal sealed class FlatDiffTranspiler
 
 	private static readonly Regex HeaderRegex = new(
 		"^([=+\\-~])\\s+(\\S+)(?:\\s+(.*))?$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		RegexOptions.Compiled | RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 
 	private static readonly Regex HasBodySuffixRegex = new(
 		"\\.\\{hasBody:(true|false)\\}$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+		TimeSpan.FromSeconds(1));
 
 	private static readonly IReadOnlyDictionary<char, string> OperationTypeBySymbol =
 		new Dictionary<char, string>

@@ -545,7 +545,6 @@ internal class DataBindingMergeStrategy : IMergeStrategy
 
 		var result = (JsonObject)baseRow.DeepClone();
 		var targetColumns = result["Row"] as JsonArray ?? new JsonArray();
-		result["Row"] = targetColumns;
 		var targetIndexes = BuildTargetColumnIndex(targetColumns);
 		foreach (var uid in localChanged)
 		{

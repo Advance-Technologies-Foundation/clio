@@ -8,7 +8,8 @@ internal sealed class FlatDiffMetadataMergeStrategy : IMergeStrategy, IMetadataM
 	private const int MaxFlatOperationsPerStage = 2_500;
 	private static readonly Regex HeaderRegex = new(
 		"^([=+\\-~])\\s+(\\S+)(?:\\s+(.*))?$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		RegexOptions.Compiled | RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 	
 	private static bool LooksLikeFlat(string content)
 	{

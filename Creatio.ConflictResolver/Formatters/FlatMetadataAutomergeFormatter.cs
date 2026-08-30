@@ -15,7 +15,8 @@ internal sealed class FlatMetadataAutomergeFormatter : IAutomergeConflictFormatt
 
 	private static readonly Regex FlatMetadataHeaderRegex = new(
 		"^([=+\\-~])\\s+(\\S+)(?:\\s+(.*))?$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		RegexOptions.Compiled | RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 
 	public bool CanFormat(MergeRequest request, MergeResult result)
 	{
