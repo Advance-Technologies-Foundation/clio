@@ -21,6 +21,11 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobilePageConversionRulesCatalogTests {
 
+	/// <summary>True when the rule's filters select the given mobile component type.</summary>
+	private static bool Targets(ComponentPropertyOverrideRule rule, string type) =>
+		rule.Filters.Any(f => string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+
+
 	private static Stream JsonStream(string json) => new MemoryStream(Encoding.UTF8.GetBytes(json));
 
 	[Test]
@@ -136,7 +141,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
-			.Single(o => o.Type == "crt.IndicatorWidget");
+			.Single(o => Targets(o, "crt.IndicatorWidget"));
 		metric.MergeNestedObjects.Should().BeTrue(
 			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
 		JsonElement config = metric.Values["config"];
@@ -155,12 +160,16 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		rules.ComponentPropertyOverrides.Should().OnlyContain(
-			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
-			because: "a rule without a type or values cannot stamp anything");
-		rules.ComponentPropertyOverrides.Select(o => o.Type).Should().OnlyHaveUniqueItems(
-			because: "the pass indexes by type and silently LAST-WINS, so a duplicate would ship a rule that "
-				+ "never fires — cheap to catch here for the bundled file");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Values.Count > 0,
+			because: "a rule without values cannot stamp anything");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Filters != null && o.Filters.Count > 0,
+			because: "filters are the rule's ONLY selector — an ABSENT list makes the pass skip the rule "
+				+ "outright, and an EMPTY one would stamp onto every insert of every type; no standard wants "
+				+ "either, so the bundled file must always name what it targets");
+		rules.ComponentPropertyOverrides
+			.SelectMany(o => o.Filters ?? [])
+			.Should().OnlyContain(f => !string.IsNullOrWhiteSpace(f.Type),
+				because: "a bundled filter that names no type would widen its standard across component types");
 	}
 
 	[Test]
@@ -171,10 +180,35 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		rules.ComponentPropertyOverrides
-			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
-			.Should().HaveCount(2)
+			.Where(o => Targets(o, "crt.GridContainer") || Targets(o, "crt.FlexContainer"))
+			.Should().HaveCount(3)
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale");
+	}
+
+	[Test]
+	[Description("The bundled rules promote a grid OR flex container left at the WEB DEFAULT corner radius (Medium) to the mobile default (Large), and match that token alone: a radius someone set deliberately, or none at all, is preserved.")]
+	public void LoadBundled_ReturnsSeededCornerRadiusOverride() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentPropertyOverrideRule radius = rules.ComponentPropertyOverrides
+			.Single(o => Targets(o, "crt.GridContainer") && o.Filters.Any(f => f.Values is { Count: > 0 }));
+		radius.Values.Should().ContainKey("borderRadius", because: "the rule exists to promote the radius");
+		radius.Values["borderRadius"].GetString().Should().Be("large");
+		radius.MergeNestedObjects.Should().BeFalse(
+			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
+		radius.Filters.Select(f => f.Type).Should().BeEquivalentTo(["crt.GridContainer", "crt.FlexContainer"],
+			because: "both container types can carry the radius, so the union names each one — the type is a "
+				+ "filter constraint like any other");
+		radius.Filters.Should().OnlyContain(f => f.Values.Count == 1,
+			because: "one discriminating property beyond the type");
+		radius.Filters.Select(f => f.Values["borderRadius"].GetString()).Should().AllBe("medium",
+			because: "Medium is the WEB DEFAULT radius, so matching it means 'left at the platform default' — "
+				+ "and Large is the mobile default. Any other radius was set deliberately by whoever designed "
+				+ "the page, so it is preserved rather than normalized away: this token IS the rule, not a "
+				+ "partial implementation of a wider one");
 	}
 
 	[Test]
