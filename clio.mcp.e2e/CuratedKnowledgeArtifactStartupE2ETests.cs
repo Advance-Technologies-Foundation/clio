@@ -96,9 +96,11 @@ public sealed class CuratedKnowledgeArtifactStartupE2ETests
                 });
                 await File.WriteAllTextAsync(Path.Combine(clioHome, "appsettings.json"), appSettings);
 
+                IFileSystem fileSystem = new FileSystem();
                 IKnowledgeSourceInstallationStore store = new KnowledgeSourceInstallationStore(
                     new FixedKnowledgeRootPathProvider(knowledgeRoot),
-                    new FileSystem(),
+                    fileSystem,
+                    new KnowledgeManagedTreeDeleter(fileSystem),
                     new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 5_000));
                 KnowledgeInstallationResult published = store.Publish(new KnowledgeGenerationPublication
                 {

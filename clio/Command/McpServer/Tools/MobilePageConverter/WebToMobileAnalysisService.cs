@@ -2018,7 +2018,7 @@ public static class WebToMobileAnalysisService {
 			// Inside a non-converting scope: only a node a conversion template RETARGETS (e.g. a header crt.Button /
 			// crt.MenuItem → FloatingActionButton.menuItems) that also has a CONVERTIBLE `clicked` is converted; it
 			// is emitted at the retargeted placement. Any other node (a container-only dropdown with no clicked of
-			// its own, an explicitly-unsupported clicked, a component no rule matches, or a retarget whose target the
+			// its own, an unsupported clicked, a component no rule matches, or a retarget whose target the
 			// mobile template lacks) is dropped with a reason built FROM DATA — naming the scope container and the
 			// specific cause — and its lost action request is recorded so requestConversions reflects it. Either way
 			// the subtree is recursed IN SCOPE, so a dropdown's nested menuItems still flatten into the same target.
@@ -2036,7 +2036,7 @@ public static class WebToMobileAnalysisService {
 					// The element is inherited from the web template (chrome such as Save/Cancel/Close), which the mobile
 					// template provides natively; retargeting it into a shared container would duplicate it. Drop it — the
 					// native element carries its OWN action. Guarded by convertibility so a node that would NOT have converted
-					// anyway (no clicked, an explicitly-unsupported request) keeps its accurate data-derived ScopeDropReason
+					// anyway (no clicked, an unsupported request) keeps its accurate data-derived ScopeDropReason
 					// below instead of this inherited-chrome one.
 					ctx.Out.Add(Drop(name, type,
 						$"action under non-converting scope '{scopeContainer}'; '{name}' is inherited from the web template "
@@ -2064,7 +2064,7 @@ public static class WebToMobileAnalysisService {
 					});
 				} else {
 					(string dropReason, string requestLossReason) = ScopeDropReason(
-						scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
+						ctx, scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
 					ctx.Out.Add(Drop(name, type, dropReason));
 					// Record the lost action so requestConversions surfaces it (BuildMobileValues did not run, so
 					// nothing recorded it yet). None-clicked nodes carry no request and nothing is recorded.
@@ -2387,20 +2387,31 @@ public static class WebToMobileAnalysisService {
 	private enum ClickedConvertibility {
 		/// <summary>No <c>clicked</c> event binding — a container-only node (e.g. a dropdown), not itself an action.</summary>
 		None,
-		/// <summary>The versioned map explicitly CLEARS this request's mobile target — a dead action on mobile.</summary>
-		ExplicitlyUnsupported,
-		/// <summary>Supported OR unknown/custom — the action converts (an unknown request is kept and flagged, aligning
-		/// with <see cref="ProcessOneEventBinding"/>, rather than silently dropped).</summary>
+		/// <summary>A <c>crt.Button</c> whose clicked request is NOT supported on mobile — the versioned map clears its
+		/// target, OR it is covered by neither the versioned map nor the bundled supported set (an unknown
+		/// <c>crt.*</c> or a custom <c>usr.*</c> request). A dead button, so it is NOT retargeted into the FAB. Only a
+		/// <c>crt.Button</c> classifies here: another component type (e.g. a <c>crt.MenuItem</c>) with an unsupported
+		/// clicked is <see cref="Convertible"/> — kept and flagged by <see cref="ProcessEventBindings"/>, not dropped,
+		/// matching the leaf policy (<see cref="UnsupportedRequestOf"/> gates on <c>crt.Button</c>) and the tool
+		/// contract.</summary>
+		Unsupported,
+		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or present in the bundled
+		/// supported set), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
+		/// kept and flagged, not dropped) — the action converts.</summary>
 		Convertible
 	}
 
 	/// <summary>
 	/// Classifies a node's OWN <c>clicked</c> binding — the gate for converting an action inside a non-converting
 	/// scope (e.g. a header button → FAB menu item). Only <c>clicked</c> is considered (a DIFFERENT secondary
-	/// binding being unsupported does not disqualify the action). The deciding difference from a hard "supported?"
-	/// gate: a request absent from BOTH the versioned map and the bundled set is UNKNOWN/custom, and is treated as
-	/// convertible-and-flagged (matching <see cref="ProcessOneEventBinding"/>) instead of dropped — a header button
-	/// wired to a <c>usr.*</c> request is exactly the button the feature is meant to convert.
+	/// binding being unsupported does not disqualify the action). Support is decided by the SAME authoritative
+	/// criterion as <see cref="UnsupportedRequestOf"/> (<see cref="IsRequestSupported"/>) so the leaf and scope paths
+	/// never diverge on WHAT is supported. The DROP policy also matches the leaf path: only a <c>crt.Button</c> with
+	/// an unsupported clicked is <see cref="ClickedConvertibility.Unsupported"/> (a dead button, not retargeted into
+	/// the FAB); another component type (e.g. a <c>crt.MenuItem</c>) may legitimately use a system/custom request
+	/// absent from the supported set, so it stays <see cref="ClickedConvertibility.Convertible"/> and its binding is
+	/// kept and flagged by <see cref="ProcessEventBindings"/> rather than dropped — matching the shipped tool contract
+	/// ("ONLY a crt.Button whose request the mobile app does not support is DROPPED").
 	/// </summary>
 	private static ClickedConvertibility ClassifyClicked(ElementMapContext ctx, JObject node, out string request) {
 		request = null;
@@ -2408,8 +2419,13 @@ public static class WebToMobileAnalysisService {
 			return ClickedConvertibility.None;
 		}
 		request = clicked["request"].ToString();
-		return ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule) && string.IsNullOrWhiteSpace(rule.Mobile)
-			? ClickedConvertibility.ExplicitlyUnsupported
+		if (IsRequestSupported(ctx, request)) {
+			return ClickedConvertibility.Convertible;
+		}
+		// Same DROP policy as the leaf path: only a crt.Button becomes a dead action worth dropping. Another component
+		// type keeps its unsupported binding (flagged), so it is not disqualified from the FAB here.
+		return string.Equals(node["type"]?.ToString(), "crt.Button", StringComparison.OrdinalIgnoreCase)
+			? ClickedConvertibility.Unsupported
 			: ClickedConvertibility.Convertible;
 	}
 
@@ -2454,21 +2470,30 @@ public static class WebToMobileAnalysisService {
 	/// <summary>
 	/// Builds the element drop reason AND the request-loss reason for a node that did NOT convert inside a
 	/// non-converting scope, from the specific cause — so the report names the scope container and distinguishes an
-	/// absent target, an unsupported action, an unmatched component, and a container-only node instead of collapsing
-	/// them into one string. The mechanism is name-agnostic (any <c>nonConvertingScopeContainers</c> entry), so the
-	/// wording says "scope", not "header".
+	/// absent target, a known-unsupported action, an unknown/custom action, an unmatched component, and a
+	/// container-only node instead of collapsing them into one string. The mechanism is name-agnostic (any
+	/// <c>nonConvertingScopeContainers</c> entry), so the wording says "scope", not "header".
 	/// </summary>
 	private static (string DropReason, string RequestLossReason) ScopeDropReason(
-		string scopeContainer, string name, string scopedType, (string Parent, string Property)? scopedTarget,
-		ClickedConvertibility clicked, string request, bool targetMissing) {
+		ElementMapContext ctx, string scopeContainer, string name, string scopedType,
+		(string Parent, string Property)? scopedTarget, ClickedConvertibility clicked, string request, bool targetMissing) {
 		if (targetMissing && scopedTarget is { } target) {
 			return ($"under non-converting scope '{scopeContainer}'; conversion target '{target.Parent}' is not present on "
 					+ $"the mobile template, so '{name}' cannot be placed — add a '{target.Parent}' to the target template or adjust the rule",
 				$"its element could not be placed (conversion target '{target.Parent}' is absent on the mobile template)");
 		}
-		if (clicked == ClickedConvertibility.ExplicitlyUnsupported) {
-			return ($"under non-converting scope '{scopeContainer}'; action '{request}' is not supported on the Creatio Mobile app",
-				$"'{request}' is not supported on the Creatio Mobile app; the action was dropped");
+		if (clicked == ClickedConvertibility.Unsupported) {
+			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
+			// UNKNOWN/custom one (absent from both the versioned map and the bundled fallback set). clio can assert
+			// "not supported" only for the former; for the latter it can merely say it does not know it, so the
+			// developer can re-add the action manually if that custom request IS implemented on mobile.
+			bool knownUnsupported = ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)
+				&& string.IsNullOrWhiteSpace(rule.Mobile);
+			return knownUnsupported
+				? ($"under non-converting scope '{scopeContainer}'; action '{request}' is not supported on the Creatio Mobile app",
+					$"'{request}' is not supported on the Creatio Mobile app; the action was dropped")
+				: ($"under non-converting scope '{scopeContainer}'; action '{request}' is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it",
+					$"'{request}' is not in the conversion map (custom or unknown); the button was dropped — verify the request exists on mobile before re-adding it");
 		}
 		if (scopedType is null) {
 			return ($"under non-converting scope '{scopeContainer}'; no conversion rule matches this component in scope",
@@ -3554,11 +3579,8 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// The first event-binding request on the node the Creatio Mobile app does not support (or null when every
-	/// binding is supported). Support is decided by the versioned rules file first
-	/// (<see cref="ElementMapContext.RequestMap"/>): an entry with a mobile target is supported (direct/rename),
-	/// an entry that clears the target is explicitly unsupported. A request the versioned file does not cover
-	/// falls back to the bundled <see cref="MobileSupportedRequests"/> constant. Keeping one authoritative
-	/// source (the versioned file) prevents dropping a common request the file already maps.
+	/// binding is supported), per the shared <see cref="IsRequestSupported"/> criterion — the versioned rules file
+	/// first, then the bundled <see cref="MobileSupportedRequests"/> fallback.
 	/// </summary>
 	private static string UnsupportedRequestOf(ElementMapContext ctx, JObject node) {
 		foreach (JProperty prop in node.Properties()) {
@@ -3566,21 +3588,26 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			string webRequest = ((JObject)prop.Value)["request"].ToString();
-			if (ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)) {
-				// Authoritative: a non-empty mobile target is supported (effective = rule.Mobile); an entry that
-				// explicitly clears the mobile target marks the request unsupported.
-				if (string.IsNullOrWhiteSpace(rule.Mobile)) {
-					return webRequest;
-				}
-				continue;
-			}
-			// Not covered by the versioned file — fall back to the bundled offline set.
-			if (!MobileSupportedRequests.Contains(webRequest)) {
+			if (!IsRequestSupported(ctx, webRequest)) {
 				return webRequest;
 			}
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// Whether the Creatio Mobile app supports <paramref name="webRequest"/>. The single authoritative criterion,
+	/// shared by <see cref="UnsupportedRequestOf"/> (the leaf-path button drop) and <see cref="ClassifyClicked"/> (the
+	/// non-converting-scope / FAB gate) so the two never diverge — the bug where a header button with an unsupported
+	/// request was dropped on the leaf path but moved into the FAB on the scope path. The versioned rules file wins
+	/// (an entry with a mobile target is supported, an entry that clears the target is unsupported); a request the
+	/// file does not cover falls back to the bundled <see cref="MobileSupportedRequests"/> set, so anything absent —
+	/// an unknown <c>crt.*</c> or a custom <c>usr.*</c> request — is unsupported.
+	/// </summary>
+	private static bool IsRequestSupported(ElementMapContext ctx, string webRequest) =>
+		ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
+			? !string.IsNullOrWhiteSpace(rule.Mobile)
+			: MobileSupportedRequests.Contains(webRequest);
 
 	/// <summary>
 	/// A component event binding is a property whose value is an object carrying a string <c>request</c>

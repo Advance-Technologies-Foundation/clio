@@ -99,7 +99,6 @@ namespace Clio.Tests
 
         [Ignore("RequiresPackageAttribute added in error, restorew command does not require cliogate")]
         [TestCase(typeof(LockPackageOptions), "2.0.0.42")]
-        [TestCase(typeof(UnlockPackageOptions), "2.0.0.42")]
         [TestCase(typeof(RestoreWorkspaceOptions), "2.0.0.0")]
         [TestCase(typeof(Clio.Command.SqlScriptCommand.ExecuteSqlScriptOptions), "2.0.0.41")]
         [Test]
@@ -120,8 +119,24 @@ namespace Clio.Tests
         }
 
         [Test]
-        [Description("show-package-file-content relied on the implicit ServicePath trigger that never enforced a version, so its migrated requirement must be presence-only (no version).")]
-        public void ShowPackageFileContentOptions_ShouldDeclarePresenceOnlyCliogateRequirement_WhenMigrated()
+        [Description("unlock-package requires the cliogate version that prevents SysPackage.Description overflow.")]
+        public void UnlockPackageOptions_ShouldRequireCliogateVersion_AfterDescriptionOverflowFix()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetCliogateRequirement(typeof(UnlockPackageOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "unlock-package must reject a gate version that can overflow SysPackage.Description");
+            requirement!.Version.Should().Be("2.0.0.48",
+                because: "cliogate 2.0.0.48 introduced the bounded unlock description format");
+            requirement.Hint.Should().Be(ExpectedCliogateHint,
+                because: "the version failure must tell the user how to update cliogate");
+        }
+
+        [Test]
+        [Description("show-package-file-content requires the path-confinement fix introduced in cliogate 2.0.0.47.")]
+        public void ShowPackageFileContentOptions_ShouldDeclareVersionedCliogateRequirement_AfterPathConfinementFix()
         {
             // Arrange & Act
             RequiresPackageAttribute requirement = GetCliogateRequirement(typeof(ShowPackageFileContentOptions));
@@ -129,10 +144,10 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: "show-package-file-content requires cliogate to be installed");
-            requirement!.Version.Should().BeNullOrEmpty(
-                because: "the legacy implicit ServicePath trigger never enforced a version, so the requirement is presence-only");
+            requirement!.Version.Should().Be("2.0.0.47",
+                because: "older cliogate versions do not confine package file paths to the package Files directory");
             requirement.Hint.Should().Be(ExpectedCliogateHint,
-                because: "the cliogate install hint must be restored even for the presence-only requirement");
+                because: "the cliogate install hint must explain how to satisfy the versioned requirement");
         }
 
         [Test]

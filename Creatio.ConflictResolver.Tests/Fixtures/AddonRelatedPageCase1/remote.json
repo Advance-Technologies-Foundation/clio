@@ -1,0 +1,106 @@
+﻿{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "AddonSchemaManager",
+      "UId": "c9544fe0-e96a-440f-898d-13cd82976091",
+      "A2": "MscEntity_TimelineRelatedPage1",
+      "A5": "f5fbcb8d-a834-478e-b0c1-1193bf43428c",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "a6b25ce3-7d59-48bb-a1de-f34a8d5b9a9d",
+      "B8": "8.3.3.0",
+      "AD1": "82feaa5f-9061-4804-9f7d-cd882560e770",
+      "AD2": "EntitySchemaManager",
+      "AD3": "RelatedPage",
+      "AD5": "3a2d6f51-1bfc-4c17-aacb-b53de4866b7c",
+      "AD4": {
+  "Pages": [
+    {
+      "UId": "0421413e-b0f5-eeb3-0d3a-8a57924b1542",
+      "PageSchemaUId": "3edbba58-e6ce-4122-92c6-ea5f6d4508a2",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": false
+      },
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": null
+    },
+    {
+      "UId": "dc8293ca-019d-b83a-9340-628b5e571f51",
+      "PageSchemaUId": "3edbba58-e6ce-4122-92c6-ea5f6d4508a2",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": null
+    },
+    {
+      "UId": "a0cb419e-c888-602a-ad76-1cd31af4215a",
+      "PageSchemaUId": "3edbba58-e6ce-4122-92c6-ea5f6d4508a2",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "f4dddbd8-774d-419f-8bd6-fd2e87d61e1f"
+    },
+    {
+      "UId": "7da94939-7631-8507-d683-17419cbdffe4",
+      "PageSchemaUId": "3edbba58-e6ce-4122-92c6-ea5f6d4508a2",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "f4dddbd8-774d-419f-8bd6-fd2e87d61e1f"
+    },
+    {
+      "UId": "db9dc73b-1966-dc0b-22ad-5aad04afb18e",
+      "PageSchemaUId": "3edbba58-e6ce-4122-92c6-ea5f6d4508a2",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "ecd17c01-cf32-4c9c-8773-04a67992f58d"
+    },
+    {
+      "UId": "6ca22d08-e21a-f993-b9c8-53c4323a1293",
+      "PageSchemaUId": "3edbba58-e6ce-4122-92c6-ea5f6d4508a2",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "ecd17c01-cf32-4c9c-8773-04a67992f58d"
+    },
+    {
+      "UId": "fec2cf03-d33b-ad23-d047-d89299ca8977",
+      "PageSchemaUId": "3edbba58-e6ce-4122-92c6-ea5f6d4508a2",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+      "TypeColumnValue": "f4dddbd8-774d-419f-8bd6-fd2e87d61e1f"
+    },
+    {
+      "UId": "7cd39272-1359-3b74-63ea-4a6110afd868",
+      "PageSchemaUId": "7e4d8a66-3c68-4a06-a503-e6daa84d08e6",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+      "TypeColumnValue": "f4dddbd8-774d-419f-8bd6-fd2e87d61e1f"
+    }
+  ],
+  "TypeColumnUId": "ebf6bb93-8aa6-4a01-900d-c6ea67affe21"
+}
+    }
+  }
+}

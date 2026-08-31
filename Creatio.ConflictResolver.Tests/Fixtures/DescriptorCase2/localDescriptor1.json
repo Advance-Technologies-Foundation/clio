@@ -1,0 +1,13 @@
+﻿{
+  "Descriptor": {
+    "UId": "3395a7a4-354f-406d-a792-65e1700de691",
+    "Name": "ParallelDev_FormPage",
+    "ModifiedOnUtc": "\/Date(1770195793000)\/",
+    "Parent": {
+      "UId": "3b2e117f-8c6b-4ca5-80a2-7ebb497cddf9",
+      "Name": "PageWithTabsFreedomTemplate"
+    },
+    "ManagerName": "ClientUnitSchemaManager",
+    "Caption": "ParallelDev form page"
+  }
+}

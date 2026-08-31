@@ -63,6 +63,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 			.Returns(Task.FromResult(new ProcessExecutionResult { ExitCode = 0 }));
 		IAvailableIisPortService availableIisPortService = Substitute.For<IAvailableIisPortService>();
 		IIdentityServiceRoleGrantService roleGrantService = Substitute.For<IIdentityServiceRoleGrantService>();
+		IDeploymentTargetReservation targetReservation = CreateTargetReservation();
 		IdentityServiceDeploymentService service = new(
 			settingsRepository,
 			archiveResolver,
@@ -73,6 +74,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 			availableIisPortService,
 			roleGrantService,
 			systemUserResolver,
+			targetReservation,
 			Substitute.For<ILogger>());
 		DeployIdentityOptions options = new() {
 			Environment = "bank",
@@ -96,6 +98,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		creatioClient.DidNotReceive().CreateTechnicalUser(Arg.Any<string>());
 		systemUserResolver.Received(1).ResolveSystemUserId(persistedEnvironment, "Supervisor");
 		roleGrantService.DidNotReceive().GrantSystemAdministratorRole(Arg.Any<EnvironmentSettings>(), Arg.Any<string>());
+		targetReservation.Received(1).Acquire(options.IdentityPath);
 	}
 
 	[Test]
@@ -151,6 +154,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 			availableIisPortService,
 			roleGrantService,
 			systemUserResolver,
+			CreateTargetReservation(),
 			Substitute.For<ILogger>());
 		DeployIdentityOptions options = new() {
 			Environment = "bank",
@@ -316,17 +320,244 @@ public sealed class IdentityServiceDeploymentServiceTests
 				because: "user binding is irrelevant when OAuth app creation is skipped");
 	}
 
-	private static string CreateCreatioEnvironmentPath()
+	[Test]
+	[Description("Uses the runtime db connection when both db and the legacy dbPostgreSql connection are present.")]
+	public void ReadCreatioDbConnectionString_Should_Prefer_Db_When_Both_Connections_Are_Present()
+	{
+		// Arrange
+		const string runtimeConnection = "Host=runtime;Database=creatio;Username=postgres;Password=secret";
+		string environmentPath = CreateCreatioEnvironmentPath($$"""
+			<connectionStrings>
+			  <add name="dbPostgreSql" connectionString="Host=legacy;Database=stale;Username=postgres;Password=secret" />
+			  <add name="db" connectionString="{{runtimeConnection}}" />
+			</connectionStrings>
+			""");
+		EnvironmentSettings environment = new() { EnvironmentPath = environmentPath };
+
+		// Act
+		string connectionString = IdentityServiceDeploymentService.ReadCreatioDbConnectionString(environment);
+
+		// Assert
+		connectionString.Should().Be(runtimeConnection,
+			because: "IdentityService must target the same database Creatio uses at runtime");
+	}
+
+	[Test]
+	[Description("Falls back to the legacy dbPostgreSql connection when a runtime db connection is absent.")]
+	public void ReadCreatioDbConnectionString_Should_Fallback_To_DbPostgreSql_When_Db_Is_Absent()
+	{
+		// Arrange
+		const string legacyConnection = "Host=legacy;Database=creatio;Username=postgres;Password=secret";
+		string environmentPath = CreateCreatioEnvironmentPath($$"""
+			<connectionStrings>
+			  <add name="dbPostgreSql" connectionString="{{legacyConnection}}" />
+			</connectionStrings>
+			""");
+		EnvironmentSettings environment = new() { EnvironmentPath = environmentPath };
+
+		// Act
+		string connectionString = IdentityServiceDeploymentService.ReadCreatioDbConnectionString(environment);
+
+		// Assert
+		connectionString.Should().Be(legacyConnection,
+			because: "older Creatio installations may expose only dbPostgreSql");
+	}
+
+	[Test]
+	[Description("Refuses to overwrite a non-empty directory that is not an existing IdentityService deployment.")]
+	public void ExtractIdentityService_Should_Reject_Unrecognized_NonEmpty_Target()
+	{
+		// Arrange
+		string archivePath = CreateIdentityArchive();
+		string targetPath = CreateIdentityTargetPath();
+		Directory.CreateDirectory(targetPath);
+		string unrelatedFile = Path.Combine(targetPath, "unrelated.txt");
+		File.WriteAllText(unrelatedFile, "keep");
+
+		// Act
+		Action act = () => CreateService().ExtractIdentityService(
+			archivePath, targetPath, overwrite: true, CreateEnvironmentSettings());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*not a recognized IdentityService deployment*",
+				because: "overwrite must not recursively delete or overlay an unrelated directory");
+		File.Exists(unrelatedFile).Should().BeTrue(
+			because: "a refused overwrite must leave unrelated files intact");
+	}
+
+	[Test]
+	[Description("Replaces a recognized IdentityService directory so files absent from the new archive cannot remain stale.")]
+	public void ExtractIdentityService_Should_Replace_Recognized_Target()
+	{
+		// Arrange
+		string archivePath = CreateIdentityArchive();
+		string targetPath = CreateIdentityTargetPath();
+		Directory.CreateDirectory(targetPath);
+		File.WriteAllText(Path.Combine(targetPath, "IdentityService.dll"), "old");
+		File.WriteAllText(Path.Combine(targetPath, "appsettings.json"), "{}");
+		string obsoleteFile = Path.Combine(targetPath, "obsolete-extension.dll");
+		File.WriteAllText(obsoleteFile, "old");
+
+		// Act
+		CreateService().ExtractIdentityService(
+			archivePath, targetPath, overwrite: true, CreateEnvironmentSettings());
+
+		// Assert
+		File.Exists(Path.Combine(targetPath, "appsettings.json")).Should().BeTrue(
+			because: "the replacement archive should be extracted into the recognized target");
+		File.Exists(obsoleteFile).Should().BeFalse(
+			because: "a recognized deployment should be replaced cleanly so stale assemblies cannot survive an upgrade");
+	}
+
+	[Test]
+	[Description("Keeps the working IdentityService directory intact when a replacement archive cannot be extracted.")]
+	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_Staging_Fails()
+	{
+		// Arrange
+		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
+			archive.CreateEntry("conflict");
+			archive.CreateEntry("conflict/file.txt");
+		}
+		string targetPath = CreateIdentityTargetPath();
+		Directory.CreateDirectory(targetPath);
+		File.WriteAllText(Path.Combine(targetPath, "IdentityService.dll"), "old");
+		File.WriteAllText(Path.Combine(targetPath, "appsettings.json"), "{}");
+		string workingFile = Path.Combine(targetPath, "working.txt");
+		File.WriteAllText(workingFile, "original");
+
+		// Act
+		Action act = () => CreateService().ExtractIdentityService(
+			archivePath, targetPath, overwrite: true, CreateEnvironmentSettings());
+
+		// Assert
+		act.Should().Throw<IOException>(
+			because: "the conflicting archive entries cannot both be extracted into the staging directory");
+		File.ReadAllText(workingFile).Should().Be("original",
+			because: "the working deployment must remain untouched until the replacement archive extracts successfully");
+	}
+
+	[Test]
+	[Description("Keeps the working IdentityService directory intact when the replacement ZIP is not an IdentityService archive.")]
+	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_Archive_Is_Unrelated()
+	{
+		// Arrange
+		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
+			archive.CreateEntry("unrelated.txt");
+		}
+		string targetPath = CreateIdentityTargetPath();
+		Directory.CreateDirectory(targetPath);
+		File.WriteAllText(Path.Combine(targetPath, "IdentityService.dll"), "old");
+		File.WriteAllText(Path.Combine(targetPath, "appsettings.json"), "{}");
+		string workingFile = Path.Combine(targetPath, "working.txt");
+		File.WriteAllText(workingFile, "original");
+
+		// Act
+		Action act = () => CreateService().ExtractIdentityService(
+			archivePath, targetPath, overwrite: true, CreateEnvironmentSettings());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*does not contain IdentityService.dll and appsettings.json*",
+				because: "a valid but unrelated ZIP must not replace a working IdentityService deployment");
+		File.ReadAllText(workingFile).Should().Be("original",
+			because: "the working deployment must remain untouched until staged content is identified as IdentityService");
+	}
+
+	[Test]
+	[Description("Keeps the working IdentityService directory intact when staged appsettings.json is malformed.")]
+	public void ExtractIdentityService_Should_Preserve_Recognized_Target_When_AppSettings_Is_Malformed()
+	{
+		// Arrange
+		string archivePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.zip");
+		using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create)) {
+			archive.CreateEntry("IdentityService.dll");
+			ZipArchiveEntry appsettings = archive.CreateEntry("appsettings.json");
+			using StreamWriter writer = new(appsettings.Open());
+			writer.Write("not-json");
+		}
+		string targetPath = CreateIdentityTargetPath();
+		Directory.CreateDirectory(targetPath);
+		File.WriteAllText(Path.Combine(targetPath, "IdentityService.dll"), "old");
+		File.WriteAllText(Path.Combine(targetPath, "appsettings.json"), "{}");
+		string workingFile = Path.Combine(targetPath, "working.txt");
+		File.WriteAllText(workingFile, "original");
+
+		// Act
+		Action act = () => CreateService().ExtractIdentityService(
+			archivePath, targetPath, overwrite: true, CreateEnvironmentSettings());
+
+		// Assert
+		act.Should().Throw<JsonException>(
+			because: "malformed staged configuration must fail before the working deployment is moved");
+		File.ReadAllText(workingFile).Should().Be("original",
+			because: "the working deployment must remain intact until staged configuration succeeds");
+	}
+
+	[Test]
+	[Description("Refuses an IdentityService target that is redirected through a filesystem reparse point.")]
+	public void ExtractIdentityService_Should_Reject_Reparse_Point_Target()
+	{
+		// Arrange
+		if (!OperatingSystem.IsWindows()) {
+			Assert.Ignore("Windows directory-link credential redirection is Windows-specific.");
+		}
+		string rootPath = Path.Combine(Path.GetTempPath(), $"identity-link-{Guid.NewGuid():N}");
+		string externalPath = Path.Combine(rootPath, "external");
+		string targetPath = Path.Combine(rootPath, "target");
+		Directory.CreateDirectory(externalPath);
+		try {
+			try {
+				Directory.CreateSymbolicLink(targetPath, externalPath);
+			}
+			catch (Exception exception) when (exception is UnauthorizedAccessException or IOException) {
+				Assert.Ignore($"Directory-link creation is unavailable: {exception.Message}");
+			}
+			string archivePath = CreateIdentityArchive();
+
+			// Act
+			Action act = () => CreateService().ExtractIdentityService(
+				archivePath, targetPath, overwrite: true, CreateEnvironmentSettings());
+
+			// Assert
+			act.Should().Throw<InvalidOperationException>().WithMessage("*filesystem reparse point*",
+				because: "deployment files and database credentials must not be redirected outside the selected target");
+			Directory.EnumerateFileSystemEntries(externalPath).Should().BeEmpty(
+				because: "a rejected link target must receive neither binaries nor configured credentials");
+		}
+		finally {
+			if (Directory.Exists(targetPath)) {
+				Directory.Delete(targetPath);
+			}
+			if (Directory.Exists(rootPath)) {
+				Directory.Delete(rootPath, recursive: true);
+			}
+		}
+	}
+
+	private static string CreateCreatioEnvironmentPath(string? connectionStrings = null)
 	{
 		string path = Path.Combine(Path.GetTempPath(), $"creatio-env-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(path);
 		File.WriteAllText(Path.Combine(path, "ConnectionStrings.config"),
-			"""
+			connectionStrings ?? """
 			<connectionStrings>
 			  <add name="dbPostgreSql" connectionString="Server=localhost;Port=5432;Database=bank;User ID=postgres;Password=secret;" />
 			</connectionStrings>
 			""");
 		return path;
+	}
+
+	private static EnvironmentSettings CreateEnvironmentSettings() => new() {
+		EnvironmentPath = CreateCreatioEnvironmentPath()
+	};
+
+	private static IDeploymentTargetReservation CreateTargetReservation() {
+		IDeploymentTargetReservation reservation = Substitute.For<IDeploymentTargetReservation>();
+		reservation.Acquire(Arg.Any<string>()).Returns(Substitute.For<IDisposable>());
+		return reservation;
 	}
 
 	private static string CreateIdentityArchive()
@@ -379,6 +610,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 			availableIisPortService,
 			roleGrantService ?? Substitute.For<IIdentityServiceRoleGrantService>(),
 			systemUserResolver ?? Substitute.For<IIdentityServiceSystemUserResolver>(),
+			CreateTargetReservation(),
 			Substitute.For<ILogger>());
 	}
 

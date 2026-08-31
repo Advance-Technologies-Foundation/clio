@@ -1889,8 +1889,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A header button whose clicked request is UNKNOWN/custom (not in the map, not bundled) still CONVERTS into the FAB and is FLAGGED for review — aligning scope conversion with ProcessOneEventBinding — instead of vanishing, which used to lose exactly the custom-action buttons the feature must convert.")]
-	public void Analyze_Fab_HeaderButton_CustomRequest_ConvertsAndFlags() {
+	[Description("A header button whose clicked request is UNKNOWN/custom (not in the versioned map, not in the bundled supported set — e.g. a usr.* request) is DROPPED, not moved into the FAB: the scope/FAB gate uses the same support criterion as the leaf path, so a dead menu item is never shipped. The lost action is recorded in requestConversions.droppedRequests.")]
+	public void Analyze_Fab_HeaderButton_CustomRequest_Dropped_AndRecorded() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
@@ -1904,12 +1904,83 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ElementMapEntry custom = Element(guide, "CustomBtn");
-		custom.Operation.Should().Be("insert",
-			because: "a header button with a custom clicked converts (kept + flagged), not dropped");
-		custom.ParentName.Should().Be("FloatingActionButton", because: "the custom action still retargets into the FAB");
+		custom.Operation.Should().Be("drop",
+			because: "a clicked request the mobile app does not support (a custom usr.* request) must not become a live FAB menu item");
+		custom.Reason.Should().Contain("usr.MyCustomRequest",
+			because: "the drop reason names the unsupported request");
+		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+			r.ElementName == "CustomBtn" && r.WebRequest == "usr.MyCustomRequest",
+			because: "the lost header action must surface in requestConversions rather than being moved into the FAB");
+	}
+
+	[Test]
+	[Description("Regression (ActionButtonsContainer bug): a header button whose clicked request is an unknown crt.* request absent from BOTH the versioned map and the bundled supported set (e.g. crt.PrintablesRequest) is DROPPED, not moved into the FAB. The scope/FAB gate now consults the bundled supported set the leaf path already used, so the two paths agree instead of one dropping the button and the other retargeting it. The lost action is recorded.")]
+	public void Analyze_Fab_HeaderButton_UnsupportedPlatformRequest_Dropped_AndRecorded() {
+		// Arrange — crt.PrintablesRequest is NOT in the versioned map and NOT in the bundled supported set.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "PrintBtn", "type": "crt.Button", "caption": "#ResourceString(PrintBtn_caption)#",
+				  "clicked": { "request": "crt.PrintablesRequest", "params": {} } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry print = Element(guide, "PrintBtn");
+		print.Operation.Should().Be("drop",
+			because: "an unsupported clicked request must not be retargeted into the FAB, matching how the leaf path drops the same button");
+		print.Reason.Should().Contain("crt.PrintablesRequest",
+			because: "the drop reason names the unsupported request");
+		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+			r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
+			because: "the lost header action must surface in requestConversions, not be moved into the FAB");
+	}
+
+	[Test]
+	[Description("A crt.MenuItem retargeted into the FAB whose clicked request is unsupported/unknown is NOT dropped (unlike a crt.Button): it converts and its binding is kept and flagged. This matches the leaf policy (UnsupportedRequestOf gates on crt.Button) and the tool contract that ONLY a crt.Button is dropped for an unsupported request.")]
+	public void Analyze_Fab_MenuItemUnsupportedRequest_ConvertsAndFlags_NotDropped() {
+		// Arrange — a crt.MenuItem directly in the header scope with an unknown/custom clicked.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "MoreItem", "type": "crt.MenuItem", "caption": "#ResourceString(MoreItem_caption)#",
+				  "clicked": { "request": "usr.CustomMenuRequest", "params": {} } } ] } ]
+			""");
+
+		// Act — the rule matches crt.MenuItem too; the SAME unsupported request on a crt.Button would drop.
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button", "crt.MenuItem"));
+
+		// Assert
+		ElementMapEntry more = Element(guide, "MoreItem");
+		more.Operation.Should().Be("insert",
+			because: "a crt.MenuItem with an unsupported request is kept (flagged), not dropped — only a crt.Button is dropped");
+		more.ParentName.Should().Be("FloatingActionButton", because: "the menu item still retargets into the FAB");
 		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
-			r.ElementName == "CustomBtn" && r.Request == "usr.MyCustomRequest",
-			because: "an unknown request is kept verbatim and flagged for review on mobile");
+			r.ElementName == "MoreItem" && r.Request == "usr.CustomMenuRequest",
+			because: "the unknown request on a non-button is kept verbatim and flagged for manual review");
+	}
+
+	[Test]
+	[Description("A header crt.Button whose clicked request is supported ONLY via the bundled MobileSupportedRequests set (absent from the versioned map) still converts into the FAB — pinning the bundled-set positive branch of IsRequestSupported so a future map-only simplification cannot silently start dropping these buttons.")]
+	public void Analyze_Fab_HeaderButton_BundledSetSupportedRequest_ConvertsIntoFab() {
+		// Arrange — crt.SetAttributeFromNfcRequest is in the bundled supported set but NOT in the versioned map (FabRule carries no requests).
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "NfcBtn", "type": "crt.Button", "caption": "#ResourceString(NfcBtn_caption)#",
+				  "clicked": { "request": "crt.SetAttributeFromNfcRequest", "params": {} } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+
+		// Assert
+		ElementMapEntry nfc = Element(guide, "NfcBtn");
+		nfc.Operation.Should().Be("insert",
+			because: "a request supported via the bundled set (not the versioned map) must still convert into the FAB");
+		nfc.ParentName.Should().Be("FloatingActionButton", because: "the supported header action retargets into the FAB");
 	}
 
 	[Test]

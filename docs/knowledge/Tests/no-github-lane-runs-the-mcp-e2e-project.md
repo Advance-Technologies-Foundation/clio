@@ -4,7 +4,7 @@ applies-to:
   - .github/workflows/
   - clio.mcp.e2e/
 ticket: ENG-92558
-date: 2026-08-19
+date: 2026-08-30
 ---
 
 **What is true** — `.github/workflows/build.yml` has exactly three test lanes:
