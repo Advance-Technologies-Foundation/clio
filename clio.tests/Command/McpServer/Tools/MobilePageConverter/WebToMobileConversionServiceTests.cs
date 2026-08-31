@@ -4557,13 +4557,15 @@ public sealed class WebToMobileConversionServiceTests {
 	/// <summary>Builds one override rule; a null <paramref name="filtersJson"/> leaves it unconditional.</summary>
 	/// <summary>
 	/// Builds one override rule. The type is written into every filter entry — the rules file has no separate
-	/// type field, so a "type only" rule is just a filter that constrains nothing else.
+	/// type field, so a "type only" rule is just a filter that constrains nothing else. Each entry of
+	/// <paramref name="filtersJson"/> is the CONSTRAINT map of one filter (what the file nests under
+	/// <c>values</c>), kept flat here so the tests read as "this type, narrowed by this".
 	/// </summary>
 	private static ComponentPropertyOverrideRule Override(string type, string valuesJson, string filtersJson = null) {
 		List<ElementFilterRule> filters = filtersJson is null
 			? [new ElementFilterRule { Type = type }]
-			: [.. JsonSerializer.Deserialize<List<ElementFilterRule>>(filtersJson)
-				.Select(f => new ElementFilterRule { Type = f.Type ?? type, Values = f.Values })];
+			: [.. JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filtersJson)
+				.Select(constraints => new ElementFilterRule { Type = type, Values = constraints })];
 		return new ComponentPropertyOverrideRule {
 			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(valuesJson),
 			Filters = filters
@@ -5251,9 +5253,10 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Two rules for the same mobile type silently LAST-WIN — one rule per type is a real limit of the pass, so it is pinned rather than left to be discovered by a rules-file author.")]
-	public void Analyze_PropertyNormalization_ShouldLastWin_WhenTwoRulesShareAType() {
-		// Arrange
+	[Description("Several rules may target one component type and EVERY match is applied — the third rule's own key lands alongside the shared one. Where two of them write the SAME key, the last declared wins per key, and the element is reported ONCE listing each property a single time however many rules wrote it.")]
+	public void Analyze_PropertyNormalization_ShouldApplyEveryRuleAndResolveASharedKeyLastDeclaredWins() {
+		// Arrange — two rules competing for `shape`, plus a third writing a key of its own, so "both ran" is
+		// proved by an observable value rather than inferred from the winner of the collision.
 		PageBundleInfo bundle = MetricBundle();
 		var rules = new WebToMobilePageConversionRules {
 			ComponentPropertyOverrides = [
@@ -5266,6 +5269,11 @@ public sealed class WebToMobileConversionServiceTests {
 					Filters = [new ElementFilterRule { Type = "crt.IndicatorWidget" }],
 					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 						"""{ "shape": "rounded" }""")
+				},
+				new ComponentPropertyOverrideRule {
+					Filters = [new ElementFilterRule { Type = "crt.IndicatorWidget" }],
+					Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+						"""{ "tabIndex": 3 }""")
 				}
 			]
 		};
@@ -5274,10 +5282,15 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		Element(guide, "TotalIndicator").MobileValues!["shape"]!.GetValue<string>().Should().Be("rounded",
-			because: "the later rule replaces the earlier one in the by-type index, with no diagnostic");
-		guide.Normalizations!["metricStyle"].Normalized.Single().Properties.Should().BeEquivalentTo(["shape"],
-			because: "only the surviving rule is applied, so only its keys are reported");
+		JsonObject values = Element(guide, "TotalIndicator").MobileValues!.AsObject();
+		values["shape"]!.GetValue<string>().Should().Be("rounded",
+			because: "two rules wrote the same key, so the LAST declared one wins — per key, not per rule");
+		values["tabIndex"]!.GetValue<int>().Should().Be(3,
+			because: "the third rule ran too — a type is no longer limited to one rule, and nothing is shadowed");
+		guide.Normalizations!["metricStyle"].Normalized.Single().Properties.Should().BeEquivalentTo(
+			["shape", "tabIndex"],
+			because: "two rules that wrote the SAME key report it once — the report is per element and per "
+				+ "property, never per rule (this is the guard on the properties de-duplication)");
 	}
 
 	[Test]
@@ -5491,8 +5504,8 @@ public sealed class WebToMobileConversionServiceTests {
 		                  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } } } }
 		""";
 
-	/// <summary>Builds the value-constraint bag an <see cref="ElementFilterRule"/> carries as extension data.</summary>
-	private static IDictionary<string, JsonElement> Bag(string json) =>
+	/// <summary>Builds the nested value-constraint map an <see cref="ElementFilterRule"/> carries.</summary>
+	private static IReadOnlyDictionary<string, JsonElement> Bag(string json) =>
 		JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
 
 	[Test]
@@ -5514,6 +5527,32 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(skipped, "ProductsList").MobileValues!.AsObject().ContainsKey("itemLayout").Should().BeFalse(
 			because: "the value constraint is not satisfied, so the template must not apply — a silently "
 				+ "ignored constraint would render the row anyway");
+	}
+
+	[Test]
+	[Description("An UNRECOGNISED key on a filter is inert, not a constraint. The rules file annotates excludedComponents filters with `note`; an author copying that shape into a components filter must not silently stop the rule from firing — which is exactly what extension-data constraints would do.")]
+	public void Analyze_ComponentFilter_ShouldIgnoreAnUnknownKeyRatherThanTreatItAsAConstraint() {
+		// Arrange — the filter carries `note` the way excludedComponents[].filters[] does in the shipped file.
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(
+			new MemoryStream(Encoding.UTF8.GetBytes("""
+			{ "components": [ {
+				"filters": [{ "type": "crt.DataGrid", "note": "primary list" }],
+				"viewConfigTemplates": [ { "preserveSourceProperties": true,
+					"parentName": "{{ diff.parentName }}", "propertyName": "{{ diff.propertyName }}",
+					"value": { "type": "crt.List", "itemLayout": {
+						"name": "{{ diff.name }}_ListItem", "type": "crt.ListItem",
+						"title": "${{ source.columns[0].code }}" } } } ] } ] }
+			""")));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithRules(GridWithColumns(), rules);
+
+		// Assert
+		rules.Components.Single().Filters.Single().Values.Should().BeNull(
+			because: "`note` is not a value constraint — it must not be collected as one");
+		Element(guide, "ProductsList").MobileValues!["itemLayout"].Should().NotBeNull(
+			because: "the annotation must leave the rule firing; treating it as a constraint on a property no "
+				+ "element has would silently drop the list row from the converted page");
 	}
 
 	[Test]

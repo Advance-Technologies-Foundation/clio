@@ -4796,11 +4796,18 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Deep JSON equality between an element's live value and a rule's filter value. Hand-written because
-	/// clio still targets net8.0, where <c>JsonNode.DeepEquals</c> does not exist; comparing raw text instead
-	/// is not an option either, since that would make key order and whitespace significant. Objects must
-	/// match key-for-key (a filter object is an exact description, not a subset) and arrays element-for-element
-	/// in order. Numbers compare by parsed value, so 1 and 1.0 agree.
+	/// Deep JSON equality between an element's live value (<see cref="JsonNode"/>) and a rule's filter value
+	/// (<see cref="JsonElement"/>).
+	/// <para>
+	/// Hand-written for two reasons, neither of which is framework availability —
+	/// <c>JsonNode.DeepEquals</c> IS available here and this file calls it elsewhere. First, the operands are
+	/// of different types, so any library comparer would need a conversion on every call anyway. Second, and
+	/// decisive, this comparison needs semantics a general JSON comparer does not give: a number matches by
+	/// PARSED VALUE, so a filter writing <c>4</c> matches an element carrying <c>4.0</c> —
+	/// <c>JToken.DeepEquals</c> treats those as unequal because it compares by JSON number type, which would
+	/// make a filter silently miss. Objects still match key-for-key (a filter object is an exact description,
+	/// not a subset) and arrays element-for-element in order.
+	/// </para>
 	/// </summary>
 	private static bool JsonValueEquals(JsonNode actual, JsonElement expected) {
 		switch (expected.ValueKind) {

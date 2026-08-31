@@ -52,8 +52,10 @@ public sealed class WebToMobilePageConversionRules {
 	public TabAreaLayersRule TabAreaLayers { get; init; }
 
 	/// <summary>
-	/// Group: per-mobile-type property overrides stamped onto EVERY element the converter INSERTS
-	/// (spacing normalization). Mobile pages follow the mobile spacing standard, so a listed
+	/// Group: property overrides stamped onto every element the converter INSERTS that a rule's
+	/// <see cref="ComponentPropertyOverrideRule.Filters"/> match — a whole component type, or a narrowed
+	/// subset of one (spacing normalization, corner-radius standard). Mobile pages follow the mobile
+	/// standards, so a listed
 	/// property is SET to the rule's value — replacing whatever the web page carried (any shape: token,
 	/// px number, CSS string, per-axis object) and added even when the web page carried none, so the
 	/// converted body is self-describing instead of leaning on client defaults. Applies to converted AND
@@ -259,9 +261,9 @@ public sealed class SynthesizedContainerRule {
 }
 
 /// <summary>
-/// One per-mobile-type value override applied to every INSERTED element of that type.
-/// The element identity keys (<c>name</c>/<c>type</c>) can never be overridden — a rules file listing
-/// them is ignored for those keys.
+/// One value override applied to every INSERTED element its <see cref="Filters"/> match — a whole component
+/// type, or a narrowed subset of one. The element identity keys (<c>name</c>/<c>type</c>) can never be
+/// overridden — a rules file listing them in <see cref="Values"/> is ignored for those keys.
 /// </summary>
 public sealed class ComponentPropertyOverrideRule {
 	/// <summary>
@@ -551,31 +553,42 @@ public sealed class ComponentEquivalenceRule {
 }
 
 
-/// <summary>Matches a source element. Only the component type is matched today.</summary>
+/// <summary>
+/// Matches an element by component type and, optionally, by the value of any other property. Used by BOTH
+/// filter groups: <see cref="ComponentEquivalenceRule.Filters"/> matches it against the SOURCE web node,
+/// <see cref="ComponentPropertyOverrideRule.Filters"/> against the element's TARGET mobile values. Every
+/// constraint the filter declares is AND-ed; a list of filters is OR-ed.
+/// </summary>
 public sealed class ElementFilterRule {
 
-	/// <summary>Component type the filter matches (e.g. <c>"crt.DataGrid"</c>). Omit to constrain by value only.</summary>
+	/// <summary>
+	/// Component type the filter matches (e.g. <c>"crt.DataGrid"</c>). On an override rule this is the PRIMARY
+	/// selector and omitting it makes the filter cross-type — the rule then applies to every component whose
+	/// values satisfy <see cref="Values"/>, which is almost never intended.
+	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
 
 	/// <summary>
-	/// Every OTHER property the filter requires, name → expected value (e.g. <c>{"borderRadius": "medium"}</c>).
-	/// AND-ed with <see cref="Type"/> and with each other; a value matches only on DEEP equality, so an ABSENT
-	/// property never matches and neither does a value that merely has the right shape.
+	/// Further properties the filter requires, name → expected value
+	/// (<c>"values": { "borderRadius": "medium" }</c>). AND-ed with <see cref="Type"/> and with each other; a
+	/// value matches only on DEEP equality, so an ABSENT property never matches and neither does a value that
+	/// merely has the right shape.
+	/// <para>
+	/// Deliberately a NESTED object rather than extension data on the filter itself. Extension data would turn
+	/// every unrecognised key into a silent AND-ed constraint — and the rules file demonstrably carries such a
+	/// key: <c>excludedComponents[].filters[]</c> annotates entries with <c>note</c>. An author copying that
+	/// shape into this filter would produce a constraint on a property no element has, and the rule would stop
+	/// firing with no exception, no report entry and no diagnostic. Nesting the constraints keeps an unknown
+	/// key inert, which is what it was before this became a shared type.
+	/// </para>
 	/// <para>
 	/// A filter that declares NOTHING — no type, no values — matches nothing. It is a rules-file mistake, and
 	/// reading it as "matches everything" would silently widen the rule it was written to narrow.
 	/// </para>
-	/// <para>
-	/// The property names are matched against whichever object the consuming rule filters: the SOURCE web node
-	/// for <see cref="ComponentEquivalenceRule.Filters"/>, the element's TARGET mobile values for
-	/// <see cref="ComponentPropertyOverrideRule.Filters"/>. Both carry <c>type</c>, so declaring it works on
-	/// either side — though on an override rule it is redundant, since the rule is already selected by its own
-	/// <see cref="ComponentPropertyOverrideRule.Type"/> before any filter is read.
-	/// </para>
 	/// </summary>
-	[JsonExtensionData]
-	public IDictionary<string, JsonElement> Values { get; init; }
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; }
 }
 
 /// <summary>
