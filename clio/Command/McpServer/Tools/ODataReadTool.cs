@@ -316,10 +316,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				// Redact like the sibling error paths: a routing Message can embed the absolute request
-				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
-				return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
+			//The detected text is server-controlled prose and is dropped, not redacted: the redactor
+			//removes known secret shapes, but arbitrary instructions, opaque tokens, tenant data and
+			//line breaks survive it, and this transcript is read as trusted content by a model.
+			if (ODataResponseError.TryClassify(root, out bool isUnregisteredEntity)) {
+				return ODataReadResponse.Failure(
+					ODataResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
 			}
 
 			//A collection response carries `value` as an ARRAY. Accepting any `value` meant a proxy or
@@ -327,6 +329,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//marker as the payload, and clio-run then forwarded it without failure redaction.
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
 				return valueEl.ValueKind == JsonValueKind.Array
+					&& IsCollectionResponse(root, entityName)
 					? ParseCollectionResponse(root, valueEl, countRequested)
 					: ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 			}
@@ -353,6 +356,34 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	/// under the default metadata level, so a genuine entity always carries an @odata.context whose
 	/// value ends with "/$entity"; nothing else may be treated as a record.
 	/// </summary>
+	/// <summary>
+	/// True when the body identifies itself as an OData COLLECTION response for the entity that was
+	/// requested: the <c>@odata.context</c> annotation names that entity set, optionally followed by a
+	/// projection such as <c>(Id,Name)</c> from $select/$expand.
+	/// </summary>
+	/// <remarks>
+	/// An array-valued <c>value</c> alone was not enough. A proxy or auth body shaped as
+	/// <c>{"value":[{"detail":"private response marker"}]}</c> satisfied it, came back as
+	/// <c>success:true</c>, and clio-run forwarded the marker as a read result. Creatio's
+	/// default-metadata responses always carry the context, which is what the single-entity path
+	/// already requires.
+	/// </remarks>
+	private static bool IsCollectionResponse(JsonElement root, string entityName) {
+		if (!root.TryGetProperty("@odata.context", out JsonElement context)
+			|| context.ValueKind != JsonValueKind.String
+			|| context.GetString() is not { } contextValue) {
+			return false;
+		}
+		int fragmentStart = contextValue.IndexOf('#', StringComparison.Ordinal);
+		if (fragmentStart < 0) {
+			return false;
+		}
+		string fragment = contextValue[(fragmentStart + 1)..];
+		int entitySetEnd = fragment.IndexOfAny(['(', '/']);
+		string entitySet = entitySetEnd < 0 ? fragment : fragment[..entitySetEnd];
+		return string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
+	}
+
 	private static bool IsSingleEntityResponse(JsonElement root) =>
 		root.ValueKind == JsonValueKind.Object
 		&& root.TryGetProperty("@odata.context", out JsonElement context)

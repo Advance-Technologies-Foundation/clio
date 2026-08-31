@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json;
 
@@ -72,6 +72,46 @@ internal static class ODataResponseError {
 	/// Builds a concise failure for a read response that is not JSON, without echoing the raw body.
 	/// </summary>
 	/// <returns>An actionable non-JSON response message.</returns>
+	/// <summary>
+	/// The fixed, locally authored diagnostic for a read whose body IS JSON and reports an error.
+	/// </summary>
+	/// <remarks>
+	/// The extracted detail is deliberately not part of it. <c>TryDetect</c> pulls
+	/// <c>error.message</c>, <c>ExceptionMessage</c> or <c>MessageDetail</c> - all server-controlled -
+	/// and <c>SensitiveErrorTextRedactor</c> removes known secret shapes only: it cannot remove forged
+	/// instructions, opaque tokens, tenant data or embedded line breaks. This text lands in an MCP
+	/// transcript that a model reads as trusted content, so no server prose is copied into it.
+	/// </remarks>
+	internal static string DescribeServerReportedReadError(bool includeUnregisteredEntityHint = false) {
+		const string classification =
+			"Creatio reported an error for this OData read. The server's own wording is not reproduced "
+			+ "here, because a service or proxy response is not trusted text in an MCP transcript; check "
+			+ "the environment's own logs for the server-side cause, then verify the entity name, the "
+			+ "filter and the credentials.";
+		//The hint is locally authored, so it is the one piece of detail that may be added.
+		return includeUnregisteredEntityHint
+			? $"{classification} {UnregisteredEntityHint}"
+			: classification;
+	}
+
+	/// <summary>
+	/// True when the body is a recognized Creatio error, reporting only whether it is the routing miss
+	/// the locally authored <see cref="UnregisteredEntityHint"/> applies to.
+	/// </summary>
+	/// <remarks>
+	/// The extracted text is deliberately not an output. Callers that put their result into an MCP
+	/// transcript must use <see cref="DescribeServerReportedReadError"/> instead of
+	/// <see cref="TryDetect"/>, whose message carries server-controlled prose.
+	/// </remarks>
+	internal static bool TryClassify(JsonElement root, out bool isUnregisteredEntity) {
+		isUnregisteredEntity = false;
+		if (!TryDetect(root, out string detected)) {
+			return false;
+		}
+		isUnregisteredEntity = detected.Contains(UnregisteredEntityHint, StringComparison.Ordinal);
+		return true;
+	}
+
 	internal static string DescribeNonJsonReadResponse() =>
 		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "
 		+ "problem rather than an OData query-shape problem; verify the environment and retry only after the "
