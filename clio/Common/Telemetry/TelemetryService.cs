@@ -380,7 +380,7 @@ public sealed class TelemetryService : ITelemetryService
 			// (`workflow: env.WORKFLOW ?? ""`), and would silently lose the guaranteed floor event.
 			if (!string.IsNullOrWhiteSpace(value) && !IsAllowedToken(value)) {
 				return Invalid("invalid-token",
-					$"Telemetry field '{name}' must be 1-{MaxFieldLength} characters of lowercase letters, digits, '.', '_' or '-'.");
+					$"Telemetry field '{name}' must be {TokenShapeSentence}.");
 			}
 		}
 		return new TelemetryEventResult(true, "valid");
@@ -466,6 +466,18 @@ public sealed class TelemetryService : ITelemetryService
 			.ToArray());
 		return kept.Trim();
 	}
+
+	/// <summary>
+	/// The one human-readable statement of what <see cref="IsAllowedToken"/> accepts. A rejection message
+	/// and three curated contract strings used to restate this charset by hand. Neither telemetry tool is
+	/// resident, so for both of them the curated contract IS the entire description the agent receives - a
+	/// charset change that updated the predicate and missed one sentence would ship a confident description
+	/// of a validator that no longer exists, and the agent would keep sending values the event dies on.
+	/// Pinned to the predicate by TelemetryService_Should_Describe_The_Token_Shape_It_Actually_Enforces,
+	/// which probes IsAllowedToken over ASCII rather than trusting this text.
+	/// </summary>
+	internal static readonly string TokenShapeSentence =
+		$"1-{MaxFieldLength} characters of lowercase letters, digits, '.', '_' or '-'";
 
 	/// <summary>
 	/// Validates a bounded lowercase identifier (a workflow, variant or model value). Linear scan rather

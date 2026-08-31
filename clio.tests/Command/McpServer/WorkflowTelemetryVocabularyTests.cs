@@ -471,6 +471,55 @@ public sealed class WorkflowTelemetryVocabularyTests
 
 	// Serialized through the same catalog entry point the MCP tool calls, so the assertions read the
 	// bytes an agent actually receives rather than a hand-picked projection of the definition.
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the one sentence that describes the token charset honest by probing IsAllowedToken, so a change to the validator cannot leave the contract describing a validator that no longer exists.")]
+	public void TelemetryService_Should_Describe_The_Token_Shape_It_Actually_Enforces()
+	{
+		// Arrange — derive the shape from the predicate instead of restating it. Neither telemetry tool is
+		// resident, so the curated contract is the entire description the agent gets; a charset change that
+		// updated IsAllowedToken and missed a sentence would confidently document the old rule.
+		string sentence = TelemetryService.TokenShapeSentence;
+		int longestAccepted = Enumerable.Range(1, 512)
+			.Last(length => TelemetryService.IsAllowedToken(new string('a', length)));
+
+		// Act
+		char[] punctuationAccepted = Enumerable.Range(0x21, 0x7E - 0x21 + 1)
+			.Select(code => (char)code)
+			.Where(character => !char.IsAsciiLetterOrDigit(character))
+			.Where(character => TelemetryService.IsAllowedToken(character.ToString()))
+			.ToArray();
+		char[] punctuationRejected = Enumerable.Range(0x21, 0x7E - 0x21 + 1)
+			.Select(code => (char)code)
+			.Where(character => !char.IsAsciiLetterOrDigit(character))
+			.Where(character => !TelemetryService.IsAllowedToken(character.ToString()))
+			.ToArray();
+
+		// Assert
+		sentence.Should().Contain($"1-{longestAccepted} characters",
+			because: "the length the sentence advertises is the length the predicate stops accepting at");
+		TelemetryService.IsAllowedToken(new string('a', longestAccepted + 1)).Should().BeFalse(
+			because: "the advertised maximum is a maximum");
+		foreach (char accepted in punctuationAccepted) {
+			sentence.Should().Contain($"'{accepted}'",
+				because: $"the predicate accepts '{accepted}', so an agent reading the contract must be told it may send it");
+		}
+		foreach (char rejected in punctuationRejected) {
+			sentence.Should().NotContain($"'{rejected}'",
+				because: $"the predicate rejects '{rejected}', and a sentence offering it costs the sender a whole event");
+		}
+		TelemetryService.IsAllowedToken("a").Should().BeTrue();
+		TelemetryService.IsAllowedToken("A").Should().BeFalse(
+			because: "the sentence says lowercase");
+		sentence.Should().Contain("lowercase letters").And.Contain("digits");
+
+		// The sentence is worth deriving only if it actually reaches the surface the agent reads. Compared
+		// through the same serializer because it escapes the apostrophes the charset is spelled with.
+		string escaped = JsonSerializer.Serialize(sentence).Trim('"');
+		SerializeContract(Clio.Command.McpServer.Tools.SendTelemetryTool.ToolName).Should().Contain(escaped,
+			because: "the curated contract is the whole description for a non-resident tool");
+	}
+
 	private static string SerializeContract(string toolName) =>
 		JsonSerializer.Serialize(Clio.Command.McpServer.Tools.ToolContractCatalog.GetContracts([toolName]));
 
