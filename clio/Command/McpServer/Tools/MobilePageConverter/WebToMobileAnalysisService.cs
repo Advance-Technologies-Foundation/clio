@@ -275,10 +275,6 @@ public static class WebToMobileAnalysisService {
 		// declares (itemLayout) is never declared as an array.
 		InitializeContainerChildSlots(elementMap, mobileByType);
 
-		// Complete every layoutConfig the map carries, whoever wrote it — the placement passes above, the
-		// per-breakpoint adaptive pass, and the verbatim carry of the web page's own placement. Runs LAST of the
-		// elementMap-mutating passes so nothing can emit a partial one after it.
-		NormalizePlacements(elementMap);
 
 		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
 		// converter INSERTS, and the web page's own value for those properties is deliberately IGNORED
@@ -288,6 +284,14 @@ public static class WebToMobileAnalysisService {
 		// merge twins the mobile template provides are never touched. Each rule also declares the report
 		// group it feeds, so two standards never bleed into each other's summary.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
+
+		// Complete every layoutConfig the map carries, whoever wrote it — the placement passes above, the
+		// per-breakpoint adaptive pass, and the verbatim carry of the web page's own placement. Placed AFTER
+		// ApplyComponentPropertyOverrides deliberately: that pass stamps rule-declared properties onto inserted
+		// elements, so a rules file that ever declares a layoutConfig would otherwise write a partial one after
+		// this ran. No bundled rule declares one today, which is exactly why the order — not the data — has to
+		// be what guarantees it.
+		NormalizePlacements(elementMap);
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
@@ -4374,7 +4378,9 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// One sibling cell: the computed row of column 1, spanning one cell. All four keys are always written —
+	/// A single-column cell: the computed row of column 1, spanning one cell. The one placement literal in this
+	/// file — the positional pass and the tab-area stacking both stack into a single column, so they want the
+	/// same object. All four keys are always written —
 	/// the Freedom UI Mobile DESIGNER fails to open a page whose element carries a <c>layoutConfig</c> without
 	/// <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine without them. A partial
 	/// placement is therefore not a smaller placement, it is a broken page at design time.
@@ -4727,11 +4733,6 @@ public static class WebToMobileAnalysisService {
 		&& entry is not null
 		&& ResolveExpectedShape(entry, slot) == JsonValueKind.Object;
 
-	/// <summary>A single-column grid cell: column 1 of the given row, spanning nothing.</summary>
-	private static JsonObject SingleColumnPlacement(int row) => new() {
-		["column"] = 1, ["colSpan"] = 1, ["row"] = row, ["rowSpan"] = 1
-	};
-
 	/// <summary>
 	/// Stacks one retargeted element into its single-column parent at the given row. An element the
 	/// adaptive pass already placed per breakpoint keeps that placement: mobile resolves layoutConfig from
@@ -4759,7 +4760,7 @@ public static class WebToMobileAnalysisService {
 		if (child.MobileValues is JsonObject childValues
 			&& (childValues["layoutConfig"] is not JsonObject layoutConfig
 				|| layoutConfig["adaptive"] is null)) {
-			childValues["layoutConfig"] = SingleColumnPlacement(row);
+			childValues["layoutConfig"] = SiblingSlot(row);
 		}
 	}
 

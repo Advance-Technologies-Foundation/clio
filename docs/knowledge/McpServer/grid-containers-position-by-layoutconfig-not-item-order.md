@@ -19,14 +19,8 @@ else. Two consequences, and the second one cost two rounds to learn:
    genuinely freed — the progress bar still rendered below the tab strip.
 
 So placing content above an anchor takes BOTH halves: an explicit row on the sibling AND the anchor
-moved down. And a `layoutConfig` must be COMPLETE: write `row`, `column`, `colSpan` and `rowSpan`
-every time. The runtime renders fine without the spans, but the Freedom UI Mobile **designer** fails
-to open a page whose `layoutConfig` omits them — a partial placement is not a smaller placement, it is
-a page nobody can edit. `NormalizePlacements` enforces that once, last, over the whole element map:
-the converter authors placements from several places (the positional pass, the anchor clone, the
-adaptive pass, the tab-area stacking) and it also carries the WEB page's own `layoutConfig` verbatim,
-which may legitimately declare only `row`/`column`. Fixing the writers one by one leaves that carry
-path — and every future writer — behind.
+moved down. (What that placement must CONTAIN is a separate fact, with a different cause and a
+different symptom — see `mobile-designer-requires-a-complete-layoutconfig.md`.)
 
 **Why it is this way** — the web side gives no hint: there the same wrapper lives in a
 `crt.FlexContainer`, where DOM order *is* visual order, so no child carries a `layoutConfig` for
