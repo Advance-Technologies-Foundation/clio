@@ -53,8 +53,12 @@ namespace Clio.Command
 						ReferenceType = options.Rebase
 					});
 					if (referenceResult != 0) {
-						//Removing packages.config after a failed rebase would leave a package that
-						//neither restores its assemblies nor points at local ones
+						//An unsupported reference type reports the failure and returns nonzero without
+						//rebasing anything. Reporting "Done" and exiting 0 here told the caller the package
+						//was ready, and removing packages.config on top of that left it with a package that
+						//neither restores its assemblies nor points at local ones.
+						_logger.WriteError(
+							$"Failed to set '{options.Rebase}' references for package '{options.Name}'.");
 						return referenceResult;
 					}
 					package.RemovePackageConfig();

@@ -157,7 +157,7 @@ namespace Clio
 			return false;
 		}
 
-		private string[] GetSearchPatterns(RefType type)
+		private static string[] GetSearchPatterns(RefType type)
 		{
 			switch (type)
 			{
