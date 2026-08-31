@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
@@ -55,6 +55,10 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectBooleanValue(string value){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -79,6 +83,10 @@ public class SysSettingsManagerTests
 		string stringDateTimeValue = dtValue.ToString(CultureInfo.InvariantCulture);
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -97,6 +105,10 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectGuidValue(string value){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -165,6 +177,10 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Throws(string value){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -212,6 +228,10 @@ public class SysSettingsManagerTests
 	public void CreatioCanCreateSetting(string valueTypeName){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -253,6 +273,10 @@ public class SysSettingsManagerTests
 	public void CreatioCannotCanCreateSetting(){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();

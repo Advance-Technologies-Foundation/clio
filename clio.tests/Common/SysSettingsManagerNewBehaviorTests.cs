@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -6,6 +6,7 @@ using System.Security.Authentication;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
@@ -34,12 +35,30 @@ public class SysSettingsManagerNewBehaviorTests {
 		IsNetCore = false
 	};
 
+	// What an accepted DataService SelectQuery answers with. A substituted client returns null by
+	// default, and an empty body is no longer accepted as proof of authentication, so every test that
+	// reaches the probe needs a real envelope rather than silence.
+	private const string AcceptedDataServiceResponse = "{\"rows\":[],\"success\":true}";
+
+	private static IApplicationClient BuildAcceptedClient() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(AcceptedDataServiceResponse);
+		return applicationClient;
+	}
+
+	private static IApplicationClient BuildRejectingClient(string response) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(response);
+		return applicationClient;
+	}
+
 	private static ISysSettingsManager BuildSut(IDataProvider dataProvider,
 		IApplicationClient applicationClient = null) {
 		BindingsModule bm = new(FileSystem);
 		IServiceProvider container = bm.Register(EnvironmentSettings);
 		return new SysSettingsManager(
-			applicationClient ?? Substitute.For<IApplicationClient>(),
+			applicationClient ?? BuildAcceptedClient(),
 			container.GetRequiredService<IServiceUrlBuilder>(),
 			dataProvider,
 			container.GetRequiredService<IWorkingDirectoriesProvider>(),
@@ -460,6 +479,11 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(string.Empty);
+		// The credentials are fine here; it is the WRITE acknowledgement that is missing, so the
+		// probe route answers normally and only the update comes back empty.
+		applicationClient
+			.ExecutePostRequest(Arg.Is<string>(url => url.Contains("SelectQuery")), Arg.Any<string>())
+			.Returns(AcceptedDataServiceResponse);
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
 		sut.UpdateSysSetting("UsrAny", "value").Should().BeFalse(
@@ -1026,4 +1050,193 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	#endregion
+
+	#region Indeterminate probe responses fail closed
+
+	private const string ExpiredCredentialsResponse =
+		"{\"success\":false,\"responseStatus\":{\"ErrorCode\":\"5\",\"Message\":\"Your password has expired\"}}";
+
+	[TestCase(null, TestName = "null probe body")]
+	[TestCase("", TestName = "empty probe body")]
+	[TestCase("   ", TestName = "whitespace probe body")]
+	[Description("An empty DataService body is an indeterminate transport or session failure, not proof of authentication: listing must fail closed rather than report an empty catalog.")]
+	public void GetAllSysSettingsWithValues_ShouldFailClosed_WhenProbeBodyIsEmpty(string probeResponse) {
+		// Arrange
+		IApplicationClient applicationClient = BuildRejectingClient(probeResponse);
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues(includeBinary: true);
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "an accepted SelectQuery always answers with a JSON envelope, so silence cannot stand in for it")
+			.WithMessage("*empty DataService response*");
+	}
+
+	[TestCase(null, TestName = "null probe body")]
+	[TestCase("", TestName = "empty probe body")]
+	[TestCase("   ", TestName = "whitespace probe body")]
+	[Description("An empty DataService body must stop an update before it writes, and must not be cached as a successful probe that later writes can ride on.")]
+	public void UpdateSysSetting_ShouldFailClosedAndNotCache_WhenProbeBodyIsEmpty(string probeResponse) {
+		// Arrange
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrIndeterminate", "Text");
+		IApplicationClient applicationClient = BuildRejectingClient(probeResponse);
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		Action first = () => sut.UpdateSysSetting("UsrIndeterminate", "value");
+		Action second = () => sut.UpdateSysSetting("UsrIndeterminate", "value");
+
+		// Assert
+		first.Should().Throw<AuthenticationException>(
+			because: "the write must not proceed on an unproven session");
+		applicationClient.ReceivedCalls().Should().ContainSingle(
+			because: "only the probe may reach the wire; the update itself must never be sent");
+		second.Should().Throw<AuthenticationException>(
+			because: "an indeterminate probe must not be remembered as success, so the second attempt has to probe again");
+		applicationClient.ReceivedCalls().Should().HaveCount(2,
+			because: "the second attempt re-probes rather than riding on a cached success flag");
+	}
+
+	[TestCase(null, TestName = "null probe body")]
+	[TestCase("", TestName = "empty probe body")]
+	[TestCase("   ", TestName = "whitespace probe body")]
+	[Description("An empty DataService body must stop create-sys-setting before it writes.")]
+	public void InsertSysSetting_ShouldFailClosed_WhenProbeBodyIsEmpty(string probeResponse) {
+		// Arrange
+		IApplicationClient applicationClient = BuildRejectingClient(probeResponse);
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.InsertSysSetting("UsrIndeterminate", "UsrIndeterminate", "Text");
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "creating a setting on an unproven session must fail rather than appear to succeed");
+		applicationClient.ReceivedCalls().Should().ContainSingle(
+			because: "only the probe may reach the wire; the insert itself must never be sent");
+	}
+
+	#endregion
+
+	#region Legacy provider-only read
+
+	[Test]
+	[Description("The legacy GetSysSettingValueByCode path probes before handing back an empty provider value, so expired credentials no longer read as a real empty setting.")]
+	public void GetSysSettingValueByCode_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
+		// Arrange
+		IApplicationClient applicationClient = BuildRejectingClient(ExpiredCredentialsResponse);
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetSysSettingValueByCode("SchemaNamePrefix");
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "an empty provider value is indistinguishable from a rejected read, so the credentials have to be verified first")
+			.WithMessage("*password has expired*");
+	}
+
+	[Test]
+	[Description("get-syssetting no longer exits 0 with an empty value on rejected credentials: the authentication failure reaches the caller.")]
+	public void SysSettingsCommand_Get_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
+		// Arrange
+		IApplicationClient applicationClient = BuildRejectingClient(ExpiredCredentialsResponse);
+		ISysSettingsManager manager = BuildSut(new DataProviderMock(), applicationClient);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>());
+
+		// Act
+		Action act = () => command.Execute(new SysSettingsOptions { Code = "MaxFileSize", IsGet = true });
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "reporting exit 0 and an empty value for a rejected read is the defect this fixes");
+	}
+
+	[Test]
+	[Description("get-schema-name-prefix reports an authentication failure instead of success:true with an empty prefix when the credentials are rejected.")]
+	public void GetSchemaNamePrefix_ShouldReportAuthenticationFailure_WhenCredentialsAreRejected() {
+		// Arrange
+		IApplicationClient applicationClient = BuildRejectingClient(ExpiredCredentialsResponse);
+		SysSettingsManager manager = (SysSettingsManager)BuildSut(new DataProviderMock(), applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
+		SchemaNamePrefixTool tool = new(commandResolver);
+
+		// Act
+		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("local"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an empty prefix caused by rejected credentials must not be reported as a successful read");
+		result.Error.Should().Be("Authentication error reading SchemaNamePrefix.",
+			because: "the caller needs to know the credentials are the problem, not that no prefix is configured");
+	}
+
+	#endregion
+
+	#region Per-environment factory wiring
+
+	[Test]
+	[Description("The per-environment sys-settings factory installs the no-reauth executor for an access-token profile, so a login-page response cannot trigger CreatioClient.Login() across the bearer credential boundary.")]
+	public void PerEnvironmentFactory_ShouldUseNoReauthExecutor_ForAccessTokenProfile() {
+		// Arrange
+		EnvironmentSettings bearerSettings = new() {
+			Uri = "https://localhost",
+			AccessToken = "bearer-token",
+			IsNetCore = true
+		};
+
+		// Act
+		IReauthExecutor reauthExecutor = ResolveFactoryReauthExecutor(bearerSettings);
+
+		// Assert
+		reauthExecutor.Should().BeOfType<NoReauthExecutor>(
+			because: "a bearer profile must never fall back to a login/password re-authentication");
+	}
+
+	[Test]
+	[Description("The per-environment sys-settings factory keeps the adapter's own login-capable executor for a login/password profile, so session-expiry recovery is unchanged there.")]
+	public void PerEnvironmentFactory_ShouldKeepLoginCapableExecutor_ForPasswordProfile() {
+		// Arrange
+		EnvironmentSettings passwordSettings = new() {
+			Uri = "https://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			IsNetCore = false
+		};
+
+		// Act
+		IReauthExecutor reauthExecutor = ResolveFactoryReauthExecutor(passwordSettings);
+
+		// Assert
+		reauthExecutor.Should().NotBeOfType<NoReauthExecutor>(
+			because: "the non-bearer path must keep recovering from server-side session expiry");
+	}
+
+	private static IReauthExecutor ResolveFactoryReauthExecutor(EnvironmentSettings envSettings) {
+		BindingsModule bm = new(FileSystem);
+		IServiceProvider container = bm.Register(EnvironmentSettings);
+		Func<EnvironmentSettings, ISysSettingsManager> factory =
+			container.GetRequiredService<Func<EnvironmentSettings, ISysSettingsManager>>();
+		//The client stays lazy, so reading the wiring costs no HTTP call.
+		ISysSettingsManager manager = factory(envSettings);
+		object applicationClient = ReadPrivateField(manager, "_creatioClient");
+		applicationClient.Should().BeOfType<CreatioClientAdapter>(
+			because: "the factory wires the sys-settings manager onto the Creatio client adapter");
+		return (IReauthExecutor)ReadPrivateField(applicationClient, "_reauthExecutor");
+	}
+
+	private static object ReadPrivateField(object instance, string fieldName) {
+		System.Reflection.FieldInfo field = instance.GetType().GetField(
+			fieldName,
+			System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		field.Should().NotBeNull(
+			because: $"{instance.GetType().Name}.{fieldName} is what the wiring assertion reads");
+		return field!.GetValue(instance);
+	}
+
+	#endregion
+
 }

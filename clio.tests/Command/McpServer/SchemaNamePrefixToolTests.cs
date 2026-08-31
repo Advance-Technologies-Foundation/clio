@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net.Http;
 using ATF.Repository.Providers;
 using Clio.Command.McpServer.Tools;
@@ -19,13 +19,23 @@ public sealed class SchemaNamePrefixToolTests {
 	/// provider, so the remaining constructor dependencies are inert substitutes.
 	/// </summary>
 	private static SysSettingsManager BuildSysSettingsManager(IDataProvider dataProvider) =>
-		new(Substitute.For<IApplicationClient>(),
+		new(BuildAuthenticatedClient(),
 			Substitute.For<IServiceUrlBuilder>(),
 			dataProvider,
 			Substitute.For<IWorkingDirectoriesProvider>(),
 			Substitute.For<IFileSystem>(),
 			Substitute.For<System.IO.Abstractions.IFileSystem>(),
 			Substitute.For<ILogger>());
+
+	// These scenarios describe a reachable environment with accepted credentials, so the
+	// authenticated DataService probe has to answer with a real envelope; a substituted client
+	// returns null, and an empty body is deliberately no longer taken as proof of authentication.
+	private static IApplicationClient BuildAuthenticatedClient() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		return applicationClient;
+	}
 
 	[Test]
 	[Category("Unit")]

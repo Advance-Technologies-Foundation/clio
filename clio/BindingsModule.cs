@@ -1104,14 +1104,23 @@ public class BindingsModule {
 		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
 		// The client stays lazy, so building the factory result costs no HTTP call on its own.
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp =>
-			envSettings => new SysSettingsManager(
-				new CreatioClientAdapter(new Lazy<CreatioClient>(() => BuildCreatioClient(envSettings))),
-				new ServiceUrlBuilder(envSettings),
-				BuildRemoteDataProvider(envSettings),
-				sp.GetRequiredService<IWorkingDirectoriesProvider>(),
-				sp.GetRequiredService<Clio.Common.IFileSystem>(),
-				sp.GetRequiredService<IFileSystem>(),
-				sp.GetRequiredService<ILogger>()));
+			envSettings => {
+				Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
+				// Same bearer rule as RegisterActiveEnvironmentServices: with an access token the adapter
+				// must never fall back to CreatioClient.Login() when it receives a login page, because
+				// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1).
+				IApplicationClient applicationClient = !string.IsNullOrEmpty(envSettings.AccessToken)
+					? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
+					: new CreatioClientAdapter(lazyCreatioClient);
+				return new SysSettingsManager(
+					applicationClient,
+					new ServiceUrlBuilder(envSettings),
+					BuildRemoteDataProvider(envSettings),
+					sp.GetRequiredService<IWorkingDirectoriesProvider>(),
+					sp.GetRequiredService<Clio.Common.IFileSystem>(),
+					sp.GetRequiredService<IFileSystem>(),
+					sp.GetRequiredService<ILogger>());
+			});
 
 		RegisterFluentValidators(services);
 		return settingsRepository;

@@ -392,6 +392,11 @@ public class SysSettingsManager : ISysSettingsManager
 		if (!string.IsNullOrEmpty(providerValue)) {
 			return providerValue;
 		}
+		//An empty provider value is also what a rejected read looks like, so the credentials must be
+		//verified before that emptiness is handed back as a legitimate answer. Without this, legacy
+		//get-syssetting exited 0 with no value and get-schema-name-prefix reported success:true with
+		//an empty prefix on expired credentials.
+		EnsureAuthenticatedDataServiceResponse("reading sys-setting");
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
 		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
 			return providerValue ?? string.Empty;
@@ -700,8 +705,13 @@ public class SysSettingsManager : ISysSettingsManager
 				exception);
 		}
 		if (string.IsNullOrWhiteSpace(response)) {
-			_authProbeSucceeded = true;
-			return;
+			//A DataService SelectQuery that was accepted always answers with a JSON envelope. An
+			//empty body is an indeterminate transport or session failure, so treating it as proof of
+			//authentication brought back the silent empty-success result and let every later write
+			//skip the probe through the cached flag.
+			throw new AuthenticationException(
+				$"Failed {operationLabel}: the environment returned an empty DataService response, which does "
+				+ "not confirm the credentials were accepted. Verify the environment credentials and retry.");
 		}
 		if (ReauthExecutor.IsSessionExpiredResponse(response)) {
 			throw new AuthenticationException(
