@@ -14,6 +14,11 @@ internal interface IKnowledgeManagedTreeDeleter {
 	/// Removes the tree rooted at <paramref name="root"/> directly, and does nothing when it does not exist.
 	/// Read-only attributes are cleared first. Use <see cref="DeleteRecoverably"/> when a partially removed root
 	/// would make later retries impossible.
+	/// <para>Every directory reparse point inside the tree is <em>unlinked</em> before the delete is attempted —
+	/// see <see cref="DeleteRecoverably"/> for why. Unlike that method this one walks the LIVE root with no
+	/// rename, so the unlink applies to the caller's own tree and is not undone when the delete then fails: a
+	/// reported failure leaves the tree in place minus its links. Every current caller is discarding the tree
+	/// outright, which is the only reason that is acceptable.</para>
 	/// </summary>
 	/// <param name="root">Path of the tree to remove.</param>
 	void Delete(string root);
@@ -34,10 +39,22 @@ internal interface IKnowledgeManagedTreeDeleter {
 	/// <para>Read-only attributes are cleared before the delete. Git marks pack files (<c>*.pack</c>,
 	/// <c>*.idx</c>) read-only on creation and Windows refuses to delete a read-only file, so every Git
 	/// knowledge checkout contains files a plain recursive delete cannot remove.</para>
-	/// <para>The attribute walk does not descend into a directory symlink or junction, and skips a file that is
-	/// one. <see cref="System.IO.Directory.Delete(string, bool)"/> unlinks a name-surrogate reparse point rather
-	/// than emptying its target, so a walk that descended would clear read-only bits on files outside the
-	/// managed root that are never deleted — including on a checkout Clio has just rejected as untrusted.</para>
+	/// <para>The walk never descends into a directory reparse point, and skips a file that is one: absent a local
+	/// process racing the walk, nothing behind a link is deleted or modified, so clearing read-only bits there
+	/// would mutate state outside the managed root — including on a checkout Clio has just rejected as
+	/// untrusted. The residual race is accepted: closing it needs handle-relative traversal the framework does
+	/// not expose.</para>
+	/// <para>Instead of skipping a directory reparse point, the walk <em>unlinks</em> it with a non-recursive
+	/// delete, which removes the link and leaves its target untouched. This is not tidiness: a recursive
+	/// <see cref="System.IO.Directory.Delete(string, bool)"/> that meets a <b>junction</b> anywhere inside the
+	/// tree removes the link and then throws anyway, leaving the tree on disk. It fails elevated as well as
+	/// unelevated, and the exception differs by host — <c>IOException</c> "The parameter is incorrect" or
+	/// <c>UnauthorizedAccessException</c> "Access to the path is denied" — so neither the privilege level nor
+	/// the exception type can be relied on. A directory <em>symlink</em> is handled natively and never triggers
+	/// it. A tag that is not a name surrogate at all — a OneDrive Files-On-Demand placeholder, a ProjFS root,
+	/// WCI, DFS — is neither: the framework descends into it, so this walk descends too and clears the
+	/// read-only bits inside, which is what keeps a read-only pack file behind a placeholder folder from
+	/// becoming another undeletable cache.</para>
 	/// <para>Clearing is best effort: a file that cannot be reset is left for the delete itself to report, so a
 	/// genuine permission problem still surfaces as one rather than being masked, or — worse — thrown from the
 	/// enumerator before the delete that would have succeeded is ever reached.</para>
@@ -134,7 +151,11 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 			string directoryPath = pending.Pop();
 			try {
 				IDirectoryInfo directory = _fileSystem.DirectoryInfo.New(directoryPath);
-				if (!directory.Exists || (directory.Attributes & FileAttributes.ReparsePoint) != 0) {
+				// LOAD-BEARING, not redundant. Since name-surrogate children are unlinked below and never
+				// pushed, the only links that reach this check are the root itself and one swapped in after
+				// enumeration - and a failed unlink is silent, so surviving links do occur. Removing this as
+				// unreachable would let the walk descend through them.
+				if (!directory.Exists || IsLink(directory)) {
 					continue;
 				}
 				// TopDirectoryOnly, NOT SearchOption.AllDirectories: the framework's recursive enumeration
@@ -145,6 +166,23 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 					switch (entry) {
 						case IFileInfo file:
 							ClearReadOnlyAttribute(file);
+							break;
+						case IDirectoryInfo child when IsLink(child):
+							// Unlinked HERE, not left for the recursive delete. Directory.Delete(recursive: true)
+							// throws when it meets a JUNCTION anywhere inside the tree - it removes the link and
+							// then fails anyway, leaving the tree behind. The exception varies by host
+							// (IOException "The parameter is incorrect" / UnauthorizedAccessException "Access to
+							// the path is denied"), and it happens elevated as well as not, so neither the type
+							// nor the privilege level can be relied on.
+							//
+							// THREE tag classes, not two, and the framework keys on the name-surrogate bit: it
+							// unlinks a SYMLINK natively, mishandles a MOUNT POINT (junction) as above, and
+							// DESCENDS INTO a non-name-surrogate tag - a OneDrive Files-On-Demand placeholder,
+							// a ProjFS/Scalar root, WCI, DFS. IsLink separates them, so this branch takes only
+							// the first two and the third falls through to be walked exactly as the framework
+							// walks it - otherwise a read-only *.pack behind a placeholder folder would keep
+							// its attribute and stay an undeletable cache.
+							UnlinkReparsePoint(child);
 							break;
 						case IDirectoryInfo child:
 							pending.Push(child.FullName);
@@ -160,6 +198,46 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 				// A concurrent removal or an unreadable subtree. Leave it to the delete to report: clearing
 				// attributes must never be the step that fails an otherwise removable tree.
 			}
+		}
+	}
+
+	// TRUE for a link, FALSE for a reparse point that is not one. Measured: ResolveLinkTarget returns a
+	// target for a JUNCTION as well as a symbolic link, so this does not accidentally exclude the mount-point
+	// tag - which is the only one that actually breaks the recursive delete. A non-name-surrogate tag
+	// (OneDrive placeholder, ProjFS, WCI, DFS) returns null and must be descended into rather than unlinked.
+	// Throwing counts as "not a link": the walk then leaves it alone, which is the pre-existing behaviour.
+	private static bool IsLink(IDirectoryInfo directory) {
+		try {
+			return (directory.Attributes & FileAttributes.ReparsePoint) != 0
+				&& directory.ResolveLinkTarget(returnFinalTarget: false) is not null;
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			return false;
+		}
+	}
+
+	// A NON-recursive delete of a directory reparse point removes the link and never touches its target -
+	// verified, including that a read-only payload behind the link keeps its attribute. Best effort, like the
+	// rest of the walk: if the link survives, the delete that follows is what reports it.
+	//
+	// DESTROYING things inside a walk named "clear attributes" is sound for exactly one reason: every caller
+	// deletes this same root immediately afterwards (Delete, DeleteRecoverably, SweepAbandonedQuarantines), so
+	// nothing unlinked here was going to survive the call. That makes two refactors unsafe even though both
+	// look like improvements - reusing this walk in a NON-deleting context ("make a tree writable first"), and
+	// moving it BEFORE DeleteRecoverably's Move, which would turn a failed rename from "nothing happened" into
+	// an unrecoverable link-stripping of a tree that then survives.
+	private void UnlinkReparsePoint(IDirectoryInfo link) {
+		try {
+			// Re-read the attribute rather than trusting the enumeration's cached FIND_DATA: the parent was
+			// re-opened by name after its own fresh check, so a local process can swap a plain directory for a
+			// link in between and steer this delete outside the managed root. One stat closes the cheap half of
+			// that race; the rest needs handle-relative traversal the framework does not expose.
+			IDirectoryInfo current = _fileSystem.DirectoryInfo.New(link.FullName);
+			if (!IsLink(current)) {
+				return;
+			}
+			current.Delete(recursive: false);
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			// Left for the delete to report, exactly as an unresettable read-only file is.
 		}
 	}
 

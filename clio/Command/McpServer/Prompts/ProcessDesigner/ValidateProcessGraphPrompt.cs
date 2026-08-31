@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 /// </summary>
 [McpServerPromptType]
 [Description("Guides the agent to read the process-modeling guidance, validate a planned process graph with validate-process-graph, and only then build it with create-business-process.")]
-[FeatureToggle("process-designer")]
 public static class ValidateProcessGraphPrompt {
 
 	/// <summary>
