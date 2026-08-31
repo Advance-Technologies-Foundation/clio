@@ -14,7 +14,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// Hermetic happy-path end-to-end coverage for the upload-image MCP tool: the real clio MCP server
 /// resolves a registered environment (isolated clio home) that points at a loopback fake of the
-/// Creatio image surface (forms-auth login without a CSRF cookie, upload endpoint, verification
+/// Creatio image surface (forms-auth login with the modern CSRF cookie, upload endpoint, verification
 /// read), so the full
 /// login → upload → byte-verified read flow runs without a live Creatio environment.
 /// </summary>
@@ -67,9 +67,9 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(UploadImageTool.ToolName)]
-	[AllureName("upload-image accepts a tokenless CSRF-disabled session and verifies the image end to end")]
-	[AllureDescription("Registers an isolated environment pointing at a CSRF-disabled loopback fake whose login returns only a session cookie, calls upload-image through the real clio MCP server, and verifies the structured result plus the login → upload → byte-verified read sequence.")]
-	[Description("Registers an isolated environment pointing at a CSRF-disabled loopback fake whose login returns only a session cookie, calls upload-image through the real clio MCP server, and verifies the structured result plus the login → upload → byte-verified read sequence.")]
+	[AllureName("upload-image forwards the authenticated session and modern CSRF token end to end")]
+	[AllureDescription("Registers an isolated environment pointing at a loopback fake that requires both the forms session cookie and matching CRT_CSRF header, calls upload-image through the real clio MCP server, and verifies the structured result plus the login → upload → authenticated byte-read sequence.")]
+	[Description("Requires the real MCP upload path to forward the forms cookie and matching modern CSRF header before byte-verifying the stored image.")]
 	public async Task UploadImage_Should_Upload_And_Verify_Image_When_Environment_Is_Reachable() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -107,6 +107,8 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 	/// read that serves the exact uploaded bytes back.
 	/// </summary>
 	private sealed class FakeCreatioImageStub : IAsyncDisposable {
+		private const string SessionCookie = ".ASPXAUTH=stub-session";
+		private const string CsrfCookie = "CRT_CSRF=stub-csrf";
 		public static readonly byte[] PngPayload = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4];
 
 		private readonly CancellationTokenSource _cancellationTokenSource = new();
@@ -177,12 +179,16 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 			string path = context.Request.Url?.AbsolutePath ?? string.Empty;
 			byte[] bytes;
 			if (path.EndsWith("/ServiceModel/AuthService.svc/Login", StringComparison.Ordinal)) {
-				// The auth client harvests Set-Cookie headers itself (its HTTP client has no cookie
-				// jar). This fake deliberately issues no CSRF cookie to model a CSRF-disabled site.
-				context.Response.Headers.Add("Set-Cookie", ".ASPXAUTH=stub-session; path=/");
+				context.Response.Headers.Add("Set-Cookie", SessionCookie + "; path=/; HttpOnly; SameSite=Lax");
+				context.Response.Headers.Add("Set-Cookie", CsrfCookie + "; path=/; SameSite=Strict");
 				context.Response.ContentType = "application/json";
 				bytes = Encoding.UTF8.GetBytes("{\"Code\":0}");
 			} else if (path.EndsWith("/ImageAPIService/upload", StringComparison.Ordinal)) {
+				if (!HasCookie(context.Request, SessionCookie) || !HasCookie(context.Request, CsrfCookie)
+					|| context.Request.Headers["CRT_CSRF"] != "stub-csrf") {
+					context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+					bytes = Encoding.UTF8.GetBytes("missing authenticated CSRF session");
+				} else {
 				string? fileId = context.Request.QueryString["fileId"];
 				UploadedFileId = Guid.TryParse(fileId, out Guid parsed) ? parsed : Guid.Empty;
 				using MemoryStream buffer = new();
@@ -190,11 +196,17 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 				UploadedBytes = buffer.ToArray();
 				context.Response.ContentType = "application/json";
 				bytes = Encoding.UTF8.GetBytes("{\"success\":true}");
+				}
 			} else if (path.Contains("/img/entity/hash/SysImage/Data/", StringComparison.Ordinal)) {
+				if (!HasCookie(context.Request, SessionCookie)) {
+					context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+					bytes = Encoding.UTF8.GetBytes("missing authenticated session");
+				} else {
 				string idSegment = path[(path.LastIndexOf('/') + 1)..];
 				VerifiedFileId = Guid.TryParse(idSegment, out Guid parsed) ? parsed : Guid.Empty;
 				context.Response.ContentType = "image/png";
 				bytes = UploadedBytes ?? [];
+				}
 			} else {
 				context.Response.StatusCode = (int)HttpStatusCode.NotFound;
 				context.Response.ContentType = "text/plain";
@@ -204,5 +216,9 @@ public sealed class UploadImageHappyPathE2ETests : McpContractFixtureBase {
 			await context.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
 			context.Response.Close();
 		}
+
+		private static bool HasCookie(HttpListenerRequest request, string expected) =>
+			(request.Headers["Cookie"] ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries)
+				.Any(value => value.Trim().Equals(expected, StringComparison.Ordinal));
 	}
 }

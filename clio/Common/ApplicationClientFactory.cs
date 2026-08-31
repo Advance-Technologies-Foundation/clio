@@ -33,13 +33,13 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 			GuardBearerSettings(settings);
 			Lazy<CreatioClient> client = new(() =>
 				new CreatioClient(settings.Uri, settings.AccessToken, settings.IsNetCore));
-			return new CreatioClientAdapter(client, _noReauthExecutor);
+			return new CreatioClientAdapter(client, null, _noReauthExecutor, ownsClient: true);
 		}
 
 		if (!string.IsNullOrEmpty(settings.Cookie)) {
 			throw new NotSupportedException(
-				"Cookie-based authentication is not supported in v1 (no supported CreatioClient " +
-				"cookie-injection path); use an access token.");
+				"A raw EnvironmentSettings.Cookie value is not a supported structured Creatio session; " +
+				"use an access token or import typed session cookies on a forms-auth client.");
 		}
 
 		if (string.IsNullOrEmpty(settings.ClientId)) {
@@ -59,13 +59,14 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 			GuardBearerSettings(settings);
 			Lazy<CreatioClient> client = new(() =>
 				new CreatioClient(settings.Uri, settings.AccessToken, settings.IsNetCore));
-			return new CreatioClientAdapter(client, new ServiceUrlBuilder(settings), _noReauthExecutor);
+			return new CreatioClientAdapter(client, new ServiceUrlBuilder(settings), _noReauthExecutor,
+				ownsClient: true);
 		}
 
 		if (!string.IsNullOrEmpty(settings.Cookie)) {
 			throw new NotSupportedException(
-				"Cookie-based authentication is not supported in v1 (no supported CreatioClient " +
-				"cookie-injection path); use an access token.");
+				"A raw EnvironmentSettings.Cookie value is not a supported structured Creatio session; " +
+				"use an access token or import typed session cookies on a forms-auth client.");
 		}
 
 		ServiceUrlBuilder serviceUrlBuilder = new(settings);
@@ -76,6 +77,31 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 
 		return new CreatioClientAdapter(settings.Uri, settings.ClientId,
 			settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore, serviceUrlBuilder);
+	}
+
+	/// <inheritdoc />
+	public IOwnedApplicationClient CreateFormsEnvironmentClient(EnvironmentSettings settings,
+		bool useUntrustedSsl) {
+		ArgumentNullException.ThrowIfNull(settings);
+		return new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,
+			useUntrustedSsl, settings.IsNetCore, new ServiceUrlBuilder(settings));
+	}
+
+	/// <inheritdoc />
+	public IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings settings,
+		string accessToken, bool useUntrustedSsl) {
+		ArgumentNullException.ThrowIfNull(settings);
+		EnvironmentSettings bearerSettings = new() {
+			Uri = settings.Uri,
+			IsNetCore = settings.IsNetCore,
+			AccessToken = accessToken,
+			AccessTokenType = AuthenticationScheme.Bearer
+		};
+		GuardBearerSettings(bearerSettings);
+		Lazy<CreatioClient> client = new(() => new CreatioClient(settings.Uri, accessToken,
+			useUntrustedSsl, settings.IsNetCore));
+		return new CreatioClientAdapter(client, new ServiceUrlBuilder(settings), _noReauthExecutor,
+			ownsClient: true);
 	}
 
 	#endregion

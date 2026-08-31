@@ -2,12 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using Clio.Common.BrowserSession;
 
 namespace Clio.Common;
 
@@ -38,29 +36,20 @@ public sealed class SysImageUploader : ISysImageUploader {
 			[".svg"] = "image/svg+xml"
 		};
 
-	private static readonly string[] CsrfCookieNames = ["CRT_CSRF", "BPMCSRF"];
-
-	/// <summary>
-	/// Name of the dedicated <see cref="IHttpClientFactory"/> client for the image upload and its
-	/// verification read. Configured like the auth client (no cookie jar, no auto-redirect — cookies
-	/// are attached manually and a login-page redirect must surface as a raw 3xx), but with a larger
-	/// timeout: a cold IIS site can take well over the auth client's 30-second budget to spin up.
-	/// </summary>
-	internal const string HttpClientName = "sys-image-upload";
-
 	private readonly EnvironmentSettings _environmentSettings;
-	private readonly ICreatioAuthClient _authClient;
-	private readonly IHttpClientFactory _httpClientFactory;
+	private readonly IApplicationClientFactory _applicationClientFactory;
+	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly Clio.Common.IFileSystem _fileSystem;
 
 	/// <summary>
-	/// Initializes the uploader for the environment carried by <paramref name="environmentSettings"/>.
+	/// Initializes the uploader for the active environment using a dedicated strict-TLS forms client.
 	/// </summary>
-	public SysImageUploader(EnvironmentSettings environmentSettings, ICreatioAuthClient authClient,
-		IHttpClientFactory httpClientFactory, Clio.Common.IFileSystem fileSystem) {
+	public SysImageUploader(EnvironmentSettings environmentSettings,
+		IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder,
+		Clio.Common.IFileSystem fileSystem) {
 		_environmentSettings = environmentSettings;
-		_authClient = authClient;
-		_httpClientFactory = httpClientFactory;
+		_applicationClientFactory = applicationClientFactory;
+		_serviceUrlBuilder = serviceUrlBuilder;
 		_fileSystem = fileSystem;
 	}
 
@@ -95,71 +84,44 @@ public sealed class SysImageUploader : ISysImageUploader {
 				$"File changed while reading and no longer fits the {MaxImageBytes:N0}-byte limit: '{filePath}' ({payload.LongLength:N0} bytes).");
 		}
 		try {
-			StorageStateResult session = await _authClient.LoginAsync(_environmentSettings, cancellationToken)
+			using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(
+				_environmentSettings, useUntrustedSsl: false);
+			return await UploadThroughClientAsync(client, filePath, payload, mimeType, cancellationToken)
 				.ConfigureAwait(false);
-			return await UploadAuthenticatedAsync(session, filePath, payload, mimeType, cancellationToken)
-				.ConfigureAwait(false);
-		} catch (CreatioAuthenticationException ex) {
-			return SysImageUploadResult.Failure(ex.Message);
+		} catch (UnauthorizedAccessException) {
+			return SysImageUploadResult.Failure(
+				$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
+				"check username and password in env config");
 		} catch (HttpRequestException ex) {
 			return SysImageUploadResult.Failure($"Image upload failed: {ex.Message}");
-		} catch (TaskCanceledException) {
+		} catch (OperationCanceledException) {
 			cancellationToken.ThrowIfCancellationRequested();
 			return SysImageUploadResult.Failure("Image upload timed out.");
 		}
 	}
 
-	private async Task<SysImageUploadResult> UploadAuthenticatedAsync(StorageStateResult session,
+	private async Task<SysImageUploadResult> UploadThroughClientAsync(IApplicationClient client,
 		string filePath, byte[] payload, string mimeType, CancellationToken cancellationToken) {
-		string cookieHeader = string.Join("; ", session.Cookies.Select(c => $"{c.Name}={c.Value}"));
-		BrowserCookie csrfCookie = CsrfCookieNames
-			.Select(cookieName => session.Cookies.FirstOrDefault(c =>
-				c.Name.Equals(cookieName, StringComparison.OrdinalIgnoreCase)))
-			.FirstOrDefault(cookie => !string.IsNullOrEmpty(cookie?.Value));
 		Guid imageId = Guid.NewGuid();
 		string fileName = System.IO.Path.GetFileName(filePath);
-		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
 
-		using HttpRequestMessage upload = new(HttpMethod.Post, BuildUploadUrl(imageId, payload.LongLength, mimeType));
-		upload.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-		// Creatio uses CRT_CSRF on current runtimes and BPMCSRF on legacy ones. Echo the token
-		// under the same name the environment issued. A missing token is valid when server-side
-		// CSRF protection is disabled, so the image API remains the authority instead of clio
-		// rejecting the request before it reaches the environment.
-		if (csrfCookie is not null) {
-			upload.Headers.TryAddWithoutValidation(csrfCookie.Name, csrfCookie.Value);
-		}
-		upload.Content = new ByteArrayContent(payload);
-		upload.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
-		// The File API range end is zero-indexed and inclusive: a 123-byte file is "bytes 0-122/123".
-		upload.Content.Headers.ContentRange = new ContentRangeHeaderValue(0, payload.LongLength - 1, payload.LongLength);
-		// The file name travels percent-encoded inside a plain, UNQUOTED filename parameter, byte-for-byte
-		// like the platform's own upload page sends. This shape is load-bearing and verified live against
-		// the image API: the server derives the image type from the filename's extension with a naive
-		// parse that does not strip quotes, so a quoted filename (filename="x.png") is read as extension
-		// 'png"' and the upload is rejected with HTTP 200 {"error":"File is not an image."}. Percent-
-		// encoding keeps a non-ASCII name (which would otherwise be mangled on the Latin-1 header channel)
-		// intact while staying a valid unquoted header token; the RFC 5987 filename* form is rejected
-		// outright with HTTP 400 "Content-Disposition". Set as a raw header so no quoting is reintroduced
-		// by the typed ContentDispositionHeaderValue.FileName setter.
-		upload.Content.Headers.TryAddWithoutValidation("Content-Disposition",
-			$"attachment; filename={Uri.EscapeDataString(fileName)}");
-
-		using HttpResponseMessage uploadResponse = await http.SendAsync(upload, cancellationToken)
+		using HttpResponseMessage uploadResponse = await client.UploadImageAsync(
+			BuildUploadUrl(imageId, payload.LongLength, mimeType), payload, fileName, mimeType,
+			cancellationToken: cancellationToken)
 			.ConfigureAwait(false);
 		string uploadBody = await uploadResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 		if (!uploadResponse.IsSuccessStatusCode) {
-			string missingCsrfHint = csrfCookie is null &&
-				uploadResponse.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
-				? " The login session carried no CRT_CSRF or BPMCSRF cookie; verify that the environment or proxy returns its CSRF cookie and retry."
+			string csrfHint = uploadResponse.StatusCode is System.Net.HttpStatusCode.Unauthorized
+				or System.Net.HttpStatusCode.Forbidden
+				? " Verify the environment credentials and that its proxy preserves the Creatio CSRF cookie."
 				: string.Empty;
 			return SysImageUploadResult.Failure(
-				$"Image upload failed: the image API returned HTTP {(int)uploadResponse.StatusCode}.{missingCsrfHint}");
+				$"Image upload failed: the image API returned HTTP {(int)uploadResponse.StatusCode}.{csrfHint}");
 		}
 		if (TryReadUploadError(uploadBody, out string serverError)) {
 			return SysImageUploadResult.Failure($"Image upload failed: {serverError}");
 		}
-		return await VerifyUploadAsync(http, cookieHeader, imageId, payload, cancellationToken).ConfigureAwait(false);
+		return await VerifyUploadAsync(client, imageId, payload, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -169,16 +131,11 @@ public sealed class SysImageUploader : ISysImageUploader {
 	/// root on .NET Core (no <c>/rest/</c> segment on either runtime).
 	/// </summary>
 	private string BuildUploadUrl(Guid imageId, long totalFileLength, string mimeType) {
-		return $"{BuildWorkspaceRoot()}/ImageAPIService/upload" +
+		return _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ImageApiUpload) +
 			$"?fileapi{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}" +
 			$"&totalFileLength={totalFileLength}" +
 			$"&fileId={imageId}" +
 			$"&mimeType={Uri.EscapeDataString(mimeType)}";
-	}
-
-	private string BuildWorkspaceRoot() {
-		string root = _environmentSettings.Uri?.TrimEnd('/') ?? string.Empty;
-		return _environmentSettings.IsNetCore ? root : root + "/0";
 	}
 
 	/// <summary>
@@ -250,12 +207,11 @@ public sealed class SysImageUploader : ISysImageUploader {
 	/// status-only check could report a false success — the byte comparison is the authoritative
 	/// persistence proof.
 	/// </summary>
-	private async Task<SysImageUploadResult> VerifyUploadAsync(HttpClient http, string cookieHeader,
-		Guid imageId, byte[] payload, CancellationToken cancellationToken) {
-		string verifyUrl = $"{BuildWorkspaceRoot()}/img/entity/hash/SysImage/Data/{imageId}";
-		using HttpRequestMessage verify = new(HttpMethod.Get, verifyUrl);
-		verify.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-		using HttpResponseMessage verifyResponse = await http.SendAsync(verify, cancellationToken)
+	private async Task<SysImageUploadResult> VerifyUploadAsync(IApplicationClient client, Guid imageId,
+		byte[] payload, CancellationToken cancellationToken) {
+		string verifyUrl = _serviceUrlBuilder.Build($"/img/entity/hash/SysImage/Data/{imageId}");
+		using HttpResponseMessage verifyResponse = await client.ExecuteGetRequestAsync(
+			verifyUrl, cancellationToken: cancellationToken)
 			.ConfigureAwait(false);
 		if (!verifyResponse.IsSuccessStatusCode) {
 			return SysImageUploadResult.Failure(

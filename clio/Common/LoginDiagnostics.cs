@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Clio.Common;
 
@@ -77,11 +78,39 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 	}
 
 	/// <inheritdoc />
+	public async Task<T> TrackAsync<T>(Func<Task<T>> login, LoginAttemptKind kind) {
+		ArgumentNullException.ThrowIfNull(login);
+		AttemptRecord record = BeginAttempt(kind);
+		try {
+			return await login().ConfigureAwait(false);
+		} catch (Exception exception)
+			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
+			throw Decorate(exception, rejection, record);
+		} finally {
+			EndAttempt(record);
+		}
+	}
+
+	/// <inheritdoc />
 	public T TrackRequest<T>(Func<T> request) {
 		ArgumentNullException.ThrowIfNull(request);
 		AttemptRecord record = BeginAttempt(LoginAttemptKind.Implicit);
 		try {
 			return request();
+		} catch (Exception exception)
+			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
+			throw Decorate(exception, rejection, record);
+		} finally {
+			EndAttempt(record);
+		}
+	}
+
+	/// <inheritdoc />
+	public async Task<T> TrackRequestAsync<T>(Func<Task<T>> request) {
+		ArgumentNullException.ThrowIfNull(request);
+		AttemptRecord record = BeginAttempt(LoginAttemptKind.Implicit);
+		try {
+			return await request().ConfigureAwait(false);
 		} catch (Exception exception)
 			when (TryFindLoginRejection(exception, out UnauthorizedAccessException rejection)) {
 			throw Decorate(exception, rejection, record);

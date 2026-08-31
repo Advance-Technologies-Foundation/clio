@@ -1,0 +1,53 @@
+using System;
+using Clio;
+using Clio.Common;
+using Creatio.Client;
+using FluentAssertions;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Common;
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
+internal sealed class CreatioClientAdapterLifetimeTests {
+
+	[Test]
+	[Description("Disposing an adapter around a borrowed DI client does not dispose the shared CreatioClient")]
+	public void Dispose_ShouldKeepClientUsable_WhenClientIsBorrowed() {
+		// Arrange
+		using CreatioClient client = new("https://localhost", "Supervisor", "Supervisor", true);
+		CreatioClientAdapter sut = new(client);
+
+		// Act
+		sut.Dispose();
+		Action clientAct = () => client.ExportSessionCookies();
+		Action adapterAct = () => sut.ExportSessionCookies();
+
+		// Assert
+		clientAct.Should().NotThrow(
+			because: "DI-owned clients can outlive an adapter while a SignalR listener finishes cancellation");
+		adapterAct.Should().Throw<ObjectDisposedException>(
+			because: "disposing the adapter must still prevent new operations through that adapter");
+	}
+
+	[Test]
+	[Description("Disposing a factory-created adapter disposes its short-lived owned CreatioClient")]
+	public void Dispose_ShouldDisposeClient_WhenClientIsFactoryOwned() {
+		// Arrange
+		ApplicationClientFactory factory = new(Substitute.For<IReauthExecutor>());
+		IOwnedApplicationClient sut = factory.CreateFormsEnvironmentClient(new EnvironmentSettings {
+			Uri = "https://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		}, useUntrustedSsl: true);
+		// Act
+		sut.Dispose();
+		Action act = () => sut.ExportSessionCookies();
+
+		// Assert
+		act.Should().Throw<ObjectDisposedException>(
+			because: "disposing before first use must not allow the lazy client to be created afterward");
+	}
+}

@@ -10,12 +10,11 @@ namespace Clio.Command.OAuthAppConfiguration;
 
 /// <summary>
 /// Talks to a remote IdentityService (OAuth identity server) over HTTP for read-only probing and
-/// server-to-server (<c>client_credentials</c>) token verification. This is intentionally NOT routed
-/// through <see cref="IApplicationClient"/>: the identity server is a different host than Creatio, uses
-/// no Creatio session auth, requires <c>application/x-www-form-urlencoded</c> for the token endpoint,
-/// and the bearer smoke test must carry an arbitrary access token rather than the environment's
-/// configured credentials. The same split is already used by the IdentityService deployment service
-/// (<c>VerifyIdentityDiscovery</c> / <c>VerifyClientCredentials</c>).
+/// server-to-server (<c>client_credentials</c>) token verification. IdentityService discovery and token
+/// acquisition intentionally use an ordinary <see cref="HttpClient"/> because they target a different
+/// host and require <c>application/x-www-form-urlencoded</c>. The Creatio DataService smoke request uses
+/// <see cref="IApplicationClient"/> so origin validation and bearer transport remain owned by the shared
+/// Creatio client.
 /// </summary>
 public interface IIdentityServerProbe
 {
@@ -39,6 +38,7 @@ public interface IIdentityServerProbe
 	/// Performs a minimal bearer-authenticated DataService smoke request against Creatio and returns the
 	/// HTTP status code so callers can confirm the freshly minted token is accepted end to end.
 	/// </summary>
+	/// <param name="environmentSettings">Target Creatio environment shape.</param>
 	/// <param name="selectQueryUrl">
 	/// Fully resolved DataService SelectQuery URL. Build it with
 	/// <see cref="IServiceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute)"/> for
@@ -47,17 +47,21 @@ public interface IIdentityServerProbe
 	/// </param>
 	/// <param name="accessToken">Bearer access token to present.</param>
 	/// <returns>The HTTP status code returned by the DataService SelectQuery.</returns>
-	int RunBearerDataServiceSmokeTest(string selectQueryUrl, string accessToken);
+	int RunBearerDataServiceSmokeTest(EnvironmentSettings environmentSettings, string selectQueryUrl,
+		string accessToken);
 }
 
 /// <inheritdoc />
-public sealed class IdentityServerProbe(IHttpClientFactory httpClientFactory) : IIdentityServerProbe
+public sealed class IdentityServerProbe(IHttpClientFactory httpClientFactory,
+	IApplicationClientFactory applicationClientFactory) : IIdentityServerProbe
 {
 	private const string ContactTop1SelectQuery =
 		"""{"rootSchemaName":"Contact","operationType":0,"allColumns":false,"rowCount":1,"columns":{"items":{"Id":{"expression":{"expressionType":0,"columnPath":"Id"}}}}}""";
 
 	private readonly IHttpClientFactory _httpClientFactory =
 		httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+	private readonly IApplicationClientFactory _applicationClientFactory =
+		applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
 
 	/// <inheritdoc />
 	public bool IsDiscoveryReachable(string identityServerBaseUrl) {
@@ -106,16 +110,16 @@ public sealed class IdentityServerProbe(IHttpClientFactory httpClientFactory) : 
 	}
 
 	/// <inheritdoc />
-	public int RunBearerDataServiceSmokeTest(string selectQueryUrl, string accessToken) {
+	public int RunBearerDataServiceSmokeTest(EnvironmentSettings environmentSettings,
+		string selectQueryUrl, string accessToken) {
 		if (string.IsNullOrWhiteSpace(selectQueryUrl) || string.IsNullOrWhiteSpace(accessToken)) {
 			return 0;
 		}
-		HttpClient client = _httpClientFactory.CreateClient();
-		using StringContent content = new(ContactTop1SelectQuery);
-		content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-		using HttpRequestMessage request = new(HttpMethod.Post, selectQueryUrl) { Content = content };
-		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-		HttpResponseMessage response = Task.Run(() => client.SendAsync(request)).GetAwaiter().GetResult();
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateBearerEnvironmentClient(
+			environmentSettings, accessToken, useUntrustedSsl: false);
+		using HttpResponseMessage response = client.ExecutePostRequestAsync(
+			selectQueryUrl, ContactTop1SelectQuery).GetAwaiter().GetResult();
 		return (int)response.StatusCode;
 	}
 
