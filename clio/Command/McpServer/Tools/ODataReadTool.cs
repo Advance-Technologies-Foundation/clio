@@ -337,7 +337,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//Single-entity response (no value wrapper). Only OData identifies itself as one: the
 			//@odata.context annotation ends with "/$entity". Without that check ANY parsed JSON object
 			//was a successful record - {"detail":"private response marker"} included.
-			return IsSingleEntityResponse(root)
+			return IsSingleEntityResponse(root, entityName)
 				? new ODataReadResponse(true, null, 1, root.Clone(), null)
 				: ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 		} catch (Exception) {
@@ -368,7 +368,17 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	/// default-metadata responses always carry the context, which is what the single-entity path
 	/// already requires.
 	/// </remarks>
-	private static bool IsCollectionResponse(JsonElement root, string entityName) {
+	private static bool IsCollectionResponse(JsonElement root, string entityName) =>
+		TryGetContextEntitySet(root, out string entitySet)
+		&& string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Reads the entity-set name out of the <c>@odata.context</c> annotation: the fragment after
+	/// <c>#</c>, cut at a projection such as <c>(Id,Name)</c> or at a trailing segment such as
+	/// <c>/$entity</c>.
+	/// </summary>
+	private static bool TryGetContextEntitySet(JsonElement root, out string entitySet) {
+		entitySet = string.Empty;
 		if (!root.TryGetProperty("@odata.context", out JsonElement context)
 			|| context.ValueKind != JsonValueKind.String
 			|| context.GetString() is not { } contextValue) {
@@ -380,16 +390,26 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 		string fragment = contextValue[(fragmentStart + 1)..];
 		int entitySetEnd = fragment.IndexOfAny(['(', '/']);
-		string entitySet = entitySetEnd < 0 ? fragment : fragment[..entitySetEnd];
-		return string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
+		entitySet = entitySetEnd < 0 ? fragment : fragment[..entitySetEnd];
+		return true;
 	}
 
-	private static bool IsSingleEntityResponse(JsonElement root) =>
+	/// <summary>
+	/// True when the body identifies itself as an OData single-entity response for the entity that
+	/// was REQUESTED. The <c>/$entity</c> suffix alone was not enough: a body answering
+	/// <c>...#$metadata#Account/$entity</c> to a read of <c>Contact</c> came back as
+	/// <c>success:true</c>, which forwards an unrelated - possibly proxy-controlled - record into the
+	/// MCP transcript as the requested data. The collection branch already checks the entity set; so
+	/// does this one now.
+	/// </summary>
+	private static bool IsSingleEntityResponse(JsonElement root, string entityName) =>
 		root.ValueKind == JsonValueKind.Object
 		&& root.TryGetProperty("@odata.context", out JsonElement context)
 		&& context.ValueKind == JsonValueKind.String
 		&& context.GetString() is { } contextValue
-		&& contextValue.EndsWith("/$entity", StringComparison.Ordinal);
+		&& contextValue.EndsWith("/$entity", StringComparison.Ordinal)
+		&& TryGetContextEntitySet(root, out string entitySet)
+		&& string.Equals(entitySet, entityName, StringComparison.OrdinalIgnoreCase);
 
 	private static ODataReadResponse ParseCollectionResponse(
 		JsonElement root,

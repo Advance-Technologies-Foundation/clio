@@ -1,4 +1,4 @@
-using Allure.NUnit;
+﻿using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -53,10 +53,13 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "a bindable odata-read payload should return a structured tool response, not a protocol error");
 			response.Success.Should().BeFalse(
 				because: "a {Message, MessageDetail} routing body must be surfaced as a failure, not wrapped as a single-entity success");
-			response.Error.Should().Contain($"controller named '{UnregisteredEntity}'",
-				because: "the MessageDetail should be surfaced so the caller sees the unregistered-controller cause");
+			response.Error.Should().Be(
+				ODataResponseError.DescribeServerReportedReadError(includeUnregisteredEntityHint: true),
+				because: "the read path reports the locally authored classification plus the hint, asserted via the shared builder to avoid literal drift");
+			response.Error.Should().NotContain($"controller named '{UnregisteredEntity}'",
+				because: "the server's own MessageDetail must not be copied into an MCP transcript, which a model reads as trusted content");
 			response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
-				because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
+				because: "the unregistered-entity hint is locally authored, so it is the one piece of detail that still steers the agent to wait-and-retry rather than read this as a data gap");
 		});
 	}
 
