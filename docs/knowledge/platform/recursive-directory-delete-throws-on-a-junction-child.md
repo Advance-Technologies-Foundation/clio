@@ -53,11 +53,21 @@ privilege — but accepted deliberately rather than unnoticed.
 
 **Three tag classes, not two.** The framework keys on the name-surrogate bit: it unlinks a symlink natively,
 mishandles a mount point as above, and **descends into** a non-name-surrogate tag — a OneDrive
-Files-On-Demand placeholder, a ProjFS/Scalar root, WCI, DFS. Clio's walk attempts to unlink that third class
-too; the attempt fails as not-empty, is swallowed, and the framework descends as before. Residual: read-only
-bits inside such a directory are never cleared, so a read-only `*.pack` behind a placeholder folder is still
-an undeletable cache. Narrowing the unlink to name-surrogates (`ResolveLinkTarget is not null`) would close
-it.
+Files-On-Demand placeholder, a ProjFS/Scalar root, WCI, DFS. Clio separates them with
+`ResolveLinkTarget(returnFinalTarget: false) is not null`: the first two are unlinked, and the third is
+walked exactly as the framework walks it, so a read-only `*.pack` behind a placeholder folder still has its
+attribute cleared instead of becoming an undeletable cache for a different reason.
+
+**`ResolveLinkTarget` returns a target for a JUNCTION, not only for a symbolic link** — measured, both
+`LinkTarget` and `ResolveLinkTarget`. That is what makes the split above usable: gating on it does not
+accidentally exclude the mount-point tag, which is the only one that actually breaks the delete. It also
+answers a question about a different guard: `OutputPathConfinement.IsReparsePoint` is implemented over
+`LinkTarget`, so `mklink /J` does **not** slip past the write-confinement check.
+
+**A substituted `IDirectoryInfo` does not return null here.** `ResolveLinkTarget` returns an interface, and
+NSubstitute auto-substitutes interface return types — so a mock link looks like a link without being
+configured, and a test for the non-link class must set `ResolveLinkTarget` to null explicitly. Assuming the
+default is null is how that branch ends up unpinned.
 
 **What breaks if you ignore it** — a user whose knowledge checkout contains a junction cannot delete the
 cache at all, and the error names only `'linked'`. Because the source is unregistered while its cache

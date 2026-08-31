@@ -75,6 +75,37 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 	}
 
 	[Test]
+	[Description("Descends into a reparse point that is not a link, so read-only files behind it are still cleared.")]
+	public void Delete_ShouldDescend_WhenAReparsePointIsNotALink() {
+		// Arrange
+		// The third tag class: a OneDrive Files-On-Demand placeholder, a ProjFS/Scalar root, WCI, DFS. The
+		// ReparsePoint bit is set but there is no link target, and the framework's recursive delete descends
+		// into it - so this walk must too, or a read-only *.pack inside keeps its attribute and the cache
+		// becomes undeletable for a different reason.
+		IFileInfo behind = Substitute.For<IFileInfo>();
+		behind.Attributes.Returns(FileAttributes.ReadOnly);
+		IDirectoryInfo placeholder = Directory(
+			LinkPath, FileAttributes.Directory | FileAttributes.ReparsePoint, files: [behind]);
+		placeholder.ResolveLinkTarget(Arg.Any<bool>()).Returns((IFileSystemInfo)null);
+		IDirectoryInfo root = Directory(Root, FileAttributes.Directory, children: [placeholder]);
+		IFileSystem fileSystem = FileSystemFor(root, placeholder);
+		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
+
+		// Act
+		deleter.Delete(Root);
+
+		// Assert
+		placeholder.ReceivedCalls()
+			.Should().NotContain(call => call.GetMethodInfo().Name == nameof(IDirectoryInfo.Delete),
+				because: "a non-name-surrogate tag is not a link: unlinking it fails as not-empty, and the "
+					+ "framework descends into it rather than refusing it");
+		behind.ReceivedCalls()
+			.Should().Contain(call => call.GetMethodInfo().Name == "set_IsReadOnly",
+				because: "the recursive delete will reach this file, so its read-only bit has to be cleared - "
+					+ "skipping the whole directory is what leaves an undeletable cache behind a placeholder");
+	}
+
+	[Test]
 	[Description("Still attempts the recursive delete when unlinking a reparse point fails.")]
 	public void Delete_ShouldStillDelete_WhenUnlinkingAReparsePointThrows() {
 		// Arrange

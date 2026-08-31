@@ -51,7 +51,10 @@ internal interface IKnowledgeManagedTreeDeleter {
 	/// unelevated, and the exception differs by host — <c>IOException</c> "The parameter is incorrect" or
 	/// <c>UnauthorizedAccessException</c> "Access to the path is denied" — so neither the privilege level nor
 	/// the exception type can be relied on. A directory <em>symlink</em> is handled natively and never triggers
-	/// it; unlinking every reparse point up front covers both shapes without inspecting reparse tags.</para>
+	/// it. A tag that is not a name surrogate at all — a OneDrive Files-On-Demand placeholder, a ProjFS root,
+	/// WCI, DFS — is neither: the framework descends into it, so this walk descends too and clears the
+	/// read-only bits inside, which is what keeps a read-only pack file behind a placeholder folder from
+	/// becoming another undeletable cache.</para>
 	/// <para>Clearing is best effort: a file that cannot be reset is left for the delete itself to report, so a
 	/// genuine permission problem still surfaces as one rather than being masked, or — worse — thrown from the
 	/// enumerator before the delete that would have succeeded is ever reached.</para>
@@ -148,11 +151,11 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 			string directoryPath = pending.Pop();
 			try {
 				IDirectoryInfo directory = _fileSystem.DirectoryInfo.New(directoryPath);
-				// LOAD-BEARING, not redundant. Since reparse-point children are unlinked below and never
-				// pushed, the only reparse points that reach this check are the root itself and one swapped in
-				// after enumeration - and a failed unlink is silent, so surviving links do occur. Removing this
-				// as unreachable would let the walk descend through them.
-				if (!directory.Exists || (directory.Attributes & FileAttributes.ReparsePoint) != 0) {
+				// LOAD-BEARING, not redundant. Since name-surrogate children are unlinked below and never
+				// pushed, the only links that reach this check are the root itself and one swapped in after
+				// enumeration - and a failed unlink is silent, so surviving links do occur. Removing this as
+				// unreachable would let the walk descend through them.
+				if (!directory.Exists || IsLink(directory)) {
 					continue;
 				}
 				// TopDirectoryOnly, NOT SearchOption.AllDirectories: the framework's recursive enumeration
@@ -164,7 +167,7 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 						case IFileInfo file:
 							ClearReadOnlyAttribute(file);
 							break;
-						case IDirectoryInfo child when (child.Attributes & FileAttributes.ReparsePoint) != 0:
+						case IDirectoryInfo child when IsLink(child):
 							// Unlinked HERE, not left for the recursive delete. Directory.Delete(recursive: true)
 							// throws when it meets a JUNCTION anywhere inside the tree - it removes the link and
 							// then fails anyway, leaving the tree behind. The exception varies by host
@@ -172,16 +175,13 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 							// the path is denied"), and it happens elevated as well as not, so neither the type
 							// nor the privilege level can be relied on.
 							//
-							// There are THREE tag classes here, not two, and the framework keys on the
-							// name-surrogate bit: it unlinks a SYMLINK natively, refuses a MOUNT POINT
-							// (junction) as above, and DESCENDS INTO a non-name-surrogate tag - a OneDrive
-							// Files-On-Demand placeholder, ProjFS/Scalar root, WCI, DFS. This branch attempts to
-							// unlink that third class too; the attempt fails with a not-empty error, is
-							// swallowed, and the framework then descends as it always did. Residual, accepted:
-							// read-only bits inside such a directory are never cleared, so a read-only *.pack
-							// behind a placeholder folder remains an undeletable cache. Narrowing this to
-							// name-surrogates only (ResolveLinkTarget is not null) would fix that and needs the
-							// substitutes updated - deliberately not done in a release-blocking change.
+							// THREE tag classes, not two, and the framework keys on the name-surrogate bit: it
+							// unlinks a SYMLINK natively, mishandles a MOUNT POINT (junction) as above, and
+							// DESCENDS INTO a non-name-surrogate tag - a OneDrive Files-On-Demand placeholder,
+							// a ProjFS/Scalar root, WCI, DFS. IsLink separates them, so this branch takes only
+							// the first two and the third falls through to be walked exactly as the framework
+							// walks it - otherwise a read-only *.pack behind a placeholder folder would keep
+							// its attribute and stay an undeletable cache.
 							UnlinkReparsePoint(child);
 							break;
 						case IDirectoryInfo child:
@@ -198,6 +198,20 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 				// A concurrent removal or an unreadable subtree. Leave it to the delete to report: clearing
 				// attributes must never be the step that fails an otherwise removable tree.
 			}
+		}
+	}
+
+	// TRUE for a link, FALSE for a reparse point that is not one. Measured: ResolveLinkTarget returns a
+	// target for a JUNCTION as well as a symbolic link, so this does not accidentally exclude the mount-point
+	// tag - which is the only one that actually breaks the recursive delete. A non-name-surrogate tag
+	// (OneDrive placeholder, ProjFS, WCI, DFS) returns null and must be descended into rather than unlinked.
+	// Throwing counts as "not a link": the walk then leaves it alone, which is the pre-existing behaviour.
+	private static bool IsLink(IDirectoryInfo directory) {
+		try {
+			return (directory.Attributes & FileAttributes.ReparsePoint) != 0
+				&& directory.ResolveLinkTarget(returnFinalTarget: false) is not null;
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			return false;
 		}
 	}
 
@@ -218,7 +232,7 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 			// link in between and steer this delete outside the managed root. One stat closes the cheap half of
 			// that race; the rest needs handle-relative traversal the framework does not expose.
 			IDirectoryInfo current = _fileSystem.DirectoryInfo.New(link.FullName);
-			if ((current.Attributes & FileAttributes.ReparsePoint) == 0) {
+			if (!IsLink(current)) {
 				return;
 			}
 			current.Delete(recursive: false);
