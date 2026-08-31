@@ -16,10 +16,10 @@ using Newtonsoft.Json;
 	HelpText = "Read the parameter signature (codes, types, direction) of a Creatio business process")]
 // NOTE: deliberately NOT [RequiresPackage(BundledPackages.ProcessBuilderPackageName)] — get-process-signature reads the built-in
 // DataService (ProcessSchemaRequest / VwProcessLib), present on every Creatio; it never calls ProcessDesignService.
-// Its MCP tool (GetProcessSignatureTool) is likewise NOT [FeatureToggle]-gated, unlike the rest of the
-// process-designer MCP suite: this is a shipped standalone capability with a public CLI verb, so its MCP
-// surface must match that verb rather than hide behind an experimental flag (PR #715, commit 7fda641e).
-// Both absences are pinned by tests — see ProcessDesignerRequiresPackageAttributeTests and
+// Its MCP tool (GetProcessSignatureTool) is likewise NOT [FeatureToggle]-gated: this is a shipped
+// standalone capability with a public CLI verb, so its MCP surface must match that verb (PR #715,
+// commit 7fda641e). The rest of the process-designer MCP suite ships gate-free too since go-live
+// (ENG-96132). Both absences are pinned by tests — see ProcessDesignerRequiresPackageAttributeTests and
 // GetProcessSignatureToolTests.
 public class GetProcessSignatureOptions : EnvironmentOptions {
 
