@@ -29,6 +29,7 @@ public class NugetMaterializer : INugetMaterializer
 	private const string Net472Moniker = "net472";
 	private const string NetStandardMoniker = "netstandard";
 	private const string NetStandardTargetFramework = "netstandard2.0";
+	private const string NugetHelperFolderName = ".nuget";
 
 	//The Import attribute that names the props file this csproj pulls in.
 	private const string ProjectAttribute = "Project";
@@ -36,6 +37,13 @@ public class NugetMaterializer : INugetMaterializer
 	#endregion
 
 	#region Fields: Private
+
+	//The build output the helper project leaves behind, dropped before every conversion.
+	private static readonly string[] StaleHelperOutputFolders = ["bin", "obj"];
+
+	//Everything that could make a package name address a folder other than its own.
+	private static readonly char[] PathSeparatorChars =
+		[Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '/', '\\', ':'];
 
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IFileSystem _fileSystem;
@@ -67,16 +75,20 @@ public class NugetMaterializer : INugetMaterializer
 	/// </summary>
 	/// <param name="packageName">Package to add to</param>
 	/// <param name="xElements">Collection of NugetPackages to add</param>
-	private void AddNugetReferences(string packageName, IEnumerable<XElement> xElements){
+	/// <returns>True when every package was added; false as soon as one <c>dotnet add</c> fails.</returns>
+	private bool AddNugetReferences(string packageName, IEnumerable<XElement> xElements){
 		IEnumerable<NugetPackage> refs = GetNugetReferences(xElements);
 		foreach (NugetPackage nugetPackage in refs) {
-			_processExecutor.Execute(
-				"dotnet",
-				$"add package {nugetPackage.Name} -v {nugetPackage.Version}",
-				true,
-				Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName)
-			);
+			if (RunInNugetProject(packageName, $"add package {nugetPackage.Name} -v {nugetPackage.Version}")) {
+				continue;
+			}
+			//Carrying on would build props out of the packages that did resolve, and the command
+			//would report success for a conversion that silently dropped a dependency.
+			_logger.WriteError($"Could not add the {nugetPackage.Name} package to the {packageName} "
+				+ "helper project. No package reference was converted");
+			return false;
 		}
+		return true;
 	}
 
 	/// <summary>
@@ -89,31 +101,115 @@ public class NugetMaterializer : INugetMaterializer
 	/// ┃ ┃ ┣ 📂Release <br/>
 	/// </summary>
 	/// <param name="packageName">Name of the package to build</param>
-	private void BuildNugetProject(string packageName){
-		_processExecutor.Execute(
-			"dotnet",
-			$"build {packageName}.csproj -c Release --no-incremental",
-			true,
-			Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName)
-		);
-		//TODO: Should we Delete obj folder or leave it alone?
+	/// <returns>True when <c>dotnet build</c> exited successfully.</returns>
+	private bool BuildNugetProject(string packageName){
+		if (RunInNugetProject(packageName, $"build {packageName}.csproj -c Release --no-incremental")) {
+			return true;
+		}
+		//A failed build leaves whatever bin content the previous run produced, and reading that back
+		//would describe the earlier run instead of this one.
+		_logger.WriteError($"Could not build the {packageName} helper project. "
+			+ "No package reference was converted");
+		return false;
 	}
 
-	private void CreateNugetProjectIfNotExists(string packageName){
-		string nugetProjectFolderPath = Path.Combine(_workspacePathBuilder.RootPath, ".nuget", packageName);
-		_fileSystem.CreateDirectoryIfNotExists(nugetProjectFolderPath);
-
-		string nugetCsprojPath = Path.Combine(nugetProjectFolderPath, $"{packageName}.csproj");
-		bool projExists = _fileSystem.ExistsFile(nugetCsprojPath);
-
-		if (projExists) {
-			return;
+	/// <summary>
+	/// Runs a dotnet command inside the helper project folder and reports whether it succeeded.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="IProcessExecutor.Execute"/> hands back the captured text only, so a failed
+	/// <c>dotnet add</c> or <c>dotnet build</c> was indistinguishable from a successful one and the
+	/// command went on to publish props built from stale output.
+	/// </remarks>
+	private bool RunInNugetProject(string packageName, string arguments){
+		ProcessExecutionOptions options = new("dotnet", arguments) {
+			WorkingDirectory = BuildNugetProjectFolderPath(packageName)
+		};
+		ProcessExecutionResult result = _processExecutor.ExecuteAndCaptureAsync(options)
+			.GetAwaiter().GetResult();
+		if (result is {Started: true, ExitCode: 0}) {
+			return true;
 		}
+		_logger.WriteError($"dotnet {arguments} failed with exit code "
+			+ $"{result?.ExitCode?.ToString() ?? "<none>"}");
+		string output = JoinNonEmptyOutput(result?.StandardOutput, result?.StandardError);
+		if (!string.IsNullOrWhiteSpace(output)) {
+			_logger.WriteError(output);
+		}
+		return false;
+	}
+
+	private static string JoinNonEmptyOutput(string standardOutput, string standardError){
+		string[] parts = new[] {standardOutput, standardError}
+			.Where(part => !string.IsNullOrWhiteSpace(part))
+			.ToArray();
+		return string.Join(Environment.NewLine, parts);
+	}
+
+	private string BuildNugetProjectFolderPath(string packageName) =>
+		Path.Combine(_workspacePathBuilder.RootPath, NugetHelperFolderName, packageName);
+
+	/// <summary>
+	/// Writes the helper project from the template and drops the output of the previous run.
+	/// </summary>
+	/// <remarks>
+	/// The helper project is persistent and <see cref="AddNugetReferences"/> only ever adds, so a
+	/// project left by an earlier run still declares the packages that run converted and still holds
+	/// its bin/obj content. Reusing it made the props describe the earlier reference set: a
+	/// dependency removed from the real csproj kept its DLL and its import. Recreating the project
+	/// and clearing the output makes every run describe the references the csproj declares now.
+	/// </remarks>
+	private void CreateNugetProject(string packageName){
+		string nugetProjectFolderPath = BuildNugetProjectFolderPath(packageName);
+		_fileSystem.CreateDirectoryIfNotExists(nugetProjectFolderPath);
 
 		string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 		string templatePath = Path.Combine(baseDir, "tpl", "NugetProject.csproj.tpl");
 		string templateContent = _fileSystem.ReadAllText(templatePath);
+		string nugetCsprojPath = Path.Combine(nugetProjectFolderPath, $"{packageName}.csproj");
 		_fileSystem.WriteAllTextToFile(nugetCsprojPath, templateContent);
+
+		foreach (string staleOutputFolder in StaleHelperOutputFolders) {
+			_fileSystem.DeleteDirectoryIfExists(Path.Combine(nugetProjectFolderPath, staleOutputFolder));
+		}
+	}
+
+	/// <summary>
+	/// Rejects a package name that would steer path derivation out of the workspace packages folder.
+	/// </summary>
+	/// <remarks>
+	/// The name arrives from the command line and reaches file reads, writes, builds and deletes -
+	/// the props files, the csproj and its .bak, and the helper project. A rooted name, or one
+	/// carrying a separator or a dot segment, resolves outside
+	/// <see cref="IWorkspacePathBuilder.PackagesFolderPath"/>, so the check runs before the first
+	/// filesystem call rather than inside each caller.
+	/// </remarks>
+	private bool IsPackageNameWithinPackagesFolder(string packageName){
+		if (string.IsNullOrWhiteSpace(packageName)) {
+			_logger.WriteError("The package name is empty");
+			return false;
+		}
+
+		bool hasSeparator = packageName.IndexOfAny(PathSeparatorChars) >= 0;
+		bool hasDotSegment = packageName is "." or ".."
+			|| packageName.Split('.').Any(string.IsNullOrEmpty);
+		if (hasSeparator || hasDotSegment || Path.IsPathRooted(packageName)
+			|| packageName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) {
+			_logger.WriteError($"The {packageName} package name is not a plain package folder name");
+			return false;
+		}
+
+		string packagesFolderPath = Path.GetFullPath(_workspacePathBuilder.PackagesFolderPath);
+		string packagePath = Path.GetFullPath(_workspacePathBuilder.BuildPackagePath(packageName));
+		string packagesFolderPrefix = packagesFolderPath
+			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+			+ Path.DirectorySeparatorChar;
+		if (!packagePath.StartsWith(packagesFolderPrefix, StringComparison.OrdinalIgnoreCase)) {
+			_logger.WriteError($"The {packageName} package resolves outside the "
+				+ $"{packagesFolderPath} packages folder");
+			return false;
+		}
+		return true;
 	}
 
 	[Pure]
@@ -324,6 +420,9 @@ public class NugetMaterializer : INugetMaterializer
 	#region Methods: Public
 
 	public int Materialize(string packageName){
+		if (!IsPackageNameWithinPackagesFolder(packageName)) {
+			return 1;
+		}
 		_csprojPath = _workspacePathBuilder.BuildPackageProjectPath(packageName);
 		string xmlContent = GetXmlContent(_csprojPath);
 		IEnumerable<XElement> elements = FindNugetReferences(xmlContent);
@@ -334,9 +433,10 @@ public class NugetMaterializer : INugetMaterializer
 			return 1;
 		}
 
-		CreateNugetProjectIfNotExists(packageName);
-		AddNugetReferences(packageName, xElements);
-		BuildNugetProject(packageName);
+		CreateNugetProject(packageName);
+		if (!AddNugetReferences(packageName, xElements) || !BuildNugetProject(packageName)) {
+			return 1;
+		}
 		PropsBuildResult propsBuildResult = _propsBuilder.Build(packageName);
 		if (!propsBuildResult.HasAnyProps) {
 			_logger.WriteError($"Could not find any dll to reference for {packageName}. "

@@ -95,6 +95,27 @@ public class SwitchNugetToDllTests
 	}
 
 	[Test]
+	public void Command_ShouldExit_WhenPackageIsNotDeclaredByWorkspace(){
+		//Arrange
+		_toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
+			_nugetMaterializer);
+		SwitchNugetToDllOptions toDllOptions = new() {
+			PackageName = "../Victim"
+		};
+		SetWorkspace(true, _workspace);
+		_workspace.WorkspaceSettings.Returns(new WorkspaceSettings {
+			Packages = new[] {"test-package"}
+		});
+
+		//Act
+		int actual = _toDllCommand.Execute(toDllOptions);
+
+		//Assert
+		actual.Should().Be(1);
+		_logger.Received(1).WriteLine("../Victim is not a package of this workspace... exiting");
+	}
+
+	[Test]
 	public void Command_ShouldHave_DescriptionBlock_InReadmeFile() =>
 		ReadmeChecker
 			.IsInReadme(typeof(SwitchNugetToDllOptions))

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Xml.Linq;
 using Clio.Common;
 using Clio.Workspaces;
@@ -24,15 +25,21 @@ public class NugetMaterializerTests
 		_workspacePathBuilder.RootPath.Returns(RootPath);
 		_workspacePathBuilder.BuildPackagePropsPath(Arg.Is(PackageName), Arg.Any<string>())
 			.Returns(ci => $"{PackageName}-{ci.ArgAt<string>(1)}.nuget.props");
+		_workspacePathBuilder.PackagesFolderPath.Returns(PackagesFolderPath);
+		_workspacePathBuilder.BuildPackagePath(Arg.Any<string>())
+			.Returns(ci => Path.Combine(PackagesFolderPath, ci.ArgAt<string>(0)));
 		_logger = Substitute.For<ILogger>();
 		_fileSystem = Substitute.For<IFileSystem>();
 		_processExecutor= Substitute.For<IProcessExecutor>();
+		_processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(_ => Task.FromResult(SucceededRun));
 		_propsBuilder = Substitute.For<IPropsBuilder>();
 		_sut = new NugetMaterializer(_workspacePathBuilder, _fileSystem, _logger, _processExecutor, _propsBuilder);
 	}
 
 	[TearDown]
 	public void TearDown(){
+		_processExecutor?.ClearReceivedCalls();
 		_fileSystem?.ClearReceivedCalls();
 		_logger?.ClearReceivedCalls();
 		_propsBuilder?.ClearReceivedCalls();
@@ -45,6 +52,12 @@ public class NugetMaterializerTests
 	private const string CsprojFileName = "test-package" + ".csproj";
 	private const string PackageName = "test-package";
 	private const string RootPath = "root-path";
+	private static readonly string PackagesFolderPath = Path.Combine(RootPath, "packages");
+
+	//What a dotnet invocation looks like when it worked; the guards read ExitCode, not the text.
+	private static readonly ProcessExecutionResult SucceededRun = new() {Started = true, ExitCode = 0};
+	private static readonly ProcessExecutionResult FailedRun =
+		new() {Started = true, ExitCode = 1, StandardError = "dotnet said no"};
 
 	//The nuget packages declared by MockCsProjWithNugetContent, as the assemblies they produce
 	private static readonly string[] MaterializedNugets = ["Nuget1", "Nuget2", "Nuget3"];
@@ -170,41 +183,29 @@ public class NugetMaterializerTests
 		_fileSystem
 			.ReadAllText(Arg.Is<string>(s => s.EndsWith("NugetProject.csproj.tpl")))
 			.Returns("tpl content");
-		
+
 		//Act
 		int actual = _sut.Materialize(PackageName);
 
 		//Assert
 		_fileSystem.CreateDirectoryIfNotExists(nugetProjectFolderPath);
 		_fileSystem.Received(1).ReadAllText(Arg.Is<string>(s => s.EndsWith("NugetProject.csproj.tpl")));
-		_fileSystem.Received(1).ExistsFile(nugetCsprojPath);
 		_fileSystem.Received(1).WriteAllTextToFile(Path.Combine(nugetCsprojPath), "tpl content");
-		
+
 		for(int i = 1; i<4; i++) {
 			string command = $"add package Nuget{i} -v 1.1.{i}";
-			_processExecutor.Received(1).Execute(
-				Arg.Is("dotnet"),
-				Arg.Is(command),
-				Arg.Is(true),
-				Arg.Is(nugetProjectFolderPath),
-				Arg.Is(false)
-			);
+			AssertRan(command, nugetProjectFolderPath);
 		}
-		_processExecutor.Received(1).Execute(
-			Arg.Is("dotnet"),
-			Arg.Is($"build {PackageName}.csproj -c Release --no-incremental"),
-			Arg.Is(true),
-			Arg.Is(nugetProjectFolderPath),
-			Arg.Is(false)
-		);
-		
+		AssertRan($"build {PackageName}.csproj -c Release --no-incremental", nugetProjectFolderPath);
+
 		_propsBuilder.Received(1).Build(PackageName);
 		actual.Should().Be(0, because: "the package was converted successfully");
 	}
 
 	[Test]
-	[Description("Reuses the existing nuget project instead of recreating it")]
-	public void Materializer_DoesNotCreateProj_WhenOneExists(){
+	[Description("Rewrites the helper project and drops its previous output, so a run never reads "
+		+ "back the reference set of an earlier one")]
+	public void Materializer_RecreatesProj_WhenOneExists(){
 		// Arrange
 		_fileSystem.ReadAllText(CsprojFileName)
 			.Returns(MockCsProjWithNugetContent());
@@ -212,24 +213,23 @@ public class NugetMaterializerTests
 		string nugetProjectFolderPath = Path.Combine(RootPath,".nuget", PackageName);
 		string nugetCsprojPath = Path.Combine(nugetProjectFolderPath, $"{PackageName}.csproj");
 		_fileSystem.ExistsFile(nugetCsprojPath).Returns(true);
-		
+		_fileSystem
+			.ReadAllText(Arg.Is<string>(s => s.EndsWith("NugetProject.csproj.tpl")))
+			.Returns("tpl content");
+
 		//Act
 		int actual = _sut.Materialize(PackageName);
 
 		//Assert
 		_fileSystem.CreateDirectoryIfNotExists(nugetProjectFolderPath);
-		_fileSystem.Received(1).ExistsFile(nugetCsprojPath);
-		
+		_fileSystem.Received(1).WriteAllTextToFile(nugetCsprojPath, "tpl content");
+		_fileSystem.Received(1).DeleteDirectoryIfExists(Path.Combine(nugetProjectFolderPath, "bin"));
+		_fileSystem.Received(1).DeleteDirectoryIfExists(Path.Combine(nugetProjectFolderPath, "obj"));
+
 		for(int i = 1; i<4; i++) {
 			string command = $"add package Nuget{i} -v 1.1.{i}";
-			_processExecutor.Received(1).Execute(
-				Arg.Is("dotnet"),
-				Arg.Is(command),
-				Arg.Is(true),
-				Arg.Is(nugetProjectFolderPath),
-				Arg.Is(false)
-			);
-			
+			AssertRan(command, nugetProjectFolderPath);
+
 		}
 
 		actual.Should().Be(0, because: "the package was converted successfully");
@@ -544,5 +544,97 @@ public class NugetMaterializerTests
 			$"Removed the {netStandardProps} import from the {CsprojFileName} file, "
 			+ "because the props file does not exist");
 	}
+
+
+	[Test]
+	[Description("Stops before building props when dotnet add fails, instead of converting only the "
+		+ "packages that happened to resolve")]
+	public void Materializer_Fails_When_AddPackageFails(){
+		// Arrange
+		_fileSystem.ReadAllText(CsprojFileName)
+			.Returns(MockCsProjWithNugetContent());
+		_processExecutor
+			.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(
+				o => o.Arguments.StartsWith("add package Nuget2")))
+			.Returns(_ => Task.FromResult(FailedRun));
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(1, because: "a dependency the helper project could not add is not converted");
+		_logger.Received(1).WriteError($"Could not add the Nuget2 package to the {PackageName} "
+			+ "helper project. No package reference was converted");
+		AssertDidNotRun("add package Nuget3 -v 1.1.3");
+		AssertDidNotRun($"build {PackageName}.csproj -c Release --no-incremental");
+		_propsBuilder.DidNotReceive().Build(Arg.Any<string>());
+		_fileSystem.DidNotReceive().WriteAllTextToFile(CsprojFileName, Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Stops before building props when the helper project fails to build, so its stale "
+		+ "output is never read back as this run's result")]
+	public void Materializer_Fails_When_HelperProjectBuildFails(){
+		// Arrange
+		_fileSystem.ReadAllText(CsprojFileName)
+			.Returns(MockCsProjWithNugetContent());
+		_processExecutor
+			.ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(o => o.Arguments.StartsWith("build ")))
+			.Returns(_ => Task.FromResult(FailedRun));
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(1, because: "props built after a failed build would describe the previous run");
+		_logger.Received(1).WriteError($"Could not build the {PackageName} helper project. "
+			+ "No package reference was converted");
+		_propsBuilder.DidNotReceive().Build(Arg.Any<string>());
+		_fileSystem.DidNotReceive().WriteAllTextToFile(CsprojFileName, Arg.Any<string>());
+	}
+
+	[TestCase("../Victim")]
+	[TestCase(@"..\Victim")]
+	[TestCase("packages/Victim")]
+	[TestCase("..")]
+	[TestCase("")]
+	[Description("Rejects a package name that addresses a folder outside the workspace packages "
+		+ "folder, before touching the filesystem")]
+	public void Materializer_Rejects_PackageNameOutsidePackagesFolder(string packageName){
+		//Act
+		int actual = _sut.Materialize(packageName);
+
+		//Assert
+		actual.Should().Be(1, because: "the name does not address a package of this workspace");
+		_fileSystem.ReceivedCalls().Should().BeEmpty("no path derived from the name may be touched");
+		_processExecutor.ReceivedCalls().Should().BeEmpty();
+		_propsBuilder.DidNotReceive().Build(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Rejects an absolute package name before touching the filesystem")]
+	public void Materializer_Rejects_RootedPackageName(){
+		//Act
+		int actual = _sut.Materialize(Path.Combine(Path.GetTempPath(), "Victim"));
+
+		//Assert
+		actual.Should().Be(1, because: "an absolute name escapes the packages folder");
+		_fileSystem.ReceivedCalls().Should().BeEmpty("no path derived from the name may be touched");
+		_processExecutor.ReceivedCalls().Should().BeEmpty();
+	}
+
+	#region Methods: Private
+
+	private void AssertRan(string arguments, string workingDirectory) =>
+		_processExecutor.Received(1).ExecuteAndCaptureAsync(
+			Arg.Is<ProcessExecutionOptions>(o => o.Program == "dotnet"
+				&& o.Arguments == arguments
+				&& o.WorkingDirectory == workingDirectory));
+
+	private void AssertDidNotRun(string arguments) =>
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(
+			Arg.Is<ProcessExecutionOptions>(o => o.Arguments == arguments));
+
+	#endregion
 
 }
