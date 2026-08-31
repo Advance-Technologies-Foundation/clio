@@ -8,7 +8,7 @@ using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// Detects pairs of <c>viewConfigDiff</c> operations that target one component <c>name</c> in a single
-/// body where the differ provably discards one of them, and reports them as advisory warnings.
+/// body where the differ discards one of them, and reports them as advisory warnings.
 /// </summary>
 /// <remarks>
 /// A <c>viewConfigDiff</c> reads as an ordered operation list, but <see cref="JsonDiffApplier"/> — clio's
@@ -30,11 +30,11 @@ using Newtonsoft.Json.Linq;
 /// </para>
 /// All findings are WARNINGS, not errors, for the same reason
 /// <see cref="PageInsertDowngradeDetector"/>'s are: this detector reads ONE schema body and cannot see
-/// the replacing chain. A parent schema inserting the same name puts the component in the base and can
-/// make a transform apply after all, and an ancestor's <c>alias</c> declaration carrying
-/// <c>excludeOperations</c> can legitimately neutralise an operation
-/// (<c>JsonDiffApplier.IsExcludeAliasOperation</c>) — neither is visible here. It therefore advises
-/// rather than blocks.
+/// the replacing chain. A parent schema inserting the same name puts the component in the base, which
+/// for the three conditional rules below can make the transform apply after all; and an ancestor's
+/// <c>alias</c> declaration carrying <c>excludeOperations</c> can legitimately neutralise an operation
+/// (<c>JsonDiffApplier.IsExcludeAliasOperation</c>). Neither is visible here, so it advises rather than
+/// blocks.
 /// <para>
 /// Operation verbs are compared <see cref="StringComparer.Ordinal"/> and are never case-folded. This is
 /// load-bearing, not an oversight: the differ switches on the raw verb string with no <c>default</c>
@@ -43,7 +43,11 @@ using Newtonsoft.Json.Linq;
 /// separate finding and deliberately out of scope — GH-1240 covers the pairs.
 /// </para>
 /// Array positions are not recorded and not reported, because the differ ignores them: a finding names
-/// the component and the two verbs, which is the whole of what the author can act on.
+/// the component and the two verbs, which is the whole of what the author can act on. One known blind
+/// spot, in the fail-quiet direction: an <c>insert</c> that carries its element's <c>name</c> inside
+/// <c>values</c> rather than on the operation object still creates that component (the differ only
+/// stamps the operation-level name when it is non-empty), but has no name to group on here, so a
+/// sibling operation for it goes unreported.
 /// <para>
 /// The detector needs no knowledge of which mode produced the body — it inspects the resolved final
 /// body, so it covers <c>replace</c> and <c>append</c> identically, and applies to <c>sync-pages</c>
@@ -53,13 +57,18 @@ using Newtonsoft.Json.Linq;
 internal static class PageInertOperationDetector {
 
 	private const string ViewConfigDiffMarker = "SCHEMA_VIEW_CONFIG_DIFF";
+
+	// Legacy spelling of the same section, still accepted by every other reader in the repo
+	// (PageSchemaBodyParser, ChartConfigKeyOrderPreprocessor, SchemaValidationService). Reading only the
+	// modern marker would make this check a silent no-op on a whole body dialect.
+	private const string LegacyViewConfigDiffMarker = "SCHEMA_DIFF";
+
 	private const string ViewConfigDiffProperty = "viewConfigDiff";
 	private const string GuidePointer = " See docs://mcp/guides/page-modification.";
 
 	/// <summary>
-	/// Upper bound on reported findings, so a pathological body cannot bury the response in warnings.
-	/// A page carrying ~40 operations bounds the distinct pairs at roughly 20; beyond this cap one
-	/// summary line names the remainder rather than hiding it.
+	/// Hard ceiling on reported findings, deliberately well below the worst case, so a pathological body
+	/// cannot bury the response. Beyond it one summary line names the remainder rather than hiding it.
 	/// </summary>
 	private const int MaxReportedFindings = 12;
 
@@ -80,58 +89,79 @@ internal static class PageInertOperationDetector {
 
 	}
 
-	/// <summary>Which co-occurrence was found — one value per row of <see cref="InertPairs"/>.</summary>
-	private enum InertShape {
-
-		MergeBesideInsert,
-		MoveBesideInsert,
-		ElementRemoveBesideInsert,
-		MoveBesideElementRemove,
-		MergeBesideElementRemove,
-		MergeBesideSet,
-		PropertyRemoveBesideElementRemove
-
-	}
+	/// <summary>
+	/// One rule: when <c>Live</c> and <c>Discarded</c> both target one name, <c>Discarded</c> does not
+	/// take effect, and <c>Message</c> says so. <c>RescuedBy</c>, when set, is a third group whose
+	/// presence makes <c>Discarded</c> effective after all and therefore suppresses the rule.
+	/// </summary>
+	/// <remarks>
+	/// The message is carried in the row rather than reached through a shape enum and a parallel switch,
+	/// so a new rule cannot be added without its message — and so no unmatched-case throw exists on a
+	/// path whose whole contract is that it must never affect a save.
+	/// </remarks>
+	private readonly record struct InertRule(
+		ApplyGroup Live,
+		ApplyGroup Discarded,
+		Func<string, string> Message,
+		ApplyGroup? RescuedBy = null);
 
 	/// <summary>
-	/// Every co-occurrence of two apply groups for ONE name that provably discards one of them. Each row
-	/// is checkable against <c>JsonDiffApplier</c> on its own, without reading any control flow here; the
-	/// citation in the comment above it is the proof.
+	/// Every co-occurrence of two apply groups for ONE name where the differ discards one of them. Each
+	/// row is checkable against <c>JsonDiffApplier</c> on its own, without reading any control flow here;
+	/// the citation in the comment above it is the proof.
 	/// <para>
-	/// Two shapes that look like they belong here are deliberately absent, because reading the applier
-	/// shows they are not inert. <c>insert</c> + <c>set</c>: <c>Set</c> removes first and copies the
-	/// removed item's <c>index</c> and <c>propertyName</c> back onto its own config before inserting, so
-	/// the insert establishes the existence and position the set then reuses — only its <c>values</c> are
-	/// overwritten. <c>merge</c> + property <c>remove</c>: <c>Remove</c>'s property branch deletes only
-	/// the NAMED properties and <c>Merge</c> writes only the keys present in <c>values</c>, so only the
-	/// intersection of the two key sets is lost, not the merge.
+	/// The first four rows hold UNCONDITIONALLY — the discard follows from group order alone, whether or
+	/// not the component exists in the base. The last three involve this body's own <c>insert</c> and are
+	/// conditional on the component NOT coming from a parent schema in the replacing chain, which this
+	/// detector cannot see; their messages state that case rather than asserting the author is wrong.
+	/// Unconditional rows come first because that order is also the dedupe precedence: at most one
+	/// finding per (name, discarded group), so the strongest available reason is the one reported.
+	/// </para>
+	/// <para>
+	/// Two shapes that look like they belong here are absent, because reading the applier shows the named
+	/// operation still does something. <c>insert</c> + <c>set</c>: <c>Set</c> removes the element first
+	/// and copies the removed item's <c>index</c> and <c>propertyName</c> back onto its own config, so
+	/// the insert's POSITION survives as an override — note it keeps only those two, taking
+	/// <c>parentName</c> from the set itself, and the insert's <c>values</c> are discarded wholesale.
+	/// <c>merge</c> + property <c>remove</c>: <c>Remove</c>'s property branch deletes only the NAMED
+	/// properties and <c>Merge</c> writes only the keys present in <c>values</c>, so only the
+	/// intersection of the two key sets is lost, not the merge. A third near-miss, <c>set</c> +
+	/// <c>move</c>, is excluded for the same reason: <c>Set</c> re-inserts under its OWN
+	/// <c>parentName</c>, which overrides the move when the two disagree but is not a discard.
 	/// </para>
 	/// </summary>
-	private static readonly (ApplyGroup Live, ApplyGroup Discarded, InertShape Shape)[] InertPairs = [
-		// The merge group runs before the position pipeline, so the merge resolves against a base that
-		// does not contain the component yet, fails, and its unsuccessful list is discarded.
-		(ApplyGroup.Insert, ApplyGroup.Merge, InertShape.MergeBesideInsert),
-		// Moves are resolved against the pristine source before any insert runs, and an unresolved move
-		// yields neither a remove nor a generated insert — it vanishes entirely.
-		(ApplyGroup.Insert, ApplyGroup.Move, InertShape.MoveBesideInsert),
-		// The position pipeline applies ALL removes before ANY insert, so a remove cannot delete what the
-		// same body inserts.
-		(ApplyGroup.Insert, ApplyGroup.ElementRemove, InertShape.ElementRemoveBesideInsert),
+	private static readonly InertRule[] InertRules = [
 		// FilterMoveOperation opens the position pipeline and drops every move whose name matches any
 		// element remove — unconditionally, whether or not the remove itself resolves.
-		(ApplyGroup.ElementRemove, ApplyGroup.Move, InertShape.MoveBesideElementRemove),
-		// The merge group patches the element; the position pipeline then deletes it.
-		(ApplyGroup.ElementRemove, ApplyGroup.Merge, InertShape.MergeBesideElementRemove),
+		new(ApplyGroup.ElementRemove, ApplyGroup.Move, BuildMoveBesideElementRemoveMessage),
+		// The merge group patches the element; the position pipeline then deletes it. An insert of the
+		// same name does not rescue the merge: the insert builds a fresh element from its own values.
+		new(ApplyGroup.ElementRemove, ApplyGroup.Merge, BuildMergeBesideElementRemoveMessage),
 		// The set group runs last and replaces the element wholesale with its own values.
-		(ApplyGroup.Set, ApplyGroup.Merge, InertShape.MergeBesideSet),
+		new(ApplyGroup.Set, ApplyGroup.Merge, BuildMergeBesideSetMessage),
 		// Element removals run in the position pipeline, property removals in the group after it, so the
-		// property removal targets an element that is already gone.
-		(ApplyGroup.ElementRemove, ApplyGroup.PropertyRemove, InertShape.PropertyRemoveBesideElementRemove)
+		// property removal targets an element that is already gone — UNLESS an insert for the same name
+		// re-creates it in that same pipeline, which runs before the property-removal group and makes the
+		// property removal effective. Hence RescuedBy.
+		new(ApplyGroup.ElementRemove, ApplyGroup.PropertyRemove, BuildPropertyRemoveBesideElementRemoveMessage,
+			RescuedBy: ApplyGroup.Insert),
+		// The merge group runs before the position pipeline, so a merge aimed at a component this body
+		// inserts resolves against a base that does not contain it, fails, and its unsuccessful list is
+		// discarded. Conditional: a parent schema inserting the name puts it in the base.
+		new(ApplyGroup.Insert, ApplyGroup.Merge, BuildMergeBesideInsertMessage),
+		// Moves are resolved against the pristine source before any insert runs, and an unresolved move
+		// yields neither a remove nor a generated insert — it vanishes entirely. Conditional in the same
+		// way: with the name in the base the move resolves, and the own insert then duplicates the name.
+		new(ApplyGroup.Insert, ApplyGroup.Move, BuildMoveBesideInsertMessage),
+		// The position pipeline applies ALL removes before ANY insert, so a remove cannot delete what the
+		// same body inserts. Conditional, and the loosest row: with the name in the base this is the
+		// legitimate replace-an-inherited-component idiom, where both operations do apply.
+		new(ApplyGroup.Insert, ApplyGroup.ElementRemove, BuildElementRemoveBesideInsertMessage)
 	];
 
 	/// <summary>
-	/// Inspects the body about to be written and returns one advisory warning per component and shape
-	/// whose second operation the differ discards at apply time.
+	/// Inspects the body about to be written and returns one advisory warning per component and dropped
+	/// operation, for the operations the differ discards at apply time.
 	/// </summary>
 	/// <param name="body">
 	/// Resolved final page body (post-merge for <c>append</c>, verbatim for <c>replace</c>). May be
@@ -152,17 +182,28 @@ internal static class PageInertOperationDetector {
 			return warnings;
 		}
 		int suppressed = 0;
+		var reportedForName = new HashSet<ApplyGroup>();
 		foreach (string name in namesInOrder) {
 			HashSet<ApplyGroup> groups = groupsByName[name];
 			if (groups.Count < 2) {
 				continue;
 			}
-			foreach ((ApplyGroup live, ApplyGroup discarded, InertShape shape) in InertPairs) {
-				if (!groups.Contains(live) || !groups.Contains(discarded)) {
+			reportedForName.Clear();
+			foreach (InertRule rule in InertRules) {
+				if (!groups.Contains(rule.Live) || !groups.Contains(rule.Discarded)) {
+					continue;
+				}
+				if (rule.RescuedBy is { } rescuer && groups.Contains(rescuer)) {
+					continue;
+				}
+				// One finding per dropped operation, not per rule: several rules can name the same dead
+				// operation for different reasons, and repeating it says nothing new. Rules are ordered
+				// strongest-reason-first, so the first match is the one worth reporting.
+				if (!reportedForName.Add(rule.Discarded)) {
 					continue;
 				}
 				if (warnings.Count < MaxReportedFindings) {
-					warnings.Add(BuildMessage(shape, name));
+					warnings.Add(rule.Message(name));
 				} else {
 					suppressed++;
 				}
@@ -188,56 +229,64 @@ internal static class PageInertOperationDetector {
 		_ => ApplyGroup.Dropped
 	};
 
-	private static string BuildMessage(InertShape shape, string name) => shape switch {
-		InertShape.MergeBesideInsert =>
-			$"Component '{name}' carries both an 'insert' and a 'merge' in the body being saved. The differ " +
-			"applies whole operation groups in a fixed order — merges run BEFORE inserts, never in array " +
-			"order — so the merge resolves against a base that does not contain the component yet and is " +
-			"silently dropped. Fold the merge's values into the insert's own 'values', or use 'set', the " +
-			"only verb applied after inserts. If a parent schema inserts this name too, the merge patches " +
-			"the parent's element and this body's insert then adds a second component with the same name." +
-			GuidePointer,
-		InertShape.MoveBesideInsert =>
-			$"Component '{name}' carries both an 'insert' and a 'move' in the body being saved. Moves are " +
-			"resolved against the unmodified base before any insert runs, so a move aimed at a component " +
-			"the same body inserts resolves to nothing and is discarded entirely — not even the relocation " +
-			"survives. Set the insert's own 'parentName' and 'index' instead of adding a move." +
-			GuidePointer,
-		InertShape.ElementRemoveBesideInsert =>
-			$"Component '{name}' carries both an 'insert' and an element 'remove' in the body being saved. " +
-			"If the component comes from a parent schema this is the replace-an-inherited-component idiom, " +
-			"and 'set' expresses it in one operation. Within a single body, though, ALL removes are applied " +
-			"before ANY insert, so the remove can never delete what this body inserts: if the component is " +
-			"self-inserted the remove does nothing at all. Prefer 'set', or drop whichever of the two is " +
-			"redundant." + GuidePointer,
-		InertShape.MoveBesideElementRemove =>
-			$"Component '{name}' carries both an element 'remove' and a 'move' in the body being saved. " +
-			"Before applying anything the differ filters the move list against the remove list and drops " +
-			"every move whose name matches a remove — unconditionally, whether or not the remove itself " +
-			"resolves. The component is deleted and the move never runs. Drop the remove if you meant to " +
-			"relocate the component." + GuidePointer,
-		InertShape.MergeBesideElementRemove =>
-			$"Component '{name}' carries both a 'merge' and an element 'remove' in the body being saved. " +
-			"Merges are applied first and removes second, so the merge patches the element and the remove " +
-			"then deletes it: the merged values never reach runtime. Drop whichever of the two you did not " +
-			"intend." + GuidePointer,
-		InertShape.MergeBesideSet =>
-			$"Component '{name}' carries both a 'merge' and a 'set' in the body being saved. 'set' is " +
-			"applied last and replaces the element wholesale with its own 'values', so the merge's values " +
-			"are overwritten and never reach runtime. Fold the merge's values into the set's 'values'." +
-			GuidePointer,
-		InertShape.PropertyRemoveBesideElementRemove =>
-			$"Component '{name}' carries both an element 'remove' and a property 'remove' (one with a " +
-			"'properties' array) in the body being saved. Element removals are applied in the group before " +
-			"property removals, so by the time the property removal runs the element is gone and it does " +
-			"nothing. Drop the property removal, or drop the element removal if you only meant to strip " +
-			"properties." + GuidePointer,
-		_ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unhandled inert shape.")
-	};
+	// Messages follow the convention of PageInsertDowngradeDetector's: what is wrong, why it matters at
+	// runtime, what to do instead, then the guide pointer. They say "submitted body" rather than "body
+	// being saved" because Detect also runs on a dry run, where nothing is saved.
+
+	private static string BuildMoveBesideElementRemoveMessage(string name) =>
+		$"Component '{name}' carries both an element 'remove' and a 'move' in the submitted body. " +
+		"Before applying anything the differ filters the move list against the remove list and drops " +
+		"every move whose name matches a remove — unconditionally, whether or not the remove itself " +
+		"resolves. The component is deleted and the move never runs. Drop the remove if you meant to " +
+		"relocate the component." + GuidePointer;
+
+	private static string BuildMergeBesideElementRemoveMessage(string name) =>
+		$"Component '{name}' carries both a 'merge' and an element 'remove' in the submitted body. " +
+		"Merges are applied first and removes second, so the merge patches the element and the remove " +
+		"then deletes it: the merged values never reach runtime. Drop whichever of the two you did not " +
+		"intend." + GuidePointer;
+
+	private static string BuildMergeBesideSetMessage(string name) =>
+		$"Component '{name}' carries both a 'merge' and a 'set' in the submitted body. 'set' is applied " +
+		"last and replaces the element wholesale with its own 'values', so the merge's values are " +
+		"overwritten and never reach runtime. Fold the merge's values into the set's 'values'." +
+		GuidePointer;
+
+	private static string BuildPropertyRemoveBesideElementRemoveMessage(string name) =>
+		$"Component '{name}' carries both an element 'remove' and a property 'remove' (one with a " +
+		"'properties' array) in the submitted body. Element removals are applied in the group before " +
+		"property removals, so by the time the property removal runs the element is gone and it does " +
+		"nothing. Drop the property removal, or drop the element removal if you only meant to strip " +
+		"properties." + GuidePointer;
+
+	private static string BuildMergeBesideInsertMessage(string name) =>
+		$"Component '{name}' carries both an 'insert' and a 'merge' in the submitted body. The differ " +
+		"applies whole operation groups in a fixed order — merges run BEFORE inserts, never in array " +
+		"order — so the merge resolves against a base that does not contain the component yet and is " +
+		"silently dropped. Fold the merge's values into the insert's own 'values', or use 'set', the " +
+		"only verb applied after inserts. If a parent schema inserts this name too, the merge patches " +
+		"the parent's element and this body's insert then adds a second component with the same name." +
+		GuidePointer;
+
+	private static string BuildMoveBesideInsertMessage(string name) =>
+		$"Component '{name}' carries both an 'insert' and a 'move' in the submitted body. Moves are " +
+		"resolved against the unmodified base before any insert runs, so a move aimed at a component " +
+		"the same body inserts resolves to nothing and is discarded entirely — not even the relocation " +
+		"survives. Set the insert's own 'parentName' and 'index' instead of adding a move. If a parent " +
+		"schema inserts this name too, the move relocates the parent's element and this body's insert " +
+		"then adds a second component with the same name." + GuidePointer;
+
+	private static string BuildElementRemoveBesideInsertMessage(string name) =>
+		$"Component '{name}' carries both an 'insert' and an element 'remove' in the submitted body. If " +
+		"the component comes from a parent schema this is the replace-an-inherited-component idiom and " +
+		"both operations apply — 'set' expresses it in one operation. If the component is instead " +
+		"self-inserted, the remove does nothing at all: within a single body ALL removes are applied " +
+		"before ANY insert, so the remove can never delete what this body inserts. Prefer 'set', or " +
+		"drop whichever of the two is redundant." + GuidePointer;
 
 	private static string BuildSuppressedMessage(int suppressed) =>
 		$"{suppressed} further inert-operation finding(s) in this body are not listed. Fix the ones above " +
-		"and save again to see the rest." + GuidePointer;
+		"and re-run to see the rest." + GuidePointer;
 
 	/// <summary>
 	/// Reduces the body's <c>viewConfigDiff</c> to the set of apply groups present per component name,
@@ -296,7 +345,8 @@ internal static class PageInertOperationDetector {
 			JObject json = JObject.Parse(body);
 			return json[ViewConfigDiffProperty] as JArray ?? new JArray();
 		}
-		if (!PageSchemaSectionReader.TryRead(body, out string content, ViewConfigDiffMarker)) {
+		if (!PageSchemaSectionReader.TryRead(body, out string content, ViewConfigDiffMarker,
+			LegacyViewConfigDiffMarker)) {
 			return new JArray();
 		}
 		string trimmed = content.Trim();

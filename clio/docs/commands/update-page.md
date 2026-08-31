@@ -1,4 +1,4 @@
-﻿# update-page
+# update-page
 
 ## Command Type
 
@@ -196,8 +196,12 @@ Operations are applied in whole **groups** in a fixed order (merges, then remove
 `set` last), never in array order. So a `merge`, `move`, or element `remove` that ends up beside an
 `insert` for the same `name` resolves against a base that does not contain the component yet and is
 silently dropped; likewise a `move` for a name the same body also element-`remove`s, which the
-differ filters out before applying anything. The save still succeeds and the response carries an
-advisory `warnings` entry naming the component. Fix it by folding the transform's values into the
+differ filters out before applying anything. The same applies wherever one operation's group runs
+after another's for one name: a `merge` beside an element `remove` or a `set` (the remove deletes,
+or the set replaces wholesale, what the merge just patched), and a property `remove` beside an
+element `remove` (the element is gone before property removals run — unless an `insert` re-creates
+it, which makes the property removal effective again). The save still succeeds and the
+response carries an advisory `warnings` entry naming the component and the dead operation. Fix it by folding the transform's values into the
 `insert` itself, or by using `set`, which runs after the insert — not by reordering the array, which
 changes nothing.
 

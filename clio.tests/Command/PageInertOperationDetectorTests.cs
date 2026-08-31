@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Clio.Command;
@@ -173,6 +173,39 @@ public class PageInertOperationDetectorTests {
 			{ "operation": "merge", "name": "UsrName", "values": { "tooltip": "Y" } },
 			{ "operation": "merge", "name": "UsrName", "values": { "visible": false } }
 		]
+		""";
+
+	private const string InsertAndBothRemoves =
+		"""
+		[
+			{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } },
+			{ "operation": "remove", "name": "UsrName" },
+			{ "operation": "remove", "name": "UsrName", "properties": ["layoutConfig"] }
+		]
+		""";
+
+	private const string InsertMergeAndElementRemove =
+		"""
+		[
+			{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } },
+			{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } },
+			{ "operation": "remove", "name": "UsrName" }
+		]
+		""";
+
+	/// <summary>A web body using the legacy SCHEMA_DIFF spelling of the viewConfigDiff section.</summary>
+	private static string LegacyMarkerWebBody(string viewConfigDiffInner) =>
+		$$"""
+		define("Test", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+			return {
+				diff: /**SCHEMA_DIFF*/{{viewConfigDiffInner}}/**SCHEMA_DIFF*/,
+				viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+				modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
+				handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
+				converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+				validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+			};
+		});
 		""";
 
 	/// <summary>Builds a web body whose diff carries an insert+merge pair for each of many names.</summary>
@@ -507,5 +540,57 @@ public class PageInertOperationDetectorTests {
 			because: "the cap is 12 findings plus exactly one summary line, so a pathological body cannot bury the response");
 		warnings.Last().Should().Contain("18 further inert-operation finding(s)",
 			because: "silent truncation would read as \"that is all of them\"; the count of what was dropped has to be stated");
+	}
+
+	// ----- rules that a THIRD operation for the same name rescues or supersedes ----------------------
+
+	[Test]
+	[Description("Detect does not report the property remove when an insert for the same name re-creates the element before the property-removal group runs")]
+	public void Detect_ShouldNotWarnAboutPropertyRemove_WhenAnInsertRescuesItBesideAnElementRemove() {
+		// Arrange — insert + element remove + property remove, all on one name.
+		string body = WebBody(InsertAndBothRemoves);
+
+		// Act
+		IReadOnlyList<string> warnings = PageInertOperationDetector.Detect(body);
+
+		// Assert
+		warnings.Should().NotContain(w => w.Contains("property 'remove'"),
+			because: "the insert runs in the position pipeline, before the property-removal group, so it re-creates the element and the property removal DOES strip its keys — reporting it would contradict Detect_ShouldNotWarn_WhenPropertyRemoveSitsBesideInsertForSameName");
+		warnings.Should().ContainSingle(w => w.Contains("the remove does nothing at all"),
+			because: "the element removal is the dead operation in this body — all removes run before all inserts — and it is the one worth reporting");
+	}
+
+	[Test]
+	[Description("Detect reports one finding per dropped operation, not one per matching rule, when a name spans three apply groups")]
+	public void Detect_ShouldReportOneFindingPerDroppedOperation_WhenANameSpansThreeGroups() {
+		// Arrange — insert + merge + element remove matches three rules, but only two operations die.
+		string body = WebBody(InsertMergeAndElementRemove);
+
+		// Act
+		IReadOnlyList<string> warnings = PageInertOperationDetector.Detect(body);
+
+		// Assert
+		warnings.Should().HaveCount(2,
+			because: "the merge and the element remove are the two dropped operations; the merge is named once even though both the element-remove rule and the insert rule explain its death");
+		warnings.Should().ContainSingle(w => w.Contains("the merged values never reach runtime"),
+			because: "repeating the same dead merge with a second, weaker reason adds noise without adding an action");
+		warnings.Should().ContainSingle(w => w.Contains("the remove does nothing at all"),
+			because: "the element removal is a separately dead operation and needs its own finding");
+	}
+
+	// ----- the legacy section marker ----------------------------------------------------------------
+
+	[Test]
+	[Description("Detect reads the legacy SCHEMA_DIFF marker as well as SCHEMA_VIEW_CONFIG_DIFF, so a legacy body is not silently skipped")]
+	public void Detect_ShouldWarn_WhenLegacyDiffMarkerCarriesAnInertPair() {
+		// Arrange
+		string body = LegacyMarkerWebBody(InsertAndMerge);
+
+		// Act
+		IReadOnlyList<string> warnings = PageInertOperationDetector.Detect(body);
+
+		// Assert
+		warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("'merge'"),
+			because: "every other viewConfigDiff reader in the repo (PageSchemaBodyParser, ChartConfigKeyOrderPreprocessor, SchemaValidationService) accepts SCHEMA_DIFF for the same section, so reading only the modern marker would make this check a silent no-op on a whole body dialect");
 	}
 }

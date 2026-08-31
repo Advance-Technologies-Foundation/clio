@@ -118,9 +118,12 @@ internal static class PageInsertDowngradeDetector {
 
 	private static bool TryExtractOperationsByName(string body, out Dictionary<string, HashSet<string>> operationsByName) {
 		// Names use Ordinal to mirror both the platform differ (JsonDiffApplier groups names with
-		// StringComparer.Ordinal) and the name half of PageBodyMerger's merge identity; the operation sets
-		// use OrdinalIgnoreCase
-		// because the op vocabulary is a small case-insensitive set.
+		// StringComparer.Ordinal) and the name half of PageBodyMerger's merge identity. The operation sets
+		// use OrdinalIgnoreCase deliberately, and ONLY because of the question this detector asks: a
+		// mis-cased "Merge" left behind where an insert used to be still orphans the component, so it must
+		// count as a transform here. Do not carry that comparer to a detector asking whether an operation
+		// TAKES EFFECT — the differ's verb switch has no default branch, so a mis-cased verb is discarded
+		// whole. See PageInertOperationDetector, which uses Ordinal for exactly that reason.
 		operationsByName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 		try {
 			JArray viewConfigDiff = ReadViewConfigDiff(body);
