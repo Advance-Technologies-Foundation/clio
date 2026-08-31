@@ -321,7 +321,9 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		// The pre-method binder rejects the payload before the command runs and emits the contracted
-		// diagnostic: "invalid-parameter-type: argument 'rules' for MCP tool '<name>' must be an array."
+		// diagnostic: "invalid-parameter-type: argument 'rules' for MCP tool '<name>' contains a value
+		// that does not match the documented shape." The binding failed BELOW 'rules', so the message
+		// reports containment rather than the CLR type of 'rules', which the caller already sent right.
 		// It names the NESTED wire parameter rather than the composite `args` wrapper, and deliberately
 		// does NOT echo the raw System.Text.Json text — that message repeats the caller-supplied `type`
 		// discriminator ("unsupported-action") back to the client, which is what the sanitization removes.

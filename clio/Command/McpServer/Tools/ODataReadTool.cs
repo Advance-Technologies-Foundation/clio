@@ -328,19 +328,14 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 
 			// Single-entity response (no value wrapper)
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
-		} catch (Exception ex) {
-			// A null or blank body is already classified by the guard above, so json is non-null here and
-			// only its shape still matters: a body that does not start with '{' or '[' is not JSON at all
-			// (an IIS/proxy HTML page, for instance) and gets the same non-JSON classification.
-			string trimmedJson = json.TrimStart();
-			if (trimmedJson.Length == 0 || (trimmedJson[0] != '{' && trimmedJson[0] != '[')) {
-				return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
-			}
-			string preview = json;
-			if (preview.Length > 500) {
-				preview = preview[..500] + "...";
-			}
-			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
+		} catch (Exception) {
+			// EVERY parse failure gets the same fixed diagnostic, carrying no fragment of the body. Testing
+			// the first character was not enough: a malformed body that still starts with '{' or '[' — a
+			// truncated proxy response, say — fell through to a preview that copied arbitrary server or
+			// proxy content into the MCP transcript. The redactor strips known secret shapes, not tenant
+			// data it has never seen, so the body cannot be quoted at all. The exception message is
+			// dropped with it: a parse position is of no use to a caller who cannot see the body anyway.
+			return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 		}
 	}
 

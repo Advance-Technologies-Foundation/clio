@@ -509,6 +509,69 @@ public sealed class McpToolErrorFilterTests
 				nameof(FakeRetrySafeTool.Execute), BindingFlags.Public | BindingFlags.Instance)!,
 			new FakeRetrySafeTool());
 
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a JSON object, not an array, when clio-run's dictionary-typed args parameter receives an array — the enumerable check classified every dictionary as an array.")]
+	public async Task HandleCallToolErrors_Should_Report_Object_When_ClioRun_Args_Receives_An_Array() {
+		// Arrange
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw new AssertionException("tool body must not run"));
+		MethodInfo method = typeof(ClioRunTool).GetMethod(nameof(ClioRunTool.Run),
+			BindingFlags.Public | BindingFlags.Instance)!;
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"clio-run",
+			new Dictionary<string, JsonElement> {
+				["command"] = JsonDocument.Parse("\"sync-schemas\"").RootElement,
+				["args"] = JsonDocument.Parse("[]").RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(method, new ClioRunTool(Substitute.For<IClioRunExecutor>()));
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "an array is not the documented shape for the clio-run arguments object");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("invalid-parameter-type",
+			because: "the failure must use the error code advertised by get-tool-contract");
+		text.Should().Contain("an object",
+			because: "Dictionary<string, JsonElement> is carried on the wire as a JSON object");
+		text.Should().NotContain("must be an array",
+			because: "telling the caller to send an array repeats the very shape that just failed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Says the named property CONTAINS an incompatible value when the binding failed deeper inside it, instead of naming the outer property's own CLR type.")]
+	public async Task HandleCallToolErrors_Should_Report_Containment_When_Binding_Fails_Below_The_Property() {
+		// Arrange — 'rules' IS the array the contract asks for; the incompatible value is 'actions',
+		// one level down, so the real binder produces a path of $.rules[0].actions.
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw new AssertionException("tool body must not run"));
+		RequestContext<CallToolRequestParams> context = CreateContext(
+			"create-entity-business-rule",
+			new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse("{\"rules\":[{\"actions\":\"not-an-array\"}]}").RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(
+			typeof(FakeToolWithNestedArgs).GetMethod(nameof(FakeToolWithNestedArgs.Execute),
+				BindingFlags.Public | BindingFlags.Instance)!,
+			new FakeToolWithNestedArgs());
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("rules",
+			because: "the message must still name the property the caller can navigate from");
+		text.Should().Contain("contains a value that does not match the documented shape",
+			because: "the incompatible value is nested inside the array, not the array itself");
+		text.Should().NotContain("must be an array",
+			because: "the caller already supplied an array, so that advice recommends no valid correction");
+	}
+
 	private static RequestContext<CallToolRequestParams> CreateContext(
 		string toolName, IDictionary<string, JsonElement>? arguments = null) =>
 		McpRequestContextTestFactory.CreateCallToolContext(toolName, arguments);
@@ -532,6 +595,27 @@ public sealed class McpToolErrorFilterTests
 
 	public sealed class FakeToolWithCompositeArgs {
 		public string Execute(FakeCompositeArgs args) => "ok";
+	}
+
+	// Two levels deep on purpose: a failure inside 'actions' must be reported against 'rules' as
+	// containment, not as the CLR type of 'rules' itself.
+	public sealed record FakeRuleAction(
+		[property: JsonPropertyName("type")]
+		string Type
+	);
+
+	public sealed record FakeRule(
+		[property: JsonPropertyName("actions")]
+		List<FakeRuleAction> Actions
+	);
+
+	public sealed record FakeNestedArgs(
+		[property: JsonPropertyName("rules")]
+		List<FakeRule> Rules
+	);
+
+	public sealed class FakeToolWithNestedArgs {
+		public string Execute(FakeNestedArgs args) => "ok";
 	}
 
 	public sealed class FakeToolWithCancellationToken {

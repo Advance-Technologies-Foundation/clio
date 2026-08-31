@@ -768,6 +768,42 @@ public sealed class ODataReadToolTests {
 			because: "the null has to be absorbed as the non-JSON transport failure it is, not surface as an NRE");
 	}
 
+	[TestCase("{\"detail\":\"private response marker\"", TestName = "Read_Should_Suppress_Body_When_TruncatedJsonObject")]
+	[TestCase("[{\"detail\":\"private response marker\"}", TestName = "Read_Should_Suppress_Body_When_TruncatedJsonArray")]
+	[Category("Unit")]
+	[Description("Suppresses the response body for a parse failure that still begins with a JSON opening brace or bracket, which the first-character check let through into the error preview.")]
+	public void Read_Should_Suppress_Body_When_MalformedJsonStartsWithBrace(string malformedBody) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		// A truncated proxy response: unparsable, but it starts with '{' or '[', so the shape check passed
+		// it to the preview branch and the marker was copied into the MCP transcript.
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(malformedBody);
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unparsable body is not a successful read");
+		response.Error.Should().Contain("did not return a JSON OData response",
+			because: "every parse failure gets the same fixed classification, whatever the body starts with");
+		response.Error.Should().NotContain("private response marker",
+			because: "no fragment of an untrusted server or proxy body may reach the MCP transcript; the "
+				+ "redactor removes known secret shapes, not arbitrary tenant data");
+		response.Error.Should().NotContain("Response:",
+			because: "the raw-body preview is what leaked the marker and must be gone entirely");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects top=0 with a structured validation failure instead of silently returning the default page.")]

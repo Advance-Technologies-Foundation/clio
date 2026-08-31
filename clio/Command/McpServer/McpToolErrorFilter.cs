@@ -133,11 +133,49 @@ public static class McpToolErrorFilter
 		string? argumentName,
 		Exception exception) {
 		string preciseArgumentName = GetPreciseArgumentName(parameterType, argumentName, exception);
-		string expectedType = GetExpectedJsonType(parameterType, preciseArgumentName);
-		string message = string.IsNullOrWhiteSpace(argumentName)
-			? $"invalid-parameter-type: arguments for MCP tool '{toolName ?? UnknownToolName}' must match the documented shape (expected {expectedType})."
-			: $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolName ?? UnknownToolName}' must be {expectedType}.";
+		string toolLabel = toolName ?? UnknownToolName;
+		string message;
+		if (string.IsNullOrWhiteSpace(argumentName)) {
+			message = $"invalid-parameter-type: arguments for MCP tool '{toolLabel}' must match the documented shape "
+				+ $"(expected {GetExpectedJsonType(parameterType, preciseArgumentName)}).";
+		} else if (IsNestedBindingFailure(parameterType, exception)) {
+			// The named property's OWN value is not what failed: the caller did send the array or object
+			// the contract asks for, and the incompatible value sits somewhere inside it. Reporting the
+			// CLR type of the outer property here ("must be an array") names a correction the caller has
+			// already made, so the message says where to look instead.
+			message = $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolLabel}' "
+				+ "contains a value that does not match the documented shape.";
+		} else {
+			message = $"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolLabel}' "
+				+ $"must be {GetExpectedJsonType(parameterType, preciseArgumentName)}.";
+		}
 		return $"{message} Received an incompatible JSON value.";
+	}
+
+	/// <summary>
+	/// True when the failing JSON path continues BELOW the named property, so the incompatible value is
+	/// nested inside it rather than being that property's own value.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="GetPreciseArgumentName"/> reports only the first path segment, so
+	/// <c>$.rules[0].actions[0].type</c> is reported as <c>rules</c>. Without this distinction the message
+	/// then describes the CLR type of <c>rules</c>, which the caller already supplied correctly.
+	/// </remarks>
+	private static bool IsNestedBindingFailure(Type parameterType, Exception exception) {
+		if (!parameterType.IsClass || parameterType == typeof(string)
+			|| exception is not JsonException { Path: { } path }
+			|| !path.StartsWith("$.", StringComparison.Ordinal)) {
+			return false;
+		}
+		string remainder = path[2..];
+		int boundary = remainder.IndexOfAny(['.', '[']);
+		if (boundary < 0) {
+			return false;
+		}
+		// Only when the first segment actually resolved to a documented property. Otherwise the reported
+		// name is the outer argument itself and "must be <type>" remains the accurate advice.
+		return GetJsonPropertyNames(parameterType)
+			.Contains(remainder[..boundary], StringComparer.OrdinalIgnoreCase);
 	}
 
 	private static string GetPreciseArgumentName(Type parameterType, string? argumentName, Exception exception) {
@@ -162,10 +200,23 @@ public static class McpToolErrorFilter
 		}
 		if (type == typeof(string)) return "a string";
 		if (type == typeof(bool)) return "a boolean";
+		// A dictionary IS an IEnumerable, so it has to be recognized BEFORE the enumerable branch below.
+		// Without this, a contract taking Dictionary<string, JsonElement> — clio-run's own `args` — was
+		// reported as "an array", telling the caller to resend the very shape that had just failed.
+		if (IsJsonObjectContract(type)) return "an object";
 		if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string)) return "an array";
 		if (type.IsPrimitive || type == typeof(decimal)) return "a number";
 		return "an object";
 	}
+
+	/// <summary>
+	/// True when the CLR type is carried on the wire as a JSON object rather than a JSON array.
+	/// </summary>
+	private static bool IsJsonObjectContract(Type type) =>
+		typeof(System.Collections.IDictionary).IsAssignableFrom(type)
+		|| type.GetInterfaces().Any(candidate => candidate.IsGenericType
+			&& (candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>)
+				|| candidate.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>)));
 
 	private static string? GetJsonPropertyName(PropertyInfo property) =>
 		property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
