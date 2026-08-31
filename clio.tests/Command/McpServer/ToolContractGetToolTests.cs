@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;

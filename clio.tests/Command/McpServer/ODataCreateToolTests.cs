@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -259,6 +259,32 @@ public sealed class ODataCreateToolTests {
 		response.Created.Should().Be(1, because: "a create echo carrying @odata.context + Id is a real created record, even with a Message column");
 		response.Results.Single().Success.Should().BeTrue(because: "the routing-error detection must not swallow a genuine created-record echo");
 		response.Results.Single().Id.Should().Be("22222222-2222-2222-2222-222222222222", because: "the created record's Id must be surfaced");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A created-record echo carrying a numeric Code plus a Message is still a successful create: the DataService/AuthService envelope detector must not claim a body that also holds OData payload members, because the write has already happened and a reported failure invites a duplicate retry.")]
+	public void Create_Should_Not_Misclassify_Created_Entity_With_Code_And_Message_Columns() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrThing");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrThing/$entity\",\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Code\":200,\"Message\":\"Created\"}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "UsrThing", Rows = Arr("[{\"Code\":200}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1, because: "a non-zero Code column on a body that also carries @odata.context and Id is data, not a DataService error envelope");
+		response.Results.Single().Success.Should().BeTrue(because: "reporting a completed create as a failure invites a duplicate retry");
+		response.Results.Single().Id.Should().Be("33333333-3333-3333-3333-333333333333", because: "the created record's Id must be surfaced");
 	}
 
 	[Test]

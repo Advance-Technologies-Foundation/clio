@@ -289,6 +289,10 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		+ "\"MessageDetail\":\"No type was found that matches the controller named 'UsrThing'.\"}",
 		TestName = "ASP.NET routing error")]
 	[TestCase("{\"Code\":1,\"Message\":\"Unauthorized\"}", TestName = "authentication rejection")]
+	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"Package UsrThing was not found.\"}}",
+		TestName = "BaseResponse failure with errorInfo")]
+	[TestCase("{\"success\":false}", TestName = "BaseResponse failure without any detail")]
+	[TestCase("<html><body>Access denied</body></html>", TestName = "HTML page carrying no status and no known marker")]
 	[TestCase("\uFEFF<!DOCTYPE html><html><head><title>500 - Internal server error.</title></head></html>",
 		TestName = "HTML page behind a byte-order mark")]
 	[TestCase("<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">"
@@ -329,6 +333,10 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	[TestCase("{\"value\":[{\"Id\":\"1\",\"Code\":\"UsrCode\"}]}", TestName = "collection with a Code column")]
 	[TestCase("{\"Code\":0,\"Exception\":\"\"}", TestName = "successful DataService envelope")]
 	[TestCase("{\"Message\":\"ok\",\"value\":[]}", TestName = "payload carrying both Message and data")]
+	[TestCase("{\"@odata.context\":\"http://host/0/odata/$metadata#UsrThing/$entity\","
+		+ "\"Id\":\"7b3f6c1e-0e7a-4f2e-9a1f-2c0d5f4b8e11\",\"Code\":200,\"Message\":\"Created\"}",
+		TestName = "OData create echo carrying Code and Message")]
+	[TestCase("{\"success\":true,\"errorInfo\":null}", TestName = "BaseResponse success")]
 	[Description("A successful payload is still saved even when it carries members that look like error keys (issue 1220)")]
 	public void Execute_ShouldSaveResponse_WhenPayloadOnlyResemblesAnErrorEnvelope(string responseBody) {
 		// Arrange

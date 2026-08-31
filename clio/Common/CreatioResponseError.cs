@@ -77,6 +77,7 @@ internal static class CreatioResponseError {
 		message = string.Empty;
 		return root.ValueKind == JsonValueKind.Object
 			&& (TryDetectDataServiceEnvelope(root, out message)
+				|| TryDetectBaseResponse(root, out message)
 				|| TryDetectODataV4Error(root, out message)
 				|| TryDetectAspNetException(root, out message)
 				|| TryDetectRoutingError(root, out message));
@@ -134,6 +135,9 @@ internal static class CreatioResponseError {
 	// happens to carry a `Code` column from being read as a failure.
 	private static bool TryDetectDataServiceEnvelope(JsonElement root, out string message) {
 		message = string.Empty;
+		if (HasODataPayloadMembers(root)) {
+			return false;
+		}
 		if (!(TryGetProperty(root, out JsonElement code, "Code", "code")
 			&& code.ValueKind == JsonValueKind.Number
 			&& code.TryGetInt32(out int codeValue)
@@ -147,6 +151,51 @@ internal static class CreatioResponseError {
 		message = $"Creatio returned error code {codeValue}: {detail}";
 		return true;
 	}
+
+	// Creatio's own BaseResponse envelope: { "success": false, "errorInfo": { "message": ... } }.
+	// Configuration and application services answer HTTP 200 with it, and the detail-less
+	// { "success": false } is just as common. Without this branch call-service beautified such a
+	// failure, wrote it to --destination and exited 0 - the same false success this contract removes
+	// for the other envelopes. Only an explicit boolean false counts, so a payload carrying
+	// success=true, or a `success` string column, is left alone.
+	private static bool TryDetectBaseResponse(JsonElement root, out string message) {
+		message = string.Empty;
+		if (HasODataPayloadMembers(root)) {
+			return false;
+		}
+		if (!(TryGetProperty(root, out JsonElement success, "success", "Success")
+			&& success.ValueKind == JsonValueKind.False)) {
+			return false;
+		}
+		string? detail = null;
+		if (TryGetProperty(root, out JsonElement errorInfo, "errorInfo", "ErrorInfo")
+			&& errorInfo.ValueKind == JsonValueKind.Object) {
+			detail = First(errorInfo, "message", "Message", "errorMessage", "ErrorMessage");
+		}
+		detail ??= First(root, "errorMessage", "ErrorMessage", "message", "Message");
+		message = string.IsNullOrWhiteSpace(detail)
+			? "Creatio reported the request as failed without an error message."
+			: $"Creatio reported the request as failed: {detail}";
+		return true;
+	}
+
+	/// <summary>
+	/// Members that only a real OData payload carries: the metadata annotations, the collection
+	/// wrapper and the key a create echoes back. A body holding one of them is data, so the two
+	/// structurally loose detectors - the DataService/AuthService envelope and
+	/// <c>BaseResponse</c> - must not claim it. A successful create answered as
+	/// <c>{"@odata.context":"...","Id":"&lt;guid&gt;","Code":200,"Message":"Created"}</c> was
+	/// otherwise reported as <c>Success=false</c> by <c>ODataCreateTool.ParseCreated</c> after the
+	/// write had already happened, which invites a duplicate retry. The narrow-shape detectors
+	/// (OData v4 <c>error</c>, the ASP.NET exception envelope, the routing error) need no guard:
+	/// their members never appear on an entity.
+	/// </summary>
+	private static readonly string[] ODataPayloadMembers = [
+		"@odata.context", "@odata.id", "@odata.etag", "value", "Id", "id"
+	];
+
+	private static bool HasODataPayloadMembers(JsonElement root) =>
+		root.EnumerateObject().Any(property => ODataPayloadMembers.Any(property.NameEquals));
 
 	private static bool TryGetProperty(JsonElement root, out JsonElement value, params string[] names) {
 		foreach (string name in names) {

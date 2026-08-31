@@ -180,17 +180,21 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 		if (CreatioResponseError.IsMarkup(response)) {
 			//An HTML/XML body is never a successful service payload: the request did not reach the
-			//service intact. Report the status when the page carries one, otherwise the known page
-			//wording or the generic markers.
+			//service intact. Recognizing the markup is what decides failure - the status line, the known
+			//page wording and the generic markers only sharpen the diagnostic. A marker-free page such as
+			//"<html><body>Access denied</body></html>" carries none of them, and returning success for it
+			//saved the page to --destination and exited 0, which is the very behaviour this contract
+			//forbids. Fail closed instead.
 			if (TryGetErrorStatus(response, out int statusCode)) {
 				error = $"HTTP status {statusCode}";
-				return false;
 			}
-			if (CreatioResponseError.IsKnownErrorPage(response) || MatchesErrorPageMarkers(response)) {
+			else if (CreatioResponseError.IsKnownErrorPage(response) || MatchesErrorPageMarkers(response)) {
 				error = "HTTP status unavailable from the response body";
-				return false;
 			}
-			return true;
+			else {
+				error = "the response is an HTML page, not a service payload";
+			}
+			return false;
 		}
 
 		try {
