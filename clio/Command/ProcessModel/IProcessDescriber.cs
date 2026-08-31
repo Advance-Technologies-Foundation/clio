@@ -420,11 +420,11 @@ public sealed class DescribedPreconfiguredPage {
 	public DescribedPreconfiguredPagePerformer Performer { get; set; }
 
 	/// <summary>
-	/// The completing buttons, in stored order. An EMPTY list is only interpretable together with
-	/// <see cref="PageUiType"/>: on <c>freedom</c> it means none are selected — an element that can never finish
-	/// at run time; on <c>classic</c> it is the NORMAL state (such a page completes through its own page-designer
-	/// buttons, so do not report it as broken); on a null page type it means nothing, because the page could not
-	/// be read.
+	/// The completing buttons, in stored order. Read it together with <see cref="PageUiType"/>: on
+	/// <c>freedom</c> an EMPTY list means none are selected — an element that can never finish at run time; on
+	/// <c>classic</c> the member is <c>null</c> (NOT APPLICABLE — such a page completes through its own
+	/// page-designer buttons, whose model this contract does not carry, so do not report it as broken); on a null
+	/// page type an empty list means nothing, because the page could not be read.
 	/// </summary>
 	[JsonPropertyName("buttons")]
 	public List<DescribedPreconfiguredPageButton> Buttons { get; set; }
