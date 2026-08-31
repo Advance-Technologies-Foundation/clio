@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
@@ -691,5 +692,64 @@ public sealed class ExecuteEsqToolTests {
 			because: "a cancellation/timeout should be reported as a timeout, not a generic error");
 		response.Hint.Should().BeNull(
 			because: "a timeout is not a query-format problem, so the ESQ-format guidance hint must not be attached");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an oversized DataService response by UTF-8 byte count before parsing and returns a structured result-too-large failure without ESQ-format guidance.")]
+	public void Execute_ShouldReturnResultTooLarge_WhenResponseExceedsUtf8ByteBudget() {
+		// Arrange
+		string responseJson = $"{{\"rows\":[{{\"Data\":\"{new string('\u00e9', ExecuteEsqTool.MaxResponseSizeBytes / 2)}\"}}],\"success\":true}}";
+		responseJson.Length.Should().BeLessThan(ExecuteEsqTool.MaxResponseSizeBytes,
+			because: "the fixture must prove the guard measures UTF-8 bytes rather than UTF-16 character count");
+		(ExecuteEsqTool tool, _, _) = BuildTool(responseJson);
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"SysPackageReferenceAssembly\",\"allColumns\":true,\"rowCount\":200}")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an oversized result must be replaced before it reaches MCP serialization");
+		response.ErrorClass.Should().Be(ExecuteEsqTool.ResultTooLargeErrorClass,
+			because: "callers need a stable machine-readable classification for narrowing or paging the query");
+		response.Error.Should().Contain(ExecuteEsqTool.MaxResponseSizeBytes.ToString(),
+			because: "the failure must state the enforced byte budget");
+		response.Error.Should().Contain("explicit columns",
+			because: "the caller needs an actionable recovery that avoids blob-bearing allColumns results");
+		response.Rows.Should().BeNull(
+			because: "none of the oversized DataService body may cross the MCP boundary");
+		response.Hint.Should().BeNull(
+			because: "result size is not an ESQ-format error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a valid DataService response whose UTF-8 byte count is exactly the documented response budget.")]
+	public void Execute_ShouldReturnRows_WhenResponseEqualsUtf8ByteBudget() {
+		// Arrange
+		const string prefix = "{\"rows\":[{\"Data\":\"";
+		const string suffix = "\"}],\"success\":true}";
+		int payloadLength = ExecuteEsqTool.MaxResponseSizeBytes - prefix.Length - suffix.Length;
+		string responseJson = prefix + new string('A', payloadLength) + suffix;
+		Encoding.UTF8.GetByteCount(responseJson).Should().Be(ExecuteEsqTool.MaxResponseSizeBytes,
+			because: "the fixture must pin the inclusive side of the byte boundary exactly");
+		(ExecuteEsqTool tool, _, _) = BuildTool(responseJson);
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\",\"rowCount\":1}")
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the contract rejects only responses larger than the documented byte budget");
+		response.Count.Should().Be(1,
+			because: "the single row at the exact byte budget should be preserved");
+		response.ErrorClass.Should().BeNull(
+			because: "a response at the inclusive boundary is not result-too-large");
 	}
 }

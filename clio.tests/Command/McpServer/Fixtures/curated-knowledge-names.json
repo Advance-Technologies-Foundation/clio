@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.13.46",
-  "sequence": 1013046000,
+  "libraryVersion": "1.13.54",
+  "sequence": 1013054000,
   "availableNames": [
     "agent-execution",
     "app-modeling",
@@ -22,6 +22,7 @@
     "core-rules",
     "creatio-composable-app-development",
     "creatio-freedom-iframe-section",
+    "creatio-three-way-merge",
     "creatio.agent-execution",
     "creatio.app-modeling",
     "creatio.application-listener",
@@ -61,6 +62,7 @@
     "creatio.existing-app-maintenance",
     "creatio.feature-toggle",
     "creatio.feature-toggle-tests",
+    "creatio.git-three-way-merge",
     "creatio.home-page",
     "creatio.identity-assertion",
     "creatio.indicator-widget",
@@ -80,6 +82,8 @@
     "creatio.page-schema-handlers",
     "creatio.page-schema-resources",
     "creatio.page-schema-validators",
+    "creatio.process-modeling",
+    "creatio.process-script-task",
     "creatio.record-rights",
     "creatio.related-list",
     "creatio.related-page-binding",
@@ -135,6 +139,8 @@
     "page-schema-handlers",
     "page-schema-resources",
     "page-schema-validators",
+    "process-modeling",
+    "process-script-task",
     "record-rights",
     "related-list",
     "related-page-binding",
@@ -154,8 +160,6 @@
   ],
   "featureGatedNames": [
     "creatio.freedom-page-web-to-mobile-conversion",
-    "creatio.process-modeling",
-    "freedom-page-web-to-mobile-conversion",
-    "process-modeling"
+    "freedom-page-web-to-mobile-conversion"
   ]
 }

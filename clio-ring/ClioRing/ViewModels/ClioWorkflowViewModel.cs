@@ -315,7 +315,7 @@ public sealed partial class ClioWorkflowViewModel : ViewModelBase {
 	}
 
 	// Parses list-packages / list-apps into human-readable card rows; other commands show raw output.
-	private static IEnumerable<string> ParseRows(string key, ClioToolCallResult result) {
+	internal static IEnumerable<string> ParseRows(string key, ClioToolCallResult result) {
 		if (string.IsNullOrWhiteSpace(result.RawText)) {
 			yield break;
 		}
@@ -332,6 +332,14 @@ public sealed partial class ClioWorkflowViewModel : ViewModelBase {
 				yield break;
 			}
 			if (key == "list-packages" && root.TryGetProperty("packages", out JsonElement pkgs) && pkgs.ValueKind == JsonValueKind.Array) {
+				if (root.TryGetProperty("truncated", out JsonElement truncated)
+					&& truncated.ValueKind == JsonValueKind.True
+					&& root.TryGetProperty("count", out JsonElement count)
+					&& count.TryGetInt32(out int pageCount)
+					&& root.TryGetProperty("total", out JsonElement total)
+					&& total.TryGetInt32(out int totalCount)) {
+					yield return $"Showing {pageCount} of {totalCount} packages. More packages remain.";
+				}
 				foreach (JsonElement p in pkgs.EnumerateArray()) {
 					yield return $"{Prop(p, "name", "Name")}  ·  {Prop(p, "version", "Version")}  ·  {Prop(p, "maintainer", "Maintainer")}";
 				}

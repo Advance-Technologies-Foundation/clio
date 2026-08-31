@@ -479,6 +479,102 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
+	[Description("ENG-96114 end to end: when the guide places content ABOVE a positional anchor, the anchor must not be left where the mobile template pinned it. Inserting at index 0 pushes the anchor down inside the parent's items, but a grid parent positions by layoutConfig — so the guide must also carry a merge moving the anchor's own row. Before this the converted progress bar rendered under the tab strip and nothing reported it.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide frees the anchor's row for content placed above it")]
+	[AllureDescription("Iterates the seeded application's pages through the real clio MCP server until one converts with indexed positional inserts, then asserts the guide carries exactly one merge for that anchor and that its layoutConfig.row is no longer the template's row 1 — the anchor made room for the content above it. No seeded page with content above the wrapper degrades to Ignore, never a vacuous pass; a conversion failure always fails the test.")]
+	public async Task MobilePageConversionGuideTool_Should_Free_The_Anchor_Row_For_Content_Above_It() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one places content above an anchor. The converter's own reason text is
+		// the trigger; a conversion FAILURE is a regression, not a seed gap.
+		MobilePageConversionGuide guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (PlacedAboveAnchor(candidate).Count > 0) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		if (guide is null) {
+			if (failedCandidates.Count > 0) {
+				Assert.Fail(
+					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
+			}
+			Assert.Ignore(
+				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converted successfully, but none placed content above a positional anchor. Add a tabbed record "
+				+ "page with an element above CardContentWrapper (e.g. a stage progress bar) to the seed application "
+				+ "to exercise this surface.");
+		}
+
+		// Assert — the anchor made room. The exact arithmetic is unit-tested; what must hold end to end is that
+		// the anchor no longer sits in the row the template pinned it to, and that it is re-placed exactly once.
+		List<ElementMapEntry> above = PlacedAboveAnchor(guide);
+		string anchorName = ResolveBundledPositionalAnchor();
+		anchorName.Should().NotBeNullOrEmpty(
+			because: "the bundled tabbed template rule must declare the mobile anchor its ':top' content is placed "
+				+ $"around, so '{convertedSchemaName}' has something to be positioned against");
+
+		List<ElementMapEntry> anchorMerges = [.. guide.ElementMap
+			.Where(e => e.Operation == "merge" && string.Equals(e.MobileName, anchorName, StringComparison.OrdinalIgnoreCase))];
+		anchorMerges.Should().ContainSingle(
+			because: "the anchor is re-placed exactly once, whether the page produced a template twin for it or not");
+		JsonNode row = anchorMerges[0].MobileValues?["layoutConfig"]?["row"];
+		row.Should().NotBeNull(
+			because: $"'{anchorName}' is positioned by layoutConfig, so the {above.Count} element(s) above it can "
+				+ "only be made room for by moving its row");
+		row!.GetValue<int>().Should().BeGreaterThan(1,
+			because: "leaving the anchor in the template's first row is exactly the defect — the content above it "
+				+ "would render below it");
+
+		foreach (ElementMapEntry entry in above) {
+			entry.MobileValues?["layoutConfig"].Should().NotBeNull(
+				because: $"'{entry.MobileName}' must carry its own row too: freeing the anchor's row is not enough, "
+					+ "the mobile runtime does not auto-place an unpositioned child into the free cell");
+		}
+	}
+
+	/// <summary>
+	/// Surviving inserts the converter routed ABOVE a positional anchor: they carry an index and say so in the
+	/// reason the converter composed. Keyed on the reason because the anchor name is page/template data, not
+	/// something this test may assume.
+	/// </summary>
+	private static List<ElementMapEntry> PlacedAboveAnchor(MobilePageConversionGuide guide) =>
+		guide?.ElementMap is null
+			? []
+			: [.. guide.ElementMap.Where(e =>
+				e.Operation == "insert" && e.Index is not null
+				&& e.Reason is not null && e.Reason.Contains("placed above the mobile ", StringComparison.Ordinal))];
+
+	/// <summary>
+	/// The MOBILE anchor the bundled tabbed-template rule places its positional content around, read from the
+	/// shipped rules file rather than parsed out of the converter's prose — a reason-wording change must not
+	/// break this test, and the rule is the authoritative source anyway. Mirrors
+	/// <see cref="ResolveBundledRemovableTypes"/>. Null when no rule declares a positional entry.
+	/// </summary>
+	private static string ResolveBundledPositionalAnchor() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+			.Where(t => t.Mobile == "MobilePageWithTabsFreedomTemplate")
+			.SelectMany(t => t.Containers)
+			.Where(c => c.Mobile is not null && c.Mobile.Contains(':'))
+			.Select(c => c.Mobile.Split(':', 2)[0].Trim())
+			.FirstOrDefault(anchor => anchor.Length > 0);
+
+	[Test]
 	[Description("Container child-slot regression guard: every surviving container insert that another surviving insert targets as parentName must physically declare THE SLOT IT IS TARGETED THROUGH ('items', 'tools', 'menuItems', …) in its mobileValues, and the viewConfigDiff assembled from the element map (in map order, exactly as the guide's nextSteps instruct the caller) must apply cleanly through the faithful differ clones. Before the converter declared those slots, the FIRST parent-child insert pair failed the Creatio differ with 'Item X is not a container for other items', so this is non-vacuous on any seeded page with nested containers. A conversion failure always fails the test, and so does a page that converted WITH tabAreaLayers yet produced no parent-targeting insert (the synthesized layers guarantee one by construction); Ignores only when the seed truly carries no nested structure at all.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide returns an element map the Creatio differ applies cleanly")]
