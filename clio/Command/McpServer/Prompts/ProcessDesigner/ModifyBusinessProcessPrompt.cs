@@ -23,7 +23,8 @@ public static class ModifyBusinessProcessPrompt {
 		$"""
 		 Edit the existing business process `{process}` on Creatio environment `{environmentName}` with the
 		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
-		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract;
+		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
+		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `addParameter`, `addMapping`, `setParameter`, `removeParameter`,
 		 `setFilter`, `clearFilter`, `setSignal`, `setElement`, `setConnections`, or `clearConnections`
