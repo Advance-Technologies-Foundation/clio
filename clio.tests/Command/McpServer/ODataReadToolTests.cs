@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -1160,5 +1160,65 @@ public sealed class ODataReadToolTests {
 			because: "an empty error body must degrade to an explicit contentless message rather than an empty string");
 		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
 			because: "an empty body is not identifiable as a routing miss, so the registration hint must not be appended");
+	}
+
+	[TestCase("{\"value\":\"private response marker\"}", TestName = "Read_Should_Reject_NonArrayValue")]
+	[TestCase("{\"detail\":\"private response marker\"}", TestName = "Read_Should_Reject_ObjectWithoutODataContext")]
+	[TestCase("{\"value\":{\"detail\":\"private response marker\"}}", TestName = "Read_Should_Reject_ObjectValue")]
+	[Category("Unit")]
+	[Description("Valid JSON that is not an OData payload is a failure, not a record: ExecuteGetRequest returns bodies for non-2xx statuses too, so a proxy or auth body used to come back as success:true and clio-run then forwarded it without failure redaction.")]
+	public void Read_Should_Reject_ValidJsonThatIsNotAnODataPayload(string responseBody) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(responseBody);
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "only an OData collection (an array `value`) or a self-identified $entity is a record");
+		response.Error.Should().Contain("did not return a JSON OData response",
+			because: "the body-free transport diagnostic is the fixed classification for a non-OData body");
+		response.Error.Should().NotContain("private response marker",
+			because: "no fragment of an untrusted server or proxy body may reach the MCP transcript");
+		response.Value.Should().BeNull(
+			because: "a failure must not carry a payload for clio-run to forward");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A genuine OData single-entity response — identified by an @odata.context ending in /$entity — is still accepted after the non-OData bodies are rejected.")]
+	public void Read_Should_Accept_SingleEntity_When_ODataContextIdentifiesIt() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(applicationClient);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(serviceUrlBuilder);
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact/$entity\",\"Id\":\"1\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact"
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the body identifies itself as an OData entity");
+		response.Count.Should().Be(1);
 	}
 }

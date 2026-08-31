@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -95,6 +96,17 @@ public static class McpToolErrorFilter
 			if (!arguments.TryGetValue(argumentName, out JsonElement argumentValue)) {
 				continue;
 			}
+			//JsonElement.Deserialize happily returns null for a reference type, so {"args":null} never
+			//threw and the tool ran with a null composite argument - odata-read answered with a typed
+			//NRE-derived success:false while the same call through clio-run reported a missing required
+			//argument. A required, non-nullable parameter rejects an explicit JSON null here so both
+			//paths return the same invalid-parameter-type contract. Optional and nullable parameters
+			//are untouched: null is a legitimate value for them.
+			if (argumentValue.ValueKind == JsonValueKind.Null && IsRequiredNonNullable(parameter)) {
+				result = CreateJsonErrorResult(BuildNullArgumentErrorMessage(
+					context.Params.Name, parameter.ParameterType, argumentName));
+				return true;
+			}
 			try {
 				argumentValue.Deserialize(parameter.ParameterType, SerializerOptions);
 			}
@@ -110,6 +122,28 @@ public static class McpToolErrorFilter
 
 		return false;
 	}
+
+	/// <summary>
+	/// True when the parameter must carry a value: it is marked <see cref="RequiredAttribute"/>, has no
+	/// default, and its type is not a nullable one. A nullable or defaulted parameter accepts null.
+	/// </summary>
+	private static bool IsRequiredNonNullable(ParameterInfo parameter) {
+		if (parameter.GetCustomAttribute<RequiredAttribute>() is null || parameter.HasDefaultValue) {
+			return false;
+		}
+		Type type = parameter.ParameterType;
+		if (Nullable.GetUnderlyingType(type) is not null) {
+			return false;
+		}
+		//A reference type declared as nullable (`Args?`) is annotated rather than a distinct CLR type,
+		//so the nullable context of the declaration is what tells them apart.
+		return new NullabilityInfoContext().Create(parameter).WriteState != NullabilityState.Nullable;
+	}
+
+	private static string BuildNullArgumentErrorMessage(string toolName, Type parameterType, string argumentName) =>
+		$"invalid-parameter-type: argument '{argumentName}' for MCP tool '{toolName}' must be "
+		+ $"{GetExpectedJsonType(parameterType, argumentName)}. Received a JSON null, and the argument "
+		+ "is required.";
 
 	private static CallToolResult CreateJsonErrorResult(string message) {
 		return new CallToolResult {
@@ -214,9 +248,17 @@ public static class McpToolErrorFilter
 	/// </summary>
 	private static bool IsJsonObjectContract(Type type) =>
 		typeof(System.Collections.IDictionary).IsAssignableFrom(type)
-		|| type.GetInterfaces().Any(candidate => candidate.IsGenericType
-			&& (candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>)
-				|| candidate.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>)));
+		//Type.GetInterfaces() lists the interfaces a type implements, never the type itself, so a
+		//property declared AS IReadOnlyDictionary<string,string> - ApplicationCreateArgs'
+		//title-localizations, for one - fell through to the IEnumerable branch and was reported as
+		//"an array". The declared type has to be tested on its own before the implemented ones.
+		|| IsDictionaryDefinition(type)
+		|| type.GetInterfaces().Any(IsDictionaryDefinition);
+
+	private static bool IsDictionaryDefinition(Type candidate) =>
+		candidate.IsGenericType
+		&& (candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>)
+			|| candidate.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>));
 
 	private static string? GetJsonPropertyName(PropertyInfo property) =>
 		property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;

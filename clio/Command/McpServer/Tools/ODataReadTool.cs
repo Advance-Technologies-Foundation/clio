@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.ComponentModel;
@@ -322,12 +322,21 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 				return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
 			}
 
+			//A collection response carries `value` as an ARRAY. Accepting any `value` meant a proxy or
+			//auth body such as {"value":"private response marker"} came back as success:true with the
+			//marker as the payload, and clio-run then forwarded it without failure redaction.
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
-				return ParseCollectionResponse(root, valueEl, countRequested);
+				return valueEl.ValueKind == JsonValueKind.Array
+					? ParseCollectionResponse(root, valueEl, countRequested)
+					: ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 			}
 
-			// Single-entity response (no value wrapper)
-			return new ODataReadResponse(true, null, 1, root.Clone(), null);
+			//Single-entity response (no value wrapper). Only OData identifies itself as one: the
+			//@odata.context annotation ends with "/$entity". Without that check ANY parsed JSON object
+			//was a successful record - {"detail":"private response marker"} included.
+			return IsSingleEntityResponse(root)
+				? new ODataReadResponse(true, null, 1, root.Clone(), null)
+				: ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 		} catch (Exception) {
 			// EVERY parse failure gets the same fixed diagnostic, carrying no fragment of the body. Testing
 			// the first character was not enough: a malformed body that still starts with '{' or '[' — a
@@ -338,6 +347,18 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			return ODataReadResponse.Failure(ODataResponseError.DescribeNonJsonReadResponse());
 		}
 	}
+
+	/// <summary>
+	/// True when the body identifies itself as an OData single-entity response. Creatio serves reads
+	/// under the default metadata level, so a genuine entity always carries an @odata.context whose
+	/// value ends with "/$entity"; nothing else may be treated as a record.
+	/// </summary>
+	private static bool IsSingleEntityResponse(JsonElement root) =>
+		root.ValueKind == JsonValueKind.Object
+		&& root.TryGetProperty("@odata.context", out JsonElement context)
+		&& context.ValueKind == JsonValueKind.String
+		&& context.GetString() is { } contextValue
+		&& contextValue.EndsWith("/$entity", StringComparison.Ordinal);
 
 	private static ODataReadResponse ParseCollectionResponse(
 		JsonElement root,
