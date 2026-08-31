@@ -74,7 +74,13 @@ param(
     [Parameter(Mandatory = $true)][string] $Version,
     [ValidateSet('Debug','Release')][string] $Configuration,
     [string] $Framework,
-    [switch] $SkipTests
+    [switch] $SkipTests,
+    # Run the gates and STOP before anything is written. This exists because the gates could not be
+    # tested without risking the repository they protect: steps 6 and 7 write into the CLIO tree, not the
+    # package tree, so exercising the provenance checks against a throwaway package clone still overwrote
+    # clio's archive and pins with whatever placeholder version the test passed. A clean tree, an honest
+    # pin and the wrong content - the exact class the gates exist to stop, reachable by testing them.
+    [switch] $ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -154,7 +160,49 @@ $producingCommit = (git -C $PackageRepoPath rev-parse HEAD).Trim()
 if ($producingCommit -notmatch '^[0-9a-f]{40}$') {
     Die "git rev-parse HEAD did not return a commit id in $PackageRepoPath."
 }
-Ok "producing commit $producingCommit (tree clean)"
+
+# Clean is not the same as CURRENT, and the difference is the whole remaining hole. A detached HEAD on an
+# old commit, or a branch left behind after someone else advanced it, is perfectly clean - the script would
+# cut it and the pin would name that commit HONESTLY. The provenance would not lie; the head would just be
+# the wrong one. That has happened: an archive was cut before a rebase and silently predated it.
+#
+# This check belongs here and cannot live in clio.tests. A fixture there has ONE repository open, so
+# "is this commit the tip of a branch in the OTHER repository" is a question it cannot ask. The script has
+# both, so it is the only place the question is answerable at all.
+$branch = git -C $PackageRepoPath symbolic-ref -q --short HEAD 2>$null
+if (-not $branch) {
+    Die ("The package repository is on a DETACHED HEAD at $producingCommit, so the archive would correspond " +
+        "to no branch. The pin would name that commit truthfully and still be useless to a reviewer, who " +
+        "has a branch name and not a loose commit. Check out the branch you mean to ship.")
+}
+$upstream = git -C $PackageRepoPath rev-parse --abbrev-ref --symbolic-full-name "@{upstream}" 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $upstream) {
+    # No upstream is normal for local work and is NOT an error: there is nothing to be behind. Said out
+    # loud rather than passed over, because it is also the state in which this check proves least.
+    Ok "producing commit $producingCommit (branch $branch, tree clean, no upstream to compare against)"
+} else {
+    $behind = (git -C $PackageRepoPath rev-list --count "HEAD..$upstream" 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Die "Cannot compare $branch against $upstream in $PackageRepoPath."
+    }
+    if ([int]$behind -gt 0) {
+        Die ("Branch $branch is $behind commit(s) behind $upstream, so the archive would omit work that is " +
+            "already on the branch it claims to ship. Merge or rebase first, THEN cut. This is the failure " +
+            "an archive hit once by predating a rebase - it was clean, and the pin named its head correctly.")
+    }
+    $ahead = (git -C $PackageRepoPath rev-list --count "$upstream..HEAD" 2>$null).Trim()
+    # Ahead is expected - the restamp below is itself an unpushed commit. Reported so the operator can see
+    # how much of what is being shipped exists only locally.
+    # LIMIT, stated rather than papered over: "behind" is measured against the upstream ref AS LAST FETCHED.
+    # This script does not fetch - a build script that reaches the network fails differently on every host,
+    # and off-VPN it would fail always. So it catches a stale checkout, not an unfetched remote.
+    Ok "producing commit $producingCommit (branch $branch, tree clean, $ahead ahead of $upstream, 0 behind)"
+}
+
+if ($ValidateOnly) {
+    Ok "-ValidateOnly: the gates passed and nothing was written. Re-run without it to cut for real."
+    exit 0
+}
 
 # ---------------------------------------------------------------- 1. sources compile, tests pass
 if ($SkipTests) {
