@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -4781,27 +4782,67 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.Normalizations.Should().BeNull(because: "no element matched, so nothing was written");
 	}
 
+	/// <summary>One grid and one flex container, so a rule crossing component types is visible.</summary>
+	private static PageBundleInfo TwoContainerBundle() => Bundle("""
+		[ { "name": "CardGrid", "type": "crt.GridContainer", "items": [
+			{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
+		  { "name": "Row", "type": "crt.FlexContainer", "items": [
+			{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
+		""");
+
 	[Test]
-	[Description("A rule with NO filters matches every insert of EVERY type — the same permissive reading the components group gives an unfiltered entry. The bundled file is held to a stricter bar by LoadBundled_OverridesCarryDataOnly; this pins the mechanism.")]
-	public void Analyze_OverrideFilters_ShouldMatchEveryTypeWhenTheRuleDeclaresNoFilter() {
-		// Arrange — one grid and one flex container, and a rule that constrains neither.
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "CardGrid", "type": "crt.GridContainer", "items": [
-				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] },
-			  { "name": "Row", "type": "crt.FlexContainer", "items": [
-				{ "name": "Status", "type": "crt.Input", "control": "$Status" } ] } ]
-			""");
-		var unfiltered = new ComponentPropertyOverrideRule {
+	[Description("A rule whose `filters` key is ABSENT is skipped entirely: the filters are the whole of what an override rule targets, so a forgotten key must not be read as 'everything' and stamp values onto every component on the page.")]
+	public void Analyze_OverrideFilters_ShouldSkipTheRuleWhenTheFiltersKeyIsAbsent() {
+		// Arrange — Filters left unset, which is what a rules file without the key deserialises to.
+		var noFilterKey = new ComponentPropertyOverrideRule {
 			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "borderRadius": "large" }""")
 		};
 
 		// Act
-		MobilePageConversionGuide guide = AnalyzeOverrides(bundle, unfiltered);
+		MobilePageConversionGuide guide = AnalyzeOverrides(TwoContainerBundle(), noFilterKey);
+
+		// Assert
+		foreach (string name in new[] { "CardGrid", "Row" }) {
+			Element(guide, name).MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+				because: $"the rule is incomplete, so {name} must be left exactly as it arrived");
+		}
+		guide.Normalizations.Should().BeNull(because: "the rule never ran, so nothing was written or reported");
+	}
+
+	[Test]
+	[Description("An EMPTY filter list is the explicit opt-in to 'every insert of every type' — it can only be written deliberately, unlike a missing key, so it keeps the unbounded reading.")]
+	public void Analyze_OverrideFilters_ShouldMatchEveryTypeWhenTheFilterListIsEmpty() {
+		// Arrange
+		var unbounded = new ComponentPropertyOverrideRule {
+			Filters = [],
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "borderRadius": "large" }""")
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(TwoContainerBundle(), unbounded);
 
 		// Assert
 		Element(guide, "CardGrid").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large");
 		Element(guide, "Row").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("large",
-			because: "without filters the rule is unbounded — it reaches a different component type too");
+			because: "an empty list is unbounded on purpose — it reaches a different component type too");
+	}
+
+	[Test]
+	[Description("The absent/empty distinction survives DESERIALISATION, which is where it has to hold: the rules file is JSON, and a missing key and an empty array must not collapse onto the same value.")]
+	public void ParseRules_ShouldDistinguishAnAbsentFilterListFromAnEmptyOne() {
+		// Arrange & Act
+		WebToMobilePageConversionRules parsed = WebToMobilePageConversionRulesCatalog.ParseStream(
+			new MemoryStream(Encoding.UTF8.GetBytes("""
+			{ "componentPropertyOverrides": [
+				{ "values": { "borderRadius": "large" } },
+				{ "filters": [], "values": { "borderRadius": "large" } } ] }
+			""")));
+
+		// Assert
+		parsed.ComponentPropertyOverrides[0].Filters.Should().BeNull(
+			because: "a missing key must stay distinguishable from an empty array, or the pass cannot tell "
+				+ "a forgotten selector from a deliberate one");
+		parsed.ComponentPropertyOverrides[1].Filters.Should().NotBeNull().And.BeEmpty();
 	}
 
 	[Test]

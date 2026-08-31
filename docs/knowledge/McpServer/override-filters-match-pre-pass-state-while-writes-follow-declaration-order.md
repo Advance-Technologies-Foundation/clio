@@ -23,11 +23,28 @@ This replaces the earlier invariant, where the rule carried its own `type`, `byT
 `Dictionary<string, Rule>`, and a duplicate `type` silently LAST-WINS — a second rule for a type used to
 make the first one vanish entirely.
 
-A filter entry that declares nothing — no type, no value — matches NOTHING. A rule with NO filters at
-all is the opposite: it matches every insert of EVERY type, mirroring how the components group reads an
-unfiltered entry. That is almost never intended, so `LoadBundled_OverridesCarryDataOnly` requires every
-bundled rule to declare at least one filter and every filter to name a type. Neither guard reaches a
-rules file served from the CDN.
+A filter entry that declares nothing — no type, no value — matches NOTHING.
+
+At the RULE level, absent and empty are deliberately different, and this is the one place the two groups
+diverge:
+
+| `filters` on an override rule | Behaviour |
+|---|---|
+| key absent, or `null` | the rule is SKIPPED |
+| `[]` | applies to every insert of every type |
+| `[…]` | normal matching |
+
+`ComponentEquivalenceRule.Filters` instead reads an absent list as "match everything", because there the
+filters NARROW a rule that already carries its own selector (`web` / `viewConfigTemplates`). On an
+override rule the filters ARE the selector, so a missing key means the rule is incomplete rather than
+universal — and reading it as "everything" would let one forgotten key stamp values onto every component
+on the page, silently. The empty list keeps the unbounded reading because it can only be written on
+purpose. The MATCHER itself stays shared and identical between the two groups; only this rule-level
+admission differs.
+
+`LoadBundled_OverridesCarryDataOnly` additionally requires every bundled rule to declare at least one
+filter and every filter to name a type. That guard does not reach a rules file served from the CDN — but
+there, the absent-key case now fails safe rather than applying to everything.
 
 `ElementFilterRule` is SHARED between the two groups and both sides run one match rule (entries OR-ed,
 each AND-ing every constraint it declares, deep equality on values). They differ only in what they read:

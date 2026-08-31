@@ -277,9 +277,19 @@ public sealed class ComponentPropertyOverrideRule {
 	/// reads as "either radius".
 	/// </para>
 	/// <para>
-	/// Empty or absent matches EVERY insert of every type, mirroring the components group. That is almost never
-	/// what a standard wants, so <c>LoadBundled_OverridesCarryDataOnly</c> requires every bundled rule to
-	/// declare at least one filter.
+	/// ABSENT and EMPTY are deliberately different here, because forgetting the key and meaning "everything"
+	/// must not look alike. An absent list (no <c>filters</c> key, or null) SKIPS the rule entirely: the
+	/// filters are the whole of what an override rule targets, so a rule without them is incomplete rather
+	/// than universal, and a typo must not silently stamp values onto every component on the page. An EMPTY
+	/// list is the explicit opt-in to "every insert of every type" — it can only be written on purpose.
+	/// <c>LoadBundled_OverridesCarryDataOnly</c> additionally holds the bundled file to at least one filter
+	/// naming a type, so even the explicit form cannot ship here by accident.
+	/// </para>
+	/// <para>
+	/// This is the ONE place the two groups diverge, and only at the rule level:
+	/// <see cref="ComponentEquivalenceRule.Filters"/> reads an absent list as "match everything", because
+	/// there the filters NARROW a rule that already carries its own selector (<c>web</c> /
+	/// <c>viewConfigTemplates</c>). The matcher itself stays shared and identical.
 	/// </para>
 	/// <para>
 	/// Every rule's filters are evaluated against the element as it ENTERED the pass, before the first value
@@ -288,7 +298,7 @@ public sealed class ComponentPropertyOverrideRule {
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("filters")]
-	public IReadOnlyList<ElementFilterRule> Filters { get; init; } = [];
+	public IReadOnlyList<ElementFilterRule> Filters { get; init; }
 
 	/// <summary>Property name → value stamped onto the inserted element's mobile values.</summary>
 	[JsonPropertyName("values")]

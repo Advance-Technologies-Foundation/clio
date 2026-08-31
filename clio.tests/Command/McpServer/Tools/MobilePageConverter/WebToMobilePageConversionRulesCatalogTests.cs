@@ -162,11 +162,12 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		// Assert
 		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Values.Count > 0,
 			because: "a rule without values cannot stamp anything");
-		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Filters.Count > 0,
-			because: "filters are the rule's ONLY selector now — an entry without them would stamp onto every "
-				+ "insert of every type, which no standard wants");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Filters != null && o.Filters.Count > 0,
+			because: "filters are the rule's ONLY selector — an ABSENT list makes the pass skip the rule "
+				+ "outright, and an EMPTY one would stamp onto every insert of every type; no standard wants "
+				+ "either, so the bundled file must always name what it targets");
 		rules.ComponentPropertyOverrides
-			.SelectMany(o => o.Filters)
+			.SelectMany(o => o.Filters ?? [])
 			.Should().OnlyContain(f => !string.IsNullOrWhiteSpace(f.Type),
 				because: "a bundled filter that names no type would widen its standard across component types");
 	}

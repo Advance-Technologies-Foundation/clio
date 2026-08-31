@@ -4726,8 +4726,15 @@ public static class WebToMobileAnalysisService {
 		// exactly the way a components-group entry is — by running its filters. Every rule that matches is
 		// applied, in DECLARATION order, and two matching rules that write the same key resolve
 		// last-declared-wins per KEY. That is also how one type mixes replace and merge semantics without
-		// loosening the per-rule merge flag. A rule that stamps nothing is dropped up front.
-		List<ComponentPropertyOverrideRule> declared = [.. overrides.Where(r => r?.Values is { Count: > 0 })];
+		// loosening the per-rule merge flag.
+		//
+		// Dropped up front: a rule that stamps nothing, and a rule with NO `filters` key at all. The second is
+		// the important one — the filters are the whole of what an override rule targets, so a rule missing
+		// them is incomplete, not universal, and treating it as "matches everything" would let one forgotten
+		// key stamp values onto every component on the page, silently. An EMPTY list still means "everything":
+		// that form can only be written deliberately, so it stays available.
+		List<ComponentPropertyOverrideRule> declared =
+			[.. overrides.Where(r => r?.Values is { Count: > 0 } && r.Filters is not null)];
 		if (declared.Count == 0) {
 			return result;
 		}
@@ -4770,7 +4777,7 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Whether an override rule applies to the element carrying <paramref name="values"/>. A rule with no
-	/// filters applies to every insert of its type — the long-standing behavior. Otherwise the same rule as
+	/// filters (an EMPTY list; an absent one never gets here) applies to every insert. Otherwise the same rule as
 	/// <see cref="MatchesAnyFilter"/> on the source side: the filters are OR-ed, each one AND-s every
 	/// constraint it declares, a value matches only on DEEP equality (so an ABSENT property never matches),
 	/// and a filter that declares nothing matches nothing. The element's values are only READ here — see the
@@ -4778,6 +4785,8 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static bool MatchesFilters(JsonObject values, IReadOnlyList<ElementFilterRule> filters) {
 		if (filters is not { Count: > 0 }) {
+			// Only the EMPTY list reaches this — the caller has already dropped a rule whose `filters` key is
+			// absent — and an empty list is the deliberate "every insert of every type".
 			return true;
 		}
 		string type = values["type"] is JsonValue node && node.TryGetValue(out string declared) ? declared : null;
