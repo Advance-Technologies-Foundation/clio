@@ -54,9 +54,14 @@ transcription exercise. The full contract with worked examples is in
 
 - **Business requirements, not construction steps.** State the outcome the business needs. Never
   name process elements, tool names, arguments, schema names, or UIds.
-- **Two observation blocks per case, always both**: *Design time* — what the person opening the
-  process designer must see; *Runtime* — what must happen when the process actually runs, with the
-  observable trace that proves it.
+- **Three observation levels — Stored, Design time, Runtime.** Each case names at least one and says
+  where it stops; a storage-level case is legitimate but must not read as proof the feature works.
+  At least one case in the suite must carry a value through to runtime, or the suite states what
+  blocks it.
+- **Adversarial cases state their input verbatim.** When the case tests a refusal or an error message,
+  the exact input is the test. Mark it adversarial; it cannot double as a discovery case.
+- **A wrong-but-known outcome is labelled platform behaviour**, paired with the neighbouring outcome
+  that *would* be a regression. Without the pair the label stops detecting anything.
 - **Self-contained.** The executor session has no memory, no repository, and no access to this
   Jira issue. Anything it cannot discover through the clio MCP surface must be stated in the prompt.
 - **No leading.** Do not hint at the element, the order of operations, or the tool to call. If the
@@ -69,7 +74,10 @@ transcription exercise. The full contract with worked examples is in
 2. Identify the **business capability** that shipped — the thing a user can now express in a
    process that they could not before. This is the subject of the prompt, not the implementation.
 3. Draft the cases: happy path first, then the negative/boundary cases the diff actually supports.
-   Do not invent behavior the code does not implement.
+   Do not invent behavior the code does not implement. **Group them by use site** — a capability used
+   in two places fails differently in each — and write the *Deliberately not covered* section as you
+   go, with a reason per omission. Both travel with the prompt, because the executor's coverage is
+   bounded by it.
 4. Check the draft against every rule in `references/prompt-contract.md`. Reject and rewrite your
    own draft on the first violation — this is cheaper than a wasted stand run.
 5. Write it to `spec/<feature>/<feature>-manual-test-prompt.md`. This file is the version of record

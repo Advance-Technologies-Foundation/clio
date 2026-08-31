@@ -101,11 +101,14 @@ attempt; a retried run measures a different prompt than the one on file.
 
 ## Phase 4 — browser verification
 
-Verify in the browser what the prompt claims must be observable — the designer view for the
-design-time block, the record/task/process log for the runtime block. The executor's own account of
-success is evidence of what it believed, not of what happened.
+Verify in the browser what the prompt claims must be observable, per level the case declares — a
+read-back for the *Stored* level, the designer view for *Design time*, the record/task/process log
+for *Runtime*. The executor's own account of success is evidence of what it believed, not of what
+happened; a stored-level claim in particular is the one most easily reported as working when it is
+not visible anywhere a user looks.
 
-Capture, per case: what was expected, what is actually on screen, PASS or FAIL.
+Capture, per case and per level: what was expected, what is actually there, PASS or FAIL. A case that
+declares only a stored level is not a runtime pass and must not be reported as one.
 
 ## Phase 5 — transcript analysis
 
@@ -123,7 +126,8 @@ supposed to be measured against.
   positive-control result from phase 1
 - **baseline** — the minimum call sequence a well-guided agent would use, per case, stated before the
   numbers. Without it a call count means nothing and cannot be compared across runs
-- per case: PASS/FAIL for design time and runtime, with the browser evidence
+- per case: PASS/FAIL **per declared level** (stored / design time / runtime), with the browser
+  evidence. Note explicitly which cases never reached runtime and why
 - **defects** — the point of the run. Each one carries: the observed behavior, the minimal
   reproduction, the owning component (`CrtProcessBuilder` / clio / knowledge library), and the
   repository the fix belongs in. A defect without a reproduction is an anecdote and will not survive
@@ -162,6 +166,14 @@ Three components, three destinations. Getting this wrong wastes a fix in the wro
 When a defect could belong to two of them — a tool that behaves correctly but is undiscoverable, say
 — record both, with the reason. Deciding it silently is how a guidance gap gets filed as a tool bug
 and closed as "works as designed".
+
+**A fourth disposition: platform behaviour, recognized, not filed.** Some wrong-looking outcomes are
+the Creatio platform's own behaviour, already understood by the team, and filing them against
+`CrtProcessBuilder` wastes a round. When the prompt labelled a case that way, carry the label into the
+report — and check the neighbouring regression the case names. That check is the whole value of the
+label: "the designer cannot display the value" is expected, "the value is gone after saving" is a
+regression, and only the second is a defect. A label with no such check performed is not a
+disposition, it is a skipped case.
 
 ## Reuse, do not reimplement
 

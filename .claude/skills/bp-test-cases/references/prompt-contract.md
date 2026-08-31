@@ -32,10 +32,43 @@ Permitted, because the executor cannot invent them: the environment/stand name, 
 section the scenario lives in, business field names as a user sees them in the UI, and concrete
 business values (amounts, thresholds, dates) needed to make the expected result checkable.
 
-## Rule 2 — both observation blocks, every case
+**Carve-out — adversarial cases state their input verbatim.** When the case tests a refusal, an error
+message, or tolerance of a wrong form, the exact input *is* the test and must be given literally:
+"set it using, verbatim, `System.Math.Abs(-1)`". Rule 1 governs cases that test **discovery** — can
+the agent find the right form unaided. It does not govern cases that test **reaction** to a form the
+tester chose. Mark such a case as adversarial so a reader does not mistake it for a leaked
+implementation detail, and keep the two kinds separate: a case cannot test discovery and reaction at
+once, because the verbatim input destroys the discovery.
 
-A case without both blocks tests half the feature. Serialization defects show up in the designer;
-execution defects show up only at runtime; each hides the other.
+## Rule 2 — three observation levels, at least one per case
+
+There are three places a defect becomes visible, and each hides the others:
+
+1. **Stored** — what the toolkit wrote and reads back. Catches serialization: a wrong field, a wrong
+   spelling, a meta-path in the wrong form. Observable without opening anything.
+2. **Design time** — what a person sees after opening the process in the designer. Catches what
+   serializes cleanly but renders wrong, and what the designer refuses to save.
+3. **Runtime** — what happens when the process actually runs. Catches what stores and renders
+   correctly and still does not execute, or executes as the wrong branch.
+
+**Every case declares at least one level and is explicit about where it stops.** A storage-level case
+is legitimate and often the only thing reachable before a dependency lands — but it must say so, so
+nobody reads it as proof the feature works.
+
+**Runtime coverage is mandatory for the suite, not for each case.** A suite whose every case stops at
+what is stored has not tested the feature at all: state which cases carry a value all the way through
+to something a user sees, and if none do, say why and what blocks it.
+
+**Known platform behaviour.** A case may expect an outcome that is wrong-but-known — the designer
+cannot render a formula in a given panel, a save raises a spurious required-field warning. Label it
+explicitly as platform behaviour that must **not** be filed as a defect, and state the neighbouring
+outcome that *would* be a regression (typically: the value being lost rather than merely unshown).
+Without that pairing the label becomes a blanket excuse and the case stops detecting anything.
+
+What each level asks for, concretely:
+
+**Stored** — the expression, value or reference as it is written and read back. Quote the exact form
+expected, because a plausible-but-wrong spelling is the defect this level exists to catch.
 
 **Design time** — what a person sees after opening the process in the designer. Be specific enough
 to fail on a wrong-but-plausible result:
@@ -68,6 +101,24 @@ Cover what the diff supports: the happy path, the branch/negative case, and the 
 actually introduced. Do not pad with scenarios the code does not implement — a failing case that was
 never in scope wastes a stand run and reads as a defect.
 
+## Rule 6 — the suite has a shape, and states what it leaves out
+
+A flat list of cases cannot be reviewed: nobody can tell whether it is complete.
+
+**Group cases by use site.** A capability usually has more than one place it is used, and the groups
+are what make coverage legible — "conditions on flows" and "values in parameters" fail differently
+and need different preconditions. Say in the preamble what each group covers and which groups are
+reachable today.
+
+**Declare what is deliberately not covered, and why.** This section is load-bearing, not politeness:
+it is what answers "why is there no coverage of X?" without a reviewer having to ask. Legitimate
+reasons include a dependency that has not landed, behaviour that changes between platform releases,
+and surface that automated tests already assert and an agent is not expected to author. An omission
+with no stated reason reads as an oversight, and gets re-litigated every review round.
+
+Both sections belong in the prompt file, not only in the run report — the executor's coverage is
+bounded by the prompt, so the boundary has to travel with it.
+
 ## Template
 
 ```markdown
@@ -78,9 +129,12 @@ You are testing a Creatio environment through the clio MCP tools. Work only from
 Environment: <stand alias / URL>
 Application/section: <where the scenario lives>
 
-For every case below: build what the business asks for, then report what you observe in the process
-designer (design time) and what happens when the process runs (runtime). Report exactly what you
-see, including anything that contradicts the expectation.
+For every case below: build what the business asks for, then report what you observe at each level the
+case names. Report exactly what you see, including anything that contradicts the expectation.
+
+Groups: <group 1 - use site, what it covers> / <group 2 - the other use site>
+
+## Group 1 - <use site>
 
 ## TC-01 — <business outcome in one line>
 
@@ -90,19 +144,31 @@ Preconditions:
 Business requirement:
 - <what must happen, in the words of the person who needs it>
 
+Stored — what must be written and read back:
+- <exact expected form, or omit this block>
+
 Design time — what must be visible when the process is opened in the designer:
-- <...>
+- <... or omit this block>
 
 Runtime — what must happen when the process runs, and where it is visible:
-- <...>
+- <... or omit this block, saying what blocks it>
 
 ## TC-02 — <...>
+
+## Deliberately not covered
+
+- <what, and the reason>
 ```
 
 ## Self-check before publishing
 
-- [ ] No element type, tool, argument, schema, package, or file path is named
-- [ ] Every case has both a Design time and a Runtime block
+- [ ] No element type, tool, argument, schema, package, or file path is named — except in a case
+      explicitly marked adversarial, where the verbatim input is the test
+- [ ] Every case names at least one observation level and is explicit about where it stops
+- [ ] At least one case carries a value through to runtime, or the suite says what blocks it
+- [ ] Any wrong-but-known outcome is labelled platform behaviour, paired with the neighbouring
+      outcome that would be a regression
+- [ ] Cases are grouped by use site, and the suite states what it deliberately does not cover
 - [ ] Every expected result is falsifiable — a wrong-but-plausible outcome fails it
 - [ ] The executor could run this with no repository, no memory, no Jira access
 - [ ] Every scenario is supported by the committed diff
