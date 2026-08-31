@@ -298,9 +298,9 @@ internal static class ODataFieldValidation {
 	/// named error ("Could not find a property named 'X' on type 'Y'"), so the offending fields
 	/// become a named tool failure instead of a silent no-write. Because the service reports only
 	/// the FIRST unknown property, each remaining field is re-probed individually (capped at
-	/// <see cref="MaxFollowUpProbes"/>). An empty or non-JSON probe body leaves the fields
-	/// UNVERIFIED, which fails the call the same way - "cannot confirm" must never degrade into
-	/// "proceed and report success".
+	/// <see cref="MaxFollowUpProbes"/>). Any probe body that is not the addressed record carrying the
+	/// probed keys leaves the fields UNVERIFIED, which fails the call the same way - "cannot confirm"
+	/// must never degrade into "proceed and report success".
 	/// </summary>
 	private static ODataWriteResponse? ValidateBySelectProbe(
 		IApplicationClient client,
@@ -313,8 +313,9 @@ internal static class ODataFieldValidation {
 			return null;
 		}
 		if (batch.ServerError is null) {
-			// Empty or non-JSON probe body: the probe did not reach the OData pipeline intact,
-			// so field existence is UNKNOWN - and unknown must not become "proceed to write".
+			// The probe returned no proof: an empty or non-JSON body (the request did not reach the
+			// OData pipeline intact), or JSON that is not the addressed record with the probed keys.
+			// Field existence is UNKNOWN - and unknown must not become "proceed to write".
 			// The transport detail (already redacted) names the layer that failed so the caller
 			// can triage it the same way as a failed write.
 			return ODataWriteResponse.Failure(
@@ -360,19 +361,20 @@ internal static class ODataFieldValidation {
 
 	/// <summary>
 	/// Outcome of a single-record <c>$select</c> probe. Exactly one of the three signals is set:
-	/// <see cref="Succeeded"/> (a clean JSON OData body confirms the keys),
+	/// <see cref="Succeeded"/> (the body is the addressed record and carries every probed key),
 	/// <see cref="ServerError"/> (a recognized Creatio error shape, e.g. the unknown-property
-	/// fault), or <see cref="UnverifiedDetail"/> (an empty or non-JSON body that neither
-	/// confirms nor explains anything). The text signals are redacted at construction.
+	/// fault), or <see cref="UnverifiedDetail"/> (any body that neither proves the keys nor explains
+	/// a failure - empty, non-JSON, or JSON that is not the addressed record). The text signals are
+	/// redacted at construction.
 	/// </summary>
 	private sealed record ProbeResult(bool Succeeded, string? ServerError, string? UnverifiedDetail);
 
 	/// <summary>
 	/// GETs the addressed record with <c>$select=Id,<keys></c> (bounded retry: the probe is
-	/// read-only). A JSON body without a recognized error shape confirms the keys exist; a
-	/// recognized error shape is captured (redacted) as
-	/// <see cref="ProbeResult.ServerError"/>; an empty or non-JSON body is captured (redacted)
-	/// as <see cref="ProbeResult.UnverifiedDetail"/>.
+	/// read-only). Only the addressed record carrying every probed key confirms them; a recognized
+	/// error shape is captured (redacted) as <see cref="ProbeResult.ServerError"/>; every other body -
+	/// empty, non-JSON, or JSON that is not that record - is captured (redacted) as
+	/// <see cref="ProbeResult.UnverifiedDetail"/>.
 	/// </summary>
 	private static ProbeResult Probe(
 		IApplicationClient client,
@@ -404,18 +406,21 @@ internal static class ODataFieldValidation {
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
-			if (IsSelectedRecord(doc.RootElement)) {
-				// The probe asked for a specific record with $select, so the caller's own column names
-				// sit at the root of a successful body. ODataResponseError.TryDetect classifies whole
-				// ERROR envelopes and its ASP.NET branch fires on the mere presence of a root member
-				// named ExceptionType/ExceptionMessage/StackTrace - all legal column names on a
-				// log-shaped entity. A body carrying @odata.context or the selected Id is the record
-				// the probe asked for, so it confirms the keys before any error shape is considered.
+			if (IsAddressedRecordWithKeys(doc.RootElement, id, keys, out string unverifiedReason)) {
+				// The positive check runs BEFORE error detection, and that order matters: the probe asked
+				// for a specific record with $select, so the caller's own column names sit at the root of a
+				// successful body, and ODataResponseError's ASP.NET branch fires on the mere presence of a
+				// root member named ExceptionType/ExceptionMessage/StackTrace - all legal column names on a
+				// log-shaped entity. Proof that this is the addressed record therefore outranks any error
+				// shape it may resemble.
 				return new ProbeResult(true, null, null);
 			}
+			// Not proof. A recognized error envelope explains why; anything else is UNVERIFIED - never
+			// success. The absent-error branch used to return Succeeded: true, so a `{}` body (or any
+			// unrelated JSON object) confirmed the fields, sent the PATCH and recreated #1212.
 			return ODataResponseError.TryDetect(doc.RootElement, out string serverError)
 				? new ProbeResult(false, SensitiveErrorTextRedactor.Redact(serverError), null)
-				: new ProbeResult(true, null, null);
+				: new ProbeResult(false, null, SensitiveErrorTextRedactor.Redact(unverifiedReason));
 		} catch (JsonException) {
 			return new ProbeResult(false, null,
 				SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
@@ -423,14 +428,80 @@ internal static class ODataFieldValidation {
 	}
 
 	/// <summary>
-	/// True when the body is the single record the probe addressed: it carries the service's
-	/// <c>@odata.context</c> annotation or the selected <c>Id</c>. An error envelope carries
-	/// neither, so this distinguishes a record whose own columns happen to be named like the
-	/// members of an error shape from an actual error.
+	/// True only when the body is positive proof that the probed keys exist: it is the record the
+	/// probe addressed (an <c>Id</c> equal to <paramref name="id"/>) and it carries every requested
+	/// key. The absence of a known error shape is NOT proof - the previous check accepted any object
+	/// carrying <c>@odata.context</c> OR any <c>Id</c>, and the caller accepted every other JSON
+	/// shape outright, so a <c>{}</c> probe body, an unrelated record or a partial projection all
+	/// reported the fields as confirmed, sent the PATCH and recreated #1212. Everything that is not
+	/// this shape leaves the fields unverified and the caller fails without writing.
 	/// </summary>
-	private static bool IsSelectedRecord(JsonElement root) =>
-		root.ValueKind == JsonValueKind.Object
-		&& (root.TryGetProperty("@odata.context", out _) || root.TryGetProperty("Id", out _));
+	/// <param name="unverifiedReason">
+	/// When the method returns <see langword="false"/>, states which part of the proof is missing so
+	/// the caller's failure message names it; otherwise empty.
+	/// </param>
+	private static bool IsAddressedRecordWithKeys(
+		JsonElement root, string id, IReadOnlyList<string> keys, out string unverifiedReason) {
+		unverifiedReason = string.Empty;
+		if (root.ValueKind != JsonValueKind.Object) {
+			unverifiedReason = "the probe response was not a JSON object, so it is not the addressed record.";
+			return false;
+		}
+		if (!(root.TryGetProperty("Id", out JsonElement probedId) && IsSameKey(probedId, id))) {
+			unverifiedReason =
+				"the probe response did not identify itself as the addressed record - it carries no Id equal to the requested key.";
+			return false;
+		}
+		List<string> missing = keys.Where(key => !HasSelectedMember(root, key)).ToList();
+		if (missing.Count > 0) {
+			unverifiedReason =
+				"the probe response is the addressed record but does not carry "
+				+ string.Join(", ", missing.Select(key => $"'{key}'"))
+				+ ", so those field(s) are not confirmed to exist.";
+			return false;
+		}
+		return true;
+	}
+
+	/// <summary>
+	/// Compares the probed <c>Id</c> with the addressed key. Almost every Creatio entity keys on a
+	/// GUID but some key on a numeric or string column, so all three representations are accepted;
+	/// GUIDs are compared parsed rather than textually, because the service may echo a casing or
+	/// brace form the caller did not use.
+	/// </summary>
+	private static bool IsSameKey(JsonElement probedId, string id) {
+		switch (probedId.ValueKind) {
+			case JsonValueKind.String:
+				string? probedText = probedId.GetString();
+				return Guid.TryParse(probedText, out Guid probedGuid) && Guid.TryParse(id, out Guid addressedGuid)
+					? probedGuid == addressedGuid
+					: string.Equals(probedText, id, StringComparison.OrdinalIgnoreCase);
+			case JsonValueKind.Number:
+				return string.Equals(probedId.GetRawText(), id.Trim(), StringComparison.Ordinal);
+			default:
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// True when the record carries the selected member. A member path (<c>A/B</c>) counts either as a
+	/// literal member name - a flattened projection - or by walking the nested objects the path names,
+	/// so neither serialization of a navigation select is mistaken for a missing field. An explicit
+	/// <c>null</c> counts as present: the property exists, it just has no value.
+	/// </summary>
+	private static bool HasSelectedMember(JsonElement root, string key) {
+		if (root.TryGetProperty(key, out _)) {
+			return true;
+		}
+		JsonElement current = root;
+		foreach (string segment in key.Split('/')) {
+			if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out JsonElement next)) {
+				return false;
+			}
+			current = next;
+		}
+		return true;
+	}
 
 	/// <summary>
 	/// Matches the OData service's unknown-property fault:

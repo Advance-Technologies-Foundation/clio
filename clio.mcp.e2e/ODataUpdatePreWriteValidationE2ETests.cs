@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -135,6 +135,37 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 		requests.Should().NotContain(request => request.Method == "PATCH",
 			because: "the stub acks a PATCH, so only the absence of the request itself proves the tool refused "
 				+ "to write rather than writing and reporting a failure");
+	}
+
+	[Test]
+	[AllureTag(ODataUpdateTool.ToolName)]
+	[AllureName("odata-update refuses to write when the degraded probe proves nothing")]
+	[AllureDescription("Points $metadata at an HTML page so validation degrades to the keyed $select probe, answers that probe with a bare {} - valid JSON with no recognized error shape - and verifies odata-update reports the field as unverified and issues no PATCH, even though the stub would ack one.")]
+	[Description("A fallback $select probe answering with valid JSON that is not the addressed record leaves the field unverified: odata-update writes nothing and the stub records no PATCH (issue 1212).")]
+	public async Task ODataUpdate_Should_Refuse_When_Degraded_Probe_Proves_Nothing() {
+		// Arrange
+		await using ODataPreWriteStand stand = await ODataPreWriteStand.StartAsync(
+			RuntimeDetectionStubServer.ODataPreWriteEmptyRecord, Entity);
+
+		// Act
+		CallToolResult callResult = await stand.UpdateAsync(Entity, RecordId, new Dictionary<string, object?> {
+			[UnknownField] = "#fff"
+		});
+
+		// Assert
+		string surfacedText = SerializeSurfacedText(callResult);
+		surfacedText.Should().Contain("could not be verified",
+			because: "the absence of a recognized error shape is not field verification - it must read as unverified");
+		surfacedText.Should().Contain("No write was performed",
+			because: "the caller must learn the record is untouched so it can safely retry");
+
+		IReadOnlyList<RecordedStubRequest> requests = await stand.GetRecordedRequestsAsync();
+		requests.Should().Contain(
+			request => request.Method == "GET" && request.Url.Contains("$select=", StringComparison.Ordinal),
+			because: "the degraded path has to run the keyed probe; without it the refusal would prove nothing");
+		requests.Should().NotContain(request => request.Method == "PATCH",
+			because: "the stub acks a PATCH, so only the absence of the request proves the tool refused to write "
+				+ "instead of writing and reporting success - the exact regression of issue #1212");
 	}
 
 	/// <summary>

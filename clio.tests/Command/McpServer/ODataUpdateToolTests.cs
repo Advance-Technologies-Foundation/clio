@@ -85,6 +85,27 @@ public sealed class ODataUpdateToolTests {
 		"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(" + Guid + ")\",\"Id\":\"" + Guid +
 		"\",\"" + field + "\":\"probe\"}";
 
+	/// <summary>
+	/// The addressed record echoed back with EVERY field the probe URL actually selected - what a
+	/// conforming service answers. The probe only accepts the addressed record carrying every
+	/// requested field, so a fixture echoing one fixed column would make a follow-up probe for a
+	/// different column read as unverified rather than confirmed.
+	/// </summary>
+	private static string ProbeOkForUrl(string url) {
+		const string marker = "$select=";
+		string select = url[(url.IndexOf(marker, StringComparison.Ordinal) + marker.Length)..].Split('&')[0];
+		string columns = string.Concat(select.Split(',')
+			.Where(name => name != "Id")
+			.Select(name => ",\"" + name + "\":\"probe\""));
+		return "{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(" + Guid + ")\",\"Id\":\"" + Guid +
+			"\"" + columns + "}";
+	}
+
+	/// <summary>A record that is NOT the one the probe addressed: a different key.</summary>
+	private static string ProbeOtherRecord() =>
+		"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"Id\":\"" +
+		"99999999-9999-9999-9999-999999999999\",\"Name\":\"probe\"}";
+
 	private sealed class Fixture {
 		public Fixture(string metadataBody, Func<string, string> probeBody) {
 			Client = Substitute.For<IApplicationClient>();
@@ -476,7 +497,7 @@ public sealed class ODataUpdateToolTests {
 	public void Update_Should_Fall_Back_To_Select_Probe_When_Metadata_Is_Not_Csl() {
 		// Arrange
 		Fixture f = new(HtmlPage, url =>
-			url.Contains("Color", StringComparison.Ordinal) ? UnknownPropertyError("Color") : ProbeOk("Name"));
+			url.Contains("Color", StringComparison.Ordinal) ? UnknownPropertyError("Color") : ProbeOkForUrl(url));
 
 		// Act
 		ODataWriteResponse response = Update(f, """{"Name":"New","JobTitle":"CEO","Color":"#fff"}""");
@@ -507,7 +528,7 @@ public sealed class ODataUpdateToolTests {
 	[Description("Falls back to the $select probe when the CSDL declares no matching type; an all-ok probe lets the write proceed.")]
 	public void Update_Should_Fall_Back_When_Metadata_Type_Missing() {
 		// Arrange
-		Fixture f = new(CsdLWithoutContact, _ => ProbeOk("Name"));
+		Fixture f = new(CsdLWithoutContact, url => ProbeOkForUrl(url));
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
@@ -630,5 +651,91 @@ public sealed class ODataUpdateToolTests {
 		response.Success.Should().BeTrue(because:
 			"the probe body carries @odata.context and Id alongside the caller-chosen ExceptionMessage column, so it is a keyed entity read, not a server error; the write must proceed");
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New","ExceptionMessage":"boom at /home/depot"}""", 30000);
+	}
+
+	// The absence of a recognized error shape is NOT field verification. Each body below is valid JSON
+	// that the fallback probe used to accept as "fields confirmed", which sent the PATCH and recreated
+	// #1212: an empty object, a record with a different key, and the addressed record projected without
+	// the field the caller wants to write.
+	[TestCase("{}", TestName = "empty object")]
+	[TestCase("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\"}", TestName = "annotation only, no record")]
+	[TestCase("{\"detail\":\"private response marker\"}", TestName = "unrelated JSON object")]
+	[TestCase("[]", TestName = "JSON array")]
+	[Description("A fallback probe body that is not the addressed record leaves the field unverified, so no PATCH is sent (issue 1212)")]
+	public void Update_Should_Not_Write_When_Probe_Body_Is_Not_The_Addressed_Record(string probeBody) {
+		// Arrange
+		Fixture f = new(HtmlPage, _ => probeBody);
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"DefinitelyUnknown":"x"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "absence of a known error shape is not proof that the field exists");
+		response.Error!.Should().Contain("could not be verified",
+			because: "the caller must be told the check could not confirm the field, not that the write failed");
+		response.Error.Should().NotContain("private response marker",
+			because: "an unverified probe body must not be echoed back into the tool response");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A fallback probe answering with a DIFFERENT record's key does not confirm the field, so no PATCH is sent (issue 1212)")]
+	public void Update_Should_Not_Write_When_Probe_Returns_Another_Record() {
+		// Arrange
+		Fixture f = new(HtmlPage, _ => ProbeOtherRecord());
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a body whose Id is not the addressed key is not the record the probe asked about");
+		response.Error!.Should().Contain("could not be verified");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A fallback probe returning the addressed record WITHOUT the requested field does not confirm it, so no PATCH is sent (issue 1212)")]
+	public void Update_Should_Not_Write_When_Probe_Omits_The_Requested_Field() {
+		// Arrange - the addressed record comes back, but projected without JobTitle
+		Fixture f = new(HtmlPage, _ => ProbeOk("Name"));
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"JobTitle":"CEO"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the record is the right one, but it carries no JobTitle, so the field is not confirmed to exist");
+		response.Error!.Should().Contain("JobTitle");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The addressed record carrying every selected field is accepted even when the service echoes the key in a different casing (issue 1212)")]
+	public void Update_Should_Write_When_Probe_Returns_The_Addressed_Record_In_Other_Casing() {
+		// Arrange
+		Fixture f = new(HtmlPage, _ =>
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"Id\":\"" + Guid.ToUpperInvariant() +
+			"\",\"Name\":\"probe\"}");
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the key is compared as a GUID, so a casing difference from the service is not a mismatch");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
 	}
 }

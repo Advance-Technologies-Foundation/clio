@@ -1,4 +1,4 @@
-using Clio.Mcp.E2E.Support.Configuration;
+﻿using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -51,7 +51,8 @@ internal sealed class ODataPreWriteStand : IAsyncDisposable {
 	/// registers an environment pointing at the stub.
 	/// </summary>
 	/// <param name="preWriteMode">
-	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteMetadata"/> or
+	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteMetadata"/>,
+	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteEmptyRecord"/> or
 	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteUnverified"/>.
 	/// </param>
 	/// <param name="entity">OData entity set the stub serves.</param>

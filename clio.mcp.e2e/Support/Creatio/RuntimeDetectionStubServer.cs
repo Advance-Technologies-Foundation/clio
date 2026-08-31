@@ -110,6 +110,15 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataPreWriteUnverified = "unverified";
 
 	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers
+	/// <c>$metadata</c> with an HTML page - so validation degrades to the keyed <c>$select</c> probe -
+	/// and answers that probe with a bare <c>{}</c>: valid JSON, no recognized error shape, and no proof
+	/// that any field exists. A PATCH is still acked, so a tool that treated "no error" as verification
+	/// is caught by the recorded-request assertions. This is the fail-open shape behind issue #1212.
+	/// </summary>
+	public const string ODataPreWriteEmptyRecord = "emptyrecord";
+
+	/// <summary>
 	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
 	/// <c>{ "method": ..., "url": ... }</c> for every request the stub has served, letting a test prove
 	/// which URL the pre-write validation actually requested and that no PATCH was issued.
@@ -249,6 +258,17 @@ http.createServer((request, response) => {
         response.end(metadataCsdl(config.ODataEntity));
         return;
       }
+      if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteEmptyRecord}}") {
+        // Not a CSDL document, so the CSDL validator cannot answer and the tool degrades to the probe.
+        response.writeHead(200, { "Content-Type": "text/html" });
+        response.end("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head></html>");
+        return;
+      }
+      if (isKeyedProbe && config.ODataPreWriteMode === "{{ODataPreWriteEmptyRecord}}") {
+        // Valid JSON that proves nothing: no Id, no selected column, no error shape.
+        sendJson(response, 200, {});
+        return;
+      }
       if ((isMetadata || isKeyedProbe) && config.ODataPreWriteMode === "{{ODataPreWriteUnverified}}") {
         // Neither a CSDL document nor any recognized JSON error shape: the pre-write validation can
         // neither confirm nor refute the payload, which is the "unverified" envelope under test.
@@ -258,12 +278,20 @@ http.createServer((request, response) => {
         return;
       }
       if (isKeyedProbe) {
-        // The record the $select probe addressed, echoed back with the OData context annotation.
-        sendJson(response, 200, {
+        // The record the $select probe addressed, echoed back with the OData context annotation and
+        // EVERY column the probe selected - what a conforming service answers, and what the probe now
+        // requires as proof that those fields exist.
+        const selected = decodeURIComponent(url.split("$select=")[1].split("&")[0]).split(",");
+        const record = {
           "@odata.context": "http://127.0.0.1/odata/$metadata#" + config.ODataEntity,
-          Id: "00000000-0000-0000-0000-000000000001",
-          Name: "probe"
-        });
+          Id: "00000000-0000-0000-0000-000000000001"
+        };
+        for (const column of selected) {
+          if (column && column !== "Id") {
+            record[column] = "probe";
+          }
+        }
+        sendJson(response, 200, record);
         return;
       }
       if (isPatch) {
