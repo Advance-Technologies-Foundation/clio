@@ -30,6 +30,9 @@ public class NugetMaterializer : INugetMaterializer
 	private const string NetStandardMoniker = "netstandard";
 	private const string NetStandardTargetFramework = "netstandard2.0";
 
+	//The Import attribute that names the props file this csproj pulls in.
+	private const string ProjectAttribute = "Project";
+
 	#endregion
 
 	#region Fields: Private
@@ -175,19 +178,25 @@ public class NugetMaterializer : INugetMaterializer
 			return;
 		}
 		
-		SaveCsProjFile();
+		//A conversion snapshots the project as it is right now, replacing any earlier snapshot.
+		SaveCsProjFile(true);
 	}
 
 	/// <summary>
 	/// Backs up the csproj and writes the current document over it.
 	/// Goes through IFileSystem so the written content is part of the testable contract.
 	/// </summary>
-	private void SaveCsProjFile(){
+	/// <param name="refreshBackup">
+	/// True for a conversion: it snapshots the project exactly as it is now, because the caller is
+	/// told to recover the state that preceded THIS run. A backup left by an earlier conversion
+	/// stops describing that state as soon as the project is restored or edited in between, so
+	/// keeping it would hand back stale dependencies and drop the intervening edits.
+	/// False for the stale-import repair: it must keep the pre-conversion copy it repairs after,
+	/// since copying the already-converted csproj over it destroys the only recovery copy.
+	/// </param>
+	private void SaveCsProjFile(bool refreshBackup){
 		string backupPath = $"{_csprojPath}.bak";
-		//Only the FIRST save may write the backup. A later save - the stale-import repair, above all -
-		//would otherwise copy the already-converted csproj over it and destroy the only pre-conversion
-		//copy, which is what the caller is told to recover from.
-		if (_fileSystem.ExistsFile(backupPath)) {
+		if (!refreshBackup && _fileSystem.ExistsFile(backupPath)) {
 			_logger.WriteInfo($"Keeping the existing csproj backup file {backupPath}");
 		} else {
 			_logger.WriteInfo($"Creating csproj backup file {backupPath}");
@@ -243,7 +252,8 @@ public class NugetMaterializer : INugetMaterializer
 			return;
 		}
 		
-		SaveCsProjFile();
+		//The repair runs after a conversion, so the pre-conversion snapshot must survive it.
+		SaveCsProjFile(false);
 	}
 
 	/// <summary>
@@ -252,7 +262,7 @@ public class NugetMaterializer : INugetMaterializer
 	/// <returns>True when the csproj was modified.</returns>
 	private bool RemovePropsImport(string propsFileName){
 		List<XElement> staleImports = _csproj.Descendants("Import")
-			.Where(e => e.Attribute("Project")?.Value == propsFileName)
+			.Where(e => e.Attribute(ProjectAttribute)?.Value == propsFileName)
 			.ToList();
 		
 		if (staleImports.Count == 0) {
@@ -285,7 +295,7 @@ public class NugetMaterializer : INugetMaterializer
 		}
 		
 		bool importExists = _csproj.Descendants("Import")
-			.Any(e => e.Attribute("Project")?.Value == propsFileName
+			.Any(e => e.Attribute(ProjectAttribute)?.Value == propsFileName
 				&& e.Attribute("Condition")?.Value == condition);
 		
 		if (importExists) {
@@ -295,10 +305,17 @@ public class NugetMaterializer : INugetMaterializer
 		
 		XElement importElement = new("Import");
 		importElement.SetAttributeValue("Condition", condition);
-		importElement.SetAttributeValue("Project", propsFileName);
+		importElement.SetAttributeValue(ProjectAttribute, propsFileName);
 		
-		//This will not be null, since csproj MUST have Project element
-		_csproj.Element("Project")!.Add(importElement);
+		//A csproj always has a root element, but the null-forgiving operator says nothing to a
+		//reader and nullable warnings are off in this project, so report the broken file instead.
+		XElement projectElement = _csproj.Root;
+		if (projectElement is null) {
+			_logger.WriteError($"Could not add the {propsFileName} import, because the "
+				+ $"{_csprojPath} file has no root element");
+			return false;
+		}
+		projectElement.Add(importElement);
 		return true;
 	}
 

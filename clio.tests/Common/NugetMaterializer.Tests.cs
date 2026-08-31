@@ -74,6 +74,19 @@ public class NugetMaterializerTests
 			</ItemGroup>
 		</Project>";
 
+	//The same project after a developer edit, used to prove a second conversion re-snapshots it
+	private static readonly Func<string> MockEditedCsProjWithNugetContent = () => @"
+		<Project Sdk=""Microsoft.NET.Sdk"">
+			<PropertyGroup>
+				<TargetFramework>net472</TargetFramework>
+			</PropertyGroup>
+			<ItemGroup Label=""3rd Party References"">
+				<PackageReference Include=""Nuget1"" Version=""1.1.1"" />
+				<PackageReference Include=""Nuget2"" Version=""1.1.2"" />
+				<PackageReference Include=""Nuget3"" Version=""1.1.3"" />
+			</ItemGroup>
+		</Project>";
+
 	private static readonly Func<string> MockCsProjWithExistingImports = () => $@"
 		<Project Sdk=""Microsoft.NET.Sdk"">
 			<PropertyGroup>
@@ -406,12 +419,12 @@ public class NugetMaterializerTests
 	}
 
 	[Test]
-	[Description("Keeps the pre-conversion backup instead of copying the already-converted csproj over it, so the recovery copy survives a later save such as the stale-import repair (issue 263)")]
-	public void Materializer_KeepsExistingBackup_When_CsprojIsSavedAgain(){
+	[Description("The stale-import repair keeps the pre-conversion backup instead of copying the already-converted csproj over it, so the recovery copy survives (issue 263)")]
+	public void Materializer_KeepsExistingBackup_When_RepairSavesTheCsproj(){
 		// Arrange
 		string backupPath = $"{CsprojFileName}.bak";
-		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithNugetContent());
-		_propsBuilder.Build(PackageName).Returns(new PropsBuildResult(true, true, MaterializedNugets));
+		//No PackageReference is left, so this run is the stale-import repair, not a conversion.
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithoutNugetButWithImports());
 		//A backup from the original conversion is already on disk.
 		_fileSystem.ExistsFile(backupPath).Returns(true);
 
@@ -421,6 +434,27 @@ public class NugetMaterializerTests
 		// Assert
 		_fileSystem.DidNotReceive().CopyFile(CsprojFileName, backupPath, Arg.Any<bool>());
 		_logger.Received().WriteInfo($"Keeping the existing csproj backup file {backupPath}");
+	}
+
+	[Test]
+	[Description("A second conversion refreshes the backup, so recovery does not restore the dependencies of the first run and lose the edits made in between (issue 263)")]
+	public void Materializer_RefreshesBackup_When_ConvertedAgainAfterAnEdit(){
+		// Arrange
+		string backupPath = $"{CsprojFileName}.bak";
+		//The project is edited between the two conversions - here, its target framework changes.
+		_fileSystem.ReadAllText(CsprojFileName)
+			.Returns(MockCsProjWithNugetContent(), MockEditedCsProjWithNugetContent());
+		_propsBuilder.Build(PackageName).Returns(new PropsBuildResult(true, true, MaterializedNugets));
+		//The first conversion has already left a backup behind.
+		_fileSystem.ExistsFile(backupPath).Returns(true);
+
+		// Act
+		_sut.Materialize(PackageName);
+		_sut.Materialize(PackageName);
+
+		// Assert
+		_fileSystem.Received(2).CopyFile(CsprojFileName, backupPath, true);
+		_logger.DidNotReceive().WriteInfo($"Keeping the existing csproj backup file {backupPath}");
 	}
 
 	[Test]
