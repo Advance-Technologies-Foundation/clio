@@ -162,7 +162,8 @@
     },
     {
       "filters": [{ "type": "crt.GridContainer", "values": { "borderRadius": "medium" } }],
-      "values": { "borderRadius": "large" }
+      "values": { "borderRadius": "large" },
+      "note": "ENG-95684: Medium is the WEB DEFAULT corner radius, so matching it means 'this card was left at the platform default' - and the mobile default is Large. Narrowing to that one token is therefore the rule itself, not a partial implementation: any OTHER radius on the source page was set deliberately by whoever designed it, and a deliberate choice is preserved rather than normalized away. Do NOT widen this to every non-zero token."
     },
     {
       "filters": [{ "type": "crt.FlexContainer" }],

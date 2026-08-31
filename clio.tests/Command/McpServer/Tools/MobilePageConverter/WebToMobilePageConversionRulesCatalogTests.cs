@@ -187,7 +187,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules promote a grid container that already shows a MEDIUM corner radius to Large, and narrow to that token alone — a grid at another radius, or at none, is left untouched.")]
+	[Description("The bundled rules promote a grid container left at the WEB DEFAULT corner radius (Medium) to the mobile default (Large), and match that token alone: a radius someone set deliberately, or none at all, is preserved.")]
 	public void LoadBundled_ReturnsSeededCornerRadiusOverride() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -203,8 +203,10 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		filter.Type.Should().Be("crt.GridContainer", because: "the type is a filter constraint like any other");
 		filter.Values.Should().HaveCount(1, because: "one discriminating property beyond the type");
 		filter.Values["borderRadius"].GetString().Should().Be("medium",
-			because: "the standard is deliberately narrowed to the Medium radius — widening it to every "
-				+ "non-zero token is a scope decision that belongs on the ticket, not in this file");
+			because: "Medium is the WEB DEFAULT radius, so matching it means 'left at the platform default' — "
+				+ "and Large is the mobile default. Any other radius was set deliberately by whoever designed "
+				+ "the page, so it is preserved rather than normalized away: this single token IS the rule, "
+				+ "not a partial implementation of a wider one");
 	}
 
 	[Test]

@@ -4717,7 +4717,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The BUNDLED rules promote the Medium corner radius end to end — the Area card the tab synthesis creates at the platform's Medium ships Large — and touch nothing else: a grid at another radius, at none, or without one keeps what it had. The other tests build their own rules, so only this one reads what actually ships.")]
+	[Description("The BUNDLED rules promote the WEB DEFAULT corner radius (Medium) to the mobile default (Large) end to end — the Area card the tab synthesis creates at the platform's Medium ships Large — and preserve every deliberate choice: a grid someone set to Small or xxxl, to none, or left without a radius keeps exactly what it had. The other tests build their own rules, so only this one reads what actually ships.")]
 	public void Analyze_BundledRules_PromoteTheMediumCornerRadius() {
 		// Arrange — the real rules file, and a tab whose content covers every radius case.
 		PageBundleInfo bundle = Bundle("""
@@ -4752,7 +4752,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Everything else keeps what it had — the standard is deliberately narrowed to one token.
 		Element(guide, "SmallCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("small");
 		Element(guide, "HugeCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("xxxl",
-			because: "a radius other than Medium is outside the standard and must not be rewritten");
+			because: "a radius other than the web default was chosen deliberately, so the conversion preserves "
+				+ "it rather than flattening every card onto one value");
 		Element(guide, "SquareCard").MobileValues!["borderRadius"]!.GetValue<string>().Should().Be("none",
 			because: "'none' removes the border radius, so the element never had one to promote");
 		Element(guide, "PlainCard").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
