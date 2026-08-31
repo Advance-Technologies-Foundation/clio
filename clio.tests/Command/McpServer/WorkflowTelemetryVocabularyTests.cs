@@ -732,6 +732,80 @@ public sealed class WorkflowTelemetryVocabularyTests
 			because: "total elapsed still places the unit within its run");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Spooled files carry no UTF-8 BOM, so a consumer that is not .NET can read the spool at all.")]
+	public void SpooledFiles_AreWrittenWithoutAByteOrderMark()
+	{
+		// The spool used to be read only by clio, and .NET strips a BOM on read, so nothing here ever
+		// noticed one was being written. It is now a second consumer's input — the CAADT hook reads
+		// consent.json, and QA read the event files straight off disk, where a plain `json.load` answers
+		// "Unexpected UTF-8 BOM" instead of an event. System.Text.Json is strict about it in exactly the
+		// same way, so parsing the raw bytes is the consumer's experience rather than an approximation.
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+		TelemetryEventResult recorded = service.Send(CreateRequest("workflow_started") with {
+			Workflow = "branding"
+		});
+
+		string eventPath = Directory
+			.GetFiles(TelemetryStoragePaths.EventsDirectory(_telemetryHome), $"*_{recorded.EventId}.json")
+			.Single();
+		foreach (string path in new[] { eventPath, Path.Combine(_telemetryHome, "consent.json") }) {
+			string name = Path.GetFileName(path);
+			File.ReadAllBytes(path).Take(3).Should().NotEqual([(byte)0xEF, (byte)0xBB, (byte)0xBF],
+				because: $"{name} must not open with a byte-order mark");
+			Action parseTheBytesAsAnyOtherReaderWould = () => JsonDocument.Parse(File.ReadAllBytes(path));
+			parseTheBytesAsAnyOtherReaderWould.Should().NotThrow(
+				because: $"{name} is JSON to whoever opens it, not only to a BOM-stripping .NET reader");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The retention sweep drops a state file that is genuinely old.")]
+	public void SessionStateSweep_DropsAFileOlderThanRetention()
+	{
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-creation" });
+		string sessionsDirectory = TelemetryStoragePaths.SessionsDirectory(_telemetryHome);
+		string stale = Directory.GetFiles(sessionsDirectory, "*.json").Single();
+		File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddDays(-31));
+
+		// A different pair, so the write that triggers the sweep is not the stale file's own.
+		service.Send(CreateRequest("workflow_started") with { Workflow = "branding" });
+
+		File.Exists(stale).Should().BeFalse(
+			because: "a run that has not reported for over a month is over and will never be anchored again");
+		Directory.GetFiles(sessionsDirectory, "*.json").Should().ContainSingle(
+			because: "the pair that triggered the sweep keeps its own state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The sweep never drops a state file written moments ago, however far the injected clock is from the real one.")]
+	public void SessionStateSweep_DoesNotDropAFreshFileWhenTheInjectedClockRunsAhead()
+	{
+		// The sweep compares a filesystem mtime — a real-clock quantity — against a cutoff. Deriving that
+		// cutoff from the injected TimeProvider put two clocks on either side of one comparison: a fake
+		// clock more than the retention ahead of the real one made every just-written state file stale on
+		// sight, so the sweep deleted the anchor and duration inference silently returned null for a
+		// reason the test never expressed. Failing state before the fix: duration_ms is absent here.
+		MutableTimeProvider time = new(DateTimeOffset.UtcNow.AddDays(400));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		service.Send(CreateRequest("workflow_started") with { Workflow = "app-creation" });
+		time.Advance(TimeSpan.FromSeconds(12));
+		TelemetryEventResult build = service.Send(CreateRequest("build_started") with {
+			Workflow = "app-creation"
+		});
+
+		ReadIntAttribute(ReadStoredEvent(build), "duration_since_session_start_ms").Should().Be(12_000,
+			because: "the state file the anchor lives in was written seconds ago, not 400 days ago");
+	}
+
 	private TelemetryService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
 
 	private TelemetryService CreateService(TimeProvider timeProvider) =>

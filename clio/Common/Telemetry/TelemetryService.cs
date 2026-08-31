@@ -85,6 +85,16 @@ public sealed class TelemetryService : ITelemetryService
 		WriteIndented = true,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
+
+	/// <summary>UTF-8 without a byte-order mark, for every file written under the telemetry home.</summary>
+	/// <remarks>
+	/// <see cref="Encoding.UTF8"/> emits a BOM. .NET strips it again on read, so clio never noticed, but
+	/// the spool is no longer read only by clio: the CAADT hook reads <c>consent.json</c>, and a reviewer
+	/// reading the event files with a plain <c>json.load</c> gets "Unexpected UTF-8 BOM" instead of an
+	/// event. A BOM carries no information in UTF-8 and is not valid leading JSON, so nothing is lost by
+	/// dropping it — and a reader that already strips one (the hook does) is unaffected either way.
+	/// </remarks>
+	private static readonly Encoding SpoolEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 	private readonly Ms.IFileSystem _fileSystem;
 	private readonly TimeProvider _timeProvider;
 	private readonly string _telemetryRoot;
@@ -667,7 +677,7 @@ public sealed class TelemetryService : ITelemetryService
 	{
 		sessionState.Events[eventName] = timestamp;
 		WriteJson(SessionStatePath(sessionState.SessionId, sessionState.Workflow), sessionState);
-		SweepStaleSessionState(timestamp);
+		SweepStaleSessionState();
 	}
 
 	/// <summary>
@@ -679,13 +689,21 @@ public sealed class TelemetryService : ITelemetryService
 	/// durations for a run in progress; once a run is that old nothing will anchor on it again. Swept on
 	/// write so the telemetry home stays bounded without a background task, and never allowed to disturb
 	/// the event that triggered it.
+	/// <para>
+	/// The cutoff is taken from the REAL clock, not from the injected <see cref="TimeProvider"/>, because
+	/// the value it is compared against — the filesystem's last-write time — is a real-clock quantity. A
+	/// test that places the fake clock more than <see cref="SessionStateRetention"/> ahead of the real one
+	/// would otherwise sweep the state file it had just written, and duration inference would return null
+	/// for reasons the test never expressed. One comparison, one clock. Callers that want to exercise the
+	/// sweep back-date the file with <c>SetLastWriteTimeUtc</c>, which is the same clock again.
+	/// </para>
 	/// </remarks>
-	private void SweepStaleSessionState(DateTimeOffset now)
+	private void SweepStaleSessionState()
 	{
 		try {
-			DateTimeOffset cutoff = now - SessionStateRetention;
+			DateTime cutoff = DateTime.UtcNow - SessionStateRetention;
 			foreach (string file in _fileSystem.Directory.GetFiles(SessionsDirectory, "*.json")) {
-				if (_fileSystem.File.GetLastWriteTimeUtc(file) < cutoff.UtcDateTime) {
+				if (_fileSystem.File.GetLastWriteTimeUtc(file) < cutoff) {
 					_fileSystem.File.Delete(file);
 				}
 			}
@@ -719,7 +737,7 @@ public sealed class TelemetryService : ITelemetryService
 		_fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 		string json = JsonSerializer.Serialize(value, JsonOptions);
 		string tempPath = path + ".tmp";
-		_fileSystem.File.WriteAllText(tempPath, json, Encoding.UTF8);
+		_fileSystem.File.WriteAllText(tempPath, json, SpoolEncoding);
 		_fileSystem.File.Move(tempPath, path, overwrite: true);
 	}
 
@@ -731,7 +749,7 @@ public sealed class TelemetryService : ITelemetryService
 		}
 		string installationId = Guid.NewGuid().ToString("N");
 		string tempPath = $"{InstallationIdPath}.{installationId}.tmp";
-		_fileSystem.File.WriteAllText(tempPath, installationId, Encoding.UTF8);
+		_fileSystem.File.WriteAllText(tempPath, installationId, SpoolEncoding);
 		// Replace only a blank/corrupt file; for a missing file use create-only Move so concurrent
 		// clio processes converge on a single installation id (first writer wins) instead of churning.
 		bool replaceExisting = _fileSystem.File.Exists(InstallationIdPath);
