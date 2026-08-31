@@ -23,7 +23,10 @@ namespace Clio.Mcp.E2E;
 /// </list>
 /// </summary>
 [TestFixture]
-[Category("McpE2E.Sandbox")]
+//A loopback stub answers every request in this fixture - no Creatio sandbox is involved - so it
+//belongs to the no-environment lane. Leaving it in Sandbox skipped all four cases from that lane
+//and consumed the scarce sandbox lane for nothing.
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ODataUpdateTool.ToolName)]
 [NonParallelizable]

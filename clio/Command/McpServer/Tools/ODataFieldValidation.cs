@@ -82,13 +82,17 @@ internal static class ODataFieldValidation {
 		string id,
 		IReadOnlyList<DataField> fields) {
 		// A malformed field name would also corrupt a fallback $select list, so it is rejected
-		// locally before any remote call - the same character rules odata-read applies to filter
-		// fields (simple identifier segments joined by '/' for navigation paths).
+		// locally before any remote call. A PATCH key must be a SIMPLE identifier, not the member
+		// path odata-read accepts for filters: `Account/Id` is a read-oriented navigation path, and
+		// the $select probe positively confirms it (a nested projection is a valid read), after which
+		// the tool PATCHed {"Account/Id": ...} and reported success:true without changing the
+		// intended field.
 		string? malformed = fields.Select(field => field.Name)
-			.FirstOrDefault(key => !ODataKeyFormatter.IsValidMemberPath(key));
+			.FirstOrDefault(key => !ODataKeyFormatter.IsSimpleIdentifier(key));
 		if (malformed is not null) {
 			return ODataWriteResponse.Failure(
-				$"data field '{malformed}' is not a valid OData field name (allowed: letters, digits, underscores, and '/' navigation separators). " +
+				$"data field '{malformed}' is not a writable OData property name (allowed: letters, digits and underscores; " +
+				"a navigation path such as 'Account/Id' is readable but cannot be written - set the foreign-key column, e.g. 'AccountId'). " +
 				"No write was performed.");
 		}
 
@@ -323,12 +327,17 @@ internal static class ODataFieldValidation {
 				"No write was performed; check connectivity with odata-read and retry.");
 		}
 
-		string? firstUnknown = ExtractUnknownProperty(batch.ServerError);
+		//An extracted name is trusted ONLY when it is exactly one of the keys the caller asked to
+		//write. The name comes out of server-authored fault text, so anything else - a different
+		//property, a forged fragment - is not a verdict about this request.
+		string? firstUnknown = MatchRequestedKey(ExtractUnknownProperty(batch.ServerError), keys);
 		if (firstUnknown is null) {
-			// The probe failed for a reason other than a missing property (record not found,
-			// unregistered entity, ...): surface it, do not guess, do not write.
-			return ODataWriteResponse.Failure(
-				$"The pre-write field probe for {entity}({id}) failed, so the update was not performed: {batch.ServerError}");
+			// The probe failed for a reason other than a missing property the caller named (record not
+			// found, unregistered entity, ...). The server's own wording is NOT surfaced: the redactor
+			// removes recognized secrets and URIs, but it neither neutralizes prompt-like text nor
+			// removes opaque session tokens, and this text lands in an MCP transcript a model reads as
+			// trusted content. Fixed local wording, and no write.
+			return ODataWriteResponse.Failure(ProbeRejectedMessage(entity, id));
 		}
 
 		List<string> unknown = [firstUnknown];
@@ -349,9 +358,8 @@ internal static class ODataFieldValidation {
 					$"The pre-write field probe for '{key}' on {entity}({id}) returned a response that could not be verified: {single.UnverifiedDetail}. " +
 					"No write was performed; retry.");
 			}
-			if (ExtractUnknownProperty(single.ServerError) is null) {
-				return ODataWriteResponse.Failure(
-					$"The pre-write field probe for '{key}' on {entity}({id}) failed, so the update was not performed: {single.ServerError}");
+			if (MatchRequestedKey(ExtractUnknownProperty(single.ServerError), [key]) is null) {
+				return ODataWriteResponse.Failure(ProbeRejectedMessage(entity, id, key));
 			}
 			unknown.Add(key);
 		}
@@ -422,8 +430,13 @@ internal static class ODataFieldValidation {
 				? new ProbeResult(false, SensitiveErrorTextRedactor.Redact(serverError), null)
 				: new ProbeResult(false, null, SensitiveErrorTextRedactor.Redact(unverifiedReason));
 		} catch (JsonException) {
+			//The body itself is never quoted: DescribeNonJsonResponse embeds a 500-character preview,
+			//and a proxy page or session redirect can put arbitrary remote content in it. The locally
+			//authored hint says what the shape means without reproducing any of it.
 			return new ProbeResult(false, null,
-				SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(body)));
+				"the probe response was not JSON, which Creatio's OData pipeline never returns by itself - "
+				+ "this points to a proxy, IIS, routing or session problem rather than the request's shape. "
+				+ "The body is not reproduced here");
 		}
 	}
 
@@ -512,7 +525,30 @@ internal static class ODataFieldValidation {
 		RegexOptions.Compiled,
 		TimeSpan.FromSeconds(1));
 
-	/// <summary>Extracts the property name from the service's unknown-property fault, if any.</summary>
+	/// <summary>
+	/// Returns <paramref name="extracted"/> only when it exactly matches one of
+	/// <paramref name="requestedKeys"/>. The name is parsed out of server-authored fault text, so it
+	/// is a verdict about this request only when it names a field the caller actually asked to write.
+	/// </summary>
+	private static string? MatchRequestedKey(string? extracted, IReadOnlyList<string> requestedKeys) =>
+		extracted is not null && requestedKeys.Contains(extracted, StringComparer.Ordinal)
+			? extracted
+			: null;
+
+	/// <summary>
+	/// The fixed diagnostic for a probe the service rejected for a reason this tool cannot attribute
+	/// to one of the caller's own field names. It carries no server prose - see the call sites.
+	/// </summary>
+	private static string ProbeRejectedMessage(string entity, string id, string? key = null) {
+		string subject = key is null ? $"{entity}({id})" : $"'{key}' on {entity}({id})";
+		return $"The pre-write field probe for {subject} was rejected by Creatio for a reason that does not "
+			+ "identify one of the requested fields, so the update was not performed. The server's own wording "
+			+ "is not reproduced here, because a service or proxy response is not trusted text in an MCP "
+			+ "transcript; check the environment's own logs, then verify the record Id, the entity name and the "
+			+ "credentials. No write was performed.";
+	}
+
+	/// <summary>Extracts the property name from the service's unknown-property fault, if any.</summary>	/// <summary>Extracts the property name from the service's unknown-property fault, if any.</summary>
 	private static string? ExtractUnknownProperty(string serverError) {
 		Match match = UnknownPropertyPattern.Match(serverError);
 		return match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value)
