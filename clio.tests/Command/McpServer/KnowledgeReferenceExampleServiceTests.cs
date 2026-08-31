@@ -194,6 +194,36 @@ public sealed class KnowledgeReferenceExampleServiceTests {
 	}
 
 	[Test]
+	[Description("Rejects Unicode separators, bidi controls, and lone surrogates in publisher-authored display fields.")]
+	public void List_ShouldRejectCatalogItems_WhenDisplayTextContainsUnsafeUnicode() {
+		// Arrange
+		KnowledgeRoleArticle unsafeTitle = Article(
+			"creatio", "com.creatio.clio", 100, KnowledgeSourceParticipation.Authoritative,
+			"separator", "Unsafe\u2028title", "separator", "published", "esq", 'a');
+		KnowledgeRoleArticle unsafeNote = RoleArticle(
+			"creatio", "com.creatio.clio", 100, KnowledgeSourceParticipation.Authoritative,
+			"example-bidi", unsafeTitle.Article.Text
+				.Replace("id: separator", "id: bidi", StringComparison.Ordinal)
+				.Replace("- Example only", "- Unsafe\u202E note", StringComparison.Ordinal));
+		KnowledgeRoleArticle unsafePath = unsafeTitle with {
+			Article = unsafeTitle.Article with { LocalPath = "catalog/unsafe\ud800.yaml" }
+		};
+		_runtime.GetArticlesByRole(KnowledgeReferenceExampleService.ReferenceExampleRole)
+			.Returns([unsafeTitle, unsafeNote, unsafePath]);
+
+		// Act
+		KnowledgeReferenceExampleListResult result = _service.List(new(null, null, null, null));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "unsafe Unicode in any publisher-authored display field must fail the catalog safely");
+		result.Examples.Should().BeEmpty(
+			because: "separator, bidi, and invalid UTF-16 payloads must never reach JSON or terminal output");
+		result.Diagnostics.Should().HaveCount(3,
+			because: "title, nested note, and provenance path validation branches must each remain covered");
+	}
+
+	[Test]
 	[Description("Hides a reference example whose required feature toggle is disabled, matching guidance-article gating.")]
 	public void List_ShouldHideCatalogItem_WhenRequiredFeatureIsDisabled() {
 		// Arrange

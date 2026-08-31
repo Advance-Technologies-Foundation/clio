@@ -222,14 +222,17 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 
 	private readonly IKnowledgeRootPathProvider _rootPathProvider;
 	private readonly IFileSystem _fileSystem;
+	private readonly IKnowledgeManagedTreeDeleter _treeDeleter;
 	private readonly KnowledgeInstallationStoreOptions _options;
 
 	public KnowledgeSourceInstallationStore(
 		IKnowledgeRootPathProvider rootPathProvider,
 		IFileSystem fileSystem,
+		IKnowledgeManagedTreeDeleter treeDeleter,
 		KnowledgeInstallationStoreOptions options) {
 		_rootPathProvider = rootPathProvider ?? throw new ArgumentNullException(nameof(rootPathProvider));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		_treeDeleter = treeDeleter ?? throw new ArgumentNullException(nameof(treeDeleter));
 		_options = options ?? throw new ArgumentNullException(nameof(options));
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.LockTimeoutMilliseconds);
 	}
@@ -633,7 +636,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		ValidateSourceRoot(sourceAlias, sourceRoot);
 		return WithMutationLock(sourceRoot, () => {
 			ValidateSourceRoot(sourceAlias, sourceRoot);
-			_fileSystem.Directory.Delete(sourceRoot, recursive: true);
+			_treeDeleter.DeleteRecoverably(sourceRoot);
 			return new KnowledgeInstallationResult(
 				KnowledgeInstallationStatus.Deleted,
 				$"Installed knowledge for source '{sourceAlias}' was deleted.",
@@ -791,7 +794,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			_fileSystem.Directory.Move(stagingRoot, location.GenerationRoot);
 		} finally {
 			if (_fileSystem.Directory.Exists(stagingRoot)) {
-				_fileSystem.Directory.Delete(stagingRoot, recursive: true);
+				_treeDeleter.Delete(stagingRoot);
 			}
 		}
 		diagnostic = null;
@@ -833,7 +836,7 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 				diagnostic = $"Immutable knowledge generation '{location.Name}' already exists with unexpected content.";
 				return false;
 			}
-			_fileSystem.Directory.Delete(location.GenerationRoot, recursive: true);
+			_treeDeleter.Delete(location.GenerationRoot);
 			diagnostic = null;
 			return true;
 		} catch (Exception exception) when (IsStorageException(exception)) {
@@ -1007,11 +1010,12 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			.ToArray();
 		// Materialize the victims before the first delete so the directory is never mutated mid-enumeration.
 		string[] obsolete = _fileSystem.Directory.EnumerateDirectories(generationsRoot)
-			.Where(directory => !retained.Contains(_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal))
+			.Where(directory => !retained.Contains(
+				_fileSystem.Path.GetFileName(directory), StringComparer.Ordinal))
 			.ToArray();
 		foreach (string directory in obsolete) {
 			EnsureNoReparsePoint(generationsRoot, directory);
-			_fileSystem.Directory.Delete(directory, recursive: true);
+			_treeDeleter.Delete(directory);
 		}
 	}
 
