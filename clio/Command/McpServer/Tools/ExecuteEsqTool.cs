@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -23,6 +24,8 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	private const int DefaultTimeoutMs = 30_000;
 	private const int MinTimeoutMs = 1_000;
 	private const int MaxTimeoutMs = 120_000;
+	internal const int MaxResponseSizeBytes = 200_000;
+	internal const string ResultTooLargeErrorClass = "result-too-large";
 
 	/// <summary>Executes a raw ESQ SelectQuery and returns the resulting rows.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -38,7 +41,8 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		"Creatio data, or to validate a widget/page filter before saving it. ESQ is a proprietary format that is " +
 		"easy to mis-guess: call get-guidance for 'esq' and 'esq-filters' before composing a query. " +
 		"A requested column whose columnPath does not resolve fails the call (success:false) instead of being " +
-		"silently dropped from the rows.")]
+		"silently dropped from the rows. DataService responses larger than the fixed MCP-safe budget fail with " +
+		"error-class=result-too-large; select explicit columns, lower rowCount, or page the query.")]
 	public ExecuteEsqResponse Execute(
 		[Description("Parameters: query, environment-name (required); timeout (optional).")]
 		[Required]
@@ -67,6 +71,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 
 			string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 			string responseJson = client.ExecutePostRequest(url, query.GetRawText(), timeout);
+			bool responseIsTooLarge = responseJson.Length > MaxResponseSizeBytes
+				|| Encoding.UTF8.GetByteCount(responseJson) > MaxResponseSizeBytes;
+			if (responseIsTooLarge) {
+				return ExecuteEsqResponse.ResultTooLarge(MaxResponseSizeBytes);
+			}
 
 			IReadOnlyList<string> requestedColumns = ExtractRequestedColumnAliases(query);
 			string rootSchemaName = rootSchema.GetString() ?? string.Empty;
@@ -335,7 +344,12 @@ public sealed record ExecuteEsqResponse(
 	[property: JsonPropertyName("hint")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Recovery hint returned on failure, pointing to the ESQ guidance.")]
-	string? Hint = null) {
+	string? Hint = null,
+
+	[property: JsonPropertyName("error-class")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Stable failure classification. result-too-large means the DataService response exceeded the MCP-safe byte budget.")]
+	string? ErrorClass = null) {
 
 	/// <summary>
 	/// Recovery hint attached to every failure so a caller that guessed the ESQ format is pointed at the guidance.
@@ -356,4 +370,16 @@ public sealed record ExecuteEsqResponse(
 	/// </summary>
 	public static ExecuteEsqResponse FailureWithoutGuidance(string message) =>
 		new(false, message, null, null, null);
+
+	/// <summary>Creates a structured failure for a DataService response that exceeds the MCP-safe byte budget.</summary>
+	/// <param name="maximumSizeBytes">Largest UTF-8 response the tool may return.</param>
+	public static ExecuteEsqResponse ResultTooLarge(int maximumSizeBytes) =>
+		new(
+			false,
+			$"SelectQuery result exceeds the {maximumSizeBytes} UTF-8 byte limit. "
+			+ "Select explicit columns instead of allColumns, lower rowCount, or page with rowsOffset, then retry.",
+			null,
+			null,
+			null,
+			ExecuteEsqTool.ResultTooLargeErrorClass);
 }

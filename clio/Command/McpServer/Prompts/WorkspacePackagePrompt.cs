@@ -85,16 +85,24 @@ public static class WorkspacePackagePrompt {
 		[Description("Creatio environment name")]
 		string environmentName,
 		[Description("Optional package-name filter")]
-		string? filter = null) =>
+		string? filter = null,
+		[Description("Optional page size; omit to use the default of 50")]
+		int? limit = null,
+		[Description("Optional zero-based package offset")]
+		int offset = 0) =>
 		string.IsNullOrWhiteSpace(filter)
 			? $"""
 			   Use clio mcp server `{GetPkgListTool.GetPkgListToolName}` tool to list packages installed in
 			   Creatio environment `{environmentName}`.
-			   Pass `environment-name` exactly as provided and omit `filter` when you need the full package list.
+			   Pass `environment-name` exactly as provided, `offset` `{offset}`, and
+			   `limit` `{limit?.ToString() ?? "<default 50>"}`. Omit `filter` to page through all packages.
+			   Continue with offset + count while the response reports `truncated: true`.
 			   """
 			: $"""
 			   Use clio mcp server `{GetPkgListTool.GetPkgListToolName}` tool to list packages installed in
 			   Creatio environment `{environmentName}`.
-			   Pass `environment-name` exactly as provided and use `filter` `{filter}` to narrow the result.
+			   Pass `environment-name` exactly as provided, use `filter` `{filter}`, `offset` `{offset}`, and
+			   `limit` `{limit?.ToString() ?? "<default 50>"}`. Continue with offset + count while the response
+			   reports `truncated: true`.
 			   """;
 }

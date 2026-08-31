@@ -20,6 +20,24 @@ namespace Clio.Tests;
 [NonParallelizable]
 public sealed class TeamCityRunGuardTests {
 
+	[TestCase(null, null, false)]
+	[TestCase("2024.1", null, true)]
+	[TestCase(null, "true", true)]
+	[TestCase(null, " TRUE ", true)]
+	[TestCase(null, "false", false)]
+	[Description("The local-only predicate recognizes both TeamCity and GitHub Actions automation markers.")]
+	public void IsRunningUnderTeamCityOrGitHubActions_ShouldReflectEitherAutomationMarker_WhenValuesProvided(
+		string? teamCityVersion, string? githubActions, bool expected) {
+		// Arrange
+
+		// Act
+		bool result = TeamCityRunGuard.IsRunningUnderTeamCityOrGitHubActions(teamCityVersion, githubActions);
+
+		// Assert
+		result.Should().Be(expected,
+			because: "developer-local merge labs must remain disabled in both CI systems named by the feature owner");
+	}
+
 	[TestCase(null, false)]
 	[TestCase("", false)]
 	[TestCase("   ", false)]
