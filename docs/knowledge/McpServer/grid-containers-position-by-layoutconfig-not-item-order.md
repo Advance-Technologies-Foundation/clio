@@ -19,8 +19,8 @@ else. Two consequences, and the second one cost two rounds to learn:
    genuinely freed — the progress bar still rendered below the tab strip.
 
 So placing content above an anchor takes BOTH halves: an explicit row on the sibling AND the anchor
-moved down. `colSpan` / `rowSpan` are not supported by the mobile runtime — do not write them onto
-anything the converter authors.
+moved down. (What that placement must CONTAIN is a separate fact, with a different cause and a
+different symptom — see `mobile-designer-requires-a-complete-layoutconfig.md`.)
 
 **Why it is this way** — the web side gives no hint: there the same wrapper lives in a
 `crt.FlexContainer`, where DOM order *is* visual order, so no child carries a `layoutConfig` for
