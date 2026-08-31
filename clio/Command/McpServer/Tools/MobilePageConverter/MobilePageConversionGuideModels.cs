@@ -347,6 +347,26 @@ public sealed class SectionRegistrationInfo {
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
 /// </summary>
+/// <summary>
+/// One element the conversion could not place: it would become a child of a mobile <c>crt.TabPanel</c>
+/// without being a <c>crt.TabContainer</c>, which the mobile designer renders as nothing.
+/// </summary>
+public sealed record TabStripPlacementLoss {
+
+	/// <summary>Mobile element name (the web name when the conversion did not rename it).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>Mobile component type, or null when the conversion resolved none.</summary>
+	[JsonPropertyName("mobileType")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string MobileType { get; init; }
+
+	/// <summary>The tab strip it would have been inserted into.</summary>
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
+}
+
 public sealed class MobilePageConversionGuide {
 	// ── Source analysis ───────────────────────────────────────────────
 	[JsonPropertyName("sourcePage")]
@@ -575,6 +595,18 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("resourceStrings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, string> ResourceStrings { get; init; }
+
+	/// <summary>
+	/// Elements the element map would place directly in a mobile tab strip (<c>crt.TabPanel</c>) without being
+	/// tabs themselves — a strip renders only <c>crt.TabContainer</c> children, so each of these and everything
+	/// nested inside it is lost from the converted page. Present ONLY when the conversion is incomplete, which
+	/// happens when the (runtime-fetched) rules file carries no <c>containers</c> entry for the web container
+	/// they came from. The matching <c>constraints</c> sentence is a rendering of this list; assert on the list,
+	/// not on that free text. Null when the conversion placed everything.
+	/// </summary>
+	[JsonPropertyName("tabStripPlacementLosses")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<TabStripPlacementLoss> TabStripPlacementLosses { get; init; }
 
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]

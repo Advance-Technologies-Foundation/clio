@@ -74,7 +74,20 @@ web `Tabs` sits inside `CardContentWrapper` (which maps to `GeneralTabContainer`
 `GeneralTabContainer` sits inside `Tabs`. Trusting the web nesting placed the tab strip inside its own
 descendant, twice, because `Tabs` and `CardToggleTabPanel` share one mobile name. With no mobile parent
 map available the pass places no twin at all: an unplaced twin renders exactly as it does today, a
-wrongly placed one does not.
+wrongly placed one does not. That map is a property of the mobile TEMPLATE, so it must be supplied
+unconditionally: it was once passed only when the rule declared positional (`:top`/`:bottom`) entries,
+and since only `PageWithTabsFreedomTemplate` has any, twin placement was dead for every other template
+family.
+
+**`IsTabToContentContainerTwin` keys on the twin SHAPE, not on a name.** It therefore also covers
+`FeedTabContainer` → `FeedContainer` and `AttachmentsTabContainer` → `AttachmentsContainer` (both are
+`crt.TabContainer` on the web template and both rename), which is deliberate. Its known limitation: it
+does not look at the MOBILE type, so a future `containers` entry that renames a tab to a *tab*
+(`UsrTab` → `UsrMobileTab`, both `crt.TabContainer` — one element, one identity) would lose its page
+rules instead of retargeting them. Unreachable on the shipped rules today. Do NOT "fix" it by adding
+`MobileType != crt.TabContainer` as-is: `MobileType` falls back to the WEB type when the mobile-template
+probe failed, so that predicate would reopen the general-tab hole in exactly the degraded run the rest
+of this record is about. Gate any narrowing on the mobile type having actually been read.
 
 **What breaks if you ignore it** — the failure is SILENT end to end. Unit coverage did not catch the
 missing `GeneralInfoTab` entry because `WebToMobileConversionServiceTests` hands the analyzer a

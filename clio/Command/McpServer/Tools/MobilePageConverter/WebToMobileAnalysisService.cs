@@ -287,6 +287,12 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
+		// Elements the map would drop into a tab strip without being tabs. Computed AFTER every elementMap
+		// mutating pass and surfaced BOTH as a typed guide field (the thing to assert on) and as the sentence
+		// rendered from it in constraints.
+		List<TabStripPlacementLoss> tabStripPlacementLosses =
+			CollectNonTabChildrenOfTabPanels(elementMap, mobileTypesByName);
+
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
@@ -366,6 +372,7 @@ public static class WebToMobileAnalysisService {
 				: null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
+			TabStripPlacementLosses = tabStripPlacementLosses.Count > 0 ? tabStripPlacementLosses : null,
 			// Named arguments deliberately: the tail is a run of defaulted bools, so a positional call silently
 			// mis-wires the moment a parameter is inserted rather than appended.
 			Constraints = BuildConstraints(webOnly,
@@ -390,7 +397,7 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.ParentName)
 					.Distinct(StringComparer.OrdinalIgnoreCase)
 					.ToList(),
-				nonTabChildrenOfTabPanels: CollectNonTabChildrenOfTabPanels(elementMap, mobileTypesByName)),
+				nonTabChildrenOfTabPanels: tabStripPlacementLosses),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -1738,7 +1745,7 @@ public static class WebToMobileAnalysisService {
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null,
-		IReadOnlyList<string> nonTabChildrenOfTabPanels = null) {
+		IReadOnlyList<TabStripPlacementLoss> nonTabChildrenOfTabPanels = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1853,7 +1860,8 @@ public static class WebToMobileAnalysisService {
 			constraints.Add(
 				"CONVERSION IS INCOMPLETE. elementMap places element(s) directly in a mobile tab strip "
 				+ "(crt.TabPanel) that are NOT tabs: "
-				+ string.Join(", ", nonTabChildrenOfTabPanels)
+				+ string.Join(", ", nonTabChildrenOfTabPanels.Select(
+					l => $"{l.Name} ({(string.IsNullOrEmpty(l.MobileType) ? "no mobile type" : l.MobileType)}) -> {l.ParentName}"))
 				+ ". A crt.TabPanel renders only crt.TabContainer children, so each of these — and everything "
 				+ "nested inside it — would be INVISIBLE in Mobile Designer. The cause is a MISSING containers "
 				+ "entry in the web→mobile conversion rules for the web container these elements came from "
@@ -3882,12 +3890,15 @@ public static class WebToMobileAnalysisService {
 				&& mobileContainerParents.TryGetValue(e.MobileName, out string mobileParent)
 				&& string.Equals(mobileParent, e.MergeParentName, StringComparison.OrdinalIgnoreCase)
 				&& colsByMobileParent.ContainsKey(e.MergeParentName);
-			if (isPlaceableTwin) {
-				e.MobileValues ??= new JsonObject();
-			}
+			// A twin's mobileValues stays NULL here on purpose. The group loop below skips a single-column grid,
+			// and a merge that reached the guide carrying an empty object would be pasted onto the template
+			// element as `values: {}` — noise the model still has to interpret. It is created only where a
+			// layoutConfig is actually written.
 			string parent = isPlaceableTwin ? e.MergeParentName : e.ParentName;
 			if ((!isPlaceableTwin && !string.Equals(e.Operation, "insert", StringComparison.Ordinal)) ||
-				string.IsNullOrEmpty(parent) || e.MobileValues is not JsonObject ||
+				string.IsNullOrEmpty(parent) ||
+				(!isPlaceableTwin && e.MobileValues is not JsonObject) ||
+				(isPlaceableTwin && e.MobileValues is not (null or JsonObject)) ||
 				!colsByMobileParent.ContainsKey(parent)) {
 				continue;
 			}
@@ -3925,6 +3936,9 @@ public static class WebToMobileAnalysisService {
 					["large"] = Cell(col, row, colSpan, rowSpan)
 				};
 				// Replace layoutConfig with the adaptive form (the web placement is folded into medium/large).
+				// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge
+				// delta, so the object is created at the one point where it is guaranteed to carry something.
+				child.MobileValues ??= new JsonObject();
 				((JsonObject)child.MobileValues)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
 				items.Add(new AdaptiveLayoutItem { Name = child.MobileName, LayoutConfigAdaptive = adaptive });
 			}
@@ -4394,6 +4408,19 @@ public static class WebToMobileAnalysisService {
 	/// <summary>Mobile component type of a single tab.</summary>
 	private const string MobileTabComponentType = "crt.TabContainer";
 
+	/// <summary>Case-insensitive comparer for the (name, parent) identity of a tab-strip placement loss.</summary>
+	private static readonly IEqualityComparer<(string Name, string Parent)> TupleComparer =
+		new TabStripLossKeyComparer();
+
+	private sealed class TabStripLossKeyComparer : IEqualityComparer<(string Name, string Parent)> {
+		public bool Equals((string Name, string Parent) x, (string Name, string Parent) y) =>
+			string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(x.Parent, y.Parent, StringComparison.OrdinalIgnoreCase);
+
+		public int GetHashCode((string Name, string Parent) obj) => HashCode.Combine(
+			obj.Name?.ToLowerInvariant(), obj.Parent?.ToLowerInvariant());
+	}
+
 	/// <summary>Mobile component type of the tab strip, whose items may only be <see cref="MobileTabComponentType"/>.</summary>
 	private const string MobileTabPanelComponentType = "crt.TabPanel";
 
@@ -4411,7 +4438,7 @@ public static class WebToMobileAnalysisService {
 	/// with no code change; this keeps that debuggable from the guide alone.
 	/// </para>
 	/// </summary>
-	private static List<string> CollectNonTabChildrenOfTabPanels(
+	private static List<TabStripPlacementLoss> CollectNonTabChildrenOfTabPanels(
 		IReadOnlyList<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, string> mobileTypesByName) {
 		// A parent is a tab strip when the mobile tabbed template's OWN strip name (a constant of that template,
@@ -4438,9 +4465,12 @@ public static class WebToMobileAnalysisService {
 				&& !string.IsNullOrEmpty(e.ParentName)
 				&& tabPanelNames.Contains(e.ParentName)
 				&& !string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
-			.Select(e => $"{(string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName)} "
-				+ $"({(string.IsNullOrEmpty(e.MobileType) ? "no mobile type" : e.MobileType)}) -> {e.ParentName}")
-			.Distinct(StringComparer.OrdinalIgnoreCase)];
+			.Select(e => new TabStripPlacementLoss {
+				Name = string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName,
+				MobileType = e.MobileType,
+				ParentName = e.ParentName
+			})
+			.DistinctBy(l => (l.Name, l.ParentName), TupleComparer)];
 	}
 
 	/// <summary>

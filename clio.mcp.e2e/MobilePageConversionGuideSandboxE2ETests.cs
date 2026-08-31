@@ -593,7 +593,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// regression, never a seed gap, so failures are collected and fail the test outright.
 		int pagesWithTargetedParents = 0;
 		int pagesWithTabAreaLayers = 0;
-		int pagesWithTabStripChildren = 0;
+		int pagesWithAConvertedTab = 0;
 		List<string> failedCandidates = [];
 		foreach (string schemaName in candidates) {
 			MobilePageConversionGuide? guide = await ConvertOrCollectFailureAsync(
@@ -605,7 +605,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				pagesWithTabAreaLayers++;
 			}
 			AssertNoNonTabChildOfATabStrip(guide, schemaName);
-			pagesWithTabStripChildren += guide.ElementMap.Any(e => e.Operation == "insert"
+			pagesWithAConvertedTab += guide.ElementMap.Any(e => e.Operation == "insert"
 				&& string.Equals(e.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase))
 				? 1
 				: 0;
@@ -654,7 +654,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		}
 		pagesWithTargetedParents.Should().BeGreaterThan(0,
 			because: "at least one seeded page with nested containers must have exercised the differ-apply gate");
-		if (pagesWithTabStripChildren == 0) {
+		if (pagesWithAConvertedTab == 0) {
 			// Not a failure: the tab-strip invariant is pinned hermetically on every build by
 			// WebToMobileGeneralInfoTabRegressionTests against the OOTB Services_FormPage. What is NOT covered
 			// while this is silent is the RUNTIME-FETCHED rules file reaching the same verdict through the real
@@ -696,9 +696,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			because: $"on '{schemaName}' a crt.TabPanel accepts only crt.TabContainer children, so each of these is "
 				+ "invisible in Mobile Designer and its whole subtree is lost from the converted page (ENG-94951): "
 				+ string.Join(", ", offenders.Select(e => $"{e.MobileName}({e.MobileType})->{e.ParentName}")));
-		guide.Constraints.Should().NotContain(c => c.Contains("INVISIBLE in Mobile Designer"),
+		guide.TabStripPlacementLosses.Should().BeNullOrEmpty(
 			because: $"the converter's own tab-strip loss report must stay silent on '{schemaName}' — it fires only "
-				+ "when a RUNTIME-FETCHED rules file has lost a containers entry, which no hermetic unit test can see");
+				+ "when a RUNTIME-FETCHED rules file has lost a containers entry, which no hermetic unit test can "
+				+ "see. Reported: "
+				+ string.Join(", ", (guide.TabStripPlacementLosses ?? []).Select(l => $"{l.Name}->{l.ParentName}")));
 	}
 
 	/// <summary>Mobile component type of a single tab; only this type may be a child of a crt.TabPanel.</summary>

@@ -195,9 +195,11 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture);
 
 		// Assert
+		guide.TabStripPlacementLosses.Should().BeNull(
+			because: "the shipped rules place the general tab's content correctly, so reporting a lost subtree "
+				+ "would be guidance the model acts on — corrupting a conversion that was already right");
 		guide.Constraints.Should().NotContain(c => c.Contains(TabStripLossReport),
-			because: "the shipped rules place the general tab's content correctly, so warning about a lost "
-				+ "subtree would be guidance the model acts on — corrupting a conversion that was already right");
+			because: "the rendered sentence must follow the typed field, never outlive it");
 	}
 
 	[Test]
@@ -210,6 +212,9 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		MobilePageConversionGuide guide = Convert(fixture, RulesWithoutTheGeneralTabEntry());
 
 		// Assert
+		guide.TabStripPlacementLosses.Should().ContainSingle(l => l.Name == "ServiceTeamMemberExpansionPanel"
+				&& l.MobileType == "crt.ExpansionPanel" && l.ParentName == MobileTabsPanel,
+			because: "the loss is reported as data the caller can act on, not only as prose it must parse");
 		string report = guide.Constraints.Should().ContainSingle(c => c.Contains(TabStripLossReport),
 			because: "a subtree the mobile designer renders as nothing must be named in the report; without this "
 				+ "line a lost general-information tab is indistinguishable from a page that never had one")
@@ -237,7 +242,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 		guide.ElementMap.Should().Contain(
 			e => e.Operation == "insert" && string.Equals(e.ParentName, MobileTabsPanel, StringComparison.OrdinalIgnoreCase),
 			because: "the precondition of this test is that the loss still occurs without the mobile template");
-		guide.Constraints.Should().Contain(c => c.Contains(TabStripLossReport),
+		guide.TabStripPlacementLosses.Should().NotBeNullOrEmpty(
 			because: "the mobile-template probe is best-effort; a report that disappears together with it is no "
 				+ "guard at all, and this is the compound failure the guard exists for");
 	}
@@ -271,7 +276,7 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
 		// Assert
-		guide.Constraints.Should().Contain(c => c.Contains(TabStripLossReport),
+		guide.TabStripPlacementLosses.Should().ContainSingle(l => l.Name == "UsrStrayPanel",
 			because: "the invariant is a property of crt.TabPanel itself, not of the tabbed template — a strip "
 				+ "the page authored rejects a non-tab child exactly the same way");
 		NonTabChildrenOfTabStrips(guide).Should().ContainSingle(e => e.WebName == "UsrStrayPanel",
@@ -321,6 +326,21 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			group.Items.Select(i => i.Name).Should().OnlyHaveUniqueItems(
 				because: "two web twins may share one mobile name; placing both would give the same element two cells");
 		}
+	}
+
+	[Test]
+	[Description("Twin placement must not depend on the template declaring positional (:top/:bottom) entries: only the tabbed template has any, so a mobile-parent map supplied only alongside them would leave the fix dead for every other template family.")]
+	public void Analyze_ShouldPlaceTheTemplateTwin_EvenWithNoPositionalPlacements() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, withPositionalPlacements: false);
+
+		// Assert
+		Element(guide, "SideAreaProfileContainer").MobileValues!.AsObject().Should().ContainKey("layoutConfig",
+			because: "the mobile-parent map the placement reads is a property of the mobile TEMPLATE, not of the "
+				+ "positional rules — gating one on the other is what made this dead for five of six families");
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -410,7 +430,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	private static MobilePageConversionGuide Convert(
 		JsonObject fixture,
 		WebToMobilePageConversionRules overrideRules = null,
-		bool mobileTemplateAvailable = true) {
+		bool mobileTemplateAvailable = true,
+		bool withPositionalPlacements = true) {
 		JsonObject page = fixture["page"]!.AsObject();
 		JsonArray webTemplateViewConfig = fixture["webTemplate"]!["viewConfig"]!.DeepClone().AsArray();
 
@@ -438,7 +459,9 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			suggestedTarget: "Services_MobileFormPage",
 			containerNameMap: MobilePageConversionGuideTool.BuildContainerNameMap(templateRule),
 			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule),
-			positionalPlacements: MobilePageConversionGuideTool.BuildPositionalPlacements(templateRule),
+			positionalPlacements: withPositionalPlacements
+				? MobilePageConversionGuideTool.BuildPositionalPlacements(templateRule)
+				: null,
 			templateComponentNames: new HashSet<string>(webBaselineNodes.Keys, StringComparer.OrdinalIgnoreCase),
 			mobileContainerParents: mobileTemplateAvailable
 				? WebToMobileAnalysisService.CollectParentByName(
