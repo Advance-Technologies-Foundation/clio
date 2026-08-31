@@ -413,6 +413,9 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["package-name"] = arrangeContext.PackageName,
 				["schema-name"] = schemaName,
+				//create-entity-schema requires a schema-level title-localizations with a non-empty en-US
+				//value; without it the tool refuses and no schema is created.
+				["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Color round trip" },
 				["columns"] = new[] {
 					new Dictionary<string, object?> {
 						["column-name"] = nameColumnName,
