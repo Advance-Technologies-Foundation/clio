@@ -1264,8 +1264,8 @@ internal static class ToolContractCatalog {
 					Field(EventNameFieldName, StringType,
 						$"Product event name — a flow-agnostic stage. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
 					Field("workflow", StringType, "Which flow this run is, for example app-creation, classic-to-freedom-migration, mobile-page-conversion, branding or app-maintenance. Send it on every event: the stage names are shared, so without it a stage cannot be attributed to a flow, and it also keys the run's elapsed-time state. An omitted value is recorded as the reserved 'unattributed' rather than being left empty. Short lowercase token (letters, digits, '.', '_', '-')."),
-					Field("variant", StringType, "Optional bounded qualifier the flow defines for that stage — a migration scope, a blocked reason, a unit kind. Same token shape as workflow; never free text and never customer data."),
-					Field("model", StringType, "Optional identifier of the model driving the run, for example claude-opus-5 or gpt-5. Send the id, lowercased, not a display name or a version guess. Same token shape as workflow."),
+					Field("variant", StringType, "Optional bounded qualifier the flow defines for that stage — a migration scope, a blocked reason, a unit kind. Same token shape as workflow; never free text and never customer data. OMIT it rather than sending a value that is not that shape: an invalid token rejects the WHOLE event, not just the field."),
+					Field("model", StringType, "Optional identifier of the model driving the run, for example claude-opus-5 or gpt-5. Send the id, lowercased, not a display name or a version guess. Same token shape as workflow. OMIT it rather than sending a value that is not that shape — a host placeholder such as '<synthetic>', a display name, anything with spaces or capitals: an invalid token rejects the WHOLE event, not just the field, so a stage that would otherwise have been recorded is lost."),
 					Field("input_tokens", NumberType, "Optional running total of prompt tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
 					Field("output_tokens", NumberType, "Optional running total of generated tokens consumed by the session at the moment this stage was reached. Non-negative; snapshot, not a delta."),
 					Field("cached_input_tokens", NumberType, "Optional running total of prompt tokens served from cache. Non-negative; snapshot, not a delta."),
@@ -1278,7 +1278,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
 						Context: "event_name must be one of the documented product event names."),
 					new ToolContractValidator("token", "invalid-token", Fields: ["workflow", "variant", "model"],
-						Context: "workflow, variant and model must be short lowercase tokens of letters, digits, '.', '_' or '-'.")
+						Context: "workflow, variant and model must be short lowercase tokens of letters, digits, '.', '_' or '-'. A value that is not rejects the whole event; omit the optional ones instead of sending one.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1313,7 +1313,7 @@ internal static class ToolContractCatalog {
 				new ToolErrorCodeContract("invalid-token-count",
 					"input_tokens, output_tokens or cached_input_tokens is negative."),
 				new ToolErrorCodeContract("invalid-token",
-					"workflow, variant or model is not a short lowercase token of letters, digits, '.', '_' or '-'.")
+					"workflow, variant or model is not a short lowercase token of letters, digits, '.', '_' or '-'. The event is rejected as a whole, so omit an optional token you cannot supply in that shape rather than sending it.")
 			]),
 			[],
 			[
