@@ -478,45 +478,22 @@ internal static class PageBodyMerger {
 	private static bool IsCloseBracket(char ch) => ch is ')' or '}' or ']';
 
 	/// <summary>
-	/// Merges two <c>viewConfigDiff</c> operation arrays, treating an operation's IDENTITY - not its
-	/// <c>name</c> alone - as what collides. EVERY current entry survives at its original position unless
-	/// the incoming fragment carries an entry with the SAME identity: that one replaces the first current
-	/// occurrence in place and supersedes any further current occurrences. Incoming entries the current
-	/// body does not already carry are appended in the caller's own order.
+	/// Merges two <c>viewConfigDiff</c> operation arrays. What collides is an
+	/// <see cref="OperationIdentity"/>, not a <c>name</c> alone: every current entry survives at its
+	/// original position unless the incoming fragment carries the same identity, which replaces the first
+	/// occurrence in place and supersedes any later one. Unmatched incoming entries are appended in the
+	/// caller's own order.
 	/// </summary>
 	/// <remarks>
-	/// GitHub #1132. The previous implementation flattened <c>current.Concat(incoming)</c> into ONE
-	/// dictionary keyed by <c>name</c>, so two CURRENT entries sharing a name - e.g. a <c>move</c> and a
-	/// <c>merge</c> for one component - collapsed to the last one. An append therefore DROPPED an
-	/// operation the page already had even when the incoming fragment never mentioned that component.
-	/// Multiple operations per name is a supported shape, not a malformed body: <see cref="JsonDiffApplier"/>
-	/// (clio's clone of the platform differ) groups operations by name into per-name LISTS and applies
-	/// removes, moves, inserts and merges as separate ordered passes.
-	/// <para>
-	/// Widening the identity to include the operation is what makes "preserve every current entry"
-	/// coherent: with a <c>name</c>-only key an incoming <c>merge</c> on a component the body already
-	/// <c>move</c>s would replace that move and drop the merge beside it, re-creating the very loss this
-	/// method exists to prevent.
-	/// </para>
-	/// <para>
-	/// NOTE that keeping an incoming transform beside a current <c>insert</c> for one name does NOT make
-	/// both take effect. The differ applies whole groups in a fixed order - merges first, then
-	/// removes/inserts/moves - so a <c>merge</c>, <c>move</c>, or element <c>remove</c> aimed at a component
-	/// this body inserts resolves against a source that does not contain it yet and is discarded. The
-	/// incoming operation is preserved rather than silently deleted — strictly better than the pre-#1132
-	/// behaviour, which destroyed the insert and orphaned the component — but it is INERT, and nothing
-	/// currently reports that. Tracked separately in GH-1240; do not read this method as making both
-	/// operations take effect.
-	/// </para>
-	/// Entries with no identity (a non-object element, or an object whose <c>name</c> is missing, empty, or
-	/// not a JSON string) are preserved IN PLACE rather than relocated to the tail - on BOTH sides. A
-	/// <c>viewConfigDiff</c> is an ordered operation list, so moving an operation changes when it applies
-	/// relative to its neighbours, and that is as true of the caller's fragment as of the server's body.
+	/// GitHub #1132: the previous version keyed <c>current.Concat(incoming)</c> by <c>name</c> alone, so a
+	/// page carrying both a <c>move</c> and a <c>merge</c> for one component silently lost the <c>move</c>
+	/// on any append. Why several operations per name are legitimate, why the identity is shaped the way it
+	/// is, and why a transform kept beside an <c>insert</c> is inert (GH-1240), are recorded in
+	/// <c>docs/knowledge/Command/viewconfigdiff-carries-multiple-operations-per-component-name.md</c>.
 	/// </remarks>
 	private static JArray MergeViewConfigDiffOperations(JArray current, JArray incoming) {
-		// Last incoming entry wins WITHIN one fragment: a caller who repeats an identity in the same body
-		// means the later spelling, and only one of the two can survive without re-creating the duplicate
-		// the caller is collapsing. The emit pass below still places it at the FIRST occurrence's position.
+		// Last spelling wins within one fragment; the emit pass below still places it at the first
+		// occurrence's position.
 		var incomingByIdentity = new Dictionary<OperationIdentity, JToken>();
 		foreach (JToken item in incoming) {
 			if (TryGetOperationIdentity(item, out OperationIdentity identity)) {
@@ -528,25 +505,19 @@ internal static class PageBodyMerger {
 		foreach (JToken item in current) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity) ||
 				!incomingByIdentity.TryGetValue(identity, out JToken replacement)) {
-				// No identity, or no incoming entry claims this identity. The current entry is kept
-				// VERBATIM AND IN PLACE - this is the #1132 fix: current entries are never deduped
-				// against each other, so an append can no longer drop an operation it never referenced.
+				// The #1132 fix: with no incoming counterpart, a current entry is kept even when an
+				// earlier one shares its identity.
 				merged.Add(item);
 				continue;
 			}
+			// Only the first occurrence is replaced. A later current entry of the same identity is
+			// dropped, because keeping it would re-apply stale values after the replacement — at the cost
+			// of losing its keys when the two set disjoint ones.
 			if (replaced.Add(identity)) {
 				merged.Add(replacement);
-				continue;
 			}
-			// A FURTHER current entry of an identity the incoming fragment already superseded is dropped.
-			// Keeping it would let it re-apply AFTER the replacement - the differ walks a per-name group in
-			// array order - so the caller's new values would lose to the stale ones. The residual cost is
-			// real and worth naming: when two same-identity current entries set DISJOINT keys (one title,
-			// one visible), the second entry's keys go with it. Dropping is still the better of the two
-			// available behaviours, because the alternative silently defeats the incoming write.
 		}
-		// One ordered pass over the incoming array, so an unidentified incoming entry stays interleaved
-		// exactly where the caller wrote it instead of being flushed to the tail behind every identified one.
+		// Ordered pass over `incoming` so an unidentified entry keeps the position the caller gave it.
 		var emitted = new HashSet<OperationIdentity>();
 		foreach (JToken item in incoming) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
@@ -561,49 +532,29 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
-	/// The identity of one <c>viewConfigDiff</c> operation, as the differ itself distinguishes them.
+	/// Identity of one <c>viewConfigDiff</c> operation, mirroring the distinctions the differ itself
+	/// makes. A record struct rather than a composed string key: any separator can be smuggled inside a
+	/// value — <c>U+0000</c> included, it is a legal JSON escape — which would forge a collision.
 	/// </summary>
-	/// <remarks>
-	/// A record struct rather than a concatenated string key on purpose: every single-character separator
-	/// is forgeable. <c>U+0000</c> included - it is a legal JSON string escape that Newtonsoft decodes to a
-	/// real NUL - so a crafted operation carrying one could collide with a legitimate entry and reintroduce
-	/// the #1132 silent operation loss on a path that writes to a customer environment. A tuple removes the
-	/// need to reason about separators at all.
-	/// </remarks>
 	/// <param name="Operation">The operation verb, or the empty string when the entry carries none.</param>
 	/// <param name="Name">The target component name.</param>
 	/// <param name="TargetsProperties">
-	/// Whether this is a <c>remove</c> carrying a <c>properties</c> array. <see cref="JsonDiffApplier"/>
-	/// routes <c>remove</c> into two DIFFERENT groups applied in two different passes depending on that
-	/// array, so a property removal and an element removal for one component are distinct operations and
-	/// must not collide - conflating them would let an incoming property removal delete a current element
-	/// removal, which is the #1132 defect in miniature.
+	/// A <c>remove</c> carrying a <c>properties</c> array. <see cref="JsonDiffApplier"/> routes those into
+	/// a different group than an element <c>remove</c>, so the two must not collide.
 	/// </param>
 	private readonly record struct OperationIdentity(string Operation, string Name, bool TargetsProperties);
 
 	/// <summary>
-	/// Computes the merge identity of one <c>viewConfigDiff</c> entry from its <c>operation</c>,
-	/// <c>name</c>, and - for a <c>remove</c> - whether it targets properties rather than the element.
-	/// Both strings are compared ordinally.
+	/// Computes an entry's <see cref="OperationIdentity"/>. Returns <see langword="false"/> for a
+	/// non-object element, or one whose <c>name</c> is not a non-empty JSON string — such an entry is
+	/// never merged and never reordered, which is the safe direction.
 	/// </summary>
-	/// <param name="item">The array element to identify.</param>
-	/// <param name="identity">The composite identity, or <see langword="default"/> when the entry has none.</param>
-	/// <returns>
-	/// <see langword="false"/> for a non-object element, or an object whose <c>name</c> is absent, empty,
-	/// JSON-null, or not a JSON string; such an entry is never merged and never reordered. Three deliberate
-	/// choices, all of which fail toward that safe branch:
-	/// <list type="bullet">
-	/// <item><c>operation</c> is compared ORDINALLY, not case-insensitively. The differ switches on the raw
-	/// string with NO default case, so <c>"Merge"</c> matches nothing and is discarded at apply time.
-	/// Folding case would let an incoming <c>"Merge"</c> replace - and therefore delete - a working current
-	/// <c>"merge"</c> in favour of an operation that never runs.</item>
-	/// <item>A missing <c>operation</c> is NOT defaulted; it forms its own identity with the empty string,
-	/// because guessing the platform's default would silently re-introduce the #1132 replacement of an
-	/// operation the caller never named.</item>
-	/// <item><c>name</c> must be a JSON string, so <c>{"name":123}</c> and <c>{"name":"123"}</c> cannot
-	/// share an identity the way a bare <c>ToString()</c> would have conflated them.</item>
-	/// </list>
-	/// </returns>
+	/// <remarks>
+	/// <c>operation</c> is ordinal and never case-folded: <see cref="JsonDiffApplier"/> switches on the raw
+	/// string with no default case, so a mis-cased <c>"Merge"</c> is discarded at apply time and must not
+	/// be allowed to replace a working <c>"merge"</c>. A missing <c>operation</c> is not defaulted either —
+	/// guessing one would replace an operation the caller never named.
+	/// </remarks>
 	private static bool TryGetOperationIdentity(JToken item, out OperationIdentity identity) {
 		identity = default;
 		if (item is not JObject operationItem) {

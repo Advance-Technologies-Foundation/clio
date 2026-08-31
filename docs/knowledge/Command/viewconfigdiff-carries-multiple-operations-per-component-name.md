@@ -13,8 +13,10 @@ appear several times, each with a different `operation`: a `move` that places it
 patches it are both valid and both required. `PageBodyMerger.MergeViewConfigDiffOperations` therefore
 identifies an operation by `(operation, name, targets-properties)` — both strings compared `Ordinal`,
 the third flag distinguishing a `remove` carrying a `properties` array from an element `remove` — and
-never deduplicates current-body entries against each other. Only an incoming entry with a matching
-identity replaces a current one, in place; an entry the merger cannot identify (no `name`, a
+never deduplicates current-body entries against each other *on its own*. Only an incoming entry with
+a matching identity replaces a current one, and it replaces the FIRST occurrence in place; a later
+current entry of that same superseded identity is then dropped, because keeping it would re-apply
+stale values after the replacement. An entry the merger cannot identify (a missing, empty, or
 non-string `name`, or a non-object element) is preserved at its original index rather than moved.
 
 **Why it is this way** — clio's own clone of the platform differ, `JsonDiffApplier`, groups operations
