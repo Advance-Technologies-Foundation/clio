@@ -4,13 +4,16 @@ The rules a manual test prompt must satisfy, with the failure each rule prevents
 
 ## Why the rules are strict
 
-The executor session runs with no memory, no repository access, and no sight of the Jira issue. It
-has exactly one input — this prompt — and one toolset: the shipped clio MCP surface with its
-guidance library. So the prompt is a measuring instrument. Every implementation detail leaked into
-it is a detail the guidance library is no longer being tested on.
+The run debugs three things: `CrtProcessBuilder`, clio, and the knowledge library. The executor
+session runs with no memory, no repository access, and no sight of the Jira issue. It has exactly
+one input — this prompt — and one toolset: the shipped clio MCP surface with its guidance library.
 
-A prompt that names the elements produces a green run over a guidance library that would have failed
-a real user. That is the only way this exercise can silently stop working.
+So the prompt is a measuring instrument. Every implementation detail leaked into it is a detail
+those three are no longer being tested on: naming the element skips whatever the guidance failed to
+explain, and naming the tool skips whatever its description failed to convey.
+
+A prompt that names the elements produces a green run over a product that would have failed a real
+user. That is the only way this exercise can silently stop working.
 
 ## Rule 1 — business language, not construction
 

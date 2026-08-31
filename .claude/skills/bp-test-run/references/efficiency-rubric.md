@@ -10,9 +10,14 @@ status, and order. Order matters as much as count.
 
 ## The question being asked
 
-Not "did it succeed" — phase 4 answers that. The question is: **given only the shipped guidance and
-tool descriptions, did the agent take a direct path?** Every detour is a defect somewhere upstream,
-and almost never in the agent.
+Not "did it succeed" — phase 4 answers that, and functional defects in `CrtProcessBuilder` surface
+there. The question here is: **given only the shipped guidance and tool descriptions, did the agent
+take a direct path?** Every detour is a defect in clio or in the knowledge library, and almost never
+in the agent.
+
+This is the half of the debugging session that a functional pass cannot see. A feature that works
+but takes eleven calls to reach is shipping broken for every user who is not the person who built
+it.
 
 ## Signals
 
@@ -73,11 +78,14 @@ out of the table and mention it in prose as something to watch.
 
 ## Where fixes land
 
-Guidance articles live in `Advance-Technologies-Foundation/clio-knowledge` under `guidance/`, one
-Markdown file per article, indexed by `bundle-source.json`. A fix there is a pull request in that
-repository and needs a `libraryVersion` + `sequence` bump — a library whose content changed under a
-reused sequence is rejected by clio.
+Owners in the table above resolve to two of the three components under test: **clio** (tool
+descriptions, tool profile membership, the routing pointer — all under `clio/Command/McpServer/` in
+this repository) and the **knowledge library** (articles under `guidance/` in `clio-knowledge`,
+indexed by `bundle-source.json`).
 
-Tool descriptions, tool profile membership, and the routing pointer live in this repository under
-`clio/Command/McpServer/`. Changing either is an MCP surface change and pulls in the MCP review
-policy in `AGENTS.md`.
+`CrtProcessBuilder` rarely owns an efficiency finding; its defects show up functionally in phase 4.
+The exception worth watching: when a tool's error text is unusable because the package returned
+something unusable, the finding is the package's, not the tool's.
+
+The routing table for all three destinations is in the skill's *Where each defect goes* section —
+keep it there, not duplicated here.

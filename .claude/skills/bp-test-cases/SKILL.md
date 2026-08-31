@@ -1,6 +1,6 @@
 ---
 name: bp-test-cases
-description: Author an AI-executable manual test prompt for committed business-process functionality and publish it on the Jira issue as a comment. Use after process functionality is committed, when asked to add manual test cases or a manual test prompt to a Jira task, or to revise an existing prompt after a failed run. Produces business-level scenarios with explicit design-time and runtime expectations; it does not execute them.
+description: Author an AI-executable manual test prompt used to debug CrtProcessBuilder, clio, and the clio knowledge library on a real stand, and publish it on the Jira issue as a comment. Use after process functionality is committed, when asked to add manual test cases or a manual test prompt to a Jira task, or to repair a prompt that invalidated a run. Produces business-level scenarios with explicit design-time and runtime expectations; it does not execute them.
 ---
 
 # BP manual test cases
@@ -8,10 +8,21 @@ description: Author an AI-executable manual test prompt for committed business-p
 Turn committed business-process work into a **prompt that a different AI session can execute from
 scratch** against a real stand, and publish it on the Jira issue.
 
-The prompt is not documentation of the change. It is the artifact under test: the run
-(`/bp-test-run`) measures whether the shipped MCP surface and guidance library are good enough for
-an agent that knows nothing but this prompt. Every fact the executor needs must be inside it;
-every fact it must discover for itself must be left out.
+**Three things are under test**, and every finding belongs to one of them:
+
+1. **`CrtProcessBuilder`** — the Creatio package: schema serialization, what the designer renders,
+   what the platform executes.
+2. **clio** — the CLI and the MCP tool surface: tool contracts, arguments, validation, errors,
+   what a tool does and what it reports back.
+3. **The clio knowledge library** — the guidance that steers an agent through the other two.
+
+The prompt is the instrument that exercises all three, not the subject. Its job is to state a
+business need precisely enough that any defect surfacing during the run belongs to one of those
+three, not to the wording.
+
+That is why the prompt must be built the way it is: every fact the executor needs is inside it, and
+every fact it must discover for itself is left out. A prompt that leads the executor hides exactly
+the defects the run exists to find.
 
 ## Invocation contract
 
@@ -21,8 +32,10 @@ every fact it must discover for itself must be left out.
 - `--feature <slug>` — feature folder under `spec/`. Default: derive from the issue key and summary
   (`eng-95891-formula-expressions`). Must satisfy the `spec/<feature-name>/` convention in AGENTS.md.
 - `--range <git-range>` — commits that carry the functionality. Default: `master..HEAD`.
-- `--revise` — rewrite the existing prompt instead of writing a new one. Use after a run exposed a
-  prompt defect (see the run report's *Prompt defects* section).
+- `--revise` — rewrite the existing prompt instead of writing a new one. This is a **repair path**,
+  not a normal step: use it only when a run proved the prompt itself was wrong and therefore
+  measured nothing (see the run report's *Invalidated by the prompt* section). Revising a prompt to
+  make a failing product defect go away destroys the finding.
 
 ## What it reads
 

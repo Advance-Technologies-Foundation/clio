@@ -1,18 +1,28 @@
 ---
 name: bp-test-run
-description: Execute a business-process manual test prompt end to end on a real stand — build local clio, wire the local knowledge library, install the local package, run the prompt in an isolated clean-room Claude session, verify the result in the browser, and analyze the executor's transcript for wasted or misordered tool calls. Use when asked to run manual testing on a stand, dogfood the MCP surface and guidance library, or check how efficiently an agent executes a test prompt.
+description: Debug CrtProcessBuilder, clio, and the clio knowledge library on a real stand by executing a business-process manual test prompt end to end — build local clio, wire the local knowledge library, install the local package, run the prompt in an isolated clean-room Claude session, verify design-time and runtime results in the browser, and analyze the executor's transcript for wasted or misordered tool calls. Use when asked to run manual testing on a stand, dogfood the package or MCP surface, or find guidance defects.
 ---
 
 # BP manual test run
 
-Run a manual test prompt against a real stand using **locally built** clio, guidance, and package —
-then judge two separate things:
+**This is a debugging session for three components**, run against a real stand with all three built
+locally:
 
-1. **Did the functionality work** — design time and runtime, verified in the browser.
-2. **Did the agent get there efficiently** — or did the shipped guidance make it flail.
+1. **`CrtProcessBuilder`** — schema serialization, what the designer renders, what the platform
+   executes.
+2. **clio** — the CLI and MCP tool surface: contracts, arguments, validation, error reporting.
+3. **The clio knowledge library** — the guidance that steers an agent through the other two.
 
-The second question is the reason this skill exists. A green functional result over a transcript
-full of redundant calls means the guidance library needs a fix, not a celebration.
+The prompt is the instrument, not the subject. The output of a run is **defects with reproductions,
+each attributed to one of those three** — not a verdict on the prompt.
+
+Two questions produce those defects:
+
+- **Did the functionality work** — design time and runtime, verified in the browser. Failures here
+  are usually `CrtProcessBuilder` or clio.
+- **Did the agent get there without flailing** — failures here are usually the knowledge library or
+  a tool description, and they are invisible to a functional pass. A green result reached through a
+  transcript full of redundant calls is a defect report, not a celebration.
 
 ## Invocation contract
 
@@ -114,8 +124,14 @@ supposed to be measured against.
 - **baseline** — the minimum call sequence a well-guided agent would use, per case, stated before the
   numbers. Without it a call count means nothing and cannot be compared across runs
 - per case: PASS/FAIL for design time and runtime, with the browser evidence
+- **defects** — the point of the run. Each one carries: the observed behavior, the minimal
+  reproduction, the owning component (`CrtProcessBuilder` / clio / knowledge library), and the
+  repository the fix belongs in. A defect without a reproduction is an anecdote and will not survive
+  contact with whoever has to fix it
 - efficiency findings, each with its owner and a proposed fix
-- prompt defects — anything the executor could not have known; these feed `/bp-test-cases --revise`
+- *Invalidated by the prompt* — cases where the prompt, not the product, was wrong, so the case
+  measured nothing. These and only these feed `/bp-test-cases --revise`. Keep the list short and
+  honest: moving a real product defect into this section makes it disappear
 - teardown confirmation (phase 7)
 
 Post the summary to Jira with `addCommentToJiraIssue`. **Comments only** — never edit the issue
@@ -133,12 +149,19 @@ to print are in `references/environment.md`.
 Leaving the local library enabled silently changes the guidance every unrelated session sees
 afterwards. That is a defect of the run, not a leftover detail.
 
-## Guidance fixes go to another repository
+## Where each defect goes
 
-Guidance content lives in `Advance-Technologies-Foundation/clio-knowledge`, not in this repository.
-A guidance finding becomes a pull request there, with a `libraryVersion` and `sequence` bump — clio
-rejects a library whose content changed under a reused sequence. Do not patch article text into
-clio.
+Three components, three destinations. Getting this wrong wastes a fix in the wrong repository.
+
+| Owner | Repository | Notes |
+|---|---|---|
+| `CrtProcessBuilder` | `cli-process-builder` | Package/server-side behavior. A fix reaches a stand only after a rebundle with a raised `-Version` **and** a clio rebuild |
+| clio | this repository | Tool contracts, arguments, validation, error text. An MCP surface change pulls in the MCP review policy in `AGENTS.md` |
+| Knowledge library | `clio-knowledge` | Article content, one Markdown file per article. Needs a `libraryVersion` + `sequence` bump — clio rejects a library whose content changed under a reused sequence. Never patch article text into clio |
+
+When a defect could belong to two of them — a tool that behaves correctly but is undiscoverable, say
+— record both, with the reason. Deciding it silently is how a guidance gap gets filed as a tool bug
+and closed as "works as designed".
 
 ## Reuse, do not reimplement
 
