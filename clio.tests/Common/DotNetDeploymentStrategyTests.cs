@@ -211,7 +211,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			  "Kestrel": {
 			    "Endpoints": {
 			      "Http": { "Url": "http://::1" },
-			      "Https": { "Url": "https://[::]:5002", "Certificate": { "Path": "existing.pfx" } }
+			      "Https": { "Url": "https://::1", "Certificate": { "Path": "existing.pfx" } }
 			    }
 			  }
 			}
@@ -224,8 +224,8 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
 			because: "an IPv6 address without an explicit port must be rewritten before the selected HTTP port is applied");
-		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:5002",
-			because: "preserved HTTPS endpoints must continue to use their explicit port");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost",
+			because: "an unbracketed IPv6 HTTPS address without an explicit port must use the HTTPS default port");
 	}
 
 	[Test]
