@@ -185,12 +185,34 @@ if ($LASTEXITCODE -ne 0 -or -not $upstream) {
     if ($LASTEXITCODE -ne 0) {
         Die "Cannot compare $branch against $upstream in $PackageRepoPath."
     }
-    if ([int]$behind -gt 0) {
-        Die ("Branch $branch is $behind commit(s) behind $upstream, so the archive would omit work that is " +
-            "already on the branch it claims to ship. Merge or rebase first, THEN cut. This is the failure " +
-            "an archive hit once by predating a rebase - it was clean, and the pin named its head correctly.")
-    }
     $ahead = (git -C $PackageRepoPath rev-list --count "$upstream..HEAD" 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Die "Cannot compare $branch against $upstream in $PackageRepoPath."
+    }
+    # BEHIND and DIVERGED are refused for the same reason and fixed by opposite actions, so they must not
+    # share a message. The first wording covered only "someone else advanced the branch", and told a
+    # diverged operator to rebase - which changes nothing when their commits are already on the right base
+    # and the count is stale history awaiting a force-push. Following that advice literally costs minutes
+    # and reads as "the rebase did not work".
+    if ([int]$behind -gt 0 -and [int]$ahead -eq 0) {
+        Die ("Branch $branch is $behind commit(s) behind $upstream and has none of its own, so the archive " +
+            "would omit work that is already on the branch it claims to ship. Merge or rebase first, THEN " +
+            "cut. This is the failure an archive hit once by predating a rebase - it was clean, and the pin " +
+            "named its head correctly.")
+    }
+    if ([int]$behind -gt 0) {
+        Die ("Branch $branch has DIVERGED from ${upstream}: $behind commit(s) there are not here, and " +
+            "$ahead here are not there. This script cannot tell which of two situations that is, and they " +
+            "are fixed by opposite actions:`n" +
+            "  * the upstream carries work you do not have -> pull it in, then cut;`n" +
+            "  * you rewrote your own history (rebase) and have not pushed -> those $behind are the OLD " +
+            "ids, already replayed in your tree, and rebasing again changes nothing.`n" +
+            "Tell them apart by CONTENT, not by the counts: diff $upstream..HEAD over the package sources " +
+            "and see whether your tree is a superset. If it is, the branch needs a force-push - which " +
+            "rewrites published history and is a decision for a person, not for this script, so it will " +
+            "keep refusing until someone makes it. Cutting from a checkout with no upstream is the " +
+            "supported way to proceed without that decision.")
+    }
     # Ahead is expected - the restamp below is itself an unpushed commit. Reported so the operator can see
     # how much of what is being shipped exists only locally.
     # LIMIT, stated rather than papered over: "behind" is measured against the upstream ref AS LAST FETCHED.
