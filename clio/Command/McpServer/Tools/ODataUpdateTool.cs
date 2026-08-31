@@ -11,10 +11,12 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH). Before the PATCH
-/// goes out, <see cref="ODataFieldValidation"/> verifies every data field against the entity's
-/// OData type (<c>odata/{entity}/$metadata</c>) and rejects lookup reference values in the
-/// empty-GUID form the platform silently drops, so the tool's success flag describes only
-/// writes the service has actually accepted.
+/// goes out, <see cref="ODataFieldValidation"/> verifies every data field NAME against the
+/// entity's OData type, read from the service-root <c>odata/$metadata</c> document (in OData v4
+/// <c>$metadata</c> is a service-root resource, so there is no per-entity variant to fetch).
+/// Field VALUES are not validated - an empty-GUID lookup reference is passed through like any
+/// other value - so success:true means the service accepted the PATCH, not that every value
+/// survived it.
 /// </summary>
 [McpServerToolType]
 public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
@@ -60,7 +62,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 				args.Entity.Trim(),
 				args.Id.Trim(),
 				data.EnumerateObject()
-					.Select(property => new ODataFieldValidation.DataField(property.Name, property.Value))
+					.Select(property => new ODataFieldValidation.DataField(property.Name))
 					.ToList());
 			if (fieldValidationError is not null) {
 				return fieldValidationError;

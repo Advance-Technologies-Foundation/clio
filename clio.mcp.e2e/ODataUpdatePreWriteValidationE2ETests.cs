@@ -103,8 +103,8 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 	[Test]
 	[AllureTag(ODataUpdateTool.ToolName)]
 	[AllureName("odata-update refuses to write on an unverified pre-write response")]
-	[AllureDescription("Points both pre-write reads at a non-JSON IIS-style body carrying a credential URI, then verifies odata-update reports the payload as unverified, performs no PATCH, keeps the body prefix as diagnostics, and scrubs the credential and internal host.")]
-	[Description("When $metadata and the $select probe both answer with a non-JSON body, odata-update reports the payload as unverified, writes nothing, surfaces the body prefix as diagnostics, and redacts the credential URI it carries.")]
+	[AllureDescription("Points both pre-write reads at a non-JSON IIS-style body carrying a credential URI, then verifies odata-update reports the payload as unverified, performs no PATCH, and quotes no part of that body - not the credential, not the internal host, not even the inert marker it carries - explaining the shape in locally authored wording instead.")]
+	[Description("When $metadata and the $select probe both answer with a non-JSON body, odata-update reports the payload as unverified, writes nothing, and reproduces no part of the body: the explanation is locally authored, so the credential URI it carries cannot leak.")]
 	public async Task ODataUpdate_Should_Refuse_When_PreWrite_Response_Is_Unverified() {
 		// Arrange
 		await using ODataPreWriteStand stand = await ODataPreWriteStand.StartAsync(
@@ -121,16 +121,21 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 			because: "an outcome the tool could neither confirm nor refute must read as unverified, never as success");
 		surfacedText.Should().Contain("No write was performed",
 			because: "the caller must be told the record is untouched so it can safely retry");
-		surfacedText.Should().Contain(RuntimeDetectionStubServer.ODataPreWriteUnverifiedBodyMarker,
-			because: "a prefix of the unrecognized body is deliberately surfaced as diagnostics - the same "
-				+ "contract as ODataKeyedWrite.ValidateWriteResponse - so the agent can see what answered");
+		surfacedText.Should().Contain("was not JSON",
+			because: "the agent is told what shape answered through locally authored wording, which is what "
+				+ "replaced quoting the body itself");
+		surfacedText.Should().Contain("The body is not reproduced here",
+			because: "the refusal must state that the body was withheld, otherwise the omission reads as the "
+				+ "tool having seen nothing at all");
+		surfacedText.Should().NotContain(RuntimeDetectionStubServer.ODataPreWriteUnverifiedBodyMarker,
+			because: "no part of an unrecognized pre-write body may be quoted - the marker is inert, so only "
+				+ "its absence proves the suppression is unconditional rather than redaction that happened "
+				+ "to catch this body's secrets");
 		surfacedText.Should().NotContain(RuntimeDetectionStubServer.ODataPreWriteUnverifiedSecret,
 			because: "a non-JSON pre-write body is the IIS/proxy or SSO page - a realistic carrier of "
-				+ "credentials and redirect tokens - so the redactor must scrub them from the surfaced prefix");
+				+ "credentials and redirect tokens - and none of it may reach the MCP transcript");
 		surfacedText.Should().NotContain(RuntimeDetectionStubServer.ODataPreWriteUnverifiedHost,
 			because: "internal hostnames in that same body must not reach the MCP transcript either");
-		surfacedText.Should().Contain("[redacted-uri]",
-			because: "the scrubbed URI must leave a visible placeholder so the agent knows a URI was elided");
 		surfacedText.Should().NotContain("is an invalid start of a value",
 			because: "the raw System.Text.Json parser message must never cross the MCP boundary");
 

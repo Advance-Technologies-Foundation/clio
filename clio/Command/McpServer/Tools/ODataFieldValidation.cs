@@ -57,10 +57,10 @@ internal static class ODataFieldValidation {
 	internal const int FollowUpProbeTimeoutMs = 10_000;
 
 	/// <summary>
-	/// A data field to validate: its name and the raw value the caller supplied (the value is
-	/// needed for the lookup empty-GUID check, which is name-blind on its own).
+	/// A data field to validate. Only the name is carried: validation is name-only, so a value
+	/// would be plumbed through and never read.
 	/// </summary>
-	public sealed record DataField(string Name, JsonElement Value);
+	public sealed record DataField(string Name);
 
 	/// <summary>
 	/// Verifies the supplied <paramref name="fields"/> against the entity's OData type before a
@@ -74,7 +74,7 @@ internal static class ODataFieldValidation {
 	/// <param name="urlBuilder">The environment-scoped URL builder.</param>
 	/// <param name="entity">The OData entity set name (already validated by the caller).</param>
 	/// <param name="id">The addressed record GUID (already validated by the caller).</param>
-	/// <param name="fields">The data fields (name and value) to verify.</param>
+	/// <param name="fields">The data field names to verify.</param>
 	internal static ODataWriteResponse? ValidateDataFields(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
