@@ -15,9 +15,10 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>install-process-builder</c> command.
 /// </summary>
 /// <remarks>
-/// Deliberately NOT feature-gated, even though every tool it unblocks carries
-/// <c>[FeatureToggle("process-designer")]</c>. A gated primitive is filtered out of registration, so the
-/// remediation the process-designer tools point at would be unreachable exactly when it is needed.
+/// Deliberately NOT feature-gated — and it must never regress behind a gate. The process-designer tools
+/// it unblocks ship gate-free since go-live (ENG-96132), and a gated primitive is filtered out of
+/// registration, so gating this remediation would make it unreachable exactly when a tool's package
+/// refusal names it.
 /// </remarks>
 public sealed class InstallProcessBuilderTool(
 	ILogger logger,
