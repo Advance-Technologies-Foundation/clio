@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
@@ -2106,6 +2106,117 @@ public class PageToolsTests
 			because: "the downgrade is advisory only and must not block the save");
 		response.Warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("merge"),
 			because: "demoting an own-body insert to a merge orphans the component and must surface as a warning");
+	}
+
+	[Test]
+	[Description("TryUpdatePage returns BOTH the insert-downgrade warning and the inert-operation warning instead of one overwriting the other (locks CombineWarnings).")]
+	public void TryUpdatePage_WhenDowngradeAndInertPairBothApply_ReturnsBothWarningsAndSaves() {
+		// Arrange — the stored schema inserts UsrName AND UsrPhone. The incoming replace body downgrades
+		// UsrName's insert to a merge (a downgrade finding) and carries an insert+merge pair for UsrPhone
+		// (an inert-operation finding), so the two detectors fire on one save.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrBothWarnings_FormPage",
+				"both-schema-uid",
+				"both-package-uid",
+				"UsrBothPackage",
+				"BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""
+						[
+							{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } },
+							{ "operation": "insert", "name": "UsrPhone", "values": { "type": "crt.Input" } }
+						]
+						"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrBothWarnings_FormPage",
+			Body = CreatePageBody("""
+				[
+					{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } },
+					{ "operation": "insert", "name": "UsrPhone", "values": { "type": "crt.Input" } },
+					{ "operation": "merge", "name": "UsrPhone", "values": { "visible": false } }
+				]
+				"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "both findings are advisory and neither may block the save");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("orphaned"),
+			because: "the insert->merge downgrade warning must survive the second warning source");
+		response.Warnings.Should().Contain(w => w.Contains("UsrPhone") && w.Contains("'merge'"),
+			because: "the inert insert+merge pair must be reported too — assigning response.Warnings per source would silently drop whichever ran first");
+	}
+
+	[Test]
+	[Description("TryUpdatePage reports an inert operation pair on a dry run, without saving, so the caller learns before writing.")]
+	public void TryUpdatePage_WhenDryRunBodyCarriesInertPair_ReturnsWarningWithoutSaving() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrDryInert_FormPage",
+				"dry-inert-schema-uid",
+				"dry-inert-package-uid",
+				"UsrDryInertPackage",
+				"BasePage").ToString());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrDryInert_FormPage",
+			Body = CreatePageBody("""
+				[
+					{ "operation": "remove", "name": "UsrName" },
+					{ "operation": "move", "name": "UsrName", "parentName": "Other", "propertyName": "items", "index": 0 }
+				]
+				"""),
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a dry run of a valid body succeeds; the finding is advisory");
+		response.DryRun.Should().BeTrue(because: "the dry-run flag must still be reported on the envelope");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("'move'"),
+			because: "a dry run is exactly the call that asks whether a body is right before writing it, so a body-only finding belongs there");
+		applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]

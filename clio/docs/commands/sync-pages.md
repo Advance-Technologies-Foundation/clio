@@ -167,6 +167,13 @@ being sent to Creatio:
 Validation failures prevent the page from being saved and are reported in the response.
 This replaces the need for separate dry-run calls.
 
+Advisory findings are different: they appear in each page's `validation.warnings` and never
+prevent a save. `sync-pages` forwards every warning `update-page` produces, so a page can come
+back successful with a warning that one of its `viewConfigDiff` operations is silently dropped at
+apply time because another operation for the same component name cancels it — the differ applies
+whole operation groups in a fixed order, not in array order. See
+[`update-page`](update-page.md) for the shapes and the remedies.
+
 When a page body contains `#ResourceString(key)#` macros, `sync-pages` forwards each page's
 optional `resources` JSON object string to `update-page`. The response returns
 `resources-registered` for each page so callers can see how many child-schema resources

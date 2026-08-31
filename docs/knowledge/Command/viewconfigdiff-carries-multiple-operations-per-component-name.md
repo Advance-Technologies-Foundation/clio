@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/PageInsertDowngradeDetector.cs
   - clio/Command/JsonDiffApplier.cs
 ticket: GH-1132
-date: 2026-08-28
+date: 2026-08-31
 ---
 
 **What is true** — a `viewConfigDiff` is an ordered operation list in which one component `name` may
@@ -28,20 +28,13 @@ verb would let a mis-cased `"Merge"` (which the differ discards) replace and the
 `"merge"`.
 
 **A consequence that is easy to get backwards** — preserving an incoming transform beside a current
-`insert` for one name does *not* make both take effect. Because the merge group runs before the insert
-group, a `merge`, `move`, or element `remove` aimed at a component the same body inserts resolves
-against a source that does not yet contain it and is discarded (`ApplyOperations` drops the
-unsuccessful list). Only `set` runs after the insert. Preserving the operation is still right — the
-alternative deletes the insert and orphans the component — but it is inert, and **nothing reports
-that today**: `PageInsertDowngradeDetector` falls silent as soon as it sees the insert survive. Tracked
-in GH-1240. Do not read the merger as making both operations take effect.
-
-The same trap has a second shape that is *not* about `insert`: a current element `remove` beside an
-incoming `move` for one name. `ApplyChangePositionOperationGroup` starts with
-`FilterMoveOperation(removes, moves)`, which drops every `move` whose name matches any `remove` — so
-the operation the caller just appended is the one discarded. Preserving both is still right (the
-pre-#1132 merger let the incoming `move` delete the `remove`, which is worse), but neither the merger
-nor `PageInsertDowngradeDetector` reports it. Also tracked in GH-1240.
+`insert` for one name does *not* make both take effect, and neither does preserving a current element
+`remove` beside an incoming `move`. Preserving them is still right — the alternative deletes the
+insert and orphans the component, or lets the incoming `move` delete the `remove` — but the second
+operation is **inert** at apply time. Do not read the merger as making both operations take effect.
+The mechanism, the full set of affected shapes, and the advisory warning `update-page` emits for them
+are recorded in
+`docs/knowledge/Command/a-transform-beside-an-insert-for-one-name-is-inert.md`.
 
 **What breaks if you ignore it** — the pre-#1132 merger flattened `current.Concat(incoming)` into a
 single `name`-keyed dictionary. A page whose body held a `move` and a `merge` for one component lost

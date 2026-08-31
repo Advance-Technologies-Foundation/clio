@@ -156,7 +156,7 @@ public class PageBodyMergerTests {
 	}
 
 	[Test]
-	[Description("An incoming merge must not destroy the current insert for the same name; both survive, the insert first (note the merge is inert at apply time — PageInsertDowngradeDetector reports that separately)")]
+	[Description("An incoming merge must not destroy the current insert for the same name; both survive, the insert first (note the merge is inert at apply time — PageInertOperationDetector reports that separately)")]
 	public void Merge_ShouldKeepInsertAndAddMerge_WhenIncomingMergesAnInsertedName() {
 		// Arrange
 		const string currentInsert = """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input"}}]""";
@@ -171,7 +171,7 @@ public class PageBodyMergerTests {
 		Op(merged[0]).Should().Be("insert",
 			because: "the insert must come first: a merge patches an element that must already exist");
 		Op(merged[1]).Should().Be("merge",
-			because: "the incoming merge is preserved rather than deleted — it is NOT applied at runtime (the differ runs the merge group before the insert group), which PageInsertDowngradeDetector warns about; preserving it keeps the caller's intent visible in the body instead of destroying the insert as the pre-#1132 merger did");
+			because: "the incoming merge is preserved rather than deleted — it is NOT applied at runtime (the differ runs the merge group before the insert group), which PageInertOperationDetector warns about; preserving it keeps the caller's intent visible in the body instead of destroying the insert as the pre-#1132 merger did");
 	}
 
 	[Test]
@@ -447,22 +447,21 @@ public class PageBodyMergerTests {
 	}
 
 	[Test]
-	[Description("An append that merges an inserted name no longer produces the orphaning downgrade PageInsertDowngradeDetector warns about, because the insert is kept instead of being replaced")]
-	public void Merge_ShouldProduceNoOrphanWarning_WhenIncomingMergesAnInsertedName() {
+	[Description("An append that merges an inserted name keeps the insert, so no orphaning downgrade is reported — and the kept merge, which is inert at apply time, is reported by PageInertOperationDetector instead of being left silent (GH-1240)")]
+	public void Merge_ShouldPreserveInsertAndReportKeptMergeInert_WhenIncomingMergesAnInsertedName() {
 		// Arrange
 		string currentBody = WebBody("""[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input"}}]""");
 		string incomingBody = WebBody("""[{"operation":"merge","name":"UsrName","values":{"visible":false}}]""");
 
 		// Act
 		string mergedBody = PageBodyMerger.Merge(currentBody, incomingBody);
-		IReadOnlyList<string> warnings = PageInsertDowngradeDetector.Detect(currentBody, mergedBody);
+		IReadOnlyList<string> orphanWarnings = PageInsertDowngradeDetector.Detect(currentBody, mergedBody);
+		IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(mergedBody);
 
 		// Assert
-		warnings.Should().BeEmpty(
+		orphanWarnings.Should().BeEmpty(
 			because: "the merge no longer replaces the insert, so the component is not orphaned and the downgrade warning correctly does not fire");
-		// Deliberately NOT asserted here: that the preserved merge actually takes effect. It does not —
-		// the differ runs the merge group before the insert group, so a merge beside an insert for one
-		// name is inert. Preserving it is still better than destroying the insert, and reporting the
-		// inertness is tracked separately in GH-1240 rather than widened into this fix.
+		inertWarnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("'merge'"),
+			because: "preserving the merge is right — the alternative destroys the insert as the pre-#1132 merger did — but it does NOT take effect: the differ runs the merge group before the insert group, and GH-1240 is exactly the gap of nobody saying so");
 	}
 }

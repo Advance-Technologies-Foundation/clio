@@ -1,4 +1,4 @@
-COMMAND TYPE
+﻿COMMAND TYPE
     Development commands
 
 NAME
@@ -130,6 +130,17 @@ DESCRIPTION
     exception: if your fragment supersedes an identity the page carries TWICE, only
     the first is replaced and the later one is dropped, since keeping it would
     re-apply stale values after your replacement. Handlers dedupe by request.
+    Preserved is not the same as applied, and this is not specific to append - it
+    is how the platform differ resolves any final body, so a hand-authored
+    --mode replace body produces it too. Operations run in whole GROUPS in a fixed
+    order (merges, then removes/inserts/moves, set last), never in array order.
+    - Warned: a merge, move or element remove sitting beside an insert for the
+      same name. It resolves against a base that lacks the component and is
+      dropped. Same for a move whose name the body also element-removes. Fold the
+      values into the insert, or use set, which runs after it. Reordering the
+      array changes nothing. The save still succeeds; --dry-run reports it too.
+      Advisory only: a parent schema inserting the same name can make the
+      transform apply after all, and clio cannot see the replacing chain.
     Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
     / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
     and is rejected with an actionable hint — use --mode replace for such a body.

@@ -1,4 +1,4 @@
-# update-page
+﻿# update-page
 
 ## Command Type
 
@@ -152,8 +152,11 @@ Pass `--force` to deliberately overwrite the external changes instead.
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
 
-Successful saves may also return a `warnings` entry about the live Designer Presence
-push. Treat that warning as informational only: the schema save already succeeded.
+Successful saves may also return `warnings`. Every entry is informational only — the
+schema save already succeeded, so never retry on a warning. Today they cover the live
+Designer Presence push, a component whose `insert` the submitted body replaced with a
+`merge`/`move`/`remove`, and an operation the differ will drop because another operation
+for the same component name cancels it (see "Write modes").
 
 Baseline sources: both the CLI verb and the MCP `update-page` tool arm this check
 automatically from the baseline that a previous `get-page` stores in
@@ -179,12 +182,30 @@ A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` m
 yours — and, for a `remove`, whether it targets `properties`. Incoming wins, and the replacement
 keeps the existing entry's position. Every other existing operation is preserved verbatim and in
 place, including a second operation on a component you already target (a `move` and a `merge` for
-one name are both valid and both survive).
+one name are both valid and both survive the merge — though "survive" means kept in the body, not
+necessarily applied; see the group-ordering caveat below).
 
 There is one exception. If your fragment supersedes an identity that the page carries **twice**,
 only the first occurrence is replaced and the later one is dropped — keeping it would re-apply its
 stale values *after* your replacement. When those two entries set disjoint keys, the later entry's
 keys go with it. Handlers dedupe by `request`.
+
+**Preserved is not the same as applied**, and this part is not about append at all — it is how the
+platform differ resolves any final body, so a hand-authored `--mode replace` body produces it too.
+Operations are applied in whole **groups** in a fixed order (merges, then removes/inserts/moves,
+`set` last), never in array order. So a `merge`, `move`, or element `remove` that ends up beside an
+`insert` for the same `name` resolves against a base that does not contain the component yet and is
+silently dropped; likewise a `move` for a name the same body also element-`remove`s, which the
+differ filters out before applying anything. The save still succeeds and the response carries an
+advisory `warnings` entry naming the component. Fix it by folding the transform's values into the
+`insert` itself, or by using `set`, which runs after the insert — not by reordering the array, which
+changes nothing.
+
+The warning is advisory because it reads one schema body and cannot see the replacing chain: a
+parent schema that inserts the same name puts the component in the base and can make the transform
+apply after all. A `--dry-run` reports it too, so you can check a body before writing it — in append
+mode a dry run sees only your incoming fragment, so a pair formed by the server's `insert` plus your
+`merge` is reported on the real save.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead

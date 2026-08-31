@@ -3082,4 +3082,49 @@ public sealed class ToolContractGetToolTests {
 		modeField.Description.Should().NotContain("dedupe by `name`",
 			because: "the pre-#1132 claim describes behaviour the merger no longer has and caused the silent loss of an existing move operation");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract discloses that the differ applies whole operation groups in a fixed order, so an operation preserved beside another for one name can be silently dropped (GitHub #1240)")]
+	public void ToolContractGet_Should_Disclose_ApplyOrder_Inertness_In_UpdatePage_Mode() {
+		// Arrange
+		// Same reason the identity test above is mandatory: update-page is non-resident, so this curated
+		// string is the only description an agent receives. #1132 shipped a merger that PRESERVES both
+		// operations, which reads as "both take effect" — it is not true, and the contract has to say so.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("whole operation GROUPS in a fixed order",
+			because: "an agent that believes the array is applied in order will keep authoring a transform beside an insert and keep wondering why nothing happened");
+		modeField.Description.Should().Contain("silently dropped",
+			because: "preserved-but-inert is the exact confusion #1240 filed; naming the outcome is what makes the warning actionable");
+		modeField.Description.Should().Contain("not append-specific",
+			because: "the inertness comes from the differ, not the merger, so a hand-authored 'replace' body produces it too — scoping the caveat to append would mislead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page output contract declares the warnings array the envelope carries, so an agent knows to read it")]
+	public void ToolContractGet_Should_Declare_Warnings_In_UpdatePage_Output_Envelope() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField warningsField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.OutputContract.Fields.Single(field => field.Name == "warnings");
+		warningsField.Description.Should().Contain("never retry on a warning",
+			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
+	}
 }

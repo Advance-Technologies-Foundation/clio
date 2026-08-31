@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -4838,7 +4838,7 @@ internal static class ToolContractCatalog {
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific — a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`. Reordering the array changes nothing."),
 					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
@@ -4852,6 +4852,7 @@ internal static class ToolContractCatalog {
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
+				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, page-body lint findings, and the best-effort Designer Presence push."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,

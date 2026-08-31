@@ -30,10 +30,12 @@ using Newtonsoft.Json.Linq;
 /// Since GitHub #1132 the append merger identifies an operation by
 /// <c>(operation, name, targets-properties)</c>, so an incoming <c>merge</c> no longer REPLACES a
 /// current <c>insert</c> — both are kept, and this detector
-/// stays quiet because nothing was orphaned. Be aware that keeping both does NOT make both take
-/// effect: the differ runs whole groups in a fixed order (merges first, then removes/inserts/moves)
-/// rather than in array order, so a transform beside an <c>insert</c> for the same name is inert.
-/// Reporting THAT shape is deliberately out of scope here and tracked separately in GH-1240.
+/// stays quiet because nothing was orphaned. Keeping both does NOT make both take effect: the differ
+/// runs whole groups in a fixed order (merges first, then removes/inserts/moves) rather than in array
+/// order, so a transform beside an <c>insert</c> for the same name is inert. That is a different
+/// question from orphaning — it is about ONE body, not prior-versus-final — and it is reported by
+/// <see cref="PageInertOperationDetector"/> (GH-1240), which this detector deliberately does not
+/// duplicate.
 /// </para>
 /// The detector needs no knowledge of which mode produced the body — it compares the resolved final
 /// body against the prior body, so it covers <c>replace</c> and <c>append</c> identically.
@@ -79,8 +81,8 @@ internal static class PageInsertDowngradeDetector {
 			if (finalNameOps.Contains(InsertOperation)) {
 				// The insert is preserved (e.g. updated, or kept alongside a sibling op) — not a downgrade.
 				// NOTE a sibling merge/move/remove kept beside the insert is INERT at apply time (the differ
-				// runs the merge group before the insert group and discards what fails), which this detector
-				// deliberately does NOT report — see the class remarks and GH-1240.
+				// runs the merge group before the insert group and discards what fails). That is
+				// PageInertOperationDetector's finding, not this one's — see the class remarks and GH-1240.
 				continue;
 			}
 			string transform = FirstTransformOperation(finalNameOps);

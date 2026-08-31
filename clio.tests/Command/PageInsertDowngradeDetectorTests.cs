@@ -186,9 +186,12 @@ public class PageInsertDowngradeDetectorTests {
 	}
 
 	[Test]
-	[Description("Detect does not warn when the final body keeps the insert alongside a merge (web and mobile)")]
+	[Description("Detect does not warn when the final body keeps the insert alongside a merge — orphaning is the only thing this detector reports (web and mobile)")]
 	public void Detect_ShouldNotWarn_WhenInsertIsKeptWithMerge([Values(PageSchemaType.Web, PageSchemaType.Mobile)] PageSchemaType kind) {
-		// Arrange — both ops present in order compose fine at runtime.
+		// Arrange — the insert survives, so nothing is ORPHANED. The two ops do NOT compose at runtime:
+		// the differ applies whole groups in a fixed order, merges before inserts, never in array order,
+		// so the sibling merge is inert. That is PageInertOperationDetector's finding (GH-1240), not this
+		// detector's, and the cross-link is asserted in PageInertOperationDetectorTests.
 		string prior = Body(kind, InsertName);
 		string final = Body(kind, InsertAndMergeName);
 
@@ -197,7 +200,7 @@ public class PageInsertDowngradeDetectorTests {
 
 		// Assert
 		warnings.Should().BeEmpty(
-			$"because an insert that remains present is not orphaned even when a sibling merge exists ({kind})");
+			$"because an insert that remains present cannot be orphaned; the sibling merge's inertness is reported by PageInertOperationDetector, not here ({kind})");
 	}
 
 	[Test]
