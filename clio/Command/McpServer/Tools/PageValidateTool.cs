@@ -73,9 +73,9 @@ public sealed class PageValidateTool(
 	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
 	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
 	private static PageSyncValidationResult FoldInContentErrors(
-		PageSyncValidationResult result, SchemaValidationResult chartResult) {
+		PageSyncValidationResult result, SchemaValidationResult extraResult) {
 		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);
-		mergedErrors.AddRange(chartResult.Errors);
+		mergedErrors.AddRange(extraResult.Errors);
 		return new PageSyncValidationResult {
 			MarkersOk = result.MarkersOk,
 			JsSyntaxOk = result.JsSyntaxOk,

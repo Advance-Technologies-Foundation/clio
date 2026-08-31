@@ -26,6 +26,15 @@ public static class SchemaValidationService
 	private const string LabelPropertyName = "label";
 	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
 	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
+
+	// crt.RunBusinessProcessRequest.processRunType values. The platform matches the string EXACTLY, so
+	// these are the single source of spelling for both the enumeration in the missing-value error and the
+	// case-sensitive whitelist below.
+	private const string RegardlessOfThePageRunType = "RegardlessOfThePage";
+	private const string ForTheSelectedPageRunType = "ForTheSelectedPage";
+	private const string ForTheSelectedRecordsRunType = "ForTheSelectedRecords";
+	private static readonly string[] KnownProcessRunTypes =
+		[RegardlessOfThePageRunType, ForTheSelectedPageRunType, ForTheSelectedRecordsRunType];
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
 	private const string ViewModelConfigPropertyName = "viewModelConfig";
 	private const string ModelConfigPropertyName = "modelConfig";
@@ -1784,10 +1793,11 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Body-only structural validation for <c>crt.RunBusinessProcessRequest</c> buttons:
-	/// every such button must carry a non-empty <c>processName</c> AND a non-empty
-	/// <c>processRunType</c>, and a <c>ForTheSelectedPage</c> button must additionally carry a
-	/// non-empty <c>recordIdProcessParameterName</c> (the parameter the current record is passed
-	/// into — ENG-95822). All are required by the request contract; omitting any of them does not
+	/// every such button must carry a non-empty <c>processName</c> AND a <c>processRunType</c> that is
+	/// exactly one of the three known values (the platform matches it case-sensitively), and a
+	/// <c>ForTheSelectedPage</c> button must additionally carry a non-empty
+	/// <c>recordIdProcessParameterName</c> (the parameter the current record is passed into — ENG-95822).
+	/// All are required by the request contract; omitting any — or mis-casing the run type — does not
 	/// error at runtime but silently runs the process without the intended record context (the same
 	/// silent-misbehavior class as a wrong parameter code).
 	/// Parameter-code correctness is validated separately against the live process signature
@@ -1797,9 +1807,10 @@ public static class SchemaValidationService
 		SchemaValidationResult result = new() { IsValid = true };
 		foreach (RunProcessButtonConfig config in RunProcessButtonConfigReader.Read(jsBody)) {
 			// The button name comes straight from the body JSON name field, so treat it as untrusted.
-			// Bind it through Sanitize before it reaches the semicolon-joined MCP error text and the
-			// update-page log — the same guard the sibling reporters apply, so a page authored elsewhere
-			// cannot forge extra diagnostic boundaries in the operator's agent transcript.
+			// Bind it through Sanitize — which maps control characters to spaces and caps the length at 60 —
+			// before it reaches the semicolon-joined MCP error text and the update-page log, the same guard the
+			// sibling reporters apply so a page authored elsewhere cannot smuggle newlines or an unbounded value
+			// into the operator's agent transcript.
 			string buttonLabel = string.IsNullOrWhiteSpace(config.ButtonName)
 				? "a crt.RunBusinessProcessRequest button"
 				: $"run-process button '{Sanitize(config.ButtonName)}'";
@@ -1813,10 +1824,23 @@ public static class SchemaValidationService
 				result.IsValid = false;
 				result.Errors.Add(
 					$"{buttonLabel} is missing the required 'processRunType' "
-					+ "('RegardlessOfThePage', 'ForTheSelectedPage', or 'ForTheSelectedRecords'). "
+					+ $"('{RegardlessOfThePageRunType}', '{ForTheSelectedPageRunType}', or "
+					+ $"'{ForTheSelectedRecordsRunType}'). "
 					+ "Without it the process does not run against the intended record context.");
 			}
-			else if (string.Equals(config.ProcessRunType, ForTheSelectedPageRunType, StringComparison.OrdinalIgnoreCase)
+			else if (!KnownProcessRunTypes.Contains(config.ProcessRunType, StringComparer.Ordinal)) {
+				// The platform matches processRunType EXACTLY, so a mis-cased or unknown value (e.g.
+				// 'fortheselectedpage') falls through the runtime's switch to the no-context default and runs the
+				// process with NO record — the very silent failure this rule prevents, one layer up. Reject it
+				// here, case-sensitively, so the ForTheSelectedPage record-binding check below is exact-match too.
+				result.IsValid = false;
+				result.Errors.Add(
+					$"{buttonLabel} has an unknown 'processRunType' '{Sanitize(config.ProcessRunType)}'. "
+					+ $"It must be exactly one of {string.Join(", ", KnownProcessRunTypes.Select(runType => $"'{runType}'"))} "
+					+ "(case-sensitive — the platform matches the value exactly, so a mis-cased run type silently "
+					+ "runs the process without the intended record context).");
+			}
+			else if (string.Equals(config.ProcessRunType, ForTheSelectedPageRunType, StringComparison.Ordinal)
 				&& string.IsNullOrWhiteSpace(config.RecordIdProcessParameterName)) {
 				// 'ForTheSelectedPage' runs the process against the CURRENT page's record, which the platform
 				// hands over through a named process parameter (the designer's required "Process parameter
@@ -1836,9 +1860,6 @@ public static class SchemaValidationService
 		}
 		return result;
 	}
-
-	/// <summary>The <c>processRunType</c> that runs a process against the current page's record.</summary>
-	private const string ForTheSelectedPageRunType = "ForTheSelectedPage";
 
 	#region Registry-driven chart-widget validation
 	// Walks the registry's typeDefinitions for each inserted chart and enforces ONLY the data-block

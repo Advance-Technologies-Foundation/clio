@@ -420,8 +420,8 @@ public sealed class RunProcessButtonConfigReaderTests {
 	}
 
 	[Test]
-	[Description("The ForTheSelectedPage record-binding rule matches the run type case-insensitively — a non-canonically-cased 'fortheselectedpage' with no recordIdProcessParameterName still fails, pinning the deliberate OrdinalIgnoreCase comparison against a regression to Ordinal.")]
-	public void ValidateRunProcessButtonStructure_Should_Require_RecordId_For_ForTheSelectedPage_CaseInsensitively() {
+	[Description("A mis-cased processRunType ('fortheselectedpage') is REJECTED by the case-sensitive whitelist — the platform matches the value exactly, so it would otherwise fall through to the no-record default and run the process without the current record, the same silent failure one layer up (ENG-95822, d-krestov review).")]
+	public void ValidateRunProcessButtonStructure_Should_Reject_Unknown_ProcessRunType() {
 		// Arrange
 		string mobileBody = """
 			{
@@ -446,9 +446,9 @@ public sealed class RunProcessButtonConfigReaderTests {
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "the run-type match is case-insensitive, so a differently-cased ForTheSelectedPage must still require the record binding");
-		result.Errors.Should().ContainSingle()
-			.Which.Should().Contain("recordIdProcessParameterName",
-				because: "the case-insensitive branch reports the same missing-record-binding error");
+			because: "the platform matches processRunType exactly, so a mis-cased value must be rejected up front rather than run the process with no record");
+		result.Errors.Should().ContainSingle(because: "only the run type is wrong")
+			.Which.Should().Contain("processRunType").And.Contain("ForTheSelectedPage",
+				because: "the error must name the offending key and list the exact valid values so the caller can fix the casing");
 	}
 }
