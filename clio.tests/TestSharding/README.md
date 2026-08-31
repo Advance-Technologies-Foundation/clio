@@ -24,19 +24,6 @@ to one worker using the original predicate verbatim:
 Delete the variable, clear its value, or set it to any value other than `true` to turn sharding
 back on. The required checks remain named `Unit Tests` and `Integration Tests` in either mode.
 
-## Kirill's self-hosted runner
-
-Set repository variable `KIRILL_RUNNER_ENABLED` to `true` to route a same-repository pull request
-authored and triggered by `kirillkrylov` to the uniquely labelled `kirill-clio` runner. This path
-also disables sharding, because one runner service executes one job at a time. Other contributors
-continue to use the hosted shard matrices.
-
-The self-hosted path verifies that .NET 10 and, where required, .NET 8 are already available to
-the runner service account. It does not try to install SDKs into the machine-wide dotnet directory.
-
-Set the variable to `false` before stopping the runner. GitHub does not fall back to a hosted
-runner after a job has been queued for an offline self-hosted runner.
-
 ## Rebalance shards
 
 Each worker uploads its TRX file as a 14-day artifact. Download the four unit and three integration

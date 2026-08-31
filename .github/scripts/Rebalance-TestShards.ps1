@@ -13,6 +13,45 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Assert-SuccessfulTestRun {
+    param(
+        [Parameter(Mandatory = $true)][xml] $Trx,
+        [Parameter(Mandatory = $true)][string] $Path
+    )
+
+    $counters = $Trx.TestRun.ResultSummary.Counters
+    $failureCount = @(
+        $counters.failed,
+        $counters.error,
+        $counters.timeout,
+        $counters.aborted,
+        $counters.notRunnable,
+        $counters.disconnected
+    ) | ForEach-Object { [int]$_ } | Measure-Object -Sum | Select-Object -ExpandProperty Sum
+
+    if ($Trx.TestRun.ResultSummary.outcome -ne "Completed" -or $failureCount -ne 0) {
+        throw "TRX '$Path' is not a successful completed test run."
+    }
+}
+
+function Get-UnattributedPerTestSeconds {
+    param(
+        [Parameter(Mandatory = $true)][xml] $Trx,
+        [Parameter(Mandatory = $true)][object[]] $Results
+    )
+
+    if ($Results.Count -eq 0) {
+        return 0.0
+    }
+
+    $recordedSeconds = ($Results | ForEach-Object {
+        if ($_.duration) { [TimeSpan]::Parse([string]$_.duration).TotalSeconds } else { 0.0 }
+    } | Measure-Object -Sum).Sum
+    $startedAt = [DateTimeOffset]::Parse([string]$Trx.TestRun.Times.start)
+    $finishedAt = [DateTimeOffset]::Parse([string]$Trx.TestRun.Times.finish)
+    [Math]::Max(0.0, ($finishedAt - $startedAt).TotalSeconds - $recordedSeconds) / $Results.Count
+}
+
 function Get-FixtureDurations {
     param([Parameter(Mandatory = $true)][string[]] $TrxPath)
 
@@ -20,15 +59,7 @@ function Get-FixtureDurations {
     $secondsByFixture = @{}
     foreach ($path in $resolvedPaths) {
         [xml]$trx = Get-Content -LiteralPath $path -Raw
-        if ($trx.TestRun.ResultSummary.outcome -ne "Completed" -or
-            [int]$trx.TestRun.ResultSummary.Counters.failed -ne 0 -or
-            [int]$trx.TestRun.ResultSummary.Counters.error -ne 0 -or
-            [int]$trx.TestRun.ResultSummary.Counters.timeout -ne 0 -or
-            [int]$trx.TestRun.ResultSummary.Counters.aborted -ne 0 -or
-            [int]$trx.TestRun.ResultSummary.Counters.notRunnable -ne 0 -or
-            [int]$trx.TestRun.ResultSummary.Counters.disconnected -ne 0) {
-            throw "TRX '$path' is not a successful completed test run."
-        }
+        Assert-SuccessfulTestRun -Trx $trx -Path $path
         $namespace = New-Object System.Xml.XmlNamespaceManager($trx.NameTable)
         $namespace.AddNamespace("t", $trx.DocumentElement.NamespaceURI)
 
@@ -42,21 +73,7 @@ function Get-FixtureDurations {
         }
 
         $results = @($trx.SelectNodes("//t:Results/t:UnitTestResult", $namespace))
-        $recordedSeconds = 0.0
-        foreach ($result in $results) {
-            if ($result.duration) {
-                $recordedSeconds += [TimeSpan]::Parse([string]$result.duration).TotalSeconds
-            }
-        }
-        $startedAt = [DateTimeOffset]::Parse([string]$trx.TestRun.Times.start)
-        $finishedAt = [DateTimeOffset]::Parse([string]$trx.TestRun.Times.finish)
-        $wallSeconds = ($finishedAt - $startedAt).TotalSeconds
-        $unattributedPerTestSeconds = if ($results.Count -gt 0) {
-            [Math]::Max(0.0, $wallSeconds - $recordedSeconds) / $results.Count
-        }
-        else {
-            0.0
-        }
+        $unattributedPerTestSeconds = Get-UnattributedPerTestSeconds -Trx $trx -Results $results
 
         foreach ($result in $results) {
             $fixture = $fixtureByTestId[[string]$result.testId]

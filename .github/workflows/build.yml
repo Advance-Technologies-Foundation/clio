@@ -34,7 +34,6 @@ jobs:
       tests:       ${{ steps.filter.outputs.tests }}
       analyzers:   ${{ steps.filter.outputs.analyzers }}
       cliogate:    ${{ steps.filter.outputs.cliogate }}
-      use-kirill-runner: ${{ steps.plan.outputs.use-kirill-runner }}
       unit-matrix: ${{ steps.plan.outputs.unit-matrix }}
       integration-matrix: ${{ steps.plan.outputs.integration-matrix }}
     steps:
@@ -70,23 +69,12 @@ jobs:
         shell: pwsh
         env:
           TEST_SHARDING_DISABLED: ${{ vars.TEST_SHARDING_DISABLED }}
-          USE_KIRILL_RUNNER: >-
-            ${{
-              vars.KIRILL_RUNNER_ENABLED == 'true' &&
-              github.event_name == 'pull_request' &&
-              github.event.pull_request.user.login == 'kirillkrylov' &&
-              github.actor == 'kirillkrylov' &&
-              github.triggering_actor == 'kirillkrylov' &&
-              github.event.pull_request.head.repo.full_name == github.repository
-            }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $useKirillRunner = $env:USE_KIRILL_RUNNER -eq 'true'
-          $disabled = $env:TEST_SHARDING_DISABLED -eq 'true' -or $useKirillRunner
+          $disabled = $env:TEST_SHARDING_DISABLED -eq 'true'
           $arguments = if ($disabled) { @{ DisableSharding = $true } } else { @{} }
           $unit = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite unit @arguments
           $integration = & ./.github/scripts/Get-TestShardMatrix.ps1 -Suite integration @arguments
-          "use-kirill-runner=$($useKirillRunner.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "unit-matrix=$unit" >> $env:GITHUB_OUTPUT
           "integration-matrix=$integration" >> $env:GITHUB_OUTPUT
 
@@ -103,36 +91,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.unit-matrix) }}
-    runs-on: ${{ needs.changes.outputs.use-kirill-runner == 'true' && 'kirill-clio' || 'windows-latest' }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify local .NET SDKs
-        if: needs.changes.outputs.use-kirill-runner == 'true'
-        shell: powershell
-        env:
-          REQUIRE_NET8: ${{ matrix.runNet8Compatibility }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $sdks = @(dotnet --list-sdks)
-          if ($LASTEXITCODE -ne 0 -or -not ($sdks -match '^10\.')) {
-            throw '.NET 10 SDK is not installed or is unavailable to the runner service account.'
-          }
-          if ($env:REQUIRE_NET8 -eq 'true' -and -not ($sdks -match '^8\.')) {
-            throw '.NET 8 SDK is not installed or is unavailable to the runner service account.'
-          }
-          $sdks
-
       - uses: actions/setup-dotnet@v4
-        if: needs.changes.outputs.use-kirill-runner != 'true'
         with:
           dotnet-version: 10.0.x
 
       - uses: actions/setup-dotnet@v4
-        if: matrix.runNet8Compatibility && needs.changes.outputs.use-kirill-runner != 'true'
+        if: matrix.runNet8Compatibility
         with:
           dotnet-version: 8.0.x
 
@@ -195,6 +166,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.name }}
+          overwrite: true
           path: TestResults/${{ matrix.name }}/*.trx
           if-no-files-found: warn
           retention-days: 14
@@ -253,26 +225,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.integration-matrix) }}
-    runs-on: ${{ needs.changes.outputs.use-kirill-runner == 'true' && 'kirill-clio' || 'windows-latest' }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify local .NET 10 SDK
-        if: needs.changes.outputs.use-kirill-runner == 'true'
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $sdks = @(dotnet --list-sdks)
-          if ($LASTEXITCODE -ne 0 -or -not ($sdks -match '^10\.')) {
-            throw '.NET 10 SDK is not installed or is unavailable to the runner service account.'
-          }
-          $sdks
-
       - uses: actions/setup-dotnet@v4
-        if: needs.changes.outputs.use-kirill-runner != 'true'
         with:
           dotnet-version: 10.0.x
 
@@ -299,6 +259,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.name }}
+          overwrite: true
           path: TestResults/${{ matrix.name }}/*.trx
           if-no-files-found: warn
           retention-days: 14
