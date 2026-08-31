@@ -681,6 +681,7 @@ public class BindingsModule {
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
+		services.AddSingleton<IKnowledgeManagedTreeDeleter, KnowledgeManagedTreeDeleter>();
 		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
 		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
 		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
@@ -726,6 +727,7 @@ public class BindingsModule {
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
+		services.AddTransient<PackageFileTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
@@ -818,6 +820,10 @@ public class BindingsModule {
 		services.AddTransient<UnregisterCommand>();
 		
 		services.AddTransient<IUserPromptService, UserPromptService>();
+		services.AddSingleton<Creatio.ConflictResolver.IConflictResolver,
+			Creatio.ConflictResolver.ConflictResolver>();
+		services.AddSingleton<ICreatioArtifactMergeService, CreatioArtifactMergeService>();
+		services.AddTransient<CreatioArtifactMergeCommand>();
 		services.AddTransient<DeletePackageCommand>();
 		services.AddTransient<GetPkgListCommand>();
 		services.AddTransient<RestoreWorkspaceCommand>();
