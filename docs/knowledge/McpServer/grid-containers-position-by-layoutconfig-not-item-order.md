@@ -22,7 +22,11 @@ So placing content above an anchor takes BOTH halves: an explicit row on the sib
 moved down. And a `layoutConfig` must be COMPLETE: write `row`, `column`, `colSpan` and `rowSpan`
 every time. The runtime renders fine without the spans, but the Freedom UI Mobile **designer** fails
 to open a page whose `layoutConfig` omits them — a partial placement is not a smaller placement, it is
-a page nobody can edit.
+a page nobody can edit. `NormalizePlacements` enforces that once, last, over the whole element map:
+the converter authors placements from several places (the positional pass, the anchor clone, the
+adaptive pass, the tab-area stacking) and it also carries the WEB page's own `layoutConfig` verbatim,
+which may legitimately declare only `row`/`column`. Fixing the writers one by one leaves that carry
+path — and every future writer — behind.
 
 **Why it is this way** — the web side gives no hint: there the same wrapper lives in a
 `crt.FlexContainer`, where DOM order *is* visual order, so no child carries a `layoutConfig` for

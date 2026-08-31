@@ -275,6 +275,11 @@ public static class WebToMobileAnalysisService {
 		// declares (itemLayout) is never declared as an array.
 		InitializeContainerChildSlots(elementMap, mobileByType);
 
+		// Complete every layoutConfig the map carries, whoever wrote it — the placement passes above, the
+		// per-breakpoint adaptive pass, and the verbatim carry of the web page's own placement. Runs LAST of the
+		// elementMap-mutating passes so nothing can emit a partial one after it.
+		NormalizePlacements(elementMap);
+
 		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
 		// converter INSERTS, and the web page's own value for those properties is deliberately IGNORED
 		// (discarded, never translated). Which component, which properties and which values all come from
@@ -4111,9 +4116,10 @@ public static class WebToMobileAnalysisService {
 	/// The anchor's own template placement is the ORIGIN, so nothing here is assumed: its row is the first row the
 	/// group occupies, and its shape decides the shape written onto the siblings. A template that positions the
 	/// anchor per breakpoint (<c>layoutConfig.adaptive</c>) gets every breakpoint's row shifted and the siblings
-	/// placed per breakpoint too; a flat placement gets a flat one. <c>colSpan</c> / <c>rowSpan</c> are not written
-	/// onto a sibling — the mobile runtime does not support them — while the anchor keeps whatever its template
-	/// declared, minus the shifted row.
+	/// placed per breakpoint too; a flat placement gets a flat one. Only <c>row</c> and <c>column</c> are computed;
+	/// the anchor keeps whatever its template declared, minus the shifted row. Every placement is completed to all
+	/// four keys by <see cref="NormalizePlacements"/> — the runtime renders without <c>colSpan</c> / <c>rowSpan</c>,
+	/// but the Freedom UI Mobile DESIGNER refuses to open a page whose <c>layoutConfig</c> omits them.
 	/// </para>
 	/// <para>
 	/// An anchor whose template declares no row at all is left alone together with its group: that parent
@@ -4263,6 +4269,98 @@ public static class WebToMobileAnalysisService {
 		}
 		values["layoutConfig"] = SiblingSlot(flatRow + offset);
 		return true;
+	}
+
+	/// <summary>
+	/// Completes every <c>layoutConfig</c> the element map carries so none reaches the page partial.
+	/// <para>
+	/// The Freedom UI Mobile DESIGNER fails to open a page whose <c>layoutConfig</c> omits <c>colSpan</c> /
+	/// <c>rowSpan</c>. The runtime renders fine without them, so the failure surfaces only when somebody opens the
+	/// converted page to edit it — nothing in the conversion, the validator or a read-back reports it.
+	/// </para>
+	/// <para>
+	/// Normalizing here rather than at each writer is deliberate: the converter authors a placement from several
+	/// places — this pass's own <see cref="SiblingSlot"/>, the anchor clone in <see cref="ShiftRows"/>, the
+	/// per-breakpoint adaptive pass, the tab-area stacking, and the VERBATIM carry of the web page's own
+	/// <c>layoutConfig</c> in <see cref="BuildMobileValues"/>. That last one is the reason a per-writer fix is not
+	/// enough: a child of a single-column web grid is touched by none of the placement passes and keeps the web
+	/// object exactly as authored, spans and all — and a web page may legitimately declare only
+	/// <c>row</c>/<c>column</c>.
+	/// </para>
+	/// <para>
+	/// Applied to the WHOLE <c>mobileValues</c> tree, not just its root, so a placement nested inside a pasted
+	/// value (a list row's <c>itemLayout</c>, a menu item) is completed too — the designer reads those the same way.
+	/// An <c>adaptive</c> block is completed per breakpoint and its wrapper is left alone unless it also carries
+	/// flat keys of its own; a <c>layoutConfig</c> that is not an object at all cannot be honoured as a placement
+	/// and is replaced outright.
+	/// </para>
+	/// </summary>
+	private static void NormalizePlacements(List<ElementMapEntry> elementMap) {
+		foreach (ElementMapEntry entry in elementMap) {
+			if (entry.MobileValues is JsonNode values) {
+				NormalizePlacementsIn(values);
+			}
+		}
+	}
+
+	/// <summary>Recurses a value tree, completing every <c>layoutConfig</c> property it finds.</summary>
+	private static void NormalizePlacementsIn(JsonNode node) {
+		switch (node) {
+			case JsonObject obj:
+				if (obj.TryGetPropertyValue("layoutConfig", out JsonNode placement)) {
+					obj["layoutConfig"] = CompletePlacement(placement);
+				}
+				foreach (KeyValuePair<string, JsonNode> property in obj.ToList()) {
+					if (!string.Equals(property.Key, "layoutConfig", StringComparison.Ordinal) && property.Value is not null) {
+						NormalizePlacementsIn(property.Value);
+					}
+				}
+				break;
+			case JsonArray array:
+				foreach (JsonNode item in array.ToList()) {
+					if (item is not null) {
+						NormalizePlacementsIn(item);
+					}
+				}
+				break;
+		}
+	}
+
+	/// <summary>
+	/// One placement with every key the designer requires. A non-object is replaced by the default cell: it cannot
+	/// be honoured as a placement, and leaving it would keep the page unopenable. An <c>adaptive</c> block is
+	/// completed breakpoint by breakpoint; its wrapper gains flat keys only when it already carries some, so a
+	/// purely per-breakpoint placement is never given a competing flat one.
+	/// </summary>
+	private static JsonNode CompletePlacement(JsonNode placement) {
+		if (placement is not JsonObject cell) {
+			return SiblingSlot(1);
+		}
+		if (cell["adaptive"] is JsonObject adaptive) {
+			foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive.ToList()) {
+				if (breakpoint.Value is JsonObject slot) {
+					FillPlacementKeys(slot);
+				}
+			}
+			if (PlacementKeys.Any(key => cell[key] is not null)) {
+				FillPlacementKeys(cell);
+			}
+			return cell;
+		}
+		FillPlacementKeys(cell);
+		return cell;
+	}
+
+	/// <summary>The keys a placement must carry for the mobile designer to open the page.</summary>
+	private static readonly string[] PlacementKeys = [LayoutRowKey, "column", "colSpan", "rowSpan"];
+
+	/// <summary>Adds each missing placement key as 1, leaving every value the caller already set untouched.</summary>
+	private static void FillPlacementKeys(JsonObject cell) {
+		foreach (string key in PlacementKeys) {
+			if (cell[key] is null) {
+				cell[key] = 1;
+			}
+		}
 	}
 
 	/// <summary>

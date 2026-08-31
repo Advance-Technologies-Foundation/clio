@@ -3501,7 +3501,11 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject lc = Element(guide, "FieldB").MobileValues!.AsObject()["layoutConfig"]!.AsObject();
 		lc.ContainsKey("adaptive").Should().BeFalse("a 1-column grid needs no adaptive");
 		lc["column"]!.GetValue<int>().Should().Be(1, "the carried base placement is kept as-is");
-		lc["row"]!.GetValue<int>().Should().Be(2);
+		lc["row"]!.GetValue<int>().Should().Be(2, "the web page's own row is carried verbatim");
+		lc.Select(pair => pair.Key).Should().BeEquivalentTo(["column", "row", "colSpan", "rowSpan"],
+			because: "a child of a single-column grid is touched by none of the placement passes and keeps the web "
+				+ "object — so completion has to happen for the carry path too, or the mobile designer cannot open "
+				+ "the converted page");
 	}
 
 	[Test]
@@ -7853,6 +7857,119 @@ public sealed class WebToMobileConversionServiceTests {
 			s => s.Contains("operation=merge") && s.Contains("mobileValues"),
 			because: "the merge clause is the only place that tells the caller a merge entry can carry values at "
 				+ "all — the paste-verbatim step right after it is scoped to inserts");
+	}
+
+	#endregion
+
+
+	#region layoutConfig completion (ENG-96114 — the mobile designer rejects a partial placement)
+
+	/// <summary>Every layoutConfig anywhere in an entry's mobileValues, however deeply nested.</summary>
+	private static List<JsonObject> AllPlacements(MobilePageConversionGuide guide) {
+		var found = new List<JsonObject>();
+		void Walk(JsonNode node) {
+			switch (node) {
+				case JsonObject obj:
+					foreach (KeyValuePair<string, JsonNode> pair in obj) {
+						if (pair.Key == "layoutConfig" && pair.Value is JsonObject placement) {
+							found.Add(placement);
+						}
+						if (pair.Value is not null) {
+							Walk(pair.Value);
+						}
+					}
+					break;
+				case JsonArray array:
+					foreach (JsonNode item in array) {
+						if (item is not null) {
+							Walk(item);
+						}
+					}
+					break;
+			}
+		}
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (entry.MobileValues is not null) {
+				Walk(entry.MobileValues);
+			}
+		}
+		return found;
+	}
+
+	[Test]
+	[Description("The invariant across the whole guide: no emitted layoutConfig carries fewer than the four keys the mobile designer requires — whichever pass wrote it, and however deeply it is nested inside a pasted value.")]
+	public void Analyze_ShouldEmitNoPartialPlacement_AnywhereInTheGuide() {
+		// Arrange — a page that exercises several writers at once: a single-column grid whose children keep the
+		// web placement verbatim, a multi-column grid the adaptive pass owns, and a nested value.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OneCol", "type": "crt.GridContainer", "columns": [ "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } } ] },
+			  { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldB", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
+			    { "name": "FieldC", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		List<JsonObject> placements = AllPlacements(guide);
+		placements.Should().NotBeEmpty(because: "the fixture carries placements on every field");
+		foreach (JsonObject placement in placements) {
+			if (placement["adaptive"] is JsonObject adaptive) {
+				foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive) {
+					((JsonObject)breakpoint.Value!).Select(pair => pair.Key).Should()
+						.Contain(["row", "column", "colSpan", "rowSpan"],
+							because: $"breakpoint '{breakpoint.Key}' is a placement the designer reads like any other");
+				}
+				continue;
+			}
+			placement.Select(pair => pair.Key).Should().Contain(["row", "column", "colSpan", "rowSpan"],
+				because: "the designer refuses to open a page whose layoutConfig omits any of the four keys");
+		}
+	}
+
+	[Test]
+	[Description("A layoutConfig the web page carried as something other than an object cannot be honoured as a placement — it is replaced by the default cell rather than left to keep the page unopenable.")]
+	public void Analyze_ShouldReplaceANonObjectPlacement_WithTheDefaultCell() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "FieldA", "type": "crt.Input", "layoutConfig": "unusable" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		JsonNode placement = Element(guide, "FieldA").MobileValues!["layoutConfig"];
+		placement.Should().NotBeNull(because: "the element still needs a placement the designer can read");
+		((JsonObject)placement!).Select(pair => pair.Key).Should()
+			.BeEquivalentTo(["row", "column", "colSpan", "rowSpan"],
+				because: "a scalar cannot carry a cell, so the default complete one replaces it outright");
+	}
+
+	[Test]
+	[Description("A purely per-breakpoint placement is completed inside each breakpoint and gains no competing flat placement of its own — the runtime resolves from `adaptive` when it is present.")]
+	public void Analyze_ShouldCompleteEachBreakpoint_WithoutAddingFlatKeys() {
+		// Arrange — a multi-column grid, which is what makes the adaptive pass emit a per-breakpoint placement.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
+			    { "name": "FieldB", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		var placement = (JsonObject)Element(guide, "FieldA").MobileValues!["layoutConfig"]!;
+		placement["adaptive"].Should().NotBeNull(because: "a multi-column grid gets a per-breakpoint placement");
+		placement.Select(pair => pair.Key).Should().BeEquivalentTo(["adaptive"],
+			because: "a flat placement beside an adaptive one would compete with it at every breakpoint");
+		((JsonObject)placement["adaptive"]!["small"]!).Select(pair => pair.Key).Should()
+			.Contain(["row", "column", "colSpan", "rowSpan"],
+				because: "each breakpoint is itself a placement the designer must be able to read");
 	}
 
 	#endregion
