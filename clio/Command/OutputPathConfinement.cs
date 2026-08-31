@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Clio.Common;
 using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -152,22 +153,12 @@ internal static class OutputPathConfinement {
 	/// <param name="fileSystem">File-system abstraction used for the directory probe and the atomic write.</param>
 	/// <param name="resolvedPath">The confined absolute path returned by <see cref="Resolve"/>.</param>
 	/// <param name="content">The text to write.</param>
-	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, string content) {
-		string directory = fileSystem.Path.GetDirectoryName(resolvedPath);
-		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
-			fileSystem.Directory.CreateDirectory(directory);
-		}
-		try {
-			using Stream stream = fileSystem.File.Open(resolvedPath, FileMode.CreateNew, FileAccess.Write);
-			using var writer = new StreamWriter(stream);
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, string content) =>
+		WriteThroughTemporaryFile(fileSystem, resolvedPath, stream => {
+			using StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true);
 			writer.Write(content);
-		}
-		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
-			throw new IOException(
-				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
-				"path or remove the existing file.");
-		}
-	}
+			writer.Flush();
+		});
 
 	/// <summary>
 	/// Byte-exact counterpart of <see cref="WriteAtomic(IoFileSystem, string, string)"/>, for a payload that must
@@ -175,19 +166,53 @@ internal static class OutputPathConfinement {
 	/// <see cref="StreamWriter"/>, which normalises the encoding (a BOM on the source is dropped, an invalid
 	/// sequence becomes U+FFFD); a caller that advertises a byte-faithful copy has to bypass that.
 	/// </summary>
-	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, byte[] content) {
+	internal static void WriteAtomic(IoFileSystem fileSystem, string resolvedPath, byte[] content) =>
+		WriteThroughTemporaryFile(fileSystem, resolvedPath, stream => stream.Write(content, 0, content.Length));
+
+	/// <summary>
+	/// Completes the content in a sibling temporary file and only then moves it onto the final name, without
+	/// replacing an existing file.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="FileMode.CreateNew"/> reserves the NAME atomically, not the CONTENT. Writing straight into
+	/// the final path therefore left a truncated file behind whenever the write failed part-way — a full disk,
+	/// say — while the call reported failure, and the no-overwrite guard then refused every retry against the
+	/// wreckage. The temporary file is removed on every failure path, so a failed write leaves nothing at all.
+	/// </remarks>
+	private static void WriteThroughTemporaryFile(
+		IoFileSystem fileSystem, string resolvedPath, Action<Stream> writeContent) {
 		string directory = fileSystem.Path.GetDirectoryName(resolvedPath);
 		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory)) {
 			fileSystem.Directory.CreateDirectory(directory);
 		}
+		string temporaryPath = $"{resolvedPath}.{Guid.NewGuid():N}.tmp";
 		try {
-			using Stream stream = fileSystem.File.Open(resolvedPath, FileMode.CreateNew, FileAccess.Write);
-			stream.Write(content, 0, content.Length);
+			using (Stream stream = fileSystem.File.Open(temporaryPath, FileMode.CreateNew, FileAccess.Write)) {
+				writeContent(stream);
+				stream.Flush();
+			}
+			fileSystem.File.Move(temporaryPath, resolvedPath, overwrite: false);
 		}
 		catch (IOException) when (fileSystem.File.Exists(resolvedPath)) {
+			DeleteTemporaryFile(fileSystem, temporaryPath);
 			throw new IOException(
 				$"output-file '{resolvedPath}' already exists; refusing to overwrite it. Choose a different " +
 				"path or remove the existing file.");
+		}
+		catch {
+			DeleteTemporaryFile(fileSystem, temporaryPath);
+			throw;
+		}
+	}
+
+	private static void DeleteTemporaryFile(IoFileSystem fileSystem, string temporaryPath) {
+		try {
+			if (fileSystem.File.Exists(temporaryPath)) {
+				fileSystem.File.Delete(temporaryPath);
+			}
+		}
+		catch (Exception) {
+			// A leftover temporary file is not worth replacing the real failure with a second exception.
 		}
 	}
 

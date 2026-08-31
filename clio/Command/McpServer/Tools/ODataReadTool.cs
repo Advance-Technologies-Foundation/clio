@@ -339,7 +339,15 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver, IoFileSy
 				return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
 			}
 
-			if (root.TryGetProperty("value", out JsonElement valueEl)) {
+			// A bare top-level array — some endpoints and $expand projections return one — is a COLLECTION,
+			// not a single entity. Counting it as 1 reported a page of n rows as one record. The kind is also
+			// checked before TryGetProperty, which throws on anything that is not an object.
+			if (root.ValueKind == JsonValueKind.Array) {
+				return ParseCollectionResponse(root, root, countRequested);
+			}
+
+			if (root.ValueKind == JsonValueKind.Object
+				&& root.TryGetProperty("value", out JsonElement valueEl)) {
 				return ParseCollectionResponse(root, valueEl, countRequested);
 			}
 
@@ -359,7 +367,11 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver, IoFileSy
 		JsonElement valueElement,
 		bool countRequested) {
 		int count = valueElement.ValueKind == JsonValueKind.Array ? valueElement.GetArrayLength() : 1;
-		long? totalCount = root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
+		// A bare top-level array carries no envelope, and TryGetProperty throws on a non-object, so the
+		// annotations are read only when there is an object to read them from.
+		bool hasEnvelope = root.ValueKind == JsonValueKind.Object;
+		long? totalCount = hasEnvelope
+			&& root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
 			&& totalCountElement.TryGetInt64(out long parsedTotalCount)
 			? parsedTotalCount
 			: null;
@@ -367,7 +379,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver, IoFileSy
 			return ODataReadResponse.Failure(
 				"Creatio did not return @odata.count for count=true; total count cannot be verified.");
 		}
-		string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
+		string? nextLink = hasEnvelope
+			&& root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
 			&& nextLinkElement.ValueKind == JsonValueKind.String
 			? nextLinkElement.GetString()
 			: null;

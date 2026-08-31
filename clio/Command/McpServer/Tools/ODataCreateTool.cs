@@ -21,6 +21,13 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 	internal const string ToolName = "odata-create";
 
 	/// <summary>
+	/// Largest number of rows one call may carry. The byte limit on a file-backed payload bounds size, not
+	/// cardinality: a 10 MB array of tiny objects is still over a million sequential POSTs from a single MCP
+	/// call. A caller with more rows than this is told to chunk them.
+	/// </summary>
+	internal const int MaxRowCount = 1000;
+
+	/// <summary>
 	/// Next step offered when a row's side effect cannot be verified. Kept in one place so every unknown path
 	/// gives identical advice.
 	/// </summary>
@@ -113,6 +120,16 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFile
 		if (requestedRows is not { ValueKind: JsonValueKind.Array } parsedRows || parsedRows.GetArrayLength() == 0) {
 			return ODataCreateBatchResponse.RequestError(
 				"rows is required and must be a non-empty array of field/value objects.");
+		}
+		// The byte limit bounds SIZE, not CARDINALITY: a 10 MB array still holds well over a million tiny
+		// objects, and every one of them becomes its own sequential POST plus a retained result. Inline rows
+		// are bounded in practice by the MCP context; rows-file is exactly the path that is not, so the count
+		// is rejected HERE - before the environment is resolved and before any request leaves clio.
+		int rowCount = parsedRows.GetArrayLength();
+		if (rowCount > MaxRowCount) {
+			return ODataCreateBatchResponse.RequestError(
+				$"rows contains {rowCount} entries, which exceeds the {MaxRowCount}-row limit for one call. "
+				+ "Split the input into chunks of at most " + MaxRowCount + " rows and submit them separately.");
 		}
 		rows = parsedRows;
 		return null;

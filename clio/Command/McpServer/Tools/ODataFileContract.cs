@@ -19,6 +19,13 @@ internal static class ODataFileContract {
 	internal const long MaxPayloadBytes = 10L * 1024 * 1024;
 
 	/// <summary>
+	/// UTF-8 that THROWS on an invalid byte sequence instead of substituting U+FFFD. A replaced character
+	/// still parses as JSON, so a corrupted payload would reach the OData endpoint as altered data.
+	/// </summary>
+	private static readonly Encoding StrictUtf8 = new UTF8Encoding(
+		encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+	/// <summary>
 	/// Reads a UTF-8 JSON file and returns a caller-facing error instead of throwing. The path is confined to the
 	/// workspace anchor or the OS temp directory, symmetric with the write path: without that, a file-backed
 	/// payload argument is an arbitrary file reader, and a prompt-injection payload could point it at clio's own
@@ -43,8 +50,14 @@ internal static class ODataFileContract {
 				error = $"{optionName} is {length} bytes, which exceeds the {MaxPayloadBytes}-byte limit.";
 				return false;
 			}
-			json = fileSystem.File.ReadAllText(resolvedPath, Encoding.UTF8);
+			json = fileSystem.File.ReadAllText(resolvedPath, StrictUtf8);
 			return true;
+		} catch (DecoderFallbackException) {
+			// Encoding.UTF8 replaces an invalid byte sequence with U+FFFD, so a corrupted payload still parsed
+			// as JSON and was POSTed or PATCHed with silently altered characters. Strict decoding turns that
+			// into a caller-facing input error instead. No path echo, and nothing of the bytes is quoted.
+			error = $"{optionName} is not valid UTF-8. Re-encode the file as UTF-8 and retry.";
+			return false;
 		} catch (Exception ex) {
 			// No path echo, and the platform message is redacted: an UnauthorizedAccessException or IOException
 			// can carry the resolved path, the owning user, or a raw error code.
@@ -105,12 +118,17 @@ internal static class ODataFileContract {
 		// Three shapes reach here: the OData collection envelope, a bare top-level array (some endpoints and
 		// $expand projections return one), and a single entity object. Without the bare-array branch such a
 		// response summarized silently as zero rows and no columns.
+		// The kind has to be settled BEFORE probing for the envelope property: TryGetProperty throws
+		// InvalidOperationException on anything that is not an object, so a bare top-level array never
+		// reached the branch written for it and the whole file write was reported as failed.
 		JsonElement rows = default;
-		if (root.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.Array) {
-			rows = value;
-		}
-		else if (root.ValueKind is JsonValueKind.Array or JsonValueKind.Object) {
+		if (root.ValueKind == JsonValueKind.Array) {
 			rows = root;
+		}
+		else if (root.ValueKind == JsonValueKind.Object) {
+			rows = root.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.Array
+				? value
+				: root;
 		}
 		IEnumerable<JsonElement> rowElements = [];
 		if (rows.ValueKind == JsonValueKind.Array) {
