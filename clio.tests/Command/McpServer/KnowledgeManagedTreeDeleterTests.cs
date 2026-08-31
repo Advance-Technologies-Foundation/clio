@@ -12,9 +12,11 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Substituted-file-system coverage. These assert the walk's invariants on every host, including one with
-/// no privilege to create a symbolic link — see <see cref="KnowledgeManagedTreeDeleterFileSystemTests"/>
-/// for the real-filesystem half.
+/// Substituted-file-system coverage, and the ONLY tier that runs on every push: <c>build.yml</c> filters
+/// the push/PR job to <c>Category!=Integration</c> and gates the Integration job on <c>pull_request</c>, so
+/// an invariant pinned only in <see cref="KnowledgeManagedTreeDeleterFileSystemTests"/> first executes in
+/// the unfiltered release lane. Anything load-bearing belongs here as well as there — a junction cost a
+/// release exactly that way.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -44,6 +46,53 @@ public sealed class KnowledgeManagedTreeDeleterTests {
 				because: "Directory.Delete unlinks a reparse point instead of emptying it, so descending would "
 					+ "clear read-only bits on files outside the managed root that are never deleted - including "
 					+ "on a checkout Clio has just rejected as untrusted");
+	}
+
+	[Test]
+	[Description("Unlinks a directory reparse point during the walk instead of leaving it for the recursive delete.")]
+	public void Delete_ShouldUnlinkAReparsePointChild_BeforeTheRecursiveDelete() {
+		// Arrange
+		IDirectoryInfo link = Directory(LinkPath, FileAttributes.Directory | FileAttributes.ReparsePoint);
+		IDirectoryInfo plain = Directory(Root + "/plain", FileAttributes.Directory);
+		IDirectoryInfo root = Directory(Root, FileAttributes.Directory, children: [link, plain]);
+		IFileSystem fileSystem = FileSystemFor(root, link, plain);
+		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
+
+		// Act
+		deleter.Delete(Root);
+
+		// Assert
+		link.ReceivedCalls()
+			.Should().Contain(call => call.GetMethodInfo().Name == nameof(IDirectoryInfo.Delete)
+					&& (bool)call.GetArguments()[0] == false,
+				because: "a recursive delete that meets a junction child unlinks it and then throws anyway, "
+					+ "leaving the tree - so the link has to be unlinked here, non-recursively, before the "
+					+ "recursive delete ever sees it");
+		plain.ReceivedCalls()
+			.Should().NotContain(call => call.GetMethodInfo().Name == nameof(IDirectoryInfo.Delete),
+				because: "only reparse points are unlinked individually; an ordinary subdirectory is left for "
+					+ "the recursive delete, which handles it and is far cheaper");
+	}
+
+	[Test]
+	[Description("Still attempts the recursive delete when unlinking a reparse point fails.")]
+	public void Delete_ShouldStillDelete_WhenUnlinkingAReparsePointThrows() {
+		// Arrange
+		IDirectoryInfo link = Directory(LinkPath, FileAttributes.Directory | FileAttributes.ReparsePoint);
+		link.When(info => info.Delete(false))
+			.Do(_ => throw new UnauthorizedAccessException("Access to the path 'linked' is denied."));
+		IDirectoryInfo root = Directory(Root, FileAttributes.Directory, children: [link]);
+		IFileSystem fileSystem = FileSystemFor(root, link);
+		IKnowledgeManagedTreeDeleter deleter = Resolve(fileSystem);
+
+		// Act
+		deleter.Delete(Root);
+
+		// Assert
+		fileSystem.Directory.ReceivedCalls()
+			.Should().Contain(call => call.GetMethodInfo().Name == nameof(IDirectory.Delete),
+				because: "clearing and unlinking are best effort: a link that cannot be removed is left for "
+					+ "the delete itself to report, exactly as an unresettable read-only file is");
 	}
 
 	[TestCase(FileAttributes.ReadOnly, true, TestName = "A plain read-only file is cleared")]

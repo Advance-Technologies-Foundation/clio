@@ -7,7 +7,9 @@ ticket: ENG-96211
 date: 2026-08-31
 ---
 
-**What is true** — measured on .NET 10 / Windows, three runs of each shape:
+**What is true** — measured on .NET 10 / Windows, three runs of each shape. Note the scope: `clio.tests`
+targets net10.0 only, while `clio` ships net8.0 **and** net10.0, so a .NET 10 servicing fix does not release
+clio from the workaround — the lowest shipped target framework has to cope first.
 
 | tree | `Directory.Delete(root, recursive: true)` |
 |---|---|
@@ -32,10 +34,30 @@ delete — which removes the link and leaves the target and its attributes untou
 recursive delete never meets one. `KnowledgeManagedTreeDeleter` does this during the read-only walk it
 already performs, which costs nothing extra.
 
-**Why it is this way** — a junction carries `IO_REPARSE_TAG_MOUNT_POINT`, the same tag as a volume mount
-point, while a symlink carries `IO_REPARSE_TAG_SYMLINK`. The framework's recursive delete distinguishes the
-two and refuses the mount-point tag rather than risk deleting through a mounted volume. Clio cannot tell it
-that a knowledge checkout's junction is not a mounted volume, so clio removes the link before asking.
+**Why it is this way — and it is a bug, not a safety refusal.** A junction carries
+`IO_REPARSE_TAG_MOUNT_POINT`, the same tag as a volume mount point; a symlink carries
+`IO_REPARSE_TAG_SYMLINK`. For the mount-point tag the recursive delete first attempts an unmount via
+`DeleteVolumeMountPoint`. On an ordinary junction — which is not a mounted folder — that call fails and does
+nothing; the error is latched, `RemoveDirectory` still removes the link, and the latched error is thrown at
+the end. That is exactly the signature above: junction gone, tree left, message differing by host. It is
+[dotnet/runtime#86249](https://github.com/dotnet/runtime/issues/86249), open with an active fix, alongside
+the older [#23646](https://github.com/dotnet/runtime/issues/23646) on the missing name-surrogate check. Do
+not describe it as the framework protecting mounted volumes — it isn't, and believing that stops you
+checking what clio's replacement does.
+
+**What the replacement does NOT inherit.** `Directory.Delete(link, recursive: false)` is a bare
+`RemoveDirectory`: it never calls `DeleteVolumeMountPoint`. So for a *genuine* mounted folder inside the
+managed tree, clio strips the mount-point path without dismounting, leaving the volume mounted with no path.
+**Accepted**, because a mounted folder cannot arrive from remote checkout content — it needs local mount
+privilege — but accepted deliberately rather than unnoticed.
+
+**Three tag classes, not two.** The framework keys on the name-surrogate bit: it unlinks a symlink natively,
+mishandles a mount point as above, and **descends into** a non-name-surrogate tag — a OneDrive
+Files-On-Demand placeholder, a ProjFS/Scalar root, WCI, DFS. Clio's walk attempts to unlink that third class
+too; the attempt fails as not-empty, is swallowed, and the framework descends as before. Residual: read-only
+bits inside such a directory are never cleared, so a read-only `*.pack` behind a placeholder folder is still
+an undeletable cache. Narrowing the unlink to name-surrogates (`ResolveLinkTarget is not null`) would close
+it.
 
 **What breaks if you ignore it** — a user whose knowledge checkout contains a junction cannot delete the
 cache at all, and the error names only `'linked'`. Because the source is unregistered while its cache
