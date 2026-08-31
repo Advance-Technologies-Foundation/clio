@@ -83,8 +83,8 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 			.Contain("HTTPS",
 				because: "agents must know that network-facing dotnet binding is HTTPS-only");
 		contract.InputSchema.Properties.Single(property => property.Name == "certificateKeyPath").Description.Should()
-			.Contain("PEM or CRT",
-				because: "agents need the private-key requirement for PEM and CRT certificates");
+			.Contain("PEM or DER",
+				because: "agents need the private-key requirement for PEM and DER certificate files");
 		contract.InputSchema.Properties.Single(property => property.Name == "certificatePassword").Description.Should()
 			.Contain("environment variable",
 				because: "agents must not send a raw certificate password through MCP");
