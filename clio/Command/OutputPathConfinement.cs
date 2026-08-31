@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using Clio.Common;
 using IoFileSystem = System.IO.Abstractions.IFileSystem;
@@ -16,6 +17,10 @@ using IoFileSystem = System.IO.Abstractions.IFileSystem;
 /// temp directory — the two locations the migration flow legitimately writes to.
 /// </summary>
 internal static class OutputPathConfinement {
+
+	// Owner read/write only. Applied at creation time to the temporary file the final output is renamed from,
+	// so the payload is never momentarily readable by other local users of a shared temp root.
+	internal const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
 	// Upper bound on how many links a single path component may chain through before it is treated as a cycle.
 	// A legitimate link chain is a handful deep; anything beyond this is pathological and fails closed.
@@ -178,6 +183,14 @@ internal static class OutputPathConfinement {
 	/// the final path therefore left a truncated file behind whenever the write failed part-way — a full disk,
 	/// say — while the call reported failure, and the no-overwrite guard then refused every retry against the
 	/// wreckage. The temporary file is removed on every failure path, so a failed write leaves nothing at all.
+	/// <para>
+	/// On Unix the temporary file is created 0600 rather than at whatever the process umask allows. An output
+	/// file is legitimately permitted under the SHARED OS temp root, and the payload is a raw service response —
+	/// business data, often personal data — so a default 0644 would leave it readable by every other local user
+	/// for as long as it sits there, and a failed cleanup would leave the sibling temporary copy the same way.
+	/// The mode is set at CREATION, not afterwards: a chmod after the fact still leaves a window in which the
+	/// file exists world-readable. The final name inherits it, because the move renames the same inode.
+	/// </para>
 	/// </remarks>
 	private static void WriteThroughTemporaryFile(
 		IoFileSystem fileSystem, string resolvedPath, Action<Stream> writeContent) {
@@ -187,7 +200,15 @@ internal static class OutputPathConfinement {
 		}
 		string temporaryPath = $"{resolvedPath}.{Guid.NewGuid():N}.tmp";
 		try {
-			using (Stream stream = fileSystem.File.Open(temporaryPath, FileMode.CreateNew, FileAccess.Write)) {
+			FileStreamOptions options = new() {
+				Mode = FileMode.CreateNew,
+				Access = FileAccess.Write,
+				Share = FileShare.None
+			};
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+				options.UnixCreateMode = OwnerOnlyFile;
+			}
+			using (Stream stream = fileSystem.File.Open(temporaryPath, options)) {
 				writeContent(stream);
 				stream.Flush();
 			}

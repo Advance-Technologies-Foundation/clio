@@ -3,6 +3,7 @@ namespace Clio.Tests.Command;
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -287,6 +288,27 @@ public sealed class OutputPathConfinementTests {
 		// Assert
 		File.ReadAllText(outputFile).Should().Be("content",
 			because: "WriteAtomic writes the content to the resolved path, creating the parent directory");
+	}
+
+	[Test]
+	[Description("On Unix, WriteAtomic creates the output under the SHARED temp root with owner-only permissions (0600), so a raw service response is not left readable by other local users of that root. Skipped on Windows, where the mode has no meaning; note that CI runs the unit-test job on windows-latest, so this regression only executes on a Unix developer machine.")]
+	public void WriteAtomic_ShouldCreateOwnerOnlyFile_UnderSharedTempRoot() {
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			Assert.Ignore("Unix file modes do not apply on Windows.");
+		}
+
+		// Arrange — the OS temp root is shared between local users, which is what makes the mode matter
+		string outputFile = Path.Combine(_sandbox, "odata-response.json");
+		(string path, string error) = OutputPathConfinement.Resolve(_fileSystem, outputFile);
+		error.Should().BeNull(because: "a fresh path under the temp-root sandbox is inside an allowed zone");
+
+		// Act
+		OutputPathConfinement.WriteAtomic(_fileSystem, path, "{\"value\":[]}");
+
+		// Assert
+		File.GetUnixFileMode(outputFile).Should().Be(OutputPathConfinement.OwnerOnlyFile,
+			because: "the payload is a raw service response written into a shared root, so no group or other bit "
+				+ "may be set - and the final name inherits the mode because the move renames the same inode");
 	}
 
 	[Test]
