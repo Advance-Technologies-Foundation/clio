@@ -413,6 +413,10 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 				["push-workspace", "-e", environmentName],
 				workingDirectory: workspacePath,
 				cancellationToken: cancellationTokenSource.Token);
+			await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(
+				settings,
+				environmentName,
+				cancellationTokenSource.Token);
 			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 				settings,
 				["pkg-hotfix", packageName, "true", "-e", environmentName],
@@ -424,16 +428,12 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 				cancellationTokenSource.Token);
 		}
 
-		bool ownsSession = requireEnvironment;
-		McpServerSession session = ownsSession
-			? await McpServerSession.StartAsync(settings, cancellationTokenSource.Token)
-			: Session;
+		McpServerSession session = Session;
 		return new DataBindingDbArrangeContext(
 			rootDirectory,
 			workspacePath,
 			packageName,
 			environmentName,
-			ownsSession,
 			session,
 			cancellationTokenSource);
 	}
@@ -533,17 +533,14 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		string WorkspacePath,
 		string PackageName,
 		string? EnvironmentName,
-		bool OwnsSession,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
-		public async System.Threading.Tasks.ValueTask DisposeAsync() {
-			if (OwnsSession) {
-				await Session.DisposeAsync();
-			}
+		public System.Threading.Tasks.ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return System.Threading.Tasks.ValueTask.CompletedTask;
 		}
 	}
 

@@ -56,13 +56,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private string? _sharedEnvironmentName;
 	private string? _sharedPackageName;
 	private string? _sharedRootDirectory;
-	private McpServerSession? _sharedEnvironmentSession;
 
 	[OneTimeTearDown]
-	public async Task CleanupSharedSandboxPackage() {
-		if (_sharedEnvironmentSession is not null) {
-			await _sharedEnvironmentSession.DisposeAsync();
-		}
+	public void CleanupSharedSandboxPackage() {
 		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
 			Directory.Delete(_sharedRootDirectory, recursive: true);
 		}
@@ -1207,8 +1203,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			// Each test gets its own schema inside the shared package so creates never collide; the
 			// column names are constants but live in distinct schemas, so they do not clash either.
 			string schemaName = $"Usr{Guid.NewGuid():N}";
-			_sharedEnvironmentSession ??=
-				await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new EntitySchemaArrangeContext(
 				_sharedRootDirectory!,
 				environmentName,
@@ -1217,7 +1212,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				"UsrName",
 				"UsrSortOrder",
 				"UsrCode",
-				_sharedEnvironmentSession,
+				session,
 				cancellationTokenSource);
 		});
 	}
@@ -2321,7 +2316,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public ValueTask DisposeAsync() {
 			// RootDirectory is the shared fixture workspace (see EnsureSharedSandboxPackageAsync); it is
-			// deleted once in [OneTimeTearDown], and Session is fixture-owned for the same reason.
+			// deleted once in [OneTimeTearDown], so per-test disposal must NOT remove it.
 			CancellationTokenSource.Dispose();
 			return ValueTask.CompletedTask;
 		}
