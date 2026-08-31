@@ -560,6 +560,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
 			JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
+			string? canonicalHttpEndpointName = FindCanonicalHttpEndpointName(endpoints);
 			bool hasHttpEndpoint = false;
 			foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 			{
@@ -579,7 +580,8 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 				string rewrittenUrl = KestrelEndpointUrl.ReplaceHost(url, "localhost")
 					?? throw new JsonException($"Kestrel endpoint '{property.Key}' has an unsupported URL: {url}");
-				if (string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase) && !hasHttpEndpoint)
+				if (string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase)
+					&& string.Equals(property.Key, canonicalHttpEndpointName, StringComparison.OrdinalIgnoreCase))
 				{
 					rewrittenUrl = KestrelEndpointUrl.ReplacePort(rewrittenUrl, port);
 					hasHttpEndpoint = true;
@@ -593,6 +595,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				JsonObject httpEndpoint = FindOrCreateEndpoint(endpoints);
 				SetStringProperty(httpEndpoint, "Url", $"http://localhost:{port}");
 			}
+
+			EnsureNoHttpHttpsPortConflict(endpoints);
+			EnsureNoDuplicateEndpointBindings(endpoints);
 
 			return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 		}
@@ -682,6 +687,31 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		return createdEndpoint;
 	}
 
+	private static string? FindCanonicalHttpEndpointName(JsonObject endpoints)
+	{
+		string? namedProperty = FindPropertyName(endpoints, "Http");
+		if (namedProperty is not null)
+		{
+			if (endpoints[namedProperty] is not JsonObject)
+			{
+				throw new JsonException($"Configuration property '{namedProperty}' must be a JSON object.");
+			}
+
+			return namedProperty;
+		}
+
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (property.Value is JsonObject endpoint
+				&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), "http", StringComparison.OrdinalIgnoreCase))
+			{
+				return property.Key;
+			}
+		}
+
+		return null;
+	}
+
 	private static string? GetStringProperty(JsonObject parent, string propertyName)
 	{
 		string? actualPropertyName = FindPropertyName(parent, propertyName);
@@ -721,6 +751,73 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		}
 
 		return null;
+	}
+
+	private static void EnsureNoHttpHttpsPortConflict(JsonObject endpoints)
+	{
+		HashSet<int> httpPorts = new();
+		HashSet<int> httpsPorts = new();
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			JsonObject endpoint = (JsonObject)property.Value!;
+			string? url = GetStringProperty(endpoint, "Url");
+			string? scheme = GetUriScheme(url);
+			if (url is null || scheme is null)
+			{
+				continue;
+			}
+
+			string normalizedScheme = scheme.ToLowerInvariant();
+			if (normalizedScheme is not ("http" or "https"))
+			{
+				continue;
+			}
+
+			int endpointPort = KestrelEndpointUrl.GetPort(url, normalizedScheme);
+			(normalizedScheme == "http" ? httpPorts : httpsPorts).Add(endpointPort);
+		}
+
+		foreach (int endpointPort in httpPorts)
+		{
+			if (httpsPorts.Contains(endpointPort))
+			{
+				throw new InvalidOperationException(
+					$"The Kestrel HTTP and HTTPS endpoints both use port {endpointPort}. "
+					+ "Choose a different environment port or update the existing HTTPS configuration.");
+			}
+		}
+	}
+
+	private static void EnsureNoDuplicateEndpointBindings(JsonObject endpoints)
+	{
+		Dictionary<string, string> endpointNamesByBinding = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			JsonObject endpoint = (JsonObject)property.Value!;
+			string? url = GetStringProperty(endpoint, "Url");
+			string? scheme = GetUriScheme(url);
+			if (url is null || scheme is null)
+			{
+				continue;
+			}
+
+			string normalizedScheme = scheme.ToLowerInvariant();
+			if (normalizedScheme is not ("http" or "https"))
+			{
+				continue;
+			}
+
+			int endpointPort = KestrelEndpointUrl.GetPort(url, normalizedScheme);
+			string binding = $"{normalizedScheme}:{endpointPort}";
+			if (endpointNamesByBinding.TryGetValue(binding, out string existingEndpointName))
+			{
+				throw new InvalidOperationException(
+					$"The Kestrel {normalizedScheme.ToUpperInvariant()} endpoints '{existingEndpointName}' and '{property.Key}' both use port {endpointPort}. "
+					+ "Choose a different environment port or remove the duplicate endpoint.");
+			}
+
+			endpointNamesByBinding[binding] = property.Key;
+		}
 	}
 
 	private string ResolveCoreDirectory(string corePath, string targetFolder, CreatioMode mode, params string[] requiredFiles)

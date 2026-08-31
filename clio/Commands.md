@@ -524,7 +524,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dc"></a>
 <a id="ic"></a>
 <a id="install-creatio"></a>
-- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with collision-safe IIS port reservation and local infrastructure defaults, `dc`, `ic`, `install-creatio`
+- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with collision-safe IIS/dotnet deployment, secure loopback defaults, and dotnet HTTPS controls, `dc`, `ic`, `install-creatio`
 <a id="deploy-identity"></a>
 - [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="get-identity-service-config"></a>

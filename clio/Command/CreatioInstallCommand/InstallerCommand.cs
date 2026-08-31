@@ -181,8 +181,8 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// Gets or sets a value indicating whether the dotnet-hosted application should listen on every network interface.
 	/// </summary>
 	/// <remarks>By default, dotnet deployment listens on loopback only. Use this option for a container, Kubernetes
-	/// service, or reverse proxy that connects to the application over the network. When HTTPS is not selected,
-	/// clio warns that the explicitly requested all-interface listener is plaintext.</remarks>
+	/// service, or reverse proxy that connects to the application over the network. Dotnet deployments require
+	/// HTTPS when this option is selected.</remarks>
 	[Option("bind-all-interfaces", Required = false, Default = false,
 		HelpText = "Allow dotnet hosting on all network interfaces instead of loopback")]
 	public bool BindAllInterfaces { get; set; }
@@ -209,9 +209,11 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	public string CertificatePath { get; set; }
 
 	/// <summary>
-	/// Gets or sets the password for the SSL certificate.
+	/// Gets or sets the name of the environment variable containing the PFX certificate password.
 	/// </summary>
-	[Option("cert-password", Required = false, HelpText = "Password for SSL certificate")]
+	/// <remarks>Pass a variable name rather than the password itself so shell history and process arguments do not
+	/// contain the certificate secret.</remarks>
+	[Option("cert-password", Required = false, HelpText = "Name of environment variable containing the PFX password")]
 	public string CertificatePassword { get; set; }
 
 	/// <summary>
@@ -219,6 +221,12 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// </summary>
 	[Option("cert-key-path", Required = false, HelpText = "Path to the private key file for a PEM or CRT certificate")]
 	public string CertificateKeyPath { get; set; }
+
+	/// <summary>
+	/// Gets or sets the path to a file containing the PFX certificate password.
+	/// </summary>
+	[Option("cert-password-file", Required = false, HelpText = "Path to a file containing the PFX password")]
+	public string CertificatePasswordFile { get; set; }
 
 	/// <summary>
 	/// Gets or sets a value indicating whether the application should be started after deployment.

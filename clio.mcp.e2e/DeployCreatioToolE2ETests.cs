@@ -68,7 +68,7 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 			because: "the live contract should preserve the conditional IIS port guidance");
 		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(
 			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName", "useHttps", "deployment",
-				"bindAllInterfaces", "certificatePath", "certificateKeyPath", "certificatePassword"],
+				"bindAllInterfaces", "certificatePath", "certificateKeyPath", "certificatePassword", "certificatePasswordFile"],
 			because: "the full deploy-creatio contract should expose the command's optional dotnet endpoint controls");
 		contract.InputSchema.Properties.Single(property => property.Name == "useHttps").Description.Should()
 			.Contain("fall back to HTTP",
@@ -79,9 +79,15 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 		contract.InputSchema.Properties.Single(property => property.Name == "bindAllInterfaces").Description.Should()
 			.Contain("loopback",
 				because: "agents need to know that dotnet network exposure is opt-in");
+		contract.InputSchema.Properties.Single(property => property.Name == "bindAllInterfaces").Description.Should()
+			.Contain("HTTPS",
+				because: "agents must know that network-facing dotnet binding is HTTPS-only");
 		contract.InputSchema.Properties.Single(property => property.Name == "certificateKeyPath").Description.Should()
 			.Contain("PEM or CRT",
 				because: "agents need the private-key requirement for PEM and CRT certificates");
+		contract.InputSchema.Properties.Single(property => property.Name == "certificatePassword").Description.Should()
+			.Contain("environment variable",
+				because: "agents must not send a raw certificate password through MCP");
 	}
 
 	[Test]

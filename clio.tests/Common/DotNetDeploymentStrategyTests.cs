@@ -1,12 +1,19 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Common;
 using Clio.Common.DeploymentStrategies;
+using Clio.Common.SystemServices;
 using Clio.Tests.Command;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common;
@@ -14,8 +21,17 @@ namespace Clio.Tests.Common;
 [TestFixture]
 [Property("Module", "Common")]
 public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
+	private ICreatioHostService _creatioHostService;
+	private ISystemServiceManager _serviceManager;
 	private DotNetDeploymentStrategy _sut;
 	private string _temporaryDirectory;
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		_creatioHostService = Substitute.For<ICreatioHostService>();
+		_serviceManager = Substitute.For<ISystemServiceManager>();
+		containerBuilder.AddSingleton(_creatioHostService);
+		containerBuilder.AddSingleton(_serviceManager);
+	}
 
 	public override void Setup() {
 		base.Setup();
@@ -52,13 +68,13 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	[Description("Keeps the registered dotnet control URL local while the explicitly requested listener uses all interfaces.")]
 	public void GetApplicationUrl_ShouldRemainLocalWhenAllInterfacesAreEnabled() {
 		// Arrange
-		PfInstallerOptions options = new() { SitePort = 40123, BindAllInterfaces = true };
+		PfInstallerOptions options = new() { SitePort = 40123, UseHttps = true, BindAllInterfaces = true };
 
 		// Act
 		string result = _sut.GetApplicationUrl(options);
 
 		// Assert
-		result.Should().Be("http://localhost:40123",
+		result.Should().Be("https://localhost:40123",
 			because: "wildcard listener addresses are not valid client destinations and registration/readiness use the local control URL");
 	}
 
@@ -82,14 +98,35 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	[Description("Uses the explicit bind-all-interfaces option when a dotnet deployment must receive network traffic.")]
 	public void BuildApplicationConfiguration_ShouldBindAllInterfacesWhenExplicitlyRequested() {
 		// Arrange
-		PfInstallerOptions options = new() { SitePort = 40123, BindAllInterfaces = true };
+		string certificatePath = CreateTemporaryPfx("server.pfx");
+		PfInstallerOptions options = new() {
+			SitePort = 40123,
+			UseHttps = true,
+			BindAllInterfaces = true,
+			CertificatePath = certificatePath
+		};
 
 		// Act
 		string result = _sut.BuildApplicationConfiguration(null, options);
 
 		// Assert
-		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://[::]:40123",
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://[::]:40123",
 			because: "the wildcard binding must remain available only through explicit opt-in");
+	}
+
+	[Test]
+	[Description("Rejects plaintext dotnet deployment when all network interfaces were requested.")]
+	public void BuildApplicationConfiguration_ShouldRejectPlaintextAllInterfaceBinding() {
+		// Arrange
+		PfInstallerOptions options = new() { SitePort = 40123, BindAllInterfaces = true };
+
+		// Act
+		Action action = () => _sut.BuildApplicationConfiguration(null, options);
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("--bind-all-interfaces requires --use-https for dotnet deployment.",
+			because: "a network-facing dotnet listener must not be exposed as plaintext by default");
 	}
 
 	[Test]
@@ -97,11 +134,12 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	public void BuildApplicationConfiguration_ShouldConfigureHttpsFromPfx() {
 		// Arrange
 		string certificatePath = CreateTemporaryPfx("server.pfx", "secret");
+		string passwordFile = CreateTemporaryPasswordFile("secret");
 		PfInstallerOptions options = new() {
 			SitePort = 40123,
 			UseHttps = true,
 			CertificatePath = certificatePath,
-			CertificatePassword = "secret"
+			CertificatePasswordFile = passwordFile
 		};
 
 		// Act
@@ -187,7 +225,8 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		PfInstallerOptions options = new() { SitePort = 40123 };
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(existingJson, options);
+		DotNetApplicationConfiguration configuration = _sut.BuildApplicationConfigurationWithEnvironment(existingJson, options);
+		string result = configuration.Json;
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
@@ -198,6 +237,10 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			because: "preserved HTTPS configuration must not remain exposed on the wildcard address");
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be("existing.pfx",
 			because: "existing operator certificate configuration must not be discarded");
+		HasJsonProperty(result, "Kestrel", "Endpoints", "Https", "Certificate", "Password").Should().BeFalse(
+			because: "existing certificate passwords must not remain persisted in appsettings.json");
+		configuration.EnvironmentVariables["Kestrel__Endpoints__Https__Certificate__Password"].Should().Be("existing-secret",
+			because: "an existing certificate password must be supplied through the controlled host environment");
 		HasJsonProperty(result, "CustomSetting").Should().BeTrue(
 			because: "unrelated application configuration must survive endpoint updates");
 	}
@@ -226,6 +269,38 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			because: "an IPv6 address without an explicit port must be rewritten before the selected HTTP port is applied");
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost",
 			because: "an unbracketed IPv6 HTTPS address without an explicit port must use the HTTPS default port");
+	}
+
+	[TestCase("http://[::1]", "http://localhost")]
+	[TestCase("https://[::1]", "https://localhost")]
+	[Description("Supports bracketed IPv6 endpoint hosts when the address has no explicit port.")]
+	public void ReplaceHost_ShouldSupportBracketedIpv6WithoutPort(string url, string expected) {
+		// Arrange
+
+		// Act
+		string result = KestrelEndpointUrl.ReplaceHost(url, "localhost");
+
+		// Assert
+		result.Should().Be(expected,
+			because: "bracketed IPv6 host syntax without a port is a valid Kestrel endpoint form");
+	}
+
+	[TestCase("http://::1:5000")]
+	[TestCase("http://2001:db8::1:5000")]
+	[TestCase("http://fe80::1:5000")]
+	[Description("Rejects ambiguous unbracketed IPv6 endpoint strings that could silently lose an explicit port.")]
+	public void BuildApplicationConfiguration_ShouldRejectAmbiguousUnbracketedIpv6Port(string url) {
+		// Arrange
+		string existingJson = $"{{\"Kestrel\":{{\"Endpoints\":{{\"Http\":{{\"Url\":\"http://localhost:5000\"}},\"PublicHttp\":{{\"Url\":\"{url}\"}}}}}}}}";
+		PfInstallerOptions options = new() { SitePort = 40123 };
+
+		// Act
+		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("Kestrel endpoint 'PublicHttp' has an unsupported URL: *",
+			because: "an ambiguous unbracketed IPv6 port must be rejected instead of being rewritten incorrectly");
 	}
 
 	[Test]
@@ -378,6 +453,7 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		const string existingJson = """
 			{
 			  "Kestrel": {
+			    "Certificates": { "Default": { "Path": "default.pfx" } },
 			    "Endpoints": {
 			      "Https": { "Url": "https://localhost:5002", "Certificate": { "Password": "secret" } }
 			    }
@@ -391,8 +467,52 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
-			.WithMessage("Dotnet HTTPS requires --cert-path or an existing Kestrel certificate configuration.",
-			because: "a password-only certificate object cannot configure a working HTTPS listener");
+			.WithMessage("The existing Kestrel HTTPS endpoint certificate configuration is incomplete.*",
+			because: "an incomplete endpoint certificate must not silently fall back to a valid default certificate");
+	}
+
+	[Test]
+	[Description("Deploys dotnet with a certificate password supplied through a file and forwards it only to the host and service environment.")]
+	public async Task Deploy_ShouldPassCertificatePasswordThroughEnvironment() {
+		// Arrange
+		string appDirectory = Path.Combine(_temporaryDirectory, "app");
+		Directory.CreateDirectory(appDirectory);
+		string certificatePath = CreateTemporaryPfx("deploy.pfx", "deploy-secret");
+		string passwordFile = CreateTemporaryPasswordFile("deploy-secret");
+		int sitePort = GetAvailablePort();
+		PfInstallerOptions options = new() {
+			SiteName = "deploy-test",
+			SitePort = sitePort,
+			UseHttps = true,
+			CertificatePath = certificatePath,
+			CertificatePasswordFile = passwordFile,
+			AutoRun = true
+		};
+		_creatioHostService.StartInBackground(Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>()).Returns(42);
+		_serviceManager.CreateOrUpdateService(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<IReadOnlyDictionary<string, string>>()).Returns(Task.FromResult(true));
+		_serviceManager.StartService(Arg.Any<string>()).Returns(Task.FromResult(true));
+
+		// Act
+		int exitCode = await _sut.Deploy(appDirectory, options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "a valid dotnet HTTPS deployment should complete after writing configuration and starting the host");
+		string generatedJson = File.ReadAllText(Path.Combine(appDirectory, "appsettings.json"));
+		generatedJson.Should().NotContain("deploy-secret",
+			because: "certificate passwords must not be written to the deployed appsettings.json");
+		_creatioHostService.Received(1).StartInBackground(
+			appDirectory,
+			Arg.Is<IReadOnlyDictionary<string, string>>(variables =>
+				variables["Kestrel__Endpoints__Https__Certificate__Password"] == "deploy-secret"));
+		if (!OperatingSystem.IsWindows()) {
+			await _serviceManager.Received(1).CreateOrUpdateService(
+				"creatio-deploy-test", Arg.Any<string>(), appDirectory, "/usr/bin/dotnet", "Terrasoft.WebHost.dll", true,
+				Arg.Is<IReadOnlyDictionary<string, string>>(variables =>
+					variables["Kestrel__Endpoints__Https__Certificate__Password"] == "deploy-secret"));
+		}
 	}
 
 	private string CreateTemporaryPfx(string fileName, string? password = null) {
@@ -402,6 +522,20 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		string path = Path.Combine(_temporaryDirectory, fileName);
 		File.WriteAllBytes(path, certificate.Export(X509ContentType.Pfx, password));
 		return path;
+	}
+
+	private string CreateTemporaryPasswordFile(string password) {
+		string path = Path.Combine(_temporaryDirectory, Guid.NewGuid().ToString("N") + ".password");
+		File.WriteAllText(path, password + Environment.NewLine);
+		return path;
+	}
+
+	private static int GetAvailablePort() {
+		using TcpListener listener = new(IPAddress.Loopback, 0);
+		listener.Start();
+		int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+		listener.Stop();
+		return port;
 	}
 
 	private (string CertificatePath, string KeyPath) CreateTemporaryPemCertificate() {

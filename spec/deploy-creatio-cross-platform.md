@@ -106,12 +106,26 @@ public class PfInstallerOptions : EnvironmentNameOptions
     public string CertificatePath { get; set; }
     
     /// <summary>
-    /// Password for SSL certificate (if required). Dotnet passes it through the host environment;
-    /// it is not persisted in appsettings.json.
+    /// Name of an environment variable containing the SSL certificate password. Dotnet resolves it
+    /// and passes it through the host environment; the password is not persisted in appsettings.json.
     /// </summary>
     [Option("cert-password", Required = false,
-        HelpText = "Password for SSL certificate")]
+        HelpText = "Name of environment variable containing the PFX password")]
     public string CertificatePassword { get; set; }
+
+    /// <summary>
+    /// Path to a file containing the PFX password.
+    /// </summary>
+    [Option("cert-password-file", Required = false,
+        HelpText = "Path to a file containing the PFX password")]
+    public string CertificatePasswordFile { get; set; }
+
+    /// <summary>
+    /// Bind the dotnet listener to all network interfaces. HTTPS is required for this opt-in.
+    /// </summary>
+    [Option("bind-all-interfaces", Required = false, Default = false,
+        HelpText = "Allow dotnet hosting on all network interfaces with HTTPS")]
+    public bool BindAllInterfaces { get; set; }
     
     /// <summary>
     /// Automatically run application after deployment
@@ -279,7 +293,7 @@ clio deploy-creatio \
   --deployment dotnet \
   --use-https \
   --cert-path /etc/ssl/certs/my-app.pfx \
-  --cert-password "certificate-password"
+  --cert-password-file /run/secrets/my-app-certificate-password
 ```
 
 ### Example 5: Without Automatic Startup (for debugging)
@@ -322,7 +336,8 @@ clio deploy-creatio \
 - Create `appsettings.json` configuration with parameters:
   - Port: `{SitePort}`
   - ConnectionString: from DB config
-  - HTTPS (optional): certificate and key
+  - HTTPS (optional): certificate and key; required with `--bind-all-interfaces`
+- Bind Kestrel to `localhost` by default; `--bind-all-interfaces` is an explicit HTTPS-only opt-in
 - Create systemd service (Linux) or launchd (macOS) for auto-launch:
   ```
   [Unit]
@@ -336,7 +351,7 @@ clio deploy-creatio \
   ExecStart=/usr/bin/dotnet Terrasoft.WebHost.dll
   Restart=on-failure
   RestartSec=10
-  Environment="ASPNETCORE_URLS=http://0.0.0.0:{SitePort}"
+  Environment="ASPNETCORE_URLS=http://localhost:{SitePort}"
   Environment="ASPNETCORE_ENVIRONMENT=Production"
   
   [Install]
@@ -484,7 +499,8 @@ REDIS_PORT=6379
 | App path | `--app-path` | string | No | ~/creatio/{SiteName} | Application installation directory |
 | Use HTTPS | `--use-https` | bool | No | false | Use HTTPS instead of HTTP |
 | Certificate path | `--cert-path` | string | No | - | Path to SSL certificate (.pem or .pfx) |
-| Certificate password | `--cert-password` | string | No | - | SSL certificate password |
+| Certificate password variable | `--cert-password` | string | No | - | Name of environment variable containing the PFX password |
+| Certificate password file | `--cert-password-file` | string | No | - | Path to a file containing the PFX password |
 | Auto-run | `--auto-run` | bool | No | true | Run application after deployment |
 | Database type | `--db` | string | No | pg | pg\|mssql |
 | Platform | `--platform` | string | No | - | net6\|netframework |

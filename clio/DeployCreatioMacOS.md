@@ -280,6 +280,21 @@ clio deploy-creatio \
   --cert-path ~/certs/app.pem \
   --cert-key-path ~/certs/app.key
 
+# For a password-protected PFX, pass an environment-variable name or password-file path
+clio deploy-creatio \
+  --ZipFile ~/Downloads/creatio.zip \
+  --use-https \
+  --cert-path ~/certs/app.pfx \
+  --cert-password-file /run/secrets/creatio-cert-password
+
+# Network-facing dotnet hosting is opt-in and HTTPS-only
+clio deploy-creatio \
+  --ZipFile ~/Downloads/creatio.zip \
+  --deployment dotnet \
+  --use-https \
+  --bind-all-interfaces \
+  --cert-path ~/certs/app.pfx
+
 # Specify custom installation path
 clio deploy-creatio \
   --ZipFile ~/Downloads/creatio.zip \

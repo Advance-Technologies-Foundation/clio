@@ -1265,7 +1265,7 @@ internal sealed class CliOptionNamingBackwardCompatibilityTests {
 			"--use-https",
 			"--cert-path", "/certs/server.pem",
 			"--cert-key-path", "/certs/server.key",
-			"--cert-password", "secret"
+			"--cert-password", "CLIO_CERT_PASSWORD"
 		];
 
 		// Act
@@ -1284,8 +1284,8 @@ internal sealed class CliOptionNamingBackwardCompatibilityTests {
 			because: "the certificate path must map to PfInstallerOptions");
 		options.CertificateKeyPath.Should().Be("/certs/server.key",
 			because: "the PEM private-key path must map to PfInstallerOptions");
-		options.CertificatePassword.Should().Be("secret",
-			because: "the certificate password must map to PfInstallerOptions");
+		options.CertificatePassword.Should().Be("CLIO_CERT_PASSWORD",
+				because: "the certificate password option must map the environment-variable name to PfInstallerOptions");
 	}
 
 	[Test]

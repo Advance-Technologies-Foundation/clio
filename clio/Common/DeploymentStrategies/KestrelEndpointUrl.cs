@@ -36,14 +36,19 @@ internal static class KestrelEndpointUrl
 		{
 			if (authority.StartsWith("[", StringComparison.Ordinal))
 			{
-				return null;
+				if (!IsBracketedIpv6WithoutPort(authority))
+				{
+					return null;
+				}
 			}
-
-			int firstColon = authority.IndexOf(':');
-			int lastColon = authority.LastIndexOf(':');
-			if (firstColon >= 0 && firstColon == lastColon)
+			else if (authority.Contains(':'))
 			{
-				return null;
+				if (!IPAddress.TryParse(authority, out IPAddress? address)
+					|| address.AddressFamily != AddressFamily.InterNetworkV6
+					|| IsAmbiguousUnbracketedIpv6Port(authority))
+				{
+					return null;
+				}
 			}
 		}
 
@@ -178,8 +183,7 @@ internal static class KestrelEndpointUrl
 		int firstColon = authority.IndexOf(':');
 		if (firstColon != lastColon
 			&& IPAddress.TryParse(authority, out IPAddress? address)
-			&& address.AddressFamily == AddressFamily.InterNetworkV6
-			&& !IsLegacyUnbracketedPort(authority, candidatePort))
+			&& address.AddressFamily == AddressFamily.InterNetworkV6)
 		{
 			return false;
 		}
@@ -188,11 +192,28 @@ internal static class KestrelEndpointUrl
 		return true;
 	}
 
-	private static bool IsLegacyUnbracketedPort(string authority, string candidatePort) =>
-		authority.StartsWith("::", StringComparison.Ordinal)
-		&& candidatePort.Length >= 4
-		&& int.TryParse(candidatePort, out int port)
-		&& port is > 0 and <= 65535;
+	private static bool IsBracketedIpv6WithoutPort(string authority)
+	{
+		if (!authority.StartsWith("[", StringComparison.Ordinal)
+			|| !authority.EndsWith("]", StringComparison.Ordinal))
+		{
+			return false;
+		}
+
+		string addressText = authority[1..^1];
+		return IPAddress.TryParse(addressText, out IPAddress? address)
+			&& address.AddressFamily == AddressFamily.InterNetworkV6;
+	}
+
+	private static bool IsAmbiguousUnbracketedIpv6Port(string authority)
+	{
+		// IPv6 authorities have no delimiter that distinguishes a final decimal address segment
+		// from an explicit port. Require brackets for multi-digit decimal suffixes so rewriting
+		// cannot silently discard a caller's intended port.
+		int lastColon = authority.LastIndexOf(':');
+		string finalSegment = authority[(lastColon + 1)..];
+		return IsDigits(finalSegment) && finalSegment.Length > 1;
+	}
 
 	private static int GetDefaultPort(string scheme) =>
 		string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80;

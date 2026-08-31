@@ -27,6 +27,21 @@ public interface ICreatioHostService
 
 public class CreatioHostService : ICreatioHostService
 {
+	private static readonly string[] HostEnvironmentAllowlist = [
+		"PATH",
+		"HOME",
+		"USERPROFILE",
+		"TMP",
+		"TEMP",
+		"TMPDIR",
+		"DOTNET_ROOT",
+		"DOTNET_ROOT(x86)",
+		"DOTNET_CLI_HOME",
+		"SystemRoot",
+		"WINDIR",
+		"PATHEXT"
+	];
+
 	private readonly ILogger _logger;
 	private readonly IProcessExecutor _processExecutor;
 
@@ -47,7 +62,9 @@ public class CreatioHostService : ICreatioHostService
 		{
 			ProcessExecutionOptions options = new("dotnet", "Terrasoft.WebHost.dll") {
 				WorkingDirectory = workingDirectory,
-				EnvironmentVariables = environmentVariables
+				EnvironmentVariables = environmentVariables,
+				ClearInheritedEnvironment = true,
+				InheritedEnvironmentVariableAllowlist = HostEnvironmentAllowlist
 			};
 			ProcessLaunchResult result = _processExecutor.FireAndForgetAsync(options).GetAwaiter().GetResult();
 			if (result.Started && result.ProcessId.HasValue)

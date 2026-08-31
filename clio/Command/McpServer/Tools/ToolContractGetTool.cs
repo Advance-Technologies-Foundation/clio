@@ -5528,6 +5528,7 @@ internal static class ToolContractCatalog {
 	private const string CertificatePathFieldName = "certificatePath";
 	private const string CertificateKeyPathFieldName = "certificateKeyPath";
 	private const string CertificatePasswordFieldName = "certificatePassword";
+	private const string CertificatePasswordFileFieldName = "certificatePasswordFile";
 	private const string IdentitySitePortFieldName = "identitySitePort";
 	private const string IdentitySiteNameFieldName = "identitySiteName";
 	private const string IdentityPathFieldName = "identityPath";
@@ -5634,7 +5635,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure; also use find-empty-iis-port for local IIS) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically. For dotnet deployment, loopback binding is the default, bindAllInterfaces is an explicit network-exposure opt-in, and useHttps requires certificatePath or an existing Kestrel certificate configuration. A supplied certificatePassword is passed through the host environment and is not written to appsettings.json; never echo or log it.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure; also use find-empty-iis-port for local IIS) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically. For dotnet deployment, loopback binding is the default, bindAllInterfaces is an explicit HTTPS-only network-exposure opt-in, and useHttps requires certificatePath or an existing Kestrel certificate configuration. certificatePassword is an environment-variable name, not a raw password; certificatePasswordFile is an alternative. The resolved password is passed through the host environment and is not written to appsettings.json; never echo or log it.",
 			new ToolInputSchemaContract(
 				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
 				[
@@ -5645,10 +5646,11 @@ internal static class ToolContractCatalog {
 					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name."),
 					Field(UseHttpsFieldName, BooleanType, "For IIS, prefer HTTPS and fall back to HTTP when no usable certificate is installed; for dotnet, require certificatePath or existing Kestrel certificate settings."),
 					Field(DeploymentFieldName, StringType, "Optional deployment method: auto, iis, or dotnet. Use dotnet to select Kestrel explicitly."),
-					Field(BindAllInterfacesFieldName, BooleanType, "Optional dotnet-only opt-in to bind Kestrel on all network interfaces; loopback is the default."),
+					Field(BindAllInterfacesFieldName, BooleanType, "Optional dotnet-only opt-in to bind Kestrel HTTPS on all network interfaces; loopback is the default."),
 					Field(CertificatePathFieldName, StringType, "Optional dotnet HTTPS certificate path (.pfx, .pem, or .crt); PEM/CRT requires certificateKeyPath."),
 					Field(CertificateKeyPathFieldName, StringType, "Optional private-key path for a dotnet PEM or CRT certificate."),
-					Field(CertificatePasswordFieldName, StringType, "Optional sensitive password for the dotnet certificatePath; never echo or log it.")
+					Field(CertificatePasswordFieldName, StringType, "Optional sensitive input: name of an environment variable containing the dotnet PFX password; never pass the raw password."),
+					Field(CertificatePasswordFileFieldName, StringType, "Optional path to a file containing the dotnet PFX password.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,

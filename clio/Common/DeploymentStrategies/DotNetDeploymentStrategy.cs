@@ -246,8 +246,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			if (options.BindAllInterfaces)
 			{
 				_logger.WriteWarning(
-					$"Dotnet hosting is bound to all network interfaces using {(options.UseHttps ? "HTTPS" : "HTTP")}. "
-					+ "Ensure the endpoint is protected by TLS or an appropriate network boundary.");
+					"Dotnet hosting is bound to all network interfaces over HTTPS. "
+					+ "Restrict access with the deployment network boundary and certificate policy.");
 			}
 		}
 		catch (Exception ex)
@@ -285,19 +285,20 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		JsonObject root = ParseConfiguration(existingJson);
 		JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
 		JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
+		Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(kestrel, endpoints);
 		string bindHost = GetBindHost(options);
 
 		if (options.UseHttps)
 		{
 			(string httpsEndpointName, JsonObject httpsEndpoint) = FindOrCreateEndpoint(endpoints, "Https", "https");
 			SetStringProperty(httpsEndpoint, "Url", BuildEndpointUrl("https", bindHost, options.SitePort));
-			ConfigureHttpsCertificate(httpsEndpoint, kestrel, options);
+			ConfigureHttpsCertificate(httpsEndpointName, httpsEndpoint, kestrel, options, environmentVariables);
 			RewriteEndpointHosts(endpoints, "https", bindHost);
 			RemoveEndpointsByScheme(endpoints, "http");
 			EnsureNoDuplicateEndpointBindings(endpoints);
 			return new DotNetApplicationConfiguration(
 				root.ToJsonString(IndentedJsonOptions),
-				CreateCertificateEnvironmentVariables(httpsEndpointName, options));
+				environmentVariables);
 		}
 		else
 		{
@@ -309,8 +310,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			EnsureNoDuplicateEndpointBindings(endpoints);
 		}
 
-		return new DotNetApplicationConfiguration(root.ToJsonString(IndentedJsonOptions),
-			new Dictionary<string, string>());
+		return new DotNetApplicationConfiguration(root.ToJsonString(IndentedJsonOptions), environmentVariables);
 	}
 
 	private static JsonObject ParseConfiguration(string? existingJson)
@@ -348,9 +348,15 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	{
 		bool hasCertificatePath = !string.IsNullOrWhiteSpace(options.CertificatePath);
 		bool hasCertificateKeyPath = !string.IsNullOrWhiteSpace(options.CertificateKeyPath);
-		bool hasCertificatePassword = options.CertificatePassword is not null;
+		bool hasCertificatePassword = !string.IsNullOrWhiteSpace(options.CertificatePassword);
+		bool hasCertificatePasswordFile = !string.IsNullOrWhiteSpace(options.CertificatePasswordFile);
 
-		if (!options.UseHttps && (hasCertificatePath || hasCertificateKeyPath || hasCertificatePassword))
+		if (options.BindAllInterfaces && !options.UseHttps)
+		{
+			throw new InvalidOperationException("--bind-all-interfaces requires --use-https for dotnet deployment.");
+		}
+
+		if (!options.UseHttps && (hasCertificatePath || hasCertificateKeyPath || hasCertificatePassword || hasCertificatePasswordFile))
 		{
 			throw new InvalidOperationException("Certificate options require --use-https for dotnet deployment.");
 		}
@@ -359,15 +365,32 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		{
 			throw new InvalidOperationException("--cert-key-path requires --cert-path.");
 		}
+
+		if (hasCertificatePassword && hasCertificatePasswordFile)
+		{
+			throw new InvalidOperationException("Use either --cert-password or --cert-password-file, not both.");
+		}
+
+		if ((hasCertificatePassword || hasCertificatePasswordFile) && !hasCertificatePath)
+		{
+			throw new InvalidOperationException("--cert-password and --cert-password-file require --cert-path.");
+		}
 	}
 
-	private static void ConfigureHttpsCertificate(JsonObject httpsEndpoint, JsonObject kestrel, PfInstallerOptions options)
+	private static void ConfigureHttpsCertificate(
+		string endpointName,
+		JsonObject httpsEndpoint,
+		JsonObject kestrel,
+		PfInstallerOptions options,
+		Dictionary<string, string> environmentVariables)
 	{
 		if (!string.IsNullOrWhiteSpace(options.CertificatePath))
 		{
 			string certificatePath = ResolveExistingFilePath(options.CertificatePath, "cert-path");
 			bool requiresKeyPath = IsPemCertificatePath(certificatePath);
 			bool hasKeyPath = !string.IsNullOrWhiteSpace(options.CertificateKeyPath);
+			bool hasPasswordSource = !string.IsNullOrWhiteSpace(options.CertificatePassword)
+				|| !string.IsNullOrWhiteSpace(options.CertificatePasswordFile);
 
 			if (requiresKeyPath != hasKeyPath)
 			{
@@ -376,14 +399,15 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 						? "PEM or CRT certificates require --cert-key-path with the private key file."
 						: "--cert-key-path is only supported with PEM or CRT certificates.");
 			}
-			if (hasKeyPath && options.CertificatePassword is not null)
+			if (hasKeyPath && hasPasswordSource)
 			{
-				throw new InvalidOperationException("--cert-password is only supported with PFX certificates.");
+				throw new InvalidOperationException("Certificate password sources are only supported with PFX certificates.");
 			}
 			string? keyPath = hasKeyPath
 				? ResolveExistingFilePath(options.CertificateKeyPath, "cert-key-path")
 				: null;
-			ValidateCertificateMaterial(certificatePath, keyPath, options.CertificatePassword);
+			string? certificatePassword = ResolveCertificatePassword(options);
+			ValidateCertificateMaterial(certificatePath, keyPath, certificatePassword);
 
 			JsonObject certificate = GetOrCreateObject(httpsEndpoint, "Certificate");
 			SetStringProperty(certificate, "Path", certificatePath);
@@ -399,10 +423,18 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			// The password is supplied through Kestrel's environment configuration so the generated
 			// appsettings.json does not become a persistent plaintext secret.
 			RemoveProperty(certificate, "Password");
+			string passwordEnvironmentVariable = $"Kestrel__Endpoints__{endpointName}__Certificate__Password";
+			environmentVariables.Remove(passwordEnvironmentVariable);
+			if (certificatePassword is not null)
+			{
+				environmentVariables[passwordEnvironmentVariable] = certificatePassword;
+			}
 			return;
 		}
 
-		if (options.CertificateKeyPath is not null || options.CertificatePassword is not null)
+		if (!string.IsNullOrWhiteSpace(options.CertificateKeyPath)
+			|| !string.IsNullOrWhiteSpace(options.CertificatePassword)
+			|| !string.IsNullOrWhiteSpace(options.CertificatePasswordFile))
 		{
 			throw new InvalidOperationException("--cert-password and --cert-key-path require --cert-path.");
 		}
@@ -410,17 +442,35 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		JsonObject? endpointCertificate = GetObjectProperty(httpsEndpoint, "Certificate");
 		JsonObject? certificates = GetObjectProperty(kestrel, "Certificates");
 		JsonObject? defaultCertificate = certificates is null ? null : GetObjectProperty(certificates, "Default");
-		if (!HasUsableCertificateConfiguration(endpointCertificate)
-			&& !HasUsableCertificateConfiguration(defaultCertificate))
+		if (endpointCertificate is not null)
+		{
+			if (!HasUsableCertificateConfiguration(endpointCertificate))
+			{
+				throw new InvalidOperationException(
+					"The existing Kestrel HTTPS endpoint certificate configuration is incomplete. "
+					+ "Supply --cert-path with a certificate password source or configure Path or Subject/Store.");
+			}
+			return;
+		}
+
+		if (!HasUsableCertificateConfiguration(defaultCertificate))
 		{
 			throw new InvalidOperationException(
 				"Dotnet HTTPS requires --cert-path or an existing Kestrel certificate configuration.");
 		}
 	}
 
-	private static bool HasUsableCertificateConfiguration(JsonObject? certificate) =>
-		HasNonEmptyStringProperty(certificate, "Path")
-			|| HasNonEmptyStringProperty(certificate, "Store");
+	private static bool HasUsableCertificateConfiguration(JsonObject? certificate)
+	{
+		if (certificate is null)
+		{
+			return false;
+		}
+
+		bool hasPath = HasNonEmptyStringProperty(certificate, "Path");
+		bool hasStore = HasNonEmptyStringProperty(certificate, "Store");
+		return hasPath != hasStore && (!hasStore || HasNonEmptyStringProperty(certificate, "Subject"));
+	}
 
 	private static bool HasNonEmptyStringProperty(JsonObject? parent, string propertyName) =>
 		parent is not null && !string.IsNullOrWhiteSpace(GetStringProperty(parent, propertyName));
@@ -450,6 +500,38 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			throw new InvalidOperationException(
 				$"The certificate specified by --cert-path is invalid or cannot be loaded: {certificatePath}.", exception);
 		}
+	}
+
+	private static string? ResolveCertificatePassword(PfInstallerOptions options)
+	{
+		if (!string.IsNullOrWhiteSpace(options.CertificatePassword))
+		{
+			string environmentVariableName = options.CertificatePassword;
+			string? password = Environment.GetEnvironmentVariable(environmentVariableName);
+			if (password is null)
+			{
+				throw new InvalidOperationException(
+					$"The certificate password environment variable '{environmentVariableName}' is not set.");
+			}
+
+			return password;
+		}
+
+		if (string.IsNullOrWhiteSpace(options.CertificatePasswordFile))
+		{
+			return null;
+		}
+
+		string passwordFile = ResolveExistingFilePath(options.CertificatePasswordFile, "cert-password-file");
+		FileInfo fileInfo = new(passwordFile);
+		const long maximumPasswordFileSize = 64 * 1024;
+		if (fileInfo.Length > maximumPasswordFileSize)
+		{
+			throw new InvalidOperationException(
+				$"The file specified by --cert-password-file is larger than {maximumPasswordFileSize} bytes: {passwordFile}.");
+		}
+
+		return File.ReadAllText(passwordFile).TrimEnd('\r', '\n');
 	}
 
 	private static void EnsurePrivateKey(X509Certificate2 certificate, string certificatePath)
@@ -509,18 +591,69 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		return (endpointName, createdEndpoint);
 	}
 
-	private static IReadOnlyDictionary<string, string> CreateCertificateEnvironmentVariables(
-		string endpointName,
-		PfInstallerOptions options)
+	private static Dictionary<string, string> ExtractCertificateEnvironmentVariables(
+		JsonObject kestrel,
+		JsonObject endpoints)
 	{
-		if (options.CertificatePassword is null)
+		Dictionary<string, string> environmentVariables = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
-			return new Dictionary<string, string>();
+			if (property.Value is not JsonObject endpoint)
+			{
+				throw new JsonException($"Configuration property '{property.Key}' must be a JSON object.");
+			}
+
+			JsonObject? certificate = GetObjectProperty(endpoint, "Certificate");
+			if (certificate is not null)
+			{
+				ExtractCertificatePassword(
+					certificate,
+					$"Kestrel__Endpoints__{property.Key}__Certificate__Password",
+					environmentVariables);
+			}
 		}
 
-		return new Dictionary<string, string> {
-			[$"Kestrel__Endpoints__{endpointName}__Certificate__Password"] = options.CertificatePassword
-		};
+		JsonObject? certificates = GetObjectProperty(kestrel, "Certificates");
+		if (certificates is null)
+		{
+			return environmentVariables;
+		}
+
+		foreach (KeyValuePair<string, JsonNode?> property in certificates)
+		{
+			if (property.Value is not JsonObject certificate)
+			{
+				throw new JsonException($"Configuration property '{property.Key}' must be a JSON object.");
+			}
+
+			ExtractCertificatePassword(
+				certificate,
+				$"Kestrel__Certificates__{property.Key}__Password",
+				environmentVariables);
+		}
+
+		return environmentVariables;
+	}
+
+	private static void ExtractCertificatePassword(
+		JsonObject certificate,
+		string environmentVariableName,
+		IDictionary<string, string> environmentVariables)
+	{
+		string? passwordPropertyName = FindPropertyName(certificate, "Password");
+		if (passwordPropertyName is null)
+		{
+			return;
+		}
+
+		if (certificate[passwordPropertyName] is not JsonValue passwordValue
+			|| !passwordValue.TryGetValue<string>(out string password))
+		{
+			throw new JsonException($"Configuration property '{passwordPropertyName}' must be a JSON string.");
+		}
+
+		environmentVariables[environmentVariableName] = password;
+		certificate.Remove(passwordPropertyName);
 	}
 
 	private static void RewriteEndpointHosts(JsonObject endpoints, string scheme, string bindHost)
@@ -674,7 +807,13 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	private static JsonObject? GetObjectProperty(JsonObject parent, string propertyName)
 	{
 		string? actualPropertyName = FindPropertyName(parent, propertyName);
-		return actualPropertyName is not null ? parent[actualPropertyName] as JsonObject : null;
+		if (actualPropertyName is null)
+		{
+			return null;
+		}
+
+		return parent[actualPropertyName] as JsonObject
+			?? throw new JsonException($"Configuration property '{actualPropertyName}' must be a JSON object.");
 	}
 
 	private static string? GetStringProperty(JsonObject parent, string propertyName)

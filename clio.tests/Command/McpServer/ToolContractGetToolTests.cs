@@ -2259,7 +2259,8 @@ public sealed class ToolContractGetToolTests {
 		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
 			because: "deploy-creatio requires the site name, build archive, and port");
 		deploy.InputSchema.Properties.Select(property => property.Name).Should().Contain([
-			"deployment", "bindAllInterfaces", "certificatePath", "certificateKeyPath", "certificatePassword"
+			"deployment", "bindAllInterfaces", "certificatePath", "certificateKeyPath", "certificatePassword",
+			"certificatePasswordFile"
 		], because: "deploy-creatio must advertise the optional dotnet endpoint and certificate controls");
 		deploy.InputSchema.Properties.Single(property => property.Name == "certificatePassword").Description.Should()
 			.Contain("sensitive",

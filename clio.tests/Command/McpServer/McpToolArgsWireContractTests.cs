@@ -30,7 +30,8 @@ public sealed class McpToolArgsWireContractTests {
 		[nameof(DeployCreatioArgs.BindAllInterfaces)] = "bindAllInterfaces",
 		[nameof(DeployCreatioArgs.CertificatePath)] = "certificatePath",
 		[nameof(DeployCreatioArgs.CertificateKeyPath)] = "certificateKeyPath",
-		[nameof(DeployCreatioArgs.CertificatePassword)] = "certificatePassword"
+		[nameof(DeployCreatioArgs.CertificatePassword)] = "certificatePassword",
+		[nameof(DeployCreatioArgs.CertificatePasswordFile)] = "certificatePasswordFile"
 	};
 
 	private static readonly Dictionary<string, string> RestoreDbByEnvironmentWireNames = new() {

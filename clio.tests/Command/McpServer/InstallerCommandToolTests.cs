@@ -91,7 +91,8 @@ public sealed class InstallerCommandToolTests
 			BindAllInterfaces: true,
 			CertificatePath: "/certs/server.pem",
 			CertificateKeyPath: "/certs/server.key",
-			CertificatePassword: "secret");
+			CertificatePassword: "CLIO_CERT_PASSWORD",
+			CertificatePasswordFile: "/run/secrets/creatio-cert-password");
 
 		// Act
 		CommandExecutionResult result = tool.DeployCreatio((ProgressToken?)null, args);
@@ -123,8 +124,10 @@ public sealed class InstallerCommandToolTests
 			because: "the MCP dotnet certificate path should map into the installer options");
 		command.ReceivedOptions.CertificateKeyPath.Should().Be("/certs/server.key",
 			because: "the MCP dotnet private-key path should map into the installer options");
-		command.ReceivedOptions.CertificatePassword.Should().Be("secret",
-			because: "the MCP dotnet certificate password should map into the installer options without appearing in logs");
+		command.ReceivedOptions.CertificatePassword.Should().Be("CLIO_CERT_PASSWORD",
+			because: "the MCP dotnet certificate password input should map as an environment-variable name without exposing the secret");
+		command.ReceivedOptions.CertificatePasswordFile.Should().Be("/run/secrets/creatio-cert-password",
+			because: "the MCP dotnet certificate password file should map into the installer options");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "the reduced MCP contract should keep automatic Redis DB detection");
 		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
@@ -185,10 +188,12 @@ public sealed class InstallerCommandToolTests
 		command.ReceivedOptions.CertificateKeyPath.Should().BeNull(
 			because: "the optional dotnet private-key path must remain unset when omitted");
 		command.ReceivedOptions.CertificatePassword.Should().BeNull(
-			because: "the optional dotnet certificate password must remain unset when omitted");
+			because: "the optional dotnet certificate password environment-variable name must remain unset when omitted");
+		command.ReceivedOptions.CertificatePasswordFile.Should().BeNull(
+			because: "the optional dotnet certificate password file must remain unset when omitted");
 		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
 			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName", "UseHttps", "DeploymentMethod",
-				"BindAllInterfaces", "CertificatePath", "CertificateKeyPath", "CertificatePassword"],
+				"BindAllInterfaces", "CertificatePath", "CertificateKeyPath", "CertificatePassword", "CertificatePasswordFile"],
 			because: "the MCP deploy-creatio argument type should expose the command's optional dotnet endpoint controls");
 		command.ReceivedOptions.UseHttps.Should().BeFalse(
 			because: "HTTPS remains opt-in when the MCP argument is omitted");

@@ -116,6 +116,55 @@ namespace Clio.Tests.Command {
 	}
 
 	[Test]
+	[Description("Updates the canonical Http endpoint even when another HTTP endpoint appears first in the Kestrel JSON object.")]
+	public void UpdateConfigWithPort_ShouldPreferNamedHttpEndpointWhenEndpointOrderDiffers() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "PublicHttp": { "Url": "http://0.0.0.0:5001" },
+			      "Http": { "Url": "http://localhost:5000" }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
+			because: "the named Http endpoint is the canonical development endpoint regardless of JSON property order");
+		GetJsonString(result, "Kestrel", "Endpoints", "PublicHttp", "Url").Should().Be("http://localhost:5001",
+			because: "other HTTP endpoints must keep their ports while being constrained to loopback");
+	}
+
+	[Test]
+	[Description("Rejects a link-core-src port that would make the preserved HTTP and HTTPS Kestrel endpoints collide.")]
+	public void UpdateConfigWithPort_ShouldRejectHttpHttpsPortConflict() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": { "Url": "http://localhost:5000" },
+			      "Https": { "Url": "https://localhost:5002", "Certificate": { "Path": "server.pfx" } }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		Action action = () => _command.UpdateConfigWithPort(existingJson, 5002, "/tmp/appsettings.json");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("The Kestrel HTTP and HTTPS endpoints both use port 5002.*",
+			because: "link-core-src must fail before writing a configuration that Kestrel cannot bind");
+	}
+
+	[Test]
 	[Description("Preserves a valid JSON configuration error instead of misreporting it as an unsupported XML format.")]
 	public void UpdateConfigWithPort_ShouldRejectMalformedJsonConfiguration() {
 		// Arrange

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Tests.Command;
@@ -49,6 +50,9 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 		await _processExecutor.Received(1).FireAndForgetAsync(Arg.Is<ProcessExecutionOptions>(options =>
 			options.Arguments == "Terrasoft.WebHost.dll"
 			&& options.EnvironmentVariables["Kestrel__Endpoints__Https__Certificate__Password"] == "secret"
-			&& !options.Arguments.Contains("secret")));
+			&& !options.Arguments.Contains("secret")
+			&& options.ClearInheritedEnvironment
+			&& options.InheritedEnvironmentVariableAllowlist.Contains("PATH")
+			&& !options.InheritedEnvironmentVariableAllowlist.Contains("Kestrel__Endpoints__Https__Certificate__Password")));
 	}
 }
