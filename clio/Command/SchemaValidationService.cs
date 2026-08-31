@@ -1785,18 +1785,24 @@ public static class SchemaValidationService
 	/// <summary>
 	/// Body-only structural validation for <c>crt.RunBusinessProcessRequest</c> buttons:
 	/// every such button must carry a non-empty <c>processName</c> AND a non-empty
-	/// <c>processRunType</c>. Both are required by the request contract; omitting
-	/// <c>processRunType</c> does not error at runtime but silently runs the process without the
-	/// intended record context (the same silent-misbehavior class as a wrong parameter code).
+	/// <c>processRunType</c>, and a <c>ForTheSelectedPage</c> button must additionally carry a
+	/// non-empty <c>recordIdProcessParameterName</c> (the parameter the current record is passed
+	/// into — ENG-95822). All are required by the request contract; omitting any of them does not
+	/// error at runtime but silently runs the process without the intended record context (the same
+	/// silent-misbehavior class as a wrong parameter code).
 	/// Parameter-code correctness is validated separately against the live process signature
 	/// (it needs the environment).
 	/// </summary>
 	public static SchemaValidationResult ValidateRunProcessButtonStructure(string jsBody) {
 		SchemaValidationResult result = new() { IsValid = true };
 		foreach (RunProcessButtonConfig config in RunProcessButtonConfigReader.Read(jsBody)) {
+			// config.ButtonName is read verbatim from the body JSON `name`, so it is untrusted content;
+			// bound it with Sanitize before it reaches the "; "-flattened MCP Error / update-page log, the
+			// same guard the sibling reporters use to stop a page authored elsewhere forging diagnostic
+			// boundaries in the operator's agent transcript.
 			string buttonLabel = string.IsNullOrWhiteSpace(config.ButtonName)
 				? "a crt.RunBusinessProcessRequest button"
-				: $"run-process button '{config.ButtonName}'";
+				: $"run-process button '{Sanitize(config.ButtonName)}'";
 			if (string.IsNullOrWhiteSpace(config.ProcessName)) {
 				result.IsValid = false;
 				result.Errors.Add(
@@ -1810,9 +1816,29 @@ public static class SchemaValidationService
 					+ "('RegardlessOfThePage', 'ForTheSelectedPage', or 'ForTheSelectedRecords'). "
 					+ "Without it the process does not run against the intended record context.");
 			}
+			else if (string.Equals(config.ProcessRunType, ForTheSelectedPageRunType, StringComparison.OrdinalIgnoreCase)
+				&& string.IsNullOrWhiteSpace(config.RecordIdProcessParameterName)) {
+				// 'ForTheSelectedPage' runs the process against the CURRENT page's record, which the platform
+				// hands over through a named process parameter (the designer's required "Process parameter
+				// where the record is passed"). Omitting recordIdProcessParameterName ships a button that runs
+				// the process with NO record — update-page/validate-page otherwise accept it, and the designer
+				// only flags the empty required field after the fact (ENG-95822).
+				// Scoped to ForTheSelectedPage on purpose: 'ForTheSelectedRecords' passes the grid selection
+				// through dataSourceName/filters/selectionStateAttributeName (a different mechanism), and
+				// 'RegardlessOfThePage' passes no record — neither mandates recordIdProcessParameterName.
+				result.IsValid = false;
+				result.Errors.Add(
+					$"{buttonLabel} runs 'ForTheSelectedPage' but is missing the required "
+					+ "'recordIdProcessParameterName' (the process parameter CODE that receives the current "
+					+ "record). Resolve the process's input parameter with get-process-signature and set "
+					+ "params.recordIdProcessParameterName, so the current record is passed into the process.");
+			}
 		}
 		return result;
 	}
+
+	/// <summary>The <c>processRunType</c> that runs a process against the current page's record.</summary>
+	private const string ForTheSelectedPageRunType = "ForTheSelectedPage";
 
 	#region Registry-driven chart-widget validation
 	// Walks the registry's typeDefinitions for each inserted chart and enforces ONLY the data-block

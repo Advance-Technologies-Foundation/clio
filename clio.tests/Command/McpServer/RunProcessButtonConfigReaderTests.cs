@@ -118,6 +118,8 @@ public sealed class RunProcessButtonConfigReaderTests {
 		configs[0].ParameterCodes.Should().BeEquivalentTo(
 			new[] { "ProcessSchemaParameter1", "ProcessSchemaParameter3" },
 			because: "both recordIdProcessParameterName and parameterMappings keys are parameter codes");
+		configs[0].RecordIdProcessParameterName.Should().Be("ProcessSchemaParameter1",
+			because: "the web path surfaces the record-binding on its own field too, not only inside ParameterCodes");
 	}
 
 	[Test]
@@ -178,6 +180,8 @@ public sealed class RunProcessButtonConfigReaderTests {
 		configs[0].ProcessRunType.Should().Be("ForTheSelectedPage", because: "processRunType is read from mobile params");
 		configs[0].ParameterCodes.Should().BeEquivalentTo(new[] { "ProcessSchemaParameter1" },
 			because: "recordIdProcessParameterName is captured as a parameter code on mobile too");
+		configs[0].RecordIdProcessParameterName.Should().Be("ProcessSchemaParameter1",
+			because: "the record-binding is also surfaced on its own so a structural check can require it for ForTheSelectedPage");
 	}
 
 	[Test]
@@ -345,5 +349,106 @@ public sealed class RunProcessButtonConfigReaderTests {
 		// Assert
 		result.IsValid.Should().BeTrue(because: "a button with processName satisfies the structural rule");
 		result.Errors.Should().BeEmpty(because: "no structural problems are present");
+	}
+
+	[Test]
+	[Description("Structural validation fails and names the button when a ForTheSelectedPage run-process button omits recordIdProcessParameterName — the ENG-95822 gap (record never handed to the process). Uses a mobile body, the surface where the incident shipped.")]
+	public void ValidateRunProcessButtonStructure_Should_Fail_When_ForTheSelectedPage_Missing_RecordId() {
+		// Arrange — the exact incident shape: processName + processRunType set, record binding omitted.
+		string mobileBody = """
+			{
+				"viewConfigDiff": [
+					{
+						"operation": "insert",
+						"name": "RunProcessButton",
+						"values": {
+							"type": "crt.Button",
+							"clicked": {
+								"request": "crt.RunBusinessProcessRequest",
+								"params": { "processName": "UsrCarRentalOrder_StartProcess", "processRunType": "ForTheSelectedPage" }
+							}
+						}
+					}
+				]
+			}
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateRunProcessButtonStructure(mobileBody);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "ForTheSelectedPage runs against the current record, so the record-parameter binding is required (ENG-95822)");
+		result.Errors.Should().ContainSingle(because: "only the record binding is missing")
+			.Which.Should().Contain("RunProcessButton").And.Contain("recordIdProcessParameterName",
+				because: "the error must name the button and the exact missing key so the caller can fix it");
+	}
+
+	[Test]
+	[Description("Structural validation passes when a ForTheSelectedPage run-process button binds the current record via recordIdProcessParameterName.")]
+	public void ValidateRunProcessButtonStructure_Should_Pass_When_ForTheSelectedPage_Has_RecordId() {
+		// Arrange
+		string mobileBody = """
+			{
+				"viewConfigDiff": [
+					{
+						"operation": "insert",
+						"name": "RunProcessButton",
+						"values": {
+							"type": "crt.Button",
+							"clicked": {
+								"request": "crt.RunBusinessProcessRequest",
+								"params": {
+									"processName": "UsrCarRentalOrder_StartProcess",
+									"processRunType": "ForTheSelectedPage",
+									"recordIdProcessParameterName": "RentalOrder"
+								}
+							}
+						}
+					}
+				]
+			}
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateRunProcessButtonStructure(mobileBody);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a ForTheSelectedPage button that binds the record into a process parameter is complete");
+		result.Errors.Should().BeEmpty(because: "no structural problems remain once the record binding is present");
+	}
+
+	[Test]
+	[Description("The ForTheSelectedPage record-binding rule matches the run type case-insensitively — a non-canonically-cased 'fortheselectedpage' with no recordIdProcessParameterName still fails, pinning the deliberate OrdinalIgnoreCase comparison against a regression to Ordinal.")]
+	public void ValidateRunProcessButtonStructure_Should_Require_RecordId_For_ForTheSelectedPage_CaseInsensitively() {
+		// Arrange
+		string mobileBody = """
+			{
+				"viewConfigDiff": [
+					{
+						"operation": "insert",
+						"name": "RunProcessButton",
+						"values": {
+							"type": "crt.Button",
+							"clicked": {
+								"request": "crt.RunBusinessProcessRequest",
+								"params": { "processName": "UsrProcess_e629820", "processRunType": "fortheselectedpage" }
+							}
+						}
+					}
+				]
+			}
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateRunProcessButtonStructure(mobileBody);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the run-type match is case-insensitive, so a differently-cased ForTheSelectedPage must still require the record binding");
+		result.Errors.Should().ContainSingle()
+			.Which.Should().Contain("recordIdProcessParameterName",
+				because: "the case-insensitive branch reports the same missing-record-binding error");
 	}
 }
