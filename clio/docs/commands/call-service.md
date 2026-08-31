@@ -1,105 +1,77 @@
 # call-service
 
-Call a Creatio service endpoint.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
+
+call-service - Call a Creatio service endpoint
+
+## Synopsis
 
 ```bash
-clio call-service [options]
+clio call-service [OPTIONS]
+clio call-service [OPTIONS]
 ```
 
 ## Description
 
-Call a Creatio service endpoint.
+Sends a request to any Creatio service route and prints the response, or
+writes it to --destination.
 
-## Aliases
+--service-path is relative to the Creatio application root. Use
+odata/BulkEmailCategory; clio also accepts the equivalent /odata/...,
+0/odata/... and /0/odata/... forms and normalizes the optional 0/
+application alias away, including a repeated 0/0/ prefix. Passing the alias
+twice used to produce a double-rooted URL on .NET Framework environments.
 
-`cs`
-
-## Examples
-
-```bash
-clio call-service -e dev
-clio call-service -e dev --method GET --service-path odata/BulkEmailCategory
-clio call-service -e dev --method GET --service-path /0/odata/BulkEmailCategory
-```
-
-`--service-path` is relative to the Creatio application root. Use `odata/...`; clio also accepts
-the equivalent `/odata/...`, `0/odata/...`, and `/0/odata/...` forms. The optional `0/` application
-alias is normalized automatically.
-
-If the service returns a Creatio error envelope or an HTML server error page, clio reports a
-non-zero exit code and does not write the response to `--destination`.
+A response that is not a successful payload is never saved. clio exits with
+a non-zero code and reports the reason instead when the body is a Creatio
+error envelope ({"Code":-1,"Exception":...}), an OData v4 error
+({"error":{"message":...}}), an ASP.NET exception or routing error
+({"Message":...,"MessageDetail":...}), an authentication rejection
+({"Code":1,...}), or a server error page - including one that starts with a
+byte-order mark or an XML declaration before the doctype, which is the shape
+Creatio behind IIS returns for "Request Error"/"Service Unavailable".
 
 ## Options
 
 ```bash
--m, --method <VALUE>
-HTTP method
--f, --input <VALUE>
-Request file
--b, --body <VALUE>
-Request body JSON
--d, --destination <VALUE>
-Destination set
---service-path <VALUE>
-Route service path
--v, --variables <VALUE>
-Result file
---timeout <NUMBER>
-Request timeout in milliseconds. Default: 100000.
+-m, --method           HTTP method. POST when omitted
+-f, --input            File to read the request body from
+-b, --body             Request body JSON
+-d, --destination      File to write the response to
+--service-path         Route service path, relative to the application root
+-v, --variables        Values substituted into {{placeholders}} of the body
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
---maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restart-environment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+# Read an OData collection
+clio call-service -e dev --method GET --service-path odata/BulkEmailCategory
+
+# The same route with the optional application-root alias
+clio call-service -e dev --method GET --service-path /0/odata/BulkEmailCategory
+
+# Post a request body and save the response
+clio call-service -e dev --method POST --service-path ServiceModel/EntityDataService.svc --input request.json --destination result.json
 ```
+
+## Notes
+
+- --service-path is normalized: leading /, 0/ and /0/ layers are stripped before the URL is built
+- A Creatio error envelope, an OData or ASP.NET error body, an authentication rejection or a server error page makes the command exit non-zero without writing --destination
+- Markup detection ignores a byte-order mark and an XML declaration, so an IIS "Request Error" page is not mistaken for a payload
+- The response body is parsed once: the same document is used to classify the response and to indent what is printed or saved
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+## See Also
+
+dataservice
 
 - [Clio Command Reference](../../Commands.md#call-service)

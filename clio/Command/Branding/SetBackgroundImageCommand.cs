@@ -419,7 +419,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 				return false;
 			}
 			using JsonDocument document = JsonDocument.Parse(response);
-			if (ODataResponseError.TryDetect(document.RootElement, out string serverError)) {
+			if (CreatioResponseError.TryDetect(document.RootElement, out string serverError)) {
 				error = serverError;
 				return false;
 			}

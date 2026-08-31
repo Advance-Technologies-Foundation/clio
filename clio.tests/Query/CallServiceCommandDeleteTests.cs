@@ -277,5 +277,150 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		serviceUrlBuilder.Received(1).Build("odata/BulkEmailCategory");
 	}
 
+
+	// Every shape below reached #1220's false-success path: the body was written to --destination and
+	// the command exited 0. The expectation is the same for all of them - exit 1, nothing written,
+	// no "Result saved" message.
+	[TestCase("{\"error\":{\"message\":\"The query specified in the URI is not valid.\"}}",
+		TestName = "OData v4 error envelope")]
+	[TestCase("{\"Message\":\"An error has occurred.\",\"ExceptionType\":\"System.NullReferenceException\","
+		+ "\"StackTrace\":\"   at Terrasoft.Core\"}", TestName = "ASP.NET exception envelope")]
+	[TestCase("{\"Message\":\"No HTTP resource was found that matches the request URI.\","
+		+ "\"MessageDetail\":\"No type was found that matches the controller named 'UsrThing'.\"}",
+		TestName = "ASP.NET routing error")]
+	[TestCase("{\"Code\":1,\"Message\":\"Unauthorized\"}", TestName = "authentication rejection")]
+	[TestCase("\uFEFF<!DOCTYPE html><html><head><title>500 - Internal server error.</title></head></html>",
+		TestName = "HTML page behind a byte-order mark")]
+	[TestCase("<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">"
+		+ "<html><head><title>Request Error</title></head><body>Service Unavailable</body></html>",
+		TestName = "Creatio/IIS Request Error page behind an XML declaration")]
+	[Description("Recognizes every Creatio error envelope and error-page preamble the platform actually returns, not only {Code,Exception} and a body that starts exactly with a doctype (issue 1220)")]
+	public void Execute_ShouldFailWithoutSaving_WhenCreatioReturnsAKnownErrorShape(string responseBody) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(responseBody);
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = logger
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/BulkEmailCategory",
+			HttpMethodName = "GET",
+			ResultFileName = "result.json"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "the response is an error, not a payload");
+		fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+		logger.DidNotReceive().WriteInfo(Arg.Is<string>(m => m.Contains("Result saved")));
+	}
+
+	// The counterpart of the cases above: a payload that merely resembles an error envelope must
+	// still be saved, otherwise the fix trades false success for false failure.
+	[TestCase("{\"value\":[{\"Id\":\"1\",\"Code\":\"UsrCode\"}]}", TestName = "collection with a Code column")]
+	[TestCase("{\"Code\":0,\"Exception\":\"\"}", TestName = "successful DataService envelope")]
+	[TestCase("{\"Message\":\"ok\",\"value\":[]}", TestName = "payload carrying both Message and data")]
+	[Description("A successful payload is still saved even when it carries members that look like error keys (issue 1220)")]
+	public void Execute_ShouldSaveResponse_WhenPayloadOnlyResemblesAnErrorEnvelope(string responseBody) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(responseBody);
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = Substitute.For<ILogger>()
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/BulkEmailCategory",
+			HttpMethodName = "GET",
+			ResultFileName = "result.json"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "the response is a payload");
+		fileSystem.Received(1).WriteAllTextToFile("result.json", Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The saved body is the indented form of the same document that was classified, with no character escaping introduced by the JSON writer (issue 1220)")]
+	public void Execute_ShouldSaveIndentedResponse_WithoutEscapingPayloadCharacters() {
+		// Arrange
+		string saved = null;
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Name\":\"a+b <c> \\u00fc\"}");
+		fileSystem.When(fs => fs.WriteAllTextToFile("result.json", Arg.Any<string>()))
+			.Do(ci => saved = ci.ArgAt<string>(1));
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = Substitute.For<ILogger>()
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/BulkEmailCategory",
+			HttpMethodName = "GET",
+			ResultFileName = "result.json"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		saved.Should().Contain("\n", because: "the response has to be written indented, as before");
+		saved.Should().Contain("a+b <c> \u00fc",
+			because: "the writer must not escape `+`, `<`, `>` or non-ASCII characters that the payload legitimately contains");
+	}
+
+	[Test]
+	[Description("With --silent and no --destination nothing consumes the indented text, so it is never produced (issue 1220)")]
+	public void Execute_ShouldNotRenderResponse_WhenSilentWithoutDestination() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[]}");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = logger
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/BulkEmailCategory",
+			HttpMethodName = "GET",
+			IsSilent = true
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		logger.DidNotReceiveWithAnyArgs().WriteLine(Arg.Any<string>());
+		fileSystem.DidNotReceiveWithAnyArgs().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
 	#endregion
 }

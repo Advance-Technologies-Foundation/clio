@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Common;
 using CommandLine;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using CommandLine.Text;
 using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Query;
@@ -42,11 +43,37 @@ public class CallServiceCommandOptions : RemoteCommandOptions {
 	[Option('d', "destination", Required = false, HelpText = "Destination set")]
 	public string ResultFileName { get; set; }
 
-	[Option("service-path", Required = false, HelpText = "Route service path")]
+	[Option("service-path", Required = false, HelpText =
+		"Route service path, relative to the Creatio application root. Use 'odata/Entity'; the "
+		+ "equivalent '/odata/Entity', '0/odata/Entity' and '/0/odata/Entity' forms are accepted and "
+		+ "the optional '0/' application alias is stripped, including a repeated '0/0/' prefix")]
 	public string ServicePath { get; set; }
 
 	[Option('v', "variables", Required = false, HelpText = "Result file", Separator = ';')]
 	public IEnumerable<string> Variables { get; set; }
+
+	/// <summary>
+	/// Canonical usage examples. They live here rather than in the generated markdown so that
+	/// `clio call-service --help` shows the accepted --service-path forms and the next
+	/// `__generate-help-artifacts` run reproduces them instead of dropping hand-written ones.
+	/// </summary>
+	[Usage(ApplicationAlias = "clio")]
+	public static IEnumerable<Example> Examples =>
+		new List<Example> {
+			new("Read an OData collection",
+				new CallServiceCommandOptions {
+					HttpMethodName = "GET", ServicePath = "odata/BulkEmailCategory"
+				}),
+			new("The same route with the optional application-root alias",
+				new CallServiceCommandOptions {
+					HttpMethodName = "GET", ServicePath = "/0/odata/BulkEmailCategory"
+				}),
+			new("Post a request body and save the response",
+				new CallServiceCommandOptions {
+					HttpMethodName = "POST", ServicePath = "ServiceModel/EntityDataService.svc",
+					RequestFileName = "request.json", ResultFileName = "result.json"
+				})
+		};
 
 	#endregion
 
@@ -140,15 +167,59 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	#region Methods: Private
 
-	private static string BeautifyJsonIfPossible(string input){
+	// Errors and the beautified body come out of ONE parse. call-service can return multi-megabyte
+	// OData exports, and classifying with a throwaway tree and then re-parsing the same body to
+	// indent it doubled the full-tree parse and its transient allocation on every successful call.
+	// The document is handed back to the caller, which serializes that same document.
+	private static bool TryClassifyResponse(string response, out JsonDocument parsed, out string error) {
+		parsed = null;
+		error = null;
+		if (string.IsNullOrWhiteSpace(response)) {
+			return true;
+		}
+
+		if (CreatioResponseError.IsMarkup(response)) {
+			//An HTML/XML body is never a successful service payload: the request did not reach the
+			//service intact. Report the status when the page carries one, otherwise the known page
+			//wording or the generic markers.
+			if (TryGetErrorStatus(response, out int statusCode)) {
+				error = $"HTTP status {statusCode}";
+				return false;
+			}
+			if (CreatioResponseError.IsKnownErrorPage(response) || MatchesErrorPageMarkers(response)) {
+				error = "HTTP status unavailable from the response body";
+				return false;
+			}
+			return true;
+		}
+
 		try {
-			JToken parsedJson = JToken.Parse(input);
-			return JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
+			parsed = JsonDocument.Parse(response);
 		}
-		catch (JsonReaderException) {
-			return input;
+		catch (JsonException) {
+			//Not JSON and not markup - a plain-text body is passed through unchanged, as before.
+			return true;
 		}
+
+		if (!CreatioResponseError.TryDetect(parsed.RootElement, out string detected)) {
+			return true;
+		}
+		error = detected;
+		parsed.Dispose();
+		parsed = null;
+		return false;
 	}
+
+	// Indents the already-parsed document. UnsafeRelaxedJsonEscaping keeps the output byte-identical
+	// in intent to what Newtonsoft wrote before: without it System.Text.Json escapes `+`, `<`, `>`
+	// and every non-ASCII character, which would mangle saved payloads containing them.
+	private static string Beautify(JsonDocument parsed) =>
+		JsonSerializer.Serialize(parsed.RootElement, BeautifyOptions);
+
+	private static readonly JsonSerializerOptions BeautifyOptions = new() {
+		WriteIndented = true,
+		Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+	};
 
 	private static string ReplaceVariablesInJson(string json, IEnumerable<string> variables){
 		if (variables == null) {
@@ -211,40 +282,9 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		}
 	}
 
-	private static bool IsErrorResponse(string response) {
-		if (string.IsNullOrWhiteSpace(response)) {
-			return false;
-		}
-
-		string trimmed = response.TrimStart();
-		if (trimmed.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase)
-			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)) {
-			return TryGetErrorStatus(trimmed, out _) || MatchesErrorPageMarkers(trimmed);
-		}
-
-		try {
-			if (JToken.Parse(trimmed) is not JObject parsed) {
-				return false;
-			}
-			JToken code = parsed["Code"] ?? parsed["code"];
-			JToken exception = parsed["Exception"] ?? parsed["exception"];
-			return code?.Type == JTokenType.Integer && code.Value<int>() != 0
-				&& exception?.Type == JTokenType.String && !string.IsNullOrWhiteSpace(exception.Value<string>());
-		}
-		catch (JsonReaderException) {
-			return false;
-		}
-	}
-
-	private void WriteServiceError(string response) {
-		string status = TryGetErrorStatus(response, out int statusCode)
-			? $"HTTP status {statusCode}"
-			: "HTTP status unavailable from the response body";
-		string detail = response?.Trim();
-		if (detail?.Length > 500) {
-			detail = detail[..500] + "...";
-		}
-		Logger.WriteError($"Service request failed ({status}). Response was not saved. {detail}");
+	private void WriteServiceError(string response, string reason) {
+		Logger.WriteError($"Service request failed ({reason}). Response was not saved. "
+			+ CreatioResponseError.Truncate(response?.Trim()));
 	}
 
 	#endregion
@@ -266,24 +306,30 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
 
-		if (IsErrorResponse(jsonResult)) {
-			WriteServiceError(jsonResult);
+		if (!TryClassifyResponse(jsonResult, out JsonDocument parsedResult, out string failureReason)) {
+			WriteServiceError(jsonResult, failureReason);
 			return null;
 		}
 
-		string beautifiedJson = BeautifyJsonIfPossible(jsonResult);
-		
-		if (string.IsNullOrWhiteSpace(resultFileName)) {
-			// Print to console if no destination file specified
-			if (!IsSilent) { 
-				Logger.WriteLine(beautifiedJson); 
+		using (parsedResult) {
+			bool hasDestination = !string.IsNullOrWhiteSpace(resultFileName);
+			//Nothing consumes the indented text when the command is silent and writes no file, so the
+			//serialization is skipped entirely rather than produced and discarded.
+			if (!hasDestination && IsSilent) {
+				return jsonResult;
 			}
-		}
-		else {
-			// Write to file if destination specified
-			_fileSystem.WriteAllTextToFile(resultFileName, beautifiedJson);
-			if (!IsSilent) {
-				Logger.WriteInfo($"Result saved to {resultFileName}");
+
+			string beautifiedJson = parsedResult is null ? jsonResult : Beautify(parsedResult);
+			if (!hasDestination) {
+				// Print to console if no destination file specified
+				Logger.WriteLine(beautifiedJson);
+			}
+			else {
+				// Write to file if destination specified
+				_fileSystem.WriteAllTextToFile(resultFileName, beautifiedJson);
+				if (!IsSilent) {
+					Logger.WriteInfo($"Result saved to {resultFileName}");
+				}
 			}
 		}
 

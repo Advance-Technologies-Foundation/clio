@@ -204,7 +204,7 @@ public sealed class ODataCreateToolTests {
 		response.Created.Should().Be(0, because: "no record was created against an unregistered entity set");
 		response.Results.Single().Success.Should().BeFalse(because: "a {Message, MessageDetail} routing body must never be reported as a successful create");
 		response.Results.Single().Error.Should().Contain("controller named 'UsrCustomerStatus'", because: "the MessageDetail identifies the unregistered controller");
-		response.Results.Single().Error.Should().Contain(ODataResponseError.UnregisteredEntityHint, because: "the create path funnels through the same shared TryDetect and must surface the identical hint (asserted via the constant to avoid drift)");
+		response.Results.Single().Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint, because: "the create path funnels through the same shared TryDetect and must surface the identical hint (asserted via the constant to avoid drift)");
 		response.Results.Single().Id.Should().BeNull(because: "no record was created against an unregistered entity set");
 	}
 
@@ -232,7 +232,7 @@ public sealed class ODataCreateToolTests {
 		response.Failed.Should().Be(1, because: "a bare {Message} body is an error, not a created record");
 		response.Results.Single().Success.Should().BeFalse(because: "a bare {Message} body with no entity members is not a successful create");
 		response.Results.Single().Error.Should().Contain("Authorization has been denied", because: "the Message text is surfaced verbatim");
-		response.Results.Single().Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint, because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
+		response.Results.Single().Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint, because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
 	}
 
 	[Test]
@@ -309,7 +309,7 @@ public sealed class ODataCreateToolTests {
 		// Assert
 		response.Results.Single().Success.Should().BeFalse(because: "a body whose only members are empty Message/MessageDetail is an error, not a created record");
 		response.Results.Single().Error.Should().Be("Creatio returned an empty error response.", because: "an empty error body must degrade to an explicit contentless message rather than an empty or leading-space string");
-		response.Results.Single().Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint, because: "an empty body carries no MessageDetail, so it is not identifiable as a routing error and must not get the registration hint");
+		response.Results.Single().Error.Should().NotContain(CreatioResponseError.UnregisteredEntityHint, because: "an empty body carries no MessageDetail, so it is not identifiable as a routing error and must not get the registration hint");
 	}
 
 	[Test]

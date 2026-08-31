@@ -82,11 +82,11 @@ internal static class ODataKeyedWrite {
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(response);
-			return ODataResponseError.TryDetect(doc.RootElement, out string serverError)
+			return CreatioResponseError.TryDetect(doc.RootElement, out string serverError)
 				? SensitiveErrorTextRedactor.Redact(serverError)
 				: null;
 		} catch (JsonException) {
-			return SensitiveErrorTextRedactor.Redact(ODataResponseError.DescribeNonJsonResponse(response));
+			return SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(response));
 		}
 	}
 }

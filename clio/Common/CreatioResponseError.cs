@@ -1,19 +1,24 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Common;
 
 /// <summary>
 /// Detects Creatio error payloads returned with a non-failing HTTP status by the underlying
-/// transport. Three shapes are recognized: OData v4 errors (<c>{"error":{"message":...}}</c>),
+/// transport. Four JSON shapes are recognized: the DataService envelope
+/// (<c>{"Code":-1,"Exception":...}</c>), OData v4 errors (<c>{"error":{"message":...}}</c>),
 /// ASP.NET Web API exception errors (<c>{"Message":...,"ExceptionType":...,"StackTrace":...}</c>,
 /// e.g. the EDM model-build NullReferenceException), and ASP.NET Web API routing errors
 /// (<c>{"Message":...,"MessageDetail":...}</c>, e.g. a 404 for an unregistered/uncompiled OData
 /// controller). Real OData entities and collections never carry these members, so detecting them
 /// lets the odata-* tools report success=false instead of wrapping an error body as data.
+///
+/// The class lives in <c>Clio.Common</c> rather than next to the MCP tools because the same
+/// envelopes reach the <c>call-service</c> command: every caller that has to tell a Creatio error
+/// from a payload has to agree on the shapes, and a second copy would drift.
 /// </summary>
-internal static class ODataResponseError {
+internal static class CreatioResponseError {
 	/// <summary>
 	/// Hint appended to a detected routing error. A 404 "no controller found" is the shape Creatio
 	/// returns for an OData entity set that is not queryable yet. Its most common cause is the
@@ -71,9 +76,86 @@ internal static class ODataResponseError {
 	public static bool TryDetect(JsonElement root, out string message) {
 		message = string.Empty;
 		return root.ValueKind == JsonValueKind.Object
-			&& (TryDetectODataV4Error(root, out message)
+			&& (TryDetectDataServiceEnvelope(root, out message)
+				|| TryDetectODataV4Error(root, out message)
 				|| TryDetectAspNetException(root, out message)
 				|| TryDetectRoutingError(root, out message));
+	}
+
+	/// <summary>
+	/// True when the body is markup rather than JSON, ignoring anything that may legally precede the
+	/// first tag. <c>TrimStart()</c> alone is not enough: a UTF-8 BOM survives it, and Creatio behind
+	/// IIS answers with an XML declaration before the doctype
+	/// (<c>&lt;?xml ...?&gt;&lt;!DOCTYPE ...&gt;&lt;title&gt;Request Error&lt;/title&gt;</c>). Such a
+	/// body used to fall through the JSON branch and be saved as a successful result.
+	/// </summary>
+	public static bool IsMarkup(string body) {
+		string stripped = StripMarkupPreamble(body);
+		return stripped.StartsWith("<!doctype", StringComparison.OrdinalIgnoreCase)
+			|| stripped.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
+			|| stripped.StartsWith("<title", StringComparison.OrdinalIgnoreCase)
+			|| stripped.StartsWith("<body", StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// Removes a byte-order mark, leading whitespace and any XML declaration or processing
+	/// instruction, so the first real tag is at the start of the returned span.
+	/// </summary>
+	public static string StripMarkupPreamble(string body) {
+		if (string.IsNullOrEmpty(body)) {
+			return string.Empty;
+		}
+		string stripped = body.TrimStart('﻿', '​').TrimStart();
+		while (stripped.StartsWith("<?", StringComparison.Ordinal)) {
+			int end = stripped.IndexOf("?>", StringComparison.Ordinal);
+			if (end < 0) {
+				break;
+			}
+			stripped = stripped[(end + 2)..].TrimStart();
+		}
+		return stripped;
+	}
+
+	/// <summary>
+	/// True when the markup is one of the Creatio/IIS failure pages. The wording is the platform's
+	/// own - <c>&lt;title&gt;Request Error&lt;/title&gt;</c> with a <c>Service Unavailable</c> body -
+	/// and carries no HTTP status line, so a status-code match alone misses it.
+	/// </summary>
+	public static bool IsKnownErrorPage(string body) {
+		string stripped = StripMarkupPreamble(body);
+		return stripped.Contains("Request Error", StringComparison.OrdinalIgnoreCase)
+			|| stripped.Contains("Service Unavailable", StringComparison.OrdinalIgnoreCase);
+	}
+
+	// DataService and AuthService envelope: { "Code": <non-zero>, "Exception"|"Message": "<text>" }.
+	// Creatio answers HTTP 200 with this body for a failed DataService call, and AuthService.svc/Login
+	// rejects a login as {"Code":1,...} the same way - which is why it needs detecting at all.
+	// Requiring BOTH a non-zero Code and a non-empty Exception/Message keeps a payload that merely
+	// happens to carry a `Code` column from being read as a failure.
+	private static bool TryDetectDataServiceEnvelope(JsonElement root, out string message) {
+		message = string.Empty;
+		if (!(TryGetProperty(root, out JsonElement code, "Code", "code")
+			&& code.ValueKind == JsonValueKind.Number
+			&& code.TryGetInt32(out int codeValue)
+			&& codeValue != 0)) {
+			return false;
+		}
+		string detail = First(root, "Exception", "exception", "Message", "message");
+		if (string.IsNullOrWhiteSpace(detail)) {
+			return false;
+		}
+		message = $"Creatio returned error code {codeValue}: {detail}";
+		return true;
+	}
+
+	private static bool TryGetProperty(JsonElement root, out JsonElement value, params string[] names) {
+		foreach (string name in names) {
+			if (root.TryGetProperty(name, out value)) {
+				return true;
+			}
+		}
+		value = default;
+		return false;
 	}
 
 	// OData v4 error envelope: { "error": { "message": ... } }.

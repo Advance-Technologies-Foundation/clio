@@ -305,7 +305,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
+			if (CreatioResponseError.TryDetect(root, out string serverError)) {
 				// Redact like the sibling error paths: a routing Message can embed the absolute request
 				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
 				return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(serverError));
