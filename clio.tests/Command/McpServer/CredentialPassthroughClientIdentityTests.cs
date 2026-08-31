@@ -50,6 +50,14 @@ public class CredentialPassthroughClientIdentityTests {
 		return (T)field.GetValue(instance);
 	}
 
+	private static void SetPrivateField(object instance, string fieldName, object value) {
+		FieldInfo field = instance.GetType().GetField(fieldName,
+			BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+		field.Should().NotBeNull(
+			because: $"the reflection target field '{fieldName}' must remain available for the lifetime regression");
+		field.SetValue(instance, value);
+	}
+
 	// Bounded, visited-guarded reflective walk that returns every Creatio.Client.CreatioClient
 	// instance reachable from the root object graph. Used for IDataProvider, whose bearer-vs-login
 	// difference lives inside the ATF RemoteDataProvider's private client field; navigating by type
@@ -149,5 +157,32 @@ public class CredentialPassthroughClientIdentityTests {
 		clients.Should().Contain(
 			c => GetPrivateField<string>(c, "_oauthToken") == BearerToken,
 			because: "the data provider must be built via the RemoteDataProvider bearer ctor so the caller's token flows to the DB/ESQ path; dropping it authenticates the tenant anonymously/as Supervisor (ENG-93208 B1)");
+	}
+
+	[Test]
+	[Description("Child-container disposal must honor the adapter listener guard instead of disposing the raw CreatioClient directly.")]
+	public void ChildContainer_ShouldNotDisposeRawClient_WhenAdapterListenerHasStarted() {
+		// Arrange
+		IServiceProvider container = BuildBearerPassthroughContainer();
+		CreatioClient compatibilityClient = container.GetRequiredService<CreatioClient>();
+		IApplicationClient applicationClient = container.GetRequiredService<IApplicationClient>();
+		((ICreatioApplicationClient)applicationClient).ExportSessionCookies();
+		Lazy<CreatioClient> adapterClient = GetPrivateField<Lazy<CreatioClient>>(applicationClient, "_lazyClient");
+		SetPrivateField(applicationClient, "_listenerStarted", true);
+
+		try {
+			// Act
+			((IDisposable)container).Dispose();
+			Action act = () => adapterClient.Value.ExportSessionCookies();
+
+			// Assert
+			adapterClient.Value.Should().NotBeSameAs(compatibilityClient,
+				because: "DI-owned compatibility transport must not share the listener adapter's lifetime");
+			act.Should().NotThrow(
+				because: "DI must not bypass the adapter guard while asynchronous listener cancellation can re-enter login");
+		}
+		finally {
+			adapterClient.Value.Dispose();
+		}
 	}
 }

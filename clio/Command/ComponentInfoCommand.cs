@@ -157,7 +157,7 @@ public sealed class ComponentInfoCommand {
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(options);
-			using IOwnedPlatformVersionResolver resolver = _resolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = _resolverFactory.CreateOwned(settings);
 			return resolver.ResolveAsync(cancellationToken);
 		}
 

@@ -63,7 +63,7 @@ public sealed class GetUserCultureCommand
 			return 1;
 		}
 
-		using IOwnedCurrentUserCultureResolver resolver = _resolverFactory.Create(settings);
+		using IOwnedCurrentUserCultureResolver resolver = _resolverFactory.CreateOwned(settings);
 		CultureResolution resolution = await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 
 		// The verb has no --caption-culture override, so a failed resolution is always a hard error

@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.BrowserSession;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -272,6 +273,35 @@ public sealed class SysImageUploaderTests
 		result.Success.Should().BeFalse(because: "an unauthenticated upload cannot succeed");
 		result.Error.Should().Contain("check username and password",
 			because: "the user receives a sanitized recovery action");
+	}
+
+	[Test]
+	[Description("The legacy constructor maps its authentication facade rejection to a structured upload failure.")]
+	public async Task UploadAsync_ShouldFail_WhenLegacyAuthFacadeRejectsAuthentication() {
+		// Arrange
+		EnvironmentSettings settings = new() {
+			Uri = "https://dev.creatio.com",
+			Login = "Supervisor",
+			Password = "secret"
+		};
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(FilePath).Returns(true);
+		fileSystem.GetFileSize(FilePath).Returns(PngPayload.LongLength);
+		fileSystem.ReadAllBytes(FilePath).Returns(PngPayload);
+		#pragma warning disable CS0618 // The regression intentionally exercises the obsolete public constructor.
+		ICreatioAuthClient authClient = Substitute.For<ICreatioAuthClient>();
+		authClient.LoginAsync(settings, Arg.Any<CancellationToken>())
+			.Returns<Task<StorageStateResult>>(_ => throw CreatioAuthenticationException.InvalidCredentials(settings.Uri));
+		SysImageUploader sut = new(settings, authClient, Substitute.For<IHttpClientFactory>(), fileSystem);
+		#pragma warning restore CS0618
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync(FilePath);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a rejected legacy forms login cannot upload an image");
+		result.Error.Should().Contain("check username and password",
+			because: "legacy callers retain the uploader's structured recovery guidance");
 	}
 
 	[Test]

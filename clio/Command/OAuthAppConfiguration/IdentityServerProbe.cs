@@ -38,7 +38,6 @@ public interface IIdentityServerProbe
 	/// Performs a minimal bearer-authenticated DataService smoke request against Creatio and returns the
 	/// HTTP status code so callers can confirm the freshly minted token is accepted end to end.
 	/// </summary>
-	/// <param name="environmentSettings">Target Creatio environment shape.</param>
 	/// <param name="selectQueryUrl">
 	/// Fully resolved DataService SelectQuery URL. Build it with
 	/// <see cref="IServiceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute)"/> for
@@ -47,21 +46,36 @@ public interface IIdentityServerProbe
 	/// </param>
 	/// <param name="accessToken">Bearer access token to present.</param>
 	/// <returns>The HTTP status code returned by the DataService SelectQuery.</returns>
+	int RunBearerDataServiceSmokeTest(string selectQueryUrl, string accessToken);
+
+	/// <summary>Runs the bearer smoke test with the explicit target-environment shape.</summary>
 	int RunBearerDataServiceSmokeTest(EnvironmentSettings environmentSettings, string selectQueryUrl,
-		string accessToken);
+		string accessToken) => RunBearerDataServiceSmokeTest(selectQueryUrl, accessToken);
 }
 
 /// <inheritdoc />
-public sealed class IdentityServerProbe(IHttpClientFactory httpClientFactory,
-	IApplicationClientFactory applicationClientFactory) : IIdentityServerProbe
+public sealed class IdentityServerProbe : IIdentityServerProbe
 {
 	private const string ContactTop1SelectQuery =
 		"""{"rootSchemaName":"Contact","operationType":0,"allColumns":false,"rowCount":1,"columns":{"items":{"Id":{"expression":{"expressionType":0,"columnPath":"Id"}}}}}""";
 
-	private readonly IHttpClientFactory _httpClientFactory =
-		httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-	private readonly IApplicationClientFactory _applicationClientFactory =
-		applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
+	private readonly IHttpClientFactory _httpClientFactory;
+	private readonly IApplicationClientFactory _applicationClientFactory;
+
+	/// <summary>Initializes the probe with the authenticated Creatio client factory.</summary>
+	public IdentityServerProbe(IHttpClientFactory httpClientFactory,
+		IApplicationClientFactory applicationClientFactory) {
+		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+		_applicationClientFactory = applicationClientFactory
+			?? throw new ArgumentNullException(nameof(applicationClientFactory));
+	}
+
+	/// <summary>Retains the historical constructor while routing Creatio calls through CreatioClient.</summary>
+	[Obsolete("Use the overload that accepts IApplicationClientFactory.")]
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Architecture", "CLIO001:Resolve behavior through DI",
+		Justification = "The compatibility constructor must retain its historical public signature.")]
+	public IdentityServerProbe(IHttpClientFactory httpClientFactory)
+		: this(httpClientFactory, new ApplicationClientFactory(new NoReauthExecutor())) { }
 
 	/// <inheritdoc />
 	public bool IsDiscoveryReachable(string identityServerBaseUrl) {
@@ -107,6 +121,16 @@ public sealed class IdentityServerProbe(IHttpClientFactory httpClientFactory,
 		}
 		string body = Task.Run(() => response.Content.ReadAsStringAsync()).GetAwaiter().GetResult();
 		return ExtractAccessToken(body);
+	}
+
+	/// <inheritdoc />
+	public int RunBearerDataServiceSmokeTest(string selectQueryUrl, string accessToken) {
+		if (!Uri.TryCreate(selectQueryUrl, UriKind.Absolute, out Uri selectUri)) {
+			return 0;
+		}
+		return RunBearerDataServiceSmokeTest(new EnvironmentSettings {
+			Uri = selectUri.GetLeftPart(UriPartial.Authority)
+		}, selectQueryUrl, accessToken);
 	}
 
 	/// <inheritdoc />

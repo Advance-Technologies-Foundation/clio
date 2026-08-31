@@ -13,7 +13,24 @@ namespace Clio.Command.EntitySchemaDesigner;
 public interface ICurrentUserCultureResolverFactory
 {
 	/// <summary>Creates a resolver bound to <paramref name="settings"/>.</summary>
-	IOwnedCurrentUserCultureResolver Create(EnvironmentSettings settings);
+	ICurrentUserCultureResolver Create(EnvironmentSettings settings);
+}
+
+/// <summary>Ownership-aware access to resolvers created by a compatible factory.</summary>
+public static class CurrentUserCultureResolverFactoryExtensions {
+	/// <summary>Creates a resolver whose lifetime is scoped to the caller.</summary>
+	public static IOwnedCurrentUserCultureResolver CreateOwned(
+		this ICurrentUserCultureResolverFactory factory, EnvironmentSettings settings) {
+		ICurrentUserCultureResolver resolver = factory.Create(settings);
+		return resolver as IOwnedCurrentUserCultureResolver ?? new BorrowedCultureResolverLease(resolver);
+	}
+
+	private readonly struct BorrowedCultureResolverLease(ICurrentUserCultureResolver resolver)
+		: IOwnedCurrentUserCultureResolver {
+		public System.Threading.Tasks.Task<CultureResolution> ResolveAsync(
+			System.Threading.CancellationToken cancellationToken = default) => resolver.ResolveAsync(cancellationToken);
+		public void Dispose() { }
+	}
 }
 
 /// <summary>
@@ -45,7 +62,7 @@ public sealed class CurrentUserCultureResolverFactory : ICurrentUserCultureResol
 	}
 
 	/// <inheritdoc />
-	public IOwnedCurrentUserCultureResolver Create(EnvironmentSettings settings)
+	public ICurrentUserCultureResolver Create(EnvironmentSettings settings)
 	{
 		ArgumentNullException.ThrowIfNull(settings);
 		IOwnedApplicationClient applicationClient = _applicationClientFactory.CreateOwnedEnvironmentClient(settings);

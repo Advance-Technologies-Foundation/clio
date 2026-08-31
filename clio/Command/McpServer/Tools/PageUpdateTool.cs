@@ -321,7 +321,7 @@ public sealed class PageUpdateTool(
 			if (settings is null) {
 				return null;
 			}
-			using IOwnedPlatformVersionResolver resolver = resolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
 			PlatformVersionResolution resolution = await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 			return resolution?.ResolvedVersion;
 		} catch (OperationCanceledException) {

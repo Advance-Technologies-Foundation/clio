@@ -15,6 +15,10 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 	private readonly IApplicationClientFactory _applicationClientFactory;
 	private readonly IBrowserSessionCache _cache;
 	private readonly IFileSystem _fileSystem;
+	// This field exists only to honor the obsolete public constructor for binary-compatible callers.
+#pragma warning disable CS0618
+	private readonly ICreatioAuthClient _legacyAuthClient;
+#pragma warning restore CS0618
 
 	/// <summary>Initializes the orchestration service.</summary>
 	public BrowserSessionService(IApplicationClientFactory applicationClientFactory,
@@ -22,6 +26,18 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 		_applicationClientFactory = applicationClientFactory;
 		_cache = cache;
 		_fileSystem = fileSystem;
+	}
+
+	/// <summary>Retains the historical constructor while routing authentication through CreatioClient.</summary>
+	[Obsolete("Use the overload that accepts IApplicationClientFactory.")]
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Architecture", "CLIO001:Resolve behavior through DI",
+		Justification = "The compatibility constructor must retain its historical public signature.")]
+	public BrowserSessionService(ICreatioAuthClient authClient, IBrowserSessionCache cache,
+		IFileSystem fileSystem, IHttpClientFactory httpClientFactory)
+		: this(new ApplicationClientFactory(new NoReauthExecutor()), cache, fileSystem) {
+		ArgumentNullException.ThrowIfNull(authClient);
+		ArgumentNullException.ThrowIfNull(httpClientFactory);
+		_legacyAuthClient = authClient;
 	}
 
 	/// <inheritdoc />
@@ -65,6 +81,9 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 
 	private async Task<StorageStateResult> LoginAndExportSessionAsync(EnvironmentSettings env,
 		CancellationToken cancellationToken) {
+		if (_legacyAuthClient is not null) {
+			return await _legacyAuthClient.LoginAsync(env, cancellationToken).ConfigureAwait(false);
+		}
 		using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(env);
 		try {
 			using HttpResponseMessage response = await client.LoginAsync(RequestTimeout, cancellationToken)
@@ -92,7 +111,7 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 			return null;
 		}
 		if (!cachedCookies.Any(cookie => cookie.Name.Equals(".ASPXAUTH", StringComparison.OrdinalIgnoreCase)
-				&& (cookie.Expires < 0 || DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires) > DateTimeOffset.UtcNow))
+				&& HasLiveExpiry(cookie.Expires))
 			|| !Uri.TryCreate(env.Uri, UriKind.Absolute, out Uri environmentUri)) {
 			return null;
 		}
@@ -120,6 +139,17 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 		} catch (Exception ex) when (ex is ArgumentException or CookieException or FormatException) {
 			return null;
 		}
+	}
+
+	private static bool HasLiveExpiry(double expiry) {
+		if (!double.IsFinite(expiry)) {
+			return false;
+		}
+		if (expiry < 0) {
+			return true;
+		}
+		return expiry <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+			&& expiry > DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 	}
 
 	private static StorageStateResult ExportSession(ICreatioApplicationClient client, string environmentUri) {

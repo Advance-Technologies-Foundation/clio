@@ -355,7 +355,11 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
-		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService>(sp =>
+			new Clio.Common.BrowserSession.BrowserSessionService(
+				sp.GetRequiredService<IApplicationClientFactory>(),
+				sp.GetRequiredService<Clio.Common.BrowserSession.IBrowserSessionCache>(),
+				sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		IDeserializer deserializer = new DeserializerBuilder()
@@ -882,7 +886,11 @@ public class BindingsModule {
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
 		services.AddTransient<SetUserThemeCommand>();
-		services.AddTransient<ISysImageUploader, SysImageUploader>();
+		services.AddTransient<ISysImageUploader>(sp => new SysImageUploader(
+			sp.GetRequiredService<EnvironmentSettings>(),
+			sp.GetRequiredService<IApplicationClientFactory>(),
+			sp.GetRequiredService<IServiceUrlBuilder>(),
+			sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<SetLogoCommand>();
@@ -1141,16 +1149,24 @@ public class BindingsModule {
 		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings)));
 		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
 		// (multi-tenant safety, ENG-93208 B1).
-		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(activeSettings));
-		services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-		services.AddSingleton<IApplicationClient>(sp =>
+		// Keep the directly resolvable compatibility service separate from the adapter's transport.
+		// Microsoft DI owns/disposes factory-returned IDisposable services, so sharing that instance
+		// would bypass the adapter's SignalR listener guard during provider teardown. Both remain lazy,
+		// which is required because constructing an OAuth client fetches its token over the network.
+		Lazy<CreatioClient> compatibilityClient = new(() => BuildCreatioClient(activeSettings));
+		Lazy<CreatioClient> adapterClient = new(() => BuildCreatioClient(activeSettings));
+		services.AddSingleton<CreatioClient>(_ => compatibilityClient.Value);
+		services.AddSingleton<IApplicationClient>(sp => {
 			// Bearer path must never re-login: wire NoReauthExecutor (the DI'd IReauthExecutor)
 			// so an ephemeral bearer client cannot fall back to a login/password re-auth
 			// (multi-tenant safety, ENG-93208 B1). Non-bearer keeps the adapter's default
-			// internal closure-based ReauthExecutor byte-for-byte.
-			!string.IsNullOrEmpty(activeSettings.AccessToken)
-				? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
-				: new CreatioClientAdapter(lazyCreatioClient));
+			// internal closure-based ReauthExecutor byte-for-byte. The adapter is the sole
+			// lifetime owner; registering the raw disposable client would bypass its listener
+			// teardown guard when the child provider is disposed.
+			return !string.IsNullOrEmpty(activeSettings.AccessToken)
+				? new CreatioClientAdapter(adapterClient, sp.GetRequiredService<IReauthExecutor>())
+				: new CreatioClientAdapter(adapterClient, ownsClient: true);
+		});
 		services.AddTransient<SysSettingsManager>();
 	}
 
@@ -1289,6 +1305,16 @@ public class BindingsModule {
 					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
 					// counter); it is created by CreatioClientAdapter, not resolved from DI.
 					|| implementedInterface == typeof(ILoginDiagnostics)
+					// Application-client implementations have ownership-sensitive constructors and
+					// are registered explicitly for the active environment. Auto-registration would
+					// either create an unbound adapter or introduce a circular ownership lease.
+					|| implementedInterface == typeof(IApplicationClient)
+					|| implementedInterface == typeof(ICreatioApplicationClient)
+					|| implementedInterface == typeof(IOwnedApplicationClient)
+					// These services retain obsolete public constructors for binary compatibility;
+					// their modern constructors are selected by explicit factory registrations.
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.IBrowserSessionService)
+					|| implementedInterface == typeof(ISysImageUploader)
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.

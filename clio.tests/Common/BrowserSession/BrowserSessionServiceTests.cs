@@ -400,6 +400,44 @@ public sealed class BrowserSessionServiceTests {
 		await _client.Received(1).LoginAsync(30_000, Arg.Any<CancellationToken>());
 	}
 
+	[TestCase(253402300800d)]
+	[Description("An invalid cached .ASPXAUTH expiry is treated as stale and refreshed without probing it.")]
+	public async Task GetSessionPathAsync_ShouldRefreshWithoutCacheProbe_WhenFormsCookieExpiryIsInvalid(
+		double invalidExpiry) {
+		// Arrange
+		StubCacheHit();
+		_fileSystem.ReadAllText(CachedPath).Returns(StorageStateJson.Serialize(new StorageStateResult([
+			new BrowserCookie(".ASPXAUTH", "invalid", "dev.creatio.com", "/", true, false, "Lax", invalidExpiry)
+		])));
+
+		// Act
+		_ = await _sut.GetSessionPathAsync(Env());
+
+		// Assert
+		_cache.Received(1).Delete(Key);
+		await _client.DidNotReceive().ExecuteGetRequestAsync(
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+		await _client.Received(1).LoginAsync(30_000, Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("A non-finite cached .ASPXAUTH expiry is invalidated instead of being treated as a session cookie.")]
+	public async Task GetSessionPathAsync_ShouldRefreshWithoutCacheProbe_WhenFormsCookieExpiryIsInfinite() {
+		// Arrange
+		StubCacheHit();
+		_fileSystem.ReadAllText(CachedPath).Returns(
+			"""{"cookies":[{"name":".ASPXAUTH","value":"invalid","domain":"dev.creatio.com","path":"/","httpOnly":true,"secure":false,"sameSite":"Lax","expires":-1e400}],"origins":[]}""");
+
+		// Act
+		_ = await _sut.GetSessionPathAsync(Env());
+
+		// Assert
+		_cache.Received(1).Delete(Key);
+		await _client.DidNotReceive().ExecuteGetRequestAsync(
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+		await _client.Received(1).LoginAsync(30_000, Arg.Any<CancellationToken>());
+	}
+
 	[Test]
 	[Description("A rejected CreatioClient login is translated to the existing sanitized browser-session error.")]
 	public async Task GetSessionPathAsync_ShouldReturnSanitizedFailure_WhenLoginIsRejected() {

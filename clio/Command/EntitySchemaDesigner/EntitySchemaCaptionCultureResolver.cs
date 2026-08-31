@@ -56,7 +56,7 @@ internal sealed class EntitySchemaCaptionCultureResolver : IEntitySchemaCaptionC
 
 		try {
 			EnvironmentSettings settings = _settingsRepository.GetEnvironment(environmentOptions);
-			using IOwnedCurrentUserCultureResolver resolver = _cultureResolverFactory.Create(settings);
+			using IOwnedCurrentUserCultureResolver resolver = _cultureResolverFactory.CreateOwned(settings);
 			CultureResolution resolution = resolver.ResolveAsync().GetAwaiter().GetResult();
 			return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
 		} catch (Exception ex) when (ex is not OperationCanceledException

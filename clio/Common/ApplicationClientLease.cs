@@ -76,5 +76,5 @@ internal sealed class ApplicationClientLease(IApplicationClient client) : IOwned
 		int requestTimeout = 100_000, CancellationToken cancellationToken = default) =>
 		Extended.UploadImageAsync(url, data, fileName, mimeType, requestTimeout, cancellationToken);
 
-	public void Dispose() => (_client as IDisposable)?.Dispose();
+	public void Dispose() { }
 }

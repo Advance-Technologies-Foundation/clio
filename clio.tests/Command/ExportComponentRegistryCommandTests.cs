@@ -702,7 +702,7 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 	private const string RegistrySubdirectoryNameForTest = "component-registry";
 
 	private sealed class ThrowingResolverFactory(Exception failure) : IPlatformVersionResolverFactory {
-		public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) => new ThrowingResolver(failure);
+		public IPlatformVersionResolver Create(EnvironmentSettings settings) => new ThrowingResolver(failure);
 
 		private sealed class ThrowingResolver(Exception failure) : IOwnedPlatformVersionResolver {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
@@ -714,7 +714,7 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 	private sealed class StubResolverFactory(PlatformVersionResolution result) : IPlatformVersionResolverFactory {
 		public int CreateCallCount { get; private set; }
 
-		public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) {
+		public IPlatformVersionResolver Create(EnvironmentSettings settings) {
 			CreateCallCount++;
 			return new StubResolver(result);
 		}

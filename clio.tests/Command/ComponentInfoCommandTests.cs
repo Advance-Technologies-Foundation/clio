@@ -837,7 +837,7 @@ public sealed class ComponentInfoCommandTests {
 	private sealed class StubResolverFactory(PlatformVersionResolution result) : IPlatformVersionResolverFactory {
 		public int CreateCallCount { get; private set; }
 
-		public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) {
+		public IPlatformVersionResolver Create(EnvironmentSettings settings) {
 			CreateCallCount++;
 			return new StubResolver(result);
 		}

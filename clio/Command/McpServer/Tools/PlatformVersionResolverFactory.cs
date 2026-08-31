@@ -11,7 +11,24 @@ namespace Clio.Command.McpServer.Tools;
 /// the long-lived MCP server.
 /// </summary>
 public interface IPlatformVersionResolverFactory {
-	IOwnedPlatformVersionResolver Create(EnvironmentSettings settings);
+	IPlatformVersionResolver Create(EnvironmentSettings settings);
+}
+
+/// <summary>Ownership-aware access to platform-version resolvers created by a compatible factory.</summary>
+public static class PlatformVersionResolverFactoryExtensions {
+	/// <summary>Creates a resolver whose lifetime is scoped to the caller.</summary>
+	public static IOwnedPlatformVersionResolver CreateOwned(
+		this IPlatformVersionResolverFactory factory, EnvironmentSettings settings) {
+		IPlatformVersionResolver resolver = factory.Create(settings);
+		return resolver as IOwnedPlatformVersionResolver ?? new BorrowedPlatformVersionResolverLease(resolver);
+	}
+
+	private readonly struct BorrowedPlatformVersionResolverLease(IPlatformVersionResolver resolver)
+		: IOwnedPlatformVersionResolver {
+		public System.Threading.Tasks.Task<PlatformVersionResolution> ResolveAsync(
+			System.Threading.CancellationToken cancellationToken = default) => resolver.ResolveAsync(cancellationToken);
+		public void Dispose() { }
+	}
 }
 
 /// <summary>
@@ -37,7 +54,7 @@ public sealed class PlatformVersionResolverFactory : IPlatformVersionResolverFac
 		_loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
 	}
 
-	public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) {
+	public IPlatformVersionResolver Create(EnvironmentSettings settings) {
 		if (settings is null) {
 			throw new ArgumentNullException(nameof(settings));
 		}

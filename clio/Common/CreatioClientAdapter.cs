@@ -105,6 +105,11 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		: this(lazyClient, null, null,
 			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor)), ownsClient: true) { }
 
+	// DI composition constructor: unlike the public Lazy overload (which preserves borrowed-client
+	// compatibility), this adapter is the sole owner of the lazily-created environment client.
+	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, bool ownsClient)
+		: this(lazyClient, null, null, null, ownsClient: ownsClient) { }
+
 	// Test-only constructor for the diagnostics seam. Unlike the two constructors around it, the
 	// reauth executor MAY be null here: leaving it to the default is the only way to reach the
 	// Reauthentication login closure the default executor owns, which is precisely one of the
@@ -277,6 +282,16 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 
 	/// <inheritdoc />
 	public void Dispose() {
+		Dispose(true);
+		GC.SuppressFinalize(this);
+	}
+
+	/// <summary>Releases the owned Creatio transport when disposal was requested.</summary>
+	/// <param name="disposing">Whether managed resources should be released.</param>
+	protected virtual void Dispose(bool disposing) {
+		if (!disposing) {
+			return;
+		}
 		lock (_lifetimeSync) {
 			if (_disposed) {
 				return;
@@ -289,7 +304,6 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 				_lazyClient.Value?.Dispose();
 			}
 		}
-		GC.SuppressFinalize(this);
 	}
 
 	public string UploadAlmFile(string url, string filePath) {

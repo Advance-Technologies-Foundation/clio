@@ -6,6 +6,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Common.BrowserSession;
+using Creatio.Client;
 
 namespace Clio.Common;
 
@@ -41,6 +43,10 @@ public sealed class SysImageUploader : ISysImageUploader {
 	private readonly IApplicationClientFactory _applicationClientFactory;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly Clio.Common.IFileSystem _fileSystem;
+	// This field exists only to honor the obsolete public constructor for binary-compatible callers.
+#pragma warning disable CS0618
+	private readonly ICreatioAuthClient _legacyAuthClient;
+#pragma warning restore CS0618
 
 	/// <summary>
 	/// Initializes the uploader for the active environment using a dedicated strict-TLS forms client.
@@ -52,6 +58,19 @@ public sealed class SysImageUploader : ISysImageUploader {
 		_applicationClientFactory = applicationClientFactory;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_fileSystem = fileSystem;
+	}
+
+	/// <summary>Retains the historical constructor while routing upload transport through CreatioClient.</summary>
+	[Obsolete("Use the overload that accepts IApplicationClientFactory and IServiceUrlBuilder.")]
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Architecture", "CLIO001:Resolve behavior through DI",
+		Justification = "The compatibility constructor must retain its historical public signature.")]
+	public SysImageUploader(EnvironmentSettings environmentSettings, ICreatioAuthClient authClient,
+		IHttpClientFactory httpClientFactory, Clio.Common.IFileSystem fileSystem)
+		: this(environmentSettings, new ApplicationClientFactory(new NoReauthExecutor()),
+			new ServiceUrlBuilder(environmentSettings), fileSystem) {
+		ArgumentNullException.ThrowIfNull(authClient);
+		ArgumentNullException.ThrowIfNull(httpClientFactory);
+		_legacyAuthClient = authClient;
 	}
 
 	/// <inheritdoc />
@@ -93,15 +112,28 @@ public sealed class SysImageUploader : ISysImageUploader {
 		try {
 			using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(
 				_environmentSettings);
-			using HttpResponseMessage loginResponse = await client.LoginAsync(LoginTimeout, cancellationToken)
-				.ConfigureAwait(false);
-			if (!loginResponse.IsSuccessStatusCode) {
-				return SysImageUploadResult.Failure(
-					$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
-					"check username and password in env config");
+			if (_legacyAuthClient is not null) {
+				StorageStateResult session = await _legacyAuthClient.LoginAsync(_environmentSettings, cancellationToken)
+					.ConfigureAwait(false);
+				if (!Uri.TryCreate(_environmentSettings.Uri, UriKind.Absolute, out Uri environmentUri)) {
+					return SysImageUploadResult.Failure("Image upload failed: the environment URL is invalid.");
+				}
+				client.ImportSessionCookies(session.Cookies.Select(cookie => ToSessionCookie(cookie, environmentUri)));
+			} else {
+				using HttpResponseMessage loginResponse = await client.LoginAsync(LoginTimeout, cancellationToken)
+					.ConfigureAwait(false);
+				if (!loginResponse.IsSuccessStatusCode) {
+					return SysImageUploadResult.Failure(
+						$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
+						"check username and password in env config");
+				}
 			}
 			return await UploadThroughClientAsync(client, filePath, payload, mimeType, cancellationToken)
 				.ConfigureAwait(false);
+		} catch (CreatioAuthenticationException) {
+			return SysImageUploadResult.Failure(
+				$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
+				"check username and password in env config");
 		} catch (UnauthorizedAccessException) {
 			return SysImageUploadResult.Failure(
 				$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
@@ -113,6 +145,18 @@ public sealed class SysImageUploader : ISysImageUploader {
 			return SysImageUploadResult.Failure("Image upload timed out.");
 		}
 	}
+
+	private static CreatioSessionCookie ToSessionCookie(BrowserCookie cookie, Uri environmentUri) => new(
+		cookie.Name,
+		cookie.Value,
+		string.IsNullOrEmpty(cookie.Domain) ? environmentUri.Host : cookie.Domain,
+		string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
+		cookie.HttpOnly,
+		cookie.Secure,
+		cookie.SameSite,
+		cookie.Expires < 0
+			? DateTime.MinValue
+			: DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires).UtcDateTime);
 
 	private async Task<SysImageUploadResult> UploadThroughClientAsync(ICreatioApplicationClient client,
 		string filePath, byte[] payload, string mimeType, CancellationToken cancellationToken) {

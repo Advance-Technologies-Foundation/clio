@@ -222,10 +222,19 @@ namespace Clio.Workspaces
 
 		/// <summary>Releases the factory-owned Creatio transport when it was created.</summary>
 		public void Dispose() {
+			Dispose(true);
+			GC.SuppressFinalize(this);
+		}
+
+		/// <summary>Releases the factory-owned Creatio transport when disposal was requested.</summary>
+		/// <param name="disposing">Whether managed resources should be released.</param>
+		protected virtual void Dispose(bool disposing) {
+			if (!disposing) {
+				return;
+			}
 			if (_applicationClientLazy.IsValueCreated) {
 				_applicationClientLazy.Value.Dispose();
 			}
-			GC.SuppressFinalize(this);
 		}
 		
 		// [Obsolete("This method does not account for included and filtered packages. Use PublishToFolder with package list instead.")]

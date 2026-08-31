@@ -15,12 +15,23 @@ public sealed class CreatioAuthClient : ICreatioAuthClient {
 	/// <summary>Retains the historical constructor signature for existing consumers.</summary>
 	/// <param name="httpClientFactory">Legacy parameter; authenticated transport no longer uses it.</param>
 	/// <param name="logger">Optional logger for cookie names.</param>
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Architecture", "CLIO001:Resolve behavior through DI",
+		Justification = "The obsolete compatibility constructor cannot accept the modern factory without breaking its public signature.")]
 	public CreatioAuthClient(IHttpClientFactory httpClientFactory, ILogger logger = null) {
 		ArgumentNullException.ThrowIfNull(httpClientFactory);
 		_logger = logger;
+		_createClient = env => new CreatioClientAdapter(env.Uri, env.Login, env.Password,
+			useUntrustedSsl: false, env.IsNetCore);
 	}
 
 	private readonly ILogger _logger;
+	private readonly Func<EnvironmentSettings, IOwnedApplicationClient> _createClient;
+
+	internal CreatioAuthClient(Func<EnvironmentSettings, IOwnedApplicationClient> createClient,
+		ILogger logger = null) {
+		_createClient = createClient ?? throw new ArgumentNullException(nameof(createClient));
+		_logger = logger;
+	}
 
 	/// <inheritdoc />
 	public async Task<StorageStateResult> LoginAsync(EnvironmentSettings env, CancellationToken ct = default) {
@@ -29,10 +40,9 @@ public sealed class CreatioAuthClient : ICreatioAuthClient {
 			throw CreatioAuthenticationException.MissingFormsCredentials(env.Uri);
 		}
 
-		using IOwnedApplicationClient client = new CreatioClientAdapter(env.Uri, env.Login, env.Password,
-			useUntrustedSsl: false, env.IsNetCore);
+		using IOwnedApplicationClient client = _createClient(env);
 		try {
-			using HttpResponseMessage response = await client.LoginAsync(cancellationToken: ct).ConfigureAwait(false);
+			using HttpResponseMessage response = await client.LoginAsync(30_000, ct).ConfigureAwait(false);
 			if (!response.IsSuccessStatusCode) {
 				throw CreatioAuthenticationException.InvalidCredentials(env.Uri);
 			}
@@ -43,6 +53,8 @@ public sealed class CreatioAuthClient : ICreatioAuthClient {
 			_logger?.WriteDebug(
 				$"Harvested {cookies.Count} Creatio session cookie(s): {string.Join(", ", cookies.Select(c => c.Name))}.");
 			return new StorageStateResult(cookies.Select(ToBrowserCookie).ToList());
+		} catch (UnauthorizedAccessException) {
+			throw CreatioAuthenticationException.InvalidCredentials(env.Uri);
 		} catch (HttpRequestException) {
 			throw CreatioAuthenticationException.Connectivity(env.Uri);
 		} catch (OperationCanceledException) {

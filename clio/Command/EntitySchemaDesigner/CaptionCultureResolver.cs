@@ -96,7 +96,7 @@ public sealed class CaptionCultureResolver : ICaptionCultureResolver {
 	}
 
 	private string ResolveProfileCulture(EnvironmentSettings settings) {
-		using IOwnedCurrentUserCultureResolver resolver = _cultureResolverFactory.Create(settings);
+		using IOwnedCurrentUserCultureResolver resolver = _cultureResolverFactory.CreateOwned(settings);
 		CultureResolution resolution = resolver.ResolveAsync().GetAwaiter().GetResult();
 		return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
 	}

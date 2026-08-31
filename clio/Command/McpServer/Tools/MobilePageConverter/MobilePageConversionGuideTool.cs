@@ -261,7 +261,7 @@ public sealed class MobilePageConversionGuideTool {
 				Login = args.Login,
 				Password = args.Password
 			});
-			using IOwnedPlatformVersionResolver resolver = _versionResolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = _versionResolverFactory.CreateOwned(settings);
 			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
 		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();

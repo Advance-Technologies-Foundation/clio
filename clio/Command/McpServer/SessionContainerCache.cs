@@ -120,9 +120,10 @@ public static class SessionContainerCacheDefaults {
 /// <b>Disposal / GC-safety (Story 8, AC-05 — decision (a)).</b> On eviction the child
 /// <see cref="IServiceProvider"/> is disposed, which is sufficient. Creatio.Client 2.x owns a pooled
 /// <c>HttpClient</c> and implements <see cref="IDisposable"/>; the environment-scoped
-/// <c>CreatioClientAdapter</c> owns that lazy client and is tracked as a disposable service by the
-/// provider. Disposing an evicted container therefore releases the pooled transport without creating
-/// a client that was never used. Cached passthrough containers never call <c>Listen</c>; listener
+/// <c>CreatioClientAdapter</c> is the sole owner of its lazy client and is tracked as a disposable service
+/// by the provider. The separately resolvable compatibility client has its own lazy instance, so DI cannot
+/// bypass the adapter's listener guard. Disposing an evicted container therefore releases pooled transports.
+/// Cached passthrough containers never call <c>Listen</c>; listener
 /// clients deliberately use a different cancellation lifetime because their SignalR reconnect can
 /// outlive service-provider teardown.
 /// </para>

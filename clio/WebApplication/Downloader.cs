@@ -46,6 +46,7 @@ public class Downloader : IDownloader, IDisposable
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
+	private readonly Lazy<IOwnedApplicationClient> _applicationClient;
 
 	#endregion
 
@@ -69,27 +70,23 @@ public class Downloader : IDownloader, IDisposable
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_fileSystem = fileSystem;
 		_logger = logger;
+		_applicationClient = new Lazy<IOwnedApplicationClient>(() => {
+			IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(_environmentSettings);
+			try {
+				client.Login();
+				return client;
+			} catch {
+				client.Dispose();
+				throw;
+			}
+		});
 	}
-
-	#endregion
-
-	#region Properties: Private
-
-	private Lazy<IOwnedApplicationClient> ApplicationClient { get; set; }
 
 	#endregion
 
 	#region Methods: Private
 
-	private IApplicationClient CreateApplicationClient(){
-		ApplicationClient
-			??= new Lazy<IOwnedApplicationClient>(() => {
-				IOwnedApplicationClient c = _applicationClientFactory.CreateOwnedClient(_environmentSettings);
-				c.Login();
-				return c;
-			});
-		return ApplicationClient.Value;
-	}
+	private IApplicationClient CreateApplicationClient() => _applicationClient.Value;
 
 	private void Download(DownloadInfo downloadInfo, string tempDirectory){
 		IApplicationClient applicationClient = CreateApplicationClient();
@@ -150,10 +147,19 @@ public class Downloader : IDownloader, IDisposable
 
 	/// <summary>Releases the factory-owned Creatio transport when it was created.</summary>
 	public void Dispose() {
-		if (ApplicationClient?.IsValueCreated == true) {
-			ApplicationClient.Value.Dispose();
-		}
+		Dispose(true);
 		GC.SuppressFinalize(this);
+	}
+
+	/// <summary>Releases the factory-owned Creatio transport when disposal was requested.</summary>
+	/// <param name="disposing">Whether managed resources should be released.</param>
+	protected virtual void Dispose(bool disposing) {
+		if (!disposing) {
+			return;
+		}
+		if (_applicationClient.IsValueCreated) {
+			_applicationClient.Value.Dispose();
+		}
 	}
 
 	#endregion

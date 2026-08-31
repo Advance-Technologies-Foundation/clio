@@ -393,7 +393,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (hasEnvironment) {
 			EnvironmentSettings settings = _settingsRepository.FindEnvironment(options.EnvironmentName)
 				?? throw new ArgumentException($"build-theme: environment '{options.EnvironmentName}' is not registered.");
-			using IOwnedPlatformVersionResolver resolver = _resolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = _resolverFactory.CreateOwned(settings);
 			PlatformVersionResolution resolution = resolver.ResolveAsync(CancellationToken.None).GetAwaiter().GetResult();
 			if (resolution.Source == VersionResolutionSource.LatestFallback) {
 				throw new ArgumentException(
@@ -421,7 +421,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			return new PlatformVersionResolution(options.Version.Trim(), VersionResolutionSource.Environment);
 		}
 		if (resolvedSettings is not null) {
-			using IOwnedPlatformVersionResolver resolver = _resolverFactory.Create(resolvedSettings);
+			using IOwnedPlatformVersionResolver resolver = _resolverFactory.CreateOwned(resolvedSettings);
 			return resolver.ResolveAsync(CancellationToken.None).GetAwaiter().GetResult();
 		}
 		return new PlatformVersionResolution(null, VersionResolutionSource.LatestFallback);
