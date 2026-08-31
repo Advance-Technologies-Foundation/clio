@@ -13,9 +13,12 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH).
 /// </summary>
 [McpServerToolType]
-public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem = null) {
+public sealed class ODataUpdateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem) {
 
-	private readonly IoFileSystem _fileSystem = fileSystem ?? new System.IO.Abstractions.FileSystem();
+	//File access and confinement are core behaviour here, and IFileSystem is registered in DI, so a
+	//`new FileSystem()` fallback would mask missing wiring and let a unit test touch the real host.
+	private readonly IoFileSystem _fileSystem =
+		fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 
 	internal const string ToolName = "odata-update";
 

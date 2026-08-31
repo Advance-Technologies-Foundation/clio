@@ -28,7 +28,7 @@ public sealed class ODataUpdateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(" + Guid + ")");
 		try {
 			// Act
-			ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+			ODataWriteResponse response = new ODataUpdateTool(resolver, new System.IO.Abstractions.FileSystem()).Update(new ODataUpdateArgs {
 				EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 			});
 
@@ -52,7 +52,7 @@ public sealed class ODataUpdateToolTests {
 
 		try {
 			// Act
-			ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+			ODataWriteResponse response = new ODataUpdateTool(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>()).Update(new ODataUpdateArgs {
 				EnvironmentName = "dev", Entity = "Contact", Id = Guid,
 				Data = Obj("{\"Name\":\"Inline\"}"), RowsFile = rowsFile, Confirm = true
 			});
@@ -80,7 +80,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = false
 		});
 
@@ -105,7 +105,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new System.IO.Abstractions.FileSystem()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -131,7 +131,7 @@ public sealed class ODataUpdateToolTests {
 
 		try {
 			// Act
-			ODataWriteResponse response = new ODataUpdateTool(resolver).Update(new ODataUpdateArgs {
+			ODataWriteResponse response = new ODataUpdateTool(resolver, new System.IO.Abstractions.FileSystem()).Update(new ODataUpdateArgs {
 				EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 			});
 
@@ -175,7 +175,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
 			EnvironmentName = "dev",
@@ -198,7 +198,7 @@ public sealed class ODataUpdateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = "all", Data = Obj("{\"Name\":\"x\"}"), Confirm = true
@@ -218,7 +218,7 @@ public sealed class ODataUpdateToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}")
@@ -236,7 +236,7 @@ public sealed class ODataUpdateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{}")
@@ -260,7 +260,7 @@ public sealed class ODataUpdateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -284,7 +284,7 @@ public sealed class ODataUpdateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html><head><title>404 - File or directory not found.</title></head></html>");
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -309,7 +309,7 @@ public sealed class ODataUpdateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -334,7 +334,7 @@ public sealed class ODataUpdateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{}");
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, Substitute.For<System.IO.Abstractions.IFileSystem>());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {

@@ -14,9 +14,12 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for creating one or more Creatio records via OData v4 (HTTP POST) in a single call.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem = null) {
+public sealed class ODataCreateTool(IToolCommandResolver commandResolver, IoFileSystem fileSystem) {
 
-	private readonly IoFileSystem _fileSystem = fileSystem ?? new System.IO.Abstractions.FileSystem();
+	//File access and confinement are core behaviour here, and IFileSystem is registered in DI, so a
+	//`new FileSystem()` fallback would mask missing wiring and let a unit test touch the real host.
+	private readonly IoFileSystem _fileSystem =
+		fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 
 	internal const string ToolName = "odata-create";
 
@@ -232,7 +235,9 @@ public sealed record ODataCreateArgs {
 	[JsonPropertyName("rows")]
 	[Description(
 		"Array of row objects to insert; each row is an object of field/value pairs for one new record. " +
-		"Pass all rows for the same entity here rather than calling the tool once per row. " +
+		"Pass all rows for the same entity here rather than calling the tool once per row, up to " +
+		"1000 rows per call - a larger array is rejected before the environment is resolved and before " +
+		"any POST, so split it into batches of at most 1000. " +
 		"Use dataforge-get-table-columns to discover field names. " +
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
 		"Example: [ { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }, { \"Name\": \"Globex\" } ] " +
@@ -247,7 +252,7 @@ public sealed record ODataCreateArgs {
 
 	/// <summary>Optional path to a JSON array of row objects, used instead of <see cref="Rows"/>.</summary>
 	[JsonPropertyName("rows-file")]
-	[Description("Optional path to a JSON array of field/value objects. Use this instead of rows for large payloads; the file must be readable JSON.")]
+	[Description("Optional path to a JSON array of field/value objects. Use this instead of rows for large payloads; the file must be readable JSON. The same 1000-row ceiling and 10 MB bound apply to the file contents.")]
 	public string? RowsFile { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>
