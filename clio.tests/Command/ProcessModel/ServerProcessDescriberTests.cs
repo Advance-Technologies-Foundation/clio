@@ -161,6 +161,65 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes an EDIT-mode Open edit page element: the editing mode and the record it opens. Every other openEditPage fixture pins add mode with a null record, so the half of the contract that opens an EXISTING record - AC7's second mode and the whole of AC9 - executed in no unit test and rested entirely on stand-gated E2E that Assert.Ignores without a sandbox.")]
+	public void Describe_ShouldReadOpenEditPageEditMode_WhenServerReportsARecord() {
+		// Arrange - an edit-mode element whose record comes from a process parameter
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"object\":\"Account\",\"editMode\":\"edit\","
+			+ "\"defaultValues\":null,"
+			+ "\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.EditMode.Should().Be("edit",
+			because: "the mode decides which payload the caller must supply on a re-apply, and 'edit' is the mode "
+				+ "no other fixture exercises");
+		block.RecordId.Should().NotBeNull(
+			because: "an edit-mode element without its record is the state the write path refuses, so a read that "
+				+ "dropped it would describe an element that cannot be re-applied");
+		block.RecordId!.Value.GetProperty("processParameter").GetString().Should().Be("AccountIdParameter",
+			because: "the record source is decoded back into the named shape the write path accepts, which is what "
+				+ "makes the described block re-appliable rather than merely readable");
+		block.DefaultValues.Should().BeNull(because: "edit mode carries no pre-filled values of its own");
+	}
+
+	[Test]
+	[Description("Deserializes an element that stores BOTH pre-filled values and a record - the asymmetry the describe contract explicitly promises to report, because the runtime applies stored values in either editing mode. No other fixture produces this shape, so a read that silently dropped one side would have hidden live configuration undetected.")]
+	public void Describe_ShouldReadOpenEditPageValuesAndRecord_WhenTheSchemaCarriesBoth() {
+		// Arrange - the shape the write path refuses but the schema can hold, which the read must surface whole
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"object\":\"Account\",\"editMode\":\"edit\","
+			+ "\"defaultValues\":[{\"column\":\"Address\",\"value\":\"Kyiv\"}],"
+			+ "\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.DefaultValues.Should().ContainSingle(
+			because: "the runtime applies stored values in either mode, so hiding them on an edit-mode element "
+				+ "would hide configuration that actually runs");
+		block.RecordId.Should().NotBeNull(
+			because: "both halves are reported together - that is the documented asymmetry, and dropping either "
+				+ "one is the failure this pins");
+	}
+
+	[Test]
 	[Description("Deserializes an Open edit page element's configuration (page, object, record type, editing mode, pre-filled values, recommendation, hint, completion mode) into the DescribedOpenEditPage DTO, so the block is surfaced typed rather than falling into the element's extension bag unnoticed.")]
 	public void Describe_ShouldReadOpenEditPageConfiguration_WhenServerReportsIt() {
 		// Arrange - the shape a CrtProcessBuilder that supports the element returns for a configured add-mode element
@@ -307,7 +366,7 @@ public sealed class ServerProcessDescriberTests {
 		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
 
 		// Assert
-		DescribedOpenEditPagePerformer performer = result.Value.Elements[0].OpenEditPage.Performer;
+		DescribedPerformer performer = result.Value.Elements[0].OpenEditPage.Performer;
 		performer.Should().NotBeNull(
 			because: "the performer must be deserialized into its own DTO, not silently absorbed by the openEditPage "
 				+ "block's [JsonExtensionData] bag where no caller would find it typed");

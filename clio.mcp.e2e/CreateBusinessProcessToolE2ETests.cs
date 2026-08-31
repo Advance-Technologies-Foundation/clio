@@ -781,6 +781,9 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "Owner is a lookup column on Account on every environment, so the list must configure cleanly");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "IsError stays null on a refusal, so without the success line a refused build surfaces as an "
+				+ "unrelated failure inside the describe step instead of as the server's refusal");
 		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
 		DescribedOpenEditPageResultsByColumn results = graph.Elements
 			.Single(node => node.Name == "OpenPage1").OpenEditPage!.ResultsByColumn;
@@ -852,7 +855,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "only a successful build logs the created-schema line");
 
 		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
-		DescribedOpenEditPagePerformer performer = graph.Elements
+		DescribedPerformer performer = graph.Elements
 			.Single(node => node.Name == "OpenPage1").OpenEditPage!.Performer;
 		performer.Should().NotBeNull(
 			because: "the assignment is stored on the element's own options, so a null here would mean the designer "

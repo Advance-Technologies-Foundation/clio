@@ -403,10 +403,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange - an edit-mode element opening a fixed record, so the switch to add mode has a branch to clear.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpOpenEditPageSetElementE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildOpenEditPageEditModeDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildOpenEditPageEditModeDescriptor(processName));
 
 		// Act 1 - switch the mode with NO replacement payload.
 		CallToolResult refused = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -431,15 +428,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!.EditMode.Should().Be("edit",
 				because: "a refused update must leave the element exactly as it was, not half-switched");
 
-		// Act 2 - the same switch WITH the replacement payload.
-		CallToolResult applied = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = BuildOpenEditPageModeSwitchOperations(withDefaultValues: true)
-		});
+		// Act 2 - the same switch WITH the replacement payload. Through the helper that asserts the success LINE:
+		// on a test whose whole purpose is to prove a guard, the server's refusal text is the only diagnostic that
+		// matters, and an IsError-only gate cannot fail for a refusal - it would fail three lines later on a state
+		// mismatch instead.
+		await ModifyExpectingSuccessAsync(context, processName,
+			BuildOpenEditPageModeSwitchOperations(withDefaultValues: true));
 
 		// Assert 2
-		applied.IsError.Should().NotBeTrue(because: "a mode switch that brings its payload must apply");
 		DescribedOpenEditPage block = ParseDescribeResult(
 				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
@@ -462,10 +458,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange - an add-mode element that really carries a pre-filled value
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpOpenEditPageClearE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildOpenEditPageAddModeDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildOpenEditPageAddModeDescriptor(processName));
 		DescribedOpenEditPage before = ParseDescribeResult(
 				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
@@ -539,10 +532,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange - an element already assigned to a user, so the change is a REPLACEMENT, not a first write.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpOpenEditPagePerformerSetE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildOpenEditPageSetElementDescriptor(processName, performerType: "user")
-		});
+		await CreateProcessAsync(context, processName, BuildOpenEditPageSetElementDescriptor(processName, performerType: "user"));
 
 		// Act
 		await ModifyExpectingSuccessAsync(context, processName, """
@@ -554,7 +544,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			""");
 
 		// Assert - the helper already refused to read a refusal as success.
-		DescribedOpenEditPagePerformer performer = ReadOpenEditPage(
+		DescribedPerformer performer = ReadOpenEditPage(
 			await DescribeAsync(context, processName)).Performer!;
 		performer.Type.Should().Be("role",
 			because: "the supplied block REPLACES the assignment - a stale 'user' here would mean the element kept an "
@@ -577,10 +567,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange - an element logging an activity with a duration and the calendar flag already stored.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpOpenEditPageActivitySetE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildOpenEditPageSetElementDescriptor(processName, withLogActivity: true)
-		});
+		await CreateProcessAsync(context, processName, BuildOpenEditPageSetElementDescriptor(processName, withLogActivity: true));
 
 		// Act - change the reminder only.
 		await ModifyExpectingSuccessAsync(context, processName, """
@@ -614,10 +601,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange - an element with no results list at all, so enabling it is a first write.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpOpenEditPageResultsSetE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildOpenEditPageSetElementDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildOpenEditPageSetElementDescriptor(processName));
 
 		// Act 1 - enable it on the saved element.
 		await ModifyExpectingSuccessAsync(context, processName, """
@@ -1954,6 +1938,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	/// Creates the process and asserts the create itself succeeded. An unchecked create turns every later
 	/// assertion into a statement about a process that does not exist.
 	/// </summary>
+	/// <remarks>
+	/// The success LINE, not <c>IsError</c> alone: clio-run reports a refused build with exit code 1 inside the
+	/// payload while <c>isError</c> stays null, so an IsError-only gate cannot fail for a refusal. Without this the
+	/// arrange's refusal — an older CrtProcessBuilder on the stand being the likely cause — surfaces much later as
+	/// a Single(...) or null-reference failure in the act stage, pointing the reader at the wrong subsystem
+	/// instead of showing the server's message.
+	/// </remarks>
 	private static async Task CreateProcessAsync(ArrangeContext context, string processName, string descriptor) {
 		CallToolResult result = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
@@ -1961,6 +1952,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 		result.IsError.Should().NotBeTrue(
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		SerializeToolText(result).Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line; IsError stays null on a "
+				+ "refusal, so without this the arrange's failure is read as success");
 	}
 
 	/// <summary>Applies operations and asserts the edit succeeded, returning the result so a caller can read its notices.</summary>

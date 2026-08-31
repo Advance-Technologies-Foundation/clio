@@ -262,7 +262,10 @@ public sealed class DescribedElement {
 	/// Round-trips into a <c>create</c>/<c>modify</c> <c>openEditPage</c> block, with one asymmetry: the write path
 	/// refuses pre-filled values together with a record, while this read reports BOTH when the schema carries them —
 	/// the runtime applies stored values in either editing mode, so hiding one would hide live configuration. Drop
-	/// the one that does not belong to the reported <c>editMode</c> before re-applying.
+	/// the one that does not belong to the reported <c>editMode</c> before re-applying. One field is also reshaped
+	/// rather than dropped: <c>completionMode</c> is reported FLAT and is written NESTED, so re-apply it as
+	/// <c>completion:{mode:…}</c>. Feeding the flat key back leaves the element on its stored mode while its filter
+	/// stays — the mismatched pair the write contract warns about.
 	/// </summary>
 	[JsonPropertyName("openEditPage")]
 	public DescribedOpenEditPage OpenEditPage { get; set; }
@@ -337,8 +340,10 @@ public sealed class DescribedOpenEditPage {
 
 	/// <summary>
 	/// The RECORD TYPE the page opens for, when the object is typed (<c>Activity</c> → Task / Call / Email).
-	/// <c>null</c> for an untyped object. NOT a Classic-vs-Freedom marker — feed it back as <c>recordType</c>, or a
-	/// re-apply on a typed object is refused as ambiguous.
+	/// <c>null</c> for an untyped object. NOT a Classic-vs-Freedom marker. Feeding it back as <c>recordType</c> is
+	/// OPTIONAL and asserts the registration you expect: the designer offers one entry per page, so the type
+	/// FOLLOWS the page and omitting it is never ambiguous. A value that disagrees with the page's registered type
+	/// is refused naming the registered one.
 	/// </summary>
 	[JsonPropertyName("pageTypeUId")]
 	public string PageTypeUId { get; set; }
@@ -390,7 +395,7 @@ public sealed class DescribedOpenEditPage {
 	/// element whose schema stores neither. Report it as "not assigned explicitly", not as a gap to fill.</para>
 	/// </summary>
 	[JsonPropertyName("performer")]
-	public DescribedOpenEditPagePerformer Performer { get; set; }
+	public DescribedPerformer Performer { get; set; }
 
 	/// <summary>
 	/// Completion mode — <c>onSave</c> or <c>onConditions</c>. Derived from the stored flag, never from a designer
@@ -437,8 +442,11 @@ public sealed class DescribedOpenEditPageResultsByColumn {
 /// </summary>
 public sealed class DescribedOpenEditPageLogActivity {
 	/// <summary>
-	/// Whether the step logs an activity (<c>CreateActivity</c>). <c>null</c> when the flag is not stored, which
-	/// means the platform's <c>false</c> default applies — not that the answer is unknown.
+	/// Whether the step logs an activity (<c>CreateActivity</c>). <c>null</c> when the element stores no flag of
+	/// its own — which does NOT mean it logs nothing. The platform materializes the user-task schema's own default
+	/// onto a new element, and that default is VERSION-DEPENDENT: measured ON (with a 5-minute duration) on a
+	/// 10.1.628 core, while the 7.8.0 schema ships it off. So never narrate a <c>null</c> as "this step logs no
+	/// activity"; report that the element carries no explicit flag and the environment's schema default decides.
 	/// </summary>
 	[JsonPropertyName("enabled")]
 	public bool? Enabled { get; set; }
@@ -498,37 +506,6 @@ public sealed class DescribedActivityInterval {
 	public int? Period { get; set; }
 
 	/// <summary>Forward-compatibility bag.</summary>
-	[JsonExtensionData]
-	public Dictionary<string, JsonElement> AdditionalData { get; set; }
-}
-
-/// <summary>
-/// The performer of an Open edit page element, read back from its assignment options. Its own type rather than the
-/// Send email one: this element offers the field unconditionally, while Send email offers it only in manual send
-/// mode, so the two document different rules even where their fields coincide.
-/// </summary>
-public sealed class DescribedOpenEditPagePerformer {
-	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
-	[JsonPropertyName("type")]
-	public string Type { get; set; }
-
-	/// <summary>For user/manager: the contact formula on the element's <c>OwnerId</c> parameter; null when unset.</summary>
-	[JsonPropertyName("contact")]
-	public string Contact { get; set; }
-
-	/// <summary>For role: the role formula on the element's <c>RoleId</c> parameter; null when unset.</summary>
-	[JsonPropertyName("role")]
-	public string Role { get; set; }
-
-	/// <summary>The readable role name, when the schema stores one alongside the formula.</summary>
-	[JsonPropertyName("roleDisplay")]
-	public string RoleDisplay { get; set; }
-
-	/// <summary>Whether the page opens automatically for the performer; null when the element stores no flag.</summary>
-	[JsonPropertyName("showPage")]
-	public bool? ShowPage { get; set; }
-
-	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
@@ -615,7 +592,12 @@ public sealed class DescribedEmail {
 
 /// <summary>
 /// The performer of a user-task element ("Who performs the task?"), read back from its performer-assignment
-/// options: top-level on a described Perform task, inside the <c>email</c> block on a described Send email element.
+/// options: top-level on a described Perform task, inside the <c>email</c> block on a described Send email element,
+/// and inside the <c>openEditPage</c> block on a described Open edit page element.
+/// <para>One JSON shape, one type. Rules that differ BETWEEN elements — Send email offers the block only in manual
+/// send mode, Open edit page offers it unconditionally — are write-side availability rules and live in the tool
+/// descriptions and on each element's own property doc, not here. A second class per element would be two hand-
+/// synchronised declarations of the same five fields, which is exactly how they drift.</para>
 /// </summary>
 public sealed class DescribedPerformer {
 	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
@@ -637,6 +619,14 @@ public sealed class DescribedPerformer {
 	/// <summary>The "open the execution page automatically" flag; null when not set on the element.</summary>
 	[JsonPropertyName("showPage")]
 	public bool? ShowPage { get; set; }
+	/// <summary>
+	/// Forward-compatibility bag, so a newer server reporting more performer fields does not lose them. Added when
+	/// the Open edit page element started reporting through this type: the duplicate it replaced carried one, and
+	/// dropping it would have silently narrowed what a newer server can report.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+
 }
 
 /// <summary>
