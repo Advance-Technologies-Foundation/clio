@@ -8,8 +8,8 @@ namespace Clio.Tests.Common;
 
 /// <summary>
 /// Story 3 (browser-session-handoff): verifies owner-only hardening on a real filesystem. On Unix
-/// the exact mode (0600/0700) is asserted; on Windows the documented limitation applies and the
-/// call must simply not throw (per-user %LOCALAPPDATA% ACL is relied upon).
+/// the exact mode (0600/0700) is asserted; on Windows the explicit owner/system/administrators ACL
+/// path is exercised by the no-throw assertion.
 /// </summary>
 [TestFixture]
 [Category("Integration")]

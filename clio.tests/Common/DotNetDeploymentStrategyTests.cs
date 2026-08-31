@@ -263,6 +263,28 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Loads a DER-encoded CRT certificate with a separate PEM ECDSA private key for dotnet HTTPS hosting.")]
+	public void BuildApplicationConfiguration_ShouldConfigureHttpsFromDerEcdsaCertificateAndKey() {
+		// Arrange
+		(string certificatePath, string keyPath) = CreateTemporaryDerEcdsaCertificate();
+		PfInstallerOptions options = new() {
+			SitePort = 40123,
+			UseHttps = true,
+			CertificatePath = certificatePath,
+			CertificateKeyPath = keyPath
+		};
+
+		// Act
+		string result = _sut.BuildApplicationConfiguration(null, options);
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be(Path.GetFullPath(certificatePath),
+			because: "the DER ECDSA certificate path must be forwarded to Kestrel");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "KeyPath").Should().Be(Path.GetFullPath(keyPath),
+			because: "Kestrel needs the matching PEM ECDSA private key path for a DER certificate");
+	}
+
+	[Test]
 	[Description("Preserves existing HTTPS certificate settings while constraining their bind address when HTTP remains the selected protocol.")]
 	public void BuildApplicationConfiguration_ShouldPreserveExistingHttpsConfiguration() {
 		// Arrange
@@ -672,6 +694,17 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		using X509Certificate2 certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
 		string certificatePath = Path.Combine(_temporaryDirectory, "server.crt");
 		string keyPath = Path.Combine(_temporaryDirectory, "server.key");
+		File.WriteAllBytes(certificatePath, certificate.Export(X509ContentType.Cert));
+		File.WriteAllText(keyPath, key.ExportPkcs8PrivateKeyPem());
+		return (certificatePath, keyPath);
+	}
+
+	private (string CertificatePath, string KeyPath) CreateTemporaryDerEcdsaCertificate() {
+		using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+		CertificateRequest request = new("CN=clio-test-ecdsa", key, HashAlgorithmName.SHA256);
+		using X509Certificate2 certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
+		string certificatePath = Path.Combine(_temporaryDirectory, "server-ecdsa.crt");
+		string keyPath = Path.Combine(_temporaryDirectory, "server-ecdsa.key");
 		File.WriteAllBytes(certificatePath, certificate.Export(X509ContentType.Cert));
 		File.WriteAllText(keyPath, key.ExportPkcs8PrivateKeyPem());
 		return (certificatePath, keyPath);

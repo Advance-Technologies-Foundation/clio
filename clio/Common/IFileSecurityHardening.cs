@@ -8,14 +8,14 @@ namespace Clio.Common;
 public interface IFileSecurityHardening {
 	/// <summary>
 	/// Restricts <paramref name="filePath"/> to the current owner (Unix mode <c>0600</c>;
-	/// current-user-only ACL on Windows).
+	/// an explicit current-user, LocalSystem, and built-in-administrators ACL on Windows).
 	/// </summary>
 	/// <param name="filePath">Absolute path to an existing file.</param>
 	void HardenFile(string filePath);
 
 	/// <summary>
 	/// Restricts <paramref name="directoryPath"/> to the current owner (Unix mode <c>0700</c>;
-	/// current-user-only ACL on Windows).
+	/// an explicit current-user, LocalSystem, and built-in-administrators ACL on Windows).
 	/// </summary>
 	/// <param name="directoryPath">Absolute path to an existing directory.</param>
 	void HardenDirectory(string directoryPath);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -59,18 +60,37 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 			return;
 		}
 
-		if (environmentVariables.Any(variable => string.IsNullOrWhiteSpace(variable.Key) || variable.Value is null))
+		HashSet<string> variableNames = new(StringComparer.OrdinalIgnoreCase);
+		if (environmentVariables.Any(variable => !IsCertificatePasswordEnvironmentVariable(variable.Key)
+			|| variable.Value is null
+			|| !variableNames.Add(variable.Key)))
 		{
-			throw new ArgumentException("Host environment variable names and values must be non-null.", nameof(environmentVariables));
+			throw new ArgumentException(
+				"Only unique Kestrel certificate password environment variables can be persisted.",
+				nameof(environmentVariables));
 		}
 
 		string directory = Path.GetDirectoryName(path)
 			?? throw new InvalidOperationException("The host environment store directory could not be resolved.");
+		EnsureNotSymbolicLink(ClioRuntimePaths.Home, isDirectory: true);
+		EnsureNotSymbolicLink(directory, isDirectory: true);
 		_fileSystem.CreateDirectoryIfNotExists(directory);
+		EnsureNotSymbolicLink(directory, isDirectory: true);
 		_fileSecurityHardening.HardenDirectory(directory);
+		EnsureNotSymbolicLink(path, isDirectory: false);
 		string json = JsonSerializer.Serialize(environmentVariables, JsonOptions);
-		_fileSystem.WriteOwnerOnlyTextToFile(path, json);
-		_fileSecurityHardening.HardenFile(path);
+		try
+		{
+			_fileSystem.WriteOwnerOnlyTextToFile(path, json);
+			_fileSecurityHardening.HardenFile(path);
+		}
+		catch
+		{
+			// Do not leave a secret-bearing file behind when its ownership boundary could not be
+			// established. The next deployment/start will fail closed rather than use an unprotected value.
+			_fileSystem.DeleteFileIfExists(path);
+			throw;
+		}
 	}
 
 	/// <inheritdoc />
@@ -84,12 +104,19 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 
 		try
 		{
+			EnsureNotSymbolicLink(ClioRuntimePaths.Home, isDirectory: true);
+			string storeDirectory = Path.GetDirectoryName(path)
+				?? throw new InvalidOperationException("The host environment store directory could not be resolved.");
+			EnsureNotSymbolicLink(storeDirectory, isDirectory: true);
+			EnsureNotSymbolicLink(path, isDirectory: false);
 			Dictionary<string, string>? environmentVariables =
 				JsonSerializer.Deserialize<Dictionary<string, string>>(_fileSystem.ReadAllText(path));
 			if (environmentVariables is null
-				|| environmentVariables.Any(variable => string.IsNullOrWhiteSpace(variable.Key) || variable.Value is null))
+				|| environmentVariables.Any(variable => !IsCertificatePasswordEnvironmentVariable(variable.Key)
+					|| variable.Value is null))
 			{
-				throw new JsonException("The saved host environment must contain non-null names and values.");
+				throw new JsonException(
+					"The saved host environment must contain only Kestrel certificate password values.");
 			}
 
 			return new Dictionary<string, string>(environmentVariables, StringComparer.OrdinalIgnoreCase);
@@ -99,6 +126,60 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 			throw new InvalidOperationException(
 				$"The saved Creatio host environment is invalid or cannot be read: {path}.", exception);
 		}
+	}
+
+	private void EnsureNotSymbolicLink(string path, bool isDirectory)
+	{
+		IFileSystemInfo fileSystemInfo = isDirectory
+			? _fileSystem.GetDirectoryInfo(path)
+			: _fileSystem.GetFilesInfos(path);
+		if (fileSystemInfo is not null
+			&& (!string.IsNullOrEmpty(fileSystemInfo.LinkTarget)
+				|| fileSystemInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)))
+		{
+			throw new IOException($"The host environment store path must not be a symbolic link: {path}.");
+		}
+	}
+
+	private static bool IsCertificatePasswordEnvironmentVariable(string name)
+	{
+		if (!IsValidEnvironmentVariableName(name))
+		{
+			return false;
+		}
+
+		string[] segments = name.Split("__", StringSplitOptions.None);
+		return (segments.Length == 5
+				&& string.Equals(segments[0], "Kestrel", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(segments[1], "Endpoints", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrEmpty(segments[2])
+				&& string.Equals(segments[3], "Certificate", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(segments[4], "Password", StringComparison.OrdinalIgnoreCase))
+			|| (segments.Length == 4
+				&& string.Equals(segments[0], "Kestrel", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(segments[1], "Certificates", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrEmpty(segments[2])
+				&& string.Equals(segments[3], "Password", StringComparison.OrdinalIgnoreCase));
+	}
+
+	private static bool IsValidEnvironmentVariableName(string value)
+	{
+		if (string.IsNullOrEmpty(value)
+			|| !(value[0] == '_' || value[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'))
+		{
+			return false;
+		}
+
+		for (int index = 1; index < value.Length; index++)
+		{
+			char character = value[index];
+			if (!(character == '_' || character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	private static string GetStorePath(string workingDirectory)

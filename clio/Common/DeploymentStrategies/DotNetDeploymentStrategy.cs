@@ -561,7 +561,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			rsa.ImportFromPem(privateKey);
 			return certificate.CopyWithPrivateKey(rsa);
 		}
-		catch (CryptographicException rsaException)
+		catch (Exception rsaException) when (rsaException is CryptographicException or ArgumentException)
 		{
 			try
 			{
@@ -569,7 +569,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				ecdsa.ImportFromPem(privateKey);
 				return certificate.CopyWithPrivateKey(ecdsa);
 			}
-			catch (CryptographicException ecdsaException)
+			catch (Exception ecdsaException) when (ecdsaException is CryptographicException or ArgumentException)
 			{
 				throw new CryptographicException(
 					"The DER certificate private key is not a supported RSA or ECDSA PEM key, or it does not match the certificate.",

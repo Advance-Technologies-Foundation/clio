@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace Clio.Common;
 
@@ -10,12 +12,11 @@ namespace Clio.Common;
 /// <see cref="File.SetUnixFileMode(string, UnixFileMode)"/> — owner read/write only.
 /// </para>
 /// <para>
-/// <b>Windows:</b> currently a documented limitation. The session cache lives under
-/// <c>%LOCALAPPDATA%</c> (<see cref="SettingsRepository.AppSettingsFolderPath"/>), a per-user
-/// location that is not world-readable by default, so files inherit a per-user ACL. An explicit
-/// current-user-only ACL (inheritance disabled) is a tracked follow-up; it is intentionally not
-/// implemented here to avoid shipping unverified Windows-ACL code. A one-time debug note records
-/// the gap.
+/// <b>Windows:</b> the session cache lives under <c>%LOCALAPPDATA%</c>
+/// (<see cref="SettingsRepository.AppSettingsFolderPath"/>) and the Clio
+/// host-environment store is protected with an explicit ACL that grants full control only to the
+/// current user, LocalSystem, and built-in administrators. Inheritance is disabled so a broader
+/// parent ACL cannot make bearer credentials readable by another user.
 /// </para>
 /// </summary>
 public sealed class FileSecurityHardening : IFileSecurityHardening {
@@ -23,31 +24,65 @@ public sealed class FileSecurityHardening : IFileSecurityHardening {
 	private const UnixFileMode OwnerOnlyDirectory =
 		UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
 
-	private readonly ILogger _logger;
-
 	/// <summary>Initializes the hardening helper.</summary>
-	/// <param name="logger">Optional logger used to record the Windows documented-limitation note.</param>
-	public FileSecurityHardening(ILogger logger = null) {
-		_logger = logger;
-	}
+	public FileSecurityHardening() { }
 
 	/// <inheritdoc />
-	public void HardenFile(string filePath) => Harden(filePath, OwnerOnlyFile);
-
-	/// <inheritdoc />
-	public void HardenDirectory(string directoryPath) => Harden(directoryPath, OwnerOnlyDirectory);
-
-	private void Harden(string path, UnixFileMode mode) {
-		if (string.IsNullOrEmpty(path)) {
+	public void HardenFile(string filePath) {
+		if (string.IsNullOrEmpty(filePath)) {
 			return;
 		}
 		if (OperatingSystem.IsWindows()) {
-			// Documented limitation: rely on the per-user %LOCALAPPDATA% ACL; explicit owner-only
-			// ACL tightening is a tracked follow-up (see FileSecurityHardening summary / Story 3).
-			_logger?.WriteDebug(
-				$"Owner-only ACL tightening is not yet applied on Windows; relying on the per-user profile ACL for '{path}'.");
+			new FileInfo(filePath).SetAccessControl(CreateProtectedFileSecurity());
 			return;
 		}
-		File.SetUnixFileMode(path, mode);
+		File.SetUnixFileMode(filePath, OwnerOnlyFile);
+	}
+
+	/// <inheritdoc />
+	public void HardenDirectory(string directoryPath) {
+		if (string.IsNullOrEmpty(directoryPath)) {
+			return;
+		}
+		if (OperatingSystem.IsWindows()) {
+			new DirectoryInfo(directoryPath).SetAccessControl(CreateProtectedDirectorySecurity());
+			return;
+		}
+		File.SetUnixFileMode(directoryPath, OwnerOnlyDirectory);
+	}
+
+	private static FileSecurity CreateProtectedFileSecurity() {
+		SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+			?? throw new UnauthorizedAccessException("The current Windows user SID is unavailable.");
+		FileSecurity security = new();
+		security.SetOwner(owner);
+		security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+		AddFullControlRule(security, owner);
+		AddFullControlRule(security, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
+		AddFullControlRule(security, new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+		return security;
+	}
+
+	private static DirectorySecurity CreateProtectedDirectorySecurity() {
+		SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+			?? throw new UnauthorizedAccessException("The current Windows user SID is unavailable.");
+		DirectorySecurity security = new();
+		security.SetOwner(owner);
+		security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+		AddFullControlRule(security, owner);
+		AddFullControlRule(security, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
+		AddFullControlRule(security, new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+		return security;
+	}
+
+	private static void AddFullControlRule(FileSecurity security, SecurityIdentifier identity) {
+		security.AddAccessRule(new FileSystemAccessRule(identity, FileSystemRights.FullControl,
+			AccessControlType.Allow));
+	}
+
+	private static void AddFullControlRule(DirectorySecurity security, SecurityIdentifier identity) {
+		const InheritanceFlags inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+		security.AddAccessRule(new FileSystemAccessRule(identity, FileSystemRights.FullControl, inheritance,
+			PropagationFlags.None, AccessControlType.Allow));
 	}
 }
