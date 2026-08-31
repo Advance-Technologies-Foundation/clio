@@ -290,6 +290,13 @@ For MCP tool testing tasks, explicitly use the `test-mcp-tool` skill.
 - Trigger this skill when adding or updating MCP unit tests in `clio.tests` or MCP end-to-end tests in `clio.mcp.e2e`.
 - Preferred invocation pattern: `$test-mcp-tool <request>`.
 
+For manual testing of committed business-process functionality, use the `bp-test-cases` and `bp-test-run` skills.
+- `bp-test-cases` authors the AI-executable manual test prompt into `spec/<feature>/<feature>-manual-test-prompt.md` and publishes it on the Jira issue as a comment. It never edits the issue description.
+- `bp-test-run` executes that prompt on a stand with locally built clio, local guidance library, and locally built package, verifies design-time and runtime results in the browser, and analyzes the executor transcript for wasted or misordered tool calls.
+- The executor runs in an isolated session with no memory, no repository context, and the clio MCP server only. That isolation is a property of how the session is launched, never an instruction inside the prompt.
+- Efficiency findings are defects of the guidance library or tool descriptions, not of the executor. Guidance fixes are pull requests in `clio-knowledge`.
+- Preferred invocation pattern: `/bp-test-cases <ENG-KEY>` then `/bp-test-run <ENG-KEY>`.
+
 ## Trigger conditions for mandatory doc review
 
 Review docs whenever any of the following is changed:
