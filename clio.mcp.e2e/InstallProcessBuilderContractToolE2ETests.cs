@@ -13,20 +13,21 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// Stand-free end-to-end contract tests for <c>install-process-builder</c>.
+/// Stand-free end-to-end contract tests for <c>install-process-builder</c> and the go-live reachability
+/// of the process-designer tools it unblocks.
 /// </summary>
 /// <remarks>
-/// The fixture runs against an isolated <c>CLIO_HOME</c> whose <c>Features</c> map is EMPTY, so the real
-/// MCP server starts with <c>process-designer</c> off — the shipping default. That is not incidental
-/// setup: it is the whole point of this fixture. <c>install-process-builder</c> is the remediation the
-/// gated process-designer tools point at, so it must stay reachable on exactly the server where those
-/// tools are invisible. Asserting that with the feature state pinned by construction (rather than read
-/// from whatever the developer's own appsettings happens to say) is what makes the invariant a test
-/// instead of a coincidence.
+/// The fixture runs against an isolated <c>CLIO_HOME</c> whose <c>Features</c> map is EMPTY — the shipping
+/// default of every fresh install. That is not incidental setup: it is the whole point of this fixture.
+/// Since go-live (ENG-96132) the five process-designer tools ship gate-free, so on exactly this server
+/// they must all be reachable through the long-tail surface, alongside <c>install-process-builder</c>,
+/// the remediation their package refusals point at. Asserting that with the feature state pinned by
+/// construction (rather than read from whatever the developer's own appsettings happens to say) is what
+/// makes the invariant a test instead of a coincidence.
 /// <para>
-/// The unit twin (<c>InstallProcessBuilderToolTests.InstallProcessBuilderTool_Should_Not_Be_FeatureGated</c>)
-/// asserts the ABSENCE of the attribute; this asserts the CONSEQUENCE — that the real server, having
-/// filtered its primitives, still advertises the tool.
+/// The unit twins (<c>InstallProcessBuilderToolTests.InstallProcessBuilderTool_Should_Not_Be_FeatureGated</c>,
+/// <c>ProcessDesignerGoLiveTests</c>) assert the ABSENCE of the attribute; this asserts the CONSEQUENCE —
+/// that the real server, having filtered its primitives, exposes the whole surface by default.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -39,10 +40,10 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 	private const string ToolName = InstallProcessBuilderTool.InstallProcessBuilderToolName;
 
 	/// <summary>
-	/// The five <c>[FeatureToggle("process-designer")]</c> MCP tools whose refusals name
-	/// <c>install-process-builder</c> as the fix.
+	/// The five process-designer MCP tools whose refusals name <c>install-process-builder</c> as the fix.
+	/// Gate-free since go-live (ENG-96132): reachable by default, non-resident by design.
 	/// </summary>
-	private static readonly string[] FeatureGatedProcessDesignerTools = [
+	private static readonly string[] ProcessDesignerToolNames = [
 		CreateBusinessProcessTool.CreateBusinessProcessToolName,
 		ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
 		DescribeProcessTool.ToolName,
@@ -52,8 +53,8 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 
 	/// <inheritdoc />
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
-		// An EMPTY Features map means process-designer is off, which is the shipping default and the
-		// condition under which the remediation tool has to be reachable.
+		// An EMPTY Features map is the shipping default of every fresh install. Since go-live (ENG-96132)
+		// the whole process-designer surface, remediation included, must be reachable on exactly this server.
 		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome(
 			"""
 			{
@@ -74,11 +75,11 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 	}
 
 	[Test]
-	[Description("With process-designer off, the real MCP server still advertises install-process-builder while hiding the five gated tools that name it as the remediation.")]
+	[Description("With the shipping-default empty Features map, the real MCP server reaches install-process-builder AND all five process-designer tools through the long-tail surface, none of them resident.")]
 	[AllureTag(ToolName)]
-	[AllureName("install-process-builder stays reachable while the process-designer tools are gated off")]
-	[AllureDescription("Starts the real clio MCP server with an isolated CLIO_HOME whose Features map is empty, and verifies that install-process-builder is reachable while the five [FeatureToggle(\"process-designer\")] tools are not — so the advertised remediation is not filtered out by the very gate that makes it necessary.")]
-	public async Task InstallProcessBuilder_Should_StayReachable_WhileProcessDesignerToolsAreGatedOff() {
+	[AllureName("the process-designer surface is reachable by default alongside its remediation")]
+	[AllureDescription("Starts the real clio MCP server with an isolated CLIO_HOME whose Features map is empty — the shipping default — and verifies that install-process-builder and the five process-designer tools are all reachable (go-live, ENG-96132) while none of them is resident in tools/list.")]
+	public async Task ProcessDesignerSurface_Should_BeReachable_OnShippingDefaultSettings() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -92,32 +93,36 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "install-process-builder is the remediation the gated tools point at, so a server with "
-				+ "process-designer off must still be able to reach it — a gated primitive is filtered out of "
-				+ "registration and would be unreachable exactly when it is needed");
+			because: "install-process-builder is the remediation the process-designer tools' package refusals "
+				+ "point at, so a default-settings server must be able to reach it");
 		advertised.Should().BeFalse(
 			because: "this pins WHICH of the two reachability paths applies, and the assertion above is nearly "
 				+ "vacuous without it. ListReachableToolNamesAsync unions tools/list with the get-tool-contract "
 				+ "index, and this tool is deliberately absent from McpCoreToolProfile.CoreToolTypes — so it is "
-				+ "never in tools/list and is reached through the curated index plus clio-run. Its index entry "
-				+ "is unconditional, so the Contain above would stay green even if [FeatureToggle] were added "
-				+ "to the tool — the exact regression this fixture exists to block. Pinning non-residency here "
-				+ "means a change to EITHER half (residency or gating) has to come past a red test");
-		toolNames.Should().NotIntersectWith(FeatureGatedProcessDesignerTools,
-			because: "this fixture's CLIO_HOME leaves Features empty, so the five [FeatureToggle(\"process-designer\")] "
-				+ "tools must be invisible on every MCP surface — if they were reachable here the asymmetry this "
-				+ "test claims to prove would not exist and the assertion above would be vacuous");
+				+ "never in tools/list and is reached through the curated index plus clio-run. Pinning "
+				+ "non-residency here means a residency change has to come past a red test");
+		toolNames.Should().Contain(ProcessDesignerToolNames,
+			because: "the process-designer feature toggle was removed at go-live (ENG-96132), so on this "
+				+ "fixture's empty Features map — the shipping default — all five tools must be reachable "
+				+ "without any flag; a tool missing here is the pre-go-live behavior regressing");
+		foreach (string processDesignerToolName in ProcessDesignerToolNames) {
+			bool residentInToolsList = await context.Session.IsToolAdvertisedAsync(
+				processDesignerToolName, context.CancellationTokenSource.Token);
+			residentInToolsList.Should().BeFalse(
+				because: $"go-live removed the gate, not the residency model: {processDesignerToolName} stays "
+					+ "long-tail (reached through the get-tool-contract index plus clio-run), so tools/list — "
+					+ "the surface resident-tool consumers read — must not grow at go-live");
+		}
 		toolNames.Should().Contain(GetProcessSignatureTool.ToolName,
-			because: "get-process-signature is the other deliberately ungated member of the process-designer "
-				+ "namespace (it reads the built-in DataService), which shows the gate is per-tool rather than "
-				+ "per-namespace");
+			because: "get-process-signature is the CLI-paired member of the process-designer namespace (it "
+				+ "reads the built-in DataService) and stays reachable alongside the rest of the surface");
 	}
 
 	[Test]
 	[Description("get-tool-contract returns the curated install-process-builder contract: environment-name required, and a description that states the outcome check without claiming the install needs no restart.")]
 	[AllureTag(ToolName)]
 	[AllureName("install-process-builder advertises a curated contract with the corrected restart wording")]
-	[AllureDescription("Reads the curated install-process-builder contract over the real MCP path and verifies the required argument, that the preferred flow stops at this tool rather than naming a feature-gated follow-up, that the flow note claims no version comparison while still stating the liveness-only limit, and that the description does not reassert the retracted \"no application restart\" claim.")]
+	[AllureDescription("Reads the curated install-process-builder contract over the real MCP path and verifies the required argument, that the preferred flow stops at this tool rather than naming a hardcoded follow-up, that the flow note claims no version comparison while still stating the liveness-only limit, and that the description does not reassert the retracted \"no application restart\" claim.")]
 	public async Task InstallProcessBuilder_Contract_Should_Describe_Arguments_And_Outcome_Verification() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -135,13 +140,12 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 			because: "the environment is the tool's only argument and it is mandatory — the package ships inside "
 				+ "clio, so there is nothing else for the caller to supply");
 		contract.PreferredFlow.Tools.Should().Equal([ToolName],
-			because: "the flow must stop at this tool. It used to name list-user-tasks as a confirmation step, "
-				+ "which contradicted the assertion above in this same fixture: that tool is feature-gated and "
-				+ "absent from this very server, so the contract was telling an agent to call something it "
-				+ "could not see");
+			because: "the flow must stop at this tool: any of the five process-designer tools may have sent "
+				+ "the caller here, so the contract cannot know which call to retry and must not invent one");
 		contract.PreferredFlow.Tools.Should().NotContain(ListUserTasksTool.ListUserTasksToolName,
-			because: "naming a [FeatureToggle]-gated tool in the flow of an ungated one is the drift this pins: "
-				+ "the two halves of this fixture would otherwise assert a contradiction and call it correct");
+			because: "list-user-tasks was once hardcoded as a confirmation step, but the real confirmation is "
+				+ "retrying whichever tool refused — naming one arbitrary tool steers agents into a read that "
+				+ "confirms nothing about the call they actually came from");
 		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
 		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went
 		// back to "the NEW build is serving: it compares the version the serving build reports against the
