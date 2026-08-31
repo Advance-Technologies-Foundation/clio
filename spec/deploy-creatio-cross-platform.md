@@ -99,14 +99,15 @@ public class PfInstallerOptions : EnvironmentNameOptions
     public bool UseHttps { get; set; }
     
     /// <summary>
-    /// Path to SSL certificate (.pem or .pfx)
+    /// Path to SSL certificate (.pfx, .pem, or .crt)
     /// </summary>
     [Option("cert-path", Required = false,
-        HelpText = "Path to SSL certificate file (.pem or .pfx)")]
+        HelpText = "Path to SSL certificate file (.pfx, .pem, or .crt)")]
     public string CertificatePath { get; set; }
     
     /// <summary>
-    /// Password for SSL certificate (if required)
+    /// Password for SSL certificate (if required). Dotnet passes it through the host environment;
+    /// it is not persisted in appsettings.json.
     /// </summary>
     [Option("cert-password", Required = false,
         HelpText = "Password for SSL certificate")]

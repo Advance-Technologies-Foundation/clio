@@ -105,15 +105,20 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		};
 
 		// Act
-		string result = _sut.BuildApplicationConfiguration(null, options);
+		DotNetApplicationConfiguration configuration = _sut.BuildApplicationConfigurationWithEnvironment(null, options);
+		string result = configuration.Json;
 
 		// Assert
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:40123",
 			because: "the HTTPS endpoint must use the secure loopback address and requested port");
 		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be(Path.GetFullPath(certificatePath),
 			because: "Kestrel must load the certificate selected by the operator");
-		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Password").Should().Be("secret",
-			because: "the configured certificate password must be available to Kestrel");
+		HasJsonProperty(result, "Kestrel", "Endpoints", "Https", "Certificate", "Password").Should().BeFalse(
+			because: "certificate passwords must not be persisted in the generated appsettings.json");
+		configuration.EnvironmentVariables.Should().ContainKey("Kestrel__Endpoints__Https__Certificate__Password",
+			because: "Kestrel must receive the certificate password through the child process environment");
+		configuration.EnvironmentVariables["Kestrel__Endpoints__Https__Certificate__Password"].Should().Be("secret",
+			because: "the selected child process must receive the operator-provided certificate password");
 		HasJsonProperty(result, "Kestrel", "Endpoints", "Http").Should().BeFalse(
 			because: "explicit HTTPS deployment must not leave a parallel plaintext listener");
 	}
@@ -198,6 +203,32 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Rewrites an unbracketed IPv6 endpoint without mistaking the final address segment for a port.")]
+	public void BuildApplicationConfiguration_ShouldPreserveUnbracketedIpv6AddressWithoutPort() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": { "Url": "http://::1" },
+			      "Https": { "Url": "https://[::]:5002", "Certificate": { "Path": "existing.pfx" } }
+			    }
+			  }
+			}
+			""";
+		PfInstallerOptions options = new() { SitePort = 40123 };
+
+		// Act
+		string result = _sut.BuildApplicationConfiguration(existingJson, options);
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
+			because: "an IPv6 address without an explicit port must be rewritten before the selected HTTP port is applied");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:5002",
+			because: "preserved HTTPS endpoints must continue to use their explicit port");
+	}
+
+	[Test]
 	[Description("Rejects an HTTP deployment that would preserve an HTTPS endpoint on the same Kestrel port.")]
 	public void BuildApplicationConfiguration_ShouldRejectHttpHttpsPortConflict() {
 		// Arrange
@@ -223,6 +254,31 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		action.Should().Throw<InvalidOperationException>()
 			.WithMessage("The existing Kestrel HTTP and HTTPS endpoints both use port 5002.*",
 			because: "preserving both protocols on one binding would make Kestrel fail at startup");
+	}
+
+	[Test]
+	[Description("Rejects an HTTP deployment that would leave two same-scheme Kestrel endpoints on one binding.")]
+	public void BuildApplicationConfiguration_ShouldRejectDuplicateHttpPort() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": { "Url": "http://localhost:5000" },
+			      "PublicHttp": { "Url": "http://0.0.0.0:40123" }
+			    }
+			  }
+			}
+			""";
+		PfInstallerOptions options = new() { SitePort = 40123 };
+
+		// Act
+		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("The Kestrel HTTP endpoints 'Http' and 'PublicHttp' both use port 40123.*",
+			because: "Kestrel cannot start when rewritten HTTP endpoints share the same host and port");
 	}
 
 	[Test]

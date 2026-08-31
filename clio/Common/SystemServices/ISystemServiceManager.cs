@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Clio.Common.SystemServices;
@@ -17,6 +18,7 @@ public interface ISystemServiceManager
 	/// <param name="executablePath">Path to executable or script to run</param>
 	/// <param name="arguments">Command-line arguments for executable</param>
 	/// <param name="autoStart">Whether service should start on system boot</param>
+	/// <param name="environmentVariables">Optional environment variables for the hosted application</param>
 	/// <returns>True if service was created/updated successfully; false otherwise</returns>
 	Task<bool> CreateOrUpdateService(
 		string serviceName,
@@ -24,7 +26,8 @@ public interface ISystemServiceManager
 		string workingDirectory,
 		string executablePath,
 		string arguments = "",
-		bool autoStart = true
+		bool autoStart = true,
+		IReadOnlyDictionary<string, string> environmentVariables = null
 	);
 
 	/// <summary>

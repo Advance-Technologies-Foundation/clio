@@ -45,6 +45,7 @@ public static class DeployCreatioPrompt
 		 the host, or warns and continues with HTTP when none is available.
 		 For dotnet, pass `deployment: "dotnet"`; useHttps requires `certificatePath` or existing Kestrel
 		 certificate settings, and PEM/CRT certificates require `certificateKeyPath`. Keep
-		 `bindAllInterfaces` false unless a network-facing topology is explicitly required.
+		 `bindAllInterfaces` false unless a network-facing topology is explicitly required. Treat
+		 `certificatePassword` as sensitive: clio passes it through the host environment and never echoes it.
 		 """;
 }

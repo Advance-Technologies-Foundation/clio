@@ -58,7 +58,8 @@ public class InstallerCommandTool(
 				 `useHttps` then requires `certificatePath` or an existing Kestrel certificate configuration;
 				 PEM/CRT certificates also require `certificateKeyPath`. `bindAllInterfaces` is an explicit
 				 network-exposure opt-in; loopback remains the default. Certificate passwords are sensitive and
-				 are written to the deployed Kestrel configuration only when supplied for a certificate path.
+				 are passed only to the deployed host through Kestrel environment configuration when supplied
+				 for a certificate path; never echo or log them.
 				 When local dbHub synchronization is enabled, deployment reconciles its database source only after
 				 readiness succeeds; a dbHub warning is non-fatal and produces success-with-warnings progress.
 				 """)]

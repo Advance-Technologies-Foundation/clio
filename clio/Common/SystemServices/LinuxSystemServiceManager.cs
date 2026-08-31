@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Threading.Tasks;
 using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -28,7 +30,8 @@ public class LinuxSystemServiceManager : ISystemServiceManager
 		string workingDirectory,
 		string executablePath,
 		string arguments = "",
-		bool autoStart = true
+		bool autoStart = true,
+		IReadOnlyDictionary<string, string> environmentVariables = null
 	)
 	{
 		try
@@ -39,7 +42,8 @@ public class LinuxSystemServiceManager : ISystemServiceManager
 				workingDirectory,
 				executablePath,
 				arguments,
-				autoStart
+				autoStart,
+				environmentVariables
 			);
 
 
@@ -186,11 +190,21 @@ public class LinuxSystemServiceManager : ISystemServiceManager
 		string workingDirectory,
 		string executablePath,
 		string arguments,
-		bool autoStart
+		bool autoStart,
+		IReadOnlyDictionary<string, string> environmentVariables
 	)
 	{
 		var wantedBy = autoStart ? "multi-user.target" : "";
 		var installSection = autoStart ? $"\n[Install]\nWantedBy={wantedBy}" : "";
+		StringBuilder environmentSection = new();
+		foreach ((string key, string value) in environmentVariables ?? new Dictionary<string, string>())
+		{
+			environmentSection.Append("Environment=\"")
+				.Append(EscapeSystemdValue(key))
+				.Append('=')
+				.Append(EscapeSystemdValue(value))
+				.AppendLine("\"");
+		}
 
 		return $@"[Unit]
 Description={description}
@@ -204,6 +218,14 @@ ExecStart={executablePath} {arguments}
 Restart=on-failure
 RestartSec=10
 Environment=""ASPNETCORE_ENVIRONMENT=Production""
+{environmentSection}
 {installSection}";
 	}
+
+	private static string EscapeSystemdValue(string value) =>
+		value.Replace("\\", "\\\\", StringComparison.Ordinal)
+			.Replace("\"", "\\\"", StringComparison.Ordinal)
+			.Replace("\n", "\\n", StringComparison.Ordinal)
+			.Replace("\r", "\\r", StringComparison.Ordinal)
+			.Replace("%", "%%", StringComparison.Ordinal);
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Clio.Common.SystemServices;
@@ -19,7 +20,8 @@ public class WindowsSystemServiceManager : ISystemServiceManager
 		string workingDirectory,
 		string executablePath,
 		string arguments = "",
-		bool autoStart = true
+		bool autoStart = true,
+		IReadOnlyDictionary<string, string> environmentVariables = null
 	)
 	{
 		await Task.CompletedTask;

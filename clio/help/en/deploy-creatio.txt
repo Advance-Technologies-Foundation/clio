@@ -349,9 +349,11 @@ BEHAVIOR
     - Preserves existing HTTPS endpoint and certificate settings when HTTP remains selected
     - Returns the local application URL with configured port
 
-    For dotnet deployments, the generated appsettings.json contains the Kestrel certificate
-    configuration, including the password when --cert-password is supplied. Protect the deployed
-    application directory and avoid exposing the command line or configuration file to untrusted users.
+    For dotnet deployments, the generated appsettings.json contains the Kestrel certificate path
+    and key configuration. When --cert-password is supplied, clio passes it to the child host
+    through Kestrel environment configuration and does not write it to appsettings.json or logs.
+    Protect the shell invocation, child-process environment, and deployed application directory
+    from untrusted users.
 
 DATABASE SETUP
     Before deployment, ensure:

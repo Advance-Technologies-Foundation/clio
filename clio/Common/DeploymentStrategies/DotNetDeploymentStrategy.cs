@@ -92,12 +92,13 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			}
             _logger.WriteInfo($"Port {options.SitePort} is available");
             
-			// Create appsettings.json configuration
-			CreateApplicationConfiguration(appDirectoryPath, options);
+			// Create appsettings.json configuration and keep sensitive certificate values out of the file.
+			IReadOnlyDictionary<string, string> environmentVariables =
+				CreateApplicationConfiguration(appDirectoryPath, options);
 			_logger.WriteInfo("Application configuration created");
 
 			// Start the host application as a background process
-			int? processId = _creatioHostService.StartInBackground(appDirectoryPath);
+			int? processId = _creatioHostService.StartInBackground(appDirectoryPath, environmentVariables);
 			if (processId.HasValue)
 			{
 				_logger.WriteInfo($"Application control URL: {GetApplicationUrl(options)}");
@@ -106,7 +107,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			// Set up service management if on Linux or macOS
 			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && (bool)options.AutoRun)
 			{
-				await SetupServiceManagement(appDirectoryPath, options);
+				await SetupServiceManagement(appDirectoryPath, options, environmentVariables);
 				_logger.WriteInfo("Service management configured");
 			}
 
@@ -228,16 +229,17 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	/// </summary>
 	/// <param name="appPath">The deployed application directory.</param>
 	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
-	internal void CreateApplicationConfiguration(string appPath, PfInstallerOptions options)
+	internal IReadOnlyDictionary<string, string> CreateApplicationConfiguration(string appPath, PfInstallerOptions options)
 	{
 		var configPath = Path.Combine(appPath, "appsettings.json");
+		DotNetApplicationConfiguration configuration = null;
 
 		try
 		{
 			bool hadExistingConfiguration = File.Exists(configPath);
 			string? existingJson = hadExistingConfiguration ? File.ReadAllText(configPath) : null;
-			string updatedJson = BuildApplicationConfiguration(existingJson, options);
-			File.WriteAllText(configPath, updatedJson);
+			configuration = BuildApplicationConfigurationWithEnvironment(existingJson, options);
+			File.WriteAllText(configPath, configuration.Json);
 			_logger.WriteInfo($"Application configuration {(hadExistingConfiguration ? "updated" : "created")} at: {configPath}");
 			_logger.WriteInfo($"Kestrel listener configured at: {GetListeningEndpointUrl(options)}");
 			_logger.WriteInfo($"Application control URL: {GetApplicationUrl(options)}");
@@ -253,6 +255,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			_logger.WriteError($"Failed to create/update application configuration: {ex.Message}");
 			throw;
 		}
+
+		return configuration.EnvironmentVariables;
 	}
 
 	/// <summary>
@@ -262,6 +266,17 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
 	/// <returns>Indented JSON configuration.</returns>
 	internal string BuildApplicationConfiguration(string? existingJson, PfInstallerOptions options)
+		=> BuildApplicationConfigurationWithEnvironment(existingJson, options).Json;
+
+	/// <summary>
+	/// Builds Kestrel configuration and the transient environment values required by the host process.
+	/// </summary>
+	/// <param name="existingJson">Existing JSON configuration, or <see langword="null"/> for a new deployment.</param>
+	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
+	/// <returns>The generated configuration and child-process environment variables.</returns>
+	internal DotNetApplicationConfiguration BuildApplicationConfigurationWithEnvironment(
+		string? existingJson,
+		PfInstallerOptions options)
 	{
 		if (options == null)
 			throw new ArgumentNullException(nameof(options));
@@ -274,22 +289,28 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 
 		if (options.UseHttps)
 		{
-			JsonObject httpsEndpoint = FindOrCreateEndpoint(endpoints, "Https", "https");
+			(string httpsEndpointName, JsonObject httpsEndpoint) = FindOrCreateEndpoint(endpoints, "Https", "https");
 			SetStringProperty(httpsEndpoint, "Url", BuildEndpointUrl("https", bindHost, options.SitePort));
 			ConfigureHttpsCertificate(httpsEndpoint, kestrel, options);
 			RewriteEndpointHosts(endpoints, "https", bindHost);
 			RemoveEndpointsByScheme(endpoints, "http");
+			EnsureNoDuplicateEndpointBindings(endpoints);
+			return new DotNetApplicationConfiguration(
+				root.ToJsonString(IndentedJsonOptions),
+				CreateCertificateEnvironmentVariables(httpsEndpointName, options));
 		}
 		else
 		{
-			JsonObject httpEndpoint = FindOrCreateEndpoint(endpoints, "Http", "http");
+			(_, JsonObject httpEndpoint) = FindOrCreateEndpoint(endpoints, "Http", "http");
 			SetStringProperty(httpEndpoint, "Url", BuildEndpointUrl("http", bindHost, options.SitePort));
 			RewriteEndpointHosts(endpoints, "http", bindHost);
 			RewriteEndpointHosts(endpoints, "https", bindHost);
 			EnsureNoHttpHttpsPortConflict(endpoints);
+			EnsureNoDuplicateEndpointBindings(endpoints);
 		}
 
-		return root.ToJsonString(IndentedJsonOptions);
+		return new DotNetApplicationConfiguration(root.ToJsonString(IndentedJsonOptions),
+			new Dictionary<string, string>());
 	}
 
 	private static JsonObject ParseConfiguration(string? existingJson)
@@ -375,14 +396,9 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				RemoveProperty(certificate, "KeyPath");
 			}
 
-			if (options.CertificatePassword is not null)
-			{
-				SetStringProperty(certificate, "Password", options.CertificatePassword);
-			}
-			else
-			{
-				RemoveProperty(certificate, "Password");
-			}
+			// The password is supplied through Kestrel's environment configuration so the generated
+			// appsettings.json does not become a persistent plaintext secret.
+			RemoveProperty(certificate, "Password");
 			return;
 		}
 
@@ -463,14 +479,17 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			|| string.Equals(extension, ".crt", StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static JsonObject FindOrCreateEndpoint(JsonObject endpoints, string endpointName, string scheme)
+	private static (string Name, JsonObject Endpoint) FindOrCreateEndpoint(
+		JsonObject endpoints,
+		string endpointName,
+		string scheme)
 	{
 		string? namedProperty = FindPropertyName(endpoints, endpointName);
 		if (namedProperty is not null)
 		{
 			if (endpoints[namedProperty] is JsonObject namedEndpoint)
 			{
-				return namedEndpoint;
+				return (namedProperty, namedEndpoint);
 			}
 
 			throw new JsonException($"Configuration property '{namedProperty}' must be a JSON object.");
@@ -481,13 +500,27 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			if (property.Value is JsonObject endpoint
 				&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), scheme, StringComparison.OrdinalIgnoreCase))
 			{
-				return endpoint;
+				return (property.Key, endpoint);
 			}
 		}
 
 		JsonObject createdEndpoint = new();
 		endpoints[endpointName] = createdEndpoint;
-		return createdEndpoint;
+		return (endpointName, createdEndpoint);
+	}
+
+	private static IReadOnlyDictionary<string, string> CreateCertificateEnvironmentVariables(
+		string endpointName,
+		PfInstallerOptions options)
+	{
+		if (options.CertificatePassword is null)
+		{
+			return new Dictionary<string, string>();
+		}
+
+		return new Dictionary<string, string> {
+			[$"Kestrel__Endpoints__{endpointName}__Certificate__Password"] = options.CertificatePassword
+		};
 	}
 
 	private static void RewriteEndpointHosts(JsonObject endpoints, string scheme, string bindHost)
@@ -558,7 +591,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				continue;
 			}
 
-			int port = GetEndpointPort(url, normalizedScheme);
+			int port = KestrelEndpointUrl.GetPort(url, normalizedScheme);
 			(normalizedScheme == "http" ? httpPorts : httpsPorts).Add(port);
 		}
 
@@ -573,43 +606,40 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		}
 	}
 
-	private static int GetEndpointPort(string url, string scheme)
+	private static void EnsureNoDuplicateEndpointBindings(JsonObject endpoints)
 	{
-		int separatorIndex = url.IndexOf("://", StringComparison.Ordinal);
-		int authorityStart = separatorIndex + 3;
-		int authorityEnd = url.Length;
-		for (int index = authorityStart; index < url.Length; index++)
+		Dictionary<string, string> endpointNamesByBinding = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
-			if (url[index] is '/' or '?' or '#')
+			if (property.Value is not JsonObject endpoint)
 			{
-				authorityEnd = index;
-				break;
+				continue;
 			}
-		}
 
-		string authority = url[authorityStart..authorityEnd];
-		string? portText = null;
-		if (authority.StartsWith("[", StringComparison.Ordinal))
-		{
-			int closingBracket = authority.IndexOf(']');
-			if (closingBracket >= 0 && authority.Length > closingBracket + 1
-				&& authority[closingBracket + 1] == ':')
+			string? url = GetStringProperty(endpoint, "Url");
+			string? scheme = GetUriScheme(url);
+			if (url is null || scheme is null)
 			{
-				portText = authority[(closingBracket + 2)..];
+				continue;
 			}
-		}
-		else
-		{
-			int lastColon = authority.LastIndexOf(':');
-			if (lastColon >= 0)
-			{
-				portText = authority[(lastColon + 1)..];
-			}
-		}
 
-		return portText is not null && int.TryParse(portText, out int port)
-			? port
-			: string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80;
+			string normalizedScheme = scheme.ToLowerInvariant();
+			if (normalizedScheme is not ("http" or "https"))
+			{
+				continue;
+			}
+
+			int port = KestrelEndpointUrl.GetPort(url, normalizedScheme);
+			string binding = $"{normalizedScheme}:{port}";
+			if (endpointNamesByBinding.TryGetValue(binding, out string existingEndpointName))
+			{
+				throw new InvalidOperationException(
+					$"The Kestrel {normalizedScheme.ToUpperInvariant()} endpoints '{existingEndpointName}' and '{property.Key}' both use port {port}. "
+					+ "Choose a different --site-port or remove the duplicate endpoint.");
+			}
+
+			endpointNamesByBinding[binding] = property.Key;
+		}
 	}
 
 	private static string? GetUriScheme(string? url)
@@ -689,7 +719,10 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	/// <summary>
 	/// Sets up service management (systemd on Linux, launchd on macOS).
 	/// </summary>
-	private async Task SetupServiceManagement(string appPath, PfInstallerOptions options)
+	private async Task SetupServiceManagement(
+		string appPath,
+		PfInstallerOptions options,
+		IReadOnlyDictionary<string, string> environmentVariables)
 	{
 		var serviceName = $"creatio-{options.SiteName}";
 		var description = $"Creatio Application - {options.SiteName}";
@@ -702,7 +735,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			appPath,
 			executablePath,
 			arguments,
-			autoStart: true
+			autoStart: true,
+			environmentVariables: environmentVariables
 		);
 
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -822,3 +856,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		return 1;
 	}
 }
+
+internal sealed record DotNetApplicationConfiguration(
+	string Json,
+	IReadOnlyDictionary<string, string> EnvironmentVariables);

@@ -126,7 +126,7 @@ namespace Clio.Tests.Command {
 
 		// Assert
 		action.Should().Throw<JsonException>()
-			.WithMessage("Configuration property '*' must be a JSON object.",
+			.WithMessage("Configuration property 'Kestrel' must be a JSON object.",
 			because: "a valid JSON file with an invalid Kestrel shape should report its structural error directly");
 	}
 

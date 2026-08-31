@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -29,7 +30,8 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 		string workingDirectory,
 		string executablePath,
 		string arguments = "",
-		bool autoStart = true
+		bool autoStart = true,
+		IReadOnlyDictionary<string, string> environmentVariables = null
 	)
 	{
 		try
@@ -40,7 +42,8 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 				workingDirectory,
 				executablePath,
 				arguments,
-				autoStart
+				autoStart,
+				environmentVariables
 			);
 
 			var expandedPath = ExpandTilde(LaunchdDirectory);
@@ -193,12 +196,18 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 		string workingDirectory,
 		string executablePath,
 		string arguments,
-		bool autoStart
+		bool autoStart,
+		IReadOnlyDictionary<string, string> environmentVariables
 	)
 	{
 		var programArgumentsXml = string.IsNullOrEmpty(arguments)
 			? $"\n\t\t<string>{executablePath}</string>"
 			: $"\n\t\t<string>{executablePath}</string>\n\t\t<string>{arguments}</string>";
+		var environmentXml = new System.Text.StringBuilder("\n\t\t<key>ASPNETCORE_ENVIRONMENT</key>\n\t\t<string>Production</string>");
+		foreach ((string key, string value) in environmentVariables ?? new Dictionary<string, string>())
+		{
+			environmentXml.Append($"\n\t\t<key>{EscapeXml(key)}</key>\n\t\t<string>{EscapeXml(value)}</string>");
+		}
 
 		return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
 <!DOCTYPE plist PUBLIC ""-//Apple//DTD PLIST 1.0//EN"" ""http://www.apple.com/DTDs/PropertyList-1.0.dtd"">
@@ -223,12 +232,18 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	<string>{Path.Combine(workingDirectory, $"{serviceName}.err")}</string>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<key>ASPNETCORE_ENVIRONMENT</key>
-		<string>Production</string>
+		{environmentXml}
 	</dict>
 </dict>
 </plist>";
 	}
+
+	private static string EscapeXml(string value) =>
+		value.Replace("&", "&amp;", StringComparison.Ordinal)
+			.Replace("<", "&lt;", StringComparison.Ordinal)
+			.Replace(">", "&gt;", StringComparison.Ordinal)
+			.Replace("\"", "&quot;", StringComparison.Ordinal)
+			.Replace("'", "&apos;", StringComparison.Ordinal);
 
 	/// <summary>
 	/// Expands tilde (~) to home directory path.

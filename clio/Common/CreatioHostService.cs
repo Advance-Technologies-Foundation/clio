@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace Clio.Common;
@@ -13,7 +14,10 @@ public interface ICreatioHostService
 	/// Starts Creatio host in the background (no terminal window).
 	/// Returns the process ID if successful.
 	/// </summary>
-	int? StartInBackground(string workingDirectory);
+	/// <param name="workingDirectory">Directory containing the Creatio host.</param>
+	/// <param name="environmentVariables">Optional environment variables for the child host.</param>
+	int? StartInBackground(string workingDirectory,
+		IReadOnlyDictionary<string, string> environmentVariables = null);
 
 	/// <summary>
 	/// Starts Creatio host in a new terminal window.
@@ -36,12 +40,14 @@ public class CreatioHostService : ICreatioHostService
 	/// Starts the Creatio host process in the background.
 	/// The process runs detached and unmanaged - user can stop it via 'clio stop' or manual termination.
 	/// </summary>
-	public int? StartInBackground(string workingDirectory)
+	public int? StartInBackground(string workingDirectory,
+		IReadOnlyDictionary<string, string> environmentVariables = null)
 	{
 		try
 		{
 			ProcessExecutionOptions options = new("dotnet", "Terrasoft.WebHost.dll") {
-				WorkingDirectory = workingDirectory
+				WorkingDirectory = workingDirectory,
+				EnvironmentVariables = environmentVariables
 			};
 			ProcessLaunchResult result = _processExecutor.FireAndForgetAsync(options).GetAwaiter().GetResult();
 			if (result.Started && result.ProcessId.HasValue)

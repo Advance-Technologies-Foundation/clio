@@ -1,4 +1,6 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
 
 namespace Clio.Common.DeploymentStrategies;
 
@@ -30,38 +32,44 @@ internal static class KestrelEndpointUrl
 		}
 
 		string port = string.Empty;
-		if (authority.StartsWith("[", StringComparison.Ordinal))
+		if (!TryGetExplicitPort(authority, out port))
 		{
-			int closingBracket = authority.IndexOf(']');
-			if (closingBracket < 0)
+			if (authority.StartsWith("[", StringComparison.Ordinal))
 			{
 				return null;
 			}
 
-			string suffix = authority[(closingBracket + 1)..];
-			if (suffix.Length > 0 && (!suffix.StartsWith(":", StringComparison.Ordinal) || !IsDigits(suffix[1..])))
-			{
-				return null;
-			}
-
-			port = suffix;
-		}
-		else
-		{
+			int firstColon = authority.IndexOf(':');
 			int lastColon = authority.LastIndexOf(':');
-			if (lastColon >= 0)
+			if (firstColon >= 0 && firstColon == lastColon)
 			{
-				string candidatePort = authority[(lastColon + 1)..];
-				if (!IsDigits(candidatePort))
-				{
-					return null;
-				}
-
-				port = authority[lastColon..];
+				return null;
 			}
 		}
 
 		return $"{url[..authorityStart]}{bindHost}{port}{url[authorityEnd..]}";
+	}
+
+	/// <summary>
+	/// Gets an explicitly specified port from a Kestrel endpoint URL, if one exists.
+	/// </summary>
+	/// <param name="url">The Kestrel endpoint URL.</param>
+	/// <param name="scheme">The endpoint scheme used for the default-port fallback.</param>
+	/// <returns>The explicit port, or the scheme's default port.</returns>
+	internal static int GetPort(string url, string scheme)
+	{
+		int separatorIndex = url.IndexOf("://", StringComparison.Ordinal);
+		if (separatorIndex <= 0)
+		{
+			return GetDefaultPort(scheme);
+		}
+
+		int authorityStart = separatorIndex + 3;
+		int authorityEnd = FindAuthorityEnd(url, authorityStart);
+		string authority = url[authorityStart..authorityEnd];
+		return TryGetExplicitPort(authority, out string portText) && int.TryParse(portText[1..], out int port)
+			? port
+			: GetDefaultPort(scheme);
 	}
 
 	/// <summary>
@@ -85,10 +93,13 @@ internal static class KestrelEndpointUrl
 		}
 		else
 		{
-			int lastColon = authority.LastIndexOf(':');
-			if (lastColon >= 0 && IsDigits(authority[(lastColon + 1)..]))
+			if (TryGetExplicitPort(authority, out string portText))
 			{
-				host = authority[..lastColon];
+				host = authority[..^portText.Length];
+			}
+			else if (authority.Contains(':'))
+			{
+				host = $"[{authority}]";
 			}
 		}
 
@@ -125,4 +136,64 @@ internal static class KestrelEndpointUrl
 
 		return true;
 	}
+
+	private static bool TryGetExplicitPort(string authority, out string port)
+	{
+		port = string.Empty;
+		if (authority.StartsWith("[", StringComparison.Ordinal))
+		{
+			int closingBracket = authority.IndexOf(']');
+			if (closingBracket < 0)
+			{
+				return false;
+			}
+
+			string suffix = authority[(closingBracket + 1)..];
+			if (suffix.Length == 0)
+			{
+				return false;
+			}
+
+			if (!suffix.StartsWith(":", StringComparison.Ordinal) || !IsDigits(suffix[1..]))
+			{
+				return false;
+			}
+
+			port = suffix;
+			return true;
+		}
+
+		int lastColon = authority.LastIndexOf(':');
+		if (lastColon < 0)
+		{
+			return false;
+		}
+
+		string candidatePort = authority[(lastColon + 1)..];
+		if (!IsDigits(candidatePort))
+		{
+			return false;
+		}
+
+		int firstColon = authority.IndexOf(':');
+		if (firstColon != lastColon
+			&& IPAddress.TryParse(authority, out IPAddress? address)
+			&& address.AddressFamily == AddressFamily.InterNetworkV6
+			&& !IsLegacyUnbracketedPort(authority, candidatePort))
+		{
+			return false;
+		}
+
+		port = authority[lastColon..];
+		return true;
+	}
+
+	private static bool IsLegacyUnbracketedPort(string authority, string candidatePort) =>
+		authority.StartsWith("::", StringComparison.Ordinal)
+		&& candidatePort.Length >= 4
+		&& int.TryParse(candidatePort, out int port)
+		&& port is > 0 and <= 65535;
+
+	private static int GetDefaultPort(string scheme) =>
+		string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80;
 }
