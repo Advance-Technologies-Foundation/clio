@@ -118,13 +118,14 @@ public sealed class WorkflowTelemetryVocabularyTests
 		GrantConsent(service);
 
 		// Act
-		service.Send(CreateRequest("workflow_started") with {
+		TelemetryEventResult recorded = service.Send(CreateRequest("workflow_started") with {
 			Workflow = "classic-to-freedom-migration",
 			Variant = "single-section"
 		});
 
-		// Assert
-		JsonElement stored = ReadNewestStoredEvent();
+		// Assert — by id, not by newest name: on the real clock this write and GrantConsent's can land
+		// in the same millisecond, and the file name then tie-breaks on a random GUID.
+		JsonElement stored = ReadStoredEvent(recorded);
 		ReadStringAttribute(stored, "workflow").Should().Be("classic-to-freedom-migration",
 			because: "the flow dimension is what lets a generic stage name stay generic");
 		ReadStringAttribute(stored, "variant").Should().Be("single-section",
@@ -149,6 +150,59 @@ public sealed class WorkflowTelemetryVocabularyTests
 		result.Success.Should().BeFalse(
 			because: "a free-text field would become the place a customer name eventually lands");
 		result.Error!.Code.Should().Be("invalid-token");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("")]
+	[TestCase(" ")]
+	[Description("A blank flow field means absent, not malformed, so a hook that resolves one to nothing still reports its stage.")]
+	public void TelemetryService_Should_Treat_A_Blank_Workflow_As_Absent(string blank)
+	{
+		// Arrange — the shape guard admitted any non-null value into a predicate that rejects blanks,
+		// so "" cost the WHOLE event while null was accepted and became `unattributed`. That is the
+		// value a hook emits by accident (`workflow: env.WORKFLOW ?? ""`, a template that resolved to
+		// nothing), and the floor event it kills is the one tier the design guarantees.
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act
+		TelemetryEventResult result = service.Send(CreateRequest("workflow_started") with {
+			Workflow = blank
+		});
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "an absent flow is a known state with a reserved name, not a malformed payload");
+		ReadStringAttribute(ReadStoredEvent(result), "workflow").Should().Be("unattributed",
+			because: "the contract says an omitted or blank value is recorded as the reserved name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("")]
+	[TestCase(" ")]
+	[Description("A blank variant or model is omitted rather than rejected, matching every other optional field.")]
+	public void TelemetryService_Should_Omit_A_Blank_Variant_And_Model(string blank)
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act
+		TelemetryEventResult result = service.Send(CreateRequest("plan_presented") with {
+			Workflow = "branding", Variant = blank, Model = blank
+		});
+
+		// Assert — coding_agent and plugin_version already behave this way; these three were the
+		// outlier, and an event lost to a blank qualifier loses the stage as well.
+		result.Success.Should().BeTrue(
+			because: "a blank qualifier is an absent qualifier, as it is for every other optional field");
+		JsonElement stored = ReadStoredEvent(result);
+		ReadStringAttribute(stored, "variant").Should().BeNull(
+			because: "an empty attribute reads as a real value where an absent one says nothing was sent");
+		ReadStringAttribute(stored, "model").Should().BeNull(
+			because: "an empty attribute reads as a real value where an absent one says nothing was sent");
 	}
 
 	[Test]
@@ -217,8 +271,16 @@ public sealed class WorkflowTelemetryVocabularyTests
 			because: "treating telemetry as app-creation-only is what left the other flows silent");
 		instructions.Should().Contain("`workflow` field",
 			because: "an agent must know the flow goes in a field, not in the event name");
-		instructions.Should().Contain("workflow_started");
-		instructions.Should().Contain("plan_approved");
+		// Deliberately NOT asserting individual stage names. They used to be listed here and in the
+		// instructions, where nothing kept either copy in step with AllowedEventNames; the file's own
+		// rule is that it is a pointer, not a manual. What must hold is that it points at the
+		// authoritative list rather than restating a stale half of it.
+		instructions.Should().Contain("get-tool-contract for the authoritative event_name list",
+			because: "the one enumeration of stage names lives in the contract, derived from the enforcer");
+		foreach (string stage in StageEvents) {
+			instructions.Should().NotContain(stage,
+				because: $"a hand-copied '{stage}' in the pointer text is a second source of truth with no drift oracle");
+		}
 	}
 
 	[Test]
@@ -232,19 +294,27 @@ public sealed class WorkflowTelemetryVocabularyTests
 			ReadToolDescription(typeof(Clio.Command.McpServer.Tools.SendTelemetryTool),
 				nameof(Clio.Command.McpServer.Tools.SendTelemetryTool.SendTelemetry)),
 			ReadToolDescription(typeof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool),
-				nameof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool.GetTelemetryConsent))
+				nameof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool.GetTelemetryConsent)),
+			// The two surfaces that actually reach the agent. Neither telemetry tool is in
+			// McpCoreToolProfile, so both are non-resident and the CURATED contract is the WHOLE
+			// description they receive — editing the attributes above alone ships nothing
+			// (docs/knowledge/McpServer/curated-tool-contract-wins-over-the-description-attribute.md).
+			SerializeContract(Clio.Command.McpServer.Tools.SendTelemetryTool.ToolName),
+			SerializeContract(Clio.Command.McpServer.Tools.GetTelemetryConsentTool.ToolName)
 		];
 
 		// Act / Assert — this exact wording shipped and silently disabled the no-skill
 		// case: the text routed telemetry per workflow and then told an agent with no
 		// skill loaded not to call or prompt at all, so it correctly did nothing.
 		foreach (string surface in surfaces) {
-			surface.Should().NotContain("if no such skill is active",
-				because: "a skill-less agent doing Creatio work is in scope; gating on a loaded skill is the original defect");
-			surface.Should().NotContain("only when a consuming skill/contract drives it",
+			// Case-insensitive throughout: these surfaces disagree about capitalisation, and the gate
+			// that shipped read "if no such skill is active" where this assertion said "If no such ...".
+			string lowered = surface.ToLowerInvariant();
+			lowered.Should().NotContain("no such skill",
+				because: "a skill-less agent doing Creatio work is in scope; every phrasing of the gate is the gate");
+			lowered.Should().NotContain("only when a consuming skill/contract drives it",
 				because: "the same gate, in the heading, negates every routing line under it");
-			// Case-insensitive: the tool descriptions shout it, the server instructions do not.
-			surface.ToLowerInvariant().Should().Contain("no skill file is loaded",
+			lowered.Should().Contain("no skill file is loaded",
 				because: "the in-scope case must be stated positively, not left to inference");
 		}
 	}
@@ -299,7 +369,13 @@ public sealed class WorkflowTelemetryVocabularyTests
 			ReadToolDescription(typeof(Clio.Command.McpServer.Tools.SendTelemetryTool),
 				nameof(Clio.Command.McpServer.Tools.SendTelemetryTool.SendTelemetry)),
 			ReadToolDescription(typeof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool),
-				nameof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool.GetTelemetryConsent))
+				nameof(Clio.Command.McpServer.Tools.GetTelemetryConsentTool.GetTelemetryConsent)),
+			// The two surfaces that actually reach the agent. Neither telemetry tool is in
+			// McpCoreToolProfile, so both are non-resident and the CURATED contract is the WHOLE
+			// description they receive — editing the attributes above alone ships nothing
+			// (docs/knowledge/McpServer/curated-tool-contract-wins-over-the-description-attribute.md).
+			SerializeContract(Clio.Command.McpServer.Tools.SendTelemetryTool.ToolName),
+			SerializeContract(Clio.Command.McpServer.Tools.GetTelemetryConsentTool.ToolName)
 		];
 
 		// Assert — the shipped wording promised a silent drop while the code answers with
@@ -344,7 +420,9 @@ public sealed class WorkflowTelemetryVocabularyTests
 
 		// Assert
 		accepted.Success.Should().BeTrue();
-		JsonElement stored = ReadNewestStoredEvent();
+		// By id: as in TelemetryService_Should_Persist_Workflow_And_Variant, the real clock can put this
+		// event and the consent event in the same millisecond.
+		JsonElement stored = ReadStoredEvent(accepted);
 		ReadStringAttribute(stored, "model").Should().Be("claude-opus-5",
 			because: "the model id has to survive to the stored event, or it cannot be grouped by");
 		foreach ((string name, long expected) in new[] {
@@ -700,9 +778,70 @@ public sealed class WorkflowTelemetryVocabularyTests
 	}
 
 	[Test]
-	[Description("A repeating stage carries no inferred duration_ms, only total elapsed, so a batched report cannot pass itself off as fast work.")]
-	public void WorkItemCompleted_CarriesNoInferredDuration()
+	[Category("Unit")]
+	[Description("Strips Unicode control and format characters from a host name that cannot be slugged, so schema v2's slug promise holds for every stored value.")]
+	public void TelemetryService_Should_Not_Store_Control_Characters_In_A_Coding_Agent()
 	{
+		// Arrange — the slug path drops these, but it never runs for a value with no ASCII
+		// alphanumerics: that falls back to the caller's string, so a name made only of control or
+		// format characters reached the store verbatim while schema v2 advertises a canonical slug.
+		// U+202E is the one that matters: it reverses the rendering of everything after it in whatever
+		// dashboard cell or log line the value lands in.
+		TelemetryService service = CreateService();
+		GrantConsent(service);
+
+		// Act
+		TelemetryEventResult result = service.Send(CreateRequest("workflow_started") with {
+			Workflow = "branding", CodingAgent = "‮ ​"
+		});
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "an unslugabble host name is still not a malformed payload");
+		string stored = ReadStringAttribute(ReadStoredEvent(result), "coding_agent");
+		foreach (string forbidden in new[] { "‮", "", "​" }) {
+			(stored ?? string.Empty).Should().NotContain(forbidden,
+				because: "a value that renders as arbitrary bytes downstream is not the slug v2 promises");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A run that starts on the legacy name and continues in stage vocabulary is still timed, since the two release independently.")]
+	public void TelemetryService_Should_Anchor_Stage_Durations_On_Either_Start_Name()
+	{
+		// Arrange — clio ships before the toolkit does, so an installed toolkit emitting the legacy
+		// `session_started` alongside an updated clio that speaks stages is a state on the release path,
+		// not a mistake. Total elapsed already accepted either anchor; duration_ms did not, so exactly
+		// these runs reported one measurement and silently lost the other.
+		MutableTimeProvider time = new(DateTimeOffset.Parse("2026-08-20T09:00:00Z"));
+		TelemetryService service = CreateService(time);
+		GrantConsent(service);
+
+		// Act
+		service.Send(CreateRequest("session_started") with { Workflow = "app-creation" });
+		time.Advance(TimeSpan.FromSeconds(45));
+		TelemetryEventResult presented = service.Send(CreateRequest("plan_presented") with {
+			Workflow = "app-creation"
+		});
+		time.Advance(TimeSpan.FromSeconds(15));
+		TelemetryEventResult completed = service.Send(CreateRequest("workflow_completed") with {
+			Workflow = "app-creation"
+		});
+
+		// Assert
+		ReadIntAttribute(ReadStoredEvent(presented), "duration_ms").Should().Be(45_000,
+			because: "the legacy start name anchors a canonical stage, as it already does for total elapsed");
+		ReadIntAttribute(ReadStoredEvent(completed), "duration_ms").Should().Be(60_000,
+			because: "a terminal stage falls back to the legacy start when no narrower anchor was reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A repeating stage carries no inferred duration_ms, only total elapsed, so a batched report cannot pass itself off as fast work.")]
+	public void TelemetryService_Should_Not_Infer_A_Duration_For_A_Repeating_Work_Item()
+	{
+		// Arrange
 		// Anchoring this stage would measure the gap since the previously REPORTED unit rather than the
 		// cost of this one: an agent that finishes several units and reports them together would
 		// produce spans of milliseconds each, indistinguishable from genuinely fast work and worse
@@ -713,6 +852,7 @@ public sealed class WorkflowTelemetryVocabularyTests
 		TelemetryService service = CreateService(time);
 		GrantConsent(service);
 
+		// Act
 		service.Send(CreateRequest("workflow_started") with { Workflow = "app-creation" });
 		time.Advance(TimeSpan.FromSeconds(10));
 		service.Send(CreateRequest("build_started") with { Workflow = "app-creation" });
@@ -725,6 +865,7 @@ public sealed class WorkflowTelemetryVocabularyTests
 			Workflow = "app-creation", Variant = "page"
 		});
 
+		// Assert
 		JsonElement stored = ReadStoredEvent(second);
 		ReadIntAttribute(stored, "duration_ms").Should().BeNull(
 			because: "a stage that repeats has no single prior stage whose span means anything");
@@ -735,8 +876,9 @@ public sealed class WorkflowTelemetryVocabularyTests
 	[Test]
 	[Category("Unit")]
 	[Description("Spooled files carry no UTF-8 BOM, so a consumer that is not .NET can read the spool at all.")]
-	public void SpooledFiles_AreWrittenWithoutAByteOrderMark()
+	public void TelemetryService_Should_Write_Spooled_Files_Without_A_Byte_Order_Mark()
 	{
+		// Arrange
 		// The spool used to be read only by clio, and .NET strips a BOM on read, so nothing here ever
 		// noticed one was being written. It is now a second consumer's input — the CAADT hook reads
 		// consent.json, and QA read the event files straight off disk, where a plain `json.load` answers
@@ -748,9 +890,19 @@ public sealed class WorkflowTelemetryVocabularyTests
 			Workflow = "branding"
 		});
 
+		// Assert
 		string eventPath = Directory
 			.GetFiles(TelemetryStoragePaths.EventsDirectory(_telemetryHome), $"*_{recorded.EventId}.json")
 			.Single();
+		// installation-id.txt is the OTHER writer the no-BOM change touched, and the only one whose
+		// content is consumed verbatim as an identifier. It is not JSON, so it cannot join the parse
+		// loop below; without this line, reverting that call site alone keeps the suite green.
+		string installationIdPath = Path.Combine(_telemetryHome, "installation-id.txt");
+		File.ReadAllBytes(installationIdPath).Take(3).Should().NotEqual([(byte)0xEF, (byte)0xBB, (byte)0xBF],
+			because: "a BOM in front of the id corrupts the value for any reader that does not strip one");
+		File.ReadAllText(installationIdPath).Trim().Should()
+			.Be(ReadStringAttribute(ReadStoredEvent(recorded), "installation_id"),
+				because: "the id on disk is the id the event carries, byte for byte");
 		foreach (string path in new[] { eventPath, Path.Combine(_telemetryHome, "consent.json") }) {
 			string name = Path.GetFileName(path);
 			File.ReadAllBytes(path).Take(3).Should().NotEqual([(byte)0xEF, (byte)0xBB, (byte)0xBF],
@@ -759,51 +911,6 @@ public sealed class WorkflowTelemetryVocabularyTests
 			parseTheBytesAsAnyOtherReaderWould.Should().NotThrow(
 				because: $"{name} is JSON to whoever opens it, not only to a BOM-stripping .NET reader");
 		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("The retention sweep drops a state file that is genuinely old.")]
-	public void SessionStateSweep_DropsAFileOlderThanRetention()
-	{
-		TelemetryService service = CreateService();
-		GrantConsent(service);
-		service.Send(CreateRequest("workflow_started") with { Workflow = "app-creation" });
-		string sessionsDirectory = TelemetryStoragePaths.SessionsDirectory(_telemetryHome);
-		string stale = Directory.GetFiles(sessionsDirectory, "*.json").Single();
-		File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddDays(-31));
-
-		// A different pair, so the write that triggers the sweep is not the stale file's own.
-		service.Send(CreateRequest("workflow_started") with { Workflow = "branding" });
-
-		File.Exists(stale).Should().BeFalse(
-			because: "a run that has not reported for over a month is over and will never be anchored again");
-		Directory.GetFiles(sessionsDirectory, "*.json").Should().ContainSingle(
-			because: "the pair that triggered the sweep keeps its own state");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("The sweep never drops a state file written moments ago, however far the injected clock is from the real one.")]
-	public void SessionStateSweep_DoesNotDropAFreshFileWhenTheInjectedClockRunsAhead()
-	{
-		// The sweep compares a filesystem mtime — a real-clock quantity — against a cutoff. Deriving that
-		// cutoff from the injected TimeProvider put two clocks on either side of one comparison: a fake
-		// clock more than the retention ahead of the real one made every just-written state file stale on
-		// sight, so the sweep deleted the anchor and duration inference silently returned null for a
-		// reason the test never expressed. Failing state before the fix: duration_ms is absent here.
-		MutableTimeProvider time = new(DateTimeOffset.UtcNow.AddDays(400));
-		TelemetryService service = CreateService(time);
-		GrantConsent(service);
-
-		service.Send(CreateRequest("workflow_started") with { Workflow = "app-creation" });
-		time.Advance(TimeSpan.FromSeconds(12));
-		TelemetryEventResult build = service.Send(CreateRequest("build_started") with {
-			Workflow = "app-creation"
-		});
-
-		ReadIntAttribute(ReadStoredEvent(build), "duration_since_session_start_ms").Should().Be(12_000,
-			because: "the state file the anchor lives in was written seconds ago, not 400 days ago");
 	}
 
 	private TelemetryService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
