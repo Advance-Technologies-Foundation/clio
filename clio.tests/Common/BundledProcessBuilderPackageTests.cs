@@ -133,7 +133,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"4D307AF37B69D6601F1B1D1305E5E0AB1480B3A271613A268E55BBCAB762AB30";
+		"18DA458932CD40E6456AB5194FC4A7B7C93C311AE3477F655BC6B638B196C707";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -161,7 +161,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.4.2.0";
+	private const string ExpectedArchiveVersion = "1.4.3.0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -187,7 +187,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788174055000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788178456000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -901,8 +901,11 @@ public class BundledProcessBuilderPackageTests {
 		foreach (KeyValuePair<string, string> surface in surfaces) {
 			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
 			matches.Should().NotBeEmpty(
-				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
-					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
+				because: $"the {surface.Key} names the CrtProcessBuilder version this clio BUNDLES — which is also "
+					+ "the floor it enforces, so it is what a caller has to be on. It is deliberately not the "
+					+ "version a given route was introduced in: these surfaces track the pin, and a provenance "
+					+ "claim would go stale on every rebundle. If the sentence was removed on purpose, remove the "
+					+ "surface from this test in the same commit");
 			foreach (System.Text.RegularExpressions.Match match in matches) {
 				match.Groups[1].Value.Should().Be(ExpectedArchiveVersion,
 					because: $"the {surface.Key} names a package version an agent will trust; a literal that "

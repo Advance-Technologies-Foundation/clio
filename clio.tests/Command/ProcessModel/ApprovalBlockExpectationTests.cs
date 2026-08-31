@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
 using NUnit.Framework;
@@ -30,10 +31,10 @@ public class ApprovalBlockExpectationTests {
 			""";
 
 		// Act
-		IReadOnlyList<string> expected = ApprovalBlockExpectation.FromDescriptor(descriptor);
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromDescriptor(descriptor);
 
 		// Assert
-		expected.Should().BeEquivalentTo(["Approve1", "Approve2"],
+		expected.Select(e => e.ElementName).Should().BeEquivalentTo(["Approve1", "Approve2"],
 			because: "only the elements that actually asked for an approval configuration can have one dropped");
 	}
 
@@ -46,7 +47,7 @@ public class ApprovalBlockExpectationTests {
 			""";
 
 		// Act
-		IReadOnlyList<string> expected = ApprovalBlockExpectation.FromDescriptor(descriptor);
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromDescriptor(descriptor);
 
 		// Assert
 		expected.Should().BeEmpty(because: "there is nothing to verify when nothing asked for an approval block");
@@ -59,7 +60,7 @@ public class ApprovalBlockExpectationTests {
 		const string descriptor = "{not json";
 
 		// Act
-		IReadOnlyList<string> expected = ApprovalBlockExpectation.FromDescriptor(descriptor);
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromDescriptor(descriptor);
 
 		// Assert
 		expected.Should().BeEmpty(because: "an unparseable payload is not evidence that a block was dropped");
@@ -80,12 +81,20 @@ public class ApprovalBlockExpectationTests {
 			""";
 
 		// Act
-		IReadOnlyList<string> expected = ApprovalBlockExpectation.FromOperations(operations);
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expected = ApprovalBlockExpectation.FromOperations(operations);
 
 		// Assert
-		expected.Should().BeEquivalentTo(["Approve1", "Approve2"],
+		expected.Select(e => e.ElementName).Should().BeEquivalentTo(["Approve1", "Approve2"],
 			because: "an approval block reaches the server through either route and is discarded the same way in both");
 	}
+
+	#endregion
+
+	#region Methods: Private
+
+	/// <summary>An expectation for an element whose sent block carried no approver — the pre-approver shape.</summary>
+	private static ApprovalBlockExpectation.ApprovalExpectation Expect(string elementName) =>
+		new(elementName, ExpectsApprover: false);
 
 	#endregion
 
@@ -103,10 +112,10 @@ public class ApprovalBlockExpectationTests {
 		};
 
 		// Act
-		IReadOnlyList<string> missing = ApprovalBlockExpectation.Missing(described, ["Approve1", "Approve2"]);
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(described, [Expect("Approve1"), Expect("Approve2")]);
 
 		// Assert
-		missing.Should().BeEquivalentTo(["Approve2"],
+		missing.Select(m => m.ElementName).Should().BeEquivalentTo(["Approve2"],
 			because: "the read-back is the evidence — a reported block means the configuration landed");
 	}
 
@@ -119,7 +128,7 @@ public class ApprovalBlockExpectationTests {
 		};
 
 		// Act
-		IReadOnlyList<string> missing = ApprovalBlockExpectation.Missing(described, ["Approve1"]);
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(described, [Expect("Approve1")]);
 
 		// Assert
 		missing.Should().BeEmpty(
@@ -138,7 +147,7 @@ public class ApprovalBlockExpectationTests {
 		};
 
 		// Act
-		IReadOnlyList<string> missing = ApprovalBlockExpectation.Missing(described, [uid]);
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(described, [Expect(uid)]);
 
 		// Assert
 		missing.Should().BeEmpty(
@@ -152,10 +161,55 @@ public class ApprovalBlockExpectationTests {
 		var described = new DescribeProcessResult { Elements = [] };
 
 		// Act
-		IReadOnlyList<string> missing = ApprovalBlockExpectation.Missing(described, []);
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(described, []);
 
 		// Assert
 		missing.Should().BeEmpty(because: "an empty expectation short-circuits the whole check");
+	}
+
+
+	[Test]
+	[Description("A block that comes back WITHOUT the approver that was sent is reported as dropped: a server carrying the Approval element but not its approver returns the block and discards that one member, which a presence-only check would read as healthy.")]
+	public void Missing_ShouldReportAnApprovalBlockThatCameBackWithoutItsApprover() {
+		// Arrange — the block landed, the approver did not
+		var described = new DescribeProcessResult {
+			Elements = [
+				new DescribedElement {
+					Name = "Approve1",
+					Approval = new DescribedApproval { Object = "Order", ApproverType = null }
+				}
+			]
+		};
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing = ApprovalBlockExpectation.Missing(
+			described, [new ApprovalBlockExpectation.ApprovalExpectation("Approve1", ExpectsApprover: true)]);
+
+		// Assert
+		missing.Should().ContainSingle(because: "the element has nobody assigned to approve it")
+			.Which.BlockPresent.Should().BeTrue(
+				because: "the block itself survived, so the warning must describe the approver drop rather than "
+					+ "claim the whole configuration is missing — different cause, different message");
+	}
+
+	[Test]
+	[Description("A caller who sent no approver is not warned about one: the check reports what the request asked for, so an element legitimately left with its existing approver stays quiet.")]
+	public void Missing_ShouldStaySilentAboutTheApprover_WhenNoneWasSent() {
+		// Arrange
+		var described = new DescribeProcessResult {
+			Elements = [
+				new DescribedElement { Name = "Approve1", Approval = new DescribedApproval { ApproverType = null } }
+			]
+		};
+
+		// Act
+		IReadOnlyList<ApprovalBlockExpectation.DroppedApproval> missing =
+			ApprovalBlockExpectation.Missing(described, [Expect("Approve1")]);
+
+		// Assert
+		missing.Should().BeEmpty(
+			because: "an update that said nothing about the approver keeps whatever the element had, and a "
+				+ "read-back reporting none is not evidence that anything was discarded");
 	}
 
 	#endregion
@@ -166,7 +220,7 @@ public class ApprovalBlockExpectationTests {
 	[Description("The warning names the affected elements, states the element is unconfigured, and gives the action that fixes it.")]
 	public void BuildWarning_ShouldNameElementsAndTheFix() {
 		// Act
-		string warning = ApprovalBlockExpectation.BuildWarning(["Approve1"]);
+		string warning = ApprovalBlockExpectation.BuildWarning([new ApprovalBlockExpectation.DroppedApproval("Approve1", BlockPresent: false)]);
 
 		// Assert
 		warning.Should().Contain("Approve1",
@@ -175,6 +229,24 @@ public class ApprovalBlockExpectationTests {
 			because: "the point of the warning is that the element is NOT configured despite the success answer");
 		warning.Should().Contain("install-process-builder",
 			because: "the warning must carry the one action that fixes the usual cause");
+	}
+
+	[Test]
+	[Description("The approver-drop warning says the block DID land and the approver did not, so the reader is not sent to look for a missing approval configuration that is in fact there.")]
+	public void BuildWarning_ShouldDescribeAnApproverDrop_SeparatelyFromAMissingBlock() {
+		// Act
+		string warning = ApprovalBlockExpectation.BuildWarning(
+			[new ApprovalBlockExpectation.DroppedApproval("Approve1", BlockPresent: true)]);
+
+		// Assert
+		warning.Should().Contain("WITHOUT the approver",
+			because: "the two drops have different causes and different fixes, so they must not read alike");
+		warning.Should().Contain("NOBODY assigned",
+			because: "the consequence is what makes the warning actionable — the approval cannot be acted on");
+		warning.Should().NotContain("no approval block",
+			because: "the block DID come back; saying otherwise sends the reader after the wrong problem");
+		warning.Should().Contain("install-process-builder",
+			because: "the fix for the usual cause belongs in every variant of this warning");
 	}
 
 	[Test]

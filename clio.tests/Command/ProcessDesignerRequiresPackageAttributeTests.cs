@@ -67,7 +67,7 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today the approval APPROVER block, shipped in the 1.4.2.0 archive — an older server has no approver member and silently discards it while answering success, leaving an element that saves and runs with nobody assigned. The approval block itself (1.4.1.0), the performer block (1.3.1.1) and the email floor (1.2.0.1) set the precedent and are subsumed; presence alone cannot express any of them. This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest server behaviour they depend on that an older one does not have: 1.4.3.0, covering two shapes of the same silent failure — the approval APPROVER added in 1.4.2.0, which an older server discards while answering success, and the 1.4.3.0 refusal of a notification switched on with no email template, which an older server accepts and turns into an element that reports the notification as configured and never sends. The approval block itself (1.4.1.0), the performer block (1.3.1.1) and the email floor (1.2.0.1) set the precedent and are subsumed; presence alone cannot express any of them. The bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
         public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
@@ -77,10 +77,9 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.4.2.0",
-                because: "the approval APPROVER these commands send was "
-                    + "introduced in the 1.4.2.0 archive — an older server ignores the block or stores a dead id "
-                    + "and still answers success, so the literal is what fails CLOSED (the convergence rule only "
+            requirement!.Version.Should().Be("1.4.3.0",
+                because: "both behaviours behind this floor fail SILENTLY on an older server — the approver is "
+                    + "discarded and a template-less notification is accepted — so the literal is what fails CLOSED (the convergence rule only "
                     + "WARNS when it cannot read the archive or the version carries a pre-release suffix); "
                     + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }

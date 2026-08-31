@@ -14,14 +14,17 @@ namespace Clio.Command;
 /// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states what THIS command's code needs — the newest operation it sends that an
-// older server does not have. Today that is the approval APPROVER, shipped in the 1.4.2.0 archive: an older
-// server has no approver member and silently discards it while answering success — the element saves and
-// runs with nobody assigned. The approval block itself (1.4.1.0), the performer block
-// (1.3.1.1) and the email block (1.2.0.1) set this precedent and are subsumed by this literal. Presence
-// alone cannot express any of them. The guard fixture asserts the shipped archive satisfies the literal,
-// so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.2.0",
+// The version literal states what THIS command needs — the newest server behaviour it depends on that an
+// older one does not have. Today that is 1.4.3.0, and it covers TWO shapes of the same silent failure.
+// 1.4.2.0 added the approval APPROVER: an older server has no approver member and discards it while
+// answering success, leaving an element that saves and runs with nobody assigned. 1.4.3.0 added the
+// refusal of a notification switched on with no email template: an older server ACCEPTS that block and
+// produces an element which reports the notification as configured and never sends, because the runtime
+// does not check for a template and ignores email errors by default. Neither is visible in the response,
+// which is what a version literal is for. The approval block itself (1.4.1.0), the performer block
+// (1.3.1.1) and the email block (1.2.0.1) set this precedent and are subsumed. The guard fixture asserts
+// the shipped archive satisfies the literal, so clio can never demand a version it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.3.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -175,7 +178,7 @@ public class CreateBusinessProcessCommand(
 		// The Approval element has exactly the same silent-drop failure, so it is verified from the SAME read-back
 		// rather than a second one — the describe below is the expensive part, and one of the two blocks being
 		// absent is no reason to skip the other's check.
-		IReadOnlyList<string> expectedApproval = ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
+		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval = ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
 		if ((expected.Count == 0 && expectedApproval.Count == 0) || string.IsNullOrWhiteSpace(schemaName)) {
 			return;
 		}
