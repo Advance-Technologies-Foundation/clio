@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Net.Http;
+using System.Threading.Tasks;
 using ATF.Repository.Providers;
 using Clio;
 using Clio.Common;
@@ -40,6 +42,12 @@ public class CredentialPassthroughClientIdentityTests {
 		};
 		return new BindingsModule().Register(settings);
 	}
+
+	private static IServiceProvider BuildFormsContainer() => new BindingsModule().Register(new EnvironmentSettings {
+		Uri = EnvironmentUri,
+		Login = SupervisorLogin,
+		Password = "secret"
+	});
 
 	private static T GetPrivateField<T>(object instance, string fieldName) {
 		FieldInfo field = instance.GetType().GetField(fieldName,
@@ -184,5 +192,25 @@ public class CredentialPassthroughClientIdentityTests {
 		finally {
 			adapterClient.Value.Dispose();
 		}
+	}
+
+	[Test]
+	[Description("Forms child-container disposal closes the adapter-owned transport when no listener was started.")]
+	public async Task ChildContainer_ShouldDisposeAdapterClient_WhenFormsTransportWasUsedWithoutListener() {
+		// Arrange
+		IServiceProvider container = BuildFormsContainer();
+		IApplicationClient applicationClient = container.GetRequiredService<IApplicationClient>();
+		((ICreatioApplicationClient)applicationClient).ExportSessionCookies();
+		CreatioClient adapterClient = GetPrivateField<Lazy<CreatioClient>>(applicationClient, "_lazyClient").Value;
+
+		// Act
+		((IDisposable)container).Dispose();
+		Func<Task> act = async () => {
+			using HttpResponseMessage _ = await adapterClient.ExecuteGetRequestAsync("https://localhost/probe");
+		};
+
+		// Assert
+		await act.Should().ThrowAsync<ObjectDisposedException>(
+			because: "the adapter must remain the sole owner and release a request-only forms transport at provider teardown");
 	}
 }
