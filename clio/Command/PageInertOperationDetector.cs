@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -16,38 +16,21 @@ using Newtonsoft.Json.Linq;
 /// applies whole groups in a fixed sequence (<c>ApplyOperations</c>): merges, then the
 /// remove/insert/move position pipeline, then property removals, then <c>set</c>. Ordering the array
 /// therefore changes nothing, and two operations that read as composing can silently cancel one another.
+/// Each rule in <see cref="InertRules"/> cites the mechanism that discards its operation.
 /// <para>
-/// Three mechanisms discard an operation without any diagnostic, and every rule below rests on one of
-/// them:
-/// <list type="bullet">
-/// <item>group ordering — a later group has already destroyed, or has yet to create, what an earlier
-/// group's operation needs;</item>
-/// <item><c>FilterMoveOperation</c>, which drops every <c>move</c> whose name matches an element
-/// <c>remove</c> in the same body, before anything is applied;</item>
-/// <item>source resolution — an operation whose target name is absent resolves to nothing and is
-/// skipped, and <c>ApplyOperations</c> throws away the unsuccessful list every group returns.</item>
-/// </list>
-/// </para>
 /// All findings are WARNINGS, not errors, for the same reason
 /// <see cref="PageInsertDowngradeDetector"/>'s are: this detector reads ONE schema body and cannot see
 /// the replacing chain. A parent schema inserting the same name puts the component in the base, which
-/// for the three conditional rules below can make the transform apply after all; and an ancestor's
-/// <c>alias</c> declaration carrying <c>excludeOperations</c> can legitimately neutralise an operation
-/// (<c>JsonDiffApplier.IsExcludeAliasOperation</c>). Neither is visible here, so it advises rather than
-/// blocks.
-/// <para>
-/// Operation verbs are compared <see cref="StringComparer.Ordinal"/> and are never case-folded. This is
-/// load-bearing, not an oversight: the differ switches on the raw verb string with no <c>default</c>
-/// branch, so a mis-cased <c>"Merge"</c> lands in no group and is discarded whole. Treating it as a live
-/// <c>merge</c> here would report a pair that does not exist. Reporting the mis-cased verb itself is a
-/// separate finding and deliberately out of scope — GH-1240 covers the pairs.
+/// for the three conditional rules can make the transform apply after all; and an ancestor's
+/// <c>alias</c> carrying <c>excludeOperations</c> can legitimately neutralise an operation. Neither is
+/// visible here, so it advises rather than blocks. Known blind spot, in the same fail-quiet direction:
+/// an <c>insert</c> naming its element inside <c>values</c> rather than on the operation object still
+/// creates the component, but has no name to group on here.
 /// </para>
-/// Array positions are not recorded and not reported, because the differ ignores them: a finding names
-/// the component and the two verbs, which is the whole of what the author can act on. One known blind
-/// spot, in the fail-quiet direction: an <c>insert</c> that carries its element's <c>name</c> inside
-/// <c>values</c> rather than on the operation object still creates that component (the differ only
-/// stamps the operation-level name when it is non-empty), but has no name to group on here, so a
-/// sibling operation for it goes unreported.
+/// Operation verbs are compared <see cref="StringComparer.Ordinal"/> and are never case-folded. This is
+/// load-bearing, not an oversight: the differ switches on the raw verb with no <c>default</c> branch, so
+/// a mis-cased <c>"Merge"</c> lands in no group and is discarded whole. Treating it as a live
+/// <c>merge</c> here would report a pair that does not exist.
 /// <para>
 /// The detector needs no knowledge of which mode produced the body — it inspects the resolved final
 /// body, so it covers <c>replace</c> and <c>append</c> identically, and applies to <c>sync-pages</c>
@@ -96,8 +79,7 @@ internal static class PageInertOperationDetector {
 	/// </summary>
 	/// <remarks>
 	/// The message is carried in the row rather than reached through a shape enum and a parallel switch,
-	/// so a new rule cannot be added without its message — and so no unmatched-case throw exists on a
-	/// path whose whole contract is that it must never affect a save.
+	/// so a rule cannot exist without its message and no unmatched-case throw can reach the save path.
 	/// </remarks>
 	private readonly record struct InertRule(
 		ApplyGroup Live,
@@ -106,28 +88,23 @@ internal static class PageInertOperationDetector {
 		ApplyGroup? RescuedBy = null);
 
 	/// <summary>
-	/// Every co-occurrence of two apply groups for ONE name where the differ discards one of them. Each
-	/// row is checkable against <c>JsonDiffApplier</c> on its own, without reading any control flow here;
-	/// the citation in the comment above it is the proof.
+	/// Every co-occurrence of two apply groups for ONE name where the differ discards one of them.
 	/// <para>
 	/// The first four rows hold UNCONDITIONALLY — the discard follows from group order alone, whether or
 	/// not the component exists in the base. The last three involve this body's own <c>insert</c> and are
-	/// conditional on the component NOT coming from a parent schema in the replacing chain, which this
-	/// detector cannot see; their messages state that case rather than asserting the author is wrong.
-	/// Unconditional rows come first because that order is also the dedupe precedence: at most one
-	/// finding per (name, discarded group), so the strongest available reason is the one reported.
+	/// conditional on the component NOT coming from a parent schema, which this detector cannot see;
+	/// their messages state that case rather than asserting the author is wrong. Unconditional rows come
+	/// first because that order is also the dedupe precedence: at most one finding per (name, discarded
+	/// group), so the strongest available reason is the one reported.
 	/// </para>
 	/// <para>
-	/// Two shapes that look like they belong here are absent, because reading the applier shows the named
-	/// operation still does something. <c>insert</c> + <c>set</c>: <c>Set</c> removes the element first
-	/// and copies the removed item's <c>index</c> and <c>propertyName</c> back onto its own config, so
-	/// the insert's POSITION survives as an override — note it keeps only those two, taking
-	/// <c>parentName</c> from the set itself, and the insert's <c>values</c> are discarded wholesale.
-	/// <c>merge</c> + property <c>remove</c>: <c>Remove</c>'s property branch deletes only the NAMED
-	/// properties and <c>Merge</c> writes only the keys present in <c>values</c>, so only the
-	/// intersection of the two key sets is lost, not the merge. A third near-miss, <c>set</c> +
-	/// <c>move</c>, is excluded for the same reason: <c>Set</c> re-inserts under its OWN
-	/// <c>parentName</c>, which overrides the move when the two disagree but is not a discard.
+	/// Three shapes that look like they belong here are absent, because the named operation still does
+	/// something. <c>insert</c> + <c>set</c>: <c>Set</c> removes first and copies the removed item's
+	/// <c>index</c> and <c>propertyName</c> onto its own config, so the insert's POSITION survives (only
+	/// those two — <c>parentName</c> comes from the set, and the insert's <c>values</c> are discarded).
+	/// <c>merge</c> + property <c>remove</c>: only the intersection of the merge's <c>values</c> keys
+	/// with the named properties is lost, not the merge. <c>set</c> + <c>move</c>: <c>Set</c> re-inserts
+	/// under its OWN <c>parentName</c>, which overrides the move but is not a discard.
 	/// </para>
 	/// </summary>
 	private static readonly InertRule[] InertRules = [
@@ -140,22 +117,18 @@ internal static class PageInertOperationDetector {
 		// The set group runs last and replaces the element wholesale with its own values.
 		new(ApplyGroup.Set, ApplyGroup.Merge, BuildMergeBesideSetMessage),
 		// Element removals run in the position pipeline, property removals in the group after it, so the
-		// property removal targets an element that is already gone — UNLESS an insert for the same name
-		// re-creates it in that same pipeline, which runs before the property-removal group and makes the
-		// property removal effective. Hence RescuedBy.
+		// property removal targets an element that is already gone — UNLESS an insert re-creates it in
+		// that same pipeline, which is what RescuedBy encodes.
 		new(ApplyGroup.ElementRemove, ApplyGroup.PropertyRemove, BuildPropertyRemoveBesideElementRemoveMessage,
 			RescuedBy: ApplyGroup.Insert),
 		// The merge group runs before the position pipeline, so a merge aimed at a component this body
-		// inserts resolves against a base that does not contain it, fails, and its unsuccessful list is
-		// discarded. Conditional: a parent schema inserting the name puts it in the base.
+		// inserts resolves against a base without it and its unsuccessful list is discarded.
 		new(ApplyGroup.Insert, ApplyGroup.Merge, BuildMergeBesideInsertMessage),
-		// Moves are resolved against the pristine source before any insert runs, and an unresolved move
-		// yields neither a remove nor a generated insert — it vanishes entirely. Conditional in the same
-		// way: with the name in the base the move resolves, and the own insert then duplicates the name.
+		// Moves resolve against the pristine source before any insert runs, and an unresolved move yields
+		// neither a remove nor a generated insert — it vanishes entirely.
 		new(ApplyGroup.Insert, ApplyGroup.Move, BuildMoveBesideInsertMessage),
 		// The position pipeline applies ALL removes before ANY insert, so a remove cannot delete what the
-		// same body inserts. Conditional, and the loosest row: with the name in the base this is the
-		// legitimate replace-an-inherited-component idiom, where both operations do apply.
+		// same body inserts. The loosest row — with the name in the base, both operations do apply.
 		new(ApplyGroup.Insert, ApplyGroup.ElementRemove, BuildElementRemoveBesideInsertMessage)
 	];
 
