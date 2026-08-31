@@ -1,5 +1,7 @@
 using System;
 using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
 using Clio.Common;
 using Creatio.Client;
 using FluentAssertions;
@@ -69,6 +71,31 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		diagnostics.Received(1).TrackRequest(Arg.Any<Func<string>>());
 	}
 
+	[TestCase("get")]
+	[TestCase("post")]
+	[TestCase("upload")]
+	[Description("The asynchronous request methods record every call through ILoginDiagnostics.TrackRequestAsync")]
+	public async Task AsyncRequestMethod_ShouldRecordThroughLoginDiagnostics_WhenInvoked(string operation) {
+		// Arrange
+		ILoginDiagnostics diagnostics = Substitute.For<ILoginDiagnostics>();
+		using HttpResponseMessage expected = new(HttpStatusCode.OK);
+		diagnostics.TrackRequestAsync(Arg.Any<Func<Task<HttpResponseMessage>>>())
+			.Returns(Task.FromResult(expected));
+		CreatioClientAdapter adapter = CreateAdapter(diagnostics);
+
+		// Act
+		HttpResponseMessage result = operation switch {
+			"get" => await adapter.ExecuteGetRequestAsync("/x"),
+			"post" => await adapter.ExecutePostRequestAsync("/x", "{}"),
+			_ => await adapter.UploadImageAsync("/x", [1], "x.png", "image/png")
+		};
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "async diagnostics must observe requests without changing their response");
+		await diagnostics.Received(1).TrackRequestAsync(Arg.Any<Func<Task<HttpResponseMessage>>>());
+	}
+
 	[Test]
 	[Description("DownloadFile records through the void TrackRequest overload even though it bypasses the reauth executor")]
 	public void DownloadFile_ShouldRecordThroughLoginDiagnostics_WhenInvoked() {
@@ -89,6 +116,26 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 	#endregion
 
 	#region Tests: Login wiring
+
+	[Test]
+	[Description("An explicit asynchronous Login is recorded as LoginAttemptKind.Initial")]
+	public async Task LoginAsync_ShouldRecordInitialAttempt_WhenCalledExplicitly() {
+		// Arrange
+		ILoginDiagnostics diagnostics = Substitute.For<ILoginDiagnostics>();
+		using HttpResponseMessage expected = new(HttpStatusCode.OK);
+		diagnostics.TrackAsync(Arg.Any<Func<Task<HttpResponseMessage>>>(), LoginAttemptKind.Initial)
+			.Returns(Task.FromResult(expected));
+		CreatioClientAdapter adapter = CreateAdapter(diagnostics);
+
+		// Act
+		HttpResponseMessage result = await adapter.LoginAsync();
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "async login diagnostics must be transparent on success");
+		await diagnostics.Received(1).TrackAsync(Arg.Any<Func<Task<HttpResponseMessage>>>(),
+			LoginAttemptKind.Initial);
+	}
 
 	[Test]
 	[Description("An explicit Login is recorded as LoginAttemptKind.Initial")]

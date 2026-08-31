@@ -206,6 +206,12 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
 				"http://localhost/rest/ProcessDesignService/Ping");
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ImageApiUpload,
+				"http://localhost/0/ImageAPIService/upload");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ImageApiUpload,
+				"http://localhost/ImageAPIService/upload");
 		}
 	}
 
@@ -263,6 +269,7 @@ internal class ServiceUrlBuilderCommandTests
 	}
 
 	[TestCaseSource(nameof(TestCasesWithEnvSettingsAndKnownRoutes))]
+	[Description("Builds known routes against an explicitly supplied environment shape.")]
 	public void BuildWithEnvsAndKnownRoute_Returns_CorrectUrl(TestCaseDataWithEnvSettingAndKnownRoutes testCaseData){
 		//Arrange
 		EnvironmentSettings environmentSettingsMock = new() {
@@ -276,10 +283,12 @@ internal class ServiceUrlBuilderCommandTests
 		string actual = sut.Build(testCaseData.KnownRoute, environmentSettingsMock);
 
 		//Assert
-		actual.Should().Be(testCaseData.ExpectedUrl);
+		actual.Should().Be(testCaseData.ExpectedUrl,
+			because: "the explicit environment determines both route prefix and application origin");
 	}
 
 	[TestCaseSource(nameof(TestCasesWithKnownRoute))]
+	[Description("Builds each known route against the builder's configured environment.")]
 	public void BuildWithKnownRoute_Returns_CorrectUrl(TestCaseDataWithKnownRoutes testCaseData){
 		//Arrange
 		EnvironmentSettings environmentSettingsMock = new() {
@@ -292,7 +301,8 @@ internal class ServiceUrlBuilderCommandTests
 		string actual = sut.Build(testCaseData.KnownRoute);
 
 		//Assert
-		actual.Should().Be(testCaseData.ExpectedUrl);
+		actual.Should().Be(testCaseData.ExpectedUrl,
+			because: "known routes must preserve the runtime-specific workspace prefix");
 	}
 
 	
