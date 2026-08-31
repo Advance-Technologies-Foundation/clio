@@ -1,0 +1,25 @@
+﻿{
+  "PackageData": [
+    {
+      "Row": [
+        {
+          "SchemaColumnUId": "2aec9cef-232e-413a-9a5a-9ddde2e8a2af",
+          "Value": "CanReset2FA"
+        },
+        {
+          "SchemaColumnUId": "a2987d84-12ca-4f95-a27f-54d1cfc2517d",
+          "Value": "null",
+          "DisplayValue": ""
+        },
+        {
+          "SchemaColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+          "Value": "041fea7d-e92f-4544-8920-2d301783d7bc"
+        },
+        {
+          "SchemaColumnUId": "ea5c0817-d558-42ef-a5f9-9379560f16f1",
+          "Value": false
+        }
+      ]
+    }
+  ]
+}

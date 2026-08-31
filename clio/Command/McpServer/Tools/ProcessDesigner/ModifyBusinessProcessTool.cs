@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// <summary>
 /// MCP tool that edits an existing business process on a Creatio environment by applying a list of operations.
 /// </summary>
-[FeatureToggle("process-designer")]
 public class ModifyBusinessProcessTool(
 	ModifyBusinessProcessCommand command,
 	ILogger logger,
@@ -33,6 +32,7 @@ public class ModifyBusinessProcessTool(
 		 + "userTaskName?, useBackgroundMode? (element-level, supported by every element kind), "
 		 + "email? (sendEmail elements — same block as create-business-process), "
 		 + "approval? (approval elements — same block as create-business-process), "
+		 + "performer? (performTask elements — same block as create-business-process: who performs the task), "
 		 + "signal? {entity, on:added|modified|deleted, changedColumns?:[<ColumnName>,...]}), "
 		 + "removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "/ removeFlow (with 'source' and 'target' element names), addParameter (with a 'parameter': name, type "
@@ -42,6 +42,16 @@ public class ModifyBusinessProcessTool(
 		 + "copy an element parameter's exact type), addMapping (with a 'mapping': target {elementName, "
 		 + "elementParameter} or {targetProcessParameter}, and one source of {sourceElement, sourceElementParameter} "
 		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types; "
+		 + "a Lookup target's 'value' takes a bare non-empty record Guid, stored as the ConstValue the runtime "
+		 + "actually reads (the route ships from CrtProcessBuilder 1.4.1.0; THIS clio additionally refuses any "
+		 + "environment older than the version it BUNDLES — up front, via the package-convergence message naming "
+		 + "both versions — while an older clio surfaces the old package's [#Lookup…#]-macro rejection; either "
+		 + "refusal means the ENVIRONMENT IS BEHIND, not that the parameter is unsettable: update the package); "
+		 + "a non-Guid lookup value is refused with a message that leads with the bare-Guid route (the "
+		 + "[#Lookup…#] expression form stays the named fallback), Guid.Empty is refused as "
+		 + "referencing no record, and a Guid that exists in NO record of the parameter's reference object is "
+		 + "refused naming that object — so an id of the WRONG entity, e.g. a role id on the Contact-typed "
+		 + "OwnerId, cannot be stored; to assign a TEAM use the element-level 'performer' block, not OwnerId; "
 		 + "re-mapping an already-bound target overwrites it in place — there is no removeMapping/clear op), "
 		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
 		 + "caption/description/code/direction/referenceSchema (re-targets an existing Lookup only)/value, updated "
@@ -56,7 +66,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, email?, approval?} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, email?, approval?, performer?} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
 		 + "{source?, mode?:first, columns?, sort?:{column, direction?:asc|desc}} reconfigures a readData element's "
 		 + "data configuration: omit source to keep the current source object, omit columns/sort to keep the current "
@@ -90,6 +100,21 @@ public class ModifyBusinessProcessTool(
 		 + "to the PREVIOUS object is REFUSED — pass 'recordId' in the same call. There is no way to switch a "
 		 + "notification OFF through this block (supplying one turns it on, and a cleared template is "
 		 + "indistinguishable from one never set); disable it through addMapping against the flag parameter instead, "
+		 + "performer "
+		 + "(performTask elements only: {type:user|manager|role, contact? (user/manager: a bare Contact record "
+		 + "Guid, or a formula such as [#SysVariable.CurrentUserContact#] — defaults to the current user), "
+		 + "role? (role: a role name or record id — required), showPage?} — WHO PERFORMS the task. "
+		 + "role is the honest 'assign to a team': the created Activity carries the role in its own OwnerRole "
+		 + "column with an EMPTY owner, every user of the role sees and can take it, and whoever completes it is "
+		 + "recorded — so never fake a team by writing a role id into OwnerId. The role is CHECKED TO EXIST on "
+		 + "BOTH routes (name or id) against the role set the designer itself offers, so an arbitrary Guid or a "
+		 + "USER's SysAdminUnit id is refused instead of becoming an assignment nobody can see. A role NAME that matches MORE THAN ONE role is "
+		 + "refused too — a name cannot say which group performs the task, so pass the id; manager resolves the contact's "
+		 + "manager AT RUN TIME and raises a process error when the contact's employee record has no manager. "
+		 + "showPage omitted defaults to false for manager/role (designer parity — there is no single performer "
+		 + "to open the page for); re-applying replaces the choice in place. REFUSED on every other element kind, "
+		 + "the retired CallUserTask by name — its runtime IGNORES the assignment, so writing it there would "
+		 + "assign nobody silently; model a call as performTask + ActivityCategory instead), "
 		 + "setConnections (elementName + 'connections':[{column, and exactly ONE source of recordId (+optional "
 		 + "referenceSchema, which is a CHECK not a source) | processParameter | sourceElement + "
 		 + "sourceElementParameter | expression}] — binds the 'Connected to' links of the Activity the "

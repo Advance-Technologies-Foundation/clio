@@ -38,7 +38,11 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 			}
 
 			(IApplicationClient client, string url) = ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
-			client.ExecuteDeleteRequest(url, string.Empty, 30_000);
+			string response = client.ExecuteDeleteRequest(url, string.Empty, 30_000);
+			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
+			if (validationError is not null) {
+				return ODataWriteResponse.Failure(validationError);
+			}
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));

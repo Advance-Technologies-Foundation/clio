@@ -14,15 +14,13 @@ namespace Clio.Command;
 /// Options for editing an existing business process via the ProcessDesignService package.
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states the FLOOR this command cannot work below at all — the email block, which
-// shipped in 1.2.0.1. It deliberately does NOT track every later block: a class-level requirement is
-// enforced on EVERY invocation, so raising it would refuse create/modify outright on an environment one
-// version behind, even for a descriptor that uses none of the newer blocks. changeData (1.3.0.0) and the
-// approval block (1.4.0.0) therefore leave it alone and rely on the behavioural guards
-// (EmailBlockExpectation / ApprovalBlockExpectation), which detect a silently discarded block from the
-// read-back and warn, instead of locking everyone out. The guard fixture asserts the shipped archive
-// satisfies this literal, so clio can never demand a version it does not carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
+// The version literal states what THIS command's code needs — the newest operation it sends that an
+// older server does not have. Today that is the APPROVAL block, shipped in the 1.4.1.0 archive: an older
+// server has no approval member and silently discards it while answering success. The performer block
+// (1.3.1.1) and the email block (1.2.0.1) set this precedent and are subsumed by this literal. Presence
+// alone cannot express any of them. The guard fixture asserts the shipped archive satisfies the literal,
+// so clio can never demand a version it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.1.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -206,13 +204,14 @@ public class ModifyBusinessProcessCommand(
 		}
 	}
 
-	// Same silent-drop guard as the build path: a server predating sendEmail (or the Approval element) discards
-	// that block and still answers success, so an edit can report an applied operation whose configuration never
-	// landed. Read the process back and say so. Only runs when the operations carried one; a failed read-back is
-	// never escalated, since it is not evidence of a drop. See EmailBlockExpectation for why it is not version-based.
+	// Same silent-drop guard as the build path: a server predating sendEmail discards an email block and still
+	// answers success, so an edit can report an applied operation whose email configuration never landed. Read the
+	// process back and say so. Only runs when the operations actually carried a block; a failed read-back is never
+	// escalated, since it is not evidence of a drop. See EmailBlockExpectation for why this is not version-based.
 	private void WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
 		IReadOnlyList<string> expected = EmailBlockExpectation.FromOperations(options.OperationsJson);
-		// The Approval element has the same silent-drop failure and is verified from the SAME read-back.
+		// The Approval element has the same silent-drop failure, so it is verified from the SAME read-back rather
+		// than a second one — the describe below is the expensive part.
 		IReadOnlyList<string> expectedApproval = ApprovalBlockExpectation.FromOperations(options.OperationsJson);
 		if (expected.Count == 0 && expectedApproval.Count == 0) {
 			return;

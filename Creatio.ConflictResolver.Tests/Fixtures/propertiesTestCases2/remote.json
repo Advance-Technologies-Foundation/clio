@@ -1,0 +1,7 @@
+{
+  "Properties": {
+    "BaseUri": "http://localhost/rest1Remote",
+    "CreatedInVersion": "8.3.3.2060",
+    "Type": "Rest"
+  }
+}

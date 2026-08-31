@@ -489,8 +489,12 @@ public class BindingsModule {
 		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
 		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
-		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
-		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
+		// The diff appliers retain per-chain alias state, so PageBundleBuilder needs a FRESH instance per diff
+		// chain (not one shared instance): inject the factory and call it per chain. Registered as Func<> here
+		// (and skipped in RegisterAssemblyInterfaceTypes) because the applier ctor takes a primitive bool arg DI
+		// cannot resolve, so a plain type registration would fail ValidateOnBuild.
+		services.AddTransient<Func<IJsonDiffApplier>>(_ => () => new JsonDiffApplier());
+		services.AddTransient<Func<IJsonPathDiffApplier>>(_ => () => new JsonPathDiffApplier());
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
@@ -668,9 +672,16 @@ public class BindingsModule {
 				KnowledgeFeedbackPolicyTools.GetToolName,
 				KnowledgeManagementTools.ListKnowledgeExamplesToolName
 			}));
+		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
+		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
+		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
+		services.AddSingleton(provider => new KnowledgeUnsequencedGitOptions(
+			provider.GetRequiredService<IFeatureToggleService>()
+				.IsFeatureEnabled(KnowledgeUnsequencedGitOptions.FeatureName)));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
+		services.AddSingleton<IKnowledgeManagedTreeDeleter, KnowledgeManagedTreeDeleter>();
 		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
 		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
 		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
@@ -716,6 +727,7 @@ public class BindingsModule {
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
+		services.AddTransient<PackageFileTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
@@ -806,6 +818,10 @@ public class BindingsModule {
 		services.AddTransient<UnregisterCommand>();
 		
 		services.AddTransient<IUserPromptService, UserPromptService>();
+		services.AddSingleton<Creatio.ConflictResolver.IConflictResolver,
+			Creatio.ConflictResolver.ConflictResolver>();
+		services.AddSingleton<ICreatioArtifactMergeService, CreatioArtifactMergeService>();
+		services.AddTransient<CreatioArtifactMergeCommand>();
 		services.AddTransient<DeletePackageCommand>();
 		services.AddTransient<GetPkgListCommand>();
 		services.AddTransient<RestoreWorkspaceCommand>();
@@ -1343,7 +1359,13 @@ public class BindingsModule {
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
 					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
 					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
-					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {
+					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)
+					// The page-bundle diff appliers are registered explicitly as per-call Func<> factories
+					// (they retain per-chain alias state, so each diff chain needs its own instance). Their ctor
+					// takes a primitive bool arg DI cannot resolve, so auto-registering the type here would fail
+					// ValidateOnBuild.
+					|| implementedInterface == typeof(IJsonDiffApplier)
+					|| implementedInterface == typeof(IJsonPathDiffApplier)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

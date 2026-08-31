@@ -14,15 +14,13 @@ namespace Clio.Command;
 /// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states the FLOOR this command cannot work below at all — the email block, which
-// shipped in 1.2.0.1. It deliberately does NOT track every later block: a class-level requirement is
-// enforced on EVERY invocation, so raising it would refuse create/modify outright on an environment one
-// version behind, even for a descriptor that uses none of the newer blocks. changeData (1.3.0.0) and the
-// approval block (1.4.0.0) therefore leave it alone and rely on the behavioural guards
-// (EmailBlockExpectation / ApprovalBlockExpectation), which detect a silently discarded block from the
-// read-back and warn, instead of locking everyone out. The guard fixture asserts the shipped archive
-// satisfies this literal, so clio can never demand a version it does not carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
+// The version literal states what THIS command's code needs — the newest operation it sends that an
+// older server does not have. Today that is the APPROVAL block, shipped in the 1.4.1.0 archive: an older
+// server has no approval member and silently discards it while answering success. The performer block
+// (1.3.1.1) and the email block (1.2.0.1) set this precedent and are subsumed by this literal. Presence
+// alone cannot express any of them. The guard fixture asserts the shipped archive satisfies the literal,
+// so clio can never demand a version it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.1.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
@@ -166,11 +164,11 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
-	// A server that predates sendEmail (or the Approval element) DISCARDS that configuration block and still
-	// answers success:true, so a build can report a configured element that is in fact empty. Read the saved
-	// process back and say so when a block did not land. Only runs when the descriptor carried one, so the
-	// ordinary path pays nothing; a failure to verify is never escalated, because an unreadable description is
-	// not evidence of a dropped block. See EmailBlockExpectation for why this is behavioural, not version-based.
+	// A server that predates sendEmail DISCARDS an email block and still answers success:true, so a build can
+	// report a configured email element that is in fact empty. Read the saved process back and say so when the
+	// block did not land. Only runs when the descriptor actually carried a block, so the ordinary path pays
+	// nothing; a failure to verify is never escalated, because an unreadable description is not evidence of a
+	// dropped block. See EmailBlockExpectation for why this is behavioural rather than version-based.
 	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
 		IReadOnlyList<string> expected = EmailBlockExpectation.FromDescriptor(options.DescriptorJson);
 		// The Approval element has exactly the same silent-drop failure, so it is verified from the SAME read-back

@@ -21,14 +21,18 @@ public interface IPageBundleBuilder {
 internal sealed class PageBundleBuilder : IPageBundleBuilder {
 	private const string PathSeparator = "/";
 
-	private readonly IPageJsonDiffApplier _jsonDiffApplier;
-	private readonly IPageJsonPathDiffApplier _jsonPathDiffApplier;
+	private readonly Func<IJsonDiffApplier> _viewConfigApplierFactory;
+	private readonly Func<IJsonPathDiffApplier> _pathApplierFactory;
 
+	/// <param name="viewConfigApplierFactory">Yields a fresh view-config applier per diff chain.</param>
+	/// <param name="pathApplierFactory">Yields a fresh path applier per config chain. Both are per-call
+	/// factories because the appliers retain per-chain alias state, so an instance must not be reused across
+	/// independent chains.</param>
 	public PageBundleBuilder(
-		IPageJsonDiffApplier jsonDiffApplier,
-		IPageJsonPathDiffApplier jsonPathDiffApplier) {
-		_jsonDiffApplier = jsonDiffApplier;
-		_jsonPathDiffApplier = jsonPathDiffApplier;
+		Func<IJsonDiffApplier> viewConfigApplierFactory,
+		Func<IJsonPathDiffApplier> pathApplierFactory) {
+		_viewConfigApplierFactory = viewConfigApplierFactory;
+		_pathApplierFactory = pathApplierFactory;
 	}
 
 	public PageBundleInfo Build(IReadOnlyList<PageSchemaBundlePart> parts) {
@@ -38,10 +42,14 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 
 		PageSchemaBundlePart currentPart = parts[0];
 		List<PageSchemaBundlePart> mergeOrder = parts.Reverse().ToList();
-		JArray viewConfig = _jsonDiffApplier.ApplyDiff(
-			new JArray(),
-			mergeOrder.Select(part => part.ParsedBody.ViewConfigDiff as JArray ?? new JArray()).ToList(),
-			mergeOrder.Select(part => new PageJsonDiffApplyOptions(part.Schema.SchemaVersion >= 1)).ToList());
+		JArray viewConfig = AsExpected<JArray>(
+			_viewConfigApplierFactory().ApplyDiff(
+				new JArray(),
+				mergeOrder.Select(part => part.ParsedBody.ViewConfigDiff as JArray ?? new JArray()).ToList(),
+				mergeOrder.Select(part => new JsonApplierOperationsOptions {
+					ApplyMoveIfIndirectParentMoved = part.Schema.SchemaVersion >= 1
+				}).ToList()),
+			"view config");
 		JObject viewModelConfig = BuildConfig(
 			mergeOrder,
 			part => part.ParsedBody.ViewModelConfig as JObject ?? new JObject(),
@@ -109,15 +117,26 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 		Func<PageSchemaBundlePart, JObject> configSelector,
 		Func<PageSchemaBundlePart, JArray> diffSelector) {
 		JObject result = new();
+		// One applier per config chain: the base applier carries aliases across layers (it only resets them on an
+		// empty source), so a fresh instance per part would drop an alias declared in an ancestor's diff. Scoping it
+		// to this chain also keeps view-model and model alias state from leaking into each other.
+		IJsonPathDiffApplier applier = _pathApplierFactory();
 		foreach (PageSchemaBundlePart part in parts) {
 			JArray diff = diffSelector(part);
 			result = diff.Count > 0
-				? _jsonPathDiffApplier.Apply(result, diff)
+				? AsExpected<JObject>(applier.Apply(result, diff), "config")
 				: PageBundleMergeHelpers.DeepMerge(result, configSelector(part));
 		}
 
 		return result;
 	}
+
+	// The appliers return JToken; a server-valid chain always yields the expected container shape. Guard the
+	// cast so a malformed/edge-case chain surfaces as a JsonDiffApplierException (handled by the get-page and
+	// business-rule callers) rather than a bare InvalidCastException that escapes those catch clauses.
+	private static T AsExpected<T>(JToken applied, string configName) where T : JToken =>
+		applied as T ?? throw new JsonDiffApplierException(
+			$"Resolved {configName} was {applied?.Type.ToString() ?? "null"}, expected {typeof(T).Name}.");
 
 	private static JsonObject BuildResources(IReadOnlyList<PageSchemaBundlePart> parts) {
 		var result = new JsonObject();

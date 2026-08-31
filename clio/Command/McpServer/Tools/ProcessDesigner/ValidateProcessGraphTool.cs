@@ -17,7 +17,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// queries its installed packages to enforce that the <c>CrtProcessBuilder</c> package is present.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("process-designer")]
 public sealed class ValidateProcessGraphTool {
 	internal const string ToolName = "validate-process-graph";
 

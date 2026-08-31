@@ -67,8 +67,8 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [Test]
-        [Description("Create and Modify declare a VERSIONED requirement pinned to the FLOOR they cannot work below at all — 1.2.0.1, the archive that introduced the email block. The pin deliberately does NOT advance with every later block: a class-level requirement is enforced on EVERY invocation, so raising it to the newest archive would refuse both commands outright on an environment one version behind, even for a descriptor using none of the newer blocks. changeData (1.3.0.0) and approval (1.4.0.0) accordingly left it alone and rely on the behavioural guards, which detect a silently discarded block from the read-back. The bundled-archive guard asserts the shipped archive satisfies this literal, so clio can never demand a version it does not carry.")]
-        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsAVersionedOperation(
+        [Description("Create and Modify declare a VERSIONED requirement naming the newest operation they send that an older server does not have: today the element-level performer block and the reference-existence guard behind it, shipped in the 1.3.1.1 archive — an older server has no performer member and silently discards the block while answering success, and a pre-guard server stores a dead id instead of refusing it; presence alone cannot express either (the 1.2.0.1 email floor set the precedent and is subsumed). This is the doc's rule applied ('add a literal in the commit where a command starts calling an operation an older server does not have'), and the bundled-archive guard asserts the shipped archive satisfies the literal, so it can never demand a version clio does not carry.")]
+        public void OptionsType_ShouldDeclareVersionedProcessBuilderRequirement_WhenTheCommandShipsVersionedOperations(
             Type optionsType)
         {
             // Arrange & Act
@@ -77,12 +77,12 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} must carry the declarative {BundledPackages.ProcessBuilderPackageName} requirement so the MCP gate fires");
-            requirement!.Version.Should().Be("1.2.0.1",
-                because: "the floor is the oldest archive these commands can work against at all, NOT the newest "
-                    + "block they can send. A class-level requirement gates every invocation, so pinning it to "
-                    + "the latest archive would lock a caller out of create/modify entirely for being one version "
-                    + "behind — a regression for everyone in exchange for a block most descriptors never use. A "
-                    + "newer block's absence is reported by its behavioural guard instead");
+            requirement!.Version.Should().Be("1.4.1.0",
+                because: "the approval block these commands send was "
+                    + "introduced in the 1.4.1.0 archive — an older server ignores the block or stores a dead id "
+                    + "and still answers success, so the literal is what fails CLOSED (the convergence rule only "
+                    + "WARNS when it cannot read the archive or the version carries a pre-release suffix); "
+                    + "when the next versioned operation ships, move this pin WITH the rebundle in the same commit");
         }
 
         [Test]
@@ -164,7 +164,7 @@ namespace Clio.Tests
 
             // Act - a SHIPPED options type that is presence-only BY DESIGN (see the split above): this test pins
             // the CONVERGENCE mechanism, and its own description says the refusal cannot be a version literal —
-            // driving it through Modify, which now carries the 1.2.0.1 email literal, would test the literal instead.
+            // driving it through Modify, which now carries the versioned performer literal, would test the literal instead.
             Action act = () => checker.EnsureRequirements(new DescribeProcessOptions());
 
             // Assert

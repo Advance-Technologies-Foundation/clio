@@ -101,7 +101,7 @@
 			},
 			"examples": [
 				{
-					"process-designer": true
+					"watch-compilation": true
 				}
 			]
 		}
