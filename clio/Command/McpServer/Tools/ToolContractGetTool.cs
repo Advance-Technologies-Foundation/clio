@@ -434,6 +434,7 @@ internal static class ToolContractCatalog {
 	private const string DefaultValueConfigSourceKey = "source";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string EmailIdFieldName = "email-id";
 	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
@@ -2185,9 +2186,9 @@ internal static class ToolContractCatalog {
 			EmailTemplateTool.GetToolName,
 			"Reads every legacy Content designer and current Beefree content variant for a BulkEmail marketing email or EmailTemplate message template. Each variant carries an optimistic checksum for update-email-template.",
 			new ToolInputSchemaContract(
-				["email-id", EnvironmentNameFieldName],
+				[EmailIdFieldName, EnvironmentNameFieldName],
 				[
-					Field("email-id", StringType, "GUID of the BulkEmail or EmailTemplate host record."),
+					Field(EmailIdFieldName, StringType, "GUID of the BulkEmail or EmailTemplate host record."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field("language", StringType, "Optional Beefree language code. Requests an exists=false creation variant when missing."),
 					Field("language-id", StringType, "Optional SysLanguage GUID for EmailTemplateLang. Requests an exists=false creation variant when missing.")
@@ -2197,7 +2198,7 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the email content was read."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("email-id", StringType, "BulkEmail or EmailTemplate host record Id."),
+				Field(EmailIdFieldName, StringType, "BulkEmail or EmailTemplate host record Id."),
 				Field("host-type", StringType, "bulk-email or message-template."),
 				Field("name", StringType, "Host record name."),
 				Field("variants", ArrayType, "Content variants. Each carries format, language identity, content fields, and checksum.")),
@@ -2207,7 +2208,7 @@ internal static class ToolContractCatalog {
 			[
 				Example("Read email content before editing", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					["email-id"] = ExampleLookupValueId
+					[EmailIdFieldName] = ExampleLookupValueId
 				})
 			],
 			Flow([EmailTemplateTool.GetToolName], "Read all stored formats and languages without reverse-engineering EmailTemplate/BfEmailTemplate OData fields."),
@@ -2224,9 +2225,9 @@ internal static class ToolContractCatalog {
 			EmailTemplateTool.UpdateToolName,
 			"Updates one legacy or Beefree email-content variant for an existing BulkEmail or EmailTemplate host. The write requires confirm=true and the checksum returned by an immediately preceding get-email-template call. A missing Beefree row is created, enabling a lossless get-source then update-target copy without converting PageJson into legacy TemplateConfig.",
 			new ToolInputSchemaContract(
-				["email-id", EnvironmentNameFieldName, "format", "expected-checksum", ConfirmFieldName],
+				[EmailIdFieldName, EnvironmentNameFieldName, "format", "expected-checksum", ConfirmFieldName],
 				[
-					Field("email-id", StringType, "GUID of the existing BulkEmail or EmailTemplate host record."),
+					Field(EmailIdFieldName, StringType, "GUID of the existing BulkEmail or EmailTemplate host record."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field("format", StringType, "beefree or legacy."),
 					Field("expected-checksum", StringType, "Checksum returned by get-email-template for this exact variant."),
@@ -2248,7 +2249,7 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the guarded update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("email-id", StringType, "Updated host record Id."),
+				Field(EmailIdFieldName, StringType, "Updated host record Id."),
 				Field("format", StringType, "Updated storage format."),
 				Field("created", BooleanType, "Whether a new language/format storage row was created."),
 				Field("checksum", StringType, "Checksum of the content written.")),

@@ -222,6 +222,8 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 	private const int RequestTimeout = 30_000;
 	private const string BeefreeFormat = "beefree";
 	private const string LegacyFormat = "legacy";
+	private const string BulkEmailHost = "bulk-email";
+	private const string MessageTemplateHost = "message-template";
 
 	/// <inheritdoc />
 	public EmailTemplateContentResponse Get(string environmentName, Guid emailId, string language, string languageId) {
@@ -285,13 +287,39 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			$"Id eq {emailId:D}", "Id,Name,TemplateSubject,TemplateBody,TemplateConfig", 1));
 		JsonElement messageTemplate = First(Read(client, urls, "EmailTemplate",
 			$"Id eq {emailId:D}", "Id,Name,Subject,Body,TemplateConfig,ConfigType,IsHtmlBody", 1));
-		string hostType = bulkEmail.ValueKind == JsonValueKind.Object ? "bulk-email"
-			: messageTemplate.ValueKind == JsonValueKind.Object ? "message-template" : null;
+		string hostType = ResolveHostType(bulkEmail, messageTemplate);
 		if (hostType is null) {
 			return EmailTemplateContentResponse.Failure(
 				$"No BulkEmail or EmailTemplate host record exists with Id {emailId:D}.");
 		}
-		JsonElement host = hostType == "bulk-email" ? bulkEmail : messageTemplate;
+		JsonElement host = hostType == BulkEmailHost ? bulkEmail : messageTemplate;
+		List<EmailTemplateContentVariant> variants = ReadBeefreeVariants(client, urls, emailId, requestedLanguage);
+		if (hostType == BulkEmailHost) {
+			if (!string.IsNullOrWhiteSpace(requestedLanguageId)) {
+				return EmailTemplateContentResponse.Failure(
+					"language-id is supported only for EmailTemplate message-template hosts.");
+			}
+			variants.Add(LegacyVariant(host, languageId: null));
+		} else {
+			AddLegacyVariants(client, urls, emailId, host, requestedLanguageId, variants);
+		}
+		return new EmailTemplateContentResponse(
+			true, null, emailId.ToString("D"), hostType, String(host, "Name"), variants);
+	}
+
+	private static string ResolveHostType(JsonElement bulkEmail, JsonElement messageTemplate) {
+		if (bulkEmail.ValueKind == JsonValueKind.Object) {
+			return BulkEmailHost;
+		}
+		return messageTemplate.ValueKind == JsonValueKind.Object ? MessageTemplateHost : null;
+	}
+
+	/// <summary>
+	/// Reads every beefree variant of the email and guarantees the requested language is represented,
+	/// adding an absent-variant placeholder when the environment holds no row for it.
+	/// </summary>
+	private static List<EmailTemplateContentVariant> ReadBeefreeVariants(
+		IApplicationClient client, IServiceUrlBuilder urls, Guid emailId, string requestedLanguage) {
 		List<EmailTemplateContentVariant> variants = [];
 		foreach (JsonElement row in Read(client, urls, "BfEmailTemplate", $"EmailId eq {emailId:D}",
 			"Id,EmailId,Language,TemplateLanguageId,PageJson,PageHtml,AmpHtml,TemplateVersion", 100)) {
@@ -302,28 +330,28 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 				&& string.Equals(variant.Language ?? string.Empty, beefreeLanguage, StringComparison.OrdinalIgnoreCase))) {
 			variants.Add(AbsentBeefreeVariant(beefreeLanguage));
 		}
-		if (hostType == "bulk-email") {
-			if (!string.IsNullOrWhiteSpace(requestedLanguageId)) {
-				return EmailTemplateContentResponse.Failure(
-					"language-id is supported only for EmailTemplate message-template hosts.");
-			}
-			variants.Add(LegacyVariant(host, languageId: null));
-		} else {
-			variants.Add(LegacyVariant(host, languageId: null));
-			foreach (JsonElement row in Read(client, urls, "EmailTemplateLang", $"EmailTemplateId eq {emailId:D}",
-				"Id,EmailTemplateId,LanguageId,Subject,Body,TemplateConfig,IsHtmlBody", 100)) {
-				variants.Add(LegacyVariant(row, String(row, "LanguageId")));
-			}
-			string normalizedLanguageId = NormalizeGuid(requestedLanguageId);
-			if (!string.IsNullOrEmpty(normalizedLanguageId) && !variants.Any(variant =>
-					variant.Format == LegacyFormat
-					&& string.Equals(NormalizeGuid(variant.LanguageId), normalizedLanguageId,
-						StringComparison.OrdinalIgnoreCase))) {
-				variants.Add(AbsentLegacyVariant(normalizedLanguageId));
-			}
+		return variants;
+	}
+
+	/// <summary>
+	/// Appends the primary legacy variant and every EmailTemplateLang translation of a message-template
+	/// host, plus an absent-variant placeholder when the requested language id has no row yet.
+	/// </summary>
+	private static void AddLegacyVariants(
+		IApplicationClient client, IServiceUrlBuilder urls, Guid emailId, JsonElement host,
+		string requestedLanguageId, List<EmailTemplateContentVariant> variants) {
+		variants.Add(LegacyVariant(host, languageId: null));
+		foreach (JsonElement row in Read(client, urls, "EmailTemplateLang", $"EmailTemplateId eq {emailId:D}",
+			"Id,EmailTemplateId,LanguageId,Subject,Body,TemplateConfig,IsHtmlBody", 100)) {
+			variants.Add(LegacyVariant(row, String(row, "LanguageId")));
 		}
-		return new EmailTemplateContentResponse(
-			true, null, emailId.ToString("D"), hostType, String(host, "Name"), variants);
+		string normalizedLanguageId = NormalizeGuid(requestedLanguageId);
+		if (!string.IsNullOrEmpty(normalizedLanguageId) && !variants.Any(variant =>
+				variant.Format == LegacyFormat
+				&& string.Equals(NormalizeGuid(variant.LanguageId), normalizedLanguageId,
+					StringComparison.OrdinalIgnoreCase))) {
+			variants.Add(AbsentLegacyVariant(normalizedLanguageId));
+		}
 	}
 
 	private static EmailTemplateContentVariant FindVariant(
@@ -363,29 +391,12 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 	private static EmailTemplateUpdateResponse UpdateLegacy(
 		IApplicationClient client, IServiceUrlBuilder urls, string hostType, Guid emailId,
 		EmailTemplateUpdateArgs args, EmailTemplateContentVariant current) {
-		if (args.Subject is null && args.Body is null && args.TemplateConfig is null
-				&& args.ConfigType is null && args.IsHtmlBody is null) {
-			return EmailTemplateUpdateResponse.Failure(
-				"At least one of subject, body, template-config, config-type, or is-html-body is required for format=legacy.");
-		}
 		bool translated = !string.IsNullOrWhiteSpace(args.LanguageId);
-		if (translated && args.ConfigType is not null) {
-			return EmailTemplateUpdateResponse.Failure(
-				"config-type is supported only for the primary EmailTemplate variant, not EmailTemplateLang translations.");
+		string validationError = ValidateLegacyUpdate(hostType, args, translated);
+		if (validationError is not null) {
+			return EmailTemplateUpdateResponse.Failure(validationError);
 		}
-		var data = new Dictionary<string, object>();
-		Add(data, hostType == "bulk-email" ? "TemplateSubject" : "Subject", args.Subject);
-		Add(data, hostType == "bulk-email" ? "TemplateBody" : "Body", args.Body);
-		Add(data, "TemplateConfig", args.TemplateConfig);
-		if (hostType == "message-template") {
-			if (!translated) {
-				Add(data, "ConfigType", args.ConfigType);
-			}
-			Add(data, "IsHtmlBody", args.IsHtmlBody);
-		}
-		if (translated && hostType != "message-template") {
-			return EmailTemplateUpdateResponse.Failure("language-id is supported only for EmailTemplate message-template hosts.");
-		}
+		Dictionary<string, object> data = BuildLegacyPayload(hostType, args, translated);
 		bool created = translated && (current is null || !current.Exists);
 		if (created) {
 			if (!Guid.TryParse(args.LanguageId, out Guid languageId)) {
@@ -395,8 +406,8 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			data["LanguageId"] = languageId;
 			Write(client, urls, "EmailTemplateLang", null, data);
 		} else {
-			string entity = translated ? "EmailTemplateLang" : hostType == "bulk-email" ? "BulkEmail" : "EmailTemplate";
-			Write(client, urls, entity, translated ? current.RecordId : emailId.ToString("D"), data);
+			Write(client, urls, LegacyEntityName(hostType, translated),
+				translated ? current.RecordId : emailId.ToString("D"), data);
 		}
 		string checksum = Hash(LegacyFormat, null, NormalizeGuid(args.LanguageId),
 			args.Subject ?? current?.Subject, args.Body ?? current?.Body,
@@ -404,6 +415,51 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 			(args.ConfigType ?? current?.ConfigType)?.ToString(),
 			(args.IsHtmlBody ?? current?.IsHtmlBody)?.ToString());
 		return new(true, null, emailId.ToString("D"), LegacyFormat, created, checksum);
+	}
+
+	/// <summary>
+	/// Returns the reason a legacy update cannot be applied, or null when the arguments are usable.
+	/// The order of the checks is the order the caller reported them in before they were extracted.
+	/// </summary>
+	private static string ValidateLegacyUpdate(string hostType, EmailTemplateUpdateArgs args, bool translated) {
+		if (args.Subject is null && args.Body is null && args.TemplateConfig is null
+				&& args.ConfigType is null && args.IsHtmlBody is null) {
+			return "At least one of subject, body, template-config, config-type, or is-html-body is required for format=legacy.";
+		}
+		if (translated && args.ConfigType is not null) {
+			return "config-type is supported only for the primary EmailTemplate variant, not EmailTemplateLang translations.";
+		}
+		if (translated && hostType != MessageTemplateHost) {
+			return "language-id is supported only for EmailTemplate message-template hosts.";
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Maps the update arguments onto the column names the host entity uses; BulkEmail carries the
+	/// subject and body under Template-prefixed columns, EmailTemplate under the plain ones.
+	/// </summary>
+	private static Dictionary<string, object> BuildLegacyPayload(
+		string hostType, EmailTemplateUpdateArgs args, bool translated) {
+		var data = new Dictionary<string, object>();
+		bool bulkEmailHost = hostType == BulkEmailHost;
+		Add(data, bulkEmailHost ? "TemplateSubject" : "Subject", args.Subject);
+		Add(data, bulkEmailHost ? "TemplateBody" : "Body", args.Body);
+		Add(data, "TemplateConfig", args.TemplateConfig);
+		if (hostType == MessageTemplateHost) {
+			if (!translated) {
+				Add(data, "ConfigType", args.ConfigType);
+			}
+			Add(data, "IsHtmlBody", args.IsHtmlBody);
+		}
+		return data;
+	}
+
+	private static string LegacyEntityName(string hostType, bool translated) {
+		if (translated) {
+			return "EmailTemplateLang";
+		}
+		return hostType == BulkEmailHost ? "BulkEmail" : "EmailTemplate";
 	}
 
 	private static void Add(IDictionary<string, object> data, string name, object value) {
