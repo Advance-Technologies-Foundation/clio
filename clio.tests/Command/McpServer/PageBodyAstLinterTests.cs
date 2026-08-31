@@ -83,6 +83,155 @@ internal class PageBodyAstLinterTests {
 		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
 			because: "a helper declared in the AMD factory scope is available to handlers and must not be reported as missing");
 	}
+	[Test]
+	[Description("A name declared inside an UNRELATED nested function does not satisfy a handler call — resolution walks the lexical scope chain outwards, so a sibling scope's `const missingModuleHelper` cannot mask the handler's ReferenceError")]
+	public void Lint_ShouldEmitError_WhenTheOnlyDeclarationLivesInASiblingScope() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			"function unrelated() { const missingModuleHelper = function() { return 1; }; return missingModuleHelper; } " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { await missingModuleHelper(request); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("missingModuleHelper"),
+			because: "the handler still throws ReferenceError at runtime — a binding in a function it cannot see must not silence the gate");
+	}
+
+	[Test]
+	[Description("A destructuring KEY is not a binding — `const { alpha: beta } = source` declares `beta` only, so a handler call to `alpha()` is still reported")]
+	public void Lint_ShouldEmitError_WhenHandlerCallsADestructuringKey() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { const source = {}; const { alpha: beta } = source; " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { alpha(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("alpha"),
+			because: "the key names the property being read from `source`, it never introduces the name `alpha` into scope");
+	}
+
+	[Test]
+	[Description("The alias a destructuring pattern binds IS in scope — `const { alpha: beta } = source` makes `beta()` legitimate")]
+	public void Lint_ShouldNotEmitError_WhenHandlerCallsADestructuringAlias() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { const source = {}; const { alpha: beta } = source; " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { beta(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "the alias is the actual binding position and must resolve");
+	}
+
+	[TestCase("alert")]
+	[TestCase("require")]
+	[TestCase("queueMicrotask")]
+	[TestCase("btoa")]
+	[TestCase("atob")]
+	[TestCase("structuredClone")]
+	[TestCase("confirm")]
+	[TestCase("define")]
+	[TestCase("setTimeout")]
+	[TestCase("parseInt")]
+	[Description("A callable supplied by the browser, the AMD loader or the language itself is never reported — the rule blocks the write, so a name missing from the catalog would reject a page that runs correctly")]
+	public void Lint_ShouldNotEmitError_WhenHandlerCallsARuntimeGlobal(string globalName) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { " + globalName + "(\"x\"); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: $"`{globalName}` is provided by the page runtime and calling it is legitimate");
+	}
+
+	[Test]
+	[Description("Repeated calls to the same undeclared name collapse into one finding plus one omitted-count summary — an LLM-truncated body used to produce one finding per occurrence and a multi-megabyte error string")]
+	public void Lint_ShouldDeduplicateRepeatedUndefinedCalls() {
+		// Arrange
+		string repeated = string.Concat(Enumerable.Repeat("brokenHelper(); ", 5000));
+		string body =
+			"define(\"X\", [], function() { return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { " + repeated + "return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		List<PageBodyLintFinding> findings = LintBody(body)
+			.Where(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall).ToList();
+
+		// Assert
+		findings.Should().HaveCount(2,
+			because: "one finding names the callee, the second states how many call sites were left out");
+		findings[0].Message.Should().Contain("brokenHelper");
+		findings[1].Message.Should().Contain("4999 further call site",
+			because: "the omitted count must be stated rather than silently dropped");
+		PageBodyAstLinter.FormatErrors(findings).Length.Should().BeLessThan(20_000,
+			because: "the agent-facing error string has to stay usable regardless of how broken the body is");
+	}
+
+	[Test]
+	[Description("Distinct undeclared names are capped and the summary reports how many were omitted, so a body with hundreds of broken calls still yields a bounded response")]
+	public void Lint_ShouldCapDistinctUndefinedCallNames() {
+		// Arrange
+		int total = PageBodyAstLinter.MaxUndefinedSectionCallNames * 3;
+		string manyNames = string.Concat(Enumerable.Range(0, total).Select(i => $"broken{i}(); "));
+		string body =
+			"define(\"X\", [], function() { return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { " + manyNames + "return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		List<PageBodyLintFinding> findings = LintBody(body)
+			.Where(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall).ToList();
+
+		// Assert
+		findings.Should().HaveCount(PageBodyAstLinter.MaxUndefinedSectionCallNames + 1,
+			because: "the cap keeps the listed names bounded and adds exactly one summary finding");
+		findings[^1].Message.Should().Contain(
+			$"{total - PageBodyAstLinter.MaxUndefinedSectionCallNames} further undeclared name(s)",
+			because: "the operator has to know the report is partial and by how much");
+	}
+
+	[TestCase("try { } catch (handleIt) { handleIt(); }", TestName = "catch clause parameter")]
+	[TestCase("for (const step of []) { step(); }", TestName = "for-of loop head")]
+	[TestCase("if (true) { var later = function() { return 1; }; } later();", TestName = "var hoisted out of a block")]
+	[TestCase("helperBelow(); function helperBelow() { return 1; }", TestName = "function declared after the call")]
+	[Description("Every binding form a handler body may legitimately use resolves against the scope chain — a false positive here blocks a page that runs correctly")]
+	public void Lint_ShouldNotEmitError_ForLegitimateBindingForms(string handlerBody) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { " + handlerBody + " return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "the callee is bound by the handler body itself");
+	}
 
 	[Test]
 	[Description("Validator declaration with `return null` inside the inner async function is allowed — null signals \"no error\" per the validator contract and must NOT be flagged as validator-bad-return-literal")]

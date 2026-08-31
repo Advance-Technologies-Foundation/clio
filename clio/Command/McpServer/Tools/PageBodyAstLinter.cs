@@ -226,93 +226,331 @@ internal static class PageBodyAstLinter {
 
 	private const string FetchGlobalName = "fetch";
 
-	private static readonly HashSet<string> KnownJavaScriptGlobals = new(StringComparer.Ordinal) {
-		"Array", "Boolean", "BigInt", "Date", "Error", "EvalError", "Function", "Infinity", "Intl", "JSON",
-		"Map", "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError", "ReferenceError",
-		"Reflect", "RegExp", "Set", "String", "Symbol", "SyntaxError", "TypeError", "URIError", "URL",
-		"WeakMap", "WeakSet", "console", "crt", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent",
-		"Terrasoft", "XMLHttpRequest", "document", FetchGlobalName, "globalThis", "isFinite", "isNaN", "parseFloat", "parseInt", "sdk", "setTimeout", "setInterval",
-		"clearTimeout", "clearInterval", "window", "undefined"
-	};
+	// The blocking `undefined-section-call` rule may only reject a bare call when the callee is
+	// genuinely absent, so the catalog of names the runtime supplies has to be explicit and
+	// complete rather than a short sample. It is split by the runtime that provides each name, so
+	// a future addition lands in the right group and stays reviewable. A name missing from here
+	// turns a working page into a rejected write, which is why the groups err on the wide side.
+
+	// ECMAScript: the global object's own properties per the language specification.
+	private static readonly string[] EcmaScriptGlobals = [
+		"AggregateError", "Array", "ArrayBuffer", "Atomics", "BigInt", "BigInt64Array", "BigUint64Array",
+		"Boolean", "DataView", "Date", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent",
+		"Error", "escape", "eval", "EvalError", "FinalizationRegistry", "Float32Array", "Float64Array",
+		"Function", "globalThis", "Infinity", "Int16Array", "Int32Array", "Int8Array", "Intl", "isFinite",
+		"isNaN", "JSON", "Map", "Math", "NaN", "Number", "Object", "parseFloat", "parseInt", "Promise",
+		"Proxy", "RangeError", "ReferenceError", "Reflect", "RegExp", "Set", "SharedArrayBuffer", "String",
+		"Symbol", "SyntaxError", "TypeError", "Uint16Array", "Uint32Array", "Uint8Array", "Uint8ClampedArray",
+		"undefined", "unescape", "URIError", "WeakMap", "WeakRef", "WeakSet"
+	];
+
+	// Browser: names a Freedom UI page runs against in the host document. Kept to what page code
+	// realistically calls or reads; the probe that rejected `alert`, `btoa` and `queueMicrotask`
+	// was pointing at exactly this gap.
+	private static readonly string[] BrowserGlobals = [
+		"AbortController", "AbortSignal", "alert", "atob", "Audio", "Blob", "btoa", "cancelAnimationFrame",
+		"cancelIdleCallback", "clearInterval", "clearTimeout", "confirm", "console", "crypto", "CSS",
+		"CustomEvent", "document", "DOMParser", "Element", "Event", "EventSource", "EventTarget", "File",
+		"FileReader", "FormData", "getComputedStyle", FetchGlobalName, "Headers", "history", "HTMLElement",
+		"Image", "IntersectionObserver", "localStorage", "location", "matchMedia", "MutationObserver",
+		"navigator", "Node", "Notification", "parent", "performance", "prompt", "queueMicrotask",
+		"requestAnimationFrame", "requestIdleCallback", "Request", "ResizeObserver", "Response", "screen",
+		"self", "sessionStorage", "setInterval", "setTimeout", "structuredClone", "TextDecoder",
+		"TextEncoder", "top", "URL", "URLSearchParams", "WebSocket", "window", "Worker", "XMLHttpRequest"
+	];
+
+	// AMD: a Freedom UI page body is an AMD module, so the loader's own names are always in scope.
+	private static readonly string[] AmdGlobals = ["define", "require", "requirejs"];
+
+	// Creatio: the platform namespaces a page body may reach without declaring them.
+	private static readonly string[] CreatioGlobals = ["BPMSoft", "crt", "Ext", "sdk", "Terrasoft"];
+
+	internal static readonly IReadOnlyCollection<string> KnownRuntimeGlobals =
+		new HashSet<string>(
+			EcmaScriptGlobals.Concat(BrowserGlobals).Concat(AmdGlobals).Concat(CreatioGlobals),
+			StringComparer.Ordinal);
+
+	// One finding per distinct callee name, and at most this many names. An LLM-truncated body can
+	// repeat the same broken call thousands of times; without a bound, FormatErrors concatenated
+	// every occurrence into a multi-megabyte string that no MCP client can use. Names past the cap
+	// are replaced by a single summary finding that states how many were left out, so the response
+	// stays bounded without pretending the rest do not exist.
+	internal const int MaxUndefinedSectionCallNames = 20;
+
+	/// <summary>
+	/// A lexical scope and its chain of enclosing scopes. Resolution walks outwards, so a name
+	/// declared in a sibling or nested function is invisible here - which is the whole point: a
+	/// single flat name set made the rule accept `missingHelper()` as soon as ANY unrelated
+	/// function in the body happened to declare that name.
+	/// </summary>
+	private sealed class LexicalScope {
+
+		private readonly HashSet<string> _names = new(StringComparer.Ordinal);
+		private readonly LexicalScope _parent;
+
+		public LexicalScope(LexicalScope parent){
+			_parent = parent;
+		}
+
+		public void Declare(string name){
+			if (!string.IsNullOrEmpty(name)) {
+				_names.Add(name);
+			}
+		}
+
+		public bool IsDeclared(string name){
+			for (LexicalScope scope = this; scope is not null; scope = scope._parent) {
+				if (scope._names.Contains(name)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+	}
+
+	/// <summary>
+	/// Accumulates the rule's findings so the dedupe and the cap apply across the whole walk.
+	/// </summary>
+	private sealed class UndefinedCallBudget {
+
+		private readonly HashSet<string> _omitted = new(StringComparer.Ordinal);
+		private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
+
+		public int OmittedNameCount => _omitted.Count;
+
+		public int OmittedOccurrenceCount { get; private set; }
+
+		public int ReportedNameCount => _reported.Count;
+
+		/// <summary>Returns true when this occurrence must become a finding of its own.</summary>
+		public bool ShouldReport(string name){
+			if (_reported.Contains(name)) {
+				OmittedOccurrenceCount++;
+				return false;
+			}
+			if (_reported.Count >= MaxUndefinedSectionCallNames) {
+				_omitted.Add(name);
+				OmittedOccurrenceCount++;
+				return false;
+			}
+			_reported.Add(name);
+			return true;
+		}
+
+	}
 
 	private static void CheckUndefinedSectionCalls(Script ast, List<PageBodyLintFinding> findings) {
-		HashSet<string> declared = CollectDeclaredNames(ast);
-		ScanForUndefinedSectionCalls(ast, declared, insideSection: false, depth: 0, findings);
+		LexicalScope scriptScope = new(null);
+		foreach (string global in KnownRuntimeGlobals) {
+			scriptScope.Declare(global);
+		}
+		DeclareHoistedNames(ast, scriptScope, depth: 0);
+		DeclareBlockNames(ast.Body, scriptScope, depth: 0);
+		UndefinedCallBudget budget = new();
+		PageBodyLintFinding? lastOmitted = null;
+		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, findings, budget,
+			ref lastOmitted);
+		if (budget.OmittedOccurrenceCount > 0 && lastOmitted.HasValue) {
+			findings.Add(BuildOmittedSummary(lastOmitted.Value, budget));
+		}
 	}
 
-	private static HashSet<string> CollectDeclaredNames(Node root) {
-		var declared = new HashSet<string>(KnownJavaScriptGlobals, StringComparer.Ordinal);
-		CollectDeclaredNames(root, declared, depth: 0);
-		return declared;
+	private static PageBodyLintFinding BuildOmittedSummary(
+		PageBodyLintFinding lastOmitted, UndefinedCallBudget budget) {
+		string namesPart = budget.OmittedNameCount > 0
+			? $"{budget.OmittedNameCount} further undeclared name(s) past the first "
+				+ $"{MaxUndefinedSectionCallNames}, and "
+			: string.Empty;
+		return new PageBodyLintFinding(
+			Rule: RuleUndefinedSectionCall,
+			Severity: LintSeverity.Error,
+			Line: lastOmitted.Line,
+			Column: lastOmitted.Column,
+			Message: $"{namesPart}{budget.OmittedOccurrenceCount} further call site(s) of undeclared "
+				+ $"identifiers were omitted from this report; {budget.ReportedNameCount} distinct name(s) "
+				+ "are listed above. Fix the listed ones and re-run validate-page to see the rest.");
 	}
 
-	private static void CollectDeclaredNames(Node node, HashSet<string> declared, int depth) {
+	/// <summary>
+	/// Declares everything hoisted into one function-level scope: `var` names and function
+	/// declarations, found through nested blocks but NOT through nested functions, whose own
+	/// declarations belong to their own scope.
+	/// </summary>
+	private static void DeclareHoistedNames(Node node, LexicalScope scope, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		foreach (Node child in node.ChildNodes) {
+			switch (child) {
+				case VariableDeclaration {Kind: VariableDeclarationKind.Var} varDeclaration:
+					foreach (VariableDeclarator declarator in varDeclaration.Declarations) {
+						DeclareBindings(declarator.Id, scope, depth + 1);
+					}
+					break;
+				case FunctionDeclaration {Id: not null} functionDeclaration:
+					scope.Declare(functionDeclaration.Id.Name);
+					//A function declaration opens its own scope; nothing inside it hoists to here.
+					continue;
+				case IFunction:
+					//Same for a function expression or an arrow: its bindings stay inside it.
+					continue;
+			}
+			DeclareHoistedNames(child, scope, depth + 1);
+		}
+	}
+
+	/// <summary>
+	/// Declares the block-scoped names of one statement list: `let`, `const`, classes, and the
+	/// function declarations that are direct statements of this block.
+	/// </summary>
+	private static void DeclareBlockNames(in NodeList<Statement> statements, LexicalScope scope, int depth) {
+		foreach (Statement statement in statements) {
+			switch (statement) {
+				case VariableDeclaration {
+						Kind: VariableDeclarationKind.Let or VariableDeclarationKind.Const
+							or VariableDeclarationKind.Using or VariableDeclarationKind.AwaitUsing
+					} blockDeclaration:
+					foreach (VariableDeclarator declarator in blockDeclaration.Declarations) {
+						DeclareBindings(declarator.Id, scope, depth + 1);
+					}
+					break;
+				case FunctionDeclaration {Id: not null} functionDeclaration:
+					scope.Declare(functionDeclaration.Id.Name);
+					break;
+				case ClassDeclaration {Id: not null} classDeclaration:
+					scope.Declare(classDeclaration.Id.Name);
+					break;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Declares the names a binding target introduces - and only those. A destructuring key names
+	/// the property being read, never a new binding, so `const {alpha: beta} = source` declares
+	/// `beta` alone; counting `alpha` as declared is what let a later `alpha()` through unchecked.
+	/// </summary>
+	private static void DeclareBindings(Node node, LexicalScope scope, int depth) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		switch (node) {
-			case VariableDeclarator variable when variable.Id is not null:
-				CollectBindingNames(variable.Id, declared, depth + 1);
+			case Identifier identifier:
+				scope.Declare(identifier.Name);
 				break;
-			case FunctionDeclaration function when function.Id is not null:
-				CollectBindingNames(function.Id, declared, depth + 1);
-				CollectFunctionParameters(function, declared, depth + 1);
+			case ObjectPattern objectPattern:
+				foreach (Node property in objectPattern.Properties) {
+					//Property.Value is the binding target; a RestElement carries its own.
+					DeclareBindings(property is Property {Value: not null} keyed ? keyed.Value : property,
+						scope, depth + 1);
+				}
 				break;
-			case FunctionExpression function:
-				CollectFunctionParameters(function, declared, depth + 1);
+			case ArrayPattern arrayPattern:
+				foreach (Node element in arrayPattern.Elements) {
+					DeclareBindings(element, scope, depth + 1);
+				}
 				break;
-			case ArrowFunctionExpression function:
-				CollectFunctionParameters(function, declared, depth + 1);
+			case AssignmentPattern assignmentPattern:
+				DeclareBindings(assignmentPattern.Left, scope, depth + 1);
 				break;
-		}
-		foreach (Node child in node.ChildNodes) {
-			CollectDeclaredNames(child, declared, depth + 1);
+			case RestElement restElement:
+				DeclareBindings(restElement.Argument, scope, depth + 1);
+				break;
 		}
 	}
 
-	private static void CollectFunctionParameters(IFunction function, HashSet<string> declared, int depth) {
-		foreach (Node parameter in function.Params) {
-			CollectBindingNames(parameter, declared, depth + 1);
+	/// <summary>
+	/// Opens the scope a node introduces, if any, and returns the scope its children see.
+	/// </summary>
+	private static LexicalScope OpenScope(Node node, LexicalScope scope, int depth) {
+		switch (node) {
+			case IFunction function: {
+				LexicalScope functionScope = new(scope);
+				//A named function expression can call itself by that name from inside its body.
+				if (function.Id is not null) {
+					functionScope.Declare(function.Id.Name);
+				}
+				foreach (Node parameter in function.Params) {
+					DeclareBindings(parameter, functionScope, depth + 1);
+				}
+				DeclareHoistedNames(function.Body, functionScope, depth + 1);
+				return functionScope;
+			}
+			case BlockStatement block: {
+				LexicalScope blockScope = new(scope);
+				DeclareBlockNames(block.Body, blockScope, depth + 1);
+				return blockScope;
+			}
+			case SwitchStatement switchStatement: {
+				//Every case shares one block scope, so a `let` in case A is visible in case B.
+				LexicalScope switchScope = new(scope);
+				foreach (SwitchCase switchCase in switchStatement.Cases) {
+					DeclareBlockNames(switchCase.Consequent, switchScope, depth + 1);
+				}
+				return switchScope;
+			}
+			case CatchClause catchClause: {
+				LexicalScope catchScope = new(scope);
+				DeclareBindings(catchClause.Param, catchScope, depth + 1);
+				return catchScope;
+			}
+			case ForStatement {Init: VariableDeclaration forInit}:
+				return OpenLoopScope(forInit, scope, depth);
+			case ForInStatement {Left: VariableDeclaration forInLeft}:
+				return OpenLoopScope(forInLeft, scope, depth);
+			case ForOfStatement {Left: VariableDeclaration forOfLeft}:
+				return OpenLoopScope(forOfLeft, scope, depth);
+			case ClassExpression {Id: not null} classExpression: {
+				LexicalScope classScope = new(scope);
+				classScope.Declare(classExpression.Id.Name);
+				return classScope;
+			}
+			default:
+				return scope;
 		}
 	}
 
-	private static void CollectBindingNames(Node node, HashSet<string> declared, int depth) {
-		if (node is null || depth > MaxAstDepth) {
-			return;
+	private static LexicalScope OpenLoopScope(VariableDeclaration head, LexicalScope scope, int depth) {
+		LexicalScope loopScope = new(scope);
+		foreach (VariableDeclarator declarator in head.Declarations) {
+			DeclareBindings(declarator.Id, loopScope, depth + 1);
 		}
-		if (node is Identifier identifier) {
-			declared.Add(identifier.Name);
-			return;
-		}
-		foreach (Node child in node.ChildNodes) {
-			CollectBindingNames(child, declared, depth + 1);
-		}
+		return loopScope;
 	}
 
 	private static void ScanForUndefinedSectionCalls(
 		Node node,
-		HashSet<string> declared,
+		LexicalScope scope,
 		bool insideSection,
 		int depth,
-		List<PageBodyLintFinding> findings) {
+		List<PageBodyLintFinding> findings,
+		UndefinedCallBudget budget,
+		ref PageBodyLintFinding? lastOmitted) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
+		LexicalScope childScope = OpenScope(node, scope, depth);
 		bool childInsideSection = insideSection;
 		if (!insideSection && node is Property property && TryGetStaticPropertyName(property) is string key) {
 			childInsideSection = key is "handlers" or "converters" or "validators";
 		}
-		if (insideSection && node is CallExpression { Callee: Identifier identifier }
-			&& !declared.Contains(identifier.Name)) {
-			findings.Add(new PageBodyLintFinding(
+		if (insideSection && node is CallExpression {Callee: Identifier identifier}
+			&& !childScope.IsDeclared(identifier.Name)) {
+			PageBodyLintFinding finding = new(
 				Rule: RuleUndefinedSectionCall,
 				Severity: LintSeverity.Error,
 				Line: identifier.Location.Start.Line,
 				Column: identifier.Location.Start.Column + 1,
-				Message: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in this page body and is not a known JavaScript or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement."));
+				Message: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement.");
+			if (budget.ShouldReport(identifier.Name)) {
+				findings.Add(finding);
+			} else {
+				lastOmitted = finding;
+			}
 		}
 		foreach (Node child in node.ChildNodes) {
-			ScanForUndefinedSectionCalls(child, declared, childInsideSection, depth + 1, findings);
+			ScanForUndefinedSectionCalls(child, childScope, childInsideSection, depth + 1, findings, budget,
+				ref lastOmitted);
 		}
 	}
 
