@@ -3618,7 +3618,11 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject lc = Element(guide, "FieldB").MobileValues!.AsObject()["layoutConfig"]!.AsObject();
 		lc.ContainsKey("adaptive").Should().BeFalse("a 1-column grid needs no adaptive");
 		lc["column"]!.GetValue<int>().Should().Be(1, "the carried base placement is kept as-is");
-		lc["row"]!.GetValue<int>().Should().Be(2);
+		lc["row"]!.GetValue<int>().Should().Be(2, "the web page's own row is carried verbatim");
+		lc.Select(pair => pair.Key).Should().BeEquivalentTo(["column", "row", "colSpan", "rowSpan"],
+			because: "a child of a single-column grid is touched by none of the placement passes and keeps the web "
+				+ "object — so completion has to happen for the carry path too, or the mobile designer cannot open "
+				+ "the converted page");
 	}
 
 	[Test]
@@ -4324,7 +4328,9 @@ public sealed class WebToMobileConversionServiceTests {
 		IndexOfMobile(guide, main).Should().Be(tabAt + 1);
 		IndexOfMobile(guide, area).Should().Be(tabAt + 2);
 		Synthesized(guide, area).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
-			because: "the Area is the only child of the tab body, so it needs no explicit placement");
+			because: "an ABSENT placement is fine — measured on the stand, the mobile designer opens a page whose "
+				+ "grid child carries no layoutConfig; it is a PARTIAL one it refuses. See "
+				+ "Analyze_ShouldNotInventAPlacement_ForAnElementThatCarriesNone for that boundary");
 
 		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
 		group.AreaName.Should().Be(area);
@@ -7600,6 +7606,23 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static JsonNode LayoutConfigOf(ElementMapEntry entry) => entry?.MobileValues?["layoutConfig"];
 
+	/// <summary>
+	/// Asserts one placement cell without pinning key order: the row and column the converter computed, plus the
+	/// spans it always writes. Key order is a serializer artifact nothing reads, so a ToJsonString comparison
+	/// would fail on a reordering that changes no behaviour.
+	/// </summary>
+	private static void ShouldBeCell(JsonNode placement, int row, int column, string because) {
+		placement.Should().NotBeNull(because: because);
+		var cell = (JsonObject)placement!;
+		cell.Select(pair => pair.Key).Should().BeEquivalentTo(["row", "column", "colSpan", "rowSpan"],
+			because: "the mobile designer refuses to open a page whose placement omits any of the four keys");
+		cell["row"]!.GetValue<int>().Should().Be(row, because: because);
+		cell["column"]!.GetValue<int>().Should().Be(column, because: because);
+		cell["colSpan"]!.GetValue<int>().Should().Be(1, because: "the converter never spans a cell");
+		cell["rowSpan"]!.GetValue<int>().Should().Be(1, because: "the converter never spans a cell");
+	}
+
+
 	/// <summary>A page with siblings above the card-content wrapper and, optionally, below it.</summary>
 	private static PageBundleInfo WrapperBundle(int aboveCount, int belowCount = 0) {
 		string above = string.Concat(Enumerable.Range(1, aboveCount).Select(i =>
@@ -7656,17 +7679,17 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
 
 		// Assert
-		LayoutConfigOf(Element(guide, "Top1"))!.ToJsonString().Should().Be("""{"row":1,"column":1}""",
+		ShouldBeCell(LayoutConfigOf(Element(guide, "Top1")), row: 1, column: 1,
 			because: "the first sibling takes the anchor's own template row, in the single column mobile stacks in");
-		LayoutConfigOf(Element(guide, "Top2"))!.ToJsonString().Should().Be("""{"row":2,"column":1}""",
+		ShouldBeCell(LayoutConfigOf(Element(guide, "Top2")), row: 2, column: 1,
 			because: "siblings stack downward in web order");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(3,
 			because: "the anchor moves below everything placed above it");
 	}
 
 	[Test]
-	[Description("colSpan / rowSpan are never written onto a sibling — the mobile runtime does not support them. The anchor keeps whatever its own template declared, with only the row moved.")]
-	public void Analyze_ShouldWriteOnlyRowAndColumn_OnASibling() {
+	[Description("A sibling's layoutConfig always carries all four keys: the Freedom UI Mobile DESIGNER fails to open a page whose layoutConfig omits colSpan / rowSpan, even though the runtime renders without them — so a partial placement is a broken page at design time, not a smaller one. The anchor keeps whatever its own template declared, with only the row moved.")]
+	public void Analyze_ShouldWriteAllFourPlacementKeys_OnASibling() {
 		// Arrange
 		PageBundleInfo bundle = WrapperBundle(aboveCount: 1);
 
@@ -7675,8 +7698,9 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		((JsonObject)LayoutConfigOf(Element(guide, "Top1"))!).Select(p => p.Key).Should()
-			.BeEquivalentTo(["row", "column"],
-				because: "a span the runtime ignores would be noise in every converted body");
+			.BeEquivalentTo(["row", "column", "colSpan", "rowSpan"],
+				because: "the mobile designer refuses to open a page whose layoutConfig omits the spans, so every "
+					+ "key is written even though only row and column are computed");
 		((JsonObject)LayoutConfigOf(AnchorMerge(guide, "Tabs"))!).Select(p => p.Key).Should()
 			.BeEquivalentTo(["column", "colSpan", "row", "rowSpan"],
 				because: "the anchor's placement is the template's own, carried verbatim apart from the row");
@@ -7731,9 +7755,9 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the anchor's breakpoints are the template's own, carried verbatim apart from the row");
 
 		JsonNode sibling = LayoutConfigOf(Element(guide, "Top1"));
-		sibling!["adaptive"]!["small"]!.ToJsonString().Should().Be("""{"row":1,"column":1}""",
+		ShouldBeCell(sibling!["adaptive"]!["small"], row: 1, column: 1,
 			because: "the sibling takes the row the anchor vacated at that breakpoint, in column 1");
-		sibling["adaptive"]!["large"]!.ToJsonString().Should().Be("""{"row":2,"column":1}""",
+		ShouldBeCell(sibling["adaptive"]!["large"], row: 2, column: 1,
 			because: "a breakpoint whose anchor started lower keeps the sibling lower with it");
 		sibling["row"].Should().BeNull(
 			because: "mirroring the anchor's shape keeps the runtime resolving both the same way");
@@ -7855,9 +7879,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
 
 		// Assert
-		LayoutConfigOf(Element(guide, "Bottom1"))!.ToJsonString().Should().Be("""{"row":2,"column":1}""",
+		ShouldBeCell(LayoutConfigOf(Element(guide, "Bottom1")), row: 2, column: 1,
 			because: "the first sibling below the anchor takes the row right after the anchor's own");
-		LayoutConfigOf(Element(guide, "Bottom2"))!.ToJsonString().Should().Be("""{"row":3,"column":1}""",
+		ShouldBeCell(LayoutConfigOf(Element(guide, "Bottom2")), row: 3, column: 1,
 			because: "each further sibling below takes the next row, in web order");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs")).Should().BeNull(
 			because: "nothing is above the anchor, so its own row is still free and must not be moved");
@@ -7888,7 +7912,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode sibling = LayoutConfigOf(Element(guide, "Top1"));
 		sibling!["adaptive"].Should().BeNull(
 			because: "positional placement owns this element, and it is a single column whatever the web grid was");
-		sibling.ToJsonString().Should().Be("""{"row":3,"column":1}""",
+		ShouldBeCell(sibling, row: 3, column: 1,
 			because: "the anchor's own template row is the origin — row 1 would leave rows 2-3 empty above it");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(4,
 			because: "the anchor moves by the number of siblings ACTUALLY placed, which is exactly the one above it");
@@ -7907,7 +7931,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle, mixed);
 
 		// Assert
-		LayoutConfigOf(Element(guide, "Top1"))!.ToJsonString().Should().Be("""{"row":1,"column":1}""",
+		ShouldBeCell(LayoutConfigOf(Element(guide, "Top1")), row: 1, column: 1,
 			because: "the only row the anchor declares is the flat one, so that is the shape the sibling gets");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(2,
 			because: "the flat row is the one that moves");
@@ -7969,6 +7993,139 @@ public sealed class WebToMobileConversionServiceTests {
 			s => s.Contains("operation=merge") && s.Contains("mobileValues"),
 			because: "the merge clause is the only place that tells the caller a merge entry can carry values at "
 				+ "all — the paste-verbatim step right after it is scoped to inserts");
+	}
+
+	#endregion
+
+
+	#region layoutConfig completion (ENG-96114 — the mobile designer rejects a partial placement)
+
+	/// <summary>Every layoutConfig anywhere in an entry's mobileValues, however deeply nested.</summary>
+	private static List<JsonObject> AllPlacements(MobilePageConversionGuide guide) {
+		var found = new List<JsonObject>();
+		void Walk(JsonNode node) {
+			switch (node) {
+				case JsonObject obj:
+					foreach (KeyValuePair<string, JsonNode> pair in obj) {
+						if (pair.Key == "layoutConfig" && pair.Value is JsonObject placement) {
+							found.Add(placement);
+						}
+						if (pair.Value is not null) {
+							Walk(pair.Value);
+						}
+					}
+					break;
+				case JsonArray array:
+					foreach (JsonNode item in array) {
+						if (item is not null) {
+							Walk(item);
+						}
+					}
+					break;
+			}
+		}
+		foreach (ElementMapEntry entry in guide.ElementMap) {
+			if (entry.MobileValues is not null) {
+				Walk(entry.MobileValues);
+			}
+		}
+		return found;
+	}
+
+	[Test]
+	[Description("The invariant across the whole guide: no emitted layoutConfig carries fewer than the four keys the mobile designer requires — whichever pass wrote it, and however deeply it is nested inside a pasted value.")]
+	public void Analyze_ShouldEmitNoPartialPlacement_AnywhereInTheGuide() {
+		// Arrange — a page that exercises several writers at once: a single-column grid whose children keep the
+		// web placement verbatim, a multi-column grid the adaptive pass owns, and a nested value.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "OneCol", "type": "crt.GridContainer", "columns": [ "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } } ] },
+			  { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldB", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
+			    { "name": "FieldC", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		List<JsonObject> placements = AllPlacements(guide);
+		placements.Should().NotBeEmpty(because: "the fixture carries placements on every field");
+		foreach (JsonObject placement in placements) {
+			if (placement["adaptive"] is JsonObject adaptive) {
+				foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive) {
+					((JsonObject)breakpoint.Value!).Select(pair => pair.Key).Should()
+						.Contain(["row", "column", "colSpan", "rowSpan"],
+							because: $"breakpoint '{breakpoint.Key}' is a placement the designer reads like any other");
+				}
+				continue;
+			}
+			placement.Select(pair => pair.Key).Should().Contain(["row", "column", "colSpan", "rowSpan"],
+				because: "the designer refuses to open a page whose layoutConfig omits any of the four keys");
+		}
+	}
+
+	[Test]
+	[Description("A layoutConfig the web page carried as something other than an object cannot be honoured as a placement — it is replaced by the default cell rather than left to keep the page unopenable.")]
+	public void Analyze_ShouldReplaceANonObjectPlacement_WithTheDefaultCell() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "FieldA", "type": "crt.Input", "layoutConfig": "unusable" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		JsonNode placement = Element(guide, "FieldA").MobileValues!["layoutConfig"];
+		placement.Should().NotBeNull(because: "the element still needs a placement the designer can read");
+		((JsonObject)placement!).Select(pair => pair.Key).Should()
+			.BeEquivalentTo(["row", "column", "colSpan", "rowSpan"],
+				because: "a scalar cannot carry a cell, so the default complete one replaces it outright");
+	}
+
+	[Test]
+	[Description("A purely per-breakpoint placement is completed inside each breakpoint and gains no competing flat placement of its own — the runtime resolves from `adaptive` when it is present.")]
+	public void Analyze_ShouldCompleteEachBreakpoint_WithoutAddingFlatKeys() {
+		// Arrange — a multi-column grid, which is what makes the adaptive pass emit a per-breakpoint placement.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "TwoCol", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "items": [
+			    { "name": "FieldA", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
+			    { "name": "FieldB", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		var placement = (JsonObject)Element(guide, "FieldA").MobileValues!["layoutConfig"]!;
+		placement["adaptive"].Should().NotBeNull(because: "a multi-column grid gets a per-breakpoint placement");
+		placement.Select(pair => pair.Key).Should().BeEquivalentTo(["adaptive"],
+			because: "a flat placement beside an adaptive one would compete with it at every breakpoint");
+		((JsonObject)placement["adaptive"]!["small"]!).Select(pair => pair.Key).Should()
+			.Contain(["row", "column", "colSpan", "rowSpan"],
+				because: "each breakpoint is itself a placement the designer must be able to read");
+	}
+
+
+	[Test]
+	[Description("The boundary the completion pass deliberately does NOT cross: an element carrying no layoutConfig keeps none. Measured on the stand — the Freedom UI Mobile designer opens a page whose crt.GridContainer child has no layoutConfig at all, and refuses one whose layoutConfig is PARTIAL. So completion applies to a placement that exists; inventing one for every element would place elements the converter was never asked to position (a flex child, the single Area of a tab body) and change layouts that are correct today.")]
+	public void Analyze_ShouldNotInventAPlacement_ForAnElementThatCarriesNone() {
+		// Arrange — neither element declares a placement on the web side.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "FieldA", "type": "crt.Input" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		Element(guide, "FieldA").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+			because: "the web page positioned nothing here, and an absent placement is one the designer accepts");
+		Element(guide, "Box").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+			because: "the container is in the same position — the pass completes placements, it does not create them");
 	}
 
 	#endregion
