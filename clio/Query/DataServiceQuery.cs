@@ -171,9 +171,10 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	// OData exports, and classifying with a throwaway tree and then re-parsing the same body to
 	// indent it doubled the full-tree parse and its transient allocation on every successful call.
 	// The document is handed back to the caller, which serializes that same document.
-	private static bool TryClassifyResponse(string response, out JsonDocument parsed, out string error) {
+	private static bool TryClassifyResponse(string response, out JsonDocument parsed,
+		out ServiceResponseClassification classification) {
 		parsed = null;
-		error = null;
+		classification = default;
 		if (string.IsNullOrWhiteSpace(response)) {
 			return true;
 		}
@@ -186,13 +187,14 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			//saved the page to --destination and exited 0, which is the very behaviour this contract
 			//forbids. Fail closed instead.
 			if (TryGetErrorStatus(response, out int statusCode)) {
-				error = $"HTTP status {statusCode}";
+				classification = new ServiceResponseClassification(
+					ServiceResponseFailure.HttpErrorStatus, statusCode);
 			}
 			else if (CreatioResponseError.IsKnownErrorPage(response) || MatchesErrorPageMarkers(response)) {
-				error = "HTTP status unavailable from the response body";
+				classification = new ServiceResponseClassification(ServiceResponseFailure.KnownErrorPage);
 			}
 			else {
-				error = "the response is an HTML page, not a service payload";
+				classification = new ServiceResponseClassification(ServiceResponseFailure.NotAServicePayload);
 			}
 			return false;
 		}
@@ -205,14 +207,33 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			return true;
 		}
 
-		if (!CreatioResponseError.TryDetect(parsed.RootElement, out string detected)) {
+		//The detected text is deliberately discarded: it is remote-authored prose and must not be
+		//logged. Only the fact that the service reported a failure is kept.
+		if (!CreatioResponseError.TryDetect(parsed.RootElement, out string _)) {
 			return true;
 		}
-		error = detected;
+		classification = new ServiceResponseClassification(ServiceResponseFailure.ReportedFailure);
 		parsed.Dispose();
 		parsed = null;
 		return false;
 	}
+
+	/// <summary>
+	/// Why a response was rejected, decided locally. The remote body is never part of it: a service or
+	/// a proxy can put personal data, opaque tokens, newline/ANSI control sequences or prompt-like text
+	/// into <c>Exception</c>, <c>errorInfo.message</c> or an OData <c>error.message</c>, and any of that
+	/// would land verbatim in a terminal or a CI log.
+	/// </summary>
+	private enum ServiceResponseFailure {
+		None,
+		HttpErrorStatus,
+		KnownErrorPage,
+		NotAServicePayload,
+		ReportedFailure
+	}
+
+	private readonly record struct ServiceResponseClassification(
+		ServiceResponseFailure Failure, int StatusCode = 0);
 
 	// Indents the already-parsed document. UnsafeRelaxedJsonEscaping keeps the output byte-identical
 	// in intent to what Newtonsoft wrote before: without it System.Text.Json escapes `+`, `<`, `>`
@@ -286,9 +307,16 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		}
 	}
 
-	private void WriteServiceError(string response, string reason) {
-		Logger.WriteError($"Service request failed ({reason}). Response was not saved. "
-			+ CreatioResponseError.Truncate(response?.Trim()));
+	private void WriteServiceError(ServiceResponseClassification classification) {
+		string reason = classification.Failure switch {
+			ServiceResponseFailure.HttpErrorStatus => $"HTTP status {classification.StatusCode}",
+			ServiceResponseFailure.KnownErrorPage => "the response is an error page and carries no HTTP status",
+			ServiceResponseFailure.NotAServicePayload => "the response is an HTML page, not a service payload",
+			ServiceResponseFailure.ReportedFailure => "the service reported the request as failed",
+			var _ => "the response could not be classified as a service payload"
+		};
+		//No response preview: see ServiceResponseFailure for why nothing remote-authored is logged.
+		Logger.WriteError($"Service request failed ({reason}). Response was not saved.");
 	}
 
 	#endregion
@@ -297,8 +325,16 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	protected virtual string BuildUrl(T options) => ServiceUrlBuilderInstance.Build(NormalizeServicePath(options.ServicePath));
 
-	protected string ExecuteServiceRequest(string url, string requestData, string resultFileName = null,
-		string httpMethod = ""){
+	/// <summary>
+	/// The outcome of one service call. A nullable body cannot carry this: a no-content GET, POST or
+	/// DELETE legitimately answers with an empty body, and <see cref="TryClassifyResponse"/> accepts
+	/// that as success - so returning the body alone made a successful empty response
+	/// indistinguishable from a classified failure, and such a GET exited 1.
+	/// </summary>
+	protected readonly record struct ServiceRequestOutcome(bool Succeeded, string ResponseBody);
+
+	protected ServiceRequestOutcome ExecuteServiceRequest(string url, string requestData,
+		string resultFileName = null, string httpMethod = ""){
 		string normalizedMethod = string.IsNullOrWhiteSpace(httpMethod)
 			? "POST"
 			: httpMethod.ToUpperInvariant();
@@ -310,9 +346,10 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
 
-		if (!TryClassifyResponse(jsonResult, out JsonDocument parsedResult, out string failureReason)) {
-			WriteServiceError(jsonResult, failureReason);
-			return null;
+		if (!TryClassifyResponse(jsonResult, out JsonDocument parsedResult,
+			out ServiceResponseClassification classification)) {
+			WriteServiceError(classification);
+			return new ServiceRequestOutcome(Succeeded: false, ResponseBody: jsonResult);
 		}
 
 		using (parsedResult) {
@@ -320,7 +357,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			//Nothing consumes the indented text when the command is silent and writes no file, so the
 			//serialization is skipped entirely rather than produced and discarded.
 			if (!hasDestination && IsSilent) {
-				return jsonResult;
+				return new ServiceRequestOutcome(Succeeded: true, ResponseBody: jsonResult);
 			}
 
 			string beautifiedJson = parsedResult is null ? jsonResult : Beautify(parsedResult);
@@ -337,7 +374,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			}
 		}
 
-		return jsonResult;
+		return new ServiceRequestOutcome(Succeeded: true, ResponseBody: jsonResult);
 	}
 
 	protected string GetRequestData(string requestFileName){
@@ -354,21 +391,18 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	public override int Execute(T options){
 		IsSilent = options.IsSilent;
-		if (string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody)) {
-			if (ExecuteServiceRequest(BuildUrl(options), string.Empty, options.ResultFileName, options.HttpMethodName) is null) {
-				return 1;
-			}
-		}
-		else {
-			string requestData = string.IsNullOrWhiteSpace(options.RequestBody) ? GetRequestData(options.RequestFileName) : options.RequestBody;
+		string requestData = string.Empty;
+		if (!(string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody))) {
+			requestData = string.IsNullOrWhiteSpace(options.RequestBody)
+				? GetRequestData(options.RequestFileName)
+				: options.RequestBody;
 			if (options.Variables != null && options.Variables.Any()) {
 				requestData = ReplaceVariablesInJson(requestData, options.Variables);
 			}
-			if (ExecuteServiceRequest(BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName) is null) {
-				return 1;
-			}
 		}
-		return 0;
+		ServiceRequestOutcome outcome = ExecuteServiceRequest(
+			BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName);
+		return outcome.Succeeded ? 0 : 1;
 	}
 
 	#endregion

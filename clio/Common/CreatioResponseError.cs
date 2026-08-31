@@ -160,17 +160,32 @@ internal static class CreatioResponseError {
 	// success=true, or a `success` string column, is left alone.
 	private static bool TryDetectBaseResponse(JsonElement root, out string message) {
 		message = string.Empty;
-		if (HasODataPayloadMembers(root)) {
-			return false;
-		}
-		if (!(TryGetProperty(root, out JsonElement success, "success", "Success")
-			&& success.ValueKind == JsonValueKind.False)) {
-			return false;
-		}
+		//No OData-payload guard here, unlike the loose Code/Message detector: ValueResponse<T> and the
+		//insert-derived BaseResponse DTOs keep `value` or `id` on a failure, so guarding on those
+		//members let {"success":false,"errorInfo":{...},"value":null} exit 0 and be saved. An explicit
+		//boolean success:false is unambiguous and wins over any incidental payload member.
+		bool hasSuccessFlag = TryGetProperty(root, out JsonElement success, "success", "Success");
+		bool explicitFailure = hasSuccessFlag && success.ValueKind == JsonValueKind.False;
+		bool explicitSuccess = hasSuccessFlag && success.ValueKind == JsonValueKind.True;
+
 		string? detail = null;
+		bool hasPopulatedErrorInfo = false;
 		if (TryGetProperty(root, out JsonElement errorInfo, "errorInfo", "ErrorInfo")
 			&& errorInfo.ValueKind == JsonValueKind.Object) {
 			detail = First(errorInfo, "message", "Message", "errorMessage", "ErrorMessage");
+			string? errorCode = First(errorInfo, "errorCode", "ErrorCode", "code", "Code");
+			hasPopulatedErrorInfo = !string.IsNullOrWhiteSpace(detail) || !string.IsNullOrWhiteSpace(errorCode);
+			if (string.IsNullOrWhiteSpace(detail) && !string.IsNullOrWhiteSpace(errorCode)) {
+				detail = errorCode;
+			}
+		}
+
+		//A populated errorInfo is a failure on its own: a real permission rejection arrives as
+		//{"errorInfo":{"errorCode":"AccessDenied","message":"..."}} with no success member at all, and
+		//ignoring it saved that page and exited 0. A null or empty errorInfo, and an explicit
+		//success:true, are both left alone.
+		if (!explicitFailure && !(hasPopulatedErrorInfo && !explicitSuccess)) {
+			return false;
 		}
 		detail ??= First(root, "errorMessage", "ErrorMessage", "message", "Message");
 		message = string.IsNullOrWhiteSpace(detail)

@@ -292,6 +292,13 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"Package UsrThing was not found.\"}}",
 		TestName = "BaseResponse failure with errorInfo")]
 	[TestCase("{\"success\":false}", TestName = "BaseResponse failure without any detail")]
+	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"denied\"},\"value\":null}",
+		TestName = "BaseResponse failure keeping a value member")]
+	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"denied\"},"
+		+ "\"id\":\"7b3f6c1e-0e7a-4f2e-9a1f-2c0d5f4b8e11\"}",
+		TestName = "BaseResponse failure keeping an id member")]
+	[TestCase("{\"errorInfo\":{\"errorCode\":\"AccessDenied\",\"message\":\"Access to SysSchema is denied\"}}",
+		TestName = "populated errorInfo with no success member")]
 	[TestCase("<html><body>Access denied</body></html>", TestName = "HTML page carrying no status and no known marker")]
 	[TestCase("\uFEFF<!DOCTYPE html><html><head><title>500 - Internal server error.</title></head></html>",
 		TestName = "HTML page behind a byte-order mark")]
@@ -431,4 +438,81 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	}
 
 	#endregion
+
+	// A no-content response is a legitimate success for GET, POST and DELETE alike: the body carries
+	// nothing, TryClassifyResponse accepts it, and the command must exit 0. Returning the body as the
+	// success sentinel made an empty body indistinguishable from a classified failure.
+	[TestCase("GET", null, TestName = "no-content GET, null body")]
+	[TestCase("GET", "", TestName = "no-content GET, empty body")]
+	[TestCase("GET", "   ", TestName = "no-content GET, whitespace body")]
+	[TestCase("POST", null, TestName = "no-content POST")]
+	[TestCase("DELETE", null, TestName = "no-content DELETE")]
+	[Description("A response with no content exits 0 for every verb instead of being mistaken for a classified failure")]
+	public void Execute_ShouldSucceed_WhenResponseHasNoContent(string httpMethod, string responseBody) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("odata/UsrThing").Returns("http://host/0/odata/UsrThing");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(responseBody);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>()).Returns(responseBody);
+		applicationClient.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>()).Returns(responseBody);
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = logger
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/UsrThing",
+			HttpMethodName = httpMethod
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			"an empty body is a valid no-content answer, not a failure");
+		logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The failure diagnostic carries only a locally decided classification: no response body, and no remote-authored error prose that a service or proxy could use to inject text into a terminal or CI log")]
+	public void Execute_ShouldNotLogResponseBodyOrRemoteProse_WhenServiceReportsFailure() {
+		// Arrange
+		const string secret = "sk-live-0123456789abcdef";
+		string responseBody = "{\"success\":false,\"errorInfo\":{\"message\":"
+			+ $"\"denied for user@example.com token {secret}\"}}}}";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("odata/UsrThing").Returns("http://host/0/odata/UsrThing");
+		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(responseBody);
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = logger
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "odata/UsrThing",
+			HttpMethodName = "GET"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "the service reported the request as failed");
+		logger.Received(1).WriteError(
+			"Service request failed (the service reported the request as failed). Response was not saved.");
+		logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains(secret)
+			|| message.Contains("user@example.com")
+			|| message.Contains("denied")));
+	}
 }
