@@ -28,9 +28,13 @@ public sealed class ProcessPageFactsCommandTests {
 		_command = new ProcessPageFactsCommand(_pageReader, _logger);
 	}
 
+	/// <summary>The options the command handed the reader on the last call — the mapping nothing else asserts.</summary>
+	private PageGetOptions _forwardedOptions;
+
 	private void StubPage(PageGetResponse page) {
 		_pageReader.TryGetPage(Arg.Any<PageGetOptions>(), out Arg.Any<PageGetResponse>())
 			.Returns(call => {
+				_forwardedOptions = (PageGetOptions)call[0];
 				call[1] = page;
 				return page.Success;
 			});
@@ -38,6 +42,17 @@ public sealed class ProcessPageFactsCommandTests {
 
 	private static ProcessPageFactsOptions Options() => new() {
 		SchemaName = "UsrRequest_FormPage", Environment = "dev"
+	};
+
+	private static PageGetResponse WebPage(JsonArray viewConfig = null, JsonObject modelConfig = null,
+			JsonObject strings = null) => new() {
+		Success = true,
+		Page = new PageMetadataInfo { SchemaName = "UsrRequest_FormPage", SchemaType = "web" },
+		Bundle = new PageBundleInfo {
+			ViewConfig = viewConfig ?? [],
+			ModelConfig = modelConfig ?? [],
+			Resources = new PageResourceInfo { Strings = strings ?? [] }
+		}
 	};
 
 	[Test]
@@ -176,6 +191,76 @@ public sealed class ProcessPageFactsCommandTests {
 		// Assert
 		success.Should().BeFalse();
 		response.Error.Should().Contain("Classic UI page");
+	}
+
+	[Test]
+	[Description("The command forwards the CONNECTION options it was given to the page reader. Dropping any of them would read the page from whatever environment happens to be the default and still report success — a wrong-environment answer an agent then bakes verbatim into a process descriptor, with nothing failing.")]
+	public void TryGetFacts_ShouldForwardTheConnectionOptionsToThePageReader() {
+		// Arrange
+		StubPage(WebPage());
+		ProcessPageFactsOptions options = new() {
+			SchemaName = "UsrRequest_FormPage",
+			Environment = "prod",
+			Uri = "https://example.creatio.com",
+			Login = "Supervisor",
+			Password = "secret"
+		};
+
+		// Act
+		_command.TryGetFacts(options, out ProcessPageFactsResponse _);
+
+		// Assert
+		_forwardedOptions.Should().NotBeNull();
+		_forwardedOptions.SchemaName.Should().Be("UsrRequest_FormPage");
+		_forwardedOptions.Environment.Should().Be("prod");
+		_forwardedOptions.Uri.Should().Be("https://example.creatio.com");
+		_forwardedOptions.Login.Should().Be("Supervisor");
+		_forwardedOptions.Password.Should().Be("secret");
+	}
+
+	[Test]
+	[Description("The requested CULTURE reaches the projection, and the whole bundle round-trips through the real PageBundleInfo serialization: a resource-backed caption comes back localized and the data sources come back from modelConfig. Handing the projection a culture directly is already tested; nothing pinned that the command passes this one, so the documented --culture flag could become a no-op with the suite green.")]
+	public void TryGetFacts_ShouldResolveCaptionsInTheRequestedCultureAndReportDataSources() {
+		// Arrange — a resource-macro caption plus a page-scoped entity data source.
+		StubPage(WebPage(
+			viewConfig: [
+				new JsonObject {
+					["type"] = "crt.Button",
+					["name"] = "SaveButton",
+					["caption"] = "#ResourceString(SaveCaption)#",
+					["clicked"] = new JsonObject { ["request"] = "crt.SaveRecordRequest" }
+				}
+			],
+			modelConfig: new JsonObject {
+				["dataSources"] = new JsonObject {
+					["PDS"] = new JsonObject {
+						["type"] = "crt.EntityDataSource",
+						["scope"] = "page",
+						["config"] = new JsonObject { ["entitySchemaName"] = "UsrRequest" }
+					}
+				}
+			},
+			strings: new JsonObject {
+				["SaveCaption"] = new JsonObject {
+					["en-US"] = "Save",
+					["de-DE"] = "Speichern"
+				}
+			}));
+		ProcessPageFactsOptions options = new() {
+			SchemaName = "UsrRequest_FormPage", Environment = "dev", Culture = "de-DE"
+		};
+
+		// Act
+		bool success = _command.TryGetFacts(options, out ProcessPageFactsResponse response);
+
+		// Assert
+		success.Should().BeTrue();
+		response.CompletingButtonCandidates.Should().ContainSingle()
+			.Which.Caption.Should().Be("Speichern | SaveButton",
+				because: "the caption is resolved in the culture the caller asked for, not the default");
+		response.DataSources.Should().ContainSingle()
+			.Which.EntitySchemaName.Should().Be("UsrRequest",
+				because: "the data sources travel through modelConfig, a path no other test round-trips");
 	}
 
 	[Test]

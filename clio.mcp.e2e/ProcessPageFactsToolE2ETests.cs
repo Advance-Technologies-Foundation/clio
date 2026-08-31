@@ -24,10 +24,10 @@ public sealed class ProcessPageFactsToolE2ETests : McpContractFixtureBase {
 	private const string SeededPage = "ClioMcp_BlankPageToSave";
 
 	[Test]
-	[Description("Advertises get-process-page-facts in the server tool list so callers can discover it.")]
+	[Description("Exposes get-process-page-facts via the get-tool-contract compact index so callers can discover it on the lazy surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-process-page-facts tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that get-process-page-facts appears in the MCP server tool manifest.")]
+	[AllureName("get-process-page-facts is discoverable on the lazy surface")]
+	[AllureDescription("Verifies that get-process-page-facts is discoverable through the get-tool-contract compact index, the surface every process-designer tool is reached from.")]
 	public async Task ProcessPageFactsTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -35,14 +35,17 @@ public sealed class ProcessPageFactsToolE2ETests : McpContractFixtureBase {
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
-			arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
+		// Long-tail on purpose, and asserted the way this repository asserts long-tail tools: it sits with the
+		// four process-designer tools it feeds, none of which are resident either. Making THIS one resident while
+		// create-business-process stays long-tail would advertise the prerequisite and hide the operation.
 		toolNames.Should().Contain(ToolName,
-			because: "get-process-page-facts must be advertised so an agent building a Pre-configured page element "
-				+ "can discover where the page facts come from");
+			because: "get-process-page-facts must be discoverable on the lazy surface (get-tool-contract compact "
+				+ "index) even though it is not resident in tools/list — it is where an agent building a "
+				+ "Pre-configured page element learns the page's buttons and data sources");
 	}
 
 	[Test]
