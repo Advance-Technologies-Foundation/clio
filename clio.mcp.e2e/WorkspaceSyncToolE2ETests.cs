@@ -240,12 +240,15 @@ public sealed class WorkspaceSyncToolE2ETests {
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 			await EnsureSharedRestoreWorkspaceAsync(settings, cancellationTokenSource.Token);
 
+			string testRootDirectory = Path.Combine(Path.GetTempPath(), $"clio-workspace-restore-e2e-{Guid.NewGuid():N}");
+			string testWorkspacePath = Path.Combine(testRootDirectory, Path.GetFileName(_sharedWorkspacePath!));
+			CopyDirectory(_sharedWorkspacePath!, testWorkspacePath);
 			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 			return new WorkspaceSyncArrangeContext(
 				settings,
-				_sharedRootDirectory!,
-				_sharedWorkspacePath!,
-				Path.GetFileName(_sharedWorkspacePath!),
+				testRootDirectory,
+				testWorkspacePath,
+				Path.GetFileName(testWorkspacePath),
 				RestoreWorkspacePath: string.Empty,
 				RestoreWorkspaceName: string.Empty,
 				_sharedEnvironmentName!,
@@ -253,8 +256,18 @@ public sealed class WorkspaceSyncToolE2ETests {
 				_sharedPackageMetadata,
 				session,
 				cancellationTokenSource,
-				OwnsRootDirectory: false);
+				OwnsRootDirectory: true);
 		});
+	}
+
+	private static void CopyDirectory(string sourceDirectory, string destinationDirectory) {
+		Directory.CreateDirectory(destinationDirectory);
+		foreach (string filePath in Directory.EnumerateFiles(sourceDirectory)) {
+			File.Copy(filePath, Path.Combine(destinationDirectory, Path.GetFileName(filePath)));
+		}
+		foreach (string childDirectory in Directory.EnumerateDirectories(sourceDirectory)) {
+			CopyDirectory(childDirectory, Path.Combine(destinationDirectory, Path.GetFileName(childDirectory)));
+		}
 	}
 
 	/// <summary>
@@ -281,6 +294,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
 		PackageMetadata packageMetadata = ReadPackageMetadata(workspacePath, packageName);
 		await PushWorkspaceCliAsync(settings, workspacePath, environmentName, cancellationToken);
+		await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(settings, environmentName, cancellationToken);
 
 		_sharedRootDirectory = rootDirectory;
 		_sharedWorkspacePath = workspacePath;
@@ -363,7 +377,11 @@ public sealed class WorkspaceSyncToolE2ETests {
 
 	[AllureStep("Assert command exit code")]
 	private static void AssertCommandExitCode(WorkspaceCommandActResult actResult, int expectedExitCode, string because) {
-		actResult.Execution.ExitCode.Should().Be(expectedExitCode, because: because);
+		string output = string.Join(
+			Environment.NewLine,
+			(actResult.Execution.Output ?? []).Select(message => $"{message.MessageType}: {message.Value}"));
+		actResult.Execution.ExitCode.Should().Be(expectedExitCode,
+			because: $"{because}. Actual output: {output}");
 	}
 
 	[AllureStep("Assert execution includes Error message")]

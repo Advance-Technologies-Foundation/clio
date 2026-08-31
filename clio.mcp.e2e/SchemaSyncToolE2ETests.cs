@@ -720,6 +720,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
 		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
 		await PushWorkspaceAsync(settings, workspacePath, environmentName, packageName, cancellationToken);
+		await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(settings, environmentName, cancellationToken);
 
 		_sharedRootDirectory = rootDirectory;
 		_sharedWorkspacePath = workspacePath;
