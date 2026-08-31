@@ -332,6 +332,14 @@ internal static class PageBodyAstLinter {
 
 		public int ReportedNameCount => _reported.Count;
 
+		/// <summary>Where the last omitted occurrence sat; the summary finding reports that position.</summary>
+		public OmittedCallLocation? LastOmitted { get; private set; }
+
+		/// <summary>Keeps the position of an omitted occurrence, and nothing else.</summary>
+		public void RecordOmitted(int line, int column){
+			LastOmitted = new OmittedCallLocation(line, column);
+		}
+
 		/// <summary>Returns true when this occurrence must become a finding of its own.</summary>
 		public bool ShouldReport(string name){
 			if (_reported.Contains(name)) {
@@ -358,11 +366,10 @@ internal static class PageBodyAstLinter {
 		DeclareHoistedNames(ast, scriptScope, depth: 0, strict, atStatementLevel: true);
 		DeclareBlockNames(ast.Body, scriptScope, depth: 0);
 		UndefinedCallBudget budget = new();
-		OmittedCallLocation? lastOmitted = null;
 		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict, findings,
-			budget, ref lastOmitted);
-		if (budget.OmittedOccurrenceCount > 0 && lastOmitted.HasValue) {
-			findings.Add(BuildOmittedSummary(lastOmitted.Value, budget));
+			budget);
+		if (budget.OmittedOccurrenceCount > 0 && budget.LastOmitted.HasValue) {
+			findings.Add(BuildOmittedSummary(budget.LastOmitted.Value, budget));
 		}
 	}
 
@@ -425,29 +432,44 @@ internal static class PageBodyAstLinter {
 				//it throws ReferenceError or TypeError. Only a function declaration stays callable.
 				continue;
 			}
-			switch (child) {
-				case VariableDeclaration {Kind: VariableDeclarationKind.Var} varDeclaration:
-					foreach (VariableDeclarator declarator in varDeclaration.Declarations) {
-						DeclareBindings(declarator.Id, scope, depth + 1);
-					}
-					break;
-				case FunctionDeclaration {Id: not null} functionDeclaration:
-					//In strict code a function declared inside a block belongs to that block, so
-					//hoisting it out of one would accept a call that throws ReferenceError at
-					//runtime. DeclareBlockNames declares it in its own block scope instead.
-					if (!strict || atStatementLevel) {
-						scope.Declare(functionDeclaration.Id.Name);
-					}
-					//A function declaration opens its own scope; nothing inside it hoists to here.
-					continue;
-				case IFunction:
-					//Same for a function expression or an arrow: its bindings stay inside it.
-					continue;
-				case ReturnStatement when tracksUnreachable:
-					afterReturn = true;
-					continue;
+			if (tracksUnreachable && child is ReturnStatement) {
+				afterReturn = true;
+				continue;
+			}
+			if (DeclareHoistedChildName(child, scope, depth, strict, atStatementLevel)) {
+				continue;
 			}
 			DeclareHoistedNames(child, scope, depth + 1, strict, atStatementLevel: false);
+		}
+	}
+
+	/// <summary>
+	/// Declares the hoisted name one child contributes to <paramref name="scope"/>, if any.
+	/// Returns true when the child opens a scope of its own, so nothing inside it hoists here and
+	/// the caller must not walk into it.
+	/// </summary>
+	private static bool DeclareHoistedChildName(Node child, LexicalScope scope, int depth, bool strict,
+		bool atStatementLevel) {
+		switch (child) {
+			case VariableDeclaration {Kind: VariableDeclarationKind.Var} varDeclaration:
+				foreach (VariableDeclarator declarator in varDeclaration.Declarations) {
+					DeclareBindings(declarator.Id, scope, depth + 1);
+				}
+				return false;
+			case FunctionDeclaration {Id: not null} functionDeclaration:
+				//In strict code a function declared inside a block belongs to that block, so
+				//hoisting it out of one would accept a call that throws ReferenceError at
+				//runtime. DeclareBlockNames declares it in its own block scope instead.
+				if (!strict || atStatementLevel) {
+					scope.Declare(functionDeclaration.Id.Name);
+				}
+				//A function declaration opens its own scope; nothing inside it hoists to here.
+				return true;
+			case IFunction:
+				//Same for a function expression or an arrow: its bindings stay inside it.
+				return true;
+			default:
+				return false;
 		}
 	}
 
@@ -587,8 +609,7 @@ internal static class PageBodyAstLinter {
 		int depth,
 		bool strict,
 		List<PageBodyLintFinding> findings,
-		UndefinedCallBudget budget,
-		ref OmittedCallLocation? lastOmitted) {
+		UndefinedCallBudget budget) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
@@ -612,13 +633,13 @@ internal static class PageBodyAstLinter {
 					Column: identifier.Location.Start.Column + 1,
 					Message: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement."));
 			} else {
-				lastOmitted = new OmittedCallLocation(
+				budget.RecordOmitted(
 					identifier.Location.Start.Line, identifier.Location.Start.Column + 1);
 			}
 		}
 		foreach (Node child in node.ChildNodes) {
 			ScanForUndefinedSectionCalls(child, childScope, childInsideSection, depth + 1, childStrict,
-				findings, budget, ref lastOmitted);
+				findings, budget);
 		}
 	}
 
