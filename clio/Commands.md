@@ -274,6 +274,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="merge-workspaces"></a>
 <a id="mergew"></a>
 - [`merge-workspaces`](docs/commands/merge-workspaces.md) - Merge packages from multiple workspaces and install them to the environment, `mergew`
+<a id="merge-creatio-artifact"></a>
+- [`merge-creatio-artifact`](docs/commands/merge-creatio-artifact.md) - Preview a semantic merge and expose user questions for supported Creatio conflicts
 <a id="pkg-to-db"></a>
 <a id="2db"></a>
 <a id="todb"></a>
@@ -488,7 +490,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="show-package-file-content"></a>
 <a id="files"></a>
 <a id="show-files"></a>
-- [`show-package-file-content`](docs/commands/show-package-file-content.md) - Show files that belong to a package, `files`, `show-files`
+- [`show-package-file-content`](docs/commands/show-package-file-content.md) - List or read files materialized for a compiled package, `files`, `show-files`
 <a id="update-entity-schema"></a>
 - [`update-entity-schema`](docs/commands/update-entity-schema.md) - Apply batch column operations to a remote Creatio entity schema
 <a id="update-schema"></a>
@@ -574,7 +576,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`hosts`](docs/commands/hosts.md) - List all Creatio hosts and their status, `list-hosts`
 <a id="last-compilation-log"></a>
 <a id="lcl"></a>
-- [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
+- [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get the most recently persisted compilation result, `lcl`
 <a id="prune-db-templates"></a>
 - [`prune-db-templates`](docs/commands/prune-db-templates.md) - Interactively prune clio-managed PostgreSQL templates
 <a id="restart-web-app"></a>

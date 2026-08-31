@@ -279,6 +279,7 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 			["pkg-hotfix", packageName, "true", "-e", environmentName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationToken);
+		await ClioCliCommandRunner.WaitForEnvironmentRecoveryAsync(settings, environmentName, cancellationToken);
 
 		string schemaName = $"Usr{Guid.NewGuid():N}";
 		CallToolResult syncResult = await context.Session.CallToolAsync(

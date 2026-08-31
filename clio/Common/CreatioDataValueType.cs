@@ -83,6 +83,7 @@ public static class CreatioDataValueType {
 
 	private static readonly IReadOnlyDictionary<int, CreatioDataValueTypeInfo> ByCode = BuildByCode();
 	private static readonly IReadOnlyDictionary<string, CreatioDataValueTypeInfo> ByName = BuildByName();
+	private static readonly IReadOnlyDictionary<Guid, CreatioDataValueTypeInfo> ByUId = BuildByUId();
 
 	private static Dictionary<int, CreatioDataValueTypeInfo> BuildByCode() {
 		Dictionary<int, CreatioDataValueTypeInfo> map = [];
@@ -100,7 +101,20 @@ public static class CreatioDataValueType {
 		return map;
 	}
 
+	private static Dictionary<Guid, CreatioDataValueTypeInfo> BuildByUId() {
+		Dictionary<Guid, CreatioDataValueTypeInfo> map = [];
+		foreach (CreatioDataValueTypeInfo info in All) {
+			if (info.UId is Guid uId) {
+				map[uId] = info;
+			}
+		}
+		return map;
+	}
+
 	public static bool TryGet(int code, out CreatioDataValueTypeInfo info) => ByCode.TryGetValue(code, out info!);
+
+	/// <summary>Gets canonical type metadata for a Creatio data value type UId.</summary>
+	public static bool TryGet(Guid uId, out CreatioDataValueTypeInfo info) => ByUId.TryGetValue(uId, out info!);
 
 	/// <summary>Returns the canonical type name for a numeric code, or null when the code is unknown.</summary>
 	public static string? GetName(int code) => ByCode.TryGetValue(code, out CreatioDataValueTypeInfo? info) ? info.Name : null;

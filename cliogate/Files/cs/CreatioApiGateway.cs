@@ -13,6 +13,7 @@ using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.ServiceModel.Activation;
 using System.ServiceModel.Web;
+using System.Text;
 using ATF.Repository;
 using cliogate.Files.cs.Dto;
 using ClioGate.Functions.SQL;
@@ -79,6 +80,7 @@ namespace cliogate.Files.cs
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
 		private readonly string splitName = "#OriginalMaintainer:";
 		private const string DescriptionColumnName = "Description";
+		private const int PackageDescriptionMaxLength = 250;
 
 		#endregion
 
@@ -177,14 +179,30 @@ namespace cliogate.Files.cs
 		/// <summary>
 		/// Builds the value stored in the <c>SysPackage.Description</c> column when unlocking a package,
 		/// preserving the original maintainer marker. A null <paramref name="originalDescription"/>
-		/// (the column is nullable) is treated as an empty string.
+		/// (the column is nullable) is treated as an empty string. The human-readable prefix is truncated
+		/// when necessary so the complete marker remains within the 250-character database column.
 		/// </summary>
 		internal static string BuildUnlockDescription(string originalDescription, string originalMaintainer,
 			string splitMarker){
 			originalDescription = originalDescription ?? string.Empty;
-			return originalDescription.Contains(splitMarker)
-				? originalDescription
-				: originalDescription + splitMarker + originalMaintainer;
+			if (originalDescription.Contains(splitMarker)) {
+				return originalDescription;
+			}
+			string maintainerMarker = splitMarker + (originalMaintainer ?? string.Empty);
+			if (maintainerMarker.Length > PackageDescriptionMaxLength) {
+				throw new InvalidOperationException(
+					$"The original maintainer marker requires {maintainerMarker.Length} characters, but " +
+					$"SysPackage.{DescriptionColumnName} allows only {PackageDescriptionMaxLength}.");
+			}
+			int prefixLength = PackageDescriptionMaxLength - maintainerMarker.Length;
+			if (originalDescription.Length > prefixLength) {
+				originalDescription = originalDescription.Substring(0, prefixLength);
+				if (originalDescription.Length > 0 &&
+					char.IsHighSurrogate(originalDescription[originalDescription.Length - 1])) {
+					originalDescription = originalDescription.Substring(0, originalDescription.Length - 1);
+				}
+			}
+			return originalDescription + maintainerMarker;
 		}
 
 		/// <summary>
@@ -1547,34 +1565,133 @@ namespace cliogate.Files.cs
 		#endregion
 	}
 
+	/// <summary>
+	/// Reads and updates files below one package's materialized <c>Files</c> directory.
+	/// </summary>
 	public class PackageExplorer
 	{
+		internal const long MaxPackageTextFileBytes = 10L * 1024 * 1024;
+		internal const int MaxVisitedPackageEntries = 10_000;
+
 
 		#region Fields: Private
 
 		private readonly string _packageName;
-		private readonly string _baseDir = AppDomain.CurrentDomain.BaseDirectory;
+		private readonly string _baseDir;
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
 
 		#endregion
 
 		#region Constructors: Public
 
-		public PackageExplorer(string packageName){
-			CheckNameForDeniedSymbols(packageName);
+		/// <summary>Initializes an explorer for the named package.</summary>
+		/// <param name="packageName">A single package directory name.</param>
+		public PackageExplorer(string packageName)
+			: this(packageName, AppDomain.CurrentDomain.BaseDirectory) {
+		}
+
+		internal PackageExplorer(string packageName, string baseDir){
+			ValidatePackageName(packageName);
 			_packageName = packageName;
+			_baseDir = baseDir;
 		}
 
 		#endregion
 
 		#region Methods: Private
 
-		private string PackageDirectoryPath(){
-			return Path.Combine(_baseDir, "Terrasoft.Configuration", "Pkg", _packageName, "Files");
-		}
+		private string PackagesRootPath() =>
+			ResolveContainedPath(_baseDir, Path.Combine("Terrasoft.Configuration", "Pkg"));
+
+		private string PackageDirectoryPath() =>
+			ResolveContainedPath(PackagesRootPath(), Path.Combine(_packageName, "Files"));
 
 		
-		private string PackageBinDirectoryPath()=> Path.Combine(PackageDirectoryPath(), "Bin");
+		private string PackageBinDirectoryPath() =>
+			ResolveContainedPath(PackageDirectoryPath(), "Bin");
+
+		private static StringComparison PathComparison =>
+			Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+		private static void ValidatePackageName(string packageName) {
+			if (string.IsNullOrWhiteSpace(packageName)
+				|| Path.IsPathRooted(packageName)
+				|| packageName.IndexOf(Path.DirectorySeparatorChar) >= 0
+				|| packageName.IndexOf(Path.AltDirectorySeparatorChar) >= 0
+				|| packageName == "."
+				|| packageName == "..") {
+				throw new ArgumentException("Package name must be a single directory name.", nameof(packageName));
+			}
+		}
+
+		private static string ResolveContainedPath(string rootPath, string relativePath) {
+			if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath)) {
+				throw new ArgumentException("File path must be relative to the package Files directory.", nameof(relativePath));
+			}
+			string fullRootPath = Path.GetFullPath(rootPath)
+				.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			string fullFilePath = Path.GetFullPath(Path.Combine(fullRootPath, relativePath));
+			string rootPrefix = fullRootPath + Path.DirectorySeparatorChar;
+			if (!fullFilePath.StartsWith(rootPrefix, PathComparison)) {
+				throw new ArgumentException("File path must stay inside the package Files directory.", nameof(relativePath));
+			}
+			EnsureNoReparsePointTraversal(fullRootPath, fullFilePath, relativePath);
+			return fullFilePath;
+		}
+
+		private static void EnsureNoReparsePointTraversal(
+			string fullRootPath, string fullFilePath, string relativePath) {
+			string relativeFullPath = fullFilePath.Substring(fullRootPath.Length)
+				.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			string currentPath = fullRootPath;
+			foreach (string segment in relativeFullPath.Split(
+				new[] {Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar},
+				StringSplitOptions.RemoveEmptyEntries)) {
+				currentPath = Path.Combine(currentPath, segment);
+				FileAttributes attributes;
+				try {
+					attributes = File.GetAttributes(currentPath);
+				} catch (FileNotFoundException) {
+					break;
+				} catch (DirectoryNotFoundException) {
+					break;
+				}
+				if ((attributes & FileAttributes.ReparsePoint) != 0) {
+					throw new ArgumentException(
+						"File path must not traverse symbolic links, junctions, or reparse points.",
+						nameof(relativePath));
+				}
+			}
+		}
+
+		private static IEnumerable<string> EnumerateContainedFiles(string rootPath) {
+			var pendingDirectories = new Stack<string>();
+			int visitedEntries = 0;
+			pendingDirectories.Push(rootPath);
+			while (pendingDirectories.Count > 0) {
+				string currentDirectory = pendingDirectories.Pop();
+				foreach (string entryPath in Directory.EnumerateFileSystemEntries(currentDirectory)) {
+					visitedEntries++;
+					if (visitedEntries > MaxVisitedPackageEntries) {
+						throw new InvalidOperationException(
+							$"Package contains more than {MaxVisitedPackageEntries} filesystem entries and cannot be listed safely.");
+					}
+					FileAttributes attributes = File.GetAttributes(entryPath);
+					if ((attributes & FileAttributes.ReparsePoint) != 0) {
+						throw new InvalidOperationException(
+							"Package Files directory contains a symbolic link, junction, or reparse point.");
+					}
+					if ((attributes & FileAttributes.Directory) != 0) {
+						pendingDirectories.Push(entryPath);
+					} else {
+						yield return entryPath;
+					}
+				}
+			}
+		}
+
+		private string ResolvePackageFilePath(string filePath) =>
+			ResolveContainedPath(PackageDirectoryPath(), filePath);
 		
 		private bool IsPackageUnlocked(string packageName){
 			var userConnection = ClassFactory.Get<UserConnection>();
@@ -1609,34 +1726,52 @@ namespace cliogate.Files.cs
 
 		#region Methods: Public
 
+		/// <summary>Reads a package binary from the runtime-appropriate <c>Bin</c> directory.</summary>
 		public byte[] GetBinaryFileContent(string dllName, bool isNetCore){
 			try {
-				CheckNameForDeniedSymbols(dllName);
-				return isNetCore  
-					? File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), "netstandard", dllName))
-					: File.ReadAllBytes(Path.Combine(PackageBinDirectoryPath(), dllName));
+				string binaryRoot = isNetCore
+					? ResolveContainedPath(PackageBinDirectoryPath(), "netstandard")
+					: PackageBinDirectoryPath();
+				return File.ReadAllBytes(ResolveContainedPath(binaryRoot, dllName));
 			}catch(Exception ex) {
 				_log.Error($"Error while reading file {dllName} from package {_packageName}", ex);
 				return Array.Empty<byte>();
 			}
 		}
 		
+		/// <summary>Reads a file by its path relative to the package <c>Files</c> directory.</summary>
 		public string GetPackageFileContent(string filePath){
-			CheckNameForDeniedSymbols(filePath);
-			return File.ReadAllText(Path.Combine(PackageDirectoryPath(), filePath));
+			string fullPath = ResolvePackageFilePath(filePath);
+			using (var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+				if (stream.Length > MaxPackageTextFileBytes) {
+					throw new InvalidOperationException(
+						$"Package file exceeds the {MaxPackageTextFileBytes / (1024 * 1024)} MiB read limit.");
+				}
+				using (var reader = new StreamReader(stream, Encoding.UTF8, true)) {
+					return reader.ReadToEnd();
+				}
+			}
 		}
 
-		public IEnumerable<string> GetPackageFilesDirectoryContent() =>
-			Directory
-				.GetFiles(PackageDirectoryPath(), "*.*", SearchOption.AllDirectories)
-				.Select(f => f.Replace(PackageDirectoryPath(), string.Empty));
+		/// <summary>Lists stable, normalized paths relative to the package <c>Files</c> directory.</summary>
+		public IEnumerable<string> GetPackageFilesDirectoryContent() {
+			string rootPath = Path.GetFullPath(PackageDirectoryPath())
+				.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			int relativePathStart = rootPath.Length + 1;
+			return EnumerateContainedFiles(rootPath)
+				.Select(filePath => Path.GetFullPath(filePath).Substring(relativePathStart)
+					.Replace(Path.DirectorySeparatorChar, '/'))
+				.OrderBy(filePath => filePath, StringComparer.OrdinalIgnoreCase)
+				.ThenBy(filePath => filePath, StringComparer.Ordinal)
+				.ToList();
+		}
 
+		/// <summary>Saves text content to a package-relative file path.</summary>
 		public (bool isSuccess, Exception ex) SaveFileContent(string filePath, string fileContent){
-			CheckNameForDeniedSymbols(filePath);
 			if(!IsPackageUnlocked(_packageName)) {
 				return (false, new Exception("Cannot save file in a locked package"));
 			}
-			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+			string fullPath = ResolvePackageFilePath(filePath);
 			string directoryPath = Path.GetDirectoryName(fullPath);
 			if (!Directory.Exists(directoryPath)) {
 				Directory.CreateDirectory(directoryPath);
@@ -1644,12 +1779,12 @@ namespace cliogate.Files.cs
 			File.WriteAllText(fullPath, fileContent);
 			return (true, null);
 		}
+		/// <summary>Saves stream content to a package-relative file path.</summary>
 		public (bool isSuccess, Exception ex) SaveFileContent(string filePath, Stream fileContent){
-			CheckNameForDeniedSymbols(filePath);
 			if(!IsPackageUnlocked(_packageName)) {
 				return (false, new Exception("Cannot save file in a locked package"));
 			}
-			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+			string fullPath = ResolvePackageFilePath(filePath);
 			string directoryPath = Path.GetDirectoryName(fullPath);
 			if (!Directory.Exists(directoryPath)) {
 				Directory.CreateDirectory(directoryPath);
@@ -1660,12 +1795,12 @@ namespace cliogate.Files.cs
 
 		#endregion
 
+		/// <summary>Deletes a package-relative file.</summary>
 		public (bool isSuccess, Exception ex) DeleteFile(string filePath){
-			CheckNameForDeniedSymbols(filePath);
 			if(!IsPackageUnlocked(_packageName)) {
 				return (false, new Exception("Cannot save file in a locked package"));
 			}
-			string fullPath = Path.Combine(PackageDirectoryPath(), filePath);
+			string fullPath = ResolvePackageFilePath(filePath);
 			string directoryPath = Path.GetDirectoryName(fullPath);
 			if (!Directory.Exists(directoryPath)) {
 				return (false, new DirectoryNotFoundException(directoryPath));

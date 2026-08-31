@@ -1,0 +1,170 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "EntitySchemaManager",
+      "UId": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+      "A2": "Entity_Case4_Base",
+      "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "6bbbf8ec-3042-49f8-b273-5eb50b9d2473",
+      "B8": "8.3.3.2060",
+      "EG1": {
+        "UId": "cd51d235-c01b-4979-a78b-0cd3a2006565",
+        "A2": "Entity_da981b6EventsProcess",
+        "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+        "B1": [],
+        "B2": [],
+        "B3": [],
+        "B8": "8.3.3.2060",
+        "FJ1": [],
+        "IJ3": false,
+        "BK8": "bb4d6607-026b-4b27-b640-8f5c77c1e89d",
+        "BK15": [],
+        "BK37": {
+          "BL1": "Terrasoft.Core.Process.ProcessSchemaParameter",
+          "UId": "cdd58be7-2dba-4a5e-869b-1ad5d6d7513a",
+          "A2": "NotificationCaption",
+          "A3": "bb4d6607-026b-4b27-b640-8f5c77c1e89d",
+          "A4": "bb4d6607-026b-4b27-b640-8f5c77c1e89d",
+          "L1": "8b3f29bb-ea14-4ce5-a5c5-293a929b6ba2",
+          "L8": {
+            "GS1": 3,
+            "GS2": "[#[PropertyValue:Caption]#]"
+          }
+        },
+        "BK1": "FFFFFFFF",
+        "BK2": "FFBBBBBB",
+        "BK3": [],
+        "BK5": [],
+        "BK4": [],
+        "BK9": [],
+        "BK10": true,
+        "BK34": "null",
+        "Labels": [],
+        "BK24": [],
+        "JC1": []
+      },
+      "D8": "1b56b061-4e91-4974-9038-df8340e534f2",
+      "D29": "null",
+      "D30": "null",
+      "D31": "Entity_Case4_Local_Loc",
+      "D3": "cf2a9d28-b2f0-2a84-bff8-6be98fe330b3",
+      "D2": [
+        {
+          "UId": "ae35257c-bd5a-21c8-bec6-ccf1ae837f9e",
+          "A2": "Column1Local",
+          "A3": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A4": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+          "S2": "79bccffa-8c8b-4863-b376-a69d2244182b",
+          "E5": false,
+          "E6": true,
+          "E19": true,
+          "E29": true,
+          "E12": {
+            "FB1": 1,
+            "FB2": "444"
+          },
+          "E23": true
+        },
+        {
+          "UId": "cf2a9d28-b2f0-2a84-bff8-6be98fe330b3",
+          "A2": "ColumnIdBase",
+          "A3": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A4": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+          "S2": "23018567-a13c-4320-8687-fd6f9e3699bd",
+          "E16": true
+        },
+        {
+          "UId": "2acd1627-2604-df0c-02c1-7382d6122fe7",
+          "A2": "Column6Remote",
+          "A3": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A4": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+          "S2": "6b6b74e2-820d-490e-a017-2b73d4ccf2b0"
+        },
+        {
+          "UId": "a11056ce-002b-e368-f4f5-b0d507bbcdfd",
+          "A2": "Column7Local",
+          "A3": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A4": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+          "A5": "a91a3dfc-eec7-4f30-8e34-1743f31af4b9",
+          "S2": "325a73b8-0f47-44a0-8412-7606f78003ac"
+        }
+      ],
+      "D6": [
+        {
+          "UId": "18dbe0f6-c6fe-d924-944f-616b2aa134c4",
+          "A2": "Index3Base",
+          "A3": "1b56b061-4e91-4974-9038-df8340e534f2",
+          "A4": "1b56b061-4e91-4974-9038-df8340e534f2",
+          "A5": "a91a3dfc-eec7-4f30-8e34-1743f31af4b9",
+          "F1": false,
+          "F2": true,
+          "F4": [
+            {
+              "UId": "ca8f9d95-7c12-814d-3400-791cbcc4ea4c",
+              "A2": "IndexColumn_Column7Local",
+              "A3": "1b56b061-4e91-4974-9038-df8340e534f2",
+              "A4": "1b56b061-4e91-4974-9038-df8340e534f2",
+              "A5": "a91a3dfc-eec7-4f30-8e34-1743f31af4b9",
+              "G1": "a11056ce-002b-e368-f4f5-b0d507bbcdfd",
+              "G2": 1
+            }
+          ]
+        },
+        {
+          "UId": "a9edfa44-0c3a-7a77-0109-29040260fec2",
+          "A2": "Index1Local",
+          "A3": "1b56b061-4e91-4974-9038-df8340e534f2",
+          "A4": "1b56b061-4e91-4974-9038-df8340e534f2",
+          "A5": "a91a3dfc-eec7-4f30-8e34-1743f31af4b9",
+          "F1": false,
+          "F4": [
+            {
+              "UId": "3dc1fd06-d3bd-e216-f81e-4343b96c2817",
+              "A2": "IndexColumn_Column1Base",
+              "A3": "1b56b061-4e91-4974-9038-df8340e534f2",
+              "A4": "1b56b061-4e91-4974-9038-df8340e534f2",
+              "A5": "a91a3dfc-eec7-4f30-8e34-1743f31af4b9",
+              "G1": "ae35257c-bd5a-21c8-bec6-ccf1ae837f9e"
+            }
+          ]
+        }
+      ],
+      "D20": {
+        "A2": "Entity_Case4_BaseEvents",
+        "FA1": false,
+        "FA2": false,
+        "FA3": false,
+        "FA4": true,
+        "FA5": false,
+        "FA6": false,
+        "FA7": true,
+        "FA8": false,
+        "FA9": false,
+        "FA10": true,
+        "FA11": false,
+        "FA12": false,
+        "FA16": true,
+        "FA13": false,
+        "FA14": false,
+        "FA15": true,
+        "FA17": false
+      },
+      "D35": {},
+      "D36": {
+        "A3": "76af8ce4-3bd1-40cb-b953-473252b5cb82",
+        "BS1": false
+      },
+      "D10": true,
+      "D17": true,
+      "D32": true,
+      "D24": true,
+      "D15": true
+    }
+  }
+}

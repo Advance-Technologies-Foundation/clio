@@ -42,17 +42,18 @@ public sealed class DeployIdentityOptions : EnvironmentNameOptions
 	public int? IdentitySitePort { get; set; }
 
 	/// <summary>
-	/// Gets or sets the target directory where IdentityService files are deployed.
+	/// Gets or sets the target directory where IdentityService files are deployed. Filesystem reparse
+	/// points are refused in the target path so deployment cannot be redirected to another location.
 	/// </summary>
 	[Option("identity-path", Required = false,
-		HelpText = "Target IdentityService directory. Defaults to a sibling <environment>-identity folder")]
+		HelpText = "Target IdentityService directory. Filesystem reparse points are refused. Defaults to a sibling <environment>-identity folder")]
 	public string IdentityPath { get; set; }
 
 	/// <summary>
 	/// Gets or sets a value indicating whether an existing target directory can be overwritten.
 	/// </summary>
 	[Option("overwrite", Required = false, Default = false,
-		HelpText = "Overwrite existing IdentityService files in --identity-path")]
+		HelpText = "Overwrite IdentityService files in an empty or recognized existing --identity-path")]
 	public bool Overwrite { get; set; }
 
 	/// <summary>

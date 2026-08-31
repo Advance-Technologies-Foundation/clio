@@ -1,5 +1,7 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Allure.Net.Commons;
+using Clio.Common;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -64,6 +66,8 @@ public sealed class DeployIdentityToolE2ETests
 			because: "agents should know zipFile can be omitted when IdentityService.zip is under the registered environment");
 		FieldDescription(contract, "identitySitePort").Should().Contain("40001-40100",
 			because: "agents should know identitySitePort can be omitted and auto-selected from the default range");
+		FieldDescription(contract, "overwrite").Should().Contain("target directory",
+			because: "agents should know overwrite replaces an existing IdentityService deployment directory");
 		FieldDescription(contract, "noApp").Should().Contain("without creating a clio OAuth app",
 			because: "agents should know they can deploy and connect IdentityService without creating an OAuth app");
 		FieldDescription(contract, "createTechUser").Should().Contain("technical user",
@@ -77,6 +81,7 @@ public sealed class DeployIdentityToolE2ETests
 				"identityArchivePathInBundle",
 				"identitySiteName",
 				"identityPath",
+				"overwrite",
 				"configurationMode",
 				"clientName",
 				"clientApplicationUrl",
@@ -89,6 +94,86 @@ public sealed class DeployIdentityToolE2ETests
 		contract.InputSchema.Required.Should().BeEquivalentTo(
 			["environment-name"],
 			because: "deploy-identity should allow zipFile and identitySitePort to default from EnvironmentPath and the IIS port scanner");
+	}
+
+	[Test]
+	[Description("Passes the published environment-name and overwrite fields through the real MCP server into deploy-identity resolution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Deploy identity binds published environment and overwrite fields")]
+	[AllureDescription("Calls the destructive long-tail tool with its curated contract shape and verifies the requested missing environment reaches resolution instead of being silently dropped during MCP binding.")]
+	public async Task DeployIdentity_Should_Bind_Published_Environment_And_Overwrite_Fields()
+	{
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		string clioHome = CreateClioHomeWithDeployIdentityEnabled();
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		string missingEnvironment = $"missing-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step("Call deploy-identity through the real MCP server", () =>
+			session.CallDestructiveAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = missingEnvironment,
+					["overwrite"] = true
+				},
+				cancellationTokenSource.Token));
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		AllureApi.Step("Assert the call returns a structured command result", () =>
+			callResult.IsError.Should().NotBeTrue(
+				because: "a valid contract-shaped call should return a structured command result"));
+		AllureApi.Step("Assert the missing environment prevents deployment", () =>
+			execution.ExitCode.Should().Be(1,
+				because: "the deliberately missing registered environment cannot be deployed"));
+		AllureApi.Step("Assert the published environment reaches resolution", () =>
+			execution.Output.Should().Contain(message => message.Value != null
+				&& message.Value.Contains(missingEnvironment, StringComparison.Ordinal),
+				because: "the MCP binder must preserve the requested environment-name instead of falling back to the active environment"));
+		AllureApi.Step("Assert the command failure is classified as error output", () =>
+			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+				because: "the rejected environment should remain an actionable command error rather than a transport failure"));
+	}
+
+	[Test]
+	[Description("Rejects the obsolete environmentName field without falling back to the active environment.")]
+	[AllureTag(ToolName)]
+	[AllureName("Deploy identity rejects obsolete environment alias")]
+	[AllureDescription("Calls deploy-identity with the obsolete camel-case environment field and verifies the real MCP server refuses it before active-environment fallback.")]
+	public async Task DeployIdentity_Should_Reject_Obsolete_EnvironmentName_Field()
+	{
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		string clioHome = CreateClioHomeWithDeployIdentityEnabled();
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step("Call deploy-identity with the obsolete field", () =>
+			session.CallDestructiveAsync(
+				ToolName,
+				new Dictionary<string, object?> { ["environmentName"] = "obsolete-target" },
+				cancellationTokenSource.Token));
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		AllureApi.Step("Assert the stale call returns a structured result", () =>
+			callResult.IsError.Should().NotBeTrue(
+				because: "an obsolete argument is a caller-correctable validation error, not an MCP transport failure"));
+		AllureApi.Step("Assert the stale contract call is refused", () =>
+			execution.ExitCode.Should().Be(1,
+				because: "the obsolete field must not allow deploy-identity to use the active environment"));
+		AllureApi.Step("Assert the correction names the published field", () =>
+			execution.Output.Should().Contain(message => message.Value != null
+				&& message.Value.Contains("environment-name", StringComparison.Ordinal),
+				because: "the caller needs the canonical field name to correct the request"));
+		AllureApi.Step("Assert the stale argument is classified as error output", () =>
+			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+				because: "the rejected alias should remain an actionable command error"));
 	}
 
 	private static string FieldDescription(ToolContractDefinition contract, string fieldName)

@@ -1,0 +1,124 @@
+﻿{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "AddonSchemaManager",
+      "UId": "6b4b4d15-a39b-4a07-a7aa-8c61b3bb9477",
+      "A2": "MscEntity_addonRelatedPage",
+      "A5": "f5fbcb8d-a834-478e-b0c1-1193bf43428c",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "a6b25ce3-7d59-48bb-a1de-f34a8d5b9a9d",
+      "B8": "8.3.3.0",
+      "AD1": "05ecdcb3-40bd-4c13-a348-a5b55ecdd2d0",
+      "AD2": "EntitySchemaManager",
+      "AD3": "RelatedPage",
+      "AD5": "3a2d6f51-1bfc-4c17-aacb-b53de4866b7c",
+      "AD4": {
+  "Pages": [
+    {
+      "UId": "29bec9b1-b4a8-cf42-4903-b2ee88ac0b7d",
+      "PageSchemaUId": "2022b003-12ac-4511-9d30-d59f78fdc8aa",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": false
+      },
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": null
+    },
+    {
+      "UId": "4c304bd3-832e-29fc-f1fd-b26c645c3cf0",
+      "PageSchemaUId": "22cc919e-9774-4117-b32d-39e829f2f197",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "d2a0744b-69f2-419a-984c-31224ebae769"
+    },
+    {
+      "UId": "0d6fb081-196c-2a18-5451-e8107c80155c",
+      "PageSchemaUId": "f537fd79-9bdc-43ea-a9ce-b068c29d0b22",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "d2a0744b-69f2-419a-984c-31224ebae769"
+    },
+    {
+      "UId": "6ead0733-482d-b20c-d9aa-d708313758f5",
+      "PageSchemaUId": "7e4d8a66-3c68-4a06-a503-e6daa84d08e6",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "f4dddbd8-774d-419f-8bd6-fd2e87d61e1f"
+    },
+    {
+      "UId": "f9c5c98d-372a-018c-cb69-f28621ae2a33",
+      "PageSchemaUId": "7e4d8a66-3c68-4a06-a503-e6daa84d08e6",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "f4dddbd8-774d-419f-8bd6-fd2e87d61e1f"
+    },
+    {
+      "UId": "0ed1ac52-81c1-6782-1587-7fef1c035939",
+      "PageSchemaUId": "40aeae76-7e0a-4af3-a2e1-1f35b57b5341",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "a29a3ba5-4b0d-de11-9a51-005056c00008",
+      "TypeColumnValue": "ffcc96d9-da53-4e78-aa44-7fc7575262f7"
+    },
+    {
+      "UId": "23a48874-7602-6a36-a9d2-ec479168882a",
+      "PageSchemaUId": "00000000-0000-0000-0000-000000000000",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+      "TypeColumnValue": "a57e726d-5924-4d1d-94e7-fdecb44a2494"
+    },
+    {
+      "UId": "1db0a56d-1e04-37ee-faad-f7b6e501249b",
+      "PageSchemaUId": "0b206a39-fc94-42c5-8498-2f3867dfa117",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+      "TypeColumnValue": "a57e726d-5924-4d1d-94e7-fdecb44a2494"
+    },
+    {
+      "UId": "c0c3cf91-cc8c-49dc-196c-6c1cb0507b72",
+      "PageSchemaUId": "3f1f3f38-a0a4-4549-b895-249fb08f554a",
+      "IsDefault": true,
+      "IsSspDefault": false,
+      "Actions": null,
+      "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+      "TypeColumnValue": "ecd17c01-cf32-4c9c-8773-04a67992f58d"
+    },
+    {
+      "UId": "6f83d285-9649-4654-855b-569635c69f8b",
+      "PageSchemaUId": "b7b898d0-8c77-4953-c097-23fa6800da02",
+      "IsDefault": false,
+      "IsSspDefault": false,
+      "Actions": {
+        "Add": true
+      },
+      "Role": "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+      "TypeColumnValue": "ecd17c01-cf32-4c9c-8773-04a67992f58d"
+    }
+  ],
+  "TypeColumnUId": "ebf6bb93-8aa6-4a01-900d-c6ea67affe21"
+}
+    }
+  }
+}

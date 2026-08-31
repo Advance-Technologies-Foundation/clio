@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
+using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E;
 
 namespace Clio.Tests.Command.McpServer;
@@ -212,6 +213,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["configure-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-tool-contract"] = PassthroughClassification.NotEnvironmentSensitive,
+			[CreatioArtifactMergeTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
 			["assert-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["show-passing-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments
@@ -240,7 +242,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
-			// --- NotApplicable (138): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (139): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-custom-logging"] = PassthroughClassification.NotApplicable,
@@ -312,6 +314,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-public-jwk"] = PassthroughClassification.NotApplicable,
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
 			["get-mobile-page-conversion-guide"] = PassthroughClassification.NotApplicable, // ENG-91228 advisory guide tool; resolver-backed (class b), read-only, not part of the ENG-93347 passthrough audit
+			["get-package-file"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-page-hierarchy"] = PassthroughClassification.NotApplicable,
 			["get-process-page-facts"] = PassthroughClassification.NotApplicable,
@@ -325,6 +328,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-target-package"] = PassthroughClassification.NotApplicable,
 			["import-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["install-application"] = PassthroughClassification.NotApplicable,
+			["last-compilation-log"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,
 			["install-process-builder"] = PassthroughClassification.NotApplicable,
@@ -332,6 +336,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-entity-client-schemas"] = PassthroughClassification.NotApplicable,
 			["list-packages"] = PassthroughClassification.NotApplicable,
 			["list-page-templates"] = PassthroughClassification.NotApplicable,
+			["list-package-files"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)
 			["list-pages"] = PassthroughClassification.NotApplicable,
 			["list-printables"] = PassthroughClassification.NotApplicable,
 			["list-sys-settings"] = PassthroughClassification.NotApplicable,

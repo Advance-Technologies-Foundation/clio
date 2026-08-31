@@ -21,6 +21,7 @@ internal sealed class GuidanceGetTool {
 
 	private readonly IKnowledgeGuidanceSource _guidanceSource;
 	private readonly IKnowledgeFeedbackPolicyService _feedbackPolicyService;
+	private readonly IKnowledgeBundleActivator _activator;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="GuidanceGetTool"/> class.
@@ -28,7 +29,9 @@ internal sealed class GuidanceGetTool {
 	/// <param name="guidanceSource">Resolves embedded and externally delivered guidance without fallback.</param>
 	public GuidanceGetTool(
 		IKnowledgeGuidanceSource guidanceSource,
-		IKnowledgeFeedbackPolicyService feedbackPolicyService) {
+		IKnowledgeFeedbackPolicyService feedbackPolicyService,
+		IKnowledgeBundleActivator activator) {
+		_activator = activator ?? throw new ArgumentNullException(nameof(activator));
 		_guidanceSource = guidanceSource ?? throw new ArgumentNullException(nameof(guidanceSource));
 		_feedbackPolicyService = feedbackPolicyService
 			?? throw new ArgumentNullException(nameof(feedbackPolicyService));
@@ -111,6 +114,14 @@ internal sealed class GuidanceGetTool {
 					FeedbackPolicy = feedbackPolicy,
 					ErrorCode = KnowledgeGuidanceUnavailableException.ErrorCode,
 					Error = $"Guidance '{effectiveName}' is unavailable because no compatible verified knowledge bundle is active.",
+					// WHY no bundle is active. Without it the caller sees only the effect, and the reason was
+					// reachable from one unrelated tool (list-knowledge-examples) that nobody thinks to call when
+					// guidance is missing - which is how a source that installs and serves nothing stays a mystery.
+					// Neutralized, not merely redacted. The activator composes this from exception text that
+					// interpolates strings taken out of a remote repository, and this tool is mandatory on
+					// every operation - so raw text here is an injection channel into the first thing an agent
+					// reads. See SensitiveErrorTextRedactor.RedactUntrustedOrNull.
+					Diagnostics = SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic),
 					AvailableGuides = _guidanceSource.GetNames().ToList()
 				});
 			}
@@ -186,6 +197,11 @@ public sealed class GuidanceGetResponse {
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Error { get; init; }
+
+	/// <summary>Why no bundle is active, when that is the reason the guidance could not be served.</summary>
+	[JsonPropertyName("diagnostics")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Diagnostics { get; init; }
 
 	[JsonPropertyName("hint")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
