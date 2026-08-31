@@ -19,8 +19,10 @@ else. Two consequences, and the second one cost two rounds to learn:
    genuinely freed — the progress bar still rendered below the tab strip.
 
 So placing content above an anchor takes BOTH halves: an explicit row on the sibling AND the anchor
-moved down. `colSpan` / `rowSpan` are not supported by the mobile runtime — do not write them onto
-anything the converter authors.
+moved down. And a `layoutConfig` must be COMPLETE: write `row`, `column`, `colSpan` and `rowSpan`
+every time. The runtime renders fine without the spans, but the Freedom UI Mobile **designer** fails
+to open a page whose `layoutConfig` omits them — a partial placement is not a smaller placement, it is
+a page nobody can edit.
 
 **Why it is this way** — the web side gives no hint: there the same wrapper lives in a
 `crt.FlexContainer`, where DOM order *is* visual order, so no child carries a `layoutConfig` for

@@ -4236,7 +4236,8 @@ public static class WebToMobileAnalysisService {
 	/// reports whether it wrote one, so the caller shifts the anchor by what was really placed. The shape follows
 	/// WHERE THE ANCHOR'S ROWS ACTUALLY ARE rather than merely whether an <c>adaptive</c> key exists, so an anchor
 	/// with a flat row beside a row-less adaptive block places its siblings flat. Only <c>row</c> and
-	/// <c>column</c> are written — <c>colSpan</c> / <c>rowSpan</c> are not supported by the mobile runtime.
+	/// <c>column</c> are computed; <c>colSpan</c> / <c>rowSpan</c> are always written as 1, because the mobile
+	/// designer refuses to open a page whose <c>layoutConfig</c> omits them.
 	/// <para>
 	/// A placement the sibling already carries is REPLACED: positional placement is authoritative for an element
 	/// the rule rerouted out of its web container, and the one pass that could otherwise have written one
@@ -4264,8 +4265,15 @@ public static class WebToMobileAnalysisService {
 		return true;
 	}
 
-	/// <summary>One sibling cell: the computed row of column 1, and nothing the mobile runtime ignores.</summary>
-	private static JsonObject SiblingSlot(int row) => new() { [LayoutRowKey] = row, ["column"] = 1 };
+	/// <summary>
+	/// One sibling cell: the computed row of column 1, spanning one cell. All four keys are always written —
+	/// the Freedom UI Mobile DESIGNER fails to open a page whose element carries a <c>layoutConfig</c> without
+	/// <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine without them. A partial
+	/// placement is therefore not a smaller placement, it is a broken page at design time.
+	/// </summary>
+	private static JsonObject SiblingSlot(int row) => new() {
+		[LayoutRowKey] = row, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1
+	};
 
 	/// <summary>
 	/// Carries the shifted placement onto the anchor: patches the <c>merge</c> entry the conversion already

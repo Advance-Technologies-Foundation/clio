@@ -7539,17 +7539,17 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
 
 		// Assert
-		LayoutConfigOf(Element(guide, "Top1"))!.ToJsonString().Should().Be("""{"row":1,"column":1}""",
+		LayoutConfigOf(Element(guide, "Top1"))!.ToJsonString().Should().Be("""{"row":1,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "the first sibling takes the anchor's own template row, in the single column mobile stacks in");
-		LayoutConfigOf(Element(guide, "Top2"))!.ToJsonString().Should().Be("""{"row":2,"column":1}""",
+		LayoutConfigOf(Element(guide, "Top2"))!.ToJsonString().Should().Be("""{"row":2,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "siblings stack downward in web order");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(3,
 			because: "the anchor moves below everything placed above it");
 	}
 
 	[Test]
-	[Description("colSpan / rowSpan are never written onto a sibling — the mobile runtime does not support them. The anchor keeps whatever its own template declared, with only the row moved.")]
-	public void Analyze_ShouldWriteOnlyRowAndColumn_OnASibling() {
+	[Description("A sibling's layoutConfig always carries all four keys: the Freedom UI Mobile DESIGNER fails to open a page whose layoutConfig omits colSpan / rowSpan, even though the runtime renders without them — so a partial placement is a broken page at design time, not a smaller one. The anchor keeps whatever its own template declared, with only the row moved.")]
+	public void Analyze_ShouldWriteAllFourPlacementKeys_OnASibling() {
 		// Arrange
 		PageBundleInfo bundle = WrapperBundle(aboveCount: 1);
 
@@ -7558,8 +7558,9 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		((JsonObject)LayoutConfigOf(Element(guide, "Top1"))!).Select(p => p.Key).Should()
-			.BeEquivalentTo(["row", "column"],
-				because: "a span the runtime ignores would be noise in every converted body");
+			.BeEquivalentTo(["row", "column", "colSpan", "rowSpan"],
+				because: "the mobile designer refuses to open a page whose layoutConfig omits the spans, so every "
+					+ "key is written even though only row and column are computed");
 		((JsonObject)LayoutConfigOf(AnchorMerge(guide, "Tabs"))!).Select(p => p.Key).Should()
 			.BeEquivalentTo(["column", "colSpan", "row", "rowSpan"],
 				because: "the anchor's placement is the template's own, carried verbatim apart from the row");
@@ -7614,9 +7615,9 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the anchor's breakpoints are the template's own, carried verbatim apart from the row");
 
 		JsonNode sibling = LayoutConfigOf(Element(guide, "Top1"));
-		sibling!["adaptive"]!["small"]!.ToJsonString().Should().Be("""{"row":1,"column":1}""",
+		sibling!["adaptive"]!["small"]!.ToJsonString().Should().Be("""{"row":1,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "the sibling takes the row the anchor vacated at that breakpoint, in column 1");
-		sibling["adaptive"]!["large"]!.ToJsonString().Should().Be("""{"row":2,"column":1}""",
+		sibling["adaptive"]!["large"]!.ToJsonString().Should().Be("""{"row":2,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "a breakpoint whose anchor started lower keeps the sibling lower with it");
 		sibling["row"].Should().BeNull(
 			because: "mirroring the anchor's shape keeps the runtime resolving both the same way");
@@ -7738,9 +7739,9 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle);
 
 		// Assert
-		LayoutConfigOf(Element(guide, "Bottom1"))!.ToJsonString().Should().Be("""{"row":2,"column":1}""",
+		LayoutConfigOf(Element(guide, "Bottom1"))!.ToJsonString().Should().Be("""{"row":2,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "the first sibling below the anchor takes the row right after the anchor's own");
-		LayoutConfigOf(Element(guide, "Bottom2"))!.ToJsonString().Should().Be("""{"row":3,"column":1}""",
+		LayoutConfigOf(Element(guide, "Bottom2"))!.ToJsonString().Should().Be("""{"row":3,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "each further sibling below takes the next row, in web order");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs")).Should().BeNull(
 			because: "nothing is above the anchor, so its own row is still free and must not be moved");
@@ -7771,7 +7772,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode sibling = LayoutConfigOf(Element(guide, "Top1"));
 		sibling!["adaptive"].Should().BeNull(
 			because: "positional placement owns this element, and it is a single column whatever the web grid was");
-		sibling.ToJsonString().Should().Be("""{"row":3,"column":1}""",
+		sibling.ToJsonString().Should().Be("""{"row":3,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "the anchor's own template row is the origin — row 1 would leave rows 2-3 empty above it");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(4,
 			because: "the anchor moves by the number of siblings ACTUALLY placed, which is exactly the one above it");
@@ -7790,7 +7791,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeAroundTabs(bundle, mixed);
 
 		// Assert
-		LayoutConfigOf(Element(guide, "Top1"))!.ToJsonString().Should().Be("""{"row":1,"column":1}""",
+		LayoutConfigOf(Element(guide, "Top1"))!.ToJsonString().Should().Be("""{"row":1,"column":1,"colSpan":1,"rowSpan":1}""",
 			because: "the only row the anchor declares is the flat one, so that is the shape the sibling gets");
 		LayoutConfigOf(AnchorMerge(guide, "Tabs"))!["row"]!.GetValue<int>().Should().Be(2,
 			because: "the flat row is the one that moves");
