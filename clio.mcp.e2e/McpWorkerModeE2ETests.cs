@@ -45,8 +45,12 @@ public sealed class McpWorkerModeE2ETests {
 
 	private const string EnvironmentName = "worker-mode-stub-e2e";
 	private const string ListPagesToolName = PageListTool.ToolName;
-	private const string ProcessDesignerGatedToolName = "list-user-tasks";
-	private const string ProcessDesignerFeature = "process-designer";
+	// A tool that is STILL behind a FeatureToggle, which is the whole mechanism under test. The probe used to
+	// be list-user-tasks / process-designer; ENG-96132 shipped the process designer on by default and removed
+	// its [FeatureToggle], so freezing that flag off stopped removing anything and the frozen-off arm reached
+	// the tool. Whenever a toggle goes to general availability, this pair has to move to one that has not.
+	private const string FeatureGatedToolName = "get-identity-service-config";
+	private const string GatedToolFeature = "deploy-identity";
 
 	private static readonly TimeSpan CallBudget = TimeSpan.FromSeconds(90);
 
@@ -301,11 +305,11 @@ public sealed class McpWorkerModeE2ETests {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("The worker's tool generation comes from the parent, not from appsettings.json: with the same settings file declaring process-designer ENABLED, a worker frozen with the flag OFF cannot reach a process-designer tool at all, while a worker frozen with it ON can — so a mid-session settings change cannot move a worker's tool set.")]
+	[Description("The worker's tool generation comes from the parent, not from appsettings.json: with the same settings file declaring the gated feature ENABLED, a worker frozen with the flag OFF cannot reach the gated tool at all, while a worker frozen with it ON can — so a mid-session settings change cannot move a worker's tool set.")]
 	[AllureFeature(ClioRunTool.ToolName)]
 	[AllureTag(ClioRunTool.ToolName)]
 	[AllureName("A worker's tool set follows the parent's frozen generation, not the settings file")]
-	[AllureDescription("Writes a settings file whose features block enables process-designer, then starts two real worker children against that SAME file: one frozen with process-designer=0, one with process-designer=1. Dispatches a process-designer-gated tool through clio-run in each. The frozen-off worker must report the tool as not registered — proving it ignored the settings file — while the frozen-on worker must reach the tool and fail for some other reason. Feature-gated primitives are filtered out of registration before the transport is attached, so this is the only observable form of the guarantee.")]
+	[AllureDescription("Writes a settings file whose features block enables the gated feature, then starts two real worker children against that SAME file: one frozen with the flag off, one with it on. Dispatches the feature-gated tool through clio-run in each. The frozen-off worker must report the tool as not registered — proving it ignored the settings file — while the frozen-on worker must reach the tool and fail for some other reason. Feature-gated primitives are filtered out of registration before the transport is attached, so this is the only observable form of the guarantee. The probe must be a tool that is still behind a FeatureToggle: when one goes to general availability its toggle stops removing anything, and the frozen-off arm silently reaches the tool.")]
 	public async Task Worker_Should_UseTheParentsFrozenGeneration_NotAppSettings() {
 		// Arrange
 		await using CreatioWedgeStubServer stub = CreatioWedgeStubServer.Start();
@@ -322,7 +326,7 @@ public sealed class McpWorkerModeE2ETests {
 			    }
 			  },
 			  "features": {
-			    "{{ProcessDesignerFeature}}": true
+			    "{{GatedToolFeature}}": true
 			  }
 			}
 			""");
@@ -330,7 +334,7 @@ public sealed class McpWorkerModeE2ETests {
 			because: "the settings file the workers must DISAGREE with lives in this fixture's own clio home");
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(4));
 		Dictionary<string, object?> gatedCall = new() {
-			["command"] = ProcessDesignerGatedToolName,
+			["command"] = FeatureGatedToolName,
 			["args"] = new Dictionary<string, object?> { ["environment-name"] = EnvironmentName }
 		};
 
@@ -339,7 +343,7 @@ public sealed class McpWorkerModeE2ETests {
 		await using (WorkerProcess frozenOff = await home.StartWorkerAsync(
 				McpWorkerEnvironment.ComposeChildEnvironment(
 					new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) {
-						[ProcessDesignerFeature] = false
+						[GatedToolFeature] = false
 					},
 					McpWorkerLifetime.PerCall),
 				cancellation.Token)) {
@@ -350,7 +354,7 @@ public sealed class McpWorkerModeE2ETests {
 		await using (WorkerProcess frozenOn = await home.StartWorkerAsync(
 				McpWorkerEnvironment.ComposeChildEnvironment(
 					new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) {
-						[ProcessDesignerFeature] = true
+						[GatedToolFeature] = true
 					},
 					McpWorkerLifetime.PerCall),
 				cancellation.Token)) {
@@ -361,13 +365,13 @@ public sealed class McpWorkerModeE2ETests {
 		// Assert
 		string diagnostics = $" frozen-off answer: {frozenOffAnswer} | frozen-on answer: {frozenOnAnswer}";
 		await AllureApi.Step("The frozen-off worker does not have the gated tool, even though the settings file enables it", () => {
-			frozenOffAnswer.Should().Contain($"unknown tool '{ProcessDesignerGatedToolName}'",
+			frozenOffAnswer.Should().Contain($"unknown tool '{FeatureGatedToolName}'",
 				because: $"the worker must resolve the PARENT's generation; reaching the tool here would mean it "
 					+ $"read the settings file and disagreed with the parent about its own surface.{diagnostics}");
 			return Task.CompletedTask;
 		});
 		await AllureApi.Step("The frozen-on worker does have it, so the flag is what moved and not the environment", () => {
-			frozenOnAnswer.Should().NotContain($"unknown tool '{ProcessDesignerGatedToolName}'",
+			frozenOnAnswer.Should().NotContain($"unknown tool '{FeatureGatedToolName}'",
 				because: $"this arm is the control: without it, a worker that registered NO long-tail tools at "
 					+ $"all would satisfy the assertion above for the wrong reason.{diagnostics}");
 			return Task.CompletedTask;
