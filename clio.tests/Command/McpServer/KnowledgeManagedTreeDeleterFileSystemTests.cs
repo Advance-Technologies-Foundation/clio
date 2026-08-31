@@ -103,19 +103,20 @@ public sealed class KnowledgeManagedTreeDeleterFileSystemTests {
 				+ "just rejected as untrusted");
 	}
 
-	// A symbolic link needs SeCreateSymbolicLinkPrivilege on Windows, which a non-elevated CI agent without
-	// Developer Mode does not have. A JUNCTION sets the same ReparsePoint bit and needs no privilege, so the
-	// invariant stays covered there instead of being silently ignored.
+	// DETERMINISTIC per platform, deliberately not "try the nicer one first". Choosing a symbolic link when
+	// the privilege happens to be available made this a lottery: on an elevated or Developer-Mode host the
+	// symlink branch ran, and a symlink is the shape recursive delete handles natively. The junction branch -
+	// the shape that actually breaks it - therefore first executed on a release runner, in a release.
+	// A junction needs no privilege, so Windows always gets one and always exercises the hard case.
 	private static void CreateDirectoryReparsePoint(string path, string target) {
-		try {
+		if (!OperatingSystem.IsWindows()) {
 			Directory.CreateSymbolicLink(path, target);
 			return;
-		} catch (Exception exception) when (exception is UnauthorizedAccessException or IOException
-				or PlatformNotSupportedException) {
-			if (!OperatingSystem.IsWindows()) {
-				Assert.Fail($"Creating a directory symbolic link failed: {exception.Message}");
-			}
 		}
+		CreateJunction(path, target);
+	}
+
+	private static void CreateJunction(string path, string target) {
 		// No output redirection: nothing drains those pipes, and mklink's output is not needed.
 		using Process process = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{path}\" \"{target}\"") {
 			UseShellExecute = false,
@@ -130,6 +131,63 @@ public sealed class KnowledgeManagedTreeDeleterFileSystemTests {
 		(File.GetAttributes(path) & FileAttributes.ReparsePoint).Should().NotBe(default,
 			because: "without the ReparsePoint bit this test asserts nothing, and the guard it covers is the "
 				+ "one that keeps an untrusted checkout from being walked through");
+	}
+
+	[Test]
+	[Description("Removes a knowledge cache that contains a directory junction, which a bare recursive delete cannot.")]
+	public void Delete_ShouldRemoveTheTree_WhenItContainsADirectoryJunction() {
+		// Arrange
+		if (!OperatingSystem.IsWindows()) {
+			Assert.Ignore("A junction is a Windows-only reparse tag; the symlink shape is covered above.");
+		}
+		Directory.CreateDirectory(_outside);
+		string outsideFile = Path.Combine(_outside, "protected.txt");
+		File.WriteAllText(outsideFile, "protected");
+		File.SetAttributes(outsideFile, FileAttributes.ReadOnly);
+		string nested = Path.Combine(_root, "repository", ".git", "modules");
+		Directory.CreateDirectory(nested);
+		CreateJunction(Path.Combine(nested, "linked"), _outside);
+
+		// Act
+		_deleter.Delete(_root);
+
+		// Assert
+		Directory.Exists(_root).Should().BeFalse(
+			because: "a user whose knowledge checkout contains a junction must still be able to delete the "
+				+ "cache; a bare recursive delete removes the junction and then throws, leaving the tree and "
+				+ "with it the 'not owned by Clio' dead end");
+		File.Exists(outsideFile).Should().BeTrue(
+			because: "unlinking a junction must never reach through to what it points at");
+		File.GetAttributes(outsideFile).HasFlag(FileAttributes.ReadOnly).Should().BeTrue(
+			because: "nothing behind the link is deleted, so nothing behind it may be modified either");
+	}
+
+	[Test]
+	[Description("Records that a bare recursive delete really does fail on a junction child, so a regression here is the platform's and not clio's.")]
+	public void RecursiveDelete_ShouldFail_OnAJunctionChild_WhichIsWhyTheDeleterUnlinksFirst() {
+		// Arrange
+		if (!OperatingSystem.IsWindows()) {
+			Assert.Ignore("A junction is a Windows-only reparse tag.");
+		}
+		Directory.CreateDirectory(_outside);
+		Directory.CreateDirectory(_root);
+		CreateJunction(Path.Combine(_root, "linked"), _outside);
+
+		// Act
+		Exception captured = null;
+		try {
+			Directory.Delete(_root, recursive: true);
+		} catch (Exception exception) {
+			captured = exception;
+		}
+
+		// Assert
+		captured.Should().NotBeNull(
+			because: "the deleter unlinks reparse points up front only because the framework cannot handle a "
+				+ "junction child; if this ever starts succeeding the workaround can be reconsidered");
+		Directory.Exists(_root).Should().BeTrue(
+			because: "the framework removes the junction and then throws, so the tree is left behind - which "
+				+ "is exactly the failure a user sees as an undeletable knowledge cache");
 	}
 
 	private static void ForceDelete(string path) {

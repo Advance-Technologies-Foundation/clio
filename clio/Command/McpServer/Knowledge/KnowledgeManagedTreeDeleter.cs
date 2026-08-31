@@ -34,10 +34,17 @@ internal interface IKnowledgeManagedTreeDeleter {
 	/// <para>Read-only attributes are cleared before the delete. Git marks pack files (<c>*.pack</c>,
 	/// <c>*.idx</c>) read-only on creation and Windows refuses to delete a read-only file, so every Git
 	/// knowledge checkout contains files a plain recursive delete cannot remove.</para>
-	/// <para>The attribute walk does not descend into a directory symlink or junction, and skips a file that is
-	/// one. <see cref="System.IO.Directory.Delete(string, bool)"/> unlinks a name-surrogate reparse point rather
-	/// than emptying its target, so a walk that descended would clear read-only bits on files outside the
-	/// managed root that are never deleted — including on a checkout Clio has just rejected as untrusted.</para>
+	/// <para>The walk never descends into a directory reparse point, and skips a file that is one: nothing behind
+	/// a link is ever deleted, so clearing read-only bits there would mutate state outside the managed root —
+	/// including on a checkout Clio has just rejected as untrusted.</para>
+	/// <para>Instead of skipping a directory reparse point, the walk <em>unlinks</em> it with a non-recursive
+	/// delete, which removes the link and leaves its target untouched. This is not tidiness: a recursive
+	/// <see cref="System.IO.Directory.Delete(string, bool)"/> that meets a <b>junction</b> anywhere inside the
+	/// tree removes the link and then throws anyway, leaving the tree on disk. It fails elevated as well as
+	/// unelevated, and the exception differs by host — <c>IOException</c> "The parameter is incorrect" or
+	/// <c>UnauthorizedAccessException</c> "Access to the path is denied" — so neither the privilege level nor
+	/// the exception type can be relied on. A directory <em>symlink</em> is handled natively and never triggers
+	/// it; unlinking every reparse point up front covers both shapes without inspecting reparse tags.</para>
 	/// <para>Clearing is best effort: a file that cannot be reset is left for the delete itself to report, so a
 	/// genuine permission problem still surfaces as one rather than being masked, or — worse — thrown from the
 	/// enumerator before the delete that would have succeeded is ever reached.</para>
@@ -146,6 +153,17 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 						case IFileInfo file:
 							ClearReadOnlyAttribute(file);
 							break;
+						case IDirectoryInfo child when (child.Attributes & FileAttributes.ReparsePoint) != 0:
+							// Unlinked HERE, not left for the recursive delete. Directory.Delete(recursive: true)
+							// throws when it meets a JUNCTION anywhere inside the tree - it removes the link and
+							// then fails anyway, leaving the tree behind. The exception varies by host
+							// (IOException "The parameter is incorrect" / UnauthorizedAccessException "Access to
+							// the path is denied"), and it happens elevated as well as not, so neither the type
+							// nor the privilege level can be relied on. A directory SYMLINK is handled natively;
+							// only the mount-point tag breaks. Unlinking every reparse point up front is the one
+							// rule that covers both without inspecting tags.
+							UnlinkReparsePoint(child);
+							break;
 						case IDirectoryInfo child:
 							pending.Push(child.FullName);
 							break;
@@ -160,6 +178,17 @@ internal sealed class KnowledgeManagedTreeDeleter : IKnowledgeManagedTreeDeleter
 				// A concurrent removal or an unreadable subtree. Leave it to the delete to report: clearing
 				// attributes must never be the step that fails an otherwise removable tree.
 			}
+		}
+	}
+
+	// A NON-recursive delete of a directory reparse point removes the link and never touches its target -
+	// verified, including that a read-only payload behind the link keeps its attribute. Best effort, like the
+	// rest of the walk: if the link survives, the delete that follows is what reports it.
+	private static void UnlinkReparsePoint(IDirectoryInfo link) {
+		try {
+			link.Delete(recursive: false);
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			// Left for the delete to report, exactly as an unresettable read-only file is.
 		}
 	}
 
