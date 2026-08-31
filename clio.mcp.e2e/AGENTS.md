@@ -27,6 +27,15 @@ contract is covered off-stand by unit tests (`CreatioUninstallerTestFixture`, `A
 `McpFixturePolicyTests` enforces the attribute invariant and `TeamCityRunGuardTests` covers the guard's
 runtime behavior. When adding another destructive lifecycle fixture, follow the same marking.
 
+### Developer-local merge lab
+
+`CreatioArtifactMergeToolE2ETests` and `CreatioArtifactMergeGitLabE2ETests` exercise the incomplete
+Creatio artifact merge support. Keep both fixtures `[Explicit]` and
+`[Category("McpE2E.Manual")]`, retain their `McpE2E.NoEnvironment` infrastructure classification,
+and call `TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions` before starting the MCP
+server. They use a fixture-owned temporary `CLIO_HOME`. Do not add these fixtures to a GitHub or
+TeamCity automatic lane.
+
 ## Default rule
 
 - Every new or updated MCP tool must add or update coverage in this project.

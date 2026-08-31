@@ -46,6 +46,10 @@ public sealed class DeployIdentityTool(
 		[Required]
 		DeployIdentityArgs args)
 	{
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			return CommandExecutionResult.FromValidationError(
+				"environment-name is required and cannot be empty.");
+		}
 		DeployIdentityOptions options = new() {
 			Environment = args.EnvironmentName,
 			ZipFile = args.ZipFile,
@@ -72,7 +76,7 @@ public sealed class DeployIdentityTool(
 /// MCP arguments for the <c>deploy-identity</c> tool.
 /// </summary>
 public sealed record DeployIdentityArgs(
-	[property: JsonPropertyName("environmentName")]
+	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name")]
 	[property: Required]
 	string EnvironmentName,

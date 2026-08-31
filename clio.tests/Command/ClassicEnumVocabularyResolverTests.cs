@@ -35,6 +35,7 @@ public sealed class ClassicEnumVocabularyResolverTests {
 	private const string ZeroRootNuiLoginUrl = BaseUri + "/0/Login/NuiLogin.aspx";
 	private const string SiteRootSysEnumsUrl = BaseUri + "/core/" + Hash + "/Terrasoft/core/enums/sysenums.js";
 	private const string ZeroRootSysEnumsUrl = BaseUri + "/0/core/" + Hash + "/Terrasoft/core/enums/sysenums.js";
+	private const string FsmSysEnumsUrl = BaseUri + "/core/hash/Terrasoft/core/enums/sysenums.js";
 
 	private IClassicEnumVocabularySourceParser _parser;
 
@@ -90,6 +91,32 @@ public sealed class ClassicEnumVocabularyResolverTests {
 		requested.Should().Equal([CoreRootLoginUrl, SiteRootSysEnumsUrl],
 			because: "the runtime's own shape is tried first, so a healthy Core stand costs exactly one login-page request");
 		result.Enums.Should().BeSameAs(expected.Enums, because: "the resolver hands the parser's own result straight through when the fetch succeeds");
+		_parser.Received(1).Parse(sysEnumsBody);
+	}
+
+	[Test]
+	[Description("An FSM login page using the literal /core/hash/ route resolves sysenums.js instead of silently omitting enumVocabulary.")]
+	public void Resolve_ShouldUseLiteralHashRoute_WhenLoginPageUsesFsmStaticContent() {
+		// Arrange
+		const string sysEnumsBody = "Terrasoft.ViewItemType = { GRID_LAYOUT: 0 };";
+		var byUrl = new Dictionary<string, (HttpStatusCode, string)> {
+			[CoreRootLoginUrl] = (HttpStatusCode.OK, "<script src=\"/core/hash/Terrasoft/amd/bootstrap-loader.js\"></script>"),
+			[FsmSysEnumsUrl] = (HttpStatusCode.OK, sysEnumsBody)
+		};
+		ClassicEnumVocabularyParseResult expected = SingleEnum("ViewItemType", "GRID_LAYOUT", 0);
+		_parser.Parse(sysEnumsBody).Returns(expected);
+		var requested = new List<string>();
+		var resolver = new ClassicEnumVocabularyResolver(
+			Settings(isNetCore: true), FactoryReturning(byUrl, requested), _parser);
+
+		// Act
+		ClassicEnumVocabularyParseResult result = resolver.Resolve();
+
+		// Assert
+		requested.Should().Equal([CoreRootLoginUrl, FsmSysEnumsUrl],
+			because: "FSM serves static content through the literal hash route named by its login page");
+		result.Enums.Should().BeSameAs(expected.Enums,
+			because: "literal FSM routing must preserve the same parsed vocabulary contract as compiled hash routing");
 		_parser.Received(1).Parse(sysEnumsBody);
 	}
 

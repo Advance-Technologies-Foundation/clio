@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 /// </summary>
 [McpServerPromptType]
 [Description("Guides the agent to read an existing Creatio process with describe-business-process, then narrate what it does using the process-modeling guidance.")]
-[FeatureToggle("process-designer")]
 public static class DescribeProcessPrompt {
 
 	/// <summary>

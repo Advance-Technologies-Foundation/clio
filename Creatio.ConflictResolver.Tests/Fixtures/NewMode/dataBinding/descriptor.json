@@ -1,0 +1,9 @@
+{
+  "Descriptor": {
+    "Columns": [
+      { "ColumnUId": "id-col-1", "IsKey": true },
+      { "ColumnUId": "id-col-2", "IsKey": true },
+      { "ColumnUId": "name-col", "IsKey": false }
+    ]
+  }
+}

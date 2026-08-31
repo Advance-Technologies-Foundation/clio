@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// <summary>
 /// MCP tool that builds a business process on a Creatio environment from a declarative JSON descriptor.
 /// </summary>
-[FeatureToggle("process-designer")]
 public class CreateBusinessProcessTool(
 	CreateBusinessProcessCommand command,
 	ILogger logger,

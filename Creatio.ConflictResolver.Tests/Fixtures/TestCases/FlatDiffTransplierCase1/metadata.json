@@ -1,0 +1,10 @@
+= MetaData.Schema.UId "219cf6d6-c8b2-4499-ae09-35df80410776"
++ MetaData.Schema.EG1.B7 true
++ MetaData.Schema.EG1.BK15 {
+  "BL1": "Terrasoft.Core.Process.ProcessSchemaMapping",
+  "UId": "21bba300-9454-47e2-bda9-dbb8890ba9db",
+  "A2": "SynchronizeSubjectRemindingOwner",
+  "GT1": {}
+}
+~ MetaData.Schema.EG1.BK15 ["21bba300-9454-47e2-bda9-dbb8890ba9db","4d859192-9127-4401-a767-70119d02745e"]
+- MetaData.Schema.D2.["004b1104-cc46-4865-b079-f23d2665c922"].E16
