@@ -4813,6 +4813,34 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A rule refused for declaring no filters is REPORTED, not dropped in silence: the rules file can arrive from the CDN, so a mistyped \"filter\" or an entry still written with a top-level \"type\" must be debuggable from the guide alone rather than shipping an un-normalized page that looks like it needed nothing.")]
+	public void Analyze_OverrideFilters_ShouldReportARuleRefusedForDeclaringNoFilters() {
+		// Arrange — one usable rule and one authored against the removed `type` field, which parses with no
+		// filters at all.
+		var usable = new ComponentPropertyOverrideRule {
+			Filters = [new ElementFilterRule { Type = "crt.FlexContainer" }],
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "gap": "medium" }""")
+		};
+		var oldShape = new ComponentPropertyOverrideRule {
+			Values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{ "borderRadius": "large" }""")
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeOverrides(TwoContainerBundle(), usable, oldShape);
+
+		// Assert
+		Element(guide, "CardGrid").MobileValues!.AsObject().ContainsKey("borderRadius").Should().BeFalse(
+			because: "the refused rule still must not run — reporting it does not resurrect it");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("componentPropertyOverrides rule(s) were ignored"))
+			.Which.Should().Contain("1 componentPropertyOverrides rule(s)",
+				because: "the count names exactly how many standards did not run")
+			.And.Contain("misspelled property name",
+				because: "the line has to point at the rules file, which is where the fix is");
+		guide.Constraints.Should().NotContain(c => c.Contains("0 componentPropertyOverrides"),
+			because: "the line is emitted only when something was actually refused");
+	}
+
+	[Test]
 	[Description("An EMPTY filter list is the explicit opt-in to 'every insert of every type' — it can only be written deliberately, unlike a missing key, so it keeps the unbounded reading.")]
 	public void Analyze_OverrideFilters_ShouldMatchEveryTypeWhenTheFilterListIsEmpty() {
 		// Arrange

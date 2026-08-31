@@ -275,8 +275,11 @@ public sealed class ComponentPropertyOverrideRule {
 	/// Same shape and the same match rule as <see cref="ComponentEquivalenceRule.Filters"/>, evaluated by the
 	/// same code: the entries are OR-ed, each one AND-s every constraint it declares, a value matches only on
 	/// DEEP equality (so an ABSENT property never matches), and an entry that declares nothing matches nothing.
-	/// A list is what makes a union expressible — <c>[{type, borderRadius: small}, {type, borderRadius: medium}]</c>
-	/// reads as "either radius".
+	/// A list is what makes a union expressible —
+	/// <c>[{ "type": "crt.GridContainer", "values": { "borderRadius": "small" } },
+	/// { "type": "crt.GridContainer", "values": { "borderRadius": "medium" } }]</c> reads as "either radius".
+	/// Note the nesting: writing the constraint flat beside <c>type</c> leaves it inert, and each entry
+	/// collapses to type-only — the union then WIDENS to every element of the type instead of narrowing.
 	/// </para>
 	/// <para>
 	/// ABSENT and EMPTY are deliberately different here, because forgetting the key and meaning "everything"
@@ -289,9 +292,13 @@ public sealed class ComponentPropertyOverrideRule {
 	/// </para>
 	/// <para>
 	/// This is the ONE place the two groups diverge, and only at the rule level:
-	/// <see cref="ComponentEquivalenceRule.Filters"/> reads an absent list as "match everything", because
-	/// there the filters NARROW a rule that already carries its own selector (<c>web</c> /
-	/// <c>viewConfigTemplates</c>). The matcher itself stays shared and identical.
+	/// <see cref="ComponentEquivalenceRule.Filters"/> still reads an absent list as "match everything". That
+	/// is that group's PRE-EXISTING behavior, left alone because changing it is out of scope here — NOT a
+	/// safer case. Do not read it as one: <c>WebToMobileAnalysisService.RuleAppliesTo</c> never looks at
+	/// <c>web</c> (and no bundled template entry declares it), and the template's own <c>value.type</c> gate
+	/// is self-satisfying, because the converter derives the element's mobile type FROM the entry that
+	/// matched. So a template entry's filters are its only selector too, and an unfiltered one reaches every
+	/// source node. The matcher itself stays shared and identical.
 	/// </para>
 	/// <para>
 	/// Every rule's filters are evaluated against the element as it ENTERED the pass, before the first value

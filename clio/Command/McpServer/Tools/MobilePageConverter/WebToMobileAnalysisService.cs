@@ -389,6 +389,7 @@ public static class WebToMobileAnalysisService {
 				hasExcludedComponents: excludedRemovedNames.Count > 0,
 			exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
+				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
 				retargetParentsOnTemplate: elementMap
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
@@ -1715,7 +1716,7 @@ public static class WebToMobileAnalysisService {
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
 		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
-		bool hasExcludedComponents = false,
+		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1845,6 +1846,17 @@ public static class WebToMobileAnalysisService {
 				$"{discardedExclusionFilters} excludedComponents filter(s) were ignored because they declare no "
 				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
 				+ "misspelled property name.");
+		}
+		if (skippedOverrideRules > 0) {
+			// Same reasoning as the exclusion-filter count above, and a likelier trigger: an entry authored
+			// against the removed `type` field, or a mistyped "filter", parses with no filters at all and is
+			// refused. Without this line the page just ships un-normalized, which the report cannot tell apart
+			// from "nothing needed normalizing".
+			constraints.Add(
+				$"{skippedOverrideRules} componentPropertyOverrides rule(s) were ignored because they declare "
+				+ "no \"filters\" — those standards did NOT run, so the elements they target keep their WEB "
+				+ "values. Check the rules file for a misspelled property name or an entry still written with "
+				+ "a top-level \"type\".");
 		}
 		if (hasExcludedComponents) {
 			constraints.Add(
@@ -3266,7 +3278,11 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// True when any filter matches the SOURCE web node, or the mapping declares none (match everything).
+	/// True when any filter matches the SOURCE web node, or the mapping declares none — which this group reads
+	/// as "match everything". Note that the sibling caller does NOT: an override rule with no filters is
+	/// skipped, because there the filters are the rule's only selector (see
+	/// <see cref="ComponentPropertyOverrideRule.Filters"/>). The permissive reading here is pre-existing
+	/// behavior, not a safer case — nothing else anchors a template entry either.
 	/// Shares <see cref="ElementFilterRule"/> and its match rule with the override pass (see
 	/// <see cref="MatchesFilters"/>): the filters are OR-ed, and each one AND-s every constraint it declares —
 	/// its <c>type</c> and any value constraint. A value constraint is compared through the same
@@ -4733,8 +4749,9 @@ public static class WebToMobileAnalysisService {
 		// them is incomplete, not universal, and treating it as "matches everything" would let one forgotten
 		// key stamp values onto every component on the page, silently. An EMPTY list still means "everything":
 		// that form can only be written deliberately, so it stays available.
-		List<ComponentPropertyOverrideRule> declared =
-			[.. overrides.Where(r => r?.Values is { Count: > 0 } && r.Filters is not null)];
+		List<ComponentPropertyOverrideRule> stampers = [.. overrides.Where(r => r?.Values is { Count: > 0 })];
+		result.SkippedRulesWithoutFilters = stampers.Count(r => r.Filters is null);
+		List<ComponentPropertyOverrideRule> declared = [.. stampers.Where(r => r.Filters is not null)];
 		if (declared.Count == 0) {
 			return result;
 		}
@@ -5050,6 +5067,15 @@ public static class WebToMobileAnalysisService {
 	private sealed class ComponentPropertyOverrideResult {
 		private readonly Dictionary<string, GroupAccumulator> _groups = new(StringComparer.OrdinalIgnoreCase);
 		private readonly List<string> _order = [];
+
+		/// <summary>
+		/// Rules the pass REFUSED to run because they declare no <c>filters</c> — the whole of what an override
+		/// rule targets. Counted rather than ignored: the rules file can be fetched from the CDN at runtime, so
+		/// a mistyped <c>"filter"</c> or an entry authored against the removed <c>type</c> field silently drops
+		/// its standard, and the page then ships un-normalized in a way the report cannot otherwise distinguish
+		/// from "nothing needed normalizing".
+		/// </summary>
+		public int SkippedRulesWithoutFilters { get; set; }
 
 		/// <summary>Report groups that recorded something, in first-seen (element-map) order.</summary>
 		public IEnumerable<KeyValuePair<string, GroupAccumulator>> Groups =>
