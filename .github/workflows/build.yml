@@ -39,9 +39,12 @@ jobs:
           filters: |
             clio-src:
               - 'clio/**'
+              - 'Creatio.ConflictResolver/**'
               - 'Directory.Packages.props'
             tests:
+              - '.github/workflows/build.yml'
               - 'clio.tests/**'
+              - 'Creatio.ConflictResolver.Tests/**'
               - 'clio.mcp.e2e/**'
               - 'clio.process.fixture/**'
             analyzers:
@@ -107,11 +110,40 @@ jobs:
             --framework net10.0 `
             --filter "Category!=Integration" `
             -p:RunAnalyzers=false;
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test .\Creatio.ConflictResolver.Tests\Creatio.ConflictResolver.Tests.csproj `
+            --configuration Release `
+            -p:RunAnalyzers=false;
 
-  # ── Integration tests (run on PRs and master, after unit tests pass) ──
+  # ── ClioGate tests (only when the bundled service changes) ──────────
+  cliogate-tests:
+    name: ClioGate Tests
+    needs: changes
+    if: >-
+      needs.changes.outputs.cliogate == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    # ClioGate restores Creatio packages from the private Nexus feed, which is unreachable from hosted runners.
+    runs-on: [self-hosted, Windows]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run ClioGate tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
+          dotnet test .\cliogate.tests\cliogate.tests.csproj `
+            --configuration Release;
+
+  # ── Integration tests (run on PRs in parallel with unit tests) ──
   integration-tests:
     name: Integration Tests
-    needs: [changes, unit-tests]
+    needs: changes
     if: >-
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&

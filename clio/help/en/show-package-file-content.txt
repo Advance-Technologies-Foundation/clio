@@ -1,24 +1,42 @@
 NAME
-    show-package-file-content - Show package file content
+    show-package-file-content - List or read compiled package files
 
 DESCRIPTION
-    Displays the content of a file stored within a package.
+    Lists files materialized in a compiled package's Files directory, or reads
+    one file by its package-relative path. In non-FSM development this includes
+    the generated <PACKAGE_NAME>.csproj file.
 
 REQUIREMENTS
-    This command requires the cliogate package to be installed on the target
-    Creatio environment. If cliogate is not installed, the command displays an
-    error and exits. Install or update it with:
+    This command requires cliogate 2.0.0.47 or newer on the target Creatio
+    environment. Install or update it with:
         clio install-gate -e <ENVIRONMENT_NAME>
 
 SYNOPSIS
-    clio show-package-file-content [OPTIONS]
+    clio show-package-file-content --package <PACKAGE_NAME> [--file <RELATIVE_PATH>] -e <ENVIRONMENT_NAME>
 
 OPTIONS
-    Supports the canonical show-package-file-content command options.
+    --package <PACKAGE_NAME>
+        Required. Creatio package name.
+
+    --file <RELATIVE_PATH>
+        Optional. Package-relative file path. Omit to list all materialized
+        package files.
+
+    -e, --environment <ENVIRONMENT_NAME>
+        Registered clio environment name.
+
+    --timeout <MILLISECONDS>
+        Request timeout in milliseconds.
 
 EXAMPLES
-    clio show-package-file-content --help
-        Display canonical options and usage examples
+    clio show-package-file-content --package UsrCode -e dev
+        List materialized files in the UsrCode package.
+
+    clio show-package-file-content --package UsrCode --file UsrCode.csproj -e dev
+        Print the generated package project.
+
+    clio show-package-file-content --package UsrCode --file src/cs/Probe.cs -e dev
+        Print one package source file.
 
 SEE ALSO
     pull-pkg - Download package files locally

@@ -284,6 +284,7 @@ internal sealed class CommandHelpCatalog {
 			"get-entity-schema-properties",
 			"git-sync",
 			"listen",
+			"merge-creatio-artifact",
 			"mock-data",
 			"modify-entity-schema-column",
 			"modify-user-task-parameters",

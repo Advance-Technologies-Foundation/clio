@@ -14,11 +14,15 @@ namespace Clio.Command;
 /// Options for editing an existing business process via the ProcessDesignService package.
 /// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
-// The version literal states what THIS command's code needs: the email block ships in the 1.2.0.1
-// bundle, and an older server has no email member and silently discards the block while answering
-// success. Presence alone cannot express that. The guard fixture asserts the shipped archive
-// satisfies this literal, so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.2.0.1",
+// The version literal states what THIS command's code needs — the newest operation it sends that an
+// older server does not have. Today that is the element-level performer block and the
+// reference-existence guard behind it (bare-Guid Lookup values, performer contact/role), shipped in
+// the 1.3.1.1 archive: an older server has no performer member and silently discards the block while
+// answering success, and a pre-guard server stores a dead id instead of refusing it. Presence alone
+// cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
+// literal. The guard fixture asserts the shipped archive satisfies the literal, so clio can never
+// demand a version it does not itself carry.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.3.1.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

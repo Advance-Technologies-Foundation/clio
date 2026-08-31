@@ -71,12 +71,35 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by hand from the <c>ProcessBuilder</c> repository
-	/// (<c>packages/CrtProcessBuilder</c> at commit <c>074f955</c>, branch
-	/// <c>chore/restamp-1.2.0.0-readdata-rebundle</c> — the 1.2.0.0 restamp over merged <c>main</c>
-	/// <c>30b4816</c>, the ENG-91850 readData merge) following that repository's
-	/// <c>docs/bundling-into-clio.md</c>; there is no build step in the release path that could regenerate it
-	/// here.
+	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1 -Version 1.3.1.1</c> from
+	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
+	/// <c>feature/ENG-91846-perform-task-lookup-constants</c>, at commit
+	/// <c>2ce4ae34fdb95d70e3757560e41df7e174d1aa3a</c> — the tip on top of <c>948cae8f</c> that closes the re-review's Medium: both
+	/// performer routes resolve the parameter's reference by NAME as well as by UId and compose the lookup
+	/// macro from the RESOLVED object, so under name-only typing the contact existence check no longer skips
+	/// and the stored value is a valid macro rather than the bare Guid the platform refuses; the role macro's
+	/// object segment additionally gains the contract-known <c>SysAdminUnit</c> backstop.
+	/// 1.3.1.1 is a PATCH over 1.3.1.0 — the ENG-91846 version whose MINOR digit says the delivery adds a
+	/// capability (assigning a task to a team): this cut widens that capability's reach to the name-typed
+	/// parameter population, it does not add another. The whole route: the Lookup bare-Guid ConstValue
+	/// relaxation with the reference-existence guard, the Guid.Empty refusal, the bare-Guid-first rejection
+	/// message, and the element-level <c>performer</c> block (user/manager/role, the role landing in the
+	/// Activity's own <c>OwnerRole</c> column), with both performer fields taking an id or a name and refusing
+	/// what identifies no single record. Every stamp from 1.3.0.2 through 1.3.1.0 was branch-internal and
+	/// never released; each raise exists so a stand or checkout still carrying an older one is DETECTABLY
+	/// behind — same-version re-cuts make equal version numbers mean nothing, which the convergence check
+	/// cannot see through. There is no build step in the release path that could regenerate it here.
+	/// <para>
+	/// BOTH prescribed cross-checks were RUN against that commit, not assumed: the <c>ModifiedOnUtc</c> pinned
+	/// below equals its descriptor, and all 114 archive entries equal that commit's CHECKOUT rendering byte for
+	/// byte — the only committed file absent from the archive being the <c>.DotSettings</c> that
+	/// <c>clioignore</c> excludes. The byte check earned its
+	/// keep on the previous cut: freshly written files carried LF where a checkout on a
+	/// <c>core.autocrlf=true</c> host produces CRLF — the third failure mode the remarks below describe, an
+	/// archive corresponding to no commit at all — and the tree was renormalised before cutting. Re-run the
+	/// line-ending audit whenever the archive is cut from a tree with just-written files.
+	/// </para>
+	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
 	/// <remarks>
 	/// This is the change-detection pin, not a security control: it cannot tell a good archive from a bad
@@ -110,7 +133,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"7A059992772E5DCCDE6517A79790DB5B66EB438CDC6AACD1435F9AC6F8A88ECF";
+		"16FAB3958065EB7130D150926493F63B72E33A8CE5DEF0A6611F19FE62A5FCAF";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -127,15 +150,18 @@ public class BundledProcessBuilderPackageTests {
 	/// This makes the freeze visible; the script makes it hard to do by accident.
 	/// <para>
 	/// The must-increase rule starts at the FIRST RELEASE. Before the package has ever shipped in a released
-	/// clio there is no environment carrying it, so there is nothing for a bump to propagate to and re-cutting
-	/// the archive under the same version is correct — only <c>ModifiedOnUtc</c> has to move, which is what
-	/// makes a target pick up the new sources. That is why this pin can stay at <c>1.0.0.0</c> across
-	/// rebundles on the delivering branch. The script still refuses; the pre-release path is deliberately the
-	/// manual one, so the guard keeps no hole for the steady state.
+	/// clio there is no CUSTOMER environment carrying it, so a same-version re-cut (only <c>ModifiedOnUtc</c>
+	/// moves) is permitted — but its real boundary is narrower than "unreleased": the moment a cut leaves the
+	/// working copy (pushed, installed on a shared stand, handed to a reviewer), equal version numbers stop
+	/// meaning equal bytes and the convergence check cannot tell the copies apart — this branch re-cut 1.3.0.5
+	/// three times and then had to raise twice precisely to make stale review-time copies detectable. So:
+	/// same-version only while the previous cut never left your machine; otherwise raise. The script still
+	/// refuses a same-version cut; the pre-release path is deliberately the manual one, so the guard keeps no
+	/// hole for the steady state.
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.3.0.1";
+	private const string ExpectedArchiveVersion = "1.3.1.1";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -161,7 +187,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1787297993000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1787902471000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -852,6 +878,59 @@ public class BundledProcessBuilderPackageTests {
 		declared.Should().BeEmpty(
 			because: "only requirements naming the bundled package may reach the satisfiability check; a "
 				+ "cliogate floor is satisfied by a different archive entirely");
+	}
+
+	[Test]
+	[Description("Every 'CrtProcessBuilder <version>' literal the process-designer tool descriptions and the modify prompt hand out to agents equals the version the bundled archive actually carries. The contract text is restated on several surfaces by design (each surface reads in isolation), and this delivery re-aligned them twice by review rather than by a check — this is the check. A version bump now fails here until every shipped literal moves with the pin.")]
+	public void ToolContractVersionLiterals_ShouldMatchTheBundledArchiveVersion() {
+		// Arrange — the shipped agent-facing texts that name the package version
+		var surfaces = new Dictionary<string, string> {
+			["create-business-process description"] =
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool)),
+			["modify-business-process description"] =
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+			["modify-business-process prompt"] =
+				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
+					"env-placeholder", "process-placeholder")
+		};
+		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
+
+		var anyVersionPattern = new System.Text.RegularExpressions.Regex(@"\d+\.\d+\.\d+\.\d+");
+
+		// Act & Assert
+		foreach (KeyValuePair<string, string> surface in surfaces) {
+			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
+			matches.Should().NotBeEmpty(
+				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
+					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
+			foreach (System.Text.RegularExpressions.Match match in matches) {
+				match.Groups[1].Value.Should().Be(ExpectedArchiveVersion,
+					because: $"the {surface.Key} names a package version an agent will trust; a literal that "
+						+ "lags the bundled archive re-creates the exact drift this pin exists to end");
+			}
+			// The wide net behind the shaped one: ANY four-part version on these surfaces is the package
+			// version (nothing else four-part belongs in them), so a mention that drifts into a different
+			// shape — 'CrtProcessBuilder >= X', 'pre-X', a bare number — cannot hide beside a matching literal.
+			foreach (System.Text.RegularExpressions.Match match in anyVersionPattern.Matches(surface.Value)) {
+				match.Value.Should().Be(ExpectedArchiveVersion,
+					because: $"every four-part version on the {surface.Key} is a CrtProcessBuilder version "
+						+ "whatever sentence shape carries it; a stray one is drift the shaped pattern cannot see");
+			}
+		}
+	}
+
+	/// <summary>The [Description] text of the type's MCP tool method (the agent-facing contract).</summary>
+	private static string GetToolDescription(Type toolType) {
+		System.Reflection.MethodInfo method = toolType
+			.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
+				| System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly)
+			.Single(candidate => candidate
+				.GetCustomAttributes(true)
+				.Any(attribute => attribute.GetType().Name == "McpServerToolAttribute"));
+		var description = (System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), true)
+			.Single();
+		return description.Description;
 	}
 
 	#endregion

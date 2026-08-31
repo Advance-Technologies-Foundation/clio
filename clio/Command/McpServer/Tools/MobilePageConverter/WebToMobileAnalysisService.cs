@@ -110,6 +110,7 @@ public static class WebToMobileAnalysisService {
 		JsonNode mobileTemplateModelConfig = null,
 		bool mobileTemplateUnavailable = false,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
+		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
 		JObject webTemplateResources = null) {
@@ -126,6 +127,8 @@ public static class WebToMobileAnalysisService {
 			mobileTemplateTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, JObject> webBaselineNodes =
 			webTemplateBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
+		IReadOnlyDictionary<string, JsonObject> mobileLayoutConfigs =
+			mobileTemplateLayoutConfigs ?? new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
 
 		// 0. Filter out the web template's own components at read time. The merged tree carries the
 		//    chrome the source page inherits from its web template (e.g. PageWithTabsFreedomTemplate:
@@ -189,10 +192,29 @@ public static class WebToMobileAnalysisService {
 		// mobile anchor's PARENT container with an index. Resolve each web anchor to that mobile parent.
 		IReadOnlyDictionary<string, string> positionalParentByAnchor =
 			ResolvePositionalParents(positionalPlacements, mobileContainerParents);
+		// Web anchor -> MOBILE anchor, so an insert the rule routed can be tagged with the anchor it was placed
+		// around. The anchor-row pass groups by that tag instead of by parent container.
+		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor = ResolvePositionalAnchors(positionalPlacements);
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
-			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor,
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
+			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, webBaselineNodes, webTemplateResources);
+
+		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
+		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
+		// can take: an element-map entry of its own whose ParentName ancestor chain reaches the host (the
+		// primary shape — the child-array traversal walks tools/menuItems children into their own entries),
+		// or a node the generic per-element copy carried verbatim inside a host's OWN property (the fallback
+		// shape, when a subtree member does not resolve to a mobile type). Deliberately BEFORE
+		// RemoveEmptyContainers: a container branch this pass empties out cascades away there, and every
+		// removal is recorded as a "drop" ElementMapEntry the same way EmptyContainerRemoval records its own.
+		// The removed names feed the same two reconciliations the empty-container pass feeds: mobile names →
+		// BuildRequestConversionInfo (a removed element's binding is reported as discarded, not converted),
+		// web names → BuildMobileViewModelConfig (removal is layout cleanup — referenced attributes are KEPT).
+		HashSet<string> excludedRemovedNames = ExcludedComponentsPass.RemoveExcludedComponents(
+			elementMap, rules, out HashSet<string> excludedRemovedMobileNames,
+			out ExcludedComponentsPass.ExcludedComponentsDiagnostics excludedDiagnostics);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately
@@ -219,13 +241,20 @@ public static class WebToMobileAnalysisService {
 		// put the first web tab BEFORE the general tab).
 		AssignConvertedTabIndexes(elementMap);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
-			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames);
+			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames,
+			excludedRemovedMobileNames);
 
 		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
 		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
 		// placement. A 1-column grid gets no adaptive. Both the container columns and each child's
 		// layoutConfig.adaptive are baked into mobileValues deterministically.
 		List<AdaptiveLayoutGroup> adaptiveLayout = BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns);
+
+		// Explicit grid placement for a positional (<anchor>:top / :bottom) group. The insert index orders the
+		// parent's items, which a grid parent does not read, so the siblings and the anchor are placed by row:
+		// the anchor's own template row is the origin, the siblings above take it and the rows after, the anchor
+		// moves down by their count. Deliberately AFTER BuildAdaptiveLayout so that pass cannot overwrite it.
+		PlacePositionalGroups(elementMap, mobileLayoutConfigs);
 
 		// Designer's two-layer tab body (tab-body grid + Area card) synthesized into every tab the converter
 		// creates. Deliberately AFTER the adaptive pass: that pass indexes children per multi-column web grid
@@ -263,7 +292,12 @@ public static class WebToMobileAnalysisService {
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
 		//    viewModelConfig drops attributes used only by dropped components.
 		JsonNode modelConfig = PassthroughModelConfig(bundle);
-		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap, emptyRemovedNames);
+		// Attribute pruning treats BOTH layout-cleanup removals the same way: a name removed by the
+		// empty-container pass or by an excludedComponents rule is layout cleanup, not attribute cleanup,
+		// so the attributes it referenced are kept.
+		var layoutRemovedNames = new HashSet<string>(emptyRemovedNames, StringComparer.OrdinalIgnoreCase);
+		layoutRemovedNames.UnionWith(excludedRemovedNames);
+		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap, layoutRemovedNames);
 		// Prebuilt, ready-to-paste diffs so the caller never hand-builds the data-source section. Each config
 		// is diffed against the mobile template's OWN merged base (the schema the page is created from):
 		// a key whose subtree already exists in the base is recursed into, so only the real delta is emitted
@@ -351,12 +385,21 @@ public static class WebToMobileAnalysisService {
 				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
 				normalization: componentPropertyOverrides,
 				webTemplateUnavailable: webTemplateUnavailable,
-				hasComponentTwin: componentMap.Count > 0),
+				hasComponentTwin: componentMap.Count > 0,
+				hasExcludedComponents: excludedRemovedNames.Count > 0,
+			exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
+				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
+				retargetParentsOnTemplate: elementMap
+					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
+					.Select(e => e.ParentName)
+					.Distinct(StringComparer.OrdinalIgnoreCase)
+					.ToList()),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
-				normalization: componentPropertyOverrides),
+				normalization: componentPropertyOverrides,
+			hasResourceStrings: resourceStrings.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -776,6 +819,43 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
+	/// <summary>
+	/// Builds a name → own <c>layoutConfig</c> map for every named component of a merged viewConfig tree
+	/// (System.Text.Json). Read off the MOBILE TEMPLATE so the converter can see the placement the template
+	/// already pinned on an element — a <c>crt.GridContainer</c> positions its children by <c>layoutConfig</c>
+	/// rather than by <c>items</c> order, so content inserted above such a child needs that child's row freed.
+	/// Elements without a <c>layoutConfig</c> are simply absent from the map. Case-insensitive; first
+	/// occurrence wins, mirroring <see cref="CollectComponentTypesByName"/>.
+	/// </summary>
+	public static Dictionary<string, JsonObject> CollectLayoutConfigByName(JsonArray viewConfig) {
+		var map = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
+		CollectLayoutConfigByName(viewConfig, map);
+		return map;
+	}
+
+	private static void CollectLayoutConfigByName(JsonArray nodes, Dictionary<string, JsonObject> map) {
+		if (nodes is null) {
+			return;
+		}
+		foreach (JsonNode node in nodes) {
+			if (node is not JsonObject obj) {
+				continue;
+			}
+			string name = StringProp(obj, "name");
+			if (!string.IsNullOrWhiteSpace(name) && !map.ContainsKey(name)
+				&& obj.TryGetPropertyValue("layoutConfig", out JsonNode layoutConfig)
+				&& layoutConfig is JsonObject placement) {
+				map[name] = placement;
+			}
+			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
+				CollectLayoutConfigByName(items, map);
+			}
+			// Non-items child-element slots too, so an element nested outside items (tools, floatAction, …) is
+			// covered by the same walk as the type and parent maps.
+			CollectLayoutConfigByName(ChildComponentSlots(obj), map);
+		}
+	}
+
 	/// <summary>Reads a JSON STRING property, or null when absent / not a string (no throw on a non-string).</summary>
 	private static string StringProp(JsonObject obj, string propertyName) =>
 		obj.TryGetPropertyValue(propertyName, out JsonNode node) && node is JsonValue value
@@ -1153,6 +1233,21 @@ public static class WebToMobileAnalysisService {
 		return map;
 	}
 
+	/// <summary>
+	/// Maps each positional WEB anchor to its MOBILE anchor, so an insert the rule routed can be tagged with
+	/// the element it was placed around. Returns an empty map when there are no positional placements.
+	/// </summary>
+	private static IReadOnlyDictionary<string, string> ResolvePositionalAnchors(
+		IReadOnlyList<PositionalPlacement> placements) {
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (PositionalPlacement p in placements ?? []) {
+			if (p is not null && !string.IsNullOrWhiteSpace(p.WebAnchor) && !string.IsNullOrWhiteSpace(p.MobileAnchor)) {
+				map[p.WebAnchor] = p.MobileAnchor;
+			}
+		}
+		return map;
+	}
+
 	/// <summary>Builds the web→mobile container correspondence from the matched template rule.</summary>
 	private static IReadOnlyList<ContainerMapEntry> BuildContainerMap(TemplateMappingRule rule) {
 		if (rule?.Containers is null || rule.Containers.Count == 0) {
@@ -1476,14 +1571,16 @@ public static class WebToMobileAnalysisService {
 	/// Returns the source page's merged viewModelConfig filtered for mobile: an attribute is removed only
 	/// when EVERY component that references it (via a <c>$Attr</c> binding) was dropped from the mobile
 	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
-	/// consumer, are kept. A container the EMPTY-container pass removed (<paramref name="emptyRemovedNames"/>)
-	/// is deliberately NOT counted as dropped here: that removal is layout cleanup, and the agreed scope
-	/// keeps the attributes it referenced (e.g. a bound <c>visible</c>) untouched. All other
-	/// viewModelConfig sections are passed through unchanged.
+	/// consumer, are kept. An element either LAYOUT-CLEANUP pass removed
+	/// (<paramref name="layoutRemovedNames"/>) is deliberately NOT counted as dropped here — a container the
+	/// empty-container pass removed, or a component an <c>excludedComponents</c> rule banned from its host:
+	/// both are layout cleanup, and the agreed scope keeps the attributes they referenced (e.g. a bound
+	/// <c>visible</c>) untouched. Only a GENUINE drop — an unsupported type, an unsupported button request —
+	/// takes its attributes with it. All other viewModelConfig sections are passed through unchanged.
 	/// </summary>
 	private static JsonNode BuildMobileViewModelConfig(
 		PageBundleInfo bundle, JArray tree, List<ElementMapEntry> elementMap,
-		IReadOnlySet<string> emptyRemovedNames = null) {
+		IReadOnlySet<string> layoutRemovedNames = null) {
 		if (bundle.ViewModelConfig is not { Count: > 0 }) {
 			return null;
 		}
@@ -1500,8 +1597,8 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.WebName)
 					.Where(n => !string.IsNullOrEmpty(n)),
 				StringComparer.OrdinalIgnoreCase);
-			if (emptyRemovedNames is { Count: > 0 }) {
-				dropped.ExceptWith(emptyRemovedNames);
+			if (layoutRemovedNames is { Count: > 0 }) {
+				dropped.ExceptWith(layoutRemovedNames);
 			}
 			Dictionary<string, HashSet<string>> consumers = BuildAttrConsumers(tree);
 			// Attributes referenced by any SURVIVING element-map entry's prebuilt MobileValues are ALWAYS kept, even
@@ -1616,13 +1713,25 @@ public static class WebToMobileAnalysisService {
 		bool viewModelConfigRootMerge = false, bool modelConfigRootMerge = false, bool mobileTemplateUnavailable = false,
 		IReadOnlyList<string> dataSectionArrayConflicts = null, bool hasTabAreaLayers = false,
 		bool hasEmptyContainerRemovals = false, ComponentPropertyOverrideResult normalization = null,
-		bool webTemplateUnavailable = false, bool hasComponentTwin = false) {
+		bool webTemplateUnavailable = false, bool hasComponentTwin = false,
+		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
+		bool hasExcludedComponents = false,
+		IReadOnlyList<string> retargetParentsOnTemplate = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
 			"No handlers, no validators, no custom converters in a mobile body. Re-implement conditional visibility / required / read-only / set-value logic as entity-level business rules (create-entity-business-rule). Reference only OOTB converters inline in binding expressions.",
 			"Use only mobile-registered component types (get-component-info schema-type \"mobile\")."
 		};
+		if (retargetParentsOnTemplate is { Count: > 0 }) {
+			constraints.Add(
+				"elementMap RETARGETS elements into container(s) the mobile template ALREADY provides: "
+				+ string.Join(", ", retargetParentsOnTemplate)
+				+ ". For every elementMap entry marked parentExistsOnTemplate:true, insert ONLY that child into the named "
+				+ "parent; do NOT insert, recreate, or re-declare the parent container or its slot — the template already "
+				+ "supplies it. Adding your own copy (e.g. a second FloatingActionButton on Scaffold.floatAction) overrides "
+				+ "the native one and is wrong.");
+		}
 		if (hasModelConfig) {
 			// The "targeted, not a root merge" claim only holds when a real base was diffed against; when the
 			// modelConfig fell back to a single root merge (no template base), say so instead of the opposite.
@@ -1720,6 +1829,32 @@ public static class WebToMobileAnalysisService {
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
 		AppendNormalizationLines(constraints, normalization);
+		if (exclusionSearchTruncated) {
+			// The one outcome the drop entries cannot report: a component that was never removed produces no
+			// entry, so without this line a banned component past the depth budget is indistinguishable from
+			// one no rule targets.
+			constraints.Add(
+				"An excludedComponents search hit its depth budget and abandoned a branch: a banned component nested "
+				+ "deeper than the budget is still on the page and has NO drop entry. Re-check the deepest branches "
+				+ "of the converted page against the rules before treating the exclusion report as complete.");
+		}
+		if (discardedExclusionFilters > 0) {
+			// The rules file can be fetched from the CDN at runtime, so a typo in a published rule silently
+			// switches an exclusion off. Naming the count makes that debuggable from the report alone.
+			constraints.Add(
+				$"{discardedExclusionFilters} excludedComponents filter(s) were ignored because they declare no "
+				+ "\"type\" or no \"parentType\". Those exclusions did NOT run — check the rules file for a "
+				+ "misspelled property name.");
+		}
+		if (hasExcludedComponents) {
+			constraints.Add(
+				"One or more components were removed by an excludedComponents rule — they appear in elementMap as "
+				+ "drop entries whose reason names the rule, the type, the host and the slot. That removal is "
+				+ "POSITIONAL, not conversion loss: the same type converts normally OUTSIDE that position. Do NOT "
+				+ "re-insert such a component anywhere, do NOT look for a substitute, and do NOT raise it as a gate "
+				+ "question — just report it like any other drop. Which types are banned from which hosts is converter "
+				+ "configuration resolved at run time, so read the drop reasons rather than assuming a fixed list.");
+		}
 		if (hasEmptyContainerRemovals) {
 			constraints.Add(
 				"One or more converted containers ended up EMPTY (no child survived conversion) and were already " +
@@ -1731,11 +1866,11 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout, bool hasTabAreaLayers = false,
-		ComponentPropertyOverrideResult normalization = null) {
+		ComponentPropertyOverrideResult normalization = null, bool hasResourceStrings = false) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
-			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
+			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert), and when the entry carries mobileValues emit a MERGE operation on that element with them verbatim — a merge is the only way some values reach the page at all (an anchor whose row had to move to make room for content placed above it arrives exactly this way, and skipping it silently reproduces the misplacement); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
 			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type and EVERY source property the mobile component supports (including the field caption). Never drop a supported property. Then add ONLY the value binding (control, or value for lookups), which is left out on purpose. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
 		};
 		if (hasDataSections) {
@@ -1748,6 +1883,13 @@ public static class WebToMobileAnalysisService {
 			steps.Add("The mobile designer's two-layer tab body (tab body grid + Area card) is already baked into the element map for every converter-created tab: the tab's top-level content (expansion panels included) is retargeted into the Area and stacked in web order. Apply the element map as it is. This structure is MANDATORY — do NOT ask the user whether to apply it and do NOT offer an alternative; just STATE what it does when you present the plan (guide.tabAreaLayers: tab -> synthesized layer names -> movedChildren in row order).");
 		}
 		AppendNormalizationLines(steps, normalization);
+		if (hasResourceStrings) {
+			steps.Add("Register guide.resourceStrings as a WHOLE with one update-page resources call: it is the "
+				+ "{key: en-US text} map for EVERY #ResourceString token the pasted mobileValues carry, including the "
+				+ "ones nested inside a component value (config.title, text.template, a list row caption). Registering "
+				+ "only the per-element captionResource keys leaves the nested tokens unresolved and they render as "
+				+ "the raw token on the device.");
+		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
 		return steps;
@@ -1778,6 +1920,7 @@ public static class WebToMobileAnalysisService {
 		Dictionary<string, JObject> SourceLayouts,
 		Dictionary<string, int> GridContainerColumns,
 		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
+		IReadOnlyDictionary<string, string> PositionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> MobileTypesByName,
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
@@ -1819,6 +1962,7 @@ public static class WebToMobileAnalysisService {
 		Dictionary<string, JObject> sourceLayouts,
 		Dictionary<string, int> gridContainerColumns,
 		IReadOnlyDictionary<string, string> positionalParentByAnchor,
+		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
 		JObject webBaselineResources) {
@@ -1829,6 +1973,7 @@ public static class WebToMobileAnalysisService {
 			rules, attrToColumn, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			positionalAnchorByWebAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
@@ -1843,7 +1988,7 @@ public static class WebToMobileAnalysisService {
 		// Positional siblings: when this array holds a positional anchor container (e.g. CardContentWrapper),
 		// each sibling ABOVE it is placed above the mobile anchor (Tabs) — inserted into the anchor's parent
 		// (MainContainer) with an ascending index from 0 — and each sibling BELOW it is appended after.
-		IReadOnlyDictionary<string, (string Parent, int? Index)> positional = ResolvePositionalSiblings(ctx, nodes);
+		IReadOnlyDictionary<string, (string Parent, int? Index, string Anchor)> positional = ResolvePositionalSiblings(ctx, nodes);
 		foreach (JToken token in nodes) {
 			if (token is not JObject node) {
 				continue;
@@ -1878,7 +2023,7 @@ public static class WebToMobileAnalysisService {
 			// Inside a non-converting scope: only a node a conversion template RETARGETS (e.g. a header crt.Button /
 			// crt.MenuItem → FloatingActionButton.menuItems) that also has a CONVERTIBLE `clicked` is converted; it
 			// is emitted at the retargeted placement. Any other node (a container-only dropdown with no clicked of
-			// its own, an explicitly-unsupported clicked, a component no rule matches, or a retarget whose target the
+			// its own, an unsupported clicked, a component no rule matches, or a retarget whose target the
 			// mobile template lacks) is dropped with a reason built FROM DATA — naming the scope container and the
 			// specific cause — and its lost action request is recorded so requestConversions reflects it. Either way
 			// the subtree is recursed IN SCOPE, so a dropdown's nested menuItems still flatten into the same target.
@@ -1891,7 +2036,25 @@ public static class WebToMobileAnalysisService {
 						ItemsPropertyName, sourceAncestors);
 				ClickedConvertibility clicked = ClassifyClicked(ctx, node, out string scopedRequest);
 				bool targetMissing = scopedTarget is { } t && RetargetTargetMissing(ctx, t.Parent);
-				if (scopedTarget is { } target && clicked == ClickedConvertibility.Convertible && !targetMissing) {
+				if (scopedTarget is { } nativeTarget && clicked == ClickedConvertibility.Convertible
+					&& RetargetSourceIsInheritedChrome(ctx, name)) {
+					// The element is inherited from the web template (chrome such as Save/Cancel/Close), which the mobile
+					// template provides natively; retargeting it into a shared container would duplicate it. Drop it — the
+					// native element carries its OWN action. Guarded by convertibility so a node that would NOT have converted
+					// anyway (no clicked, an unsupported request) keeps its accurate data-derived ScopeDropReason
+					// below instead of this inherited-chrome one.
+					ctx.Out.Add(Drop(name, type,
+						$"action under non-converting scope '{scopeContainer}'; '{name}' is inherited from the web template "
+						+ $"(chrome the mobile template provides natively) — not retargeted into {nativeTarget.Parent}.{nativeTarget.Property} (retargeting would duplicate the native element)"));
+					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on an
+					// inherited button); record it so requestConversions still reports the dropped action rather than losing it silently.
+					if (scopedRequest is not null) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = name, Binding = "clicked", WebRequest = scopedRequest,
+							Reason = $"'{name}' is inherited from the web template (chrome the mobile template provides natively), which carries its own action"
+						});
+					}
+				} else if (scopedTarget is { } target && clicked == ClickedConvertibility.Convertible && !targetMissing) {
 					CaptionResource scopedCaption = ResolveCaptionResource(ctx, node, name);
 					// BuildMobileValues → ProcessEventBindings converts (or keeps+flags) the clicked request in place,
 					// so the FAB menu item ships the MOBILE request, not the web one, and requestConversions records it.
@@ -1901,11 +2064,12 @@ public static class WebToMobileAnalysisService {
 						WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = scopedType,
 						ParentName = target.Parent, PropertyName = target.Property, Index = null,
 						CaptionResource = scopedCaption, MobileValues = scopedValues,
+						ParentExistsOnTemplate = ParentProvidedByTemplate(ctx, target.Parent) ? true : (bool?)null,
 						Reason = $"action under non-converting scope '{scopeContainer}'; converted into {target.Parent}.{target.Property}"
 					});
 				} else {
 					(string dropReason, string requestLossReason) = ScopeDropReason(
-						scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
+						ctx, scopeContainer, name, scopedType, scopedTarget, clicked, scopedRequest, targetMissing);
 					ctx.Out.Add(Drop(name, type, dropReason));
 					// Record the lost action so requestConversions surfaces it (BuildMobileValues did not run, so
 					// nothing recorded it yet). None-clicked nodes carry no request and nothing is recorded.
@@ -1924,7 +2088,7 @@ public static class WebToMobileAnalysisService {
 			}
 
 			// A positional sibling of the anchor is rerouted to the mobile anchor's parent (± index).
-			bool isPositional = positional.TryGetValue(name, out (string Parent, int? Index) place);
+			bool isPositional = positional.TryGetValue(name, out (string Parent, int? Index, string Anchor) place);
 
 			bool isContainer = (items is { Count: > 0 }) || IsLayoutContainer(type, name, null, ctx.MobileByType);
 
@@ -2054,6 +2218,18 @@ public static class WebToMobileAnalysisService {
 				bool containerRetargeted = false;
 				if (ResolveTemplatePlacement(ctx, node, type, name, containerParent, containerProperty, sourceAncestors)
 					is { } containerTarget) {
+					// A container inherited from the web template (chrome the mobile template provides natively) must not be
+					// retargeted into a shared parent — that would duplicate it. Drop it and hoist its children to the walk
+					// parent so they are not lost with the container that is not re-emitted.
+					if (RetargetSourceIsInheritedChrome(ctx, name)) {
+						ctx.Out.Add(Drop(name, type,
+							$"'{name}' is inherited from the web template (chrome the mobile template provides natively) — not retargeted into "
+							+ $"'{containerTarget.Parent}.{containerTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
+						if (items is not null) {
+							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name));
+						}
+						continue;
+					}
 					// A retarget into a parent the mobile template lacks is dropped, not emitted as an unresolvable
 					// insert (see the leaf branch). Container children are hoisted to the walk parent so they are not
 					// lost with the container that could not be placed.
@@ -2079,10 +2255,13 @@ public static class WebToMobileAnalysisService {
 					Index = containerIndex,
 					CaptionResource = containerCaption,
 					MobileValues = containerValues,
+					ParentExistsOnTemplate = containerRetargeted && ParentProvidedByTemplate(ctx, containerParent)
+						? true : (bool?)null,
+					PositionalAnchor = isPositional && !containerRetargeted ? place.Anchor : null,
 					Reason = containerRetargeted
 						? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
 						: isPositional
-							? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+							? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile {place.Anchor} (in {place.Parent})"
 							: "container; mobile-supported"
 				});
 				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
@@ -2118,6 +2297,26 @@ public static class WebToMobileAnalysisService {
 			bool leafRetargeted = false;
 			if (ResolveTemplatePlacement(ctx, node, leafMobileType, name, leafParent, leafProperty, sourceAncestors)
 				is { } leafTarget) {
+				// A source element inherited from the web template (e.g. Save / Cancel / Close, carried by the record-page
+				// template) must NOT be retargeted into a shared container — the mobile template provides its own
+				// equivalent, so that would duplicate it. Drop it with a diagnostic; its nested actions are still recursed
+				// in scope for an explicit outcome, and the native element keeps its own action so nothing is lost.
+				if (RetargetSourceIsInheritedChrome(ctx, name)) {
+					ctx.Out.Add(Drop(name, type,
+						$"'{name}' is inherited from the web template (chrome the mobile template provides natively) — not retargeted into "
+						+ $"'{leafTarget.Parent}.{leafTarget.Property}' (the mobile equivalent already exists; retargeting would duplicate it)"));
+					// The native element carries its own action, but the WEB request may differ (a custom usr.* request on an
+					// inherited button); record it so requestConversions reports the dropped action instead of losing it silently.
+					ClassifyClicked(ctx, node, out string nativeSourceRequest);
+					if (nativeSourceRequest is not null) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = name, Binding = "clicked", WebRequest = nativeSourceRequest,
+							Reason = $"'{name}' is inherited from the web template (chrome the mobile template provides natively), which carries its own action"
+						});
+					}
+					RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name), inNonConvertingScope: true);
+					continue;
+				}
 				// Never emit an unresolvable insert: when a template retargets into a parent the mobile template
 				// is known to lack, drop the element with a diagnostic instead. Nested actions are still recursed
 				// in scope so they too get an explicit outcome rather than vanishing under a missing target.
@@ -2145,7 +2344,7 @@ public static class WebToMobileAnalysisService {
 			string leafReason = leafRetargeted
 				? $"field/leaf; retargeted by a conversion template into {leafParent}.{leafProperty}"
 				: isPositional
-					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile {place.Anchor} (in {place.Parent})"
 					: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
@@ -2153,6 +2352,9 @@ public static class WebToMobileAnalysisService {
 				Index = leafIndex,
 				CaptionResource = leafCaption,
 				MobileValues = leafValues,
+				ParentExistsOnTemplate = leafRetargeted && ParentProvidedByTemplate(ctx, leafParent)
+					? true : (bool?)null,
+				PositionalAnchor = isPositional && !leafRetargeted ? place.Anchor : null,
 				Reason = leafReason
 			});
 			// A leaf can still own nested child-element arrays (e.g. a crt.Button's menuItems) — descend so their
@@ -2190,20 +2392,31 @@ public static class WebToMobileAnalysisService {
 	private enum ClickedConvertibility {
 		/// <summary>No <c>clicked</c> event binding — a container-only node (e.g. a dropdown), not itself an action.</summary>
 		None,
-		/// <summary>The versioned map explicitly CLEARS this request's mobile target — a dead action on mobile.</summary>
-		ExplicitlyUnsupported,
-		/// <summary>Supported OR unknown/custom — the action converts (an unknown request is kept and flagged, aligning
-		/// with <see cref="ProcessOneEventBinding"/>, rather than silently dropped).</summary>
+		/// <summary>A <c>crt.Button</c> whose clicked request is NOT supported on mobile — the versioned map clears its
+		/// target, OR it is covered by neither the versioned map nor the bundled supported set (an unknown
+		/// <c>crt.*</c> or a custom <c>usr.*</c> request). A dead button, so it is NOT retargeted into the FAB. Only a
+		/// <c>crt.Button</c> classifies here: another component type (e.g. a <c>crt.MenuItem</c>) with an unsupported
+		/// clicked is <see cref="Convertible"/> — kept and flagged by <see cref="ProcessEventBindings"/>, not dropped,
+		/// matching the leaf policy (<see cref="UnsupportedRequestOf"/> gates on <c>crt.Button</c>) and the tool
+		/// contract.</summary>
+		Unsupported,
+		/// <summary>The clicked request is supported on mobile (mapped to a mobile target, or present in the bundled
+		/// supported set), OR the node is not a <c>crt.Button</c> (an unsupported clicked on another component type is
+		/// kept and flagged, not dropped) — the action converts.</summary>
 		Convertible
 	}
 
 	/// <summary>
 	/// Classifies a node's OWN <c>clicked</c> binding — the gate for converting an action inside a non-converting
 	/// scope (e.g. a header button → FAB menu item). Only <c>clicked</c> is considered (a DIFFERENT secondary
-	/// binding being unsupported does not disqualify the action). The deciding difference from a hard "supported?"
-	/// gate: a request absent from BOTH the versioned map and the bundled set is UNKNOWN/custom, and is treated as
-	/// convertible-and-flagged (matching <see cref="ProcessOneEventBinding"/>) instead of dropped — a header button
-	/// wired to a <c>usr.*</c> request is exactly the button the feature is meant to convert.
+	/// binding being unsupported does not disqualify the action). Support is decided by the SAME authoritative
+	/// criterion as <see cref="UnsupportedRequestOf"/> (<see cref="IsRequestSupported"/>) so the leaf and scope paths
+	/// never diverge on WHAT is supported. The DROP policy also matches the leaf path: only a <c>crt.Button</c> with
+	/// an unsupported clicked is <see cref="ClickedConvertibility.Unsupported"/> (a dead button, not retargeted into
+	/// the FAB); another component type (e.g. a <c>crt.MenuItem</c>) may legitimately use a system/custom request
+	/// absent from the supported set, so it stays <see cref="ClickedConvertibility.Convertible"/> and its binding is
+	/// kept and flagged by <see cref="ProcessEventBindings"/> rather than dropped — matching the shipped tool contract
+	/// ("ONLY a crt.Button whose request the mobile app does not support is DROPPED").
 	/// </summary>
 	private static ClickedConvertibility ClassifyClicked(ElementMapContext ctx, JObject node, out string request) {
 		request = null;
@@ -2211,8 +2424,13 @@ public static class WebToMobileAnalysisService {
 			return ClickedConvertibility.None;
 		}
 		request = clicked["request"].ToString();
-		return ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule) && string.IsNullOrWhiteSpace(rule.Mobile)
-			? ClickedConvertibility.ExplicitlyUnsupported
+		if (IsRequestSupported(ctx, request)) {
+			return ClickedConvertibility.Convertible;
+		}
+		// Same DROP policy as the leaf path: only a crt.Button becomes a dead action worth dropping. Another component
+		// type keeps its unsupported binding (flagged), so it is not disqualified from the FAB here.
+		return string.Equals(node["type"]?.ToString(), "crt.Button", StringComparison.OrdinalIgnoreCase)
+			? ClickedConvertibility.Unsupported
 			: ClickedConvertibility.Convertible;
 	}
 
@@ -2228,23 +2446,59 @@ public static class WebToMobileAnalysisService {
 		&& !ctx.MobileTypesByName.ContainsKey(parentName);
 
 	/// <summary>
+	/// True when the mobile template PROVIDES the retarget parent (its name is in the probed template's resolved
+	/// tree) — the exact inverse of <see cref="RetargetTargetMissing"/> over the same probed-names condition, so the
+	/// two never drift. Drives <c>elementMap[].parentExistsOnTemplate</c>: when true the caller inserts ONLY the
+	/// children and never re-declares the template-provided parent. Like its inverse it decides membership ONLY when
+	/// template names were probed; with none probed (template unavailable/unknown) it returns false and the flag is
+	/// omitted rather than asserted on missing information.
+	/// </summary>
+	private static bool ParentProvidedByTemplate(ElementMapContext ctx, string parentName) =>
+		ctx.MobileTypesByName is { Count: > 0 } && !string.IsNullOrEmpty(parentName)
+		&& !RetargetTargetMissing(ctx, parentName);
+
+	/// <summary>
+	/// True when a source element a conversion template would RETARGET is INHERITED FROM THE WEB TEMPLATE baseline
+	/// (present in <see cref="ElementMapContext.WebBaselineNodes"/>) rather than authored on the page. Inherited
+	/// header chrome — a Save / Cancel / Close button carried by the web record-page template — must NOT be
+	/// retargeted into a shared mobile container: the mobile template provides its own equivalent, so retargeting
+	/// would duplicate it. Keying off the WEB template (where the element actually lives under its web name) is why
+	/// this is robust: it does not depend on the element's name coinciding with a node in the mobile template — a
+	/// match that is fragile (any node, containers included) and wrong when the two templates name the same button
+	/// differently. A page-AUTHORED header action is above the baseline, so it is absent here and converts. Only ever
+	/// consulted on the retarget path. Fails OPEN (false) when the web baseline was not read (empty), so a missing
+	/// baseline never silently suppresses a page-authored conversion.
+	/// </summary>
+	private static bool RetargetSourceIsInheritedChrome(ElementMapContext ctx, string name) =>
+		!string.IsNullOrEmpty(name) && ctx.WebBaselineNodes.ContainsKey(name);
+
+	/// <summary>
 	/// Builds the element drop reason AND the request-loss reason for a node that did NOT convert inside a
 	/// non-converting scope, from the specific cause — so the report names the scope container and distinguishes an
-	/// absent target, an unsupported action, an unmatched component, and a container-only node instead of collapsing
-	/// them into one string. The mechanism is name-agnostic (any <c>nonConvertingScopeContainers</c> entry), so the
-	/// wording says "scope", not "header".
+	/// absent target, a known-unsupported action, an unknown/custom action, an unmatched component, and a
+	/// container-only node instead of collapsing them into one string. The mechanism is name-agnostic (any
+	/// <c>nonConvertingScopeContainers</c> entry), so the wording says "scope", not "header".
 	/// </summary>
 	private static (string DropReason, string RequestLossReason) ScopeDropReason(
-		string scopeContainer, string name, string scopedType, (string Parent, string Property)? scopedTarget,
-		ClickedConvertibility clicked, string request, bool targetMissing) {
+		ElementMapContext ctx, string scopeContainer, string name, string scopedType,
+		(string Parent, string Property)? scopedTarget, ClickedConvertibility clicked, string request, bool targetMissing) {
 		if (targetMissing && scopedTarget is { } target) {
 			return ($"under non-converting scope '{scopeContainer}'; conversion target '{target.Parent}' is not present on "
 					+ $"the mobile template, so '{name}' cannot be placed — add a '{target.Parent}' to the target template or adjust the rule",
 				$"its element could not be placed (conversion target '{target.Parent}' is absent on the mobile template)");
 		}
-		if (clicked == ClickedConvertibility.ExplicitlyUnsupported) {
-			return ($"under non-converting scope '{scopeContainer}'; action '{request}' is not supported on the Creatio Mobile app",
-				$"'{request}' is not supported on the Creatio Mobile app; the action was dropped");
+		if (clicked == ClickedConvertibility.Unsupported) {
+			// Distinguish a KNOWN-unsupported request (the versioned map clears its mobile target) from an
+			// UNKNOWN/custom one (absent from both the versioned map and the bundled fallback set). clio can assert
+			// "not supported" only for the former; for the latter it can merely say it does not know it, so the
+			// developer can re-add the action manually if that custom request IS implemented on mobile.
+			bool knownUnsupported = ctx.RequestMap.TryGetValue(request, out RequestMappingRule rule)
+				&& string.IsNullOrWhiteSpace(rule.Mobile);
+			return knownUnsupported
+				? ($"under non-converting scope '{scopeContainer}'; action '{request}' is not supported on the Creatio Mobile app",
+					$"'{request}' is not supported on the Creatio Mobile app; the action was dropped")
+				: ($"under non-converting scope '{scopeContainer}'; action '{request}' is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it",
+					$"'{request}' is not in the conversion map (custom or unknown); the button was dropped — verify the request exists on mobile before re-adding it");
 		}
 		if (scopedType is null) {
 			return ($"under non-converting scope '{scopeContainer}'; no conversion rule matches this component in scope",
@@ -3363,11 +3617,8 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// The first event-binding request on the node the Creatio Mobile app does not support (or null when every
-	/// binding is supported). Support is decided by the versioned rules file first
-	/// (<see cref="ElementMapContext.RequestMap"/>): an entry with a mobile target is supported (direct/rename),
-	/// an entry that clears the target is explicitly unsupported. A request the versioned file does not cover
-	/// falls back to the bundled <see cref="MobileSupportedRequests"/> constant. Keeping one authoritative
-	/// source (the versioned file) prevents dropping a common request the file already maps.
+	/// binding is supported), per the shared <see cref="IsRequestSupported"/> criterion — the versioned rules file
+	/// first, then the bundled <see cref="MobileSupportedRequests"/> fallback.
 	/// </summary>
 	private static string UnsupportedRequestOf(ElementMapContext ctx, JObject node) {
 		foreach (JProperty prop in node.Properties()) {
@@ -3375,21 +3626,26 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			string webRequest = ((JObject)prop.Value)["request"].ToString();
-			if (ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)) {
-				// Authoritative: a non-empty mobile target is supported (effective = rule.Mobile); an entry that
-				// explicitly clears the mobile target marks the request unsupported.
-				if (string.IsNullOrWhiteSpace(rule.Mobile)) {
-					return webRequest;
-				}
-				continue;
-			}
-			// Not covered by the versioned file — fall back to the bundled offline set.
-			if (!MobileSupportedRequests.Contains(webRequest)) {
+			if (!IsRequestSupported(ctx, webRequest)) {
 				return webRequest;
 			}
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// Whether the Creatio Mobile app supports <paramref name="webRequest"/>. The single authoritative criterion,
+	/// shared by <see cref="UnsupportedRequestOf"/> (the leaf-path button drop) and <see cref="ClassifyClicked"/> (the
+	/// non-converting-scope / FAB gate) so the two never diverge — the bug where a header button with an unsupported
+	/// request was dropped on the leaf path but moved into the FAB on the scope path. The versioned rules file wins
+	/// (an entry with a mobile target is supported, an entry that clears the target is unsupported); a request the
+	/// file does not cover falls back to the bundled <see cref="MobileSupportedRequests"/> set, so anything absent —
+	/// an unknown <c>crt.*</c> or a custom <c>usr.*</c> request — is unsupported.
+	/// </summary>
+	private static bool IsRequestSupported(ElementMapContext ctx, string webRequest) =>
+		ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
+			? !string.IsNullOrWhiteSpace(rule.Mobile)
+			: MobileSupportedRequests.Contains(webRequest);
 
 	/// <summary>
 	/// A component event binding is a property whose value is an object carrying a string <c>request</c>
@@ -3481,34 +3737,21 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Assembles the advisory request-conversion summary; null when the page references no requests.
-	/// Reconciles with the empty-container removal pass first: a binding is recorded while the element map
-	/// is built, so a container removed as empty AFTERWARDS would still be reported as converted/flagged —
-	/// contradicting its own drop entry (the binding's payload was discarded with the entry's mobileValues).
-	/// Such records are reclassified into <c>droppedRequests</c> with the removal named as the reason, so
-	/// the report stays consistent and the discarded binding stays visible.
+	/// Reconciles with the element-removal passes first: a binding is recorded while the element map
+	/// is built, so an element removed AFTERWARDS — as an empty container, or by an excludedComponents
+	/// rule — would still be reported as converted/flagged, contradicting its own drop entry (the binding's
+	/// payload was discarded with the entry's mobileValues). Such records are reclassified into
+	/// <c>droppedRequests</c> with the removal named as the reason, so the report stays consistent and the
+	/// discarded binding stays visible.
 	/// </summary>
 	private static RequestConversionInfo BuildRequestConversionInfo(
 		List<ConvertedRequest> converted, List<DroppedRequest> dropped, List<FlaggedRequest> flagged,
-		HashSet<string> emptyRemovedMobileNames) {
-		const string emptyRemovedReason =
-			"its container was removed as an empty container — the binding was discarded with it";
-		for (int i = converted.Count - 1; i >= 0; i--) {
-			if (emptyRemovedMobileNames.Contains(converted[i].ElementName)) {
-				dropped.Add(new DroppedRequest {
-					ElementName = converted[i].ElementName, Binding = converted[i].Binding,
-					WebRequest = converted[i].WebRequest, Reason = emptyRemovedReason
-				});
-				converted.RemoveAt(i);
-			}
-		}
-		for (int i = flagged.Count - 1; i >= 0; i--) {
-			if (emptyRemovedMobileNames.Contains(flagged[i].ElementName)) {
-				dropped.Add(new DroppedRequest {
-					ElementName = flagged[i].ElementName, Binding = flagged[i].Binding,
-					WebRequest = flagged[i].Request, Reason = emptyRemovedReason
-				});
-				flagged.RemoveAt(i);
-			}
+		HashSet<string> emptyRemovedMobileNames, HashSet<string> excludedRemovedMobileNames) {
+		ReclassifyRemovedBindings(converted, flagged, dropped, emptyRemovedMobileNames,
+			"its container was removed as an empty container — the binding was discarded with it");
+		if (excludedRemovedMobileNames is { Count: > 0 }) {
+			ReclassifyRemovedBindings(converted, flagged, dropped, excludedRemovedMobileNames,
+				"its element was removed by an excludedComponents rule — the binding was discarded with it");
 		}
 		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0) {
 			return null;
@@ -3518,6 +3761,33 @@ public static class WebToMobileAnalysisService {
 			DroppedRequests = dropped,
 			FlaggedRequests = flagged
 		};
+	}
+
+	/// <summary>
+	/// Moves every converted/flagged record whose element one of the removal passes dropped into
+	/// <paramref name="dropped"/>, with <paramref name="reason"/> naming which pass discarded the binding.
+	/// </summary>
+	private static void ReclassifyRemovedBindings(
+		List<ConvertedRequest> converted, List<FlaggedRequest> flagged, List<DroppedRequest> dropped,
+		HashSet<string> removedMobileNames, string reason) {
+		for (int i = converted.Count - 1; i >= 0; i--) {
+			if (removedMobileNames.Contains(converted[i].ElementName)) {
+				dropped.Add(new DroppedRequest {
+					ElementName = converted[i].ElementName, Binding = converted[i].Binding,
+					WebRequest = converted[i].WebRequest, Reason = reason
+				});
+				converted.RemoveAt(i);
+			}
+		}
+		for (int i = flagged.Count - 1; i >= 0; i--) {
+			if (removedMobileNames.Contains(flagged[i].ElementName)) {
+				dropped.Add(new DroppedRequest {
+					ElementName = flagged[i].ElementName, Binding = flagged[i].Binding,
+					WebRequest = flagged[i].Request, Reason = reason
+				});
+				flagged.RemoveAt(i);
+			}
+		}
 	}
 
 	// ── Adaptive (per-breakpoint) layout proposal ──────────────────────────────────────────────
@@ -3576,6 +3846,14 @@ public static class WebToMobileAnalysisService {
 			if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
 				string.IsNullOrEmpty(e.ParentName) || e.MobileValues is not JsonObject ||
 				!colsByMobileParent.ContainsKey(e.ParentName)) {
+				continue;
+			}
+			// A positional sibling was rerouted OUT of the web grid it was declared in and into the anchor's
+			// mobile parent, so that grid's column count says nothing about it — and the two can collide by NAME
+			// through the fallback above (a web MainContainer that is a multi-column grid vs the mobile
+			// MainContainer the siblings land in). Placing it here would give it a row this pass owns and let
+			// PlacePositionalGroups shift the anchor to make room for a sibling that never moved.
+			if (e.PositionalAnchor is { Length: > 0 }) {
 				continue;
 			}
 			if (!byContainer.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
@@ -3686,16 +3964,18 @@ public static class WebToMobileAnalysisService {
 	/// <see cref="ElementMapContext.PositionalParentByAnchor"/>), classifies its other named siblings:
 	/// those declared ABOVE the anchor get an ascending index from 0 (so they land before the mobile anchor,
 	/// e.g. above the Tabs); those BELOW get a null index (appended after). Both resolve to the anchor's
-	/// mobile parent. Returns an empty map when this array has no positional anchor.
+	/// mobile parent and carry the MOBILE anchor name, which the anchor-row pass groups them by. Returns an
+	/// empty map when this array has no positional anchor.
 	/// </summary>
-	private static IReadOnlyDictionary<string, (string Parent, int? Index)> ResolvePositionalSiblings(
+	private static IReadOnlyDictionary<string, (string Parent, int? Index, string Anchor)> ResolvePositionalSiblings(
 		ElementMapContext ctx, JArray nodes) {
-		var result = new Dictionary<string, (string Parent, int? Index)>(StringComparer.Ordinal);
+		var result = new Dictionary<string, (string Parent, int? Index, string Anchor)>(StringComparer.Ordinal);
 		if (ctx.PositionalParentByAnchor.Count == 0) {
 			return result;
 		}
 		int anchorIdx = -1;
 		string parent = null;
+		string mobileAnchor = null;
 		var named = new List<(int Pos, string Name)>();
 		for (int i = 0; i < nodes.Count; i++) {
 			if (nodes[i] is not JObject o) {
@@ -3709,6 +3989,7 @@ public static class WebToMobileAnalysisService {
 			if (anchorIdx < 0 && ctx.PositionalParentByAnchor.TryGetValue(nm, out string p)) {
 				anchorIdx = i;
 				parent = p;
+				mobileAnchor = ctx.PositionalAnchorByWebAnchor.GetValueOrDefault(nm);
 			}
 		}
 		if (anchorIdx < 0 || string.IsNullOrEmpty(parent)) {
@@ -3719,7 +4000,9 @@ public static class WebToMobileAnalysisService {
 			if (pos == anchorIdx) {
 				continue;
 			}
-			result[nm] = pos < anchorIdx ? (parent, topIndex++) : (parent, (int?)null);
+			result[nm] = pos < anchorIdx
+				? (parent, topIndex++, mobileAnchor)
+				: (parent, (int?)null, mobileAnchor);
 		}
 		return result;
 	}
@@ -3852,6 +4135,214 @@ public static class WebToMobileAnalysisService {
 				entry.Index = next++;
 			}
 		}
+	}
+
+	/// <summary>Layout key the converter computes; every other key of a declared placement is carried verbatim.</summary>
+	private const string LayoutRowKey = "row";
+
+	/// <summary>Per-breakpoint placement wrapper: when present, the runtime resolves layoutConfig from it.</summary>
+	private const string LayoutAdaptiveKey = "adaptive";
+
+	/// <summary>
+	/// Places a positional (<c>&lt;anchor&gt;:top</c> / <c>:bottom</c>) group by explicit grid rows: the siblings
+	/// above the anchor take the rows the anchor vacates, the anchor moves down by their count, and the siblings
+	/// below follow it.
+	/// <para>
+	/// Why an insert index is not enough (ENG-96114): the index is a position in the parent's <c>items</c> array,
+	/// and a parent that positions its children by <c>layoutConfig</c> — a <c>crt.GridContainer</c> — does not read
+	/// it. The mobile tabbed template pins its <c>Tabs</c> to row 1, so re-indexing moved nothing. Freeing that row
+	/// by shifting the anchor alone was ALSO not enough: measured on a real converted page, a sibling left without
+	/// a <c>layoutConfig</c> still rendered below the anchor, so the mobile runtime does not auto-place an
+	/// unpositioned child into the free cell. Both halves are therefore written explicitly.
+	/// </para>
+	/// <para>
+	/// The anchor's own template placement is the ORIGIN, so nothing here is assumed: its row is the first row the
+	/// group occupies, and its shape decides the shape written onto the siblings. A template that positions the
+	/// anchor per breakpoint (<c>layoutConfig.adaptive</c>) gets every breakpoint's row shifted and the siblings
+	/// placed per breakpoint too; a flat placement gets a flat one. <c>colSpan</c> / <c>rowSpan</c> are not written
+	/// onto a sibling — the mobile runtime does not support them — while the anchor keeps whatever its template
+	/// declared, minus the shifted row.
+	/// </para>
+	/// <para>
+	/// An anchor whose template declares no row at all is left alone together with its group: that parent
+	/// positions by item order, where the index arithmetic already is the whole placement. A sibling the adaptive
+	/// pass already placed per breakpoint keeps that placement — the runtime resolves from <c>adaptive</c> when it
+	/// is present, so overwriting it would drop the responsive columns and gain nothing.
+	/// </para>
+	/// <para>
+	/// Pass order is load-bearing (enforced at the call site): AFTER <see cref="RemoveEmptyContainers"/> and
+	/// <see cref="CompactPositionalIndexes"/>, so a dropped sibling reserves no row and the survivors are final;
+	/// and AFTER <see cref="BuildAdaptiveLayout"/>, so that pass cannot overwrite what this one writes.
+	/// </para>
+	/// </summary>
+	private static void PlacePositionalGroups(
+		List<ElementMapEntry> elementMap, IReadOnlyDictionary<string, JsonObject> mobileLayoutConfigs) {
+		if (mobileLayoutConfigs.Count == 0) {
+			return;
+		}
+		List<IGrouping<string, ElementMapEntry>> groups = elementMap
+			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& e.PositionalAnchor is { Length: > 0 })
+			.GroupBy(e => e.PositionalAnchor, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		foreach (IGrouping<string, ElementMapEntry> group in groups) {
+			// Above the anchor: the compacted 0..N-1 index. Below it: no index, element-map order kept.
+			List<ElementMapEntry> above = [.. group.Where(e => e.Index is not null).OrderBy(e => e.Index.Value)];
+			List<ElementMapEntry> below = [.. group.Where(e => e.Index is null)];
+			if ((above.Count == 0 && below.Count == 0)
+				|| !mobileLayoutConfigs.TryGetValue(group.Key, out JsonObject anchorPlacement)
+				|| !CarriesRow(anchorPlacement)) {
+				continue;
+			}
+			// Count the siblings ACTUALLY placed, never the candidates: the anchor may only be moved to make room
+			// that was really taken, or it vacates rows nothing occupies.
+			int placedAbove = 0;
+			foreach (ElementMapEntry sibling in above) {
+				if (PlaceSibling(sibling, anchorPlacement, offset: placedAbove)) {
+					placedAbove++;
+				}
+			}
+			// Below the anchor: the rows after its own, shifted or not. A group with nothing above it is still
+			// placed — the anchor stays where the template put it and the siblings follow it. Leaving them
+			// unpositioned is the very defect this pass exists for: the mobile runtime does not auto-place a
+			// child that carries no layoutConfig.
+			int belowOffset = placedAbove + 1;
+			foreach (ElementMapEntry sibling in below) {
+				if (PlaceSibling(sibling, anchorPlacement, offset: belowOffset)) {
+					belowOffset++;
+				}
+			}
+			if (placedAbove > 0) {
+				SetAnchorPlacement(elementMap, group.Key, ShiftRows(anchorPlacement, placedAbove), placedAbove);
+			}
+		}
+	}
+
+	/// <summary>
+	/// True when the placement declares a numeric <c>row</c> — either flat or inside at least one breakpoint of an
+	/// <c>adaptive</c> block. An anchor without one is not positioned by row, so its group is left to item order.
+	/// </summary>
+	private static bool CarriesRow(JsonObject placement) =>
+		RowSlots(placement).Any();
+
+	/// <summary>
+	/// Every object in <paramref name="placement"/> that carries a numeric <c>row</c>: the placement itself when it
+	/// is flat, and each breakpoint of an <c>adaptive</c> block. Both are yielded when a template declares both, so
+	/// a shift stays consistent whichever one the runtime resolves.
+	/// </summary>
+	private static IEnumerable<JsonObject> RowSlots(JsonObject placement) {
+		if (placement is null) {
+			yield break;
+		}
+		if (TryRow(placement, out _)) {
+			yield return placement;
+		}
+		foreach ((_, JsonObject slot) in AdaptiveRowSlots(placement)) {
+			yield return slot;
+		}
+	}
+
+	/// <summary>
+	/// Each breakpoint of an <c>adaptive</c> block that actually carries a row, with its key. A block whose
+	/// breakpoints declare none yields nothing, so a placement is never treated as adaptive on the strength of an
+	/// empty or row-less block — which would hand a sibling an empty adaptive block and no placement at all.
+	/// </summary>
+	private static IEnumerable<(string Key, JsonObject Slot)> AdaptiveRowSlots(JsonObject placement) {
+		if (placement?[LayoutAdaptiveKey] is not JsonObject adaptive) {
+			yield break;
+		}
+		foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive) {
+			if (breakpoint.Value is JsonObject slot && TryRow(slot, out _)) {
+				yield return (breakpoint.Key, slot);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Reads a slot's <c>row</c> as an integer. False when it is absent or not an integral number — a fractional
+	/// or non-numeric row is a placement the converter cannot reason about, and it must degrade rather than throw:
+	/// this runs inside the guide build, where an exception becomes a whole-tool failure.
+	/// </summary>
+	private static bool TryRow(JsonObject slot, out int row) {
+		row = 0;
+		return slot?[LayoutRowKey] is JsonValue value && value.TryGetValue(out row);
+	}
+
+	/// <summary>The anchor's declared placement with every row it carries moved down by <paramref name="by"/>.</summary>
+	private static JsonObject ShiftRows(JsonObject placement, int by) {
+		var shifted = (JsonObject)placement.DeepClone();
+		foreach (JsonObject slot in RowSlots(shifted).ToList()) {
+			if (TryRow(slot, out int row)) {
+				slot[LayoutRowKey] = row + by;
+			}
+		}
+		return shifted;
+	}
+
+	/// <summary>
+	/// Writes one sibling's placement — the anchor's own row plus <paramref name="offset"/>, in column 1 — and
+	/// reports whether it wrote one, so the caller shifts the anchor by what was really placed. The shape follows
+	/// WHERE THE ANCHOR'S ROWS ACTUALLY ARE rather than merely whether an <c>adaptive</c> key exists, so an anchor
+	/// with a flat row beside a row-less adaptive block places its siblings flat. Only <c>row</c> and
+	/// <c>column</c> are written — <c>colSpan</c> / <c>rowSpan</c> are not supported by the mobile runtime.
+	/// <para>
+	/// A placement the sibling already carries is REPLACED: positional placement is authoritative for an element
+	/// the rule rerouted out of its web container, and the one pass that could otherwise have written one
+	/// (<see cref="BuildAdaptiveLayout"/>) now skips these entries at the source.
+	/// </para>
+	/// </summary>
+	private static bool PlaceSibling(ElementMapEntry sibling, JsonObject anchorPlacement, int offset) {
+		if (sibling.MobileValues is not JsonObject values) {
+			return false;
+		}
+		List<(string Key, JsonObject Slot)> breakpoints = [.. AdaptiveRowSlots(anchorPlacement)];
+		if (breakpoints.Count > 0) {
+			var adaptive = new JsonObject();
+			foreach ((string key, JsonObject slot) in breakpoints) {
+				TryRow(slot, out int row);
+				adaptive[key] = SiblingSlot(row + offset);
+			}
+			values["layoutConfig"] = new JsonObject { [LayoutAdaptiveKey] = adaptive };
+			return true;
+		}
+		if (!TryRow(anchorPlacement, out int flatRow)) {
+			return false;
+		}
+		values["layoutConfig"] = SiblingSlot(flatRow + offset);
+		return true;
+	}
+
+	/// <summary>One sibling cell: the computed row of column 1, and nothing the mobile runtime ignores.</summary>
+	private static JsonObject SiblingSlot(int row) => new() { [LayoutRowKey] = row, ["column"] = 1 };
+
+	/// <summary>
+	/// Carries the shifted placement onto the anchor: patches the <c>merge</c> entry the conversion already
+	/// produced for it (a template twin), otherwise appends a synthesized merge that carries nothing else — so
+	/// the anchor is re-placed exactly once however the page reached it.
+	/// </summary>
+	private static void SetAnchorPlacement(
+		List<ElementMapEntry> elementMap, string anchor, JsonObject placement, int above) {
+		string note = $"moved down {above} row(s): the page inserts {above} element(s) above it, and its parent "
+			+ "positions children by layoutConfig rather than by item order";
+		ElementMapEntry existing = elementMap.FirstOrDefault(e =>
+			string.Equals(e.Operation, "merge", StringComparison.Ordinal)
+			&& string.Equals(e.MobileName, anchor, StringComparison.OrdinalIgnoreCase));
+		if (existing is not null) {
+			// A merge payload is a JsonObject or null by construction (BuildTwinMergeValues / BuildDeltaTwinMergeValues).
+			if (existing.MobileValues is not JsonObject values) {
+				values = new JsonObject();
+				existing.MobileValues = values;
+			}
+			values["layoutConfig"] = placement;
+			existing.Reason = string.IsNullOrEmpty(existing.Reason) ? note : existing.Reason + "; " + note;
+			return;
+		}
+		elementMap.Add(new ElementMapEntry {
+			Operation = "merge",
+			MobileName = anchor,
+			MobileValues = new JsonObject { ["layoutConfig"] = placement },
+			Reason = "synthesized by the converter (no web counterpart) — " + note
+		});
 	}
 
 	/// <summary>Mobile Tabs element name that converted web tabs are inserted under.</summary>

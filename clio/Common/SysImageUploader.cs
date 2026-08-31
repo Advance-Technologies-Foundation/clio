@@ -38,7 +38,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 			[".svg"] = "image/svg+xml"
 		};
 
-	private const string CsrfCookieName = "BPMCSRF";
+	private static readonly string[] CsrfCookieNames = ["CRT_CSRF", "BPMCSRF"];
 
 	/// <summary>
 	/// Name of the dedicated <see cref="IHttpClientFactory"/> client for the image upload and its
@@ -112,19 +112,23 @@ public sealed class SysImageUploader : ISysImageUploader {
 	private async Task<SysImageUploadResult> UploadAuthenticatedAsync(StorageStateResult session,
 		string filePath, byte[] payload, string mimeType, CancellationToken cancellationToken) {
 		string cookieHeader = string.Join("; ", session.Cookies.Select(c => $"{c.Name}={c.Value}"));
-		string csrfToken = session.Cookies
-			.FirstOrDefault(c => c.Name.Equals(CsrfCookieName, StringComparison.OrdinalIgnoreCase))?.Value;
-		if (string.IsNullOrEmpty(csrfToken)) {
-			return SysImageUploadResult.Failure(
-				$"The login response carried no {CsrfCookieName} cookie; cannot call the image API.");
-		}
+		BrowserCookie csrfCookie = CsrfCookieNames
+			.Select(cookieName => session.Cookies.FirstOrDefault(c =>
+				c.Name.Equals(cookieName, StringComparison.OrdinalIgnoreCase)))
+			.FirstOrDefault(cookie => !string.IsNullOrEmpty(cookie?.Value));
 		Guid imageId = Guid.NewGuid();
 		string fileName = System.IO.Path.GetFileName(filePath);
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
 
 		using HttpRequestMessage upload = new(HttpMethod.Post, BuildUploadUrl(imageId, payload.LongLength, mimeType));
 		upload.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-		upload.Headers.TryAddWithoutValidation(CsrfCookieName, csrfToken);
+		// Creatio uses CRT_CSRF on current runtimes and BPMCSRF on legacy ones. Echo the token
+		// under the same name the environment issued. A missing token is valid when server-side
+		// CSRF protection is disabled, so the image API remains the authority instead of clio
+		// rejecting the request before it reaches the environment.
+		if (csrfCookie is not null) {
+			upload.Headers.TryAddWithoutValidation(csrfCookie.Name, csrfCookie.Value);
+		}
 		upload.Content = new ByteArrayContent(payload);
 		upload.Content.Headers.ContentType = new MediaTypeHeaderValue(mimeType);
 		// The File API range end is zero-indexed and inclusive: a 123-byte file is "bytes 0-122/123".
@@ -145,8 +149,12 @@ public sealed class SysImageUploader : ISysImageUploader {
 			.ConfigureAwait(false);
 		string uploadBody = await uploadResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 		if (!uploadResponse.IsSuccessStatusCode) {
+			string missingCsrfHint = csrfCookie is null &&
+				uploadResponse.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+				? " The login session carried no CRT_CSRF or BPMCSRF cookie; verify that the environment or proxy returns its CSRF cookie and retry."
+				: string.Empty;
 			return SysImageUploadResult.Failure(
-				$"Image upload failed: the image API returned HTTP {(int)uploadResponse.StatusCode}.");
+				$"Image upload failed: the image API returned HTTP {(int)uploadResponse.StatusCode}.{missingCsrfHint}");
 		}
 		if (TryReadUploadError(uploadBody, out string serverError)) {
 			return SysImageUploadResult.Failure($"Image upload failed: {serverError}");
