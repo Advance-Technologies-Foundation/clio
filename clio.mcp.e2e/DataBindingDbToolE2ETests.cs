@@ -620,7 +620,21 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	}
 
 	private static void AssertCommandExitCode(CommandExecutionActResult actResult, int expectedExitCode, string because) {
-		actResult.Execution.ExitCode.Should().Be(expectedExitCode, because: because);
+		actResult.Execution.ExitCode.Should().Be(expectedExitCode,
+			because: $"{because}. Command output: {DescribeExecution(actResult.Execution)}");
+	}
+
+	/// <summary>
+	/// Renders the command's own log messages into the assertion message. Without them an
+	/// unexpected exit code reports only the number, which says nothing about whether the
+	/// command rejected the request or the shared sandbox was mid-rebuild.
+	/// </summary>
+	private static string DescribeExecution(CommandExecutionEnvelope execution) {
+		if (execution.Output is null || execution.Output.Count == 0) {
+			return "<no execution log messages>";
+		}
+
+		return string.Join(" | ", execution.Output.Select(m => $"[{m.MessageType}] {m.Value}"));
 	}
 
 	private static void AssertIncludesInfoMessage(CommandExecutionActResult actResult, string because) {
