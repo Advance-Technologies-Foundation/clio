@@ -1,4 +1,4 @@
-COMMAND TYPE
+﻿COMMAND TYPE
     Development commands
 
 NAME
@@ -43,9 +43,11 @@ DESCRIPTION
       format (e.g., usr.RequiredValidator).
     - Direct calls from handlers, converters, and validators must resolve to
       a declaration in the page factory scope, a callback parameter, or a known
-      JavaScript/Creatio global. Undefined helper calls are rejected before the
-      body is sent to Creatio because Page Designer can remove module-scope
-      declarations while preserving handler entries, causing ReferenceError.
+      JavaScript/Creatio global (MCP update-page / sync-pages / validate-page
+      only -- the CLI verb below does NOT run this check). Undefined helper
+      calls are rejected before the body is sent to Creatio because Page
+      Designer can remove module-scope declarations while preserving handler
+      entries, causing ReferenceError.
     MOBILE RULES (MCP update-page / sync-pages / validate-page only --
     the CLI verb below does NOT run them; it checks a mobile body only
     for disallowed sections):

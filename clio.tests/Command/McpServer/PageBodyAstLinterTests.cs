@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using Acornima.Ast;
 using Clio.Command.McpServer.Tools;
@@ -893,6 +893,83 @@ internal class PageBodyAstLinterTests {
 			because: "the unscoped write is advisory, not a structural break");
 		finding.Line.Should().Be(2,
 			because: "the finding must anchor to the unscoped entry's request property on line 2, not the scoped entry on line 1 — proving the rule fires per entry and does not spill onto the clean sibling");
+	}
+
+	[Test]
+	[Description("In strict code a function declared inside a block stays in that block, so a handler calling it from outside is still reported — Node leaves the outer binding undefined and the handler throws ReferenceError")]
+	public void Lint_ShouldEmitError_WhenStrictBlockFunctionIsCalledFromHandler() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { \"use strict\"; if (true) { function blockOnly() { return 1; } } " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { blockOnly(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("blockOnly"),
+			because: "strict mode block-scopes the declaration, so hoisting it to the factory scope would accept a call that throws at runtime");
+	}
+
+	[Test]
+	[Description("Without the strict directive the same block function DOES hoist to the factory scope, so the identical body is accepted — the rule must follow the language, not block-scope everything")]
+	public void Lint_ShouldNotEmitError_WhenSloppyBlockFunctionIsCalledFromHandler() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { if (true) { function blockOnly() { return 1; } } " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { blockOnly(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "sloppy-mode function declarations hoist out of the block and the call really does resolve");
+	}
+
+	[TestCase("const helper = function() { return 1; };", TestName = "post-return const")]
+	[TestCase("let helper = function() { return 1; };", TestName = "post-return let")]
+	[TestCase("var helper = function() { return 1; };", TestName = "post-return assigned var")]
+	[TestCase("class helper {}", TestName = "post-return class")]
+	[Description("A declaration placed AFTER the factory's return never runs its initializer, so a handler calling it fails at runtime and must still be reported")]
+	public void Lint_ShouldEmitError_WhenHelperIsDeclaredAfterTheReturn(string declaration) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; " + declaration + " });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("helper"),
+			because: "the initializer is unreachable, so the handler throws ReferenceError or TypeError however the binding is spelled");
+	}
+
+	[Test]
+	[Description("A FUNCTION DECLARATION after the factory's return is hoisted with its value and really is callable, so it must not be reported — the post-return rule stops at the one form the language keeps usable")]
+	public void Lint_ShouldNotEmitError_WhenFunctionDeclarationFollowsTheReturn() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; function helper() { return 1; } });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "a function declaration is hoisted with its body, so the call resolves at runtime");
 	}
 
 	#endregion

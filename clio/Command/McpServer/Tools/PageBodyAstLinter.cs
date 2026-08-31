@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Acornima.Ast;
@@ -309,6 +309,15 @@ internal static class PageBodyAstLinter {
 
 	}
 
+	// The directive that switches a script or a function body into strict mode.
+	private const string UseStrictDirective = "use strict";
+
+	/// <summary>
+	/// Where an omitted occurrence sat. The summary finding reports only a position, so an omitted
+	/// call must not cost a whole finding with its interpolated message.
+	/// </summary>
+	private readonly record struct OmittedCallLocation(int Line, int Column);
+
 	/// <summary>
 	/// Accumulates the rule's findings so the dedupe and the cap apply across the whole walk.
 	/// </summary>
@@ -345,19 +354,44 @@ internal static class PageBodyAstLinter {
 		foreach (string global in KnownRuntimeGlobals) {
 			scriptScope.Declare(global);
 		}
-		DeclareHoistedNames(ast, scriptScope, depth: 0);
+		bool strict = HasUseStrictDirective(ast.Body);
+		DeclareHoistedNames(ast, scriptScope, depth: 0, strict, atStatementLevel: true);
 		DeclareBlockNames(ast.Body, scriptScope, depth: 0);
 		UndefinedCallBudget budget = new();
-		PageBodyLintFinding? lastOmitted = null;
-		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, findings, budget,
-			ref lastOmitted);
+		OmittedCallLocation? lastOmitted = null;
+		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict, findings,
+			budget, ref lastOmitted);
 		if (budget.OmittedOccurrenceCount > 0 && lastOmitted.HasValue) {
 			findings.Add(BuildOmittedSummary(lastOmitted.Value, budget));
 		}
 	}
 
+	/// <summary>
+	/// True when a statement list opens with a "use strict" directive prologue.
+	/// </summary>
+	private static bool HasUseStrictDirective(in NodeList<Statement> statements) {
+		foreach (Statement statement in statements) {
+			if (statement is not ExpressionStatement {Expression: StringLiteral literal}) {
+				//The prologue ends at the first statement that is not a string literal expression.
+				return false;
+			}
+			if (literal.Value == UseStrictDirective) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// True when this function runs in strict mode: its enclosing code already did, or its own body
+	/// opens with the directive.
+	/// </summary>
+	private static bool IsStrictFunction(Node node, bool enclosingStrict) =>
+		enclosingStrict
+		|| (node is IFunction {Body: BlockStatement body} && HasUseStrictDirective(body.Body));
+
 	private static PageBodyLintFinding BuildOmittedSummary(
-		PageBodyLintFinding lastOmitted, UndefinedCallBudget budget) {
+		OmittedCallLocation lastOmitted, UndefinedCallBudget budget) {
 		string namesPart = budget.OmittedNameCount > 0
 			? $"{budget.OmittedNameCount} further undeclared name(s) past the first "
 				+ $"{MaxUndefinedSectionCallNames}, and "
@@ -377,11 +411,20 @@ internal static class PageBodyAstLinter {
 	/// declarations, found through nested blocks but NOT through nested functions, whose own
 	/// declarations belong to their own scope.
 	/// </summary>
-	private static void DeclareHoistedNames(Node node, LexicalScope scope, int depth) {
+	private static void DeclareHoistedNames(Node node, LexicalScope scope, int depth, bool strict,
+		bool atStatementLevel) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
+		//Only a statement list can put code after a return; in an if/else the branches are siblings.
+		bool tracksUnreachable = node is Acornima.Ast.Program or BlockStatement or SwitchCase;
+		bool afterReturn = false;
 		foreach (Node child in node.ChildNodes) {
+			if (afterReturn && child is not FunctionDeclaration) {
+				//Past a return the binding still hoists, but its initializer never runs, so calling
+				//it throws ReferenceError or TypeError. Only a function declaration stays callable.
+				continue;
+			}
 			switch (child) {
 				case VariableDeclaration {Kind: VariableDeclarationKind.Var} varDeclaration:
 					foreach (VariableDeclarator declarator in varDeclaration.Declarations) {
@@ -389,14 +432,22 @@ internal static class PageBodyAstLinter {
 					}
 					break;
 				case FunctionDeclaration {Id: not null} functionDeclaration:
-					scope.Declare(functionDeclaration.Id.Name);
+					//In strict code a function declared inside a block belongs to that block, so
+					//hoisting it out of one would accept a call that throws ReferenceError at
+					//runtime. DeclareBlockNames declares it in its own block scope instead.
+					if (!strict || atStatementLevel) {
+						scope.Declare(functionDeclaration.Id.Name);
+					}
 					//A function declaration opens its own scope; nothing inside it hoists to here.
 					continue;
 				case IFunction:
 					//Same for a function expression or an arrow: its bindings stay inside it.
 					continue;
+				case ReturnStatement when tracksUnreachable:
+					afterReturn = true;
+					continue;
 			}
-			DeclareHoistedNames(child, scope, depth + 1);
+			DeclareHoistedNames(child, scope, depth + 1, strict, atStatementLevel: false);
 		}
 	}
 
@@ -405,7 +456,17 @@ internal static class PageBodyAstLinter {
 	/// function declarations that are direct statements of this block.
 	/// </summary>
 	private static void DeclareBlockNames(in NodeList<Statement> statements, LexicalScope scope, int depth) {
+		bool afterReturn = false;
 		foreach (Statement statement in statements) {
+			if (afterReturn && statement is not FunctionDeclaration) {
+				//Unreachable: the name exists but its initializer never runs, so a handler calling
+				//it fails at runtime. A function declaration is the only usable case.
+				continue;
+			}
+			if (statement is ReturnStatement) {
+				afterReturn = true;
+				continue;
+			}
 			switch (statement) {
 				case VariableDeclaration {
 						Kind: VariableDeclarationKind.Let or VariableDeclarationKind.Const
@@ -462,7 +523,7 @@ internal static class PageBodyAstLinter {
 	/// <summary>
 	/// Opens the scope a node introduces, if any, and returns the scope its children see.
 	/// </summary>
-	private static LexicalScope OpenScope(Node node, LexicalScope scope, int depth) {
+	private static LexicalScope OpenScope(Node node, LexicalScope scope, int depth, bool strict) {
 		switch (node) {
 			case IFunction function: {
 				LexicalScope functionScope = new(scope);
@@ -473,7 +534,8 @@ internal static class PageBodyAstLinter {
 				foreach (Node parameter in function.Params) {
 					DeclareBindings(parameter, functionScope, depth + 1);
 				}
-				DeclareHoistedNames(function.Body, functionScope, depth + 1);
+				DeclareHoistedNames(function.Body, functionScope, depth + 1, strict,
+					atStatementLevel: true);
 				return functionScope;
 			}
 			case BlockStatement block: {
@@ -523,34 +585,40 @@ internal static class PageBodyAstLinter {
 		LexicalScope scope,
 		bool insideSection,
 		int depth,
+		bool strict,
 		List<PageBodyLintFinding> findings,
 		UndefinedCallBudget budget,
-		ref PageBodyLintFinding? lastOmitted) {
+		ref OmittedCallLocation? lastOmitted) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
-		LexicalScope childScope = OpenScope(node, scope, depth);
+		bool childStrict = IsStrictFunction(node, strict);
+		LexicalScope childScope = OpenScope(node, scope, depth, childStrict);
 		bool childInsideSection = insideSection;
 		if (!insideSection && node is Property property && TryGetStaticPropertyName(property) is string key) {
 			childInsideSection = key is "handlers" or "converters" or "validators";
 		}
 		if (insideSection && node is CallExpression {Callee: Identifier identifier}
 			&& !childScope.IsDeclared(identifier.Name)) {
-			PageBodyLintFinding finding = new(
-				Rule: RuleUndefinedSectionCall,
-				Severity: LintSeverity.Error,
-				Line: identifier.Location.Start.Line,
-				Column: identifier.Location.Start.Column + 1,
-				Message: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement.");
+			//The budget decides FIRST: a truncated body can repeat one broken call tens of thousands
+			//of times, and building the long interpolated message for every occurrence only to drop
+			//it allocated tens of megabytes. An omitted occurrence keeps its location and nothing
+			//else, which is all the summary finding reads.
 			if (budget.ShouldReport(identifier.Name)) {
-				findings.Add(finding);
+				findings.Add(new PageBodyLintFinding(
+					Rule: RuleUndefinedSectionCall,
+					Severity: LintSeverity.Error,
+					Line: identifier.Location.Start.Line,
+					Column: identifier.Location.Start.Column + 1,
+					Message: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement."));
 			} else {
-				lastOmitted = finding;
+				lastOmitted = new OmittedCallLocation(
+					identifier.Location.Start.Line, identifier.Location.Start.Column + 1);
 			}
 		}
 		foreach (Node child in node.ChildNodes) {
-			ScanForUndefinedSectionCalls(child, childScope, childInsideSection, depth + 1, findings, budget,
-				ref lastOmitted);
+			ScanForUndefinedSectionCalls(child, childScope, childInsideSection, depth + 1, childStrict,
+				findings, budget, ref lastOmitted);
 		}
 	}
 
