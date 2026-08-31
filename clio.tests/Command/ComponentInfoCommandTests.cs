@@ -837,14 +837,15 @@ public sealed class ComponentInfoCommandTests {
 	private sealed class StubResolverFactory(PlatformVersionResolution result) : IPlatformVersionResolverFactory {
 		public int CreateCallCount { get; private set; }
 
-		public IPlatformVersionResolver Create(EnvironmentSettings settings) {
+		public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) {
 			CreateCallCount++;
 			return new StubResolver(result);
 		}
 
-		private sealed class StubResolver(PlatformVersionResolution result) : IPlatformVersionResolver {
+		private sealed class StubResolver(PlatformVersionResolution result) : IOwnedPlatformVersionResolver {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromResult(result);
+			public void Dispose() { }
 		}
 	}
 }

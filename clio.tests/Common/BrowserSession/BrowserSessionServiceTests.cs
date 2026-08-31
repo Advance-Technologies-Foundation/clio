@@ -31,7 +31,7 @@ public sealed class BrowserSessionServiceTests {
 	public void SetUp() {
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_client = Substitute.For<IOwnedApplicationClient>();
-		_applicationClientFactory.CreateFormsEnvironmentClient(Arg.Any<EnvironmentSettings>(), false)
+		_applicationClientFactory.CreateFormsEnvironmentClient(Arg.Any<EnvironmentSettings>())
 			.Returns(_client);
 		_client.ExportSessionCookies().Returns([
 			new CreatioSessionCookie(".ASPXAUTH", "session-token", "dev.creatio.com", "/", true,
@@ -177,7 +177,7 @@ public sealed class BrowserSessionServiceTests {
 		await act.Should().ThrowAsync<CreatioAuthenticationException>(
 			because: "an OAuth token cannot be converted into browser session cookies");
 		_applicationClientFactory.DidNotReceive().CreateFormsEnvironmentClient(
-			Arg.Any<EnvironmentSettings>(), Arg.Any<bool>());
+			Arg.Any<EnvironmentSettings>());
 		_cache.DidNotReceive().BuildKey(Arg.Any<EnvironmentSettings>());
 	}
 
@@ -194,7 +194,7 @@ public sealed class BrowserSessionServiceTests {
 		_ = await _sut.GetSessionPathAsync(environment);
 
 		// Assert
-		_applicationClientFactory.Received(1).CreateFormsEnvironmentClient(environment, false);
+		_applicationClientFactory.Received(1).CreateFormsEnvironmentClient(environment);
 		_applicationClientFactory.DidNotReceive().CreateEnvironmentClient(Arg.Any<EnvironmentSettings>());
 	}
 
@@ -249,6 +249,99 @@ public sealed class BrowserSessionServiceTests {
 	}
 
 	[Test]
+	[Description("Caller cancellation during login is propagated with the exact token and does not write a cache entry.")]
+	public async Task GetSessionPathAsync_ShouldPropagateExactCancellation_WhenLoginIsCanceled() {
+		// Arrange
+		StubCacheMiss();
+		using CancellationTokenSource cancellation = new();
+		cancellation.Cancel();
+		_client.LoginAsync(30_000, cancellation.Token)
+			.Returns(Task.FromCanceled<HttpResponseMessage>(cancellation.Token));
+
+		// Act
+		Func<Task> act = () => _sut.GetSessionPathAsync(Env(), ct: cancellation.Token);
+
+		// Assert
+		OperationCanceledException exception = (await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "caller cancellation must not be rewritten as a connectivity failure")).Which;
+		exception.CancellationToken.Should().Be(cancellation.Token,
+			because: "the exact token preserves MCP cancellation correlation");
+		_cache.DidNotReceive().Write(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Caller cancellation during cached-session validation is propagated without deleting or refreshing the cache.")]
+	public async Task GetSessionPathAsync_ShouldPropagateCancellationWithoutMutation_WhenCachedProbeIsCanceled() {
+		// Arrange
+		StubCacheHit();
+		using CancellationTokenSource cancellation = new();
+		cancellation.Cancel();
+		_client.ExecuteGetRequestAsync(Arg.Any<string>(), 30_000, Arg.Any<int>(), Arg.Any<int>(), cancellation.Token)
+			.Returns(Task.FromCanceled<HttpResponseMessage>(cancellation.Token));
+
+		// Act
+		Func<Task> act = () => _sut.GetSessionPathAsync(Env(), ct: cancellation.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "the caller canceled validation rather than proving the cache stale");
+		_cache.DidNotReceive().Delete(Key);
+		await _client.DidNotReceive().LoginAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("A cached-session HTTP failure invalidates the cache and falls back to the explicit login path.")]
+	public async Task GetSessionPathAsync_ShouldRefresh_WhenCachedProbeTransportFails() {
+		// Arrange
+		StubCacheHit();
+		_client.ExecuteGetRequestAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<CancellationToken>()).Returns<Task<HttpResponseMessage>>(_ => throw new HttpRequestException());
+
+		// Act
+		_ = await _sut.GetSessionPathAsync(Env());
+
+		// Assert
+		_cache.Received(1).Delete(Key);
+		await _client.Received(1).LoginAsync(30_000, Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("A login transport failure maps to the sanitized browser-session connectivity error.")]
+	public async Task GetSessionPathAsync_ShouldReturnConnectivityFailure_WhenLoginTransportFails() {
+		// Arrange
+		StubCacheMiss();
+		_client.LoginAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ => throw new HttpRequestException("secret-host"));
+
+		// Act
+		Func<Task> act = () => _sut.GetSessionPathAsync(Env());
+
+		// Assert
+		(await act.Should().ThrowAsync<CreatioAuthenticationException>(
+			because: "network failure must use the established browser-session connectivity contract"))
+			.Which.Message.Should().NotContain("secret-host",
+				because: "raw transport details must not leak into the user-facing error");
+	}
+
+	[Test]
+	[Description("A non-success forms login response maps to the sanitized invalid-credentials error.")]
+	public async Task GetSessionPathAsync_ShouldReturnInvalidCredentials_WhenLoginResponseIsNotSuccessful() {
+		// Arrange
+		StubCacheMiss();
+		_client.LoginAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => Task.FromResult(Response(HttpStatusCode.Unauthorized, "secret-body")));
+
+		// Act
+		Func<Task> act = () => _sut.GetSessionPathAsync(Env());
+
+		// Assert
+		(await act.Should().ThrowAsync<CreatioAuthenticationException>(
+			because: "a rejected forms login must preserve the invalid-credentials classification"))
+			.Which.Message.Should().NotContain("secret-body",
+				because: "the server response body must not be included in the authentication error");
+	}
+
+	[Test]
 	[Description("A successful login without the forms authentication cookie is rejected.")]
 	public async Task GetSessionPathAsync_ShouldReject_WhenLoginExportsOnlyNonAuthCookies() {
 		// Arrange
@@ -264,6 +357,47 @@ public sealed class BrowserSessionServiceTests {
 		// Assert
 		await act.Should().ThrowAsync<CreatioAuthenticationException>(
 			because: "an affinity or CSRF cookie alone cannot authenticate a browser session");
+	}
+
+	[Test]
+	[Description("A cached state without .ASPXAUTH is discarded before CreatioClient can issue an implicit authenticated request.")]
+	public async Task GetSessionPathAsync_ShouldRefreshWithoutCacheProbe_WhenCachedStateHasNoFormsCookie() {
+		// Arrange
+		_cache.TryRead(Key, out Arg.Any<string>()).Returns(call => {
+			call[1] = CachedPath;
+			return true;
+		});
+		_fileSystem.ReadAllText(CachedPath).Returns(
+			"""{"cookies":[{"name":"CRT_CSRF","value":"csrf","domain":"dev.creatio.com","path":"/","httpOnly":false,"secure":true,"sameSite":"Strict","expires":-1}],"origins":[]}""");
+
+		// Act
+		_ = await _sut.GetSessionPathAsync(Env());
+
+		// Assert
+		_cache.Received(1).Delete(Key);
+		await _client.DidNotReceive().ExecuteGetRequestAsync(
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+		await _client.Received(1).LoginAsync(30_000, Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("An expired cached .ASPXAUTH cookie is discarded before a request can trigger implicit authentication.")]
+	public async Task GetSessionPathAsync_ShouldRefreshWithoutCacheProbe_WhenFormsCookieIsExpired() {
+		// Arrange
+		StubCacheHit();
+		double expired = DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds();
+		_fileSystem.ReadAllText(CachedPath).Returns(StorageStateJson.Serialize(new StorageStateResult([
+			new BrowserCookie(".ASPXAUTH", "expired", "dev.creatio.com", "/", true, false, "Lax", expired)
+		])));
+
+		// Act
+		_ = await _sut.GetSessionPathAsync(Env());
+
+		// Assert
+		_cache.Received(1).Delete(Key);
+		await _client.DidNotReceive().ExecuteGetRequestAsync(
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+		await _client.Received(1).LoginAsync(30_000, Arg.Any<CancellationToken>());
 	}
 
 	[Test]

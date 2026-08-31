@@ -184,7 +184,7 @@ public sealed class ExportComponentRegistryCommand {
 			}
 			else if (hasEnvironment) {
 				EnvironmentSettings settings = ResolveEnvironmentSettings(options);
-				IPlatformVersionResolver resolver = _resolverFactory.Create(settings);
+				using IOwnedPlatformVersionResolver resolver = _resolverFactory.Create(settings);
 				versionResolution = await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 			}
 			else {

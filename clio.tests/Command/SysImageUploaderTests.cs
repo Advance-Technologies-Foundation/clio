@@ -32,6 +32,8 @@ public sealed class SysImageUploaderTests
 		BuildSut(HttpResponseMessage uploadResponse = null,
 		HttpResponseMessage verifyResponse = null) {
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.LoginAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => Task.FromResult(TextResponse()));
 		client.UploadImageAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(_ => Task.FromResult(uploadResponse ?? TextResponse()));
@@ -55,7 +57,7 @@ public sealed class SysImageUploaderTests
 			Password = "secret"
 		};
 		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
-		factory.CreateFormsEnvironmentClient(settings, false).Returns(client);
+		factory.CreateFormsEnvironmentClient(settings).Returns(client);
 
 		return (new SysImageUploader(settings, factory, urlBuilder, fileSystem), client, factory,
 			settings, urlBuilder, fileSystem);
@@ -73,7 +75,8 @@ public sealed class SysImageUploaderTests
 
 		// Assert
 		result.Success.Should().BeTrue(because: "the Image API and byte-for-byte verification both succeeded");
-		factory.Received(1).CreateFormsEnvironmentClient(settings, false);
+		factory.Received(1).CreateFormsEnvironmentClient(settings);
+		await client.Received(1).LoginAsync(30_000, Arg.Any<CancellationToken>());
 		await client.Received(1).UploadImageAsync(
 			Arg.Is<string>(url => url.StartsWith(UploadRoot + "?fileapi", StringComparison.Ordinal)
 				&& url.Contains($"totalFileLength={PngPayload.Length}")
@@ -93,7 +96,7 @@ public sealed class SysImageUploaderTests
 	public async Task UploadAsync_ShouldForwardUnicodeFileName_WhenPathContainsUnicode() {
 		// Arrange
 		const string unicodePath = "C:/brand/логотип.png";
-		(SysImageUploader sut, IApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
 		fileSystem.ExistsFile(unicodePath).Returns(true);
 		fileSystem.GetFileSize(unicodePath).Returns(PngPayload.LongLength);
 		fileSystem.ReadAllBytes(unicodePath).Returns(PngPayload);
@@ -112,7 +115,7 @@ public sealed class SysImageUploaderTests
 	[Description("Rejects invalid local input before any Creatio request is made.")]
 	public async Task UploadAsync_ShouldFailFast_WhenLocalInputIsInvalid(string path, string expectedError) {
 		// Arrange
-		(SysImageUploader sut, IApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
 		fileSystem.ExistsFile(path).Returns(path.EndsWith(".pdf", StringComparison.Ordinal));
 
 		// Act
@@ -128,7 +131,7 @@ public sealed class SysImageUploaderTests
 	[Description("Rejects an empty image before reading or sending its contents.")]
 	public async Task UploadAsync_ShouldFailFast_WhenFileIsEmpty() {
 		// Arrange
-		(SysImageUploader sut, IApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
 		fileSystem.GetFileSize(FilePath).Returns(0);
 
 		// Act
@@ -162,7 +165,7 @@ public sealed class SysImageUploaderTests
 	[Description("Rejects a file above the shared binary cap without loading it into memory.")]
 	public async Task UploadAsync_ShouldFailFast_WhenFileExceedsSizeCap() {
 		// Arrange
-		(SysImageUploader sut, IApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
 		fileSystem.GetFileSize(FilePath).Returns(SysImageUploader.MaxImageBytes + 1);
 
 		// Act
@@ -179,7 +182,7 @@ public sealed class SysImageUploaderTests
 	[Description("Rejects a file that grows above the cap between the size probe and the read.")]
 	public async Task UploadAsync_ShouldFail_WhenFileGrowsPastCapDuringRead() {
 		// Arrange
-		(SysImageUploader sut, IApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, IFileSystem fileSystem) = BuildSut();
 		fileSystem.ReadAllBytes(FilePath).Returns(new byte[SysImageUploader.MaxImageBytes + 1]);
 
 		// Act
@@ -199,7 +202,7 @@ public sealed class SysImageUploaderTests
 	public async Task UploadAsync_ShouldSurfaceServerError_WhenImageApiRejects(string body,
 		string expectedError) {
 		// Arrange
-		(SysImageUploader sut, IApplicationClient client, _, _, _, _) = BuildSut(TextResponse(body: body));
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, _) = BuildSut(TextResponse(body: body));
 
 		// Act
 		SysImageUploadResult result = await sut.UploadAsync(FilePath);
@@ -228,7 +231,7 @@ public sealed class SysImageUploaderTests
 	[Description("Falls through an unparseable 2xx upload body to the authoritative byte verification.")]
 	public async Task UploadAsync_ShouldVerifyBytes_WhenUploadBodyIsNotJson() {
 		// Arrange
-		(SysImageUploader sut, IApplicationClient client, _, _, _, _) = BuildSut(TextResponse(body: "not-json"));
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, _) = BuildSut(TextResponse(body: "not-json"));
 
 		// Act
 		SysImageUploadResult result = await sut.UploadAsync(FilePath);
@@ -257,7 +260,7 @@ public sealed class SysImageUploaderTests
 	[Description("Turns a Creatio authentication rejection into the uploader's structured failure result.")]
 	public async Task UploadAsync_ShouldFail_WhenApplicationClientRejectsAuthentication() {
 		// Arrange
-		(SysImageUploader sut, IApplicationClient client, _, _, _, _) = BuildSut();
+		(SysImageUploader sut, ICreatioApplicationClient client, _, _, _, _) = BuildSut();
 		client.UploadImageAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns<Task<HttpResponseMessage>>(_ => throw new UnauthorizedAccessException("secret-free"));
@@ -269,5 +272,83 @@ public sealed class SysImageUploaderTests
 		result.Success.Should().BeFalse(because: "an unauthenticated upload cannot succeed");
 		result.Error.Should().Contain("check username and password",
 			because: "the user receives a sanitized recovery action");
+	}
+
+	[Test]
+	[Description("Propagates caller cancellation while still disposing the owned CreatioClient.")]
+	public async Task UploadAsync_ShouldPropagateCancellation_WhenCallerCancels() {
+		// Arrange
+		(SysImageUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		using CancellationTokenSource cancellation = new();
+		cancellation.Cancel();
+		client.LoginAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ => throw new OperationCanceledException(cancellation.Token));
+
+		// Act
+		Func<Task> act = () => sut.UploadAsync(FilePath, cancellation.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "caller cancellation must remain observable to MCP cancellation handling");
+		client.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Maps an uncancelled transport cancellation to the uploader's timeout result.")]
+	public async Task UploadAsync_ShouldReturnTimeoutFailure_WhenTransportTimesOut() {
+		// Arrange
+		(SysImageUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		client.LoginAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ => throw new OperationCanceledException());
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync(FilePath);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a transport timeout cannot produce a valid image id");
+		result.Error.Should().Contain("timed out", because: "the caller needs the established timeout diagnosis");
+		client.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Maps CreatioClient HTTP failures to a structured upload failure and disposes the client.")]
+	public async Task UploadAsync_ShouldReturnStructuredFailure_WhenTransportFails() {
+		// Arrange
+		(SysImageUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		client.UploadImageAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ => throw new HttpRequestException("loopback unavailable"));
+
+		// Act
+		SysImageUploadResult result = await sut.UploadAsync(FilePath);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an HTTP transport failure cannot persist the image");
+		result.Error.Should().Contain("loopback unavailable",
+			because: "the non-secret transport diagnosis remains actionable");
+		client.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Propagates the exact caller cancellation token when cancellation occurs during image upload.")]
+	public async Task UploadAsync_ShouldPropagateExactCancellation_WhenUploadIsCanceled() {
+		// Arrange
+		(SysImageUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		using CancellationTokenSource cancellation = new();
+		cancellation.Cancel();
+		client.UploadImageAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<int>(), cancellation.Token)
+			.Returns(Task.FromCanceled<HttpResponseMessage>(cancellation.Token));
+
+		// Act
+		Func<Task> act = () => sut.UploadAsync(FilePath, cancellation.Token);
+
+		// Assert
+		OperationCanceledException exception = (await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "the caller's cancellation must remain distinguishable from an internal timeout")).Which;
+		exception.CancellationToken.Should().Be(cancellation.Token,
+			because: "the exact token is required for cooperative MCP cancellation correlation");
+		await client.DidNotReceiveWithAnyArgs().ExecuteGetRequestAsync(default, default, default, default, default);
+		client.Received(1).Dispose();
 	}
 }

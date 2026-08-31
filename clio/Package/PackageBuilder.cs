@@ -67,7 +67,7 @@ namespace Clio.Package
 
 		private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
 
-		private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
+		private IOwnedApplicationClient CreateClient() => _applicationClientFactory.CreateOwnedClient(_environmentSettings);
 
 		private string GetSafePackageName(string packageName) =>
 			packageName
@@ -75,7 +75,6 @@ namespace Clio.Package
 				.Replace(",", "\",\"");
 
 		private void Compilation(IEnumerable<string> packagesNames, bool force) {
-			IApplicationClient applicationClient = CreateClient();
 			string compilationName = force ? "rebuild" : "build";
 			string fullBuildPackageUrl = _serviceUrlBuilder.Build(
 				force
@@ -88,8 +87,9 @@ namespace Clio.Package
 				string requestData = CreateRequestData(safePackageName);
 
 				if (_compilationHistoryPoller is not null) {
-					CompileWithPolling(applicationClient, fullBuildPackageUrl, requestData);
+					CompileWithPolling(fullBuildPackageUrl, requestData);
 				} else {
+					using IOwnedApplicationClient applicationClient = CreateClient();
 					applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
 				}
 
@@ -101,7 +101,7 @@ namespace Clio.Package
 		// the server compiles in the background and drops the connection. We fire the
 		// request in a daemon thread and use the same CompilationHistoryPoller pattern
 		// as CompileConfigurationCommand to detect completion via OData.
-		private void CompileWithPolling(IApplicationClient client, string url, string requestData) {
+		private void CompileWithPolling(string url, string requestData) {
 			CompilationHistory baseline = _compilationHistoryPoller.GetBaseline();
 			DateTime baselineCreatedOn = baseline?.CreatedOn ?? DateTime.MinValue;
 
@@ -110,6 +110,7 @@ namespace Clio.Package
 
 			Thread httpThread = new(() => {
 				try {
+					using IOwnedApplicationClient client = CreateClient();
 					client.ExecutePostRequest(url, requestData);
 				} catch (Exception ex) {
 					httpException = ex;

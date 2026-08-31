@@ -18,7 +18,9 @@ namespace Clio.Tests.Command;
 public sealed class ApplicationCreateServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
-	private IApplicationClient _applicationClient = null!;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
 	private ISysSettingsManager _sysSettingsManager = null!;
@@ -34,7 +36,7 @@ public sealed class ApplicationCreateServiceTests {
 		// Arrange
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();

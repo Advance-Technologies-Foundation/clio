@@ -78,7 +78,7 @@ public sealed class CreateBusinessProcessService(
 			descriptor["packageName"] = request.PackageNameOverride;
 		}
 
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, environmentSettings);
 		// ProcessDesignService uses BodyStyle=Wrapped: the descriptor is wrapped under a "request" property.
 		string requestBody = new JsonObject { ["request"] = descriptor }.ToJsonString();

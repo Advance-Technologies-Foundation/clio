@@ -80,16 +80,19 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	}
 
 	/// <inheritdoc />
-	public IOwnedApplicationClient CreateFormsEnvironmentClient(EnvironmentSettings settings,
-		bool useUntrustedSsl) {
+	public IOwnedApplicationClient CreateFormsEnvironmentClient(EnvironmentSettings settings) {
 		ArgumentNullException.ThrowIfNull(settings);
+		if (string.IsNullOrWhiteSpace(settings.Login) || string.IsNullOrWhiteSpace(settings.Password)) {
+			throw new ArgumentException(
+				"Forms authentication requires non-empty login and password values.", nameof(settings));
+		}
 		return new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,
-			useUntrustedSsl, settings.IsNetCore, new ServiceUrlBuilder(settings));
+			useUntrustedSsl: false, settings.IsNetCore, new ServiceUrlBuilder(settings));
 	}
 
 	/// <inheritdoc />
 	public IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings settings,
-		string accessToken, bool useUntrustedSsl) {
+		string accessToken) {
 		ArgumentNullException.ThrowIfNull(settings);
 		EnvironmentSettings bearerSettings = new() {
 			Uri = settings.Uri,
@@ -99,7 +102,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 		};
 		GuardBearerSettings(bearerSettings);
 		Lazy<CreatioClient> client = new(() => new CreatioClient(settings.Uri, accessToken,
-			useUntrustedSsl, settings.IsNetCore));
+			useUntrustedSsl: false, settings.IsNetCore));
 		return new CreatioClientAdapter(client, new ServiceUrlBuilder(settings), _noReauthExecutor,
 			ownsClient: true);
 	}
@@ -112,6 +115,9 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	// secret token value (FR-12): a blank url is named explicitly, and an unsupported token type
 	// is reported by type name only.
 	private static void GuardBearerSettings(EnvironmentSettings settings) {
+		if (string.IsNullOrWhiteSpace(settings.AccessToken)) {
+			throw new ArgumentException("Bearer authentication requires a non-empty access token.", nameof(settings));
+		}
 		if (string.IsNullOrWhiteSpace(settings.Uri)) {
 			throw new ArgumentException(
 				"An access token was supplied but the environment url is missing; provide a non-empty url.",

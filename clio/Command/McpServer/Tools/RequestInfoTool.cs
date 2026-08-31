@@ -184,7 +184,7 @@ public sealed class RequestInfoTool(
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
-			IPlatformVersionResolver resolver = resolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.Create(settings);
 			return resolver.ResolveAsync(cancellationToken);
 		}
 

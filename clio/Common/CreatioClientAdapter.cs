@@ -75,7 +75,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 	/// <param name="useUntrustedSsl">Whether invalid server certificates are accepted.</param>
 	/// <param name="isNetCore">Whether the target Creatio application uses the .NET runtime.</param>
 	/// <param name="serviceUrlBuilder">Optional environment-relative URL builder.</param>
-	public CreatioClientAdapter(string appUrl, string userName, string userPassword,
+	internal CreatioClientAdapter(string appUrl, string userName, string userPassword,
 		bool useUntrustedSsl, bool isNetCore, IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() => new CreatioClient(appUrl, userName, userPassword,
 			useUntrustedSsl, isNetCore)),
@@ -91,7 +91,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		: this(new Lazy<CreatioClient>(() => creatioClient), null, null, null) { }
 
 	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient)
-		: this(lazyClient, null, null, null, ownsClient: true) { }
+		: this(lazyClient, null, null, null, ownsClient: false) { }
 
 	#endregion
 

@@ -702,25 +702,27 @@ internal class ExportComponentRegistryCommandTests : BaseCommandTests<ExportComp
 	private const string RegistrySubdirectoryNameForTest = "component-registry";
 
 	private sealed class ThrowingResolverFactory(Exception failure) : IPlatformVersionResolverFactory {
-		public IPlatformVersionResolver Create(EnvironmentSettings settings) => new ThrowingResolver(failure);
+		public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) => new ThrowingResolver(failure);
 
-		private sealed class ThrowingResolver(Exception failure) : IPlatformVersionResolver {
+		private sealed class ThrowingResolver(Exception failure) : IOwnedPlatformVersionResolver {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromException<PlatformVersionResolution>(failure);
+			public void Dispose() { }
 		}
 	}
 
 	private sealed class StubResolverFactory(PlatformVersionResolution result) : IPlatformVersionResolverFactory {
 		public int CreateCallCount { get; private set; }
 
-		public IPlatformVersionResolver Create(EnvironmentSettings settings) {
+		public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) {
 			CreateCallCount++;
 			return new StubResolver(result);
 		}
 
-		private sealed class StubResolver(PlatformVersionResolution result) : IPlatformVersionResolver {
+		private sealed class StubResolver(PlatformVersionResolution result) : IOwnedPlatformVersionResolver {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromResult(result);
+			public void Dispose() { }
 		}
 	}
 }

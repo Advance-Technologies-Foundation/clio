@@ -65,8 +65,7 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 
 	private async Task<StorageStateResult> LoginAndExportSessionAsync(EnvironmentSettings env,
 		CancellationToken cancellationToken) {
-		using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(env,
-			useUntrustedSsl: false);
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(env);
 		try {
 			using HttpResponseMessage response = await client.LoginAsync(RequestTimeout, cancellationToken)
 				.ConfigureAwait(false);
@@ -92,13 +91,14 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 		} catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) {
 			return null;
 		}
-		if (cachedCookies.Count == 0 || !Uri.TryCreate(env.Uri, UriKind.Absolute, out Uri environmentUri)) {
+		if (!cachedCookies.Any(cookie => cookie.Name.Equals(".ASPXAUTH", StringComparison.OrdinalIgnoreCase)
+				&& (cookie.Expires < 0 || DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires) > DateTimeOffset.UtcNow))
+			|| !Uri.TryCreate(env.Uri, UriKind.Absolute, out Uri environmentUri)) {
 			return null;
 		}
 
 		try {
-			using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(env,
-				useUntrustedSsl: false);
+			using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(env);
 			client.ImportSessionCookies(cachedCookies.Select(cookie => ToSessionCookie(cookie, environmentUri)));
 			using HttpResponseMessage response = await client.ExecuteGetRequestAsync(
 				AuthenticatedBrowserLauncher.BuildShellUrl(env), RequestTimeout,
@@ -122,7 +122,7 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 		}
 	}
 
-	private static StorageStateResult ExportSession(IApplicationClient client, string environmentUri) {
+	private static StorageStateResult ExportSession(ICreatioApplicationClient client, string environmentUri) {
 		IReadOnlyList<CreatioSessionCookie> cookies = client.ExportSessionCookies();
 		if (!cookies.Any(cookie => cookie.Name.Equals(".ASPXAUTH", StringComparison.OrdinalIgnoreCase))) {
 			throw CreatioAuthenticationException.NoCookies(environmentUri);

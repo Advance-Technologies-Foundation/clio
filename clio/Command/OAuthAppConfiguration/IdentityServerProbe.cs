@@ -117,7 +117,7 @@ public sealed class IdentityServerProbe(IHttpClientFactory httpClientFactory,
 		}
 		ArgumentNullException.ThrowIfNull(environmentSettings);
 		using IOwnedApplicationClient client = _applicationClientFactory.CreateBearerEnvironmentClient(
-			environmentSettings, accessToken, useUntrustedSsl: false);
+			environmentSettings, accessToken);
 		using HttpResponseMessage response = client.ExecutePostRequestAsync(
 			selectQueryUrl, ContactTop1SelectQuery).GetAwaiter().GetResult();
 		return (int)response.StatusCode;

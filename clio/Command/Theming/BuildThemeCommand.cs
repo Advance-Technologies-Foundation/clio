@@ -393,7 +393,8 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (hasEnvironment) {
 			EnvironmentSettings settings = _settingsRepository.FindEnvironment(options.EnvironmentName)
 				?? throw new ArgumentException($"build-theme: environment '{options.EnvironmentName}' is not registered.");
-			PlatformVersionResolution resolution = _resolverFactory.Create(settings).ResolveAsync(CancellationToken.None).GetAwaiter().GetResult();
+			using IOwnedPlatformVersionResolver resolver = _resolverFactory.Create(settings);
+			PlatformVersionResolution resolution = resolver.ResolveAsync(CancellationToken.None).GetAwaiter().GetResult();
 			if (resolution.Source == VersionResolutionSource.LatestFallback) {
 				throw new ArgumentException(
 					$"build-theme: could not determine the Creatio version of environment '{options.EnvironmentName}'. "
@@ -420,7 +421,8 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			return new PlatformVersionResolution(options.Version.Trim(), VersionResolutionSource.Environment);
 		}
 		if (resolvedSettings is not null) {
-			return _resolverFactory.Create(resolvedSettings).ResolveAsync(CancellationToken.None).GetAwaiter().GetResult();
+			using IOwnedPlatformVersionResolver resolver = _resolverFactory.Create(resolvedSettings);
+			return resolver.ResolveAsync(CancellationToken.None).GetAwaiter().GetResult();
 		}
 		return new PlatformVersionResolution(null, VersionResolutionSource.LatestFallback);
 	}

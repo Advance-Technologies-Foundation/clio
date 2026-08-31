@@ -11,7 +11,7 @@ namespace Clio.Command.McpServer.Tools;
 /// the long-lived MCP server.
 /// </summary>
 public interface IPlatformVersionResolverFactory {
-	IPlatformVersionResolver Create(EnvironmentSettings settings);
+	IOwnedPlatformVersionResolver Create(EnvironmentSettings settings);
 }
 
 /// <summary>
@@ -37,19 +37,24 @@ public sealed class PlatformVersionResolverFactory : IPlatformVersionResolverFac
 		_loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
 	}
 
-	public IPlatformVersionResolver Create(EnvironmentSettings settings) {
+	public IOwnedPlatformVersionResolver Create(EnvironmentSettings settings) {
 		if (settings is null) {
 			throw new ArgumentNullException(nameof(settings));
 		}
-		IApplicationClient applicationClient = _applicationClientFactory.CreateEnvironmentClient(settings);
-		// Loggers are constructed per call rather than stored as ILogger<PlatformVersionResolver>
-		// on the factory — that would mismatch the factory's enclosing type (Sonar S6672) and
-		// the factory itself has no logging of its own to justify a typed instance field.
-		return new PlatformVersionResolver(
-			applicationClient,
-			settings,
-			_serviceUrlBuilderFactory,
-			_timeProvider,
-			_loggerFactory.CreateLogger<PlatformVersionResolver>());
+		IOwnedApplicationClient applicationClient = _applicationClientFactory.CreateOwnedEnvironmentClient(settings);
+		try {
+			// Loggers are constructed per call rather than stored as ILogger<PlatformVersionResolver>
+			// on the factory — that would mismatch the factory's enclosing type (Sonar S6672) and
+			// the factory itself has no logging of its own to justify a typed instance field.
+			return new PlatformVersionResolver(
+				applicationClient,
+				settings,
+				_serviceUrlBuilderFactory,
+				_timeProvider,
+				_loggerFactory.CreateLogger<PlatformVersionResolver>());
+		} catch {
+			applicationClient.Dispose();
+			throw;
+		}
 	}
 }

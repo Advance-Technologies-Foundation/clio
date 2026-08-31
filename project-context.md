@@ -37,12 +37,13 @@
     do not widen this exception for convenience.
 - Commands are registered via DI in `clio/BindingsModule.cs` and wired as verbs in
   `clio/Program.cs` — never forget to register.
-- `IApplicationClient` / `CreatioClient` is the ONLY way to talk to the Creatio HTTP API — never
-  use a raw `HttpClient`. This includes forms login and session-cookie import/export, bearer
+- Authenticated Creatio HTTP API calls use `IApplicationClient` / `CreatioClient`. This includes
+  forms login and session-cookie import/export, bearer
   DataService calls, Image API binary uploads, and byte-exact verification reads. Extend the shared
-  client contract when a new Creatio transport shape is required; named `IHttpClientFactory`
-  clients remain appropriate only for non-Creatio hosts such as IdentityService discovery and token
-  endpoints.
+  client contract when a new authenticated Creatio transport shape is required. Raw named
+  `IHttpClientFactory` clients remain appropriate for non-Creatio hosts such as IdentityService and
+  for documented anonymous/bootstrap probes whose redirect, timeout, or no-login semantics differ
+  (`HealthCheckCommand`, `ClassicEnumVocabularyResolver`, and `EnvironmentRuntimeDetectionService`).
 
 ### CLI flag naming — HARD RULE
 - **All CLI option names must be kebab-case**: `--package-name`, not `--packageName` or `--PackageName`

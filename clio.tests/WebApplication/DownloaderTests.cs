@@ -19,7 +19,9 @@ public class DownloaderTests : BaseClioModuleTests
 	#region Fields: Private
 
 	private readonly ILogger _loggerMock = Substitute.For<ILogger>();
-	private readonly IApplicationClient _applicationClientMock = Substitute.For<IApplicationClient>();
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private readonly IOwnedApplicationClient _applicationClientMock = Substitute.For<IOwnedApplicationClient>();
 
 	private readonly IApplicationClientFactory _applicationClientFactoryMock
 		= Substitute.For<IApplicationClientFactory>();

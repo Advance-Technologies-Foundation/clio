@@ -1,4 +1,6 @@
 using System;
+using System.Net.Http;
+using System.Threading.Tasks;
 using Clio;
 using Clio.Common;
 using Creatio.Client;
@@ -41,7 +43,7 @@ internal sealed class CreatioClientAdapterLifetimeTests {
 			Uri = "https://localhost",
 			Login = "Supervisor",
 			Password = "Supervisor"
-		}, useUntrustedSsl: true);
+		});
 		// Act
 		sut.Dispose();
 		Action act = () => sut.ExportSessionCookies();
@@ -49,5 +51,42 @@ internal sealed class CreatioClientAdapterLifetimeTests {
 		// Assert
 		act.Should().Throw<ObjectDisposedException>(
 			because: "disposing before first use must not allow the lazy client to be created afterward");
+	}
+
+	[Test]
+	[Description("Disposing an owned adapter closes the captured CreatioClient transport.")]
+	public async Task Dispose_ShouldCloseUnderlyingTransport_WhenOwnedClientWasInitialized() {
+		// Arrange
+		CreatioClient client = new("https://localhost", "token", useUntrustedSsl: false, isNetCore: true);
+		CreatioClientAdapter sut = new(new Lazy<CreatioClient>(() => client), null,
+			new NoReauthExecutor(), ownsClient: true);
+		sut.ExportSessionCookies();
+
+		// Act
+		sut.Dispose();
+		Func<Task> act = async () => {
+			using HttpResponseMessage _ = await client.ExecuteGetRequestAsync("https://localhost/probe");
+		};
+
+		// Assert
+		await act.Should().ThrowAsync<ObjectDisposedException>(
+			because: "disposing the adapter must close the captured owned CreatioClient transport itself");
+	}
+
+	[Test]
+	[Description("Disposing an adapter around a caller-supplied lazy client keeps that client borrowed.")]
+	public void Dispose_ShouldKeepClientUsable_WhenLazyClientIsBorrowed() {
+		// Arrange
+		using CreatioClient client = new("https://localhost", "token", useUntrustedSsl: false, isNetCore: true);
+		CreatioClientAdapter sut = new(new Lazy<CreatioClient>(() => client));
+		sut.ExportSessionCookies();
+
+		// Act
+		sut.Dispose();
+		Action act = () => client.ExportSessionCookies();
+
+		// Assert
+		act.Should().NotThrow(
+			because: "caller-supplied direct and lazy clients must have identical borrowed ownership semantics");
 	}
 }

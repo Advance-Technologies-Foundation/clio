@@ -13,7 +13,7 @@ namespace Clio.Command.EntitySchemaDesigner;
 public interface ICurrentUserCultureResolverFactory
 {
 	/// <summary>Creates a resolver bound to <paramref name="settings"/>.</summary>
-	ICurrentUserCultureResolver Create(EnvironmentSettings settings);
+	IOwnedCurrentUserCultureResolver Create(EnvironmentSettings settings);
 }
 
 /// <summary>
@@ -45,17 +45,22 @@ public sealed class CurrentUserCultureResolverFactory : ICurrentUserCultureResol
 	}
 
 	/// <inheritdoc />
-	public ICurrentUserCultureResolver Create(EnvironmentSettings settings)
+	public IOwnedCurrentUserCultureResolver Create(EnvironmentSettings settings)
 	{
 		ArgumentNullException.ThrowIfNull(settings);
-		IApplicationClient applicationClient = _applicationClientFactory.CreateEnvironmentClient(settings);
-		// The logger is created per call rather than stored as a typed instance field — that would
-		// mismatch the factory's enclosing type (Sonar S6672), and the factory does no logging itself.
-		return new CurrentUserCultureResolver(
-			applicationClient,
-			settings,
-			_serviceUrlBuilderFactory,
-			_cache,
-			_loggerFactory.CreateLogger<CurrentUserCultureResolver>());
+		IOwnedApplicationClient applicationClient = _applicationClientFactory.CreateOwnedEnvironmentClient(settings);
+		try {
+			// The logger is created per call rather than stored as a typed instance field — that would
+			// mismatch the factory's enclosing type (Sonar S6672), and the factory does no logging itself.
+			return new CurrentUserCultureResolver(
+				applicationClient,
+				settings,
+				_serviceUrlBuilderFactory,
+				_cache,
+				_loggerFactory.CreateLogger<CurrentUserCultureResolver>());
+		} catch {
+			applicationClient.Dispose();
+			throw;
+		}
 	}
 }

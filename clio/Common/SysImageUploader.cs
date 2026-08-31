@@ -18,6 +18,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 	/// (logos and the shell background) enforce one consistent size policy.
 	/// </summary>
 	internal const long MaxImageBytes = SysSettingsManager.MaxBinaryValueBytes;
+	private const int LoginTimeout = 30_000;
 
 	/// <summary>
 	/// The raster and vector formats the Appearance page accepts, mapped to their mime types. SVG is
@@ -83,9 +84,22 @@ public sealed class SysImageUploader : ISysImageUploader {
 			return SysImageUploadResult.Failure(
 				$"File changed while reading and no longer fits the {MaxImageBytes:N0}-byte limit: '{filePath}' ({payload.LongLength:N0} bytes).");
 		}
+		if (string.IsNullOrWhiteSpace(_environmentSettings.Login)
+			|| string.IsNullOrWhiteSpace(_environmentSettings.Password)) {
+			return SysImageUploadResult.Failure(
+				$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
+				"forms username and password are required in env config");
+		}
 		try {
 			using IOwnedApplicationClient client = _applicationClientFactory.CreateFormsEnvironmentClient(
-				_environmentSettings, useUntrustedSsl: false);
+				_environmentSettings);
+			using HttpResponseMessage loginResponse = await client.LoginAsync(LoginTimeout, cancellationToken)
+				.ConfigureAwait(false);
+			if (!loginResponse.IsSuccessStatusCode) {
+				return SysImageUploadResult.Failure(
+					$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
+					"check username and password in env config");
+			}
 			return await UploadThroughClientAsync(client, filePath, payload, mimeType, cancellationToken)
 				.ConfigureAwait(false);
 		} catch (UnauthorizedAccessException) {
@@ -100,7 +114,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 		}
 	}
 
-	private async Task<SysImageUploadResult> UploadThroughClientAsync(IApplicationClient client,
+	private async Task<SysImageUploadResult> UploadThroughClientAsync(ICreatioApplicationClient client,
 		string filePath, byte[] payload, string mimeType, CancellationToken cancellationToken) {
 		Guid imageId = Guid.NewGuid();
 		string fileName = System.IO.Path.GetFileName(filePath);
@@ -207,7 +221,7 @@ public sealed class SysImageUploader : ISysImageUploader {
 	/// status-only check could report a false success — the byte comparison is the authoritative
 	/// persistence proof.
 	/// </summary>
-	private async Task<SysImageUploadResult> VerifyUploadAsync(IApplicationClient client, Guid imageId,
+	private async Task<SysImageUploadResult> VerifyUploadAsync(ICreatioApplicationClient client, Guid imageId,
 		byte[] payload, CancellationToken cancellationToken) {
 		string verifyUrl = _serviceUrlBuilder.Build($"/img/entity/hash/SysImage/Data/{imageId}");
 		using HttpResponseMessage verifyResponse = await client.ExecuteGetRequestAsync(

@@ -35,7 +35,7 @@ public interface IDownloader
 
 #region Class: Downloader
 
-public class Downloader : IDownloader
+public class Downloader : IDownloader, IDisposable
 {
 
 	#region Fields: Private
@@ -75,7 +75,7 @@ public class Downloader : IDownloader
 
 	#region Properties: Private
 
-	private Lazy<IApplicationClient> ApplicationClient { get; set; }
+	private Lazy<IOwnedApplicationClient> ApplicationClient { get; set; }
 
 	#endregion
 
@@ -83,8 +83,8 @@ public class Downloader : IDownloader
 
 	private IApplicationClient CreateApplicationClient(){
 		ApplicationClient
-			??= new Lazy<IApplicationClient>(() => {
-				var c =  _applicationClientFactory.CreateClient(_environmentSettings);
+			??= new Lazy<IOwnedApplicationClient>(() => {
+				IOwnedApplicationClient c = _applicationClientFactory.CreateOwnedClient(_environmentSettings);
 				c.Login();
 				return c;
 			});
@@ -146,6 +146,14 @@ public class Downloader : IDownloader
 		_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 			Parallel.ForEach(downloadInfos, downloadInfo => DownloadPackageDll(downloadInfo, tempDirectory));
 		});
+	}
+
+	/// <summary>Releases the factory-owned Creatio transport when it was created.</summary>
+	public void Dispose() {
+		if (ApplicationClient?.IsValueCreated == true) {
+			ApplicationClient.Value.Dispose();
+		}
+		GC.SuppressFinalize(this);
 	}
 
 	#endregion

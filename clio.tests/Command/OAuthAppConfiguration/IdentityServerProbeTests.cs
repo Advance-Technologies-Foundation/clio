@@ -32,7 +32,7 @@ internal sealed class IdentityServerProbeTests : BaseClioModuleTests {
 		base.Setup();
 		_sut = Container.GetRequiredService<IIdentityServerProbe>();
 		_applicationClientFactory.CreateBearerEnvironmentClient(Arg.Any<EnvironmentSettings>(),
-			Arg.Any<string>(), Arg.Any<bool>())
+			Arg.Any<string>())
 			.Returns(_applicationClient);
 	}
 
@@ -56,7 +56,7 @@ internal sealed class IdentityServerProbeTests : BaseClioModuleTests {
 
 		// Assert
 		status.Should().Be(204, because: "the probe reports the exact Creatio response status");
-		_applicationClientFactory.Received(1).CreateBearerEnvironmentClient(environment, "opaque-token", false);
+		_applicationClientFactory.Received(1).CreateBearerEnvironmentClient(environment, "opaque-token");
 		_ = _applicationClient.Received(1).ExecutePostRequestAsync(
 			"https://dev.creatio.com/DataService/json/SyncReply/SelectQuery",
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Contact\"")),
@@ -73,6 +73,6 @@ internal sealed class IdentityServerProbeTests : BaseClioModuleTests {
 		// Assert
 		status.Should().Be(0, because: "no authenticated request can be issued without a token");
 		_applicationClientFactory.DidNotReceive().CreateBearerEnvironmentClient(
-			Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), Arg.Any<bool>());
+			Arg.Any<EnvironmentSettings>(), Arg.Any<string>());
 	}
 }
