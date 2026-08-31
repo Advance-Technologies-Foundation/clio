@@ -1104,23 +1104,7 @@ public class BindingsModule {
 		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
 		// The client stays lazy, so building the factory result costs no HTTP call on its own.
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp =>
-			envSettings => {
-				Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
-				// Same bearer rule as RegisterActiveEnvironmentServices: with an access token the adapter
-				// must never fall back to CreatioClient.Login() when it receives a login page, because
-				// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1).
-				IApplicationClient applicationClient = !string.IsNullOrEmpty(envSettings.AccessToken)
-					? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
-					: new CreatioClientAdapter(lazyCreatioClient);
-				return new SysSettingsManager(
-					applicationClient,
-					new ServiceUrlBuilder(envSettings),
-					BuildRemoteDataProvider(envSettings),
-					sp.GetRequiredService<IWorkingDirectoriesProvider>(),
-					sp.GetRequiredService<Clio.Common.IFileSystem>(),
-					sp.GetRequiredService<IFileSystem>(),
-					sp.GetRequiredService<ILogger>());
-			});
+			envSettings => BuildEnvironmentScopedSysSettingsManager(sp, envSettings));
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
@@ -1149,6 +1133,30 @@ public class BindingsModule {
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
+	/// <summary>
+	/// Builds a <see cref="SysSettingsManager"/> for one environment with the same dependency set the
+	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
+	/// than as an empty success.
+	/// </summary>
+	private static ISysSettingsManager BuildEnvironmentScopedSysSettingsManager(
+		IServiceProvider sp, EnvironmentSettings envSettings) {
+		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
+		// Same bearer rule as RegisterActiveEnvironmentServices: with an access token the adapter
+		// must never fall back to CreatioClient.Login() when it receives a login page, because
+		// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1).
+		IApplicationClient applicationClient = !string.IsNullOrEmpty(envSettings.AccessToken)
+			? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
+			: new CreatioClientAdapter(lazyCreatioClient);
+		return new SysSettingsManager(
+			applicationClient,
+			new ServiceUrlBuilder(envSettings),
+			BuildRemoteDataProvider(envSettings),
+			sp.GetRequiredService<IWorkingDirectoriesProvider>(),
+			sp.GetRequiredService<Clio.Common.IFileSystem>(),
+			sp.GetRequiredService<IFileSystem>(),
+			sp.GetRequiredService<ILogger>());
+	}
+
 	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);
