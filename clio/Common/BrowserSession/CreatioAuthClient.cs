@@ -11,6 +11,8 @@ namespace Clio.Common.BrowserSession;
 /// <inheritdoc cref="ICreatioAuthClient" />
 /// <remarks>This compatibility facade now delegates authenticated transport to CreatioClient.</remarks>
 [Obsolete("Use IApplicationClientFactory.CreateFormsEnvironmentClient; retained for binary compatibility.")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "S1133:Deprecated code should be removed",
+	Justification = "This public facade is retained intentionally for binary compatibility.")]
 public sealed class CreatioAuthClient : ICreatioAuthClient {
 	/// <summary>Retains the historical constructor signature for existing consumers.</summary>
 	/// <param name="httpClientFactory">Legacy parameter; authenticated transport no longer uses it.</param>

@@ -59,12 +59,6 @@ internal interface ILoginDiagnostics {
 	T TrackRequest<T>(Func<T> request);
 
 	/// <summary>
-	/// Asynchronously invokes <paramref name="request"/> under the same implicit-request recording as
-	/// <see cref="TrackRequest{T}"/>.
-	/// </summary>
-	Task<T> TrackRequestAsync<T>(Func<Task<T>> request);
-
-	/// <summary>
 	/// Invokes <paramref name="request"/> under the same recording as <see cref="TrackRequest{T}"/>, for
 	/// request methods that return nothing.
 	/// </summary>
@@ -74,4 +68,10 @@ internal interface ILoginDiagnostics {
 	/// <paramref name="request"/> failed because its implicit login was rejected.
 	/// </exception>
 	void TrackRequest(Action request);
+
+	/// <summary>
+	/// Asynchronously invokes <paramref name="request"/> under the same implicit-request recording as
+	/// <see cref="TrackRequest{T}"/>.
+	/// </summary>
+	Task<T> TrackRequestAsync<T>(Func<Task<T>> request);
 }

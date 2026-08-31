@@ -80,30 +80,30 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	}
 
 	/// <inheritdoc />
-	public IOwnedApplicationClient CreateFormsEnvironmentClient(EnvironmentSettings settings) {
-		ArgumentNullException.ThrowIfNull(settings);
-		if (string.IsNullOrWhiteSpace(settings.Login) || string.IsNullOrWhiteSpace(settings.Password)) {
+	public IOwnedApplicationClient CreateFormsEnvironmentClient(EnvironmentSettings environment) {
+		ArgumentNullException.ThrowIfNull(environment);
+		if (string.IsNullOrWhiteSpace(environment.Login) || string.IsNullOrWhiteSpace(environment.Password)) {
 			throw new ArgumentException(
-				"Forms authentication requires non-empty login and password values.", nameof(settings));
+				"Forms authentication requires non-empty login and password values.", nameof(environment));
 		}
-		return new CreatioClientAdapter(settings.Uri, settings.Login, settings.Password,
-			useUntrustedSsl: false, settings.IsNetCore, new ServiceUrlBuilder(settings));
+		return new CreatioClientAdapter(environment.Uri, environment.Login, environment.Password,
+			useUntrustedSsl: false, environment.IsNetCore, new ServiceUrlBuilder(environment));
 	}
 
 	/// <inheritdoc />
-	public IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings settings,
+	public IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings environment,
 		string accessToken) {
-		ArgumentNullException.ThrowIfNull(settings);
+		ArgumentNullException.ThrowIfNull(environment);
 		EnvironmentSettings bearerSettings = new() {
-			Uri = settings.Uri,
-			IsNetCore = settings.IsNetCore,
+			Uri = environment.Uri,
+			IsNetCore = environment.IsNetCore,
 			AccessToken = accessToken,
 			AccessTokenType = AuthenticationScheme.Bearer
 		};
 		GuardBearerSettings(bearerSettings);
-		Lazy<CreatioClient> client = new(() => new CreatioClient(settings.Uri, accessToken,
-			useUntrustedSsl: false, settings.IsNetCore));
-		return new CreatioClientAdapter(client, new ServiceUrlBuilder(settings), _noReauthExecutor,
+		Lazy<CreatioClient> client = new(() => new CreatioClient(environment.Uri, accessToken,
+			useUntrustedSsl: false, environment.IsNetCore));
+		return new CreatioClientAdapter(client, new ServiceUrlBuilder(environment), _noReauthExecutor,
 			ownsClient: true);
 	}
 

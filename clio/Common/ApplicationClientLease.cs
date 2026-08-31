@@ -50,14 +50,14 @@ internal sealed class ApplicationClientLease(IApplicationClient client) : IOwned
 		int maxAttempts = 1, int delaySec = 1) =>
 		_client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
 
+	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int maxAttempts = 1, int delaySec = 1) where T : BaseResponse, new() =>
+		_client.ExecutePostRequest<T>(url, requestData, requestTimeout, maxAttempts, delaySec);
+
 	public Task<HttpResponseMessage> ExecutePostRequestAsync(string url, string requestData,
 		int requestTimeout = 100_000, int maxAttempts = 1, int delaySec = 1,
 		CancellationToken cancellationToken = default) =>
 		Extended.ExecutePostRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec, cancellationToken);
-
-	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int maxAttempts = 1, int delaySec = 1) where T : BaseResponse, new() =>
-		_client.ExecutePostRequest<T>(url, requestData, requestTimeout, maxAttempts, delaySec);
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) =>

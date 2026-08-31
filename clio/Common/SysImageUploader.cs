@@ -62,6 +62,8 @@ public sealed class SysImageUploader : ISysImageUploader {
 
 	/// <summary>Retains the historical constructor while routing upload transport through CreatioClient.</summary>
 	[Obsolete("Use the overload that accepts IApplicationClientFactory and IServiceUrlBuilder.")]
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "S1133:Deprecated code should be removed",
+		Justification = "This public constructor is retained intentionally for binary compatibility.")]
 	[System.Diagnostics.CodeAnalysis.SuppressMessage("Architecture", "CLIO001:Resolve behavior through DI",
 		Justification = "The compatibility constructor must retain its historical public signature.")]
 	public SysImageUploader(EnvironmentSettings environmentSettings, ICreatioAuthClient authClient,
@@ -76,32 +78,9 @@ public sealed class SysImageUploader : ISysImageUploader {
 	/// <inheritdoc />
 	public async Task<SysImageUploadResult> UploadAsync(string filePath,
 		CancellationToken cancellationToken = default) {
-		if (string.IsNullOrWhiteSpace(filePath)) {
-			return SysImageUploadResult.Failure("A path to the image file is required.");
-		}
-		if (!_fileSystem.ExistsFile(filePath)) {
-			return SysImageUploadResult.Failure($"File not found: '{filePath}'.");
-		}
-		string extension = System.IO.Path.GetExtension(filePath);
-		if (!MimeTypesByExtension.TryGetValue(extension ?? string.Empty, out string mimeType)) {
-			return SysImageUploadResult.Failure(
-				$"Unsupported image extension '{extension}'. Supported: " +
-				string.Join(", ", MimeTypesByExtension.Keys.OrderBy(k => k, StringComparer.Ordinal)) + ".");
-		}
-		long fileSize = _fileSystem.GetFileSize(filePath);
-		if (fileSize == 0) {
-			return SysImageUploadResult.Failure($"File is empty: '{filePath}'.");
-		}
-		if (fileSize > MaxImageBytes) {
-			return SysImageUploadResult.Failure(
-				$"File exceeds the {MaxImageBytes:N0}-byte limit: '{filePath}' ({fileSize:N0} bytes).");
-		}
-		byte[] payload = _fileSystem.ReadAllBytes(filePath);
-		// Re-check after the read: a file that grew between the size probe and the read must not
-		// slip past the cap (same bounded-read discipline as the Binary sys-setting upload path).
-		if (payload.LongLength == 0 || payload.LongLength > MaxImageBytes) {
-			return SysImageUploadResult.Failure(
-				$"File changed while reading and no longer fits the {MaxImageBytes:N0}-byte limit: '{filePath}' ({payload.LongLength:N0} bytes).");
+		SysImageUploadResult validationFailure = TryReadImage(filePath, out byte[] payload, out string mimeType);
+		if (validationFailure is not null) {
+			return validationFailure;
 		}
 		if (string.IsNullOrWhiteSpace(_environmentSettings.Login)
 			|| string.IsNullOrWhiteSpace(_environmentSettings.Password)) {
@@ -123,27 +102,59 @@ public sealed class SysImageUploader : ISysImageUploader {
 				using HttpResponseMessage loginResponse = await client.LoginAsync(LoginTimeout, cancellationToken)
 					.ConfigureAwait(false);
 				if (!loginResponse.IsSuccessStatusCode) {
-					return SysImageUploadResult.Failure(
-						$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
-						"check username and password in env config");
+					return AuthenticationFailure(filePath);
 				}
 			}
 			return await UploadThroughClientAsync(client, filePath, payload, mimeType, cancellationToken)
 				.ConfigureAwait(false);
 		} catch (CreatioAuthenticationException) {
-			return SysImageUploadResult.Failure(
-				$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
-				"check username and password in env config");
+			return AuthenticationFailure(filePath);
 		} catch (UnauthorizedAccessException) {
-			return SysImageUploadResult.Failure(
-				$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
-				"check username and password in env config");
+			return AuthenticationFailure(filePath);
 		} catch (HttpRequestException ex) {
 			return SysImageUploadResult.Failure($"Image upload failed: {ex.Message}");
 		} catch (OperationCanceledException) {
 			cancellationToken.ThrowIfCancellationRequested();
 			return SysImageUploadResult.Failure("Image upload timed out.");
 		}
+	}
+
+	private static SysImageUploadResult AuthenticationFailure(string filePath) =>
+		SysImageUploadResult.Failure(
+			$"authentication failed for environment while uploading '{System.IO.Path.GetFileName(filePath)}' — " +
+			"check username and password in env config");
+
+	private SysImageUploadResult TryReadImage(string filePath, out byte[] payload, out string mimeType) {
+		payload = null;
+		mimeType = null;
+		if (string.IsNullOrWhiteSpace(filePath)) {
+			return SysImageUploadResult.Failure("A path to the image file is required.");
+		}
+		if (!_fileSystem.ExistsFile(filePath)) {
+			return SysImageUploadResult.Failure($"File not found: '{filePath}'.");
+		}
+		string extension = System.IO.Path.GetExtension(filePath);
+		if (!MimeTypesByExtension.TryGetValue(extension ?? string.Empty, out mimeType)) {
+			return SysImageUploadResult.Failure(
+				$"Unsupported image extension '{extension}'. Supported: " +
+				string.Join(", ", MimeTypesByExtension.Keys.OrderBy(k => k, StringComparer.Ordinal)) + ".");
+		}
+		long fileSize = _fileSystem.GetFileSize(filePath);
+		if (fileSize == 0) {
+			return SysImageUploadResult.Failure($"File is empty: '{filePath}'.");
+		}
+		if (fileSize > MaxImageBytes) {
+			return SysImageUploadResult.Failure(
+				$"File exceeds the {MaxImageBytes:N0}-byte limit: '{filePath}' ({fileSize:N0} bytes).");
+		}
+		payload = _fileSystem.ReadAllBytes(filePath);
+		// Re-check after the read: a file that grew between the size probe and the read must not
+		// slip past the cap (same bounded-read discipline as the Binary sys-setting upload path).
+		if (payload.LongLength == 0 || payload.LongLength > MaxImageBytes) {
+			return SysImageUploadResult.Failure(
+				$"File changed while reading and no longer fits the {MaxImageBytes:N0}-byte limit: '{filePath}' ({payload.LongLength:N0} bytes).");
+		}
+		return null;
 	}
 
 	private static CreatioSessionCookie ToSessionCookie(BrowserCookie cookie, Uri environmentUri) => new(

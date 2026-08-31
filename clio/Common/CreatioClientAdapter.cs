@@ -215,14 +215,6 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
 	}
 
-	/// <inheritdoc />
-	public Task<HttpResponseMessage> ExecutePostRequestAsync(string url, string requestData,
-		int requestTimeout = 100_000, int maxAttempts = 1, int delaySec = 1,
-		CancellationToken cancellationToken = default) =>
-		_loginDiagnostics.TrackRequestAsync(() =>
-			Client.ExecutePostRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec,
-				cancellationToken));
-
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1)
 		where T : BaseResponse, new() {
@@ -241,6 +233,14 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		}
 		return _jsonConverter.DeserializeObject<T>(response);
 	}
+
+	/// <inheritdoc />
+	public Task<HttpResponseMessage> ExecutePostRequestAsync(string url, string requestData,
+		int requestTimeout = 100_000, int maxAttempts = 1, int delaySec = 1,
+		CancellationToken cancellationToken = default) =>
+		_loginDiagnostics.TrackRequestAsync(() =>
+			Client.ExecutePostRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec,
+				cancellationToken));
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {

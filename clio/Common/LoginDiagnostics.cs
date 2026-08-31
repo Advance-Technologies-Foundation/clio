@@ -106,6 +106,15 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 	}
 
 	/// <inheritdoc />
+	public void TrackRequest(Action request) {
+		ArgumentNullException.ThrowIfNull(request);
+		TrackRequest<object>(() => {
+			request();
+			return null;
+		});
+	}
+
+	/// <inheritdoc />
 	public async Task<T> TrackRequestAsync<T>(Func<Task<T>> request) {
 		ArgumentNullException.ThrowIfNull(request);
 		AttemptRecord record = BeginAttempt(LoginAttemptKind.Implicit);
@@ -117,15 +126,6 @@ internal sealed class LoginDiagnostics : ILoginDiagnostics {
 		} finally {
 			EndAttempt(record);
 		}
-	}
-
-	/// <inheritdoc />
-	public void TrackRequest(Action request) {
-		ArgumentNullException.ThrowIfNull(request);
-		TrackRequest<object>(() => {
-			request();
-			return null;
-		});
 	}
 
 	/// <summary>

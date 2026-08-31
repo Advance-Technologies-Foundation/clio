@@ -10,6 +10,8 @@ namespace Clio.Common.BrowserSession;
 /// exchange for clio's token — confirmed by the ENG-91234 Story-11 spike).
 /// </summary>
 [System.Obsolete("Use IApplicationClientFactory.CreateFormsEnvironmentClient; retained for binary compatibility.")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "S1133:Deprecated code should be removed",
+	Justification = "This public interface is retained intentionally for binary compatibility.")]
 public interface ICreatioAuthClient {
 	/// <summary>
 	/// Logs in to <paramref name="env"/> and harvests the session cookies.

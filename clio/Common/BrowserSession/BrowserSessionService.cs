@@ -30,6 +30,8 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 
 	/// <summary>Retains the historical constructor while routing authentication through CreatioClient.</summary>
 	[Obsolete("Use the overload that accepts IApplicationClientFactory.")]
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Maintainability", "S1133:Deprecated code should be removed",
+		Justification = "This public constructor is retained intentionally for binary compatibility.")]
 	[System.Diagnostics.CodeAnalysis.SuppressMessage("Architecture", "CLIO001:Resolve behavior through DI",
 		Justification = "The compatibility constructor must retain its historical public signature.")]
 	public BrowserSessionService(ICreatioAuthClient authClient, IBrowserSessionCache cache,
