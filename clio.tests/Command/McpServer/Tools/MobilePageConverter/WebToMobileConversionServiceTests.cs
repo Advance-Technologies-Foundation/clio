@@ -4211,7 +4211,9 @@ public sealed class WebToMobileConversionServiceTests {
 		IndexOfMobile(guide, main).Should().Be(tabAt + 1);
 		IndexOfMobile(guide, area).Should().Be(tabAt + 2);
 		Synthesized(guide, area).MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
-			because: "the Area is the only child of the tab body, so it needs no explicit placement");
+			because: "an ABSENT placement is fine — measured on the stand, the mobile designer opens a page whose "
+				+ "grid child carries no layoutConfig; it is a PARTIAL one it refuses. See "
+				+ "Analyze_ShouldNotInventAPlacement_ForAnElementThatCarriesNone for that boundary");
 
 		TabAreaLayerGroup group = guide.TabAreaLayers!.Single();
 		group.AreaName.Should().Be(area);
@@ -7987,6 +7989,26 @@ public sealed class WebToMobileConversionServiceTests {
 		((JsonObject)placement["adaptive"]!["small"]!).Select(pair => pair.Key).Should()
 			.Contain(["row", "column", "colSpan", "rowSpan"],
 				because: "each breakpoint is itself a placement the designer must be able to read");
+	}
+
+
+	[Test]
+	[Description("The boundary the completion pass deliberately does NOT cross: an element carrying no layoutConfig keeps none. Measured on the stand — the Freedom UI Mobile designer opens a page whose crt.GridContainer child has no layoutConfig at all, and refuses one whose layoutConfig is PARTIAL. So completion applies to a placement that exists; inventing one for every element would place elements the converter was never asked to position (a flex child, the single Area of a tab body) and change layouts that are correct today.")]
+	public void Analyze_ShouldNotInventAPlacement_ForAnElementThatCarriesNone() {
+		// Arrange — neither element declares a placement on the web side.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Box", "type": "crt.GridContainer", "items": [
+			    { "name": "FieldA", "type": "crt.Input" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeWithEmptyRemoval(bundle);
+
+		// Assert
+		Element(guide, "FieldA").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+			because: "the web page positioned nothing here, and an absent placement is one the designer accepts");
+		Element(guide, "Box").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse(
+			because: "the container is in the same position — the pass completes placements, it does not create them");
 	}
 
 	#endregion
