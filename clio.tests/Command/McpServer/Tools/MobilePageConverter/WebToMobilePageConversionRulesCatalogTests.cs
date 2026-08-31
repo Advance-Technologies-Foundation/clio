@@ -187,7 +187,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("The bundled rules promote a grid container left at the WEB DEFAULT corner radius (Medium) to the mobile default (Large), and match that token alone: a radius someone set deliberately, or none at all, is preserved.")]
+	[Description("The bundled rules promote a grid OR flex container left at the WEB DEFAULT corner radius (Medium) to the mobile default (Large), and match that token alone: a radius someone set deliberately, or none at all, is preserved.")]
 	public void LoadBundled_ReturnsSeededCornerRadiusOverride() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -199,14 +199,16 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		radius.Values["borderRadius"].GetString().Should().Be("large");
 		radius.MergeNestedObjects.Should().BeFalse(
 			because: "borderRadius is a scalar token — there is no nested subtree to preserve");
-		ElementFilterRule filter = radius.Filters.Single();
-		filter.Type.Should().Be("crt.GridContainer", because: "the type is a filter constraint like any other");
-		filter.Values.Should().HaveCount(1, because: "one discriminating property beyond the type");
-		filter.Values["borderRadius"].GetString().Should().Be("medium",
+		radius.Filters.Select(f => f.Type).Should().BeEquivalentTo(["crt.GridContainer", "crt.FlexContainer"],
+			because: "both container types can carry the radius, so the union names each one — the type is a "
+				+ "filter constraint like any other");
+		radius.Filters.Should().OnlyContain(f => f.Values.Count == 1,
+			because: "one discriminating property beyond the type");
+		radius.Filters.Select(f => f.Values["borderRadius"].GetString()).Should().AllBe("medium",
 			because: "Medium is the WEB DEFAULT radius, so matching it means 'left at the platform default' — "
 				+ "and Large is the mobile default. Any other radius was set deliberately by whoever designed "
-				+ "the page, so it is preserved rather than normalized away: this single token IS the rule, "
-				+ "not a partial implementation of a wider one");
+				+ "the page, so it is preserved rather than normalized away: this token IS the rule, not a "
+				+ "partial implementation of a wider one");
 	}
 
 	[Test]
