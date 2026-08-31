@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Xml.Linq;
 using Clio.Common;
 using Clio.Workspaces;
 using FluentAssertions;
@@ -376,6 +377,50 @@ public class NugetMaterializerTests
 		_logger.Received(1).WriteInfo(
 			$"Removed the {PackageName}-netstandard.nuget.props import from the {CsprojFileName} file, "
 			+ "because the props file does not exist");
+	}
+
+	[Test]
+	[Description("Rewrites a utf-16 declaration as utf-8 so the produced bytes reload; WriteAllTextToFile emits UTF-8 without a BOM, and a declaration still claiming utf-16 fails XDocument.Parse (issue 263)")]
+	public void Materializer_NormalizesXmlDeclaration_When_ProjectDeclaresUtf16(){
+		// Arrange
+		string savedCsproj = null;
+		_fileSystem.ReadAllText(CsprojFileName).Returns(
+			"<?xml version=\"1.0\" encoding=\"utf-16\"?>" + Environment.NewLine + MockCsProjWithNugetContent());
+		_propsBuilder.Build(PackageName).Returns(new PropsBuildResult(true, true, MaterializedNugets));
+		_fileSystem.When(fs => fs.WriteAllTextToFile(CsprojFileName, Arg.Any<string>()))
+			.Do(ci => savedCsproj = ci.ArgAt<string>(1));
+
+		// Act
+		_sut.Materialize(PackageName);
+
+		// Assert
+		savedCsproj.Should().NotBeNull(because: "the csproj must be written through the file system");
+		savedCsproj.Should().NotContain("utf-16",
+			because: "the bytes are UTF-8, so a declaration claiming utf-16 describes a file that does not exist");
+		savedCsproj.Should().Contain("encoding=\"utf-8\"",
+			because: "the declaration must name the encoding actually written");
+		Action reload = () => XDocument.Parse(savedCsproj);
+		reload.Should().NotThrow(
+			because: "a utf-16 declaration over UTF-8 bytes fails with 'There is no Unicode byte order mark. "
+				+ "Cannot switch to Unicode.' on the next load");
+	}
+
+	[Test]
+	[Description("Keeps the pre-conversion backup instead of copying the already-converted csproj over it, so the recovery copy survives a later save such as the stale-import repair (issue 263)")]
+	public void Materializer_KeepsExistingBackup_When_CsprojIsSavedAgain(){
+		// Arrange
+		string backupPath = $"{CsprojFileName}.bak";
+		_fileSystem.ReadAllText(CsprojFileName).Returns(MockCsProjWithNugetContent());
+		_propsBuilder.Build(PackageName).Returns(new PropsBuildResult(true, true, MaterializedNugets));
+		//A backup from the original conversion is already on disk.
+		_fileSystem.ExistsFile(backupPath).Returns(true);
+
+		// Act
+		_sut.Materialize(PackageName);
+
+		// Assert
+		_fileSystem.DidNotReceive().CopyFile(CsprojFileName, backupPath, Arg.Any<bool>());
+		_logger.Received().WriteInfo($"Keeping the existing csproj backup file {backupPath}");
 	}
 
 	[Test]

@@ -183,10 +183,36 @@ public class NugetMaterializer : INugetMaterializer
 	/// Goes through IFileSystem so the written content is part of the testable contract.
 	/// </summary>
 	private void SaveCsProjFile(){
-		_logger.WriteInfo($"Creating csproj backup file {_csprojPath}.bak");
-		_fileSystem.CopyFile(_csprojPath, $"{_csprojPath}.bak", true);
-		string declaration = _csproj.Declaration is null ? string.Empty : _csproj.Declaration + Environment.NewLine;
-		_fileSystem.WriteAllTextToFile(_csprojPath, declaration + _csproj);
+		string backupPath = $"{_csprojPath}.bak";
+		//Only the FIRST save may write the backup. A later save - the stale-import repair, above all -
+		//would otherwise copy the already-converted csproj over it and destroy the only pre-conversion
+		//copy, which is what the caller is told to recover from.
+		if (_fileSystem.ExistsFile(backupPath)) {
+			_logger.WriteInfo($"Keeping the existing csproj backup file {backupPath}");
+		} else {
+			_logger.WriteInfo($"Creating csproj backup file {backupPath}");
+			_fileSystem.CopyFile(_csprojPath, backupPath, true);
+		}
+		_fileSystem.WriteAllTextToFile(_csprojPath, BuildCsProjText());
+	}
+
+	/// <summary>
+	/// Renders the document with a declaration that matches the bytes actually written.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="IFileSystem.WriteAllTextToFile"/> writes UTF-8 without a BOM. Copying the original
+	/// declaration through unchanged therefore rewrote a UTF-16 project as UTF-8 bytes still claiming
+	/// <c>encoding="utf-16"</c>, and reloading those bytes fails with "There is no Unicode byte order
+	/// mark. Cannot switch to Unicode." Only the encoding is normalized; version and standalone are
+	/// carried over, so a project that declared neither still gets neither.
+	/// </remarks>
+	private string BuildCsProjText(){
+		if (_csproj.Declaration is null) {
+			return _csproj.ToString();
+		}
+		XDeclaration declaration = new(
+			_csproj.Declaration.Version, "utf-8", _csproj.Declaration.Standalone);
+		return declaration + Environment.NewLine + _csproj;
 	}
 
 	/// <summary>
