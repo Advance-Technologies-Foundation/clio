@@ -786,20 +786,23 @@ public sealed class WorkflowTelemetryVocabularyTests
 		// alphanumerics: that falls back to the caller's string, so a name made only of control or
 		// format characters reached the store verbatim while schema v2 advertises a canonical slug.
 		// U+202E is the one that matters: it reverses the rendering of everything after it in whatever
-		// dashboard cell or log line the value lands in.
+		// dashboard cell or log line the value lands in. They are written as escapes, not as the
+		// literal characters: a source file that carries a real U+202E renders differently from how
+		// it compiles, which is the Trojan-Source shape text:S6389 fails the build over. The runtime
+		// value the test feeds the service is byte-identical either way.
 		TelemetryService service = CreateService();
 		GrantConsent(service);
 
 		// Act
 		TelemetryEventResult result = service.Send(CreateRequest("workflow_started") with {
-			Workflow = "branding", CodingAgent = "‮ ​"
+			Workflow = "branding", CodingAgent = "\u202E\u0007 \u200B"
 		});
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "an unslugabble host name is still not a malformed payload");
 		string stored = ReadStringAttribute(ReadStoredEvent(result), "coding_agent");
-		foreach (string forbidden in new[] { "‮", "", "​" }) {
+		foreach (string forbidden in new[] { "\u202E", "\u0007", "\u200B" }) {
 			(stored ?? string.Empty).Should().NotContain(forbidden,
 				because: "a value that renders as arbitrary bytes downstream is not the slug v2 promises");
 		}
