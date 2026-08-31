@@ -12,6 +12,7 @@ using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using CommandLine;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -55,6 +56,11 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 	private static readonly Regex BacktickedKebabToken = new(
 		@"`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`",
 		RegexOptions.Compiled);
+
+	// Prose that tells a user to enable a feature flag: `clio experimental --name <key> --enable`.
+	private static readonly Regex ExperimentalFeatureKeyReference = new(
+		@"experimental\s+--name\s+([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
+		RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
 	private static readonly Regex GuidanceNameReference = new(
 		@"name=([a-z][a-z0-9]*(?:-[a-z0-9]+)*)",
@@ -426,5 +432,149 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		violations.Should().BeEmpty(
 			because: "resident imperatives are valid, negated mentions are not imperatives, and fenced " +
 				"code blocks are terminal examples outside the oracle's scope");
+	}
+	/// <summary>
+	/// Collects every feature key the SHIPPED templates name, from the two shapes a template can carry
+	/// one in: a JSON <c>features</c> node's <c>examples</c> entries, and prose telling a user to run
+	/// <c>clio experimental --name &lt;key&gt;</c>. Keyed by feature name, valued by where it was found.
+	/// </summary>
+	private static Dictionary<string, string> FeatureKeysNamedByShippedTemplates() {
+		Dictionary<string, string> keysBySource = new(StringComparer.OrdinalIgnoreCase);
+		string templateRoot = Path.Combine(AppContext.BaseDirectory, "tpl");
+		foreach (string file in Directory.EnumerateFiles(templateRoot, "*", SearchOption.AllDirectories)) {
+			string text;
+			try {
+				text = File.ReadAllText(file);
+			} catch (IOException) {
+				continue;
+			}
+			string relativePath = Path.GetRelativePath(templateRoot, file).Replace('\\', '/');
+			foreach (Match match in ExperimentalFeatureKeyReference.Matches(text)) {
+				keysBySource[match.Groups[1].Value] = "tpl/" + relativePath + " (experimental --name)";
+			}
+			// A template that is not JSON simply contributes no example keys; never fail the scan on it.
+			try {
+				using JsonDocument document = JsonDocument.Parse(text);
+				foreach (string key in CollectFeatureExampleKeys(document.RootElement)) {
+					keysBySource[key] = "tpl/" + relativePath + " (features examples)";
+				}
+			} catch (JsonException) {
+			}
+		}
+		return keysBySource;
+	}
+
+	/// <summary>
+	/// Walks a template's JSON for any <c>features</c> node carrying an <c>examples</c> array and returns
+	/// the property names of those example objects - the feature keys the template advertises.
+	/// </summary>
+	private static IEnumerable<string> CollectFeatureExampleKeys(JsonElement element) {
+		if (element.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in element.EnumerateObject()) {
+				if (string.Equals(property.Name, "features", StringComparison.OrdinalIgnoreCase)
+					&& property.Value.ValueKind == JsonValueKind.Object
+					&& property.Value.TryGetProperty("examples", out JsonElement examples)
+					&& examples.ValueKind == JsonValueKind.Array) {
+					foreach (JsonElement example in examples.EnumerateArray()) {
+						if (example.ValueKind != JsonValueKind.Object) {
+							continue;
+						}
+						foreach (JsonProperty exampleKey in example.EnumerateObject()) {
+							yield return exampleKey.Name;
+						}
+					}
+				}
+				foreach (string nested in CollectFeatureExampleKeys(property.Value)) {
+					yield return nested;
+				}
+			}
+		} else if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				foreach (string nested in CollectFeatureExampleKeys(item)) {
+					yield return nested;
+				}
+			}
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every feature key named by a shipped template still exists as a live [FeatureToggle] in the product, so retiring a flag cannot leave a template telling users to enable something that is gone.")]
+	public void ShippedTemplates_ShouldNameOnlyLiveFeatureKeys_WhenAdvertisingFeatureToggles() {
+		// Arrange
+		HashSet<string> liveFeatureKeys = typeof(McpCoreToolProfile).Assembly.GetTypes()
+			.Select(type => type.GetCustomAttribute<FeatureToggleAttribute>(inherit: false))
+			.Where(attribute => attribute is not null)
+			.Select(attribute => attribute!.FeatureName)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		Dictionary<string, string> namedKeys = FeatureKeysNamedByShippedTemplates();
+		string[] retiredKeys = namedKeys
+			.Where(pair => !liveFeatureKeys.Contains(pair.Key))
+			.Select(pair => pair.Value + ": '" + pair.Key + "'")
+			.OrderBy(entry => entry, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		liveFeatureKeys.Should().NotBeEmpty(
+			because: "the product still gates several features, so an empty live set would mean the "
+				+ "reflection lookup broke and the assertion below became vacuous");
+		namedKeys.Should().NotBeEmpty(
+			because: "at least one shipped template advertises the features map by example, and a scan "
+				+ "that extracts nothing would stay green while the templates drifted freely");
+		retiredKeys.Should().BeEmpty(
+			because: "a template is stamped verbatim into every user repo, so a feature key it names must "
+				+ "still gate something. This is the ENG-96132 go-live regression made mechanical: the "
+				+ "features example named 'process-designer' until that flag was retired, and nothing but "
+				+ "review would have caught a template still telling users to enable a flag the product "
+				+ "no longer has");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An MCP tool that ships without a [FeatureToggle] must not name a feature-gated guidance article as mandatory reading, so a tool go-live cannot outrun the guidance library that documents it.")]
+	public void UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead() {
+		// Arrange
+		IReadOnlySet<string> featureGatedNames = CuratedKnowledgeNames("featureGatedNames");
+		IReadOnlySet<string> availableNames = CuratedKnowledgeNames("availableNames");
+		Type[] ungatedToolTypes = McpFeatureToggleFilter
+			.GetAttributedTypes(typeof(McpCoreToolProfile).Assembly, typeof(McpServerToolTypeAttribute))
+			.Where(type => type.GetCustomAttribute<FeatureToggleAttribute>(inherit: false) is null)
+			.ToArray();
+
+		// Act
+		List<string> violations = [];
+		List<string> resolvedReferences = [];
+		foreach (Type toolType in ungatedToolTypes) {
+			foreach (MethodInfo method in toolType.GetMethods()) {
+				string description = method
+					.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>(inherit: false)?.Description;
+				if (string.IsNullOrWhiteSpace(description)) {
+					continue;
+				}
+				foreach (Match match in GuidanceNameReference.Matches(description)) {
+					string guidanceName = match.Groups[1].Value;
+					if (featureGatedNames.Contains(guidanceName)) {
+						violations.Add(toolType.Name + "." + method.Name + " -> get-guidance name=" + guidanceName);
+					} else if (availableNames.Contains(guidanceName)) {
+						resolvedReferences.Add(toolType.Name + " -> " + guidanceName);
+					}
+				}
+			}
+		}
+
+		// Assert
+		resolvedReferences.Should().NotBeEmpty(
+			because: "at least one un-gated tool description points at a curated guide (create-business-process "
+				+ "names process-modeling), so an empty resolved set would mean the scan stopped matching and "
+				+ "the violation check below became vacuous");
+		violations.Should().BeEmpty(
+			because: "the tool gate and the guidance-article gate key off the same feature name but ship in "
+				+ "two independently released artifacts - clio and the clio-knowledge library. Un-gating a "
+				+ "tool while its mandatory guide stays gated is the out-of-order publish this pins "
+				+ "(ENG-96132): the tool would be reachable by default while get-guidance reports its guide "
+				+ "as unavailable, indistinguishable from never published. This fails CI instead, because "
+				+ "the pinned fixture only moves to a generation the library actually published");
 	}
 }
