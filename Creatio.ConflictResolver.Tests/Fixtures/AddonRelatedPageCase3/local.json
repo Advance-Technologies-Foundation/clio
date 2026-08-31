@@ -1,0 +1,9 @@
+= MetaData.Schema.UId "083e5e88-a59e-40f5-b3db-ad32831a435e"
+= MetaData.Schema.A5 "719d52fc-76bc-4899-ac87-c234f0e1ffce"
+= MetaData.Schema.B6 "cc936d2e-ee9a-1bfb-c460-51bb2bf739b3"
++ MetaData.Schema.B7 true
+= MetaData.Schema.AD5 "6b4b4d15-a39b-4a07-a7aa-8c61b3bb9477"
+= MetaData.Schema.AD4.Pages.["c0c3cf91-cc8c-49dc-196c-6c1cb0507b72"].PageSchemaUId "f537fd79-9bdc-43ea-a9ce-b068c29d0b22"
+= MetaData.Schema.AD4.Pages.["4e586e63-7559-5e34-feee-2d0fbda580a1"].PageSchemaUId "ec5fd902-66ce-4139-a241-10ebd8addc40"
+= MetaData.Schema.AD4.TypeColumnUId "3015559e-cbc6-406a-88af-07f7930be832"
++ MetaData.Schema.B7 true

@@ -1,0 +1,24 @@
+﻿{
+  "SqlScript": {
+    "UId": "f63784c8-edc4-cc56-8249-e1761ea1f98d",
+    "Name": "UsrAkhSql",
+    "DBEngineType": 0,
+    "InstallType": 1,
+    "ModifiedOnUtc": "\/Date(1774635181000)\/",
+    "BackwardCompatibilityConfirmed": false,
+    "DependsOn": [
+      {
+        "UId": "e48facd5-a405-41c7-8b5f-1ae987bf3b25",
+        "Name": "DeleteOldSysAdminOperationGranteeMSSQL"
+      },
+      {
+        "UId": "20470554-8d9f-4030-ab75-bfd9d43e081b",
+        "Name": "ActualizeCurrentPackageIdSettingsValueMSSql"
+      },
+      {
+        "UId": "65eef637-699c-4750-be27-27a7c71dd2d3",
+        "Name": "ActualizeAdminUnitInRoleMSSql"
+      }
+    ]
+  }
+}

@@ -26,14 +26,8 @@ unrecognised verb:
 - list-user-tasks
 - validate-process-graph
 
-They are additionally behind the `process-designer` feature toggle, which is **off by
-default** (`clio experimental --name process-designer --enable`). Each refuses to run
-against an environment where the package is missing **or older than the version bundled
-with clio**, and names this command in the refusal.
-
-`install-process-builder` itself is a normal CLI verb and is deliberately *not* behind
-the toggle — a gated verb would be filtered out of the parser, so the remediation the
-refusals point at would vanish exactly when it is needed.
+Each refuses to run against an environment where the package is missing **or older than
+the version bundled with clio**, and names this command in the refusal.
 
 The package ships as source, without a compiled assembly, and the target
 environment compiles it during installation against its own core. One archive

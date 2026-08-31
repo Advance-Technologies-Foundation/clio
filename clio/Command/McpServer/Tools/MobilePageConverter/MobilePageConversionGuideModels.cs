@@ -138,10 +138,16 @@ public sealed class ElementMapEntry {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ParentName { get; set; }
 
-	/// <summary>Parent property to insert into (insert); defaults to <c>items</c>.</summary>
+	/// <summary>
+	/// Parent property to insert into (insert); defaults to <c>items</c>. Settable (like
+	/// <see cref="ParentName"/>) for the same reason: the tab-area pass retargets a tab's top-level content onto
+	/// the synthesized Area container, and the slot travels with the parent — a child the web page kept in the
+	/// tab's <c>tools</c> strip lands in the Area's <c>items</c>, the only child collection a
+	/// <c>crt.GridContainer</c> declares.
+	/// </summary>
 	[JsonPropertyName("propertyName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string PropertyName { get; init; }
+	public string PropertyName { get; set; }
 
 	/// <summary>
 	/// True when this <c>insert</c> RETARGETS the element into a <see cref="ParentName"/> that ALREADY EXISTS on
@@ -199,6 +205,15 @@ public sealed class ElementMapEntry {
 	[JsonPropertyName("reason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Reason { get; set; }
+
+	/// <summary>
+	/// Converter bookkeeping, never serialized: the MOBILE anchor name (e.g. <c>Tabs</c>) when this
+	/// <c>insert</c> was routed by a <c>&lt;anchor&gt;:top</c> / <c>:bottom</c> template rule. The anchor-row
+	/// pass counts the entries the RULE routed, never "every indexed insert under that parent" — an ordinary
+	/// insert can legitimately target the same mobile container and must not shift the anchor.
+	/// </summary>
+	[JsonIgnore]
+	internal string PositionalAnchor { get; set; }
 }
 
 /// <summary>
@@ -461,10 +476,13 @@ public sealed class MobilePageConversionGuide {
 	/// Requests (actions) referenced by the source page's component event bindings (a button's
 	/// <c>clicked</c>, a field's <c>valueChange</c>/<c>updated</c>), deterministically converted for
 	/// mobile. Supported requests are remapped in-place inside the affected element's
-	/// <c>elementMap[].mobileValues</c>; unsupported requests have their binding stripped (the component
-	/// stays); unknown/custom requests are kept and flagged for manual review. This section is an
-	/// advisory SUMMARY — the actionable result is already baked into <c>mobileValues</c>. Null when the
-	/// source page references no requests. (Page <c>handlers</c> are web-only and never transferred.)
+	/// <c>elementMap[].mobileValues</c>. An unsupported or unknown/custom request is handled by component
+	/// type: on a <c>crt.Button</c> the whole element is DROPPED (a dead button, appearing as an
+	/// <c>elementMap</c> drop and recorded under <c>droppedRequests</c>) — including a button retargeted
+	/// into the FAB from a non-converting scope; on any other component type the binding is kept verbatim
+	/// and flagged for manual review (the component stays). This section is an advisory SUMMARY — the
+	/// actionable result is already baked into <c>mobileValues</c>. Null when the source page references no
+	/// requests. (Page <c>handlers</c> are web-only and never transferred.)
 	/// </summary>
 	[JsonPropertyName("requestConversions")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

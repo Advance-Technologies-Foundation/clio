@@ -1,0 +1,92 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "ServiceSchemaManager",
+      "UId": "e5e9200d-e01e-47e6-965a-734b8ffba38b",
+      "A2": "RestService_1_Remote",
+      "A5": "65344ecb-f697-4f9a-bad8-ef0e5f5a46a2",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "6bbbf8ec-3042-49f8-b273-5eb50b9d2473",
+      "B8": "8.3.3.2060",
+      "IQ1": "http://localhost/rest1RemoteLocal",
+      "IQ2": 1,
+      "IQ3": 7,
+      "IQ7": [],
+      "IQ4": [
+        {
+          "UId": "86c12308-91f7-4476-9c55-80ec6fe43a05",
+          "A2": "RestMethod1Local",
+          "A3": "e5e9200d-e01e-47e6-965a-734b8ffba38b",
+          "A4": "e5e9200d-e01e-47e6-965a-734b8ffba38b",
+          "IR3": 200,
+          "IR4": true,
+          "IR5": "null",
+          "IR1": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "b26d67d6-661c-4791-9564-57e289d5336c",
+                "A2": "preq1l",
+                "IU1": "preq1l",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 3,
+                "IU5": {
+                  "IV1": "preq1l",
+                  "IV2": 1
+                },
+                "IU6": []
+              },
+              {
+                "UId": "a81f5b75-477b-4028-8531-c8ead7c0aeb6",
+                "A2": "preq1badd",
+                "IU1": "preq1badd",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 2,
+                "IU5": {
+                  "IV1": "preq1badd",
+                  "IV2": 1
+                },
+                "IU6": []
+              }
+            ],
+            "IT2": 2,
+            "IT1": "/address1Local/"
+          },
+          "IR2": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "a5cf288e-af0b-4dfa-96ba-a254c7871ca7",
+                "A2": "pres1l",
+                "IU1": "pres1l",
+                "IU2": "Float",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "23",
+                  "IV2": 1
+                },
+                "IU6": []
+              }
+            ]
+          }
+        }
+      ],
+      "IQ5": {
+        "IY1": 1,
+        "IZ1": {
+          "IV1": "FacebookRegistrationPage",
+          "IV2": 2
+        },
+        "IZ2": {
+          "IV1": "CloudServicesAPIKey",
+          "IV2": 2
+        }
+      }
+    }
+  }
+}

@@ -81,6 +81,26 @@ public sealed class McpFixturePolicyTests {
 	}
 
 	[Test]
+	[Description("Keeps the Creatio merge E2E fixtures explicit and manual so GitHub Actions and TeamCity never execute them automatically.")]
+	public void CreatioMergeFixtures_ShouldStayExplicitAndManual_WhenTheyAreDeveloperLocal() {
+		// Arrange
+		Type[] fixtures = [
+			typeof(CreatioArtifactMergeToolE2ETests),
+			typeof(CreatioArtifactMergeGitLabE2ETests)
+		];
+
+		// Act
+		Type[] misconfigured = fixtures
+			.Where(fixture => fixture.GetCustomAttribute<ExplicitAttribute>(inherit: true) is null
+				|| !FixtureHasCategory(fixture, "McpE2E.Manual"))
+			.ToArray();
+
+		// Assert
+		misconfigured.Should().BeEmpty(
+			because: "the feature owner requires all Creatio merge E2E coverage to remain outside automatic GitHub and TeamCity execution");
+	}
+
+	[Test]
 	[Description("Asserts the off-stand tests that cover the uninstall warning contract still exist, since UninstallCreatioWarningE2ETests is [Explicit] and never runs in CI to catch a regression itself.")]
 	public void UninstallWarningContract_ShouldStayCoveredOffStand_WhenExplicitFixtureNeverRunsInCi() {
 		// Arrange

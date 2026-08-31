@@ -201,7 +201,7 @@ public class GetProcessSignatureToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-process-signature's MCP tool must NOT carry [FeatureToggle], unlike the rest of the process-designer suite, so its MCP surface matches its shipped public CLI verb.")]
+	[Description("get-process-signature's MCP tool must NOT carry [FeatureToggle], so its MCP surface matches its shipped public CLI verb.")]
 	public void GetProcessSignatureTool_Should_Not_Be_FeatureGated() {
 		// Arrange & Act
 		object[] toggles = typeof(GetProcessSignatureTool)
@@ -211,9 +211,10 @@ public class GetProcessSignatureToolTests {
 		toggles.Should().BeEmpty(
 			because: "gps is a shipped standalone capability that reads the built-in DataService and has a "
 				+ "public CLI verb, so gating only its MCP twin would make the two surfaces disagree. The "
-				+ "gate was added in 96250e4d and deliberately removed again in 7fda641e (PR #715) — this "
-				+ "test exists so 'restoring consistency' with the gated process-designer tools cannot "
-				+ "silently undo that decision");
+				+ "gate was added in 96250e4d and deliberately removed again in 7fda641e (PR #715); since "
+				+ "go-live (ENG-96132) the rest of the process-designer suite ships gate-free too (pinned "
+				+ "by ProcessDesignerGoLiveTests), and this test keeps the CLI-paired tool from regressing "
+				+ "independently");
 	}
 
 	private sealed class FakeGetProcessSignatureCommand : GetProcessSignatureCommand {
