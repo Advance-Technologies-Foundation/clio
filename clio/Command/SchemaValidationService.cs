@@ -1796,10 +1796,10 @@ public static class SchemaValidationService
 	public static SchemaValidationResult ValidateRunProcessButtonStructure(string jsBody) {
 		SchemaValidationResult result = new() { IsValid = true };
 		foreach (RunProcessButtonConfig config in RunProcessButtonConfigReader.Read(jsBody)) {
-			// config.ButtonName is read verbatim from the body JSON `name`, so it is untrusted content;
-			// bound it with Sanitize before it reaches the "; "-flattened MCP Error / update-page log, the
-			// same guard the sibling reporters use to stop a page authored elsewhere forging diagnostic
-			// boundaries in the operator's agent transcript.
+			// The button name comes straight from the body JSON name field, so treat it as untrusted.
+			// Bind it through Sanitize before it reaches the semicolon-joined MCP error text and the
+			// update-page log — the same guard the sibling reporters apply, so a page authored elsewhere
+			// cannot forge extra diagnostic boundaries in the operator's agent transcript.
 			string buttonLabel = string.IsNullOrWhiteSpace(config.ButtonName)
 				? "a crt.RunBusinessProcessRequest button"
 				: $"run-process button '{Sanitize(config.ButtonName)}'";
