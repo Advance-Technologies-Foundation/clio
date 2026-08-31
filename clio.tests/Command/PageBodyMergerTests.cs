@@ -104,7 +104,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("GitHub #1132: an append whose fragment is unrelated must keep BOTH existing web operations that share one component name")]
-	public void Merge_Should_PreserveEveryCurrentOperation_WhenTwoShareOneName_Web() {
+	public void Merge_ShouldPreserveEveryCurrentWebOperation_WhenTwoShareOneName() {
 		// Arrange — current body carries a move AND a merge for "ExamplePanel"; the incoming fragment
 		// inserts an unrelated, uniquely named component and never mentions "ExamplePanel".
 		string current = MoveAndMergeOneName;
@@ -136,7 +136,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("GitHub #1132 on the mobile surface: MergeMobile must also keep both existing operations that share one component name")]
-	public void Merge_Should_PreserveEveryCurrentOperation_WhenTwoShareOneName_Mobile() {
+	public void Merge_ShouldPreserveEveryCurrentMobileOperation_WhenTwoShareOneName() {
 		// Arrange — the same precondition expressed as a plain-JSON mobile body, routed through MergeMobile.
 		string current = MoveAndMergeOneName;
 		string incoming = UnrelatedInsert;
@@ -157,7 +157,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("An incoming merge must not destroy the current insert for the same name; both survive, the insert first (note the merge is inert at apply time — PageInsertDowngradeDetector reports that separately)")]
-	public void Merge_Should_KeepInsertAndAddMerge_WhenIncomingMergesAnInsertedName() {
+	public void Merge_ShouldKeepInsertAndAddMerge_WhenIncomingMergesAnInsertedName() {
 		// Arrange
 		const string currentInsert = """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input"}}]""";
 		const string incomingMerge = """[{"operation":"merge","name":"UsrName","values":{"visible":false}}]""";
@@ -176,7 +176,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("When operation AND name both match, the incoming entry replaces the current one at the current entry's position")]
-	public void Merge_Should_ReplaceInPlace_WhenOperationAndNameBothMatch() {
+	public void Merge_ShouldReplaceInPlace_WhenOperationAndNameBothMatch() {
 		// Arrange
 		const string current = """
 			[
@@ -203,7 +203,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("A further current entry of an identity the incoming fragment already superseded is dropped, not re-applied after the replacement")]
-	public void Merge_Should_DropFurtherCurrentDuplicates_WhenIncomingSupersedesTheIdentity() {
+	public void Merge_ShouldDropFurtherCurrentDuplicates_WhenIncomingSupersedesTheIdentity() {
 		// Arrange
 		// The duplicates are deliberately NON-adjacent: an intervening unrelated entry is where
 		// position-tracking bugs hide, and adjacent-only fixtures cannot catch them.
@@ -230,7 +230,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("Operation verbs are compared ordinally: the differ switches on the raw string with no default case, so a mis-cased 'Merge' must not collide with — and delete — a working 'merge'")]
-	public void Merge_Should_TreatOperationCaseSensitively() {
+	public void Merge_ShouldKeepBothEntries_WhenOperationVerbsDifferOnlyByCase() {
 		// Arrange
 		const string current = """[{"operation":"merge","name":"B","values":{"v":1}}]""";
 		const string incoming = """[{"operation":"Merge","name":"B","values":{"v":2}}]""";
@@ -247,7 +247,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("Component names are compared case-sensitively, mirroring the platform differ's Ordinal grouping")]
-	public void Merge_Should_TreatNameCaseSensitively() {
+	public void Merge_ShouldKeepBothEntries_WhenNamesDifferOnlyByCase() {
 		// Arrange
 		const string current = """[{"operation":"merge","name":"Panel","values":{"v":1}}]""";
 		const string incoming = """[{"operation":"merge","name":"panel","values":{"v":2}}]""";
@@ -266,7 +266,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("A missing 'operation' forms its own identity rather than being defaulted to some assumed platform operation")]
-	public void Merge_Should_TreatMissingOperationAsItsOwnIdentity() {
+	public void Merge_ShouldKeepBothEntries_WhenOneEntryHasNoOperation() {
 		// Arrange
 		const string current = """[{"name":"X","values":{"v":1}}]""";
 		const string incoming = """[{"operation":"merge","name":"X","values":{"v":2}}]""";
@@ -283,7 +283,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("An entry with no 'name' keeps its original position instead of being relocated to the end of the array")]
-	public void Merge_Should_PreserveUnnamedEntryPosition() {
+	public void Merge_ShouldPreserveEntryPosition_WhenCurrentEntryHasNoName() {
 		// Arrange
 		const string current = """
 			[
@@ -308,7 +308,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("A non-object array element has no identity: it is preserved verbatim and never relocated")]
-	public void Merge_Should_PreserveNonObjectArrayEntry() {
+	public void Merge_ShouldPreserveEntryVerbatim_WhenArrayElementIsNotAnObject() {
 		// Arrange
 		const string current = """["stray", {"operation":"merge","name":"A","values":{"v":1}}]""";
 		const string incoming = """[{"operation":"merge","name":"A","values":{"v":2}}]""";
@@ -325,7 +325,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("Incoming entries with no current counterpart are appended after all current entries, in incoming order")]
-	public void Merge_Should_AppendUnmatchedIncomingEntriesInIncomingOrder() {
+	public void Merge_ShouldAppendInIncomingOrder_WhenIncomingEntriesHaveNoCurrentCounterpart() {
 		// Arrange
 		const string current = """[{"operation":"merge","name":"A","values":{"v":1}}]""";
 		const string incoming = """
@@ -349,7 +349,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("An incoming fragment's own order is preserved when it mixes identified and unidentified entries")]
-	public void Merge_Should_PreserveIncomingOrder_WhenFragmentMixesIdentifiedAndUnidentifiedEntries() {
+	public void Merge_ShouldPreserveIncomingOrder_WhenFragmentMixesIdentifiedAndUnidentifiedEntries() {
 		// Arrange
 		const string current = """[{"operation":"merge","name":"A","values":{"v":1}}]""";
 		const string incoming = """
@@ -373,7 +373,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("When one incoming fragment repeats an identity, the last spelling wins")]
-	public void Merge_Should_KeepLastIncomingEntry_WhenIncomingRepeatsOneIdentity() {
+	public void Merge_ShouldKeepLastIncomingEntry_WhenIncomingRepeatsOneIdentity() {
 		// Arrange
 		const string current = "[]";
 		const string incoming = """
@@ -395,7 +395,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("A property removal and an element removal for one component are distinct operations: the differ routes them into different groups, so an incoming property removal must not delete a current element removal")]
-	public void Merge_Should_NotConflate_PropertyRemove_With_ElementRemove() {
+	public void Merge_ShouldKeepBothRemoves_WhenOneTargetsPropertiesAndOneTargetsTheElement() {
 		// Arrange
 		const string current = """[{"operation":"remove","name":"Panel"}]""";
 		const string incoming = """[{"operation":"remove","name":"Panel","properties":["caption"]}]""";
@@ -414,7 +414,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("Two property removals for one component still collide on identity, so the incoming one replaces the current one in place")]
-	public void Merge_Should_ReplaceInPlace_WhenBothRemovesTargetProperties() {
+	public void Merge_ShouldReplaceInPlace_WhenBothRemovesTargetProperties() {
 		// Arrange
 		const string current = """[{"operation":"remove","name":"Header","properties":["caption"]}]""";
 		const string incoming = """[{"operation":"remove","name":"Header","properties":["tooltip"]}]""";
@@ -431,7 +431,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("A non-string 'name' yields no identity, so the entry is preserved in place and never conflated with the string spelling of the same value")]
-	public void Merge_Should_NotConflate_NumericName_With_StringName() {
+	public void Merge_ShouldKeepBothEntries_WhenOneNameIsNumericAndOneIsAString() {
 		// Arrange
 		const string current = """[{"operation":"merge","name":123,"values":{"v":1}}]""";
 		const string incoming = """[{"operation":"merge","name":"123","values":{"v":2}}]""";
@@ -448,7 +448,7 @@ public class PageBodyMergerTests {
 
 	[Test]
 	[Description("An append that merges an inserted name no longer produces the orphaning downgrade PageInsertDowngradeDetector warns about, because the insert is kept instead of being replaced")]
-	public void Merge_Should_ProduceBodyWithNoOrphanWarning_WhenIncomingMergesAnInsertedName() {
+	public void Merge_ShouldProduceNoOrphanWarning_WhenIncomingMergesAnInsertedName() {
 		// Arrange
 		string currentBody = WebBody("""[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input"}}]""");
 		string incomingBody = WebBody("""[{"operation":"merge","name":"UsrName","values":{"visible":false}}]""");

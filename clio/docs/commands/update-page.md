@@ -176,10 +176,15 @@ can report a conflict against a page that has not actually changed. This edge fa
 schema body from the server and merges your incoming fragment into it.
 
 A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
-yours — incoming wins, and the replacement keeps the existing entry's position. Every other
-existing operation is preserved verbatim and in place, including a second operation on a
-component you already target (a `move` and a `merge` for one name are both valid and both
-survive). Handlers dedupe by `request`.
+yours — and, for a `remove`, whether it targets `properties`. Incoming wins, and the replacement
+keeps the existing entry's position. Every other existing operation is preserved verbatim and in
+place, including a second operation on a component you already target (a `move` and a `merge` for
+one name are both valid and both survive).
+
+There is one exception. If your fragment supersedes an identity that the page carries **twice**,
+only the first occurrence is replaced and the later one is dropped — keeping it would re-apply its
+stale values *after* your replacement. When those two entries set disjoint keys, the later entry's
+keys go with it. Handlers dedupe by `request`.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead

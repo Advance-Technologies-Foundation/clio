@@ -3021,8 +3021,10 @@ public sealed class ToolContractGetToolTests {
 			.InputSchema.Properties.Single(field => field.Name == "mode");
 		modeField.Description.Should().Contain("`operation` and `name`",
 			because: "an agent must be told the append merge identity is the operation AND the name, so it can predict which existing entries a fragment replaces");
-		modeField.Description.Should().Contain("preserved in place",
-			because: "the safety guarantee the issue disputed — existing operations survive an append — must be stated on the surface agents actually read");
+		modeField.Description.Should().Contain("does not collide with is preserved",
+			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the surface agents actually read");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the merger DOES drop a further existing entry of a superseded identity; promising unqualified preservation would repeat the #1132 defect of shipping a claim the code does not honour");
 		modeField.Description.Should().NotContain("dedupe by `name`",
 			because: "the pre-#1132 claim describes behaviour the merger no longer has and caused the silent loss of an existing move operation");
 	}

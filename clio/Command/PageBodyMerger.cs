@@ -17,9 +17,11 @@ internal static class PageBodyMerger {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	/// <summary>
-	/// The one operation verb whose merge identity depends on more than (operation, name): the differ
-	/// routes a <c>remove</c> carrying a <c>properties</c> array into a different group, and a different
-	/// apply pass, than an element <c>remove</c>. Ordinal, matching the differ switch.
+	/// The one operation verb the differ routes into a DIFFERENT GROUP based on shape: a <c>remove</c>
+	/// carrying a <c>properties</c> array goes to a different group, and a different apply pass, than an
+	/// element <c>remove</c>. (A <c>set</c> also branches on <c>properties</c>, but inside its own apply
+	/// pass rather than at grouping time, so it needs no identity discriminator.) Ordinal, matching the
+	/// differ switch.
 	/// </summary>
 	private const string RemoveOperationName = "remove";
 

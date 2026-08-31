@@ -206,8 +206,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			.InputSchema.Properties.Single(field => field.Name == "mode");
 		modeField.Description.Should().Contain("`operation` and `name`",
 			because: "the append merge identity an agent plans against must reach it end-to-end through the real MCP transport, per the AGENTS.md MCP e2e rule");
-		modeField.Description.Should().Contain("preserved in place",
+		modeField.Description.Should().Contain("does not collide with is preserved",
 			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the wire");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the caller must also learn the one case where an existing entry IS dropped, or the contract repeats #1132 by promising more than the code delivers");
 		modeField.Description.Should().NotContain("dedupe by `name`",
 			because: "the pre-#1132 claim describes behaviour the merger no longer has, and shipping it would keep steering agents into the data-loss assumption");
 	}

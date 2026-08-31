@@ -124,9 +124,12 @@ DESCRIPTION
     --mode replace (default) saves the body verbatim. --mode append loads the
     current schema body from the server and merges your incoming fragment into it.
     A viewConfigDiff entry is replaced only when both operation and name match one
-    of yours (incoming wins, and the replacement keeps the existing entry's
-    position); every other existing operation is preserved verbatim, including a
-    second operation on a component you already target. Handlers dedupe by request.
+    of yours - and, for a remove, whether it targets properties. Incoming wins and
+    keeps the existing entry's position; every other existing operation is preserved
+    verbatim, including a second operation on a component you already target. One
+    exception: if your fragment supersedes an identity the page carries TWICE, only
+    the first is replaced and the later one is dropped, since keeping it would
+    re-apply stale values after your replacement. Handlers dedupe by request.
     Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
     / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
     and is rejected with an actionable hint — use --mode replace for such a body.

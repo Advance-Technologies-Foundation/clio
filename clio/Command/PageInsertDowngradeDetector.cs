@@ -27,8 +27,9 @@ using Newtonsoft.Json.Linq;
 /// it cannot tell an orphaning downgrade from a legitimate one where a parent schema inserts the same
 /// name (full-hierarchy resolution is out of scope). It therefore advises rather than blocks.
 /// <para>
-/// Since GitHub #1132 the append merger identifies an operation by <c>(operation, name)</c>, so an
-/// incoming <c>merge</c> no longer REPLACES a current <c>insert</c> — both are kept, and this detector
+/// Since GitHub #1132 the append merger identifies an operation by
+/// <c>(operation, name, targets-properties)</c>, so an incoming <c>merge</c> no longer REPLACES a
+/// current <c>insert</c> — both are kept, and this detector
 /// stays quiet because nothing was orphaned. Be aware that keeping both does NOT make both take
 /// effect: the differ runs whole groups in a fixed order (merges first, then removes/inserts/moves)
 /// rather than in array order, so a transform beside an <c>insert</c> for the same name is inert.
@@ -114,8 +115,9 @@ internal static class PageInsertDowngradeDetector {
 		"remove. See docs://mcp/guides/page-modification.";
 
 	private static bool TryExtractOperationsByName(string body, out Dictionary<string, HashSet<string>> operationsByName) {
-		// Names use Ordinal to mirror both the platform differ (JsonDiffApplier.GetObjectNameOperationsGroup)
-		// and the name half of PageBodyMerger's merge identity; the operation sets use OrdinalIgnoreCase
+		// Names use Ordinal to mirror both the platform differ (JsonDiffApplier groups names with
+		// StringComparer.Ordinal) and the name half of PageBodyMerger's merge identity; the operation sets
+		// use OrdinalIgnoreCase
 		// because the op vocabulary is a small case-insensitive set.
 		operationsByName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 		try {

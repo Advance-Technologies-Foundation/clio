@@ -1,5 +1,5 @@
 ---
-description: a viewConfigDiff legitimately carries several operations for one component name (move + merge), so append-merge identity is (operation, name) — keying on name alone silently drops existing operations
+description: a viewConfigDiff legitimately carries several operations for one component name (move + merge), so append-merge identity is (operation, name, targets-properties) — keying on name alone silently drops existing operations
 applies-to:
   - clio/Command/PageBodyMerger.cs
   - clio/Command/PageInsertDowngradeDetector.cs
@@ -20,7 +20,7 @@ stale values after the replacement. An entry the merger cannot identify (a missi
 non-string `name`, or a non-object element) is preserved at its original index rather than moved.
 
 **Why it is this way** — clio's own clone of the platform differ, `JsonDiffApplier`, groups operations
-by name into per-name *lists* (`GetObjectNameOperationsGroup`, `StringComparer.Ordinal`), splits
+by name with `StringComparer.Ordinal` (`GetObjectNameOperationsGroup`, applied to the move list), splits
 `remove` into two groups on `properties is JArray`, switches on the operation verb **exact-case with no
 `default` branch**, and applies the groups in a fixed order — `Merge`, then `Remove`/`Insert`/`Move`,
 then `RemoveProperties`, then `Set`. The identity mirrors exactly those distinctions. Case-folding the
@@ -35,6 +35,13 @@ unsuccessful list). Only `set` runs after the insert. Preserving the operation i
 alternative deletes the insert and orphans the component — but it is inert, and **nothing reports
 that today**: `PageInsertDowngradeDetector` falls silent as soon as it sees the insert survive. Tracked
 in GH-1240. Do not read the merger as making both operations take effect.
+
+The same trap has a second shape that is *not* about `insert`: a current element `remove` beside an
+incoming `move` for one name. `ApplyChangePositionOperationGroup` starts with
+`FilterMoveOperation(removes, moves)`, which drops every `move` whose name matches any `remove` — so
+the operation the caller just appended is the one discarded. Preserving both is still right (the
+pre-#1132 merger let the incoming `move` delete the `remove`, which is worse), but neither the merger
+nor `PageInsertDowngradeDetector` reports it. Also tracked in GH-1240.
 
 **What breaks if you ignore it** — the pre-#1132 merger flattened `current.Concat(incoming)` into a
 single `name`-keyed dictionary. A page whose body held a `move` and a `merge` for one component lost
