@@ -24,7 +24,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(DescribeProcessTool.ToolName)]
 [NonParallelizable]
-[Category(ProcessDesignerE2EGate.CategoryName)]
+[Category(McpE2ECategories.ProcessDesigner)]
 public sealed class DescribeProcessToolE2ETests {
 
 	private const string ToolName = DescribeProcessTool.ToolName;
@@ -85,7 +85,6 @@ public sealed class DescribeProcessToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		string? processCode = settings.Sandbox.ProcessCode;
 		if (requireReachableEnvironment) {
