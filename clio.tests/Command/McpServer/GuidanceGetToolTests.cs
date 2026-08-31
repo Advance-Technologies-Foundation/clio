@@ -20,12 +20,14 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class GuidanceGetToolTests {
 	private ServiceProvider _container;
 	private IKnowledgeGuidanceSource _source;
+	private IKnowledgeBundleActivator _activator;
 	private IKnowledgeFeedbackPolicyService _feedbackPolicyService;
 	private GuidanceGetTool _tool;
 
 	[SetUp]
 	public void SetUp() {
 		_source = Substitute.For<IKnowledgeGuidanceSource>();
+		_activator = Substitute.For<IKnowledgeBundleActivator>();
 		_source.GetNames().Returns(["synthetic-guide"]);
 		_feedbackPolicyService = Substitute.For<IKnowledgeFeedbackPolicyService>();
 		_feedbackPolicyService.GetPolicy().Returns(new KnowledgeFeedbackPolicy(
@@ -38,6 +40,7 @@ public sealed class GuidanceGetToolTests {
 			"approved"));
 		ServiceCollection services = new();
 		services.AddSingleton(_source);
+		services.AddSingleton(_activator);
 		services.AddSingleton(_feedbackPolicyService);
 		services.AddTransient<GuidanceGetTool>();
 		_container = services.BuildServiceProvider();
@@ -65,6 +68,51 @@ public sealed class GuidanceGetToolTests {
 			because: "retrieving guidance must never be classified as a mutation");
 		attribute.Destructive.Should().BeFalse(
 			because: "guidance lookup cannot require destructive authorization");
+	}
+
+	[Test]
+	[Description("Redacts the activation diagnostic before it leaves the server on the unavailable response.")]
+	public async Task GetGuidance_ShouldRedactActivationDiagnostic_WhenNoBundleIsActive() {
+		// Arrange
+		_source.FindByName("synthetic-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Unavailable, null, null));
+		_activator.LastDiagnostic.Returns("Git knowledge source 'local' could not be refreshed: Access to the "
+			+ @"path 'C:\Users\jane.doe\.clio\knowledge\9f2c\repository\.git\index' is denied.");
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "no compatible verified bundle is active for this lookup");
+		response.Diagnostics.Should().NotContain("jane.doe",
+			because: "the diagnostic is composed from IOException text carrying an absolute cache path, and "
+				+ "this response is copied verbatim into a transcript a third-party model may read");
+		response.Diagnostics.Should().Contain("[redacted-path]",
+			because: "the redactor replaces an absolute path with a stable placeholder rather than dropping "
+				+ "the sentence that explains the failure");
+		response.Diagnostics.Should().Contain("could not be refreshed",
+			because: "the reason an agent needs in order to self-correct must survive redaction");
+	}
+
+	[Test]
+	[Description("Omits the diagnostics field entirely when the activator recorded no reason.")]
+	public async Task GetGuidance_ShouldOmitDiagnostics_WhenActivatorRecordedNothing() {
+		// Arrange
+		_source.FindByName("synthetic-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Unavailable, null, null));
+		_activator.LastDiagnostic.Returns((string)null);
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+
+		// Assert
+		response.Diagnostics.Should().BeNull(
+			because: "redaction must preserve null so the serializer keeps omitting the field, rather than "
+				+ "emitting an empty string that reads as a diagnostic nobody wrote");
+		JsonSerializer.Serialize(response).Should().NotContain("diagnostics",
+			because: "WhenWritingNull must omit the field on the wire, which the CLR property alone does "
+				+ "not prove");
 	}
 
 	[Test]

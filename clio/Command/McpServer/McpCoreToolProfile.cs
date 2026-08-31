@@ -61,6 +61,9 @@ public static class McpCoreToolProfile {
 		// Freedom UI request lookup (ENG-93187)
 		typeof(RequestInfoTool),                   // get-request-info
 
+		// pure local Creatio artifact merge preview
+		typeof(CreatioArtifactMergeTool),           // merge-creatio-artifact
+
 		// entity-schema lookup / inspection
 		typeof(FindEntitySchemaTool),              // find-entity-schema
 		typeof(GetEntitySchemaPropertiesTool),     // get-entity-schema-properties

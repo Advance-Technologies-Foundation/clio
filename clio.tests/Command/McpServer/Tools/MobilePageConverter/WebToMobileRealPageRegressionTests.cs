@@ -138,7 +138,160 @@ public sealed class WebToMobileRealPageRegressionTests {
 				+ "host's values — that is the shape that would still render it on the canvas");
 	}
 
+	[Test]
+	[Description("ENG-96153 on the real page: the Next steps tab keeps its header in the web tab's tools strip, and retargeting it into the synthesized Area must re-slot it to items — a crt.GridContainer has no tools collection, so a carried-over slot renders an empty tab.")]
+	public void Analyze_ShouldReslotToolsStripChildrenIntoTheAreaItems_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		JsonNode viewConfig = fixture["viewConfig"]!;
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectTypes(viewConfig, mobileTypes);
+		ChildrenOfTabToolsStrips(viewConfig).Should().Contain("NextStepsTabContainerHeaderContainer",
+			because: "the pinned page shape is the reported one — the Next steps header sits in the tab's tools "
+				+ "strip; without it every assertion below is vacuous and the fixture needs re-deriving");
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		ElementMapEntry header = guide.ElementMap
+			.Single(e => string.Equals(e.WebName, "NextStepsTabContainerHeaderContainer", StringComparison.Ordinal));
+		header.Operation.Should().Be("insert",
+			because: "the header container is a crt.FlexContainer, a mobile-supported type that must reach the page");
+		header.ParentName.Should().StartWith("GridContainer_",
+			because: "the tab-area pass retargets a tab's top-level content onto the synthesized Area card");
+		header.PropertyName.Should().Be("items",
+			because: "the Area is a crt.GridContainer, whose only child collection is items — keeping the web "
+				+ "tab's tools slot makes the differ insert into a slot the component never renders");
+	}
+
+	[Test]
+	[Description("ENG-96153 as an invariant: every container the tab-area pass synthesizes is a crt.GridContainer, so it may declare no child collection other than items — a stray tools/menuItems array on one is the empty-tab defect.")]
+	public void Analyze_ShouldDeclareOnlyItemsOnSynthesizedTabLayers_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectTypes(fixture["viewConfig"]!, mobileTypes);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		List<ElementMapEntry> layers = SynthesizedTabLayers(guide);
+		layers.Should().NotBeEmpty(
+			because: "the pinned page has converted tabs, so the pass must have synthesized their body/Area layers");
+		layers.Should().OnlyContain(e => DeclaredChildSlots(e).SequenceEqual(new[] { "items" }),
+			because: "a synthesized layer holds its children in items alone; any other declared collection is a "
+				+ "slot carried over from the web parent that the mobile component does not render. Offenders: "
+				+ string.Join(", ", layers
+					.Where(e => !DeclaredChildSlots(e).SequenceEqual(new[] { "items" }))
+					.Select(e => $"{e.MobileName} [{string.Join("|", DeclaredChildSlots(e))}]")));
+	}
+
+	[Test]
+	[Description("ENG-96153 row order: a web tab's tools strip is its header and renders above the tab body, so after the retarget it must occupy a LOWER Area row than the tab's items content — element-map order alone stacks it last, because the walk always reaches items children before tools children.")]
+	public void Analyze_ShouldStackToolsStripAboveItemsContent_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		JsonNode viewConfig = fixture["viewConfig"]!;
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectTypes(viewConfig, mobileTypes);
+		IReadOnlyList<string> headerNames = ChildrenOfTabToolsStrips(viewConfig);
+		headerNames.Should().HaveCountGreaterThan(1,
+			because: "the pinned page must still carry several tabs whose header sits in the tools strip, or "
+				+ "this test proves the ordering rule on a single accidental case");
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		var checkedAreas = new List<string>();
+		foreach (string headerName in headerNames) {
+			ElementMapEntry header = guide.ElementMap.SingleOrDefault(
+				e => string.Equals(e.WebName, headerName, StringComparison.Ordinal)
+					&& string.Equals(e.Operation, "insert", StringComparison.Ordinal));
+			if (header?.ParentName is not { Length: > 0 } area) {
+				continue; // a header the converter dropped entirely carries no row to compare
+			}
+			List<ElementMapEntry> bodySiblings = guide.ElementMap
+				.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+					&& string.Equals(e.ParentName, area, StringComparison.OrdinalIgnoreCase)
+					&& !headerNames.Contains(e.WebName, StringComparer.Ordinal))
+				.ToList();
+			if (bodySiblings.Count == 0) {
+				continue; // nothing to sit above — a header-only tab cannot express the ordering
+			}
+			checkedAreas.Add(area);
+			int headerRow = AssignedRow(header);
+			headerRow.Should().BeGreaterThan(0,
+				because: $"the retarget gives every moved child a single-column layoutConfig, so '{headerName}' must carry a row");
+			bodySiblings.Select(AssignedRow).Should().OnlyContain(bodyRow => bodyRow > headerRow,
+				because: $"the tools strip is the tab's header: in Area '{area}' it must render above "
+					+ $"[{string.Join(", ", bodySiblings.Select(e => $"{e.WebName ?? e.MobileName}@row{AssignedRow(e)}"))}], "
+					+ $"but it was placed at row {headerRow}");
+		}
+		checkedAreas.Should().HaveCountGreaterThan(1,
+			because: "the ordering rule must have been exercised on more than one tab of the pinned page — "
+				+ "zero or one comparable Area means the assertions above were mostly skipped");
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
+
+	/// <summary>The grid row the tab-area pass assigned to a moved child, or -1 when it carries no placement.</summary>
+	private static int AssignedRow(ElementMapEntry entry) =>
+		entry.MobileValues is JsonObject values
+		&& values["layoutConfig"] is JsonObject layoutConfig
+		&& layoutConfig["row"] is JsonValue row
+		&& row.TryGetValue(out int parsed)
+			? parsed
+			: -1;
+
+	/// <summary>Names of the elements sitting directly in a <c>crt.TabContainer</c>'s <c>tools</c> strip.</summary>
+	private static IReadOnlyList<string> ChildrenOfTabToolsStrips(JsonNode node) {
+		var names = new List<string>();
+		Collect(node);
+		return names;
+
+		void Collect(JsonNode current) {
+			switch (current) {
+				case JsonArray array:
+					foreach (JsonNode item in array.Where(i => i is not null)) {
+						Collect(item!);
+					}
+					break;
+				case JsonObject obj:
+					if (string.Equals(obj["type"]?.ToString(), "crt.TabContainer", StringComparison.OrdinalIgnoreCase)
+						&& obj["tools"] is JsonArray tools) {
+						names.AddRange(tools.OfType<JsonObject>()
+							.Select(tool => tool["name"]?.ToString())
+							.Where(name => name is { Length: > 0 })!);
+					}
+					foreach (KeyValuePair<string, JsonNode> pair in obj.Where(p => p.Value is not null)) {
+						Collect(pair.Value!);
+					}
+					break;
+			}
+		}
+	}
+
+	/// <summary>The tab-body and Area containers the tab-area pass synthesizes (no web counterpart).</summary>
+	private static List<ElementMapEntry> SynthesizedTabLayers(MobilePageConversionGuide guide) =>
+		guide.ElementMap
+			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& e.WebName is null or { Length: 0 }
+				&& e.MobileName is { Length: > 0 }
+				&& (e.MobileName.StartsWith("MainTabContainer_", StringComparison.Ordinal)
+					|| e.MobileName.StartsWith("GridContainer_", StringComparison.Ordinal)))
+			.ToList();
+
+	/// <summary>The child-collection slots an entry's prebuilt <c>mobileValues</c> physically declares, ordered.</summary>
+	private static IReadOnlyList<string> DeclaredChildSlots(ElementMapEntry entry) =>
+		entry.MobileValues is JsonObject values
+			? values.Where(pair => pair.Value is JsonArray)
+				.Select(pair => pair.Key)
+				.OrderBy(slot => slot, StringComparer.Ordinal)
+				.ToList()
+			: [];
 
 	private static JsonObject LoadFixture() {
 		string path = Path.Combine(

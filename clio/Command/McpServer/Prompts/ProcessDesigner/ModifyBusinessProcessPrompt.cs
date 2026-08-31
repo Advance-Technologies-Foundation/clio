@@ -8,7 +8,6 @@ namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 /// Prompt helpers for editing an existing business process on a Creatio environment through MCP.
 /// </summary>
 [McpServerPromptType, Description("Prompts to edit an existing business process by applying operations")]
-[FeatureToggle("process-designer")]
 public static class ModifyBusinessProcessPrompt {
 
 	/// <summary>

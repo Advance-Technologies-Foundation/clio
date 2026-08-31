@@ -1,0 +1,24 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "AddonSchemaManager",
+      "UId": "61f8c327-c19c-4897-a839-4be97a59900e",
+      "A2": "AtfMiniPage_SeatrchGitlabAppearanceSettings",
+      "A5": "5d9c4234-87b5-4d7a-ab3d-02f1c4caff70",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "57902d1e-ea0c-4991-b367-992c12d68fb2",
+      "B8": "8.3.0.3076",
+      "AD1": "4c5cad80-7900-4f47-b26c-f24d9a0bce07",
+      "AD2": "ClientUnitSchemaManager",
+      "AD3": "AppearanceSettings",
+      "AD5": "3a2d6f51-1bfc-4c17-aacb-b53de4866b7c",
+      "AD4": {
+        "modalSettings": {
+          "size": 3
+        }
+      }
+    }
+  }
+}
