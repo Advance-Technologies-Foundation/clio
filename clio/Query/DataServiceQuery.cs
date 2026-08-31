@@ -171,12 +171,19 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			? "POST"
 			: httpMethod.ToUpperInvariant();
 
+		//Every verb carries the command's own timeout and retry settings. Omitting them bound the
+		//call to the interface defaults - Timeout.Infinite, one attempt, one second - so --timeout
+		//was ignored and a hung endpoint pinned the CLI or an MCP worker with no way out.
 		string jsonResult = normalizedMethod switch {
-					"POST" => ApplicationClient.ExecutePostRequest(url, requestData),
-					"GET" => ApplicationClient.ExecuteGetRequest(url),
-					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData),
-					"PATCH" => ApplicationClient.ExecutePatchRequest(url, requestData),
-					"PUT" => ApplicationClient.ExecutePutRequest(url, requestData),
+					"POST" => ApplicationClient.ExecutePostRequest(url, requestData, RequestTimeout,
+						MaxAttempts, DelaySec),
+					"GET" => ApplicationClient.ExecuteGetRequest(url, RequestTimeout, MaxAttempts, DelaySec),
+					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData, RequestTimeout,
+						MaxAttempts, DelaySec),
+					"PATCH" => ApplicationClient.ExecutePatchRequest(url, requestData, RequestTimeout,
+						MaxAttempts, DelaySec),
+					"PUT" => ApplicationClient.ExecutePutRequest(url, requestData, RequestTimeout,
+						MaxAttempts, DelaySec),
 					var _ => throw new ArgumentException($"Unsupported HTTP method '{httpMethod}'", nameof(httpMethod))
 				};
 
@@ -213,6 +220,11 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 	public override int Execute(T options){
 		IsSilent = options.IsSilent;
+		//This override does not chain to RemoteCommand.Execute, which is where these three are
+		//normally applied, so they have to be read off the options here.
+		RequestTimeout = options.TimeOut;
+		MaxAttempts = options.MaxAttempts;
+		DelaySec = options.RetryDelay;
 		if (string.IsNullOrWhiteSpace(options.RequestFileName) && string.IsNullOrWhiteSpace(options.RequestBody)) {
 			ExecuteServiceRequest(BuildUrl(options), string.Empty, options.ResultFileName, options.HttpMethodName);
 		}

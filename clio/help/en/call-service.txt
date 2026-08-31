@@ -1,4 +1,4 @@
-COMMAND TYPE
+﻿COMMAND TYPE
     Remote commands
 
 NAME
@@ -17,9 +17,36 @@ OPTIONS
     -f, --input               Request file.
     -b, --body                Request body JSON.
     -d, --destination         Destination file for the response.
-    --service-path             Route service path.
+    --service-path            Route service path.
     -v, --variables           Variables to replace in the request body.
-    --timeout                  Request timeout in milliseconds. Defaults to 100000.
+    --timeout                 Request timeout in milliseconds. Defaults to 60000
+                              for call-service.
+    --maintainer              Maintainer name. Long form only for this command,
+                              because -m is taken by --method here.
+    --silent                  Do not print the response body.
+
+    -e, --environment <ENVIRONMENT>
+        Registered environment to call. When omitted, clio uses the active
+        environment.
+
+    Environment options (can be used instead of -e):
+        -u, --uri <URI>
+            Application URI
+
+        -l, --login <LOGIN>
+            User login
+
+        -p, --password <PASSWORD>
+            User password
+
+        --client-id <ID>
+            OAuth client id
+
+        --client-secret <SECRET>
+            OAuth client secret
+
+        --auth-app-uri <URI>
+            OAuth app URI
 
 EXAMPLES
     clio call-service -e dev --service-path "odata/Contact(<id>)" \

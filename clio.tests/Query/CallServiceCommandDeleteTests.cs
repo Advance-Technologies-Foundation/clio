@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Clio.Common;
 using Clio.Query;
 using Clio.Tests.Command;
@@ -85,7 +85,10 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		CallServiceCommandOptions options = new() {
 			ServicePath = "svc",
 			HttpMethodName = "patch",
-			RequestBody = "{\"id\":1}"
+			RequestBody = "{\"id\":1}",
+			TimeOut = 12_345,
+			MaxAttempts = 7,
+			RetryDelay = 3
 		};
 
 		// Act
@@ -94,7 +97,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		// Assert
 		applicationClient
 			.Received(1)
-			.ExecutePatchRequest("http://host/svc", "{\"id\":1}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			.ExecutePatchRequest("http://host/svc", "{\"id\":1}", 12_345, 7, 3);
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -115,7 +118,10 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		CallServiceCommandOptions options = new() {
 			ServicePath = "svc",
 			HttpMethodName = "put",
-			RequestBody = "{\"id\":1}"
+			RequestBody = "{\"id\":1}",
+			TimeOut = 54_321,
+			MaxAttempts = 5,
+			RetryDelay = 2
 		};
 
 		// Act
@@ -124,7 +130,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		// Assert
 		applicationClient
 			.Received(1)
-			.ExecutePutRequest("http://host/svc", "{\"id\":1}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			.ExecutePutRequest("http://host/svc", "{\"id\":1}", 54_321, 5, 2);
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -167,4 +173,30 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 	}
 
 	#endregion
+	[Test]
+	[Description("Without --timeout the call-service default of 60000 ms and the option defaults for retries reach the client - the verb must not fall back to the interface defaults of no timeout and a single attempt")]
+	public void Execute_Should_Pass_CommandDefaultTimeout_When_TimeoutNotProvided() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			HttpMethodName = "patch",
+			RequestBody = "{\"id\":1}"
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient
+			.Received(1)
+			.ExecutePatchRequest("http://host/svc", "{\"id\":1}", 60_000, 3, 1);
+	}
+
 }
