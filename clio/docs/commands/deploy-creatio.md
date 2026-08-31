@@ -378,8 +378,9 @@ For dotnet deployments, the generated `appsettings.json` contains the Kestrel ce
 key configuration. `--cert-password` accepts the name of an environment variable, while
 `--cert-password-file` accepts a password-file path; neither raw password values nor existing
 Kestrel certificate passwords are written to `appsettings.json` or logs. Clio passes the resolved
-password to the host through Kestrel environment configuration. Protect the child-process
-environment, password file, and deployed application directory from untrusted users.
+password to the host through Kestrel environment configuration and saves it in the protected per-user
+Clio host-environment store so a later `clio start` can restore HTTPS. Protect the child-process
+environment, password file, Clio home, and deployed application directory from untrusted users.
 
 ## Database Setup
 

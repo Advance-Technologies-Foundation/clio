@@ -923,7 +923,7 @@ The prompt layer does not add new execution power, but it materially changes how
 The prompt layer acts as embedded operating guidance:
 
 - page prompts teach a workflow: `get-tool-contract` -> `list-pages` -> `get-page` -> `component-info` -> `update-page` or `sync-pages`
-- deployment prompts teach a workflow: `assert-infrastructure` -> `show-passing-infrastructure` -> `find-empty-iis-port` -> `deploy-creatio`
+- deployment prompts teach a workflow: `assert-infrastructure` -> `show-passing-infrastructure` -> (for local IIS) `find-empty-iis-port` -> `deploy-creatio`
 - FSM prompts encode the operational rule that mode changes should be followed by full compilation
 - workspace prompts tell the AI when absolute local paths are required
 - help lookup prompt teaches the AI how to read CLI help through resources

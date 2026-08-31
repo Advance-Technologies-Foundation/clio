@@ -30,6 +30,8 @@ Pings the site to verify accessibility after starting.
 Can run as background service (default) or in terminal window.
 Background service runs detached with no visible logs.
 Terminal mode opens new window with application logs visible.
+For dotnet HTTPS deployments, restores certificate values from Clio's protected
+per-user host-environment store when starting an environment again.
 
 Deployment type detection is fully automatic - no manual configuration
 required. The command checks for IIS first (Windows), then falls back
@@ -110,6 +112,8 @@ Administrator privileges may be required to start app pools
 Terrasoft.WebHost.dll must exist in the EnvironmentPath
 .NET runtime must be installed and available in PATH
 Appropriate file system permissions required
+Protect the Clio home directory because it may contain the certificate values
+needed to restart a password-protected HTTPS deployment.
 
 ## Exit Codes
 

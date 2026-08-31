@@ -287,6 +287,10 @@ clio deploy-creatio \
   --cert-path ~/certs/app.pfx \
   --cert-password-file /run/secrets/creatio-cert-password
 
+The resolved PFX password is never written to `appsettings.json`. Clio keeps it in its protected
+per-user host-environment store so `clio start` can restore HTTPS after the initial deployment
+process exits; protect the Clio home directory and password file accordingly.
+
 # Network-facing dotnet hosting is opt-in and HTTPS-only
 clio deploy-creatio \
   --ZipFile ~/Downloads/creatio.zip \

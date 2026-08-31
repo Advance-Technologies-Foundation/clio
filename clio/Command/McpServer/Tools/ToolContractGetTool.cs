@@ -5565,11 +5565,19 @@ internal static class ToolContractCatalog {
 				[
 					AssertInfrastructureTool.AssertInfrastructureToolName,
 					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, pick a safe local IIS port, then deploy. See the deploy-lifecycle guidance topic via get-guidance."),
-			[],
+				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, then deploy. For local IIS, run find-empty-iis-port between discovery and deployment. See the deploy-lifecycle guidance topic via get-guidance."),
+			[
+				Flow(
+					[
+						AssertInfrastructureTool.AssertInfrastructureToolName,
+						ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+						FindEmptyIisPortTool.FindEmptyIisPortToolName,
+						InstallerCommandTool.DeployCreatioToolName
+					],
+					"Use this variant for local IIS deployments that need a safe sitePort.")
+			],
 			[]);
 	}
 

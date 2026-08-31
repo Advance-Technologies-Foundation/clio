@@ -338,6 +338,9 @@ clio deploy-creatio \
   - ConnectionString: from DB config
   - HTTPS (optional): certificate and key; required with `--bind-all-interfaces`
 - Bind Kestrel to `localhost` by default; `--bind-all-interfaces` is an explicit HTTPS-only opt-in
+- Save resolved certificate environment values in Clio's protected per-user host-environment store
+  so subsequent `clio start` invocations can restore password-protected HTTPS without putting the
+  password in `appsettings.json`
 - Create systemd service (Linux) or launchd (macOS) for auto-launch:
   ```
   [Unit]

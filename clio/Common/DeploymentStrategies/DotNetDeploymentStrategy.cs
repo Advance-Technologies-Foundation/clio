@@ -96,6 +96,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			IReadOnlyDictionary<string, string> environmentVariables =
 				CreateApplicationConfiguration(appDirectoryPath, options);
 			_logger.WriteInfo("Application configuration created");
+			_creatioHostService.PersistEnvironmentVariables(appDirectoryPath, environmentVariables);
 
 			// Start the host application as a background process
 			int? processId = _creatioHostService.StartInBackground(appDirectoryPath, environmentVariables);
@@ -285,16 +286,16 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		JsonObject root = ParseConfiguration(existingJson);
 		JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
 		JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
-		Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(kestrel, endpoints);
 		string bindHost = GetBindHost(options);
 
 		if (options.UseHttps)
 		{
+			RemoveEndpointsByScheme(endpoints, "http");
+			Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(kestrel, endpoints);
 			(string httpsEndpointName, JsonObject httpsEndpoint) = FindOrCreateEndpoint(endpoints, "Https", "https");
 			SetStringProperty(httpsEndpoint, "Url", BuildEndpointUrl("https", bindHost, options.SitePort));
 			ConfigureHttpsCertificate(httpsEndpointName, httpsEndpoint, kestrel, options, environmentVariables);
 			RewriteEndpointHosts(endpoints, "https", bindHost);
-			RemoveEndpointsByScheme(endpoints, "http");
 			EnsureNoDuplicateEndpointBindings(endpoints);
 			return new DotNetApplicationConfiguration(
 				root.ToJsonString(IndentedJsonOptions),
@@ -302,15 +303,15 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		}
 		else
 		{
+			Dictionary<string, string> environmentVariables = ExtractCertificateEnvironmentVariables(kestrel, endpoints);
 			(_, JsonObject httpEndpoint) = FindOrCreateEndpoint(endpoints, "Http", "http");
 			SetStringProperty(httpEndpoint, "Url", BuildEndpointUrl("http", bindHost, options.SitePort));
 			RewriteEndpointHosts(endpoints, "http", bindHost);
 			RewriteEndpointHosts(endpoints, "https", bindHost);
 			EnsureNoHttpHttpsPortConflict(endpoints);
 			EnsureNoDuplicateEndpointBindings(endpoints);
+			return new DotNetApplicationConfiguration(root.ToJsonString(IndentedJsonOptions), environmentVariables);
 		}
-
-		return new DotNetApplicationConfiguration(root.ToJsonString(IndentedJsonOptions), environmentVariables);
 	}
 
 	private static JsonObject ParseConfiguration(string? existingJson)

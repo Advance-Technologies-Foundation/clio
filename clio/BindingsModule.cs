@@ -373,6 +373,7 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
+		services.AddTransient<ICreatioHostEnvironmentStore, CreatioHostEnvironmentStore>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();

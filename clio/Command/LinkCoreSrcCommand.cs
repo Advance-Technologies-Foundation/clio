@@ -510,6 +510,11 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			// Extract port from URI
 			Uri uri = new Uri(env.Uri);
 			int port = uri.Port;
+			string scheme = uri.Scheme.ToLowerInvariant();
+			if (scheme is not ("http" or "https"))
+			{
+				throw new InvalidOperationException($"Unsupported environment URI scheme: {uri.Scheme}");
+			}
 
 			if (port <= 0)
 			{
@@ -528,7 +533,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			string content = _fileSystem.ReadAllText(appSettingsPath);
 
 			// Try to parse as JSON first, then as XML
-			string updatedContent = UpdateConfigWithPort(content, port, appSettingsPath);
+			string updatedContent = UpdateConfigWithPort(content, port, appSettingsPath, scheme);
 			_fileSystem.WriteAllTextToFile(appSettingsPath, updatedContent);
 			_logger.WriteInfo($"  ✓ Port {port} configured in appsettings.json");
 		}
@@ -545,7 +550,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	/// <param name="port">The port selected by the environment URI.</param>
 	/// <param name="filePath">The path used in parse diagnostics.</param>
 	/// <returns>Updated JSON or XML configuration.</returns>
-	internal string UpdateConfigWithPort(string content, int port, string filePath)
+	internal string UpdateConfigWithPort(string content, int port, string filePath, string scheme = "http")
 	{
 		// Try JSON format first (for appsettings.json)
 		bool jsonParsed = false;
@@ -560,8 +565,14 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
 			JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
-			string? canonicalHttpEndpointName = FindCanonicalHttpEndpointName(endpoints);
-			bool hasHttpEndpoint = false;
+			string targetScheme = scheme.ToLowerInvariant();
+			if (targetScheme is not ("http" or "https"))
+			{
+				throw new InvalidOperationException($"Unsupported endpoint URI scheme: {scheme}");
+			}
+			string targetEndpointName = targetScheme == Uri.UriSchemeHttps ? "Https" : "Http";
+			string? canonicalEndpointName = FindCanonicalEndpointName(endpoints, targetEndpointName, targetScheme);
+			bool hasTargetEndpoint = false;
 			foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 			{
 				if (property.Value is not JsonObject endpoint)
@@ -570,30 +581,30 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				}
 
 				string? url = GetStringProperty(endpoint, "Url");
-				string? scheme = GetUriScheme(url);
-				if (url is null || scheme is null
-					|| (!string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase)
-						&& !string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase)))
+				string? endpointScheme = GetUriScheme(url);
+				if (url is null || endpointScheme is null
+					|| (!string.Equals(endpointScheme, "http", StringComparison.OrdinalIgnoreCase)
+						&& !string.Equals(endpointScheme, "https", StringComparison.OrdinalIgnoreCase)))
 				{
 					continue;
 				}
 
 				string rewrittenUrl = KestrelEndpointUrl.ReplaceHost(url, "localhost")
 					?? throw new JsonException($"Kestrel endpoint '{property.Key}' has an unsupported URL: {url}");
-				if (string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase)
-					&& string.Equals(property.Key, canonicalHttpEndpointName, StringComparison.OrdinalIgnoreCase))
+				if (string.Equals(endpointScheme, targetScheme, StringComparison.OrdinalIgnoreCase)
+					&& string.Equals(property.Key, canonicalEndpointName, StringComparison.OrdinalIgnoreCase))
 				{
 					rewrittenUrl = KestrelEndpointUrl.ReplacePort(rewrittenUrl, port);
-					hasHttpEndpoint = true;
+					hasTargetEndpoint = true;
 				}
 
 				SetStringProperty(endpoint, "Url", rewrittenUrl);
 			}
 
-			if (!hasHttpEndpoint)
+			if (!hasTargetEndpoint)
 			{
-				JsonObject httpEndpoint = FindOrCreateEndpoint(endpoints);
-				SetStringProperty(httpEndpoint, "Url", $"http://localhost:{port}");
+				JsonObject targetEndpoint = FindOrCreateEndpoint(endpoints, targetEndpointName);
+				SetStringProperty(targetEndpoint, "Url", $"{targetScheme}://localhost:{port}");
 			}
 
 			EnsureNoHttpHttpsPortConflict(endpoints);
@@ -669,9 +680,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		throw new JsonException($"Configuration property '{actualPropertyName}' must be a JSON object.");
 	}
 
-	private static JsonObject FindOrCreateEndpoint(JsonObject endpoints)
+	private static JsonObject FindOrCreateEndpoint(JsonObject endpoints, string endpointName)
 	{
-		string? namedProperty = FindPropertyName(endpoints, "Http");
+		string? namedProperty = FindPropertyName(endpoints, endpointName);
 		if (namedProperty is not null)
 		{
 			if (endpoints[namedProperty] is JsonObject endpoint)
@@ -683,13 +694,13 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		}
 
 		JsonObject createdEndpoint = new();
-		endpoints["Http"] = createdEndpoint;
+		endpoints[endpointName] = createdEndpoint;
 		return createdEndpoint;
 	}
 
-	private static string? FindCanonicalHttpEndpointName(JsonObject endpoints)
+	private static string? FindCanonicalEndpointName(JsonObject endpoints, string endpointName, string scheme)
 	{
-		string? namedProperty = FindPropertyName(endpoints, "Http");
+		string? namedProperty = FindPropertyName(endpoints, endpointName);
 		if (namedProperty is not null)
 		{
 			if (endpoints[namedProperty] is not JsonObject)
@@ -703,7 +714,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
 		{
 			if (property.Value is JsonObject endpoint
-				&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), "http", StringComparison.OrdinalIgnoreCase))
+				&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), scheme, StringComparison.OrdinalIgnoreCase))
 			{
 				return property.Key;
 			}

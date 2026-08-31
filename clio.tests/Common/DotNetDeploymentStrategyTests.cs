@@ -162,6 +162,43 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Does not restore certificate secrets from an HTTP endpoint that explicit HTTPS deployment removes.")]
+	public void BuildApplicationConfiguration_ShouldNotExportRemovedHttpCertificatePassword() {
+		// Arrange
+		string certificatePath = CreateTemporaryPfx("replacement.pfx", "https-secret");
+		string passwordFile = CreateTemporaryPasswordFile("https-secret");
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": {
+			        "Url": "http://localhost:5000",
+			        "Certificate": { "Path": "removed.pfx", "Password": "http-secret" }
+			      },
+			      "Https": { "Url": "https://localhost:5001" }
+			    }
+			  }
+			}
+			""";
+		PfInstallerOptions options = new() {
+			SitePort = 40123,
+			UseHttps = true,
+			CertificatePath = certificatePath,
+			CertificatePasswordFile = passwordFile
+		};
+
+		// Act
+		DotNetApplicationConfiguration configuration = _sut.BuildApplicationConfigurationWithEnvironment(existingJson, options);
+
+		// Assert
+		configuration.EnvironmentVariables.Should().NotContainKey(
+			"Kestrel__Endpoints__Http__Certificate__Password",
+			because: "a removed HTTP endpoint must not leak its certificate password into the HTTPS host environment");
+		configuration.Json.Should().NotContain("http-secret",
+			because: "a removed endpoint's certificate password must not remain in the generated configuration");
+	}
+
+	[Test]
 	[Description("Uses the explicit all-interface binding for dotnet HTTPS when the operator selects that topology.")]
 	public void BuildApplicationConfiguration_ShouldBindHttpsToAllInterfacesWhenExplicitlyRequested() {
 		// Arrange
@@ -503,6 +540,10 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		string generatedJson = File.ReadAllText(Path.Combine(appDirectory, "appsettings.json"));
 		generatedJson.Should().NotContain("deploy-secret",
 			because: "certificate passwords must not be written to the deployed appsettings.json");
+		_creatioHostService.Received(1).PersistEnvironmentVariables(
+			appDirectory,
+			Arg.Is<IReadOnlyDictionary<string, string>>(variables =>
+				variables["Kestrel__Endpoints__Https__Certificate__Password"] == "deploy-secret"));
 		_creatioHostService.Received(1).StartInBackground(
 			appDirectory,
 			Arg.Is<IReadOnlyDictionary<string, string>>(variables =>

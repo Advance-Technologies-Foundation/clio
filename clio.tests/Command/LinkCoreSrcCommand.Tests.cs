@@ -141,6 +141,32 @@ namespace Clio.Tests.Command {
 	}
 
 	[Test]
+	[Description("Updates the canonical HTTPS endpoint when the registered environment uses an HTTPS URI instead of creating a plaintext endpoint.")]
+	public void UpdateConfigWithPort_ShouldPreferHttpsEndpoint_WhenTargetSchemeIsHttps() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Https": { "Url": "https://[::]:5002", "Certificate": { "Path": "server.pfx" } }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:40123",
+			because: "an HTTPS-registered environment must keep its secure endpoint and update its selected port");
+		HasJsonProperty(result, "Kestrel", "Endpoints", "Http").Should().BeFalse(
+			because: "link-core-src must not introduce a plaintext listener for an HTTPS-registered environment");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be("server.pfx",
+			because: "the existing HTTPS certificate configuration must remain attached to the endpoint");
+	}
+
+	[Test]
 	[Description("Rejects a link-core-src port that would make the preserved HTTP and HTTPS Kestrel endpoints collide.")]
 	public void UpdateConfigWithPort_ShouldRejectHttpHttpsPortConflict() {
 		// Arrange

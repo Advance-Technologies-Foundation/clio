@@ -357,8 +357,10 @@ BEHAVIOR
     and key configuration. --cert-password accepts an environment-variable name and
     --cert-password-file accepts a password-file path. Neither raw password values nor existing
     Kestrel certificate passwords are written to appsettings.json or logs. Clio passes the resolved
-    password to the child host through Kestrel environment configuration. Protect the child-process
-    environment, password file, and deployed application directory from untrusted users.
+    password to the child host through Kestrel environment configuration and saves it in the protected
+    per-user Clio host-environment store so a later clio start can restore HTTPS. Protect the
+    child-process environment, password file, Clio home, and deployed application directory from
+    untrusted users.
 
 DATABASE SETUP
     Before deployment, ensure:
