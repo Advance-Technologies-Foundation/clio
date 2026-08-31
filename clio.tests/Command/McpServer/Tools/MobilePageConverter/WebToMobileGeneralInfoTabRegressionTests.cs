@@ -278,6 +278,51 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			because: "the expansion panel is the non-tab child; the sibling crt.TabContainer is legitimate");
 	}
 
+	[Test]
+	[Description("A container twin the mobile template provides is a SIBLING of the content this fix re-homes beside it: a mobile crt.GridContainer places children by layoutConfig alone, so the twin must be placed too, contiguously and exactly once — an unplaced twin among placed siblings is not rendered at all.")]
+	public void Analyze_ShouldPlaceTheTemplateTwin_BesideTheContentReHomedIntoItsGrid() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture);
+
+		// Assert
+		AdaptiveLayoutGroup grid = guide.AdaptiveLayout
+			.Single(g => g.Items.Any(i => i.Name == "AreaProfileContainer"));
+		IReadOnlyList<string> placed = [.. grid.Items.Select(i => i.Name)];
+		placed.Should().Equal(
+			["AreaProfileContainer", "TermsContainer", "ServiceTeamMemberExpansionPanel", "ServicePactExpansionPanel"],
+			because: "the template's profile card is the general tab grid's first child and the re-homed content "
+				+ "follows it; a gap or a repeat means a phantom child took a row");
+		grid.Items.Select(i => i.LayoutConfigAdaptive!["small"]!["row"]!.GetValue<int>())
+			.Should().Equal([1, 2, 3, 4],
+				because: "rows must be contiguous — the mobile grid does not auto-place, so a skipped row is a "
+					+ "child that was counted but never rendered");
+		Element(guide, "SideAreaProfileContainer").MobileValues!.AsObject()
+			.Should().ContainKey("layoutConfig",
+				because: "the twin is a merge, but without a layoutConfig it is the one unplaced child of a grid "
+					+ "whose every other child got a cell, and the mobile designer renders nothing for it");
+	}
+
+	[Test]
+	[Description("A twin is placed only where the MOBILE template holds it: web Tabs sits inside CardContentWrapper (mapped to GeneralTabContainer) while on mobile GeneralTabContainer sits inside Tabs, so trusting the web nesting would place the tab strip inside its own descendant — and twice, since two web twins share the mobile name.")]
+	public void Analyze_ShouldNotPlaceATwin_WhereOnlyTheWebTreeNestsIt() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture);
+
+		// Assert
+		foreach (AdaptiveLayoutGroup group in guide.AdaptiveLayout) {
+			group.Items.Should().NotContain(i => i.Name == MobileTabsPanel,
+				because: "the mobile tab strip contains the general tab's grid, not the other way round");
+			group.Items.Select(i => i.Name).Should().OnlyHaveUniqueItems(
+				because: "two web twins may share one mobile name; placing both would give the same element two cells");
+		}
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────────────────────────
 
 	/// <summary>
@@ -359,7 +404,8 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 	/// names/nodes (chrome subtraction) and the mobile template's component types. The component REGISTRIES
 	/// (<c>webByType</c> / <c>mobileByType</c>) and the mobile container-parent map used for positional
 	/// placement are deliberately stubbed — they play no part in this defect — so this is not a full
-	/// reproduction of <see cref="MobilePageConversionGuideTool"/>'s call.
+	/// reproduction of <see cref="MobilePageConversionGuideTool"/>'s call. The mobile template's PARENT map is
+	/// supplied, because the adaptive pass reads it to decide where a container twin may be placed.
 	/// </summary>
 	private static MobilePageConversionGuide Convert(
 		JsonObject fixture,
@@ -394,6 +440,10 @@ public sealed class WebToMobileGeneralInfoTabRegressionTests {
 			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule),
 			positionalPlacements: MobilePageConversionGuideTool.BuildPositionalPlacements(templateRule),
 			templateComponentNames: new HashSet<string>(webBaselineNodes.Keys, StringComparer.OrdinalIgnoreCase),
+			mobileContainerParents: mobileTemplateAvailable
+				? WebToMobileAnalysisService.CollectParentByName(
+					fixture["mobileTemplate"]!["viewConfig"]!.DeepClone().AsArray())
+				: null,
 			mobileTemplateTypesByName: mobileTemplateAvailable ? MobileTemplateTypes(fixture) : null,
 			webTemplateBaselineNodes: webBaselineNodes);
 	}

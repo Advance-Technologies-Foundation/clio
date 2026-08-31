@@ -248,7 +248,8 @@ public static class WebToMobileAnalysisService {
 		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
 		// placement. A 1-column grid gets no adaptive. Both the container columns and each child's
 		// layoutConfig.adaptive are baked into mobileValues deterministically.
-		List<AdaptiveLayoutGroup> adaptiveLayout = BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns);
+		List<AdaptiveLayoutGroup> adaptiveLayout =
+			BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns, mobileContainerParents);
 
 		// Explicit grid placement for a positional (<anchor>:top / :bottom) group. The insert index orders the
 		// parent's items, which a grid parent does not read, so the siblings and the anchor are placed by row:
@@ -402,18 +403,6 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Converts the source page's PAGE-level business rules for the mobile page (advisory).
-	/// Page rules carry only element actions (hide / show / make-editable / read-only / required /
-	/// optional). An action converts only for the referenced elements that survive on mobile (elementMap
-	/// operation merge/insert), with their names remapped web→mobile and only the survivors kept. A rule
-	/// with no surviving action is dropped together with its condition. A rule whose condition mixes AND and OR
-	/// across nested groups is also dropped (the flat single-operator condition input cannot represent it without
-	/// changing when the rule fires). Otherwise the condition is carried verbatim — EVERY operand type is supported
-	/// in a mobile page-rule condition (attribute, const, formula, system-value, system-setting) — with each
-	/// operand's attribute path remapped from the source DS column path to the mobile viewModel attribute name, so
-	/// the rule is ready for create-page-business-rule. Returns null when no probe ran.
-	/// </summary>
-	/// <summary>
 	/// True when the entry is a container twin that maps a web TAB onto the mobile tab's CONTENT container
 	/// (e.g. <c>GeneralInfoTab</c> -&gt; <c>GeneralTabContainer</c>). Such a <c>containers</c> entry is a PLACEMENT
 	/// rule — it decides where the tab's children go — and NOT an identity rule: on the mobile template the two
@@ -427,6 +416,18 @@ public static class WebToMobileAnalysisService {
 		&& !string.IsNullOrWhiteSpace(entry.MobileName)
 		&& !string.Equals(entry.MobileName, entry.WebName, StringComparison.OrdinalIgnoreCase);
 
+	/// <summary>
+	/// Converts the source page's PAGE-level business rules for the mobile page (advisory).
+	/// Page rules carry only element actions (hide / show / make-editable / read-only / required /
+	/// optional). An action converts only for the referenced elements that survive on mobile (elementMap
+	/// operation merge/insert), with their names remapped web→mobile and only the survivors kept. A rule
+	/// with no surviving action is dropped together with its condition. A rule whose condition mixes AND and OR
+	/// across nested groups is also dropped (the flat single-operator condition input cannot represent it without
+	/// changing when the rule fires). Otherwise the condition is carried verbatim — EVERY operand type is supported
+	/// in a mobile page-rule condition (attribute, const, formula, system-value, system-setting) — with each
+	/// operand's attribute path remapped from the source DS column path to the mobile viewModel attribute name, so
+	/// the rule is ready for create-page-business-rule. Returns null when no probe ran.
+	/// </summary>
 	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
 		PageBusinessRuleProbeResult probe,
 		IReadOnlyList<ElementMapEntry> elementMap,
@@ -1850,14 +1851,18 @@ public static class WebToMobileAnalysisService {
 			// Silent failure by construction: the mobile designer renders a tab strip's non-tab child as nothing,
 			// so without this line a lost subtree is indistinguishable from a page that never had it.
 			constraints.Add(
-				"elementMap inserts element(s) DIRECTLY into a mobile tab strip (crt.TabPanel) that are NOT tabs: "
+				"CONVERSION IS INCOMPLETE. elementMap places element(s) directly in a mobile tab strip "
+				+ "(crt.TabPanel) that are NOT tabs: "
 				+ string.Join(", ", nonTabChildrenOfTabPanels)
-				+ ". A crt.TabPanel renders only crt.TabContainer children, so each of these — and everything nested "
-				+ "inside it — is INVISIBLE in Mobile Designer and effectively lost. Do NOT paste those entries as they "
-				+ "are: place each one inside the content container of the tab it belongs to, and report the correction. "
-				+ "The underlying cause is a MISSING containers entry in the web→mobile conversion rules for that web "
-				+ "container (e.g. GeneralInfoTab → GeneralTabContainer) — report it so the rules file is fixed.");
+				+ ". A crt.TabPanel renders only crt.TabContainer children, so each of these — and everything "
+				+ "nested inside it — would be INVISIBLE in Mobile Designer. The cause is a MISSING containers "
+				+ "entry in the web→mobile conversion rules for the web container these elements came from "
+				+ "(e.g. GeneralInfoTab → GeneralTabContainer), so the converter could not resolve where they "
+				+ "belong. REPORT this to the user and stop; do NOT guess a parent for them. Element placement in "
+				+ "this guide is otherwise authoritative — this line is the one case where it is known to be "
+				+ "wrong, and inventing a replacement is not a fix, it is a second unverifiable placement.");
 		}
+
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
 		// built-in text for a rules file that predates reportConstraint.
@@ -2155,6 +2160,7 @@ public static class WebToMobileAnalysisService {
 							&& !string.IsNullOrEmpty(twinType)
 						? twinType
 						: (ctx.MobileTypes.Contains(type ?? "") ? type : null),
+					MergeParentName = ResolveParent(ctx, mobileParentName),
 					Reason = TwinReason(name)
 				});
 				if (items is not null) {
@@ -3832,7 +3838,8 @@ public static class WebToMobileAnalysisService {
 	private static List<AdaptiveLayoutGroup> BuildAdaptiveLayout(
 		List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, JObject> sourceLayouts,
-		IReadOnlyDictionary<string, int> gridContainerColumns) {
+		IReadOnlyDictionary<string, int> gridContainerColumns,
+		IReadOnlyDictionary<string, string> mobileContainerParents = null) {
 		// Grid-container column counts are captured under the WEB container name, but children carry the MOBILE
 		// parent name in their element-map entries — a merge twin or relocated wrapper renames the container
 		// (e.g. CardContentWrapper -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
@@ -3855,9 +3862,33 @@ public static class WebToMobileAnalysisService {
 		var byContainer = new Dictionary<string, List<ElementMapEntry>>(StringComparer.OrdinalIgnoreCase);
 		var order = new List<string>();
 		foreach (ElementMapEntry e in elementMap) {
-			if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
-				string.IsNullOrEmpty(e.ParentName) || e.MobileValues is not JsonObject ||
-				!colsByMobileParent.ContainsKey(e.ParentName)) {
+			// A container TWIN the mobile template provides is a SIBLING of the inserts placed here, and a
+			// mobile crt.GridContainer positions its children by layoutConfig ALONE (docs/knowledge/McpServer/
+			// grid-containers-position-by-layoutconfig-not-item-order.md: an unpositioned child is NOT auto-placed
+			// into a free cell). Leaving the twin out therefore does not "keep the template's own layout" — it
+			// makes the twin the one unplaced child of a grid whose every other child got a cell, and it stops
+			// rendering. It carries no parentName by design, so its parent comes from converter bookkeeping, and
+			// it may carry no mobileValues yet — a layoutConfig-only merge delta is created for it below.
+			// A twin is placed ONLY where the MOBILE TEMPLATE itself holds it. The recorded parent comes from the
+			// WEB tree, and the two nestings can be inverted: web Tabs sits inside CardContentWrapper (which maps
+			// to GeneralTabContainer), while on mobile GeneralTabContainer sits inside Tabs. Trusting the web
+			// nesting there would place the tab strip inside its own descendant -- and twice, since two web twins
+			// (Tabs and CardToggleTabPanel) share the mobile name. Without the mobile parent map the pass places
+			// no twin at all: an unplaced twin renders exactly as it does today, a wrongly placed one does not.
+			bool isPlaceableTwin = string.Equals(e.Operation, "merge", StringComparison.Ordinal)
+				&& e.MergeParentName is { Length: > 0 }
+				&& e.MobileName is { Length: > 0 }
+				&& mobileContainerParents is not null
+				&& mobileContainerParents.TryGetValue(e.MobileName, out string mobileParent)
+				&& string.Equals(mobileParent, e.MergeParentName, StringComparison.OrdinalIgnoreCase)
+				&& colsByMobileParent.ContainsKey(e.MergeParentName);
+			if (isPlaceableTwin) {
+				e.MobileValues ??= new JsonObject();
+			}
+			string parent = isPlaceableTwin ? e.MergeParentName : e.ParentName;
+			if ((!isPlaceableTwin && !string.Equals(e.Operation, "insert", StringComparison.Ordinal)) ||
+				string.IsNullOrEmpty(parent) || e.MobileValues is not JsonObject ||
+				!colsByMobileParent.ContainsKey(parent)) {
 				continue;
 			}
 			// A positional sibling was rerouted OUT of the web grid it was declared in and into the anchor's
@@ -3868,10 +3899,10 @@ public static class WebToMobileAnalysisService {
 			if (e.PositionalAnchor is { Length: > 0 }) {
 				continue;
 			}
-			if (!byContainer.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
+			if (!byContainer.TryGetValue(parent, out List<ElementMapEntry> list)) {
 				list = [];
-				byContainer[e.ParentName] = list;
-				order.Add(e.ParentName);
+				byContainer[parent] = list;
+				order.Add(parent);
 			}
 			list.Add(e);
 		}

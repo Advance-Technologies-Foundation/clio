@@ -2,6 +2,7 @@
 description: web→mobile conversion silently loses a whole tab's content when the rules file has no containers entry for a web-template container that sits inside Tabs
 applies-to:
   - clio/Command/McpServer/Data/WebToMobilePageConversionRules.json
+  - clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideModels.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobileAnalysisService.cs
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobileGeneralInfoTabRegressionTests.cs
   - clio.tests/Command/McpServer/Fixtures/ServicesFormPageTabbed.live-snapshot.json
@@ -61,6 +62,19 @@ exclusion would have left two silent wrong conversions behind. Pinned by
 `ConvertPageBusinessRules_FeedTabToContentContainerTwin_DropsRuleForTheSameReason`, with the two
 over-correction guards beside it (a same-name tab twin, and a renaming NON-tab twin, both still
 convert).
+
+**A container twin must be PLACED beside the content re-homed next to it.** A mobile
+`crt.GridContainer` positions children by `layoutConfig` alone (see
+`grid-containers-position-by-layoutconfig-not-item-order.md`), so once this fix puts page content into
+`GeneralTabContainer`, the template's own `AreaProfileContainer` — a merge twin the adaptive pass used
+to skip — became the single unplaced child of a grid whose every other child had a cell, and stopped
+rendering. The adaptive pass therefore places twins too. It may place one ONLY where the MOBILE
+template nests it: the recorded parent comes from the WEB tree and the two nestings can be inverted —
+web `Tabs` sits inside `CardContentWrapper` (which maps to `GeneralTabContainer`) while on mobile
+`GeneralTabContainer` sits inside `Tabs`. Trusting the web nesting placed the tab strip inside its own
+descendant, twice, because `Tabs` and `CardToggleTabPanel` share one mobile name. With no mobile parent
+map available the pass places no twin at all: an unplaced twin renders exactly as it does today, a
+wrongly placed one does not.
 
 **What breaks if you ignore it** — the failure is SILENT end to end. Unit coverage did not catch the
 missing `GeneralInfoTab` entry because `WebToMobileConversionServiceTests` hands the analyzer a

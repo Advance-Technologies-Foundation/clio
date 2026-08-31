@@ -3574,16 +3574,16 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A multi-column grid container renamed by the template map (merge twin, e.g. GeneralInfoTabContainer -> GeneralTabContainer) still gets the phone one-column collapse: the column count captured under the WEB name is matched to children that carry the MOBILE parent name.")]
+	[Description("A multi-column grid container renamed by the template map (merge twin, e.g. CardContentWrapper -> GeneralTabContainer) still gets the phone one-column collapse: the column count captured under the WEB name is matched to children that carry the MOBILE parent name.")]
 	public void Analyze_MultiColumnGrid_RenamedTwin_ConvertsSmallToOneColumn() {
 		PageBundleInfo bundle = Bundle("""
-			[ { "name": "GeneralInfoTabContainer", "type": "crt.GridContainer",
+			[ { "name": "CardContentWrapper", "type": "crt.GridContainer",
 			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
 				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
 				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
 			""");
 		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-			["GeneralInfoTabContainer"] = "GeneralTabContainer"
+			["CardContentWrapper"] = "GeneralTabContainer"
 		};
 
 		MobilePageConversionGuide guide = Analyze(bundle,
