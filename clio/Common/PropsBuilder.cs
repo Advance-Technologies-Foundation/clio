@@ -132,16 +132,18 @@ public class PropsBuilder : IPropsBuilder
 
 	#region Fields: Private
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	//Matches a whole condition that is a single $(TargetFramework) comparison, in either
 	//operand order: '$(TargetFramework)' == 'net472' and 'net472' != '$(TargetFramework)'
 	private static readonly Regex SimpleTargetFrameworkConditionRegex = new(
 		@"^\s*(?:'\$\(TargetFramework\)'\s*(?<operator>==|!=)\s*'(?<framework>[^']*)'"
 		+ @"|'(?<framework2>[^']*)'\s*(?<operator2>==|!=)\s*'\$\(TargetFramework\)')\s*$",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	//Any mention of the property, used to tell "no opinion" from "an expression we cannot evaluate"
 	private static readonly Regex TargetFrameworkMentionRegex = new(
-		@"\$\(TargetFramework[^)]*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+		@"\$\(TargetFramework[^)]*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
