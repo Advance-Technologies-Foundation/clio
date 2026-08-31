@@ -54,7 +54,12 @@ public sealed class PackageBuilderLifetimeTests {
 	}
 
 	private static async Task<HttpResponseMessage> WaitForCancellationAsync(CancellationToken cancellationToken) {
-		await Task.Delay(Timeout.Infinite, cancellationToken);
+		try {
+			await Task.Delay(Timeout.Infinite, cancellationToken);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw new HttpRequestException("The server closed the settled compilation connection.");
+		}
 		return new HttpResponseMessage();
 	}
 }

@@ -163,6 +163,8 @@ namespace Clio.Package
 				request.GetAwaiter().GetResult();
 			} catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
 				// Expected when compilation history settles before the 8.3.3+ HTTP response arrives.
+			} catch (HttpRequestException) when (cancellation.IsCancellationRequested) {
+				// The server may close the connection while the settled request is being cancelled.
 			}
 		}
 
