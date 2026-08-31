@@ -191,7 +191,9 @@ public sealed class InstallProcessBuilderToolTests {
 		// Assert
 		toggles.Should().BeEmpty(
 			because: "a gated primitive is filtered out of MCP registration, so gating the installer would "
-				+ "hide it while the gated process-designer tools keep telling callers to run it");
+				+ "hide it while the process-designer tools keep telling callers to run it. Those tools ship "
+				+ "gate-free since go-live (ENG-96132), and their remediation must never regress behind a "
+				+ "gate either");
 	}
 
 	[Test]

@@ -12,7 +12,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// structured graph the agent can narrate (the inverse of generation). Read-only, environment-sensitive.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("process-designer")]
 public sealed class DescribeProcessTool(
 	DescribeProcessCommand command,
 	ILogger logger,
