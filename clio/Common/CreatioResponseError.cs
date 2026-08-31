@@ -18,6 +18,29 @@ namespace Clio.Common;
 /// envelopes reach the <c>call-service</c> command: every caller that has to tell a Creatio error
 /// from a payload has to agree on the shapes, and a second copy would drift.
 /// </summary>
+/// <summary>
+/// Which endpoint produced the body being classified. The detectors are not interchangeable
+/// between the two: a bare <c>{"Message":...}</c> is a routing miss on an OData controller but a
+/// perfectly ordinary payload from a custom service, and Creatio's own <c>BaseResponse</c> envelope
+/// never comes out of an OData endpoint, where a <c>Success</c> member is an entity column.
+/// </summary>
+internal enum CreatioResponseContext {
+
+	/// <summary>
+	/// Any Creatio service body: <c>call-service</c>, AuthService, the configuration services. Their
+	/// payload shape is defined by whoever wrote the endpoint, so only wording-anchored and
+	/// structurally unambiguous error shapes may claim one.
+	/// </summary>
+	Service,
+
+	/// <summary>
+	/// An OData v4 endpoint body. The payload shape is fixed by the protocol, which is what makes
+	/// the bare-<c>Message</c> routing shape a reliable error signal here.
+	/// </summary>
+	ODataPayload
+
+}
+
 internal static class CreatioResponseError {
 	/// <summary>
 	/// Hint appended to a detected routing error. A 404 "no controller found" is the shape Creatio
@@ -68,19 +91,26 @@ internal static class CreatioResponseError {
 	/// error as data.
 	/// </summary>
 	/// <param name="root">The parsed root JSON element of the response body.</param>
+	/// <param name="context">Which endpoint produced the body; it selects the applicable detectors.</param>
 	/// <param name="message">
 	/// When the method returns <see langword="true"/>, receives the extracted error text (for a
 	/// routing error the unregistered-entity hint is appended); otherwise an empty string.
 	/// </param>
 	/// <returns><see langword="true"/> when <paramref name="root"/> is a recognized error body.</returns>
-	public static bool TryDetect(JsonElement root, out string message) {
+	public static bool TryDetect(JsonElement root, CreatioResponseContext context, out string message) {
 		message = string.Empty;
-		return root.ValueKind == JsonValueKind.Object
-			&& (TryDetectDataServiceEnvelope(root, out message)
-				|| TryDetectBaseResponse(root, out message)
-				|| TryDetectODataV4Error(root, out message)
-				|| TryDetectAspNetException(root, out message)
-				|| TryDetectRoutingError(root, out message));
+		if (root.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		//BaseResponse is a Creatio service envelope and never an OData body, where `success` is an
+		//ordinary entity column: claiming it there reported a created record as failed AFTER the write
+		//had happened, which invites a duplicate retry.
+		bool isService = context == CreatioResponseContext.Service;
+		return TryDetectDataServiceEnvelope(root, out message)
+			|| (isService && TryDetectBaseResponse(root, out message))
+			|| TryDetectODataV4Error(root, out message)
+			|| TryDetectAspNetException(root, out message)
+			|| TryDetectRoutingError(root, context, out message);
 	}
 
 	/// <summary>
@@ -135,7 +165,7 @@ internal static class CreatioResponseError {
 	// happens to carry a `Code` column from being read as a failure.
 	private static bool TryDetectDataServiceEnvelope(JsonElement root, out string message) {
 		message = string.Empty;
-		if (HasODataPayloadMembers(root)) {
+		if (HasODataControlAnnotation(root)) {
 			return false;
 		}
 		if (!(TryGetProperty(root, out JsonElement code, "Code", "code")
@@ -195,22 +225,26 @@ internal static class CreatioResponseError {
 	}
 
 	/// <summary>
-	/// Members that only a real OData payload carries: the metadata annotations, the collection
-	/// wrapper and the key a create echoes back. A body holding one of them is data, so the two
-	/// structurally loose detectors - the DataService/AuthService envelope and
-	/// <c>BaseResponse</c> - must not claim it. A successful create answered as
+	/// The OData control annotations - the only members a body cannot carry unless an OData endpoint
+	/// produced it. They are what stops the structurally loose DataService/AuthService envelope from
+	/// claiming a real payload: a successful create answered as
 	/// <c>{"@odata.context":"...","Id":"&lt;guid&gt;","Code":200,"Message":"Created"}</c> was
 	/// otherwise reported as <c>Success=false</c> by <c>ODataCreateTool.ParseCreated</c> after the
-	/// write had already happened, which invites a duplicate retry. The narrow-shape detectors
-	/// (OData v4 <c>error</c>, the ASP.NET exception envelope, the routing error) need no guard:
-	/// their members never appear on an entity.
+	/// write had already happened, which invites a duplicate retry.
+	///
+	/// <c>Id</c>, <c>id</c> and <c>value</c> are deliberately NOT here. Any envelope may carry them,
+	/// so treating them as proof of a payload let an explicit error such as
+	/// <c>{"Code":-1,"Exception":"...","Id":"&lt;guid&gt;"}</c> be saved and exit 0 - an explicit
+	/// non-zero <c>Code</c> with an <c>Exception</c> is the stronger signal and now wins. The
+	/// narrow-shape detectors (OData v4 <c>error</c>, the ASP.NET exception envelope, the routing
+	/// error) need no guard: their members never appear on an entity.
 	/// </summary>
-	private static readonly string[] ODataPayloadMembers = [
-		"@odata.context", "@odata.id", "@odata.etag", "value", "Id", "id"
+	private static readonly string[] ODataControlAnnotations = [
+		"@odata.context", "@odata.id", "@odata.etag"
 	];
 
-	private static bool HasODataPayloadMembers(JsonElement root) =>
-		root.EnumerateObject().Any(property => ODataPayloadMembers.Any(property.NameEquals));
+	private static bool HasODataControlAnnotation(JsonElement root) =>
+		root.EnumerateObject().Any(property => ODataControlAnnotations.Any(property.NameEquals));
 
 	private static bool TryGetProperty(JsonElement root, out JsonElement value, params string[] names) {
 		foreach (string name in names) {
@@ -258,11 +292,21 @@ internal static class CreatioResponseError {
 	// would lose its distinguishing member and be misclassified. No current call site does that
 	// (odata-read hits the collection endpoint; odata-create echoes an Id), so the precondition is
 	// safe today — revisit this branch before adding a by-key/metadata=none read path.
-	private static bool TryDetectRoutingError(JsonElement root, out string message) {
+	private static bool TryDetectRoutingError(JsonElement root, CreatioResponseContext context,
+		out string message) {
 		message = string.Empty;
 		if (!(root.TryGetProperty("Message", out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
 			&& !HasNonRoutingErrorMembers(root))) {
+			return false;
+		}
+		//The bare {Message[,MessageDetail]} shape is only an error signal where the protocol fixes the
+		//payload shape. A custom endpoint reached through call-service owns its own contract and may
+		//legitimately answer {"Message":"OK"}; claiming that as a failure exited 1 and refused to save a
+		//valid response. Outside OData only the routing-miss WORDING counts.
+		if (context != CreatioResponseContext.ODataPayload
+			&& !IsRoutingMiss(First(root, "MessageDetail"))
+			&& !IsRoutingMiss(bareMessage.GetString())) {
 			return false;
 		}
 		// Surface the most specific text: MessageDetail ("No type was found that matches the

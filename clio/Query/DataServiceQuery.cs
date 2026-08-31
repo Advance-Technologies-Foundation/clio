@@ -209,7 +209,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 
 		//The detected text is deliberately discarded: it is remote-authored prose and must not be
 		//logged. Only the fact that the service reported a failure is kept.
-		if (!CreatioResponseError.TryDetect(parsed.RootElement, out string _)) {
+		if (!CreatioResponseError.TryDetect(parsed.RootElement, CreatioResponseContext.Service, out string _)) {
 			return true;
 		}
 		classification = new ServiceResponseClassification(ServiceResponseFailure.ReportedFailure);

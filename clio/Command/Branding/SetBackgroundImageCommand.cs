@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -419,7 +419,8 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 				return false;
 			}
 			using JsonDocument document = JsonDocument.Parse(response);
-			if (CreatioResponseError.TryDetect(document.RootElement, out string serverError)) {
+			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.Service,
+				out string serverError)) {
 				error = serverError;
 				return false;
 			}

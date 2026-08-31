@@ -299,6 +299,9 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		TestName = "BaseResponse failure keeping an id member")]
 	[TestCase("{\"errorInfo\":{\"errorCode\":\"AccessDenied\",\"message\":\"Access to SysSchema is denied\"}}",
 		TestName = "populated errorInfo with no success member")]
+	[TestCase("{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
+		+ "\"Id\":\"7b3f6c1e-0e7a-4f2e-9a1f-2c0d5f4b8e11\"}",
+		TestName = "explicit error envelope carrying an Id")]
 	[TestCase("<html><body>Access denied</body></html>", TestName = "HTML page carrying no status and no known marker")]
 	[TestCase("\uFEFF<!DOCTYPE html><html><head><title>500 - Internal server error.</title></head></html>",
 		TestName = "HTML page behind a byte-order mark")]
@@ -344,6 +347,9 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		+ "\"Id\":\"7b3f6c1e-0e7a-4f2e-9a1f-2c0d5f4b8e11\",\"Code\":200,\"Message\":\"Created\"}",
 		TestName = "OData create echo carrying Code and Message")]
 	[TestCase("{\"success\":true,\"errorInfo\":null}", TestName = "BaseResponse success")]
+	[TestCase("{\"Message\":\"OK\"}", TestName = "custom endpoint answering with a bare Message")]
+	[TestCase("{\"Message\":\"Processed 12 records\",\"MessageDetail\":\"batch 7\"}",
+		TestName = "custom endpoint answering with Message and MessageDetail")]
 	[Description("A successful payload is still saved even when it carries members that look like error keys (issue 1220)")]
 	public void Execute_ShouldSaveResponse_WhenPayloadOnlyResemblesAnErrorEnvelope(string responseBody) {
 		// Arrange

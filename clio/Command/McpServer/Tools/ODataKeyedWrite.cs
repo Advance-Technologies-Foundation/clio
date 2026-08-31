@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Clio.Common;
 
 namespace Clio.Command.McpServer.Tools;
@@ -82,7 +82,8 @@ internal static class ODataKeyedWrite {
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(response);
-			return CreatioResponseError.TryDetect(doc.RootElement, out string serverError)
+			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload,
+				out string serverError)
 				? SensitiveErrorTextRedactor.Redact(serverError)
 				: null;
 		} catch (JsonException) {
