@@ -350,7 +350,7 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("Creates a desktop page from CentralAreaDesktopTemplate, reads it back via get-page to confirm the parent template, and deletes the schema (which auto-removes the platform-registered selector record).")]
+	[Description("Creates a desktop page from CentralAreaDesktopTemplate, reads it back via get-page to confirm the parent template, and deletes the schema on an FSM-off stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-page creates a desktop from CentralAreaDesktopTemplate and get-page reads it back")]
 	public async Task PageCreateTool_Should_Create_Desktop_From_Desktop_Template() {
@@ -359,6 +359,15 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		CallToolResult fsmResult = await arrangeContext.Session.CallToolAsync(
+			FsmModeTool.GetFsmModeToolName,
+			new Dictionary<string, object?> { ["environmentName"] = environmentName },
+			arrangeContext.CancellationTokenSource.Token);
+		FsmModeStatusEnvelope fsmStatus = FsmModeStatusResultParser.Extract(fsmResult);
+		if (string.Equals(fsmStatus.Mode, "on", StringComparison.OrdinalIgnoreCase)) {
+			Assert.Ignore(
+				"Creating a desktop through the remote designer API is not isolated on an FSM stand: the schema is not materialized in package storage and poisons later configuration saves. Run this test against an FSM-off sandbox.");
+		}
 		string schemaName = $"UsrE2E_Desktop_{Guid.NewGuid():N}".Substring(0, 40);
 
 		try {
@@ -402,7 +411,7 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 			getResponse.Page.ParentSchemaName.Should().Be("CentralAreaDesktopTemplate",
 				because: "the desktop page must inherit the platform desktop template");
 		} finally {
-			// Teardown: deleting the schema auto-removes its Desktop selector row (platform listener),
+			// On an FSM-off stand, deleting the schema auto-removes its Desktop selector row (platform listener),
 			// so the sandbox selector is not polluted by E2E desktops.
 			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
 			await ClioCliCommandRunner.RunAsync(
