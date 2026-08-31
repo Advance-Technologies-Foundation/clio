@@ -18,31 +18,28 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// Story 5 (ai-business-process-generation) end-to-end coverage for <c>validate-process-graph</c>.
-/// NOT in CI — run manually. The tool is feature-toggled (<c>process-designer</c>) and, since
-/// the env-scoping fix, requires the <c>CrtProcessBuilder</c> package on the named environment, so
-/// it is no longer hermetic: the advertisement and refusal cases run without a Creatio instance, but
-/// the happy-path graph validation requires a reachable sandbox environment with the package.
+/// NOT in CI — run manually. Since the env-scoping fix the tool requires the <c>CrtProcessBuilder</c>
+/// package on the named environment, so it is not hermetic: the advertisement and refusal cases run
+/// without a Creatio instance, but the happy-path graph validation requires a reachable sandbox
+/// environment with the package. The tool itself ships gate-free since go-live (ENG-96132).
 /// </summary>
 [TestFixture]
 [AllureNUnit]
 [AllureFeature(ValidateProcessGraphTool.ToolName)]
 [NonParallelizable]
-[Category(ProcessDesignerE2EGate.CategoryName)]
+[Category(McpE2ECategories.ProcessDesigner)]
 public sealed class ValidateProcessGraphToolE2ETests {
 
 	private const string ToolName = ValidateProcessGraphTool.ToolName;
-	private const string FeatureKey = "process-designer";
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies validate-process-graph is discoverable via the get-tool-contract compact index (requires the feature toggle to be enabled).")]
+	[Description("Starts the real clio MCP server and verifies validate-process-graph is discoverable via the get-tool-contract compact index.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph is discoverable on the lazy surface of the clio MCP server")]
 	public async Task ValidateProcessGraph_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
-		// ArrangeAsync already Assert.Ignores when the process-designer feature is disabled, so this test
-		// only runs against a server that registered the gated tool. On the lazy surface even an ENABLED
-		// gated tool is never resident in tools/list — discoverability is asserted through the union of
-		// tools/list and the get-tool-contract compact index.
+		// The tool is long-tail: never resident in tools/list — discoverability is asserted through the
+		// union of tools/list and the get-tool-contract compact index.
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
 
 		// Act
@@ -51,7 +48,8 @@ public sealed class ValidateProcessGraphToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "the validate-process-graph tool must be discoverable via the get-tool-contract compact index when the process-designer feature is enabled");
+			because: "validate-process-graph ships gate-free since go-live (ENG-96132), so it must be "
+				+ "discoverable via the get-tool-contract compact index on default settings");
 	}
 
 	[Test]
@@ -216,13 +214,13 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		new() { ["source"] = source, ["target"] = target, ["flow-kind"] = flowKind };
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext arrangeContext, Dictionary<string, object?> graphArgs) {
-		// Gated tools are never resident in tools/list on the lazy surface, so the availability canary
+		// Long-tail tools are never resident in tools/list on the lazy surface, so the availability canary
 		// checks the reachable-name union (tools/list + get-tool-contract compact index) instead.
 		IReadOnlyCollection<string> toolNames =
 			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
-		if (!toolNames.Contains(ToolName)) {
-			Assert.Ignore($"{ToolName} is feature-toggled off. Enable it (clio experimental --name {FeatureKey} --enable) to run this E2E.");
-		}
+		toolNames.Should().Contain(ToolName,
+			because: $"{ToolName} ships gate-free since go-live (ENG-96132), so a server that hides it is a "
+				+ "regression rather than a configuration to skip over");
 		return await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> { ["args"] = graphArgs },
@@ -232,7 +230,6 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource);
