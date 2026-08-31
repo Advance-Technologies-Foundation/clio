@@ -115,6 +115,36 @@ tightened validator, a fixed authorization hole: those must be a `[RequiresPacka
 convergence. Convergence warns and proceeds when it cannot read the archive, and it is a delivery policy
 rather than a gate — only the literal fails closed.
 
+### Two branches, two restamps — the second merger RE-CUTS, it does not pick a version
+
+When two branches each rebundle, each carries its own `descriptor.json` bump, and if neither branch is a
+descendant of the other's restamp those bumps are independent. Merging them conflicts on that file.
+
+**Resolve it by re-cutting from the merged tree. Never by choosing one side's version.**
+
+This conflict is worth its own rule because of a property the others here do not have: **both resolutions
+look correct.** Take the other branch's line and the archive holds one branch's bytes under a number that
+promises both; take your own and you get the same thing mirrored. Nothing downstream disagrees with you —
+the pins are refreshed FROM the archive you just produced, so they are self-consistent whatever is in it,
+and `ExpectedProducingCommit` names a commit that genuinely was HEAD when the bytes were packed. Every
+test passes, the provenance is honest about the commit, and the version is still a claim about content
+that nobody made. Compare the failure modes above, where at least one resolution is visibly worse.
+
+The rule that prevents it is the same one the whole section rests on, applied to the merge: **a version
+moves because the CONTENT changed, not because circumstances did.** A stand that has moved ahead, a peer
+who took the next number, a rebase that changed nothing in the sources — none of those is a reason to cut
+a new number, and none is a reason to reuse one either. Re-cutting from the merged tree is what makes the
+number mean "these bytes" again, and it is cheap: the script does the whole thing in one call.
+
+A corollary, learned the expensive way: **claim the number before you cut, not after.** Two archives were
+produced under `1.4.0.9` on one day by two branches that fork off each other, and the number is burned —
+a gap in the sequence is always cheaper than a number that names two different sets of bytes. `1.4.0.12`
+and `.14` are skipped for the same reason.
+
+And do not read a stand's installed version as the sequence's high-water mark. It records what someone
+last installed, which may be a branch that never merges. The sequence is owned by the branches, not by
+the environment.
+
 ### One call — `rebundle-process-builder.ps1`
 
 The whole procedure, from the repository root:
