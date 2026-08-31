@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Xml;
 using Clio.Command;
 using Clio.Common;
@@ -25,6 +26,7 @@ namespace Clio.Tests.Command {
 		private ISettingsRepository _settingsRepositoryMock;
 		private ISystemServiceManager _systemServiceManagerMock;
 		private IValidator<LinkCoreSrcOptions> _validator;
+		private LinkCoreSrcCommand _command;
 
 		#endregion
 
@@ -36,6 +38,7 @@ namespace Clio.Tests.Command {
 			_settingsRepositoryMock = Container.GetRequiredService<ISettingsRepository>();
 			_systemServiceManagerMock = Container.GetRequiredService<ISystemServiceManager>();
 			_validator = Container.GetRequiredService<IValidator<LinkCoreSrcOptions>>();
+			_command = Container.GetRequiredService<LinkCoreSrcCommand>();
 		}
 
 		protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -48,9 +51,106 @@ namespace Clio.Tests.Command {
 			containerBuilder.AddSingleton<ISystemServiceManager>(_systemServiceManagerMock);
 		}
 
-		#endregion
+	#endregion
 
-		#region Tests: Validation
+	#region Tests: Kestrel configuration
+
+	[Test]
+	[Description("Constrains existing HTTP and HTTPS Kestrel endpoint hosts to loopback while updating the development HTTP port.")]
+	public void UpdateConfigWithPort_ShouldConstrainAllKestrelEndpointsToLoopback() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": { "Url": "http://[::]:5000" },
+			      "PublicHttp": { "Url": "http://10.0.0.5:5001" },
+			      "Https": { "Url": "https://0.0.0.0:5002", "Certificate": { "Path": "server.pfx" } }
+			    }
+			  },
+			  "CustomSetting": { "Enabled": true }
+			}
+			""";
+
+		// Act
+		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
+			because: "the linked development HTTP endpoint must use the environment port and loopback");
+		GetJsonString(result, "Kestrel", "Endpoints", "PublicHttp", "Url").Should().Be("http://localhost:5001",
+			because: "additional HTTP endpoints must not remain exposed on a non-loopback host");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:5002",
+			because: "preserved HTTPS endpoints must also be constrained to loopback");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be("server.pfx",
+			because: "link-core-src must preserve the existing HTTPS certificate configuration");
+		HasJsonProperty(result, "CustomSetting").Should().BeTrue(
+			because: "unrelated application configuration must survive the port update");
+	}
+
+	[Test]
+	[Description("Adds a loopback HTTP endpoint without replacing existing Kestrel configuration when no HTTP endpoint exists.")]
+	public void UpdateConfigWithPort_ShouldAddLoopbackHttpEndpointAndPreserveExistingConfiguration() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Certificates": { "Default": { "Path": "server.pfx" } },
+			    "Endpoints": {
+			      "Https": { "Url": "https://[::]:5002", "Certificate": { "Path": "server.pfx" } }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		string result = _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Http", "Url").Should().Be("http://localhost:40123",
+			because: "link-core-src needs a deterministic local HTTP endpoint when none exists");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Url").Should().Be("https://localhost:5002",
+			because: "an existing HTTPS endpoint must not be discarded by the HTTP fallback");
+		GetJsonString(result, "Kestrel", "Certificates", "Default", "Path").Should().Be("server.pfx",
+			because: "existing certificate settings must remain available to Kestrel");
+	}
+
+	[Test]
+	[Description("Preserves a valid JSON configuration error instead of misreporting it as an unsupported XML format.")]
+	public void UpdateConfigWithPort_ShouldRejectMalformedJsonConfiguration() {
+		// Arrange
+		const string existingJson = "{\"Kestrel\":[]}";
+
+		// Act
+		Action action = () => _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json");
+
+		// Assert
+		action.Should().Throw<JsonException>()
+			.WithMessage("Configuration property '*' must be a JSON object.",
+			because: "a valid JSON file with an invalid Kestrel shape should report its structural error directly");
+	}
+
+	private static string GetJsonString(string json, params string[] path) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		JsonElement current = document.RootElement;
+		foreach (string propertyName in path) {
+			current = current.GetProperty(propertyName);
+		}
+		return current.GetString() ?? string.Empty;
+	}
+
+	private static bool HasJsonProperty(string json, params string[] path) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		JsonElement current = document.RootElement;
+		for (int index = 0; index < path.Length - 1; index++) {
+			current = current.GetProperty(path[index]);
+		}
+		return current.TryGetProperty(path[^1], out _);
+	}
+
+	#endregion
+
+	#region Tests: Validation
 
 	[Test]
 	[Description("Should validate that CorePath is required")]

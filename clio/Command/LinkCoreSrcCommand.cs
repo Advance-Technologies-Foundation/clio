@@ -4,8 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Xml;
 using Clio.Common;
+using Clio.Common.DeploymentStrategies;
 using Clio.Common.ScenarioHandlers;
 using Clio.Common.SystemServices;
 using Clio.UserEnvironment;
@@ -536,53 +538,65 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		}
 	}
 
-	private string UpdateConfigWithPort(string content, int port, string filePath)
+	/// <summary>
+	/// Updates the NetCore Kestrel port and constrains configured endpoint hosts to loopback.
+	/// </summary>
+	/// <param name="content">The existing appsettings content.</param>
+	/// <param name="port">The port selected by the environment URI.</param>
+	/// <param name="filePath">The path used in parse diagnostics.</param>
+	/// <returns>Updated JSON or XML configuration.</returns>
+	internal string UpdateConfigWithPort(string content, int port, string filePath)
 	{
 		// Try JSON format first (for appsettings.json)
+		bool jsonParsed = false;
 		try
 		{
-			using (var doc = JsonDocument.Parse(content))
+			JsonNode? parsed = JsonNode.Parse(content);
+			jsonParsed = true;
+			if (parsed is not JsonObject root)
 			{
-				var root = doc.RootElement.Clone();
-				var options_json = new JsonSerializerOptions { WriteIndented = true };
+				throw new JsonException("The application configuration root must be a JSON object.");
+			}
 
-				// Update port in Kestrel configuration
-				string updatedJson = JsonSerializer.Serialize(root);
-
-				// Update HTTP port using regex - same as deploy-creatio
-				// Pattern: "Url": "http://[::]:xxxx"
-				updatedJson = System.Text.RegularExpressions.Regex.Replace(
-					updatedJson,
-					@"""Url""\s*:\s*""http://\[\:\:\]:\d+""",
-					$@"""Url"": ""http://[::]:{port}"""
-				);
-
-				// If no Kestrel Http URL was found, try to insert it
-				if (!updatedJson.Contains("http://[::]:"))
+			JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
+			JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
+			bool hasHttpEndpoint = false;
+			foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+			{
+				if (property.Value is not JsonObject endpoint)
 				{
-					// Fallback: rebuild config with Kestrel section (HTTP only)
-					var existingConfig = JsonSerializer.Deserialize<Dictionary<string, object>>(
-						JsonSerializer.Serialize(root)
-					);
-
-					existingConfig["Kestrel"] = new
-					{
-						Endpoints = new
-						{
-							Http = new
-							{
-								Url = $"http://[::]:{port}"
-							}
-						}
-					};
-
-					updatedJson = JsonSerializer.Serialize(existingConfig, options_json);
+					throw new JsonException($"Configuration property '{property.Key}' must be a JSON object.");
 				}
 
-				return updatedJson;
+				string? url = GetStringProperty(endpoint, "Url");
+				string? scheme = GetUriScheme(url);
+				if (url is null || scheme is null
+					|| (!string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase)
+						&& !string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase)))
+				{
+					continue;
+				}
+
+				string rewrittenUrl = KestrelEndpointUrl.ReplaceHost(url, "localhost")
+					?? throw new JsonException($"Kestrel endpoint '{property.Key}' has an unsupported URL: {url}");
+				if (string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase) && !hasHttpEndpoint)
+				{
+					rewrittenUrl = KestrelEndpointUrl.ReplacePort(rewrittenUrl, port);
+					hasHttpEndpoint = true;
+				}
+
+				SetStringProperty(endpoint, "Url", rewrittenUrl);
 			}
+
+			if (!hasHttpEndpoint)
+			{
+				JsonObject httpEndpoint = FindOrCreateEndpoint(endpoints);
+				SetStringProperty(httpEndpoint, "Url", $"http://localhost:{port}");
+			}
+
+			return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 		}
-		catch (JsonException jsonEx)
+		catch (JsonException jsonEx) when (!jsonParsed)
 		{
 			// If not JSON, try XML format
 			try
@@ -630,6 +644,83 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 					$"XML parsing error: {xmlEx.Message}");
 			}
 		}
+	}
+
+	private static JsonObject GetOrCreateObject(JsonObject parent, string propertyName)
+	{
+		string? actualPropertyName = FindPropertyName(parent, propertyName);
+		if (actualPropertyName is null)
+		{
+			JsonObject createdObject = new();
+			parent[propertyName] = createdObject;
+			return createdObject;
+		}
+
+		if (parent[actualPropertyName] is JsonObject existingObject)
+		{
+			return existingObject;
+		}
+
+		throw new JsonException($"Configuration property '{actualPropertyName}' must be a JSON object.");
+	}
+
+	private static JsonObject FindOrCreateEndpoint(JsonObject endpoints)
+	{
+		string? namedProperty = FindPropertyName(endpoints, "Http");
+		if (namedProperty is not null)
+		{
+			if (endpoints[namedProperty] is JsonObject endpoint)
+			{
+				return endpoint;
+			}
+
+			throw new JsonException($"Configuration property '{namedProperty}' must be a JSON object.");
+		}
+
+		JsonObject createdEndpoint = new();
+		endpoints["Http"] = createdEndpoint;
+		return createdEndpoint;
+	}
+
+	private static string? GetStringProperty(JsonObject parent, string propertyName)
+	{
+		string? actualPropertyName = FindPropertyName(parent, propertyName);
+		if (actualPropertyName is null || parent[actualPropertyName] is not JsonValue value
+			|| !value.TryGetValue<string>(out string result))
+		{
+			return null;
+		}
+
+		return result;
+	}
+
+	private static void SetStringProperty(JsonObject parent, string propertyName, string value)
+	{
+		parent[FindPropertyName(parent, propertyName) ?? propertyName] = value;
+	}
+
+	private static string? GetUriScheme(string? url)
+	{
+		if (string.IsNullOrWhiteSpace(url))
+		{
+			return null;
+		}
+
+		int separatorIndex = url.IndexOf("://", StringComparison.Ordinal);
+		return separatorIndex > 0 ? url[..separatorIndex] : null;
+	}
+
+	private static string? FindPropertyName(JsonObject parent, string propertyName)
+	{
+		foreach (KeyValuePair<string, JsonNode?> property in parent)
+		{
+			if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
+			{
+				return property.Key;
+			}
+		}
+
+		return null;
 	}
 
 	private string ResolveCoreDirectory(string corePath, string targetFolder, CreatioMode mode, params string[] requiredFiles)

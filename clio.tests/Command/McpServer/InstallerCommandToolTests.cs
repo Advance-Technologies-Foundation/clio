@@ -86,7 +86,12 @@ public sealed class InstallerCommandToolTests
 			SitePort: 8080,
 			DbServerName: "sql-main",
 			RedisServerName: "redis-main",
-			UseHttps: true);
+			UseHttps: true,
+			DeploymentMethod: "dotnet",
+			BindAllInterfaces: true,
+			CertificatePath: "/certs/server.pem",
+			CertificateKeyPath: "/certs/server.key",
+			CertificatePassword: "secret");
 
 		// Act
 		CommandExecutionResult result = tool.DeployCreatio((ProgressToken?)null, args);
@@ -110,6 +115,16 @@ public sealed class InstallerCommandToolTests
 			because: "local Redis server selection should be forwarded when provided");
 		command.ReceivedOptions.UseHttps.Should().BeTrue(
 			because: "the MCP HTTPS preference should map into the installer options");
+		command.ReceivedOptions.DeploymentMethod.Should().Be("dotnet",
+			because: "the MCP deployment selector should map into the installer options");
+		command.ReceivedOptions.BindAllInterfaces.Should().BeTrue(
+			because: "the MCP network-binding opt-in should map into the installer options");
+		command.ReceivedOptions.CertificatePath.Should().Be("/certs/server.pem",
+			because: "the MCP dotnet certificate path should map into the installer options");
+		command.ReceivedOptions.CertificateKeyPath.Should().Be("/certs/server.key",
+			because: "the MCP dotnet private-key path should map into the installer options");
+		command.ReceivedOptions.CertificatePassword.Should().Be("secret",
+			because: "the MCP dotnet certificate password should map into the installer options without appearing in logs");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "the reduced MCP contract should keep automatic Redis DB detection");
 		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
@@ -118,8 +133,6 @@ public sealed class InstallerCommandToolTests
 			because: "the reduced MCP contract should let the installer detect the database type from the build");
 		command.ReceivedOptions.DropIfExists.Should().BeTrue(
 			because: "the reduced MCP contract should use drop-if-exists overrides");
-		command.ReceivedOptions.DeploymentMethod.Should().BeNull(
-			because: "the reduced MCP contract should no longer expose deployment-method overrides");
 		command.ReceivedOptions.AutoRun.Should().BeTrue(
 			because: "the MCP wrapper should still apply the CLI auto-run default even though the argument is no longer caller-configurable");
 		command.ReceivedOptions.Uri.Should().BeNull(
@@ -138,7 +151,7 @@ public sealed class InstallerCommandToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps local server names optional and limits the deploy-creatio MCP argument type to the six approved fields.")]
+	[Description("Keeps local server names optional and exposes the deploy-creatio MCP endpoint and certificate controls as optional fields.")]
 	public void DeployCreatio_Should_Keep_DbServerName_Optional_And_Expose_Only_Approved_Fields()
 	{
 		// Arrange
@@ -163,9 +176,20 @@ public sealed class InstallerCommandToolTests
 			because: "db-server-name must remain optional so Kubernetes can stay the default deployment path");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "redis-db should default to auto-detection when omitted");
+		command.ReceivedOptions.DeploymentMethod.Should().BeNull(
+			because: "the MCP wrapper should not force a deployment method when the optional selector is omitted");
+		command.ReceivedOptions.BindAllInterfaces.Should().BeFalse(
+			because: "dotnet network exposure must remain opt-in when the MCP flag is omitted");
+		command.ReceivedOptions.CertificatePath.Should().BeNull(
+			because: "the optional dotnet certificate path must remain unset when omitted");
+		command.ReceivedOptions.CertificateKeyPath.Should().BeNull(
+			because: "the optional dotnet private-key path must remain unset when omitted");
+		command.ReceivedOptions.CertificatePassword.Should().BeNull(
+			because: "the optional dotnet certificate password must remain unset when omitted");
 		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
-			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName", "UseHttps"],
-			because: "the MCP deploy-creatio argument type should expose only the six approved arguments");
+			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName", "UseHttps", "DeploymentMethod",
+				"BindAllInterfaces", "CertificatePath", "CertificateKeyPath", "CertificatePassword"],
+			because: "the MCP deploy-creatio argument type should expose the command's optional dotnet endpoint controls");
 		command.ReceivedOptions.UseHttps.Should().BeFalse(
 			because: "HTTPS remains opt-in when the MCP argument is omitted");
 	}
@@ -194,7 +218,11 @@ public sealed class InstallerCommandToolTests
 		prompt.Should().Contain("existing forced-password-change state",
 			because: "the prompt should disclose that deployment preserves the database's existing state");
 		prompt.Should().Contain("opportunistic",
-			because: "the prompt should disclose the HTTPS-to-HTTP fallback behavior");
+			because: "the prompt should disclose the local IIS HTTPS-to-HTTP fallback behavior");
+		prompt.Should().Contain("certificatePath",
+			because: "the prompt should disclose the dotnet certificate input required for HTTPS");
+		prompt.Should().Contain("bindAllInterfaces",
+			because: "the prompt should disclose that network-facing dotnet binding is an explicit opt-in");
 	}
 
 	private static McpServerToolAttribute GetDeployCreatioAttribute()

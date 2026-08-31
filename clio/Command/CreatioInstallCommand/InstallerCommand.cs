@@ -178,23 +178,34 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	public bool NoIIS { get; set; }
 
 	/// <summary>
+	/// Gets or sets a value indicating whether the dotnet-hosted application should listen on every network interface.
+	/// </summary>
+	/// <remarks>By default, dotnet deployment listens on loopback only. Use this option for a container, Kubernetes
+	/// service, or reverse proxy that connects to the application over the network. When HTTPS is not selected,
+	/// clio warns that the explicitly requested all-interface listener is plaintext.</remarks>
+	[Option("bind-all-interfaces", Required = false, Default = false,
+		HelpText = "Allow dotnet hosting on all network interfaces instead of loopback")]
+	public bool BindAllInterfaces { get; set; }
+
+	/// <summary>
 	/// Gets or sets the installation directory for the application.
 	/// </summary>
 	[Option("app-path", Required = false, HelpText = "Application installation path")]
 	public string AppPath { get; set; }
 
 	/// <summary>
-	/// Gets or sets a value indicating whether HTTPS is preferred for deployment.
+	/// Gets or sets a value indicating whether HTTPS should be used for deployment.
 	/// </summary>
-	/// <remarks>Local IIS falls back to HTTP when no usable machine certificate is available.</remarks>
+	/// <remarks>Local IIS falls back to HTTP when no usable machine certificate is available. Dotnet deployment
+	/// requires --cert-path or an existing Kestrel certificate configuration and fails when neither is available.</remarks>
 	[Option("use-https", Required = false, Default = false,
-		HelpText = "Prefer HTTPS (local IIS falls back to HTTP when no usable machine certificate exists)")]
+		HelpText = "Use HTTPS (IIS falls back to HTTP without a certificate; dotnet requires certificate settings)")]
 	public bool UseHttps { get; set; }
 
 	/// <summary>
-	/// Gets or sets the path to the SSL certificate file.
+	/// Gets or sets the path to the SSL certificate file used by dotnet hosting.
 	/// </summary>
-	[Option("cert-path", Required = false, HelpText = "Path to SSL certificate file (.pem or .pfx)")]
+	[Option("cert-path", Required = false, HelpText = "Path to SSL certificate file (.pfx, .pem, or .crt) for dotnet hosting")]
 	public string CertificatePath { get; set; }
 
 	/// <summary>
@@ -202,6 +213,12 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// </summary>
 	[Option("cert-password", Required = false, HelpText = "Password for SSL certificate")]
 	public string CertificatePassword { get; set; }
+
+	/// <summary>
+	/// Gets or sets the path to the private key file used with a PEM or CRT certificate.
+	/// </summary>
+	[Option("cert-key-path", Required = false, HelpText = "Path to the private key file for a PEM or CRT certificate")]
+	public string CertificateKeyPath { get; set; }
 
 	/// <summary>
 	/// Gets or sets a value indicating whether the application should be started after deployment.

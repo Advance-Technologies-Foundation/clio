@@ -2258,16 +2258,25 @@ public sealed class ToolContractGetToolTests {
 			contract.Name == InstallerCommandTool.DeployCreatioToolName);
 		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
 			because: "deploy-creatio requires the site name, build archive, and port");
+		deploy.InputSchema.Properties.Select(property => property.Name).Should().Contain([
+			"deployment", "bindAllInterfaces", "certificatePath", "certificateKeyPath", "certificatePassword"
+		], because: "deploy-creatio must advertise the optional dotnet endpoint and certificate controls");
+		deploy.InputSchema.Properties.Single(property => property.Name == "certificatePassword").Description.Should()
+			.Contain("sensitive",
+				because: "the contract must signal that certificate passwords require secret handling");
 		deploy.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "deploy-creatio returns the standard command execution result payload");
 		deploy.PreferredFlow.Tools.Should().Equal(
 			new[] {
 				AssertInfrastructureTool.AssertInfrastructureToolName,
 				ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-				FindEmptyIisPortTool.FindEmptyIisPortToolName,
 				InstallerCommandTool.DeployCreatioToolName
 			},
-			because: "deploy-creatio should advertise the canonical deploy preflight order");
+			because: "deploy-creatio should advertise the common preflight order without making an IIS-only scan mandatory for dotnet");
+		deploy.PreferredFlow.Notes.Should().Contain("local IIS",
+			because: "the contract should explain when the optional IIS port scan is still required");
+		deploy.PreferredFlow.Tools.Should().NotContain(FindEmptyIisPortTool.FindEmptyIisPortToolName,
+			because: "dotnet deployment must not inherit an IIS-only tool as a mandatory preferred-flow step");
 		deploy.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the most consequential tool must spell out its preconditions");
 

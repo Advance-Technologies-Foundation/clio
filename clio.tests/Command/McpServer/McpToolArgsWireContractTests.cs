@@ -25,7 +25,12 @@ public sealed class McpToolArgsWireContractTests {
 		[nameof(DeployCreatioArgs.SitePort)] = "sitePort",
 		[nameof(DeployCreatioArgs.DbServerName)] = "dbServerName",
 		[nameof(DeployCreatioArgs.RedisServerName)] = "redisServerName",
-		[nameof(DeployCreatioArgs.UseHttps)] = "useHttps"
+		[nameof(DeployCreatioArgs.UseHttps)] = "useHttps",
+		[nameof(DeployCreatioArgs.DeploymentMethod)] = "deployment",
+		[nameof(DeployCreatioArgs.BindAllInterfaces)] = "bindAllInterfaces",
+		[nameof(DeployCreatioArgs.CertificatePath)] = "certificatePath",
+		[nameof(DeployCreatioArgs.CertificateKeyPath)] = "certificateKeyPath",
+		[nameof(DeployCreatioArgs.CertificatePassword)] = "certificatePassword"
 	};
 
 	private static readonly Dictionary<string, string> RestoreDbByEnvironmentWireNames = new() {

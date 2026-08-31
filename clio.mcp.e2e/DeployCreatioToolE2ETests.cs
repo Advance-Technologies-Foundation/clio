@@ -60,12 +60,28 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 			because: "the real discovery contract should disclose command-level concurrent IIS port protection");
 		contract.Description.Should().Contain("existing forced-password-change state",
 			because: "the real MCP contract should disclose the preserved database behavior used by Ring");
+		contract.PreferredFlow.Tools.Should().Equal(
+			[AssertInfrastructureTool.AssertInfrastructureToolName,
+				ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName, ToolName],
+			because: "the preferred dotnet-compatible flow must not make the IIS-only port scan mandatory");
+		contract.PreferredFlow.Notes.Should().Contain("local IIS",
+			because: "the live contract should preserve the conditional IIS port guidance");
 		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(
-			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName", "useHttps"],
-			because: "the full deploy-creatio contract should only expose the six approved arguments");
+			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName", "useHttps", "deployment",
+				"bindAllInterfaces", "certificatePath", "certificateKeyPath", "certificatePassword"],
+			because: "the full deploy-creatio contract should expose the command's optional dotnet endpoint controls");
 		contract.InputSchema.Properties.Single(property => property.Name == "useHttps").Description.Should()
-			.Contain("falls back to HTTP",
-				because: "agents need the non-failing HTTPS fallback contract before invoking deployment");
+			.Contain("fall back to HTTP",
+				because: "agents need the existing local IIS HTTPS fallback behavior before invoking deployment");
+		contract.InputSchema.Properties.Single(property => property.Name == "deployment").Description.Should()
+			.Contain("dotnet",
+				because: "agents need an explicit way to select the dotnet deployment strategy");
+		contract.InputSchema.Properties.Single(property => property.Name == "bindAllInterfaces").Description.Should()
+			.Contain("loopback",
+				because: "agents need to know that dotnet network exposure is opt-in");
+		contract.InputSchema.Properties.Single(property => property.Name == "certificateKeyPath").Description.Should()
+			.Contain("PEM or CRT",
+				because: "agents need the private-key requirement for PEM and CRT certificates");
 	}
 
 	[Test]
@@ -93,7 +109,10 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 					["siteName"] = $"e2e-{Guid.NewGuid():N}",
 					["zipFile"] = missingZipFile,
 					["sitePort"] = 5001,
-					["useHttps"] = true
+					["useHttps"] = true,
+					["deployment"] = "dotnet",
+					["bindAllInterfaces"] = false,
+					["certificatePath"] = "/etc/ssl/private/creatio.pfx"
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);

@@ -98,19 +98,29 @@ OPTIONS
         Custom application installation path
         Default: Windows %ProgramFiles%/Creatio, macOS ~/creatio, Linux /opt/creatio
 
+    --bind-all-interfaces
+        For dotnet deployment, bind Kestrel to all network interfaces instead of loopback.
+        Use this when a container, Kubernetes service, or reverse proxy must reach the application
+        over the network. The default is loopback-only; this option has no effect on IIS deployment.
+        For direct network access, combine it with --use-https; otherwise clio emits a warning because
+        the explicitly requested all-interface HTTP listener is plaintext.
+
     --use-https
-        Prefer HTTPS for the application. For local IIS, clio selects a usable
-        LocalMachine/My certificate matching the host. If none is installed,
-        deployment warns and continues over HTTP. Configure an ambiguous
-        preference with pin-certificate.
-        Default: false (HTTP only)
+        Use HTTPS for the application. For local IIS, clio selects a usable LocalMachine/My
+        certificate matching the host. If none is installed, deployment warns and continues over
+        HTTP. For dotnet deployment, this explicitly selects an HTTPS Kestrel endpoint and requires
+        --cert-path or an existing Kestrel certificate configuration; it does not fall back to HTTP.
+        Default: false (HTTP selected; existing HTTPS configuration is preserved)
 
     --cert-path PATH
-        Path to SSL certificate file (.pem or .pfx format)
-        Used by dotnet deployment; IIS uses the Windows certificate store
+        Path to the dotnet SSL certificate file (.pfx, .pem, or .crt format)
+        PEM and CRT certificates require --cert-key-path. IIS uses the Windows certificate store
 
     --cert-password PASSWORD
-        Password for SSL certificate (if certificate is password-protected)
+        Password for a password-protected dotnet certificate. IIS uses the Windows certificate store
+
+    --cert-key-path PATH
+        Path to the private key file for a PEM or CRT certificate used by dotnet HTTPS
 
     --auto-run
         Automatically launch application in browser after deployment
@@ -204,11 +214,16 @@ EXAMPLES
        clio deploy-creatio --site-name "LegacyApp" --platform netframework \\
            --zip-file "C:\creatio-framework.zip"
 
-    4. Deploy with HTTPS on Windows using dotnet (no IIS):
+    4. Deploy with HTTPS on Windows using dotnet (no IIS) and a PFX certificate:
        clio deploy-creatio --site-name "SecureApp" --no-iis --use-https \\
-           --cert-path "C:\certs\app.pem" --zip-file "C:\creatio-app.zip"
+           --cert-path "C:\certs\app.pfx" --cert-password "<certificate-password>" --zip-file "C:\creatio-app.zip"
 
-    4a. Prefer HTTPS for local IIS (falls back to HTTP when no usable certificate exists):
+    4a. Deploy dotnet HTTPS with a PEM certificate and separate private key:
+       clio deploy-creatio --site-name "SecurePemApp" --deployment dotnet --use-https \\
+           --cert-path "/etc/ssl/certs/app.pem" --cert-key-path "/etc/ssl/private/app.key" \\
+           --zip-file "/opt/creatio-app.zip"
+
+    4b. Prefer HTTPS for local IIS (falls back to HTTP when no usable certificate exists):
         clio pin-certificate
         clio deploy-creatio --site-name "SecureIis" --site-port 40087 --use-https \
             --zip-file "C:\creatio-app.zip"
@@ -228,7 +243,7 @@ EXAMPLES
     8. Silent deployment with all parameters:
 	   clio deploy-creatio --site-name "AutoDeploy" --db pg --platform net6 \\
 		   --site-port 8443 --use-https \\
-           --cert-path "/certs/server.pem" --zip-file "/app/creatio.zip" --silent
+           --cert-path "/certs/server.pfx" --cert-password "<certificate-password>" --zip-file "/app/creatio.zip" --silent
 
     9. Deploy with specific Redis database (when auto-detection fails):
        clio deploy-creatio --site-name "RedisApp" --zip-file "C:\creatio-app.zip" --redis-db 5
@@ -311,19 +326,32 @@ BEHAVIOR
     - Deploys application files to custom or default path
     - Creates Windows service (if applicable)
     - Runs application via dotnet executable
-    - Returns application URL in format: http(s)://FQDN:port
+    - Binds to http://localhost:port by default; use --bind-all-interfaces for network access
+    - With --use-https, configures a Kestrel HTTPS endpoint from --cert-path or existing certificate settings
+    - Removes HTTP endpoints when HTTPS is explicitly selected, so no parallel plaintext listener remains
+    - Returns the local application URL in format: http(s)://localhost:port
 
     macOS:
     - Deploys application files to ~/creatio or custom path
     - Creates launchd service for auto-start
     - Manages service via launchctl
-    - Returns application URL with configured port
+    - Binds the dotnet host to loopback by default; use --bind-all-interfaces for a container or reverse proxy
+    - Supports PFX certificates and PEM/CRT certificates with --cert-key-path when --use-https is selected
+    - Preserves existing HTTPS endpoint and certificate settings when HTTP remains selected
+    - Returns the local application URL with configured port
 
     Linux:
     - Deploys application files to /opt/creatio or custom path
     - Creates systemd service unit file
     - Manages service via systemctl
-    - Returns application URL with configured port
+    - Binds the dotnet host to loopback by default; use --bind-all-interfaces for a container or reverse proxy
+    - Supports PFX certificates and PEM/CRT certificates with --cert-key-path when --use-https is selected
+    - Preserves existing HTTPS endpoint and certificate settings when HTTP remains selected
+    - Returns the local application URL with configured port
+
+    For dotnet deployments, the generated appsettings.json contains the Kestrel certificate
+    configuration, including the password when --cert-password is supplied. Protect the deployed
+    application directory and avoid exposing the command line or configuration file to untrusted users.
 
 DATABASE SETUP
     Before deployment, ensure:
@@ -461,7 +489,14 @@ TROUBLESHOOTING
     A: Ensure IIS is installed (Windows) or dotnet SDK is available
 
     Q: "Application deployed but inaccessible"
-    A: Check firewall rules, port availability, and FQDN resolution
+    A: Check firewall rules, port availability, and FQDN resolution. Dotnet deployments bind
+       to loopback by default; add --bind-all-interfaces when a container, Kubernetes service,
+       or reverse proxy must connect over the network.
+
+    Q: "Dotnet HTTPS requires --cert-path or an existing Kestrel certificate configuration"
+    A: Add --cert-path to a readable .pfx file (and --cert-password when required), or provide
+       an existing Kestrel certificate configuration in appsettings.json. For a .pem or .crt
+       certificate, also provide --cert-key-path for its private key.
 
     Q: "Certificate path not found"
     A: Verify --cert-path points to valid certificate file (absolute path recommended)

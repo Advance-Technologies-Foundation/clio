@@ -5523,6 +5523,11 @@ internal static class ToolContractCatalog {
 	private const string DbServerNameFieldName = "dbServerName";
 	private const string RedisServerNameFieldName = "redisServerName";
 	private const string UseHttpsFieldName = "useHttps";
+	private const string DeploymentFieldName = "deployment";
+	private const string BindAllInterfacesFieldName = "bindAllInterfaces";
+	private const string CertificatePathFieldName = "certificatePath";
+	private const string CertificateKeyPathFieldName = "certificateKeyPath";
+	private const string CertificatePasswordFieldName = "certificatePassword";
 	private const string IdentitySitePortFieldName = "identitySitePort";
 	private const string IdentitySiteNameFieldName = "identitySiteName";
 	private const string IdentityPathFieldName = "identityPath";
@@ -5629,16 +5634,21 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure; also use find-empty-iis-port for local IIS) and prefer the recommended bundle from show-passing-infrastructure. IIS deployment reserves and revalidates sitePort across concurrent clio processes before target mutation, and deploy/uninstall serialize by environment name and physical target directory. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically. For dotnet deployment, loopback binding is the default, bindAllInterfaces is an explicit network-exposure opt-in, and useHttps requires certificatePath or an existing Kestrel certificate configuration. Never echo certificatePassword.",
 			new ToolInputSchemaContract(
 				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
 				[
 					Field(SiteNameFieldName, StringType, "Creatio instance name."),
 					Field(ZipFileFieldName, StringType, "Absolute path to the Creatio build archive (.zip). Pick a build from the configured creatio-products folder when the path is unknown."),
-					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port to choose a safe local IIS port."),
+					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port for a safe local IIS port."),
 					Field(DbServerNameFieldName, StringType, "Optional local database server configuration name; omit to keep the default Kubernetes deployment path."),
 					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name."),
-					Field(UseHttpsFieldName, BooleanType, "Prefer HTTPS for local IIS deployment. Uses a matching usable LocalMachine/My certificate and falls back to HTTP with a warning when none is available.")
+					Field(UseHttpsFieldName, BooleanType, "For IIS, prefer HTTPS and fall back to HTTP when no usable certificate is installed; for dotnet, require certificatePath or existing Kestrel certificate settings."),
+					Field(DeploymentFieldName, StringType, "Optional deployment method: auto, iis, or dotnet. Use dotnet to select Kestrel explicitly."),
+					Field(BindAllInterfacesFieldName, BooleanType, "Optional dotnet-only opt-in to bind Kestrel on all network interfaces; loopback is the default."),
+					Field(CertificatePathFieldName, StringType, "Optional dotnet HTTPS certificate path (.pfx, .pem, or .crt); PEM/CRT requires certificateKeyPath."),
+					Field(CertificateKeyPathFieldName, StringType, "Optional private-key path for a dotnet PEM or CRT certificate."),
+					Field(CertificatePasswordFieldName, StringType, "Optional sensitive password for the dotnet certificatePath; never echo or log it.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -5652,16 +5662,23 @@ internal static class ToolContractCatalog {
 					[DbServerNameFieldName] = "postgres-local",
 					[RedisServerNameFieldName] = "redis-local",
 					[UseHttpsFieldName] = true
+				}),
+				Example("Deploy dotnet HTTPS with a PFX certificate", new Dictionary<string, object?> {
+					[SiteNameFieldName] = "creatio-dotnet",
+					[ZipFileFieldName] = "/srv/creatio/creatio.zip",
+					[SitePortFieldName] = 8443,
+					[DeploymentFieldName] = "dotnet",
+					[UseHttpsFieldName] = true,
+					[CertificatePathFieldName] = "/etc/ssl/private/creatio.pfx"
 				})
 			],
 			Flow(
 				[
 					AssertInfrastructureTool.AssertInfrastructureToolName,
 					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
-					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Always run the full deploy preflight before deploy-creatio. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
+				"Always run the infrastructure preflight before deploy-creatio. For a local IIS deployment, also run find-empty-iis-port and pass its firstAvailablePort as sitePort; dotnet deployments do not require the IIS-only port scan. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
 			[],
 			[],
 			Preconditions: [

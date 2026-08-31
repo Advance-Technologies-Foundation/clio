@@ -26,7 +26,7 @@ public static class DeployCreatioPrompt
 		[Required]
 		[Description("Port where Creatio will be deployed")]
 		int sitePort,
-		[Description("Prefer HTTPS for local IIS deployment; falls back to HTTP when no usable certificate is installed")]
+		[Description("For IIS, prefer HTTPS and fall back to HTTP when no usable certificate is installed; for dotnet, require certificate settings")]
 		bool useHttps = false) =>
 		$"""
 		 Before calling `{InstallerCommandTool.DeployCreatioToolName}`, first run `assert-infrastructure`
@@ -43,5 +43,8 @@ public static class DeployCreatioPrompt
 		 zip file `{zipFile}`, site port `{sitePort}`, useHttps `{useHttps.ToString().ToLowerInvariant()}`, and the selected or recommended server-name arguments.
 		 For local IIS, useHttps is opportunistic: clio uses one usable LocalMachine/My certificate matching
 		 the host, or warns and continues with HTTP when none is available.
+		 For dotnet, pass `deployment: "dotnet"`; useHttps requires `certificatePath` or existing Kestrel
+		 certificate settings, and PEM/CRT certificates require `certificateKeyPath`. Keep
+		 `bindAllInterfaces` false unless a network-facing topology is explicitly required.
 		 """;
 }

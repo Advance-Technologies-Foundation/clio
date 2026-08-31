@@ -1257,6 +1257,38 @@ internal sealed class CliOptionNamingBackwardCompatibilityTests {
 	}
 
 	[Test]
+	[Description("Dotnet bind and certificate options parse through PfInstallerOptions using their kebab-case names")]
+	public void PfInstallerOptions_DotNetSecurityOptions_Parse() {
+		// Arrange
+		string[] arguments = [
+			"--bind-all-interfaces",
+			"--use-https",
+			"--cert-path", "/certs/server.pem",
+			"--cert-key-path", "/certs/server.key",
+			"--cert-password", "secret"
+		];
+
+		// Act
+		ParserResult<PfInstallerOptions> result = Parser.Default.ParseArguments<PfInstallerOptions>(arguments);
+		PfInstallerOptions? options = null;
+		result.WithParsed(parsed => options = parsed);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "the dotnet security controls must be available through the documented CLI syntax");
+		options!.BindAllInterfaces.Should().BeTrue(
+			because: "the explicit wildcard binding flag must map to PfInstallerOptions");
+		options.UseHttps.Should().BeTrue(
+			because: "the HTTPS flag must select the dotnet TLS path");
+		options.CertificatePath.Should().Be("/certs/server.pem",
+			because: "the certificate path must map to PfInstallerOptions");
+		options.CertificateKeyPath.Should().Be("/certs/server.key",
+			because: "the PEM private-key path must map to PfInstallerOptions");
+		options.CertificatePassword.Should().Be("secret",
+			because: "the certificate password must map to PfInstallerOptions");
+	}
+
+	[Test]
 	[Description("Explorer ZIP deployment preserves the database's forced-password-change state when disable-reset-password is omitted")]
 	public void PfInstallerOptions_ShouldDefaultDisableResetPasswordToFalse_WhenExplorerContextArgumentsOmitIt() {
 		// Arrange

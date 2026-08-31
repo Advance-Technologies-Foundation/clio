@@ -2,6 +2,11 @@
 
 Link core source code to environment for development.
 
+For the NetCore mode, the command configures Kestrel on loopback (`localhost`) and updates the
+environment HTTP port. Existing HTTP and HTTPS endpoint settings are preserved and their hosts are
+also constrained to loopback, so linking a local core source tree does not expose the development
+server on every network interface.
+
 
 ## Usage
 

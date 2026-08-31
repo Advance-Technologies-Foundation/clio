@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
@@ -19,6 +23,10 @@ namespace Clio.Common.DeploymentStrategies;
 /// </summary>
 public class DotNetDeploymentStrategy : IDeploymentStrategy
 {
+	private const string LoopbackHost = "localhost";
+	private const string AllInterfacesHost = "[::]";
+	private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+
 	private readonly ILogger _logger;
 	private readonly ISystemServiceManager _serviceManager;
 	private readonly ICreatioHostService _creatioHostService;
@@ -92,7 +100,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			int? processId = _creatioHostService.StartInBackground(appDirectoryPath);
 			if (processId.HasValue)
 			{
-				_logger.WriteInfo($"Application will be available at: {GetApplicationUrl(options)}");
+				_logger.WriteInfo($"Application control URL: {GetApplicationUrl(options)}");
 			}
 
 			// Set up service management if on Linux or macOS
@@ -113,19 +121,24 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	}
 
 	/// <summary>
-	/// Gets the HTTP URL where the dotnet-hosted application will be accessible.
+	/// Gets the URL where the dotnet-hosted application will be accessible.
 	/// </summary>
+	/// <remarks>For dotnet deployments this is the local control URL used for environment registration,
+	/// readiness checks, and browser launch. When <see cref="PfInstallerOptions.BindAllInterfaces"/> is true,
+	/// Kestrel listens on the wildcard address but this method still returns <c>localhost</c>, because a wildcard
+	/// address is a listener address rather than a client destination.</remarks>
 	public string GetApplicationUrl(PfInstallerOptions options)
 	{
 		if (options == null)
 			throw new ArgumentNullException(nameof(options));
 
-		const string protocol = "http";
-		var host = "localhost";
+		string protocol = options.UseHttps ? "https" : "http";
+		const string host = LoopbackHost;
 		var port = options.SitePort;
+		int defaultPort = options.UseHttps ? 443 : 80;
 
-		// Don't include the default HTTP port in URL.
-		if (port == 80)
+		// Don't include the default port in URL.
+		if (port == defaultPort)
 		{
 			return $"{protocol}://{host}";
 		}
@@ -211,111 +224,28 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	}
 
 	/// <summary>
-	/// <summary>
-	/// Creates or updates appsettings.json configuration file.
-	/// If file exists, preserves existing content and only updates the Kestrel port.
-	/// If file doesn't exist, creates a minimal configuration.
+	/// Creates or updates the appsettings.json configuration file for the selected dotnet endpoint.
 	/// </summary>
-	private void CreateApplicationConfiguration(string appPath, PfInstallerOptions options)
+	/// <param name="appPath">The deployed application directory.</param>
+	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
+	internal void CreateApplicationConfiguration(string appPath, PfInstallerOptions options)
 	{
 		var configPath = Path.Combine(appPath, "appsettings.json");
 
 		try
 		{
-			JsonDocument doc;
-			
-			// Load existing config if it exists, otherwise create new
-			if (File.Exists(configPath))
+			bool hadExistingConfiguration = File.Exists(configPath);
+			string? existingJson = hadExistingConfiguration ? File.ReadAllText(configPath) : null;
+			string updatedJson = BuildApplicationConfiguration(existingJson, options);
+			File.WriteAllText(configPath, updatedJson);
+			_logger.WriteInfo($"Application configuration {(hadExistingConfiguration ? "updated" : "created")} at: {configPath}");
+			_logger.WriteInfo($"Kestrel listener configured at: {GetListeningEndpointUrl(options)}");
+			_logger.WriteInfo($"Application control URL: {GetApplicationUrl(options)}");
+			if (options.BindAllInterfaces)
 			{
-				_logger.WriteInfo($"Found existing appsettings.json, updating port configuration");
-				string existingJson = File.ReadAllText(configPath);
-				doc = JsonDocument.Parse(existingJson);
-			}
-			else
-			{
-				_logger.WriteInfo($"Creating new appsettings.json configuration");
-				// Create minimal default config
-				var defaultConfig = new
-				{
-					Kestrel = new
-					{
-						Endpoints = new
-						{
-							Http = new
-							{
-								Url = $"http://[::]:{options.SitePort}"
-							}
-						}
-					},
-					Logging = new
-					{
-						LogLevel = new
-						{
-							Default = "Information"
-						}
-					},
-					AllowedHosts = "*"
-				};
-				
-				var options_json = new JsonSerializerOptions { WriteIndented = true };
-				string json = JsonSerializer.Serialize(defaultConfig, options_json);
-				File.WriteAllText(configPath, json);
-				_logger.WriteInfo($"Application configuration created at: {configPath}");
-				_logger.WriteInfo($"HTTP endpoint configured on port {options.SitePort}");
-				return;
-			}
-
-			// Update existing config with new port
-			using (doc)
-			{
-				var root = doc.RootElement.Clone();
-				var options_json = new JsonSerializerOptions { WriteIndented = true };
-
-				// Update port in Kestrel configuration
-				string updatedJson = JsonSerializer.Serialize(root);
-				
-				// Use simple string replacement to update HTTP port - more reliable than deep JSON manipulation
-				// Pattern: "Url": "http://[::]:[oldport]"
-				updatedJson = System.Text.RegularExpressions.Regex.Replace(
-					updatedJson,
-					@"""Url""\s*:\s*""http://\[\:\:\]:\d+""",
-					$@"""Url"": ""http://[::]:{ options.SitePort}"""
-				);
-
-				// Remove HTTPS endpoint block if it exists
-				// Pattern: ,"Https":{...} or "Https":{...},
-				updatedJson = System.Text.RegularExpressions.Regex.Replace(
-					updatedJson,
-					@",?\s*""Https""\s*:\s*\{[^}]*""Certificate""\s*:\s*\{[^}]*\}[^}]*\}",
-					string.Empty,
-					System.Text.RegularExpressions.RegexOptions.Singleline
-				);
-
-				// If no Kestrel Http URL was found, we need to ensure it exists
-				if (!updatedJson.Contains("http://[::]:"))
-				{
-					// Fallback: rebuild config with Kestrel section (HTTP only)
-					var existingConfig = JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, object>>(
-						JsonSerializer.Serialize(root)
-					);
-					
-					existingConfig["Kestrel"] = new
-					{
-						Endpoints = new
-						{
-							Http = new
-							{
-								Url = $"http://[::]:{options.SitePort}"
-							}
-						}
-					};
-
-					updatedJson = JsonSerializer.Serialize(existingConfig, options_json);
-				}
-
-				File.WriteAllText(configPath, updatedJson);
-				_logger.WriteInfo($"Application configuration updated at: {configPath}");
-				_logger.WriteInfo($"HTTP endpoint configured on port {options.SitePort}");
+				_logger.WriteWarning(
+					$"Dotnet hosting is bound to all network interfaces using {(options.UseHttps ? "HTTPS" : "HTTP")}. "
+					+ "Ensure the endpoint is protected by TLS or an appropriate network boundary.");
 			}
 		}
 		catch (Exception ex)
@@ -323,6 +253,437 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			_logger.WriteError($"Failed to create/update application configuration: {ex.Message}");
 			throw;
 		}
+	}
+
+	/// <summary>
+	/// Builds the Kestrel portion of an application configuration while preserving unrelated settings.
+	/// </summary>
+	/// <param name="existingJson">Existing JSON configuration, or <see langword="null"/> for a new deployment.</param>
+	/// <param name="options">The deployment options that determine the endpoint and certificate.</param>
+	/// <returns>Indented JSON configuration.</returns>
+	internal string BuildApplicationConfiguration(string? existingJson, PfInstallerOptions options)
+	{
+		if (options == null)
+			throw new ArgumentNullException(nameof(options));
+
+		ValidateCertificateArguments(options);
+		JsonObject root = ParseConfiguration(existingJson);
+		JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
+		JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
+		string bindHost = GetBindHost(options);
+
+		if (options.UseHttps)
+		{
+			JsonObject httpsEndpoint = FindOrCreateEndpoint(endpoints, "Https", "https");
+			SetStringProperty(httpsEndpoint, "Url", BuildEndpointUrl("https", bindHost, options.SitePort));
+			ConfigureHttpsCertificate(httpsEndpoint, kestrel, options);
+			RewriteEndpointHosts(endpoints, "https", bindHost);
+			RemoveEndpointsByScheme(endpoints, "http");
+		}
+		else
+		{
+			JsonObject httpEndpoint = FindOrCreateEndpoint(endpoints, "Http", "http");
+			SetStringProperty(httpEndpoint, "Url", BuildEndpointUrl("http", bindHost, options.SitePort));
+			RewriteEndpointHosts(endpoints, "http", bindHost);
+			RewriteEndpointHosts(endpoints, "https", bindHost);
+			EnsureNoHttpHttpsPortConflict(endpoints);
+		}
+
+		return root.ToJsonString(IndentedJsonOptions);
+	}
+
+	private static JsonObject ParseConfiguration(string? existingJson)
+	{
+		if (string.IsNullOrWhiteSpace(existingJson))
+		{
+			return new JsonObject {
+				["Kestrel"] = new JsonObject {
+					["Endpoints"] = new JsonObject()
+				},
+				["Logging"] = new JsonObject {
+					["LogLevel"] = new JsonObject {
+						["Default"] = "Information"
+					}
+				},
+				["AllowedHosts"] = "*"
+			};
+		}
+
+		JsonNode? node = JsonNode.Parse(existingJson);
+		return node as JsonObject
+			?? throw new JsonException("The application configuration root must be a JSON object.");
+	}
+
+	private static string GetBindHost(PfInstallerOptions options) =>
+		options.BindAllInterfaces ? AllInterfacesHost : LoopbackHost;
+
+	private static string BuildEndpointUrl(string scheme, string host, int port) =>
+		$"{scheme}://{host}:{port}";
+
+	private static string GetListeningEndpointUrl(PfInstallerOptions options) =>
+		BuildEndpointUrl(options.UseHttps ? "https" : "http", GetBindHost(options), options.SitePort);
+
+	private static void ValidateCertificateArguments(PfInstallerOptions options)
+	{
+		bool hasCertificatePath = !string.IsNullOrWhiteSpace(options.CertificatePath);
+		bool hasCertificateKeyPath = !string.IsNullOrWhiteSpace(options.CertificateKeyPath);
+		bool hasCertificatePassword = options.CertificatePassword is not null;
+
+		if (!options.UseHttps && (hasCertificatePath || hasCertificateKeyPath || hasCertificatePassword))
+		{
+			throw new InvalidOperationException("Certificate options require --use-https for dotnet deployment.");
+		}
+
+		if (hasCertificateKeyPath && !hasCertificatePath)
+		{
+			throw new InvalidOperationException("--cert-key-path requires --cert-path.");
+		}
+	}
+
+	private static void ConfigureHttpsCertificate(JsonObject httpsEndpoint, JsonObject kestrel, PfInstallerOptions options)
+	{
+		if (!string.IsNullOrWhiteSpace(options.CertificatePath))
+		{
+			string certificatePath = ResolveExistingFilePath(options.CertificatePath, "cert-path");
+			bool requiresKeyPath = IsPemCertificatePath(certificatePath);
+			bool hasKeyPath = !string.IsNullOrWhiteSpace(options.CertificateKeyPath);
+
+			if (requiresKeyPath != hasKeyPath)
+			{
+				throw new InvalidOperationException(
+					requiresKeyPath
+						? "PEM or CRT certificates require --cert-key-path with the private key file."
+						: "--cert-key-path is only supported with PEM or CRT certificates.");
+			}
+			if (hasKeyPath && options.CertificatePassword is not null)
+			{
+				throw new InvalidOperationException("--cert-password is only supported with PFX certificates.");
+			}
+			string? keyPath = hasKeyPath
+				? ResolveExistingFilePath(options.CertificateKeyPath, "cert-key-path")
+				: null;
+			ValidateCertificateMaterial(certificatePath, keyPath, options.CertificatePassword);
+
+			JsonObject certificate = GetOrCreateObject(httpsEndpoint, "Certificate");
+			SetStringProperty(certificate, "Path", certificatePath);
+			if (hasKeyPath)
+			{
+				SetStringProperty(certificate, "KeyPath", keyPath!);
+			}
+			else
+			{
+				RemoveProperty(certificate, "KeyPath");
+			}
+
+			if (options.CertificatePassword is not null)
+			{
+				SetStringProperty(certificate, "Password", options.CertificatePassword);
+			}
+			else
+			{
+				RemoveProperty(certificate, "Password");
+			}
+			return;
+		}
+
+		if (options.CertificateKeyPath is not null || options.CertificatePassword is not null)
+		{
+			throw new InvalidOperationException("--cert-password and --cert-key-path require --cert-path.");
+		}
+
+		JsonObject? endpointCertificate = GetObjectProperty(httpsEndpoint, "Certificate");
+		JsonObject? certificates = GetObjectProperty(kestrel, "Certificates");
+		JsonObject? defaultCertificate = certificates is null ? null : GetObjectProperty(certificates, "Default");
+		if (!HasUsableCertificateConfiguration(endpointCertificate)
+			&& !HasUsableCertificateConfiguration(defaultCertificate))
+		{
+			throw new InvalidOperationException(
+				"Dotnet HTTPS requires --cert-path or an existing Kestrel certificate configuration.");
+		}
+	}
+
+	private static bool HasUsableCertificateConfiguration(JsonObject? certificate) =>
+		HasNonEmptyStringProperty(certificate, "Path")
+			|| HasNonEmptyStringProperty(certificate, "Store");
+
+	private static bool HasNonEmptyStringProperty(JsonObject? parent, string propertyName) =>
+		parent is not null && !string.IsNullOrWhiteSpace(GetStringProperty(parent, propertyName));
+
+	private static void ValidateCertificateMaterial(string certificatePath, string? keyPath, string? password)
+	{
+		try
+		{
+			if (keyPath is not null)
+			{
+				using X509Certificate2 certificate = X509Certificate2.CreateFromPemFile(certificatePath, keyPath);
+				EnsurePrivateKey(certificate, certificatePath);
+				return;
+			}
+
+			#if NET9_0_OR_GREATER
+			using X509Certificate2 pfxCertificate = X509CertificateLoader.LoadPkcs12FromFile(
+				certificatePath,
+				password);
+			#else
+			using X509Certificate2 pfxCertificate = new(certificatePath, password);
+			#endif
+			EnsurePrivateKey(pfxCertificate, certificatePath);
+		}
+		catch (Exception exception) when (exception is CryptographicException or ArgumentException or IOException)
+		{
+			throw new InvalidOperationException(
+				$"The certificate specified by --cert-path is invalid or cannot be loaded: {certificatePath}.", exception);
+		}
+	}
+
+	private static void EnsurePrivateKey(X509Certificate2 certificate, string certificatePath)
+	{
+		if (!certificate.HasPrivateKey)
+		{
+			throw new InvalidOperationException(
+				$"The certificate specified by --cert-path does not contain a private key: {certificatePath}.");
+		}
+	}
+
+	private static string ResolveExistingFilePath(string path, string optionName)
+	{
+		string fullPath = Path.GetFullPath(path);
+		if (!File.Exists(fullPath))
+		{
+			throw new FileNotFoundException($"The file specified by --{optionName} was not found: {fullPath}", fullPath);
+		}
+
+		return fullPath;
+	}
+
+	private static bool IsPemCertificatePath(string path)
+	{
+		string extension = Path.GetExtension(path);
+		return string.Equals(extension, ".pem", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(extension, ".crt", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static JsonObject FindOrCreateEndpoint(JsonObject endpoints, string endpointName, string scheme)
+	{
+		string? namedProperty = FindPropertyName(endpoints, endpointName);
+		if (namedProperty is not null)
+		{
+			if (endpoints[namedProperty] is JsonObject namedEndpoint)
+			{
+				return namedEndpoint;
+			}
+
+			throw new JsonException($"Configuration property '{namedProperty}' must be a JSON object.");
+		}
+
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (property.Value is JsonObject endpoint
+				&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), scheme, StringComparison.OrdinalIgnoreCase))
+			{
+				return endpoint;
+			}
+		}
+
+		JsonObject createdEndpoint = new();
+		endpoints[endpointName] = createdEndpoint;
+		return createdEndpoint;
+	}
+
+	private static void RewriteEndpointHosts(JsonObject endpoints, string scheme, string bindHost)
+	{
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (property.Value is not JsonObject endpoint)
+			{
+				continue;
+			}
+
+			string? url = GetStringProperty(endpoint, "Url");
+			if (!string.Equals(GetUriScheme(url), scheme, StringComparison.OrdinalIgnoreCase))
+			{
+				continue;
+			}
+
+			string rewrittenUrl = KestrelEndpointUrl.ReplaceHost(url, bindHost)
+				?? throw new InvalidOperationException($"Kestrel endpoint '{property.Key}' has an unsupported URL: {url}");
+			SetStringProperty(endpoint, "Url", rewrittenUrl);
+		}
+	}
+
+	private static void RemoveEndpointsByScheme(JsonObject endpoints, string scheme)
+	{
+		string endpointName = scheme switch {
+			"http" => "Http",
+			"https" => "Https",
+			_ => string.Empty
+		};
+		List<string> namesToRemove = new();
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (string.Equals(property.Key, endpointName, StringComparison.OrdinalIgnoreCase)
+				|| property.Value is JsonObject endpoint
+					&& string.Equals(GetUriScheme(GetStringProperty(endpoint, "Url")), scheme, StringComparison.OrdinalIgnoreCase))
+			{
+				namesToRemove.Add(property.Key);
+			}
+		}
+
+		foreach (string name in namesToRemove)
+		{
+			endpoints.Remove(name);
+		}
+	}
+
+	private static void EnsureNoHttpHttpsPortConflict(JsonObject endpoints)
+	{
+		HashSet<int> httpPorts = new();
+		HashSet<int> httpsPorts = new();
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (property.Value is not JsonObject endpoint)
+			{
+				continue;
+			}
+
+			string? url = GetStringProperty(endpoint, "Url");
+			string? scheme = GetUriScheme(url);
+			if (scheme is null || url is null)
+			{
+				continue;
+			}
+			string normalizedScheme = scheme.ToLowerInvariant();
+			if (normalizedScheme is not ("http" or "https"))
+			{
+				continue;
+			}
+
+			int port = GetEndpointPort(url, normalizedScheme);
+			(normalizedScheme == "http" ? httpPorts : httpsPorts).Add(port);
+		}
+
+		foreach (int port in httpPorts)
+		{
+			if (httpsPorts.Contains(port))
+			{
+				throw new InvalidOperationException(
+					$"The existing Kestrel HTTP and HTTPS endpoints both use port {port}. "
+					+ "Choose a different --site-port or explicitly replace the HTTPS configuration.");
+			}
+		}
+	}
+
+	private static int GetEndpointPort(string url, string scheme)
+	{
+		int separatorIndex = url.IndexOf("://", StringComparison.Ordinal);
+		int authorityStart = separatorIndex + 3;
+		int authorityEnd = url.Length;
+		for (int index = authorityStart; index < url.Length; index++)
+		{
+			if (url[index] is '/' or '?' or '#')
+			{
+				authorityEnd = index;
+				break;
+			}
+		}
+
+		string authority = url[authorityStart..authorityEnd];
+		string? portText = null;
+		if (authority.StartsWith("[", StringComparison.Ordinal))
+		{
+			int closingBracket = authority.IndexOf(']');
+			if (closingBracket >= 0 && authority.Length > closingBracket + 1
+				&& authority[closingBracket + 1] == ':')
+			{
+				portText = authority[(closingBracket + 2)..];
+			}
+		}
+		else
+		{
+			int lastColon = authority.LastIndexOf(':');
+			if (lastColon >= 0)
+			{
+				portText = authority[(lastColon + 1)..];
+			}
+		}
+
+		return portText is not null && int.TryParse(portText, out int port)
+			? port
+			: string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80;
+	}
+
+	private static string? GetUriScheme(string? url)
+	{
+		if (string.IsNullOrWhiteSpace(url))
+		{
+			return null;
+		}
+
+		int separatorIndex = url.IndexOf("://", StringComparison.Ordinal);
+		return separatorIndex > 0 ? url[..separatorIndex] : null;
+	}
+
+	private static JsonObject GetOrCreateObject(JsonObject parent, string propertyName)
+	{
+		string? actualPropertyName = FindPropertyName(parent, propertyName);
+		if (actualPropertyName is null)
+		{
+			JsonObject createdObject = new();
+			parent[propertyName] = createdObject;
+			return createdObject;
+		}
+
+		if (parent[actualPropertyName] is JsonObject existingObject)
+		{
+			return existingObject;
+		}
+
+		throw new JsonException($"Configuration property '{actualPropertyName}' must be a JSON object.");
+	}
+
+	private static JsonObject? GetObjectProperty(JsonObject parent, string propertyName)
+	{
+		string? actualPropertyName = FindPropertyName(parent, propertyName);
+		return actualPropertyName is not null ? parent[actualPropertyName] as JsonObject : null;
+	}
+
+	private static string? GetStringProperty(JsonObject parent, string propertyName)
+	{
+		string? actualPropertyName = FindPropertyName(parent, propertyName);
+		if (actualPropertyName is null || parent[actualPropertyName] is not JsonValue value
+			|| !value.TryGetValue<string>(out string result))
+		{
+			return null;
+		}
+
+		return result;
+	}
+
+	private static void SetStringProperty(JsonObject parent, string propertyName, string value)
+	{
+		parent[FindPropertyName(parent, propertyName) ?? propertyName] = value;
+	}
+
+	private static void RemoveProperty(JsonObject parent, string propertyName)
+	{
+		string? actualPropertyName = FindPropertyName(parent, propertyName);
+		if (actualPropertyName is not null)
+		{
+			parent.Remove(actualPropertyName);
+		}
+	}
+
+	private static string? FindPropertyName(JsonObject parent, string propertyName)
+	{
+		foreach (KeyValuePair<string, JsonNode?> property in parent)
+		{
+			if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
+			{
+				return property.Key;
+			}
+		}
+
+		return null;
 	}
 
 	/// <summary>

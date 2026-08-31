@@ -54,6 +54,11 @@ public class InstallerCommandTool(
 				 clear it automatically.
 				 For local IIS, `useHttps` prefers a matching usable LocalMachine/My certificate and falls back
 				 to HTTP with a warning when no usable certificate is installed.
+				 For dotnet deployment, set `deployment` to `dotnet` (or rely on automatic selection on macOS/Linux).
+				 `useHttps` then requires `certificatePath` or an existing Kestrel certificate configuration;
+				 PEM/CRT certificates also require `certificateKeyPath`. `bindAllInterfaces` is an explicit
+				 network-exposure opt-in; loopback remains the default. Certificate passwords are sensitive and
+				 are written to the deployed Kestrel configuration only when supplied for a certificate path.
 				 When local dbHub synchronization is enabled, deployment reconciles its database source only after
 				 readiness succeeds; a dbHub warning is non-fatal and produces success-with-warnings progress.
 				 """)]
@@ -74,6 +79,11 @@ public class InstallerCommandTool(
 			DbServerName = args.DbServerName,
 			RedisServerName = args.RedisServerName,
 			UseHttps = args.UseHttps,
+			DeploymentMethod = args.DeploymentMethod,
+			BindAllInterfaces = args.BindAllInterfaces,
+			CertificatePath = args.CertificatePath,
+			CertificateKeyPath = args.CertificateKeyPath,
+			CertificatePassword = args.CertificatePassword,
 			RedisDb = -1,
 			DisableResetPassword = false,
 			AutoRun = true,
@@ -97,6 +107,17 @@ public class InstallerCommandTool(
 /// <summary>
 /// Minimal MCP arguments for the <c>deploy-creatio</c> tool.
 /// </summary>
+/// <param name="SiteName">Creatio instance name.</param>
+/// <param name="ZipFile">Path to the Creatio archive file.</param>
+/// <param name="SitePort">Port where Creatio will be deployed.</param>
+/// <param name="DbServerName">Optional local database server configuration name.</param>
+/// <param name="RedisServerName">Optional local Redis server configuration name.</param>
+/// <param name="UseHttps">Whether to use HTTPS; dotnet deployment requires certificate settings.</param>
+/// <param name="DeploymentMethod">Optional deployment method: auto, iis, or dotnet.</param>
+/// <param name="BindAllInterfaces">Whether dotnet hosting may listen on all network interfaces.</param>
+/// <param name="CertificatePath">Optional PFX, PEM, or CRT certificate path for dotnet HTTPS.</param>
+/// <param name="CertificateKeyPath">Optional private-key path for a PEM or CRT certificate.</param>
+/// <param name="CertificatePassword">Optional sensitive PFX password; never echo or log it.</param>
 public sealed record DeployCreatioArgs(
 	[property: JsonPropertyName("siteName")]
 	[property: Description("Creatio instance name")]
@@ -122,6 +143,26 @@ public sealed record DeployCreatioArgs(
 	string? RedisServerName,
 
 	[property: JsonPropertyName("useHttps")]
-	[property: Description("Prefer HTTPS for local IIS deployment; falls back to HTTP when no usable certificate is installed")]
-	bool UseHttps = false
+	[property: Description("For IIS, prefer HTTPS and fall back to HTTP when no usable certificate is installed; for dotnet, require certificatePath or existing Kestrel certificate settings")]
+	bool UseHttps = false,
+
+	[property: JsonPropertyName("deployment")]
+	[property: Description("Optional deployment method: auto, iis, or dotnet. Use dotnet to select Kestrel explicitly")]
+	string? DeploymentMethod = null,
+
+	[property: JsonPropertyName("bindAllInterfaces")]
+	[property: Description("Optional dotnet-only opt-in to bind Kestrel on all network interfaces; loopback is the default")]
+	bool BindAllInterfaces = false,
+
+	[property: JsonPropertyName("certificatePath")]
+	[property: Description("Optional dotnet HTTPS certificate path (.pfx, .pem, or .crt); PEM/CRT requires certificateKeyPath")]
+	string? CertificatePath = null,
+
+	[property: JsonPropertyName("certificateKeyPath")]
+	[property: Description("Optional private-key path for a dotnet PEM or CRT certificate")]
+	string? CertificateKeyPath = null,
+
+	[property: JsonPropertyName("certificatePassword")]
+	[property: Description("Optional sensitive password for the dotnet certificatePath; do not echo or log it")]
+	string? CertificatePassword = null
 );

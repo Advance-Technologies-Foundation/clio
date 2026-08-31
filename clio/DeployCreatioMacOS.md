@@ -278,7 +278,7 @@ clio deploy-creatio \
   --ZipFile ~/Downloads/creatio.zip \
   --use-https \
   --cert-path ~/certs/app.pem \
-  --cert-password "secret"
+  --cert-key-path ~/certs/app.key
 
 # Specify custom installation path
 clio deploy-creatio \
@@ -297,10 +297,10 @@ clio deploy-creatio \
 After successful deployment:
 
 ```
-http://localhost:<port>
+http(s)://localhost:<port>
 ```
 
-Example: http://localhost:8080
+Example: http://localhost:8080 (or https://localhost:8443 when --use-https is selected)
 
 ---
 
