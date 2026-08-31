@@ -1248,6 +1248,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	public async Task PageSyncTool_Should_Reject_Mobile_Body_With_Converters_When_Validate_Is_True() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
+		string environmentName = TestConfiguration.Load().Sandbox.EnvironmentName ?? "dev";
 		string mobileBodyWithConverters = """
 			{
 			  "viewConfigDiff": [],
@@ -1260,7 +1261,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "dev",
+					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = "UsrMobile_FormPage",
@@ -1277,13 +1278,19 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "sync-pages mobile validation failures should be surfaced as structured tool results");
 
-		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
-			response.Pages.Should().ContainSingle(
-				because: "one page was submitted");
-			PageSyncPageResult page = response.Pages[0];
-			page.Validation!.ContentOk.Should().BeFalse(
-				because: "a mobile body containing 'converters' must fail mobile content validation");
-		}
+		TryExtractFailure(callResult, out PageSyncResponse? response).Should().BeTrue(
+			because: "a mobile validation rejection must use the structured sync-pages response contract");
+		response.Should().NotBeNull(
+			because: "the structured sync-pages response must be available for validation assertions");
+		response!.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		PageSyncPageResult page = response.Pages[0];
+		page.Validation.Should().NotBeNull(
+			because: $"a validation rejection must include its structured validation details. Error: {page.Error}");
+		page.Validation!.ContentOk.Should().BeFalse(
+			because: "a mobile body containing 'converters' must fail mobile content validation");
+		page.Validation.Errors.Should().Contain(error => error.Contains("converters", StringComparison.Ordinal),
+			because: "the rejection must identify the unsupported converters property rather than an unrelated validation failure");
 	}
 
 	[Test]
@@ -1294,6 +1301,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	public async Task PageSyncTool_Should_Accept_Valid_Mobile_Body_Without_AMD_Marker_Errors() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
+		string environmentName = TestConfiguration.Load().Sandbox.EnvironmentName ?? "dev";
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -1307,7 +1315,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "dev",
+					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = "UsrMobile_FormPage",
@@ -1324,14 +1332,19 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid mobile body must not raise a protocol-level error");
 
-		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
-			foreach (PageSyncPageResult page in response.Pages) {
-				if (page.Validation is not null) {
-					page.Validation.Errors.Should().NotContain(e => e.Contains("SCHEMA_"),
-						because: "AMD marker errors must not appear when the body is a mobile JSON object");
-				}
-			}
-		}
+		TryExtractFailure(callResult, out PageSyncResponse? response).Should().BeTrue(
+			because: "valid mobile validation must use the structured sync-pages response contract");
+		response.Should().NotBeNull(
+			because: "the structured sync-pages response must be available for validation assertions");
+		response!.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		PageSyncPageResult page = response.Pages[0];
+		page.Validation.Should().NotBeNull(
+			because: $"validation details must be returned for the submitted mobile body. Error: {page.Error}");
+		page.Validation!.ContentOk.Should().BeTrue(
+			because: "the plain mobile JSON object contains no unsupported properties");
+		page.Validation.Errors.Should().NotContain(e => e.Contains("SCHEMA_", StringComparison.Ordinal),
+			because: "AMD marker errors must not appear when the body is a mobile JSON object");
 	}
 
 		[Test]
