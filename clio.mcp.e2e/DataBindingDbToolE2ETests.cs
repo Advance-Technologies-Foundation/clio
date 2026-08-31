@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -29,6 +29,7 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
 	private const string ReadDbToolName = ReadDataBindingDbTool.ReadDataBindingDbToolName;
 	private const string ODataCreateToolName = ODataCreateTool.ToolName;
+	private const string CreateEntitySchemaToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
 
 	[Test]
 	[Description("Exposes every DB-first data-binding MCP tool via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
@@ -384,6 +385,145 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			"upsert must UPDATE a row that exists in the table but is unbound in the target binding, not attempt an insert that fails on required columns");
 	}
 
+	[Test]
+	[Description("Round-trips a Color column through the DB-first data-binding tools on a real Creatio environment: creates a schema with a UsrColor column, writes #009DE3 with create-data-binding-db, updates it with upsert-data-binding-row-db, reads it back with read-data-binding-db, and proves the local create-data-binding descriptor keeps the native Color data-value-type UId.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureTag(UpsertRowDbToolName)]
+	[AllureTag(ReadDbToolName)]
+	[AllureName("DB-first data binding round-trips a Color column and keeps the Color data-value-type UId")]
+	[AllureDescription("Creates a sandbox entity schema carrying a Color (dataValueType 18) column through create-entity-schema, writes and updates a hex Color value through the DB-first binding tools against a reachable Creatio sandbox, reads the row back, and asserts the local create-data-binding descriptor.json records the native Color data-value-type UId while data.json carries the hex value. The pre-existing DB-first scenarios all bind Lookup or Account, so none of them exercises a Color column end to end.")]
+	public async Task DataBindingDb_Should_RoundTrip_Color_Column_And_Keep_Color_DataValueType() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string schemaName = $"Usr{System.Guid.NewGuid():N}";
+		string bindingName = schemaName;
+		const string nameColumnName = "UsrName";
+		const string colorColumnName = "UsrColor";
+		const string colorValue = "#009DE3";
+		const string updatedColorValue = "#FF6900";
+		//The native Creatio Color data-value-type. A binding descriptor that loses it ships the
+		//column as something else and the value stops round-tripping.
+		const string colorDataValueTypeUId = "dafb71f9-ee9f-4e0b-a4d7-37aa15987155";
+		string rowName = $"E2E Color {arrangeContext.PackageName}";
+
+		CommandExecutionActResult createSchemaResult = await ActCommandAsync(
+			arrangeContext,
+			CreateEntitySchemaToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = schemaName,
+				["columns"] = new[] {
+					new Dictionary<string, object?> {
+						["column-name"] = nameColumnName,
+						["type"] = "Text"
+					},
+					new Dictionary<string, object?> {
+						["column-name"] = colorColumnName,
+						["type"] = "Color"
+					}
+				}
+			});
+		AssertToolCallSucceeded(createSchemaResult);
+		AssertCommandExitCode(createSchemaResult, 0,
+			"the schema carrying the Color column must exist before any binding can reference it");
+
+		// Act - write the Color value through the DB-first binding
+		CommandExecutionActResult createBindingResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = schemaName,
+				["binding-name"] = bindingName,
+				["rows"] =
+					$"[{{\"values\":{{\"{nameColumnName}\":\"{rowName}\",\"{colorColumnName}\":\"{colorValue}\"}}}}]"
+			});
+
+		// Act - read the binding back so the stored Color value is observed over the wire
+		CommandExecutionActResult readResult = await ActCommandAsync(
+			arrangeContext,
+			ReadDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = bindingName
+			});
+
+		// Act - the local file-based path, whose descriptor is where the data-value-type UId lands
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			arrangeContext.Settings,
+			[
+				"create-data-binding",
+				"--package", arrangeContext.PackageName,
+				"--schema", schemaName,
+				"--binding-name", bindingName,
+				"--values", $"{{\"{nameColumnName}\":\"{rowName}\",\"{colorColumnName}\":\"{colorValue}\"}}",
+				"-e", arrangeContext.EnvironmentName!
+			],
+			workingDirectory: arrangeContext.WorkspacePath,
+			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		string bindingDirectoryPath = Path.Combine(
+			arrangeContext.WorkspacePath, "packages", arrangeContext.PackageName, "Data", bindingName);
+		string descriptorPath = Path.Combine(bindingDirectoryPath, "descriptor.json");
+		string dataPath = Path.Combine(bindingDirectoryPath, "data.json");
+
+		// Assert
+		AssertToolCallSucceeded(createBindingResult);
+		AssertCommandExitCode(createBindingResult, 0,
+			"create-data-binding-db must accept a Color column value; a Color mapped to no CLR type fails serialization");
+		AssertToolCallSucceeded(readResult);
+		AssertCommandExitCode(readResult, 0,
+			"read-data-binding-db must project a binding that contains a Color column");
+		AssertOutputContains(readResult, colorValue,
+			"the stored Color value must come back from the remote binding unchanged");
+
+		File.Exists(descriptorPath).Should().BeTrue(
+			because: $"create-data-binding must write the binding descriptor to {descriptorPath}");
+		File.Exists(dataPath).Should().BeTrue(
+			because: $"create-data-binding must write the binding data to {dataPath}");
+		File.ReadAllText(descriptorPath).Should().ContainEquivalentOf(colorDataValueTypeUId,
+			because: "the descriptor column for a Color column must record the native Color data-value-type UId");
+		File.ReadAllText(dataPath).Should().Contain(colorValue,
+			because: "the local artifact must carry the hex Color value it was given");
+
+		// Act - update the same row through the upsert tool and read it back once more
+		CommandExecutionActResult upsertResult = await ActCommandAsync(
+			arrangeContext,
+			UpsertRowDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = bindingName,
+				["values"] =
+					$"{{\"{nameColumnName}\":\"{rowName}\",\"{colorColumnName}\":\"{updatedColorValue}\"}}"
+			});
+		CommandExecutionActResult readAfterUpsertResult = await ActCommandAsync(
+			arrangeContext,
+			ReadDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = bindingName
+			});
+
+		// Assert
+		AssertToolCallSucceeded(upsertResult);
+		AssertCommandExitCode(upsertResult, 0,
+			"upsert-data-binding-row-db must be able to write a Color column too, not only the create path");
+		AssertOutputContains(readAfterUpsertResult, updatedColorValue,
+			"the upserted Color value must be the one the binding reports afterwards");
+	}
+
+	private static void AssertOutputContains(CommandExecutionActResult actResult, string expected, string because) {
+		actResult.Execution.Output.Should().NotBeNullOrEmpty(
+			because: "command execution should emit human-readable diagnostics");
+		actResult.Execution.Output!
+			.Select(message => message.Value?.ToString() ?? string.Empty)
+			.Should().Contain(text => text.Contains(expected), because: because);
+	}
+
 	private async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -422,6 +562,7 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 
 		McpServerSession session = Session;
 		return new DataBindingDbArrangeContext(
+			settings,
 			rootDirectory,
 			workspacePath,
 			packageName,
@@ -521,6 +662,7 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	}
 
 	private sealed record DataBindingDbArrangeContext(
+		McpE2ESettings Settings,
 		string RootDirectory,
 		string WorkspacePath,
 		string PackageName,
