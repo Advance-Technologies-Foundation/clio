@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="en-US">
+    <Group Type="String">
+        <Items>
+            <Item Name="Caption" Value="Demo4" />
+            <Item Name="Columns.Column10loc.Caption" Value="Text 3 loc main rep" />
+            <Item Name="Columns.Column10rem.Caption" Value="Text 3 rem 2 44" />
+            <Item Name="Columns.Column12loc.Caption" Value="Text 5 loc main rep" />
+            <Item Name="Columns.Column13l.Caption" Value="Text 6 loc" />
+            <Item Name="Columns.Column14.Caption" Value="Text 6 loc 7 main" />
+            <Item Name="Columns.Column15loc.Caption" Value="Text 8 loc main" />
+            <Item Name="Columns.Column15r.Caption" Value="Text 8 rem" />
+            <Item Name="Columns.Column17loc.Caption" Value="Number 1 loc br7" />
+            <Item Name="Columns.Column17rem.Caption" Value="Number 1 rem" />
+            <Item Name="Columns.Column19loc.Caption" Value="Number 3 loc" />
+            <Item Name="Columns.Column19rem.Caption" Value="Number 3 rem" />
+            <Item Name="Columns.Column21loc.Caption" Value="Number 5 loc" />
+            <Item Name="Columns.Column21rem.Caption" Value="Number 5 rem" />
+            <Item Name="Columns.Column23loc.Caption" Value="Number 7loc" />
+            <Item Name="Columns.Column23rem.Caption" Value="Number 7 rem" />
+            <Item Name="Columns.Column25loc.Caption" Value="Number 9 loc" />
+            <Item Name="Columns.Column25rem.Caption" Value="Number 9 rem" />
+            <Item Name="Columns.Column27loc.Caption" Value="Number 11 loc" />
+            <Item Name="Columns.Column28loc.Caption" Value="Number 12 loc" />
+            <Item Name="Columns.Column29loc.Caption" Value="Checkbox 1 loc" />
+            <Item Name="Columns.Column29rem.Caption" Value="Checkbox 1 rem" />
+            <Item Name="Columns.Column30rem.Caption" Value="Checkbox 2rem" />
+            <Item Name="Columns.Column32loc.Caption" Value="Checkbox 4 loc" />
+            <Item Name="Columns.Column32rem.Caption" Value="Checkbox 4 rem" />
+            <Item Name="Columns.Column34loc.Caption" Value="Checkbox 6 loc" />
+            <Item Name="Columns.Column35loc.Caption" Value="Checkbox 7 loc" />
+            <Item Name="Columns.Column35rem.Caption" Value="Checkbox 7 rem2" />
+            <Item Name="Columns.Column37loc.Caption" Value="Checkbox 9 loc" />
+            <Item Name="Columns.Column37rem.Caption" Value="Checkbox 9 rem" />
+            <Item Name="Columns.Column39loc.Caption" Value="Checkbox 11 loc" />
+            <Item Name="Columns.Column40loc.Caption" Value="Checkbox 12 loc 1" />
+            <Item Name="Columns.Column41rem.Caption" Value="Checkbox 13 rem" />
+            <Item Name="Columns.Column42rem.Caption" Value="Checkbox 14rem" />
+            <Item Name="Columns.Column43r.Caption" Value="Number 13" />
+            <Item Name="Columns.Column8.Caption" Value="Text 1 main" />
+            <Item Name="Columns.Column9rem.Caption" Value="Text 2 rem 11 3" />
+            <Item Name="Columns.Name.Caption" Value="Name" />
+        </Items>
+    </Group>
+</Resources>

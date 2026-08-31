@@ -119,9 +119,9 @@ public static class SessionContainerCacheDefaults {
 /// <para>
 /// <b>Disposal / GC-safety (Story 8, AC-05 — decision (a)).</b> On eviction the child
 /// <see cref="IServiceProvider"/> is disposed, which is sufficient. Decompiling
-/// <c>Creatio.Client.CreatioClient</c> (creatio.client 1.0.38, netstandard2.0) shows it is declared
+/// <c>Creatio.Client.CreatioClient</c> (creatio.client 1.0.40, netstandard2.0) shows it is declared
 /// <c>class CreatioClient : ICreatioClient</c> — it does NOT implement <see cref="IDisposable"/> — and
-/// holds no long-lived per-instance transport: its only fields are <c>string</c>/<c>bool</c>,
+/// holds no long-lived per-instance transport: its fields are managed scalar/configuration state,
 /// a <c>CookieContainer</c>, an <c>ICredentials</c> and a <c>RetryPolicy</c>. Every HTTP call creates
 /// and disposes its own <c>HttpClient</c>/<c>HttpClientHandler</c> inside a <c>using</c> block
 /// (per-request, no shared static or pooled handler), and the WebSocket listener

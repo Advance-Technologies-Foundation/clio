@@ -1,0 +1,376 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "ServiceSchemaManager",
+      "UId": "a78ca5e9-6b76-4037-82f0-142e47662c44",
+      "A2": "GeminiApiSearch2",
+      "A5": "c17a7117-247e-46a4-8737-b769f00acc01",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "ac6b9a24-d2fb-4ac9-8cbf-7a98ccaa8ca5",
+      "B8": "0.0.0.0",
+      "IQ1": "https://generativelanguage.googleapis.com/v2",
+      "IQ2": 1,
+      "IQ7": [],
+      "IQ4": [
+        {
+          "UId": "d5976760-72ed-4133-9789-ac5fc989729f",
+          "A2": "GenerateContent",
+          "A3": "a78ca5e9-6b76-4037-82f0-142e47662c44",
+          "A4": "a78ca5e9-6b76-4037-82f0-142e47662c44",
+          "IR3": 120000,
+          "IR5": "null",
+          "IR1": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "0c7d3141-fdc2-4e44-9df2-faf0561ffac5",
+                "A2": "Xgoogapikey",
+                "IU1": "x-goog-api-key",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 4,
+                "IU5": {
+                  "IV1": "GeminiApiKey",
+                  "IV2": 2
+                },
+                "IU6": []
+              },
+              {
+                "UId": "b1defecf-6723-484f-bb86-2808fe6b9c02",
+                "A2": "CType",
+                "IU1": "Content-Type",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 4,
+                "IU5": {
+                  "IV1": "application/json",
+                  "IV2": 1
+                },
+                "IU6": []
+              }
+            ],
+            "IT2": 2,
+            "IT1": "/v1beta/models/gemini-2.5-flash:generateContent"
+          },
+          "IR2": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "239eccfc-895a-4a7c-b3f0-56e50b61c40e",
+                "A2": "Candidates",
+                "IU1": "$.candidates",
+                "IU2": "Object",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": [
+                  {
+                    "UId": "1f27052e-3ca5-4143-b369-24f7ac81828c",
+                    "A2": "CRole",
+                    "IU1": "content.role",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "d0990e7a-dced-4e22-a25e-5b9bb645c939",
+                    "A2": "CFReason",
+                    "IU1": "finishReason",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "6ee58e05-e2d6-443a-9b9c-9995f5a58b4b",
+                    "A2": "CIndex",
+                    "IU1": "index",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "df2a27e7-04e4-49db-840c-67512430ea87",
+                    "A2": "SEPRContent",
+                    "IU1": "groundingMetadata.searchEntryPoint.renderedContent",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "226fd570-b38c-41f6-8981-5e4ec40466f1",
+                    "A2": "GMGChunks",
+                    "IU1": "groundingMetadata.groundingChunks",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "af762d13-79de-49d6-95d1-c5d8e3680fab",
+                        "A2": "WUri",
+                        "IU1": "web.uri",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "fe33beb8-b05e-4cba-8b3b-c7786532a54a",
+                        "A2": "WTitle",
+                        "IU1": "web.title",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  },
+                  {
+                    "UId": "85b55074-62c7-4e3a-9796-5acbe53e6561",
+                    "A2": "GMGSupports",
+                    "IU1": "groundingMetadata.groundingSupports",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "10af4237-4f37-4fd8-9661-5257590a7676",
+                        "A2": "SSIndex",
+                        "IU1": "segment.startIndex",
+                        "IU2": "Integer",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "efeae83a-ba2b-449f-bc85-fb94091d1044",
+                        "A2": "SEIndex",
+                        "IU1": "segment.endIndex",
+                        "IU2": "Integer",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "3ec66335-140c-4dc1-b69e-817425094dab",
+                        "A2": "SText",
+                        "IU1": "segment.text",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "8997e601-e2b0-407f-9565-0c3a853a708c",
+                        "A2": "GSGCIndices",
+                        "IU1": "groundingChunkIndices",
+                        "IU2": "Integer",
+                        "IU3": true,
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  },
+                  {
+                    "UId": "3f6d3375-28ef-4a5f-9ffb-e37666909a42",
+                    "A2": "GMWSQueries",
+                    "IU1": "groundingMetadata.webSearchQueries",
+                    "IU2": "Text",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  }
+                ]
+              },
+              {
+                "UId": "67c1cbc8-718e-4c67-9671-d0ba532315fa",
+                "A2": "UMPTCount",
+                "IU1": "$.usageMetadata.promptTokenCount",
+                "IU2": "Integer",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "6f988994-918f-4e2c-adfa-f55450d3e826",
+                "A2": "UMCTCount",
+                "IU1": "$.usageMetadata.candidatesTokenCount",
+                "IU2": "Integer",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "136b4ce5-39ef-4f0a-8c21-9e26ff861080",
+                "A2": "UMTTCount",
+                "IU1": "$.usageMetadata.totalTokenCount",
+                "IU2": "Integer",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "02052489-61df-4618-8e2a-9a7edcf07d6d",
+                "A2": "UMPTDetails",
+                "IU1": "$.usageMetadata.promptTokensDetails",
+                "IU2": "Object",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": [
+                  {
+                    "UId": "3a105762-1685-4666-bd61-1dd096be2988",
+                    "A2": "PTDModality",
+                    "IU1": "modality",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "1650045c-7e78-482f-b0f0-504d680a4084",
+                    "A2": "PTDTCount",
+                    "IU1": "tokenCount",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  }
+                ]
+              },
+              {
+                "UId": "a715eb22-d6a8-4c6f-9670-20da16d53034",
+                "A2": "UMTUPTCount2",
+                "IU1": "$.usageMetadata.toolUsePromptTokenCount",
+                "IU2": "Integer",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "40cb71ae-015d-4ee3-86b6-406ed7f02484",
+                "A2": "UMTTCount6",
+                "IU1": "$.usageMetadata.thoughtsTokenCount3",
+                "IU2": "Integer",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "2e7c9bc9-b606-4ff5-8846-e4812e612355",
+                "A2": "MVersion",
+                "IU1": "$.modelVersion",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "8ace098e-f49f-430c-9ac9-46890b2764b0",
+                "A2": "RId",
+                "IU1": "$.responseId",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "b869a628-0e04-4262-ae91-3a1ab521235d",
+                "A2": "UMTTCount9",
+                "IU1": "$.usageMetadata.thoughtsTokenCount2",
+                "IU2": "Integer",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

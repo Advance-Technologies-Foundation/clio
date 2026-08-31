@@ -113,6 +113,37 @@ internal static class ClioCliCommandRunner {
 		return result.ExitCode == 0;
 	}
 
+	/// <summary>
+	/// Waits for Creatio to finish the delayed recycle triggered by package installation or hot-fix changes.
+	/// Three consecutive authenticated probes prevent a brief pre-shutdown success from releasing the next test step.
+	/// </summary>
+	public static async Task WaitForEnvironmentRecoveryAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken = default) {
+		const int requiredConsecutiveSuccesses = 3;
+		const int maximumAttempts = 30;
+		int consecutiveSuccesses = 0;
+		ClioCliCommandResult? lastResult = null;
+		for (int attempt = 0; attempt < maximumAttempts; attempt++) {
+			lastResult = await RunAsync(
+				settings,
+				["ping-app", "-e", environmentName, "--timeout", "30000"],
+				cancellationToken: cancellationToken);
+			consecutiveSuccesses = lastResult.ExitCode == 0 ? consecutiveSuccesses + 1 : 0;
+			if (consecutiveSuccesses == requiredConsecutiveSuccesses) {
+				await WaitForCliogateHttpHandlersAsync(environmentName, cancellationToken);
+				return;
+			}
+			await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+		}
+
+		lastResult.Should().NotBeNull(
+			because: "environment recovery polling should capture its final authenticated probe");
+		consecutiveSuccesses.Should().Be(requiredConsecutiveSuccesses,
+			because: $"'{environmentName}' must remain authenticated for {requiredConsecutiveSuccesses} consecutive probes after its package-triggered recycle. Last exit code: {lastResult!.ExitCode}. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
+	}
+
 	public static async Task RunAndAssertSuccessAsync(
 		McpE2ESettings settings,
 		IReadOnlyList<string> arguments,
@@ -468,6 +499,10 @@ internal static class ClioCliCommandRunner {
 		using HttpClient httpClient = new(handler) {
 			Timeout = CliogateHttpRequestTimeout
 		};
+		// Creatio's cookie-auth middleware redirects ordinary anonymous browser-like requests to
+		// the login page. Mark this as an AJAX/service request so a ready protected REST route returns
+		// 401 instead; the readiness probe can then distinguish it from a warming-up redirect.
+		httpClient.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
 		ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
 			httpClient,
 			maxAttempts,

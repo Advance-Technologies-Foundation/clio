@@ -1,0 +1,1407 @@
+{
+  "MetaData": {
+    "Schema": {
+      "ManagerName": "ServiceSchemaManager",
+      "UId": "daecf1bd-3d47-474f-89e6-628d07782c9c",
+      "A2": "Service_FESDSD",
+      "A5": "a00051f4-cde3-4f3f-b08e-c5ad1a5c735a",
+      "B1": [],
+      "B2": [],
+      "B3": [],
+      "B6": "a00051f4-cde3-4f3f-b08e-c5ad1a5c735a",
+      "B8": "8.3.4.54",
+      "IQ1": "https://opensource.adobe.com/Spry/samples/data_region",
+      "IQ2": 1,
+      "IQ7": [],
+      "IQ4": [
+        {
+          "UId": "37ec2bc1-0f78-4398-aa9d-be702704f6b4",
+          "A2": "Method1trtrrt",
+          "A3": "daecf1bd-3d47-474f-89e6-628d07782c9c",
+          "A4": "daecf1bd-3d47-474f-89e6-628d07782c9c",
+          "IR3": 5000,
+          "IR5": "null",
+          "IR1": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "ee966a6d-463a-481b-9039-d2c819e28b07",
+                "A2": "IItem",
+                "IU1": "$.items.item",
+                "IU2": "Object",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": [
+                  {
+                    "UId": "45de75a3-8d26-42dc-859d-6995155490f4",
+                    "A2": "IPpu",
+                    "IU1": "ppu",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "3e868b49-55cf-4bbe-8339-467eb0748c35",
+                    "A2": "BBatter",
+                    "IU1": "batters.batter",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "c09268d9-d651-491f-bd1f-a3b2702581a7",
+                        "A2": "BId",
+                        "IU1": "id",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "1f8d8f45-6a0a-46c9-894e-a0ba1f0340f1",
+                        "A2": "BType",
+                        "IU1": "type",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  },
+                  {
+                    "UId": "4d407ead-5baa-4d74-8a33-fe0059c16e83",
+                    "A2": "ITopping",
+                    "IU1": "topping",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "01c33476-25db-4054-8537-1fb7222caa0c",
+                        "A2": "TId",
+                        "IU1": "id",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "a3666615-3e77-4f26-a4be-f532612736c2",
+                        "A2": "TType",
+                        "IU1": "type",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "IT2": 2,
+            "IT1": "TestService"
+          },
+          "IR2": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "c6e6af83-4fb4-482e-b509-eb5a60c647d8",
+                "A2": "testRemote",
+                "IU1": "$",
+                "IU2": "Object",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 14,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": [
+                  {
+                    "UId": "384ed181-56d5-47dc-9983-867d8a825425",
+                    "A2": "Id",
+                    "IU1": "gffgfgfg",
+                    "IU2": "changeRemote",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "4d3d6b61-fd31-41d6-a9e2-c254bb845d70",
+                    "A2": "Name",
+                    "IU1": "name",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "3b3e13c3-2ab4-48be-98ce-9039729a2e4f",
+                    "A2": "Ppu",
+                    "IU1": "ppu",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "dbff29d6-fbad-4bba-9631-b1b8290e9ebc",
+                    "A2": "BBatter",
+                    "IU1": "batters.batter",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "339235df-8292-48f9-8795-864762963ad9",
+                        "A2": "BId",
+                        "IU1": "id",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "0ebf8ce8-c8eb-4cef-b87d-1efae3bd0f19",
+                        "A2": "BType",
+                        "IU1": "type",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  },
+                  {
+                    "UId": "f34132a9-9cfa-488e-ae91-be51f75fb817",
+                    "A2": "Topping",
+                    "IU1": "topping",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "7d328594-669c-4883-ae30-d8eb25d3debe",
+                        "A2": "TId",
+                        "IU1": "id",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "7b4a993b-e705-49cd-aa83-aaefd1853e5f",
+                        "A2": "TType",
+                        "IU1": "type",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "UId": "cc364883-1174-4bd9-8cf3-ad7c22c06338",
+          "A2": "Method2",
+          "A3": "daecf1bd-3d47-474f-89e6-628d07782c9c",
+          "A4": "daecf1bd-3d47-474f-89e6-628d07782c9c",
+          "IR3": 5000,
+          "IR5": "null",
+          "IR1": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "d00d6799-9a9a-4c72-962f-131290333182",
+                "A2": "SMName",
+                "IU1": "$.MetaData.Schema.ManagerName",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "dc6a3996-248d-4648-b15c-c64535fb6023",
+                "A2": "SId",
+                "IU1": "$.MetaData.Schema.UId",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "e75baaa7-d7bf-44b4-a681-d8f9e4339e5a",
+                "A2": "Schema",
+                "IU1": "$.MetaData.Schema.A2",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "9b9ab40e-2af1-465c-a8cd-bc52215eb322",
+                "A2": "Schema1",
+                "IU1": "$.MetaData.Schema.A5",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "173cbcc6-7764-43ad-8c3a-fc0689a898db",
+                "A2": "Schema2",
+                "IU1": "$.MetaData.Schema.B1",
+                "IU2": "Text",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "afc07292-b68c-4aed-bdf4-de17690e0d57",
+                "A2": "Schema3",
+                "IU1": "$.MetaData.Schema.B2",
+                "IU2": "Text",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "b8959542-561f-461f-bde5-55bc40732b28",
+                "A2": "Schema4",
+                "IU1": "$.MetaData.Schema.B3",
+                "IU2": "Text",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "b17f477e-dbf3-4aca-8b77-a74a34a64a9e",
+                "A2": "Schema5",
+                "IU1": "$.MetaData.Schema.B6",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "107e6c60-88a6-48fe-b7e2-2c874bb4ae0f",
+                "A2": "Schema6",
+                "IU1": "$.MetaData.Schema.B8",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "904418d6-3382-4f13-9004-c9173f781f33",
+                "A2": "Schema7",
+                "IU1": "$.MetaData.Schema.IQ1",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "bbf319b0-a343-476a-9686-25cf425a644b",
+                "A2": "Schema8",
+                "IU1": "$.MetaData.Schema.IQ2",
+                "IU2": "Integer",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "90c5bd51-e7af-4217-abdf-ee1e9222a624",
+                "A2": "Schema9",
+                "IU1": "$.MetaData.Schema.IQ7",
+                "IU2": "Text",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "374357e3-1e40-422b-acd1-07e40f37b280",
+                "A2": "Schema10",
+                "IU1": "$.MetaData.Schema.IQ4",
+                "IU2": "Object",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": [
+                  {
+                    "UId": "24efd9ab-4a23-4be3-93ae-87a77d4649cd",
+                    "A2": "Id",
+                    "IU1": "UId",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "0e6c7004-e93a-4174-bac5-c405b2e3bfb0",
+                    "A2": "IQ4A2",
+                    "IU1": "A2",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "aac5e185-4016-40ad-b5ab-5c20d645c864",
+                    "A2": "IQ4A3",
+                    "IU1": "A3",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "153a405a-eda7-43f0-b395-ef54cb68fb7b",
+                    "A2": "IQ4A4",
+                    "IU1": "A4",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "62873c89-8c1d-4bf6-9320-b3448da3f5ad",
+                    "A2": "IQ4IR3",
+                    "IU1": "IR3",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "e87f82d6-374c-4a65-820e-af433206a893",
+                    "A2": "IQ4IR5",
+                    "IU1": "IR5",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "222f27cf-d5d1-4561-a4ab-0340f8d53b47",
+                    "A2": "IR1IW2",
+                    "IU1": "IR1.IW2",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "d10b810c-1f36-4d32-b130-457eeafdccbb",
+                    "A2": "IR1IW1",
+                    "IU1": "IR1.IW1",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "31d26828-d320-44bb-b73b-eb96bc8d19cc",
+                        "A2": "Id1",
+                        "IU1": "UId",
+                        "IU2": "Text1",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "73fba23c-6eb2-44a2-ad38-bb6f417f67bb",
+                        "A2": "IW1A2",
+                        "IU1": "A2",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "76588ebe-7ff2-4a44-832e-6232d1240c9b",
+                        "A2": "IW1IU1",
+                        "IU1": "IU1",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "18342910-8994-4a52-b8ee-114171369883",
+                        "A2": "IW1IU2",
+                        "IU1": "IU2",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "0a72179e-bffd-4172-9a63-016326ad93e9",
+                        "A2": "IW1IU8",
+                        "IU1": "IU8",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "f4e3fbda-4600-4a43-b87d-373a4f965a0e",
+                        "A2": "IW1IU4",
+                        "IU1": "IU4",
+                        "IU2": "Integer",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "f674955b-5495-4162-94d3-7ec5f4e1778a",
+                        "A2": "IU5IV1",
+                        "IU1": "IU5.IV1",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "4a814171-352f-4509-b60d-7e3c6c691f5a",
+                        "A2": "IU5IV2",
+                        "IU1": "IU5.IV2",
+                        "IU2": "Integer",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "ac6d6d69-289b-4911-b156-fb5199d597eb",
+                        "A2": "IW1IU6",
+                        "IU1": "IU6",
+                        "IU2": "Text",
+                        "IU3": true,
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  },
+                  {
+                    "UId": "55357612-dae1-4e7d-97d6-7709f73e5d93",
+                    "A2": "IR1IT2",
+                    "IU1": "IR1.IT2",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                    {
+                      "UId": "782f437a-f644-42f5-9531-5cefb7da6c5a",
+                      "A2": "IR1IT2112312",
+                      "IU1": "IR1.IT212",
+                      "IU2": "testx",
+                      "IU8": "item",
+                      "IU4": 1,
+                      "IU5": {
+                        "IV1": "null"
+                      },
+                      "IU6": [
+                      	{
+                          "UId": "9d81a4c8-6722-4a48-bc22-2bef76778f50",
+                          "A2": "IRRemote",
+                          "IU1": "IR1.IRRemote",
+                          "IU2": "Text",
+                          "IU8": "item",
+                          "IU4": 1,
+                          "IU5": {
+                            "IV1": "null"
+                          },
+                          "IU6": []
+                        },
+                        {
+                          "UId": "f6a1ecc1-a143-4c8f-b131-887cd6e5a657",
+                          "A2": "IRRemoteTake",
+                          "IU1": "IR1.IRRemoteTake",
+                          "IU2": "Text",
+                          "IU8": "item",
+                          "IU4": 1,
+                          "IU5": {
+                            "IV1": "null"
+                          },
+                          "IU6": []
+                        }
+                      ]
+                  	}
+                    ]
+                  },
+                  {
+                    "UId": "6dd7bebf-d1e9-4bad-ac71-80eab141b3fd",
+                    "A2": "IR1IT1",
+                    "IU1": "IR1.IT1",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "1afec094-bf8d-4d15-82dd-ae27c90be031",
+                    "A2": "IR2IW2",
+                    "IU1": "IR2.IW2",
+                    "IU2": "Integer",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "714ad78e-ba59-4e5a-b74b-55f3a9c5f5d1",
+                    "A2": "IR2IW1",
+                    "IU1": "IR2.IW1",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "0d8d6739-8a87-4411-9cb8-8c2ed9980ec9",
+                        "A2": "IW1A21",
+                        "IU1": "A2",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "f5485735-96cb-44ef-9e21-7ee7f44c6709",
+                        "A2": "IW1IU11",
+                        "IU1": "IU1",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "2547861b-c438-4e1b-82fb-062ecf2dbef5",
+                        "A2": "IW1IU21",
+                        "IU1": "IU2",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "4aab8751-b3f2-44ce-8771-51fdbe68b6b5",
+                        "A2": "IW1IU3",
+                        "IU1": "IU3",
+                        "IU2": "Boolean",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "882278fc-f4d6-4d65-9bcd-fef0fc863a6d",
+                        "A2": "IW1IU81",
+                        "IU1": "IU8",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "f6bc5609-752d-4902-bd52-f97be7bd6762",
+                        "A2": "IW1IU41",
+                        "IU1": "IU4",
+                        "IU2": "Integer",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "7b86ffd9-d6af-42e9-996b-c578565869dd",
+                        "A2": "IU5IV11",
+                        "IU1": "IU5.IV1",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "416d632f-c9b8-4f3c-b0be-038829e62107",
+                        "A2": "IW1IU61",
+                        "IU1": "IU6",
+                        "IU2": "Text",
+                        "IU3": true,
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "IT2": 2,
+            "IT1": "/tsfssfsf"
+          },
+          "IR2": {
+            "IW2": 1,
+            "IW1": [
+              {
+                "UId": "7930c2e9-7ee3-4205-b62c-f7e8fa49474e",
+                "A2": "SMName",
+                "IU1": "$.MetaData.Schema.ManagerName",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "f1187fd5-6fc8-4479-b153-636f48d5c2b3",
+                "A2": "SId",
+                "IU1": "$.MetaData.Schema.UId",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "7fab0cef-db75-4ad4-9c5e-23cd1bc0aaf8",
+                "A2": "Schema",
+                "IU1": "$.MetaData.Schema.A2",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "44ad665e-6945-4778-8510-35379fbe3c6f",
+                "A2": "Schema1",
+                "IU1": "$.MetaData.Schema.A5",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "994aa625-63bb-458c-8a0b-921b0744f737",
+                "A2": "Schema2",
+                "IU1": "$.MetaData.Schema.B1",
+                "IU2": "Text",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "4d5fc3e6-6292-4f29-bf5a-ccbd0ea6041e",
+                "A2": "Schema3",
+                "IU1": "$.MetaData.Schema.B2",
+                "IU2": "Text",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "6eb79b42-ab13-4f2d-b183-1af74ce840b4",
+                "A2": "Schema4",
+                "IU1": "$.MetaData.Schema.B3",
+                "IU2": "Text",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "e2354a7d-3ca0-4458-934b-9d57fba2d865",
+                "A2": "Schema5",
+                "IU1": "$.MetaData.Schema.B6",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "812de1de-c860-4d25-9ade-b28f212b9759",
+                "A2": "Schema6",
+                "IU1": "$.MetaData.Schema.B8",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "f9cc50ce-94f3-4220-9302-3ce56ba2a156",
+                "A2": "Schema7",
+                "IU1": "$.MetaData.Schema.AD1",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "e9317263-291c-4c12-9871-433e0c2b2f38",
+                "A2": "Schema8",
+                "IU1": "$.MetaData.Schema.AD2",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "e793dc2d-3595-4a8e-b098-e5731414a4b5",
+                "A2": "Schema9",
+                "IU1": "$.MetaData.Schema.AD3",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "aa498629-37f9-46f3-afcd-9a02fb1b80ac",
+                "A2": "Schema10",
+                "IU1": "$.MetaData.Schema.AD5",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "ae1d743f-d989-415d-a93e-acecdeb8b4a0",
+                "A2": "AD4JI0",
+                "IU1": "$.MetaData.Schema.AD4.JI0",
+                "IU2": "Text",
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": []
+              },
+              {
+                "UId": "ffa6d20a-55b8-40cf-aa0a-2b8e2db5496d",
+                "A2": "AD4BRS1",
+                "IU1": "$.MetaData.Schema.AD4.BRS1",
+                "IU2": "Object",
+                "IU3": true,
+                "IU8": "item",
+                "IU4": 1,
+                "IU5": {
+                  "IV1": "null"
+                },
+                "IU6": [
+                  {
+                    "UId": "9e8d0f45-ff33-47ab-8585-d18f8e45096f",
+                    "A2": "BRS1JI0",
+                    "IU1": "JI0",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "ec4d5b80-0239-43ec-be2d-fbc8570cc247",
+                    "A2": "Id",
+                    "IU1": "UId",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  },
+                  {
+                    "UId": "cce9a1c5-7811-455f-bd0e-c1e6fa1c8a24",
+                    "A2": "BRS1BR1",
+                    "IU1": "BR1",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "df2cf89c-d4f8-48c6-a4cb-0ef159f630a5",
+                        "A2": "BR1JI0",
+                        "IU1": "JI0",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "adaa2085-0d68-45e6-bf0b-8a089d616d52",
+                        "A2": "Id1",
+                        "IU1": "UId",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "4b0a4677-efd9-4de7-a87e-86e5f02c2c9f",
+                        "A2": "BRC1JI0",
+                        "IU1": "BRC1.JI0",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "186aa428-6537-45b0-a019-0f57c2b7abcf",
+                        "A2": "Id2",
+                        "IU1": "BRC1.UId",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "b68c76d3-0384-4799-83d3-abe65b990340",
+                        "A2": "BRC1BGC1",
+                        "IU1": "BRC1.BGC1",
+                        "IU2": "Integer",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "2d9331f9-3afe-4216-a8e1-f16fc0f5ace8",
+                        "A2": "BRC1BGC2",
+                        "IU1": "BRC1.BGC2",
+                        "IU2": "Object",
+                        "IU3": true,
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": [
+                          {
+                            "UId": "ebd33947-3980-40ba-8bb6-b34a6b6f3dc0",
+                            "A2": "BGC2JI0",
+                            "IU1": "JI0",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "6cc10298-09c6-4fa8-9708-800bc70a19ed",
+                            "A2": "Id3",
+                            "IU1": "UId",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "fe21ff10-21d8-4981-a1bc-a3640e7cb984",
+                            "A2": "BCO1JI0",
+                            "IU1": "BCO1.JI0",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "b80ce7d4-1338-4913-9ed0-e137149f3c62",
+                            "A2": "Id4",
+                            "IU1": "BCO1.UId",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "98f38209-e550-45b6-be55-c8473bc7511b",
+                            "A2": "BCO1BRE1",
+                            "IU1": "BCO1.BRE1",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "8438e6d1-26e5-421d-b62a-317265bf4c8a",
+                            "A2": "BCO1BRE2",
+                            "IU1": "BCO1.BRE2",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "efb65304-09a7-4881-9ab7-ab4f41e68fca",
+                            "A2": "BCO1BRX1",
+                            "IU1": "BCO1.BRX1",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "cd3c5a92-7e40-4a71-9fe8-100a9986ede3",
+                            "A2": "BCO2JI0",
+                            "IU1": "BCO2.JI0",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "f70b7b48-e70a-4d4d-b6fb-8390f4f61fbe",
+                            "A2": "Id5",
+                            "IU1": "BCO2.UId",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "eaea30ab-f9ba-4fb8-bf80-baa27c7a0c44",
+                            "A2": "BCO2BRE1",
+                            "IU1": "BCO2.BRE1",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "90171875-4bc5-427f-b5e8-9f38d87f109f",
+                            "A2": "BCO2BVE1",
+                            "IU1": "BCO2.BVE1",
+                            "IU2": "Boolean",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "12edf98d-08bd-493d-ad23-6e197477e2ec",
+                            "A2": "BGC2BCO3",
+                            "IU1": "BCO3",
+                            "IU2": "Integer",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          }
+                        ]
+                      },
+                      {
+                        "UId": "a4dfbe1c-ee2d-4083-b701-2a9593b7e364",
+                        "A2": "BR1BRC2",
+                        "IU1": "BRC2",
+                        "IU2": "Object",
+                        "IU3": true,
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": [
+                          {
+                            "UId": "c6a835bb-4f55-44fb-bba6-471a22b32f6c",
+                            "A2": "BRC2JI0",
+                            "IU1": "JI0",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "f5dfab9f-f4f6-4ec3-8906-32344c3931e0",
+                            "A2": "Id6",
+                            "IU1": "UId",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          },
+                          {
+                            "UId": "d40d5c91-270e-46f7-9f32-e8057b506e07",
+                            "A2": "BRC2BRA4",
+                            "IU1": "BRA4",
+                            "IU2": "Text",
+                            "IU8": "item",
+                            "IU4": 1,
+                            "IU5": {
+                              "IV1": "null"
+                            },
+                            "IU6": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "UId": "31927cc5-7993-437c-871e-d83103b9e9fc",
+                    "A2": "BRS1BR2",
+                    "IU1": "BR2",
+                    "IU2": "Object",
+                    "IU3": true,
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": [
+                      {
+                        "UId": "a51f99bd-07c4-486b-84c9-44d440b08a84",
+                        "A2": "BR2JI0",
+                        "IU1": "JI0",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "0428712c-36c4-4822-8708-59ffeb8ecc31",
+                        "A2": "Id7",
+                        "IU1": "UId",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "0e4a0670-8ee5-4643-a036-d575616feff2",
+                        "A2": "BR2BRT1",
+                        "IU1": "BRT1",
+                        "IU2": "Text",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      },
+                      {
+                        "UId": "9de260a6-56c6-41af-b290-450439f842e4",
+                        "A2": "BR2BRT2",
+                        "IU1": "BRT2",
+                        "IU2": "Integer",
+                        "IU8": "item",
+                        "IU4": 1,
+                        "IU5": {
+                          "IV1": "null"
+                        },
+                        "IU6": []
+                      }
+                    ]
+                  },
+                  {
+                    "UId": "d55e5066-916b-42e2-ae54-d9d11589042e",
+                    "A2": "BRS1BR3",
+                    "IU1": "BR3",
+                    "IU2": "Text",
+                    "IU8": "item",
+                    "IU4": 1,
+                    "IU5": {
+                      "IV1": "null"
+                    },
+                    "IU6": []
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
