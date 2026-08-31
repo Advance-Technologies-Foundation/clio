@@ -3215,6 +3215,16 @@ public static class WebToMobileAnalysisService {
 	/// regrouped elsewhere on mobile (e.g. a header button → <c>FloatingActionButton.menuItems</c>). A template that
 	/// declares neither field, or only echoes, returns null. When several matching templates disagree, the first
 	/// declaring a retarget wins.
+	/// <para>
+	/// A declared <c>propertyName</c> is taken on trust and is NOT checked against the target's mobile component
+	/// contract. This is the SECOND path that sets an element's (parent, slot) address — <see cref="BuildTabAreaLayers"/>
+	/// is the other — and it carries the same obligation: the pair must name a slot the target type actually
+	/// declares. Nothing downstream catches a mistake, because <see cref="InitializeContainerChildSlots"/>
+	/// deliberately declares whatever slot a child names rather than validating it, and the differ then inserts
+	/// happily into an array the component never renders. A rules file that retargets into, say, a
+	/// <c>crt.GridContainer</c> with <c>propertyName: "tools"</c> therefore reproduces ENG-96153 exactly:
+	/// a container that silently renders empty in the designer and at runtime, with no error anywhere.
+	/// </para>
 	/// </summary>
 	private static (string Parent, string Property)? ResolveTemplatePlacement(
 		ElementMapContext ctx, JObject node, string mobileType, string mobileName,
@@ -4373,7 +4383,11 @@ public static class WebToMobileAnalysisService {
 	/// The tab's top-level content (expansion panels included — a panel is an ordinary component here) is
 	/// then RETARGETED into the Area, and every retargeted component gets a sequential single-column
 	/// <c>layoutConfig</c> so the mobile order matches the web order. The element map is walked in tree
-	/// order, so the row numbers follow the source page's own ordering.
+	/// order, so the row numbers follow the source page's own ordering — EXCEPT for a child that sat in the
+	/// tab's <c>tools</c> strip, which is hoisted back above the <c>items</c> content
+	/// (<see cref="IsHeaderSlot"/>): the strip is the tab's header and renders above the body on web, but
+	/// the walk always emits a container's <c>items</c> children before its <c>tools</c> children, so
+	/// element-map order alone would stack the header last.
 	/// </para>
 	/// <para>
 	/// The whole pass is switched by DATA: with no usable <c>tabAreaLayers</c> section in the rules file it
@@ -4452,15 +4466,33 @@ public static class WebToMobileAnalysisService {
 
 			// Move the tab's top-level content into the Area and stack it in source order. The Area is a
 			// single-column grid, so each component gets row N of column 1 — element-map order IS the web
-			// order.
+			// order, with ONE correction: element-map order does not preserve where a tools-strip child
+			// renders. A web tab's tools strip is its HEADER (title + the add/settings buttons) drawn ABOVE
+			// the tab body, but the walk reaches a container's items children (WalkElements) before it
+			// reaches its tools children (RecurseChildArrays), unconditionally — so replaying element-map
+			// order verbatim would stack the header LAST. Hoisting is stable, so the relative order inside
+			// each group is still the source order, and it MUST read the slot before the loop below
+			// overwrites PropertyName.
+			List<ElementMapEntry> ordered = content
+				.OrderBy(c => IsHeaderSlot(c.PropertyName) ? 0 : 1)
+				.ToList();
 			var moved = new List<string>();
 			int row = 1;
-			foreach (ElementMapEntry child in content) {
+			foreach (ElementMapEntry child in ordered) {
 				// Without an Area only routing hints can remain here; they point at the tab body.
 				child.ParentName = areaName ?? mainName;
 				if (!string.Equals(child.Operation, "insert", StringComparison.Ordinal)) {
 					continue; // a relocate-children entry is a routing hint, not an element — nothing to place
 				}
+				// The slot travels with the parent. A web crt.TabContainer declares BOTH items and tools (its
+				// header strip — e.g. the Next steps tab's title + "add step" button), and RecurseChildArrays
+				// emits such a child with propertyName "tools". The Area it is retargeted into is a
+				// crt.GridContainer, whose only child collection is items, so carrying the source slot across
+				// the retarget would make InitializeContainerChildSlots declare a "tools" array on the Area and
+				// have the differ insert into a slot the component never renders: the tab shows nothing but an
+				// empty Area, in the designer and at runtime alike (ENG-96153). The hoist above has already
+				// read the source slot, which is why it cannot be folded into this loop.
+				child.PropertyName = ItemsPropertyName;
 				moved.Add(child.MobileName);
 				PlaceInSingleColumn(child, row);
 				row++;
@@ -4602,6 +4634,21 @@ public static class WebToMobileAnalysisService {
 	/// (scalar, array) cannot hold <c>adaptive</c> and is replaceable — string-indexing it directly would
 	/// throw InvalidOperationException.
 	/// </summary>
+	/// <summary>
+	/// True when a child sat in a slot OTHER than <c>items</c> on its web parent — for a tab that means the
+	/// <c>tools</c> header strip. A null or empty <c>propertyName</c> is the generic <c>items</c> slot (the
+	/// same default the differ body assembly uses), so it is NOT a header slot.
+	/// <para>
+	/// Deliberately phrased as "not items" rather than "is tools": the question being asked is whether the
+	/// child is tab CHROME, and a slot list would have to be kept in sync with whatever slots the web
+	/// registry declares on a tab-hosting container. Every non-items slot a tab child can occupy is header
+	/// chrome, so the negative test needs no maintenance.
+	/// </para>
+	/// </summary>
+	private static bool IsHeaderSlot(string propertyName) =>
+		propertyName is { Length: > 0 }
+		&& !string.Equals(propertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase);
+
 	private static void PlaceInSingleColumn(ElementMapEntry child, int row) {
 		if (child.MobileValues is JsonObject childValues
 			&& (childValues["layoutConfig"] is not JsonObject layoutConfig
@@ -4641,7 +4688,7 @@ public static class WebToMobileAnalysisService {
 			// Guaranteed a non-empty string by IsUsableLayer, which gates every call to this method.
 			MobileType = values["type"].GetValue<string>(),
 			ParentName = parentName,
-			PropertyName = "items",
+			PropertyName = ItemsPropertyName,
 			MobileValues = values,
 			Reason = reason
 		};
