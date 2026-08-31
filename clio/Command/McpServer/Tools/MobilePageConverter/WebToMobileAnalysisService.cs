@@ -275,6 +275,7 @@ public static class WebToMobileAnalysisService {
 		// declares (itemLayout) is never declared as an array.
 		InitializeContainerChildSlots(elementMap, mobileByType);
 
+
 		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
 		// converter INSERTS, and the web page's own value for those properties is deliberately IGNORED
 		// (discarded, never translated). Which component, which properties and which values all come from
@@ -283,6 +284,14 @@ public static class WebToMobileAnalysisService {
 		// merge twins the mobile template provides are never touched. Each rule also declares the report
 		// group it feeds, so two standards never bleed into each other's summary.
 		ComponentPropertyOverrideResult componentPropertyOverrides = ApplyComponentPropertyOverrides(elementMap, rules);
+
+		// Complete every layoutConfig the map carries, whoever wrote it — the placement passes above, the
+		// per-breakpoint adaptive pass, and the verbatim carry of the web page's own placement. Placed AFTER
+		// ApplyComponentPropertyOverrides deliberately: that pass stamps rule-declared properties onto inserted
+		// elements, so a rules file that ever declares a layoutConfig would otherwise write a partial one after
+		// this ran. No bundled rule declares one today, which is exactly why the order — not the data — has to
+		// be what guarantees it.
+		NormalizePlacements(elementMap);
 		IReadOnlyList<NormalizationEntry> spacingNormalization =
 			componentPropertyOverrides.EntriesOf(SpacingGroup);
 
@@ -3215,6 +3224,16 @@ public static class WebToMobileAnalysisService {
 	/// regrouped elsewhere on mobile (e.g. a header button → <c>FloatingActionButton.menuItems</c>). A template that
 	/// declares neither field, or only echoes, returns null. When several matching templates disagree, the first
 	/// declaring a retarget wins.
+	/// <para>
+	/// A declared <c>propertyName</c> is taken on trust and is NOT checked against the target's mobile component
+	/// contract. This is the SECOND path that sets an element's (parent, slot) address — <see cref="BuildTabAreaLayers"/>
+	/// is the other — and it carries the same obligation: the pair must name a slot the target type actually
+	/// declares. Nothing downstream catches a mistake, because <see cref="InitializeContainerChildSlots"/>
+	/// deliberately declares whatever slot a child names rather than validating it, and the differ then inserts
+	/// happily into an array the component never renders. A rules file that retargets into, say, a
+	/// <c>crt.GridContainer</c> with <c>propertyName: "tools"</c> therefore reproduces ENG-96153 exactly:
+	/// a container that silently renders empty in the designer and at runtime, with no error anywhere.
+	/// </para>
 	/// </summary>
 	private static (string Parent, string Property)? ResolveTemplatePlacement(
 		ElementMapContext ctx, JObject node, string mobileType, string mobileName,
@@ -4111,9 +4130,10 @@ public static class WebToMobileAnalysisService {
 	/// The anchor's own template placement is the ORIGIN, so nothing here is assumed: its row is the first row the
 	/// group occupies, and its shape decides the shape written onto the siblings. A template that positions the
 	/// anchor per breakpoint (<c>layoutConfig.adaptive</c>) gets every breakpoint's row shifted and the siblings
-	/// placed per breakpoint too; a flat placement gets a flat one. <c>colSpan</c> / <c>rowSpan</c> are not written
-	/// onto a sibling — the mobile runtime does not support them — while the anchor keeps whatever its template
-	/// declared, minus the shifted row.
+	/// placed per breakpoint too; a flat placement gets a flat one. Only <c>row</c> and <c>column</c> are computed;
+	/// the anchor keeps whatever its template declared, minus the shifted row. Every placement is completed to all
+	/// four keys by <see cref="NormalizePlacements"/> — the runtime renders without <c>colSpan</c> / <c>rowSpan</c>,
+	/// but the Freedom UI Mobile DESIGNER refuses to open a page whose <c>layoutConfig</c> omits them.
 	/// </para>
 	/// <para>
 	/// An anchor whose template declares no row at all is left alone together with its group: that parent
@@ -4236,7 +4256,8 @@ public static class WebToMobileAnalysisService {
 	/// reports whether it wrote one, so the caller shifts the anchor by what was really placed. The shape follows
 	/// WHERE THE ANCHOR'S ROWS ACTUALLY ARE rather than merely whether an <c>adaptive</c> key exists, so an anchor
 	/// with a flat row beside a row-less adaptive block places its siblings flat. Only <c>row</c> and
-	/// <c>column</c> are written — <c>colSpan</c> / <c>rowSpan</c> are not supported by the mobile runtime.
+	/// <c>column</c> are computed; <c>colSpan</c> / <c>rowSpan</c> are always written as 1, because the mobile
+	/// designer refuses to open a page whose <c>layoutConfig</c> omits them.
 	/// <para>
 	/// A placement the sibling already carries is REPLACED: positional placement is authoritative for an element
 	/// the rule rerouted out of its web container, and the one pass that could otherwise have written one
@@ -4264,8 +4285,109 @@ public static class WebToMobileAnalysisService {
 		return true;
 	}
 
-	/// <summary>One sibling cell: the computed row of column 1, and nothing the mobile runtime ignores.</summary>
-	private static JsonObject SiblingSlot(int row) => new() { [LayoutRowKey] = row, ["column"] = 1 };
+	/// <summary>
+	/// Completes every <c>layoutConfig</c> the element map carries so none reaches the page partial.
+	/// <para>
+	/// The Freedom UI Mobile DESIGNER fails to open a page whose <c>layoutConfig</c> omits <c>colSpan</c> /
+	/// <c>rowSpan</c>. The runtime renders fine without them, so the failure surfaces only when somebody opens the
+	/// converted page to edit it — nothing in the conversion, the validator or a read-back reports it.
+	/// </para>
+	/// <para>
+	/// Normalizing here rather than at each writer is deliberate: the converter authors a placement from several
+	/// places — this pass's own <see cref="SiblingSlot"/>, the anchor clone in <see cref="ShiftRows"/>, the
+	/// per-breakpoint adaptive pass, the tab-area stacking, and the VERBATIM carry of the web page's own
+	/// <c>layoutConfig</c> in <see cref="BuildMobileValues"/>. That last one is the reason a per-writer fix is not
+	/// enough: a child of a single-column web grid is touched by none of the placement passes and keeps the web
+	/// object exactly as authored, spans and all — and a web page may legitimately declare only
+	/// <c>row</c>/<c>column</c>.
+	/// </para>
+	/// <para>
+	/// Applied to the WHOLE <c>mobileValues</c> tree, not just its root, so a placement nested inside a pasted
+	/// value (a list row's <c>itemLayout</c>, a menu item) is completed too — the designer reads those the same way.
+	/// An <c>adaptive</c> block is completed per breakpoint and its wrapper is left alone unless it also carries
+	/// flat keys of its own; a <c>layoutConfig</c> that is not an object at all cannot be honoured as a placement
+	/// and is replaced outright.
+	/// </para>
+	/// </summary>
+	private static void NormalizePlacements(List<ElementMapEntry> elementMap) {
+		foreach (ElementMapEntry entry in elementMap) {
+			if (entry.MobileValues is JsonNode values) {
+				NormalizePlacementsIn(values);
+			}
+		}
+	}
+
+	/// <summary>Recurses a value tree, completing every <c>layoutConfig</c> property it finds.</summary>
+	private static void NormalizePlacementsIn(JsonNode node) {
+		switch (node) {
+			case JsonObject obj:
+				if (obj.TryGetPropertyValue("layoutConfig", out JsonNode placement)) {
+					obj["layoutConfig"] = CompletePlacement(placement);
+				}
+				foreach (KeyValuePair<string, JsonNode> property in obj.ToList()) {
+					if (!string.Equals(property.Key, "layoutConfig", StringComparison.Ordinal) && property.Value is not null) {
+						NormalizePlacementsIn(property.Value);
+					}
+				}
+				break;
+			case JsonArray array:
+				foreach (JsonNode item in array.ToList()) {
+					if (item is not null) {
+						NormalizePlacementsIn(item);
+					}
+				}
+				break;
+		}
+	}
+
+	/// <summary>
+	/// One placement with every key the designer requires. A non-object is replaced by the default cell: it cannot
+	/// be honoured as a placement, and leaving it would keep the page unopenable. An <c>adaptive</c> block is
+	/// completed breakpoint by breakpoint; its wrapper gains flat keys only when it already carries some, so a
+	/// purely per-breakpoint placement is never given a competing flat one.
+	/// </summary>
+	private static JsonNode CompletePlacement(JsonNode placement) {
+		if (placement is not JsonObject cell) {
+			return SiblingSlot(1);
+		}
+		if (cell["adaptive"] is JsonObject adaptive) {
+			foreach (KeyValuePair<string, JsonNode> breakpoint in adaptive.ToList()) {
+				if (breakpoint.Value is JsonObject slot) {
+					FillPlacementKeys(slot);
+				}
+			}
+			if (PlacementKeys.Any(key => cell[key] is not null)) {
+				FillPlacementKeys(cell);
+			}
+			return cell;
+		}
+		FillPlacementKeys(cell);
+		return cell;
+	}
+
+	/// <summary>The keys a placement must carry for the mobile designer to open the page.</summary>
+	private static readonly string[] PlacementKeys = [LayoutRowKey, "column", "colSpan", "rowSpan"];
+
+	/// <summary>Adds each missing placement key as 1, leaving every value the caller already set untouched.</summary>
+	private static void FillPlacementKeys(JsonObject cell) {
+		foreach (string key in PlacementKeys) {
+			if (cell[key] is null) {
+				cell[key] = 1;
+			}
+		}
+	}
+
+	/// <summary>
+	/// A single-column cell: the computed row of column 1, spanning one cell. The one placement literal in this
+	/// file — the positional pass and the tab-area stacking both stack into a single column, so they want the
+	/// same object. All four keys are always written —
+	/// the Freedom UI Mobile DESIGNER fails to open a page whose element carries a <c>layoutConfig</c> without
+	/// <c>colSpan</c> / <c>rowSpan</c>, even though the runtime itself renders fine without them. A partial
+	/// placement is therefore not a smaller placement, it is a broken page at design time.
+	/// </summary>
+	private static JsonObject SiblingSlot(int row) => new() {
+		[LayoutRowKey] = row, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1
+	};
 
 	/// <summary>
 	/// Carries the shifted placement onto the anchor: patches the <c>merge</c> entry the conversion already
@@ -4373,7 +4495,11 @@ public static class WebToMobileAnalysisService {
 	/// The tab's top-level content (expansion panels included — a panel is an ordinary component here) is
 	/// then RETARGETED into the Area, and every retargeted component gets a sequential single-column
 	/// <c>layoutConfig</c> so the mobile order matches the web order. The element map is walked in tree
-	/// order, so the row numbers follow the source page's own ordering.
+	/// order, so the row numbers follow the source page's own ordering — EXCEPT for a child that sat in the
+	/// tab's <c>tools</c> strip, which is hoisted back above the <c>items</c> content
+	/// (<see cref="IsHeaderSlot"/>): the strip is the tab's header and renders above the body on web, but
+	/// the walk always emits a container's <c>items</c> children before its <c>tools</c> children, so
+	/// element-map order alone would stack the header last.
 	/// </para>
 	/// <para>
 	/// The whole pass is switched by DATA: with no usable <c>tabAreaLayers</c> section in the rules file it
@@ -4452,15 +4578,33 @@ public static class WebToMobileAnalysisService {
 
 			// Move the tab's top-level content into the Area and stack it in source order. The Area is a
 			// single-column grid, so each component gets row N of column 1 — element-map order IS the web
-			// order.
+			// order, with ONE correction: element-map order does not preserve where a tools-strip child
+			// renders. A web tab's tools strip is its HEADER (title + the add/settings buttons) drawn ABOVE
+			// the tab body, but the walk reaches a container's items children (WalkElements) before it
+			// reaches its tools children (RecurseChildArrays), unconditionally — so replaying element-map
+			// order verbatim would stack the header LAST. Hoisting is stable, so the relative order inside
+			// each group is still the source order, and it MUST read the slot before the loop below
+			// overwrites PropertyName.
+			List<ElementMapEntry> ordered = content
+				.OrderBy(c => IsHeaderSlot(c.PropertyName) ? 0 : 1)
+				.ToList();
 			var moved = new List<string>();
 			int row = 1;
-			foreach (ElementMapEntry child in content) {
+			foreach (ElementMapEntry child in ordered) {
 				// Without an Area only routing hints can remain here; they point at the tab body.
 				child.ParentName = areaName ?? mainName;
 				if (!string.Equals(child.Operation, "insert", StringComparison.Ordinal)) {
 					continue; // a relocate-children entry is a routing hint, not an element — nothing to place
 				}
+				// The slot travels with the parent. A web crt.TabContainer declares BOTH items and tools (its
+				// header strip — e.g. the Next steps tab's title + "add step" button), and RecurseChildArrays
+				// emits such a child with propertyName "tools". The Area it is retargeted into is a
+				// crt.GridContainer, whose only child collection is items, so carrying the source slot across
+				// the retarget would make InitializeContainerChildSlots declare a "tools" array on the Area and
+				// have the differ insert into a slot the component never renders: the tab shows nothing but an
+				// empty Area, in the designer and at runtime alike (ENG-96153). The hoist above has already
+				// read the source slot, which is why it cannot be folded into this loop.
+				child.PropertyName = ItemsPropertyName;
 				moved.Add(child.MobileName);
 				PlaceInSingleColumn(child, row);
 				row++;
@@ -4589,11 +4733,6 @@ public static class WebToMobileAnalysisService {
 		&& entry is not null
 		&& ResolveExpectedShape(entry, slot) == JsonValueKind.Object;
 
-	/// <summary>A single-column grid cell: column 1 of the given row, spanning nothing.</summary>
-	private static JsonObject SingleColumnPlacement(int row) => new() {
-		["column"] = 1, ["colSpan"] = 1, ["row"] = row, ["rowSpan"] = 1
-	};
-
 	/// <summary>
 	/// Stacks one retargeted element into its single-column parent at the given row. An element the
 	/// adaptive pass already placed per breakpoint keeps that placement: mobile resolves layoutConfig from
@@ -4602,11 +4741,26 @@ public static class WebToMobileAnalysisService {
 	/// (scalar, array) cannot hold <c>adaptive</c> and is replaceable — string-indexing it directly would
 	/// throw InvalidOperationException.
 	/// </summary>
+	/// <summary>
+	/// True when a child sat in a slot OTHER than <c>items</c> on its web parent — for a tab that means the
+	/// <c>tools</c> header strip. A null or empty <c>propertyName</c> is the generic <c>items</c> slot (the
+	/// same default the differ body assembly uses), so it is NOT a header slot.
+	/// <para>
+	/// Deliberately phrased as "not items" rather than "is tools": the question being asked is whether the
+	/// child is tab CHROME, and a slot list would have to be kept in sync with whatever slots the web
+	/// registry declares on a tab-hosting container. Every non-items slot a tab child can occupy is header
+	/// chrome, so the negative test needs no maintenance.
+	/// </para>
+	/// </summary>
+	private static bool IsHeaderSlot(string propertyName) =>
+		propertyName is { Length: > 0 }
+		&& !string.Equals(propertyName, ItemsPropertyName, StringComparison.OrdinalIgnoreCase);
+
 	private static void PlaceInSingleColumn(ElementMapEntry child, int row) {
 		if (child.MobileValues is JsonObject childValues
 			&& (childValues["layoutConfig"] is not JsonObject layoutConfig
 				|| layoutConfig["adaptive"] is null)) {
-			childValues["layoutConfig"] = SingleColumnPlacement(row);
+			childValues["layoutConfig"] = SiblingSlot(row);
 		}
 	}
 
@@ -4641,7 +4795,7 @@ public static class WebToMobileAnalysisService {
 			// Guaranteed a non-empty string by IsUsableLayer, which gates every call to this method.
 			MobileType = values["type"].GetValue<string>(),
 			ParentName = parentName,
-			PropertyName = "items",
+			PropertyName = ItemsPropertyName,
 			MobileValues = values,
 			Reason = reason
 		};

@@ -269,12 +269,12 @@ internal sealed class ClassicEnumVocabularyResolver(
 	// reasoning as the component-registry client).
 	public const string HttpClientName = nameof(ClassicEnumVocabularyResolver);
 
-	// Case-insensitive: nothing about the hash's own casing is a documented platform contract, only that it is
-	// 32 hex characters, so matching only lowercase would silently omit enumVocabulary on a stand that happens to
-	// serve an uppercase-hex marker. The optional leading '/0' is CAPTURED rather than merely tolerated, so a login
-	// page that already spells its static root is echoed back verbatim and can never be double-prefixed.
+	// Case-insensitive: current FSM stands use the stable literal "hash" route while compiled-content stands use
+	// a 32-character hex hash. The optional leading '/0' is CAPTURED rather than merely tolerated, so a login page
+	// that already spells its static root is echoed back verbatim and can never be double-prefixed.
 	private static readonly Regex ContentHashPathRegex = new(
-		"((?:/0)?)/core/([0-9a-fA-F]{32})/", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+		"((?:/0)?)/core/([0-9a-fA-F]{32}|hash)/", RegexOptions.Compiled | RegexOptions.IgnoreCase,
+		TimeSpan.FromSeconds(1));
 
 	// Login-page locations, ordered by the environment's declared runtime: .NET Core serves /Login/Login.html off the
 	// site root, .NET Framework serves /0/Login/NuiLogin.aspx behind its application root
