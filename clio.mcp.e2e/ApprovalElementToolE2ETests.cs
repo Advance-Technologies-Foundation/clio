@@ -135,7 +135,64 @@ public sealed class ApprovalElementToolE2ETests {
 			because: "the refusal has to name the block it is refusing, so the caller can find the mistake");
 	}
 
+	[Test]
+	[Description("Over the real MCP path an approver survives the round trip: the 'manager' token is written as the platform's own code and read back as the token again, with the employee defaulted to the current user and no role reported.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process writes an approver and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_WriteApprover_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpApproverE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApproverDescriptor(processName)
+		});
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "an approver the designer itself offers must build without a refusal");
+		DescribedElement approval = graph.Elements.Single(element => element.Name == "Approval1");
+		approval.Approval.Should().NotBeNull(
+			because: "an approver alone is configuration, so the element must report an approval block");
+		approval.Approval!.ApproverType.Should().Be("manager",
+			because: "the stored ApproverType code is an implementation detail — the contract round-trips the "
+				+ "token, and a raw code here would not feed back into a modify call");
+		approval.Approval.ApproverEmployee.Should().Be("[#SysVariable.CurrentUser#]",
+			because: "an omitted employee takes the designer's own one-click default rather than leaving the "
+				+ "element with nobody whose manager can approve");
+		approval.Approval.ApproverRole.Should().BeNull(
+			because: "the manager type does not use a role, and reporting one would describe an approver the "
+				+ "element does not use");
+	}
+
 	#region Methods: Private
+
+	private static string BuildApproverDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Approver E2E",
+		  "packageName": "Custom",
+		  "parameters": [ { "name": "RecordToApprove", "type": "Guid", "direction": "In" } ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "Approval1", "type": "approval", "caption": "Manager approval",
+		      "approval": {
+		        "object": "{{ApprovalObjectName}}",
+		        "recordId": { "processParameter": "RecordToApprove" },
+		        "approver": { "type": "manager" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "Approval1" },
+		    { "source": "Approval1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
 
 	private static string BuildApprovalDescriptor(string processName) =>
 		$$"""
@@ -150,6 +207,7 @@ public sealed class ApprovalElementToolE2ETests {
 		      "approval": {
 		        "object": "{{ApprovalObjectName}}",
 		        "recordId": { "processParameter": "RecordToApprove" },
+		        "approver": { "type": "user" },
 		        "purpose": "Discount over 20% requires approval",
 		        "allowDelegation": true
 		      } },
@@ -174,7 +232,8 @@ public sealed class ApprovalElementToolE2ETests {
 		    { "name": "Approval1", "type": "userTask", "userTaskName": "ApprovalUserTask",
 		      "approval": {
 		        "object": "{{ApprovalObjectName}}",
-		        "recordId": { "processParameter": "RecordToApprove" }
+		        "recordId": { "processParameter": "RecordToApprove" },
+		        "approver": { "type": "user" }
 		      } },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],

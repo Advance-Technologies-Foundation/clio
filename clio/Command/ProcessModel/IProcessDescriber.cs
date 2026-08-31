@@ -304,9 +304,11 @@ public sealed class DescribedElement {
 	/// schema-level default (<c>true</c>): an element nobody saved through the designer USES that value while
 	/// reporting nothing here, so absence means "not written", never "off". And clearing a notification resets its
 	/// template to no source, which makes a CLEARED template indistinguishable from one that was never set.</para>
-	/// <para>The APPROVER is absent by design — <c>ApproverType</c> / <c>EmployeeId</c> / <c>RoleId</c> belong to a
-	/// separate contract; read them from <see cref="Parameters"/>. The element's outcome likewise stays in
-	/// <see cref="Parameters"/> as the <c>ResultParameter</c> output.</para>
+	/// <para>The APPROVER is reported as <see cref="DescribedApproval.ApproverType"/> plus only the companion field
+	/// that type uses, so the block re-applies as it reads. A stored value belonging to the OTHER branch — which an
+	/// element the designer never re-saved can still carry — is deliberately not reported, and an unrecognized
+	/// type code reports no approver at all rather than a token a write would refuse. The element's outcome stays
+	/// in <see cref="Parameters"/> as the <c>ResultParameter</c> output.</para>
 	/// </summary>
 	[JsonPropertyName("approval")]
 	public DescribedApproval Approval { get; set; }
@@ -347,6 +349,26 @@ public sealed class DescribedApproval {
 	/// <summary>The fixed record's display value, when the platform stored one. Read-only.</summary>
 	[JsonPropertyName("recordIdDisplay")]
 	public string RecordIdDisplay { get; set; }
+
+	/// <summary>"Approver" — <c>user</c>, <c>manager</c> or <c>role</c>; null when the element has no approver.</summary>
+	[JsonPropertyName("approverType")]
+	public string ApproverType { get; set; }
+
+	/// <summary>The employee, as stored. Reported for the <c>user</c> and <c>manager</c> types only.</summary>
+	[JsonPropertyName("approverEmployee")]
+	public string ApproverEmployee { get; set; }
+
+	/// <summary>The employee's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverEmployeeDisplay")]
+	public string ApproverEmployeeDisplay { get; set; }
+
+	/// <summary>The approving role, as stored. Reported for the <c>role</c> type only.</summary>
+	[JsonPropertyName("approverRole")]
+	public string ApproverRole { get; set; }
+
+	/// <summary>The role's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverRoleDisplay")]
+	public string ApproverRoleDisplay { get; set; }
 
 	/// <summary>"Approval may be delegated".</summary>
 	[JsonPropertyName("allowDelegation")]

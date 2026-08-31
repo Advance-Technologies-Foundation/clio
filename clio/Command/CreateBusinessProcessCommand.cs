@@ -15,12 +15,13 @@ namespace Clio.Command;
 /// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
 // The version literal states what THIS command's code needs — the newest operation it sends that an
-// older server does not have. Today that is the APPROVAL block, shipped in the 1.4.1.0 archive: an older
-// server has no approval member and silently discards it while answering success. The performer block
+// older server does not have. Today that is the approval APPROVER, shipped in the 1.4.2.0 archive: an older
+// server has no approver member and silently discards it while answering success — the element saves and
+// runs with nobody assigned. The approval block itself (1.4.1.0), the performer block
 // (1.3.1.1) and the email block (1.2.0.1) set this precedent and are subsumed by this literal. Presence
 // alone cannot express any of them. The guard fixture asserts the shipped archive satisfies the literal,
 // so clio can never demand a version it does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.1.0",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.4.2.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
