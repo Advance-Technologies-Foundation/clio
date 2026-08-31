@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace Clio.Common;
@@ -57,6 +58,8 @@ public class CreatioHostService : ICreatioHostService
 	private readonly ILogger _logger;
 	private readonly IProcessExecutor _processExecutor;
 	private readonly ICreatioHostEnvironmentStore _environmentStore;
+	private readonly IFileSystem _fileSystem;
+	private readonly IFileSecurityHardening _fileSecurityHardening;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="CreatioHostService"/> class.
@@ -64,14 +67,20 @@ public class CreatioHostService : ICreatioHostService
 	/// <param name="logger">Logger used for host lifecycle messages.</param>
 	/// <param name="processExecutor">Process launcher used to start the host.</param>
 	/// <param name="environmentStore">Persistent store for sensitive host environment values.</param>
+	/// <param name="fileSystem">File-system abstraction used for the protected terminal launcher.</param>
+	/// <param name="fileSecurityHardening">Helper that restricts the terminal launcher to the current user.</param>
 	public CreatioHostService(
 		ILogger logger,
 		IProcessExecutor processExecutor,
-		ICreatioHostEnvironmentStore environmentStore)
+		ICreatioHostEnvironmentStore environmentStore,
+		IFileSystem fileSystem,
+		IFileSecurityHardening fileSecurityHardening)
 	{
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
 		_environmentStore = environmentStore ?? throw new ArgumentNullException(nameof(environmentStore));
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		_fileSecurityHardening = fileSecurityHardening ?? throw new ArgumentNullException(nameof(fileSecurityHardening));
 	}
 
 	/// <summary>
@@ -122,23 +131,120 @@ public class CreatioHostService : ICreatioHostService
 		IReadOnlyDictionary<string, string> environmentVariables = _environmentStore.Load(workingDirectory);
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 		{
-			string windowsArgs = $"/c start \"Creatio [{envName}]\" cmd.exe /k \"cd /d \"{workingDirectory}\" && dotnet Terrasoft.WebHost.dll\"";
+			string windowsArgs = "/c start \"Creatio\" cmd.exe /k dotnet Terrasoft.WebHost.dll";
 			StartTerminalProcess("cmd.exe", windowsArgs, workingDirectory, environmentVariables);
 			return;
 		}
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
 		{
-			string command = $"cd '{workingDirectory}' && echo 'Starting Creatio [{envName}]...' && dotnet Terrasoft.WebHost.dll";
-			string script = $"tell application \\\"Terminal\\\" to do script \\\"{command}\\\"";
-			StartTerminalProcess("osascript", $"-e \"{script}\"", workingDirectory, environmentVariables);
+			string scriptPath = CreateMacOsTerminalLaunchScript(workingDirectory, envName, environmentVariables);
+			try
+			{
+				string command = $"/bin/sh {EscapeShellSingleQuoted(scriptPath)}";
+				string script = $"tell application \"Terminal\" to do script \"{command}\"";
+				ProcessLaunchResult result = StartTerminalProcess(
+					"osascript",
+					$"-e \"{EscapeAppleScriptString(script)}\"",
+					workingDirectory,
+					environmentVariables);
+				if (result is null || !result.Started)
+				{
+					throw new InvalidOperationException(
+						$"Unable to start the macOS terminal launcher: {result?.ErrorMessage ?? "process did not start"}.");
+				}
+			}
+			catch
+			{
+				_fileSystem.DeleteFileIfExists(scriptPath);
+				throw;
+			}
 			return;
 		}
 		string terminal = GetLinuxTerminal();
-		string linuxArgs = $"--working-directory=\"{workingDirectory}\" -e \"bash -c 'echo Starting Creatio [{envName}]...; dotnet Terrasoft.WebHost.dll; exec bash'\"";
+		string linuxArgs = "-e \"bash -c 'echo Starting Creatio...; dotnet Terrasoft.WebHost.dll; exec bash'\"";
 		StartTerminalProcess(terminal, linuxArgs, workingDirectory, environmentVariables);
 	}
 
-	private void StartTerminalProcess(
+	private static string EscapeShellSingleQuoted(string value) =>
+		$"'{value.Replace("'", "'\\''", StringComparison.Ordinal)}'";
+
+	private static string EscapeAppleScriptString(string value) =>
+		value.Replace("\\", "\\\\", StringComparison.Ordinal)
+			.Replace("\"", "\\\"", StringComparison.Ordinal);
+
+	private string CreateMacOsTerminalLaunchScript(
+		string workingDirectory,
+		string envName,
+		IReadOnlyDictionary<string, string> environmentVariables)
+	{
+		string directory = Path.Combine(ClioRuntimePaths.Home, "host-environments");
+		_fileSystem.CreateDirectoryIfNotExists(directory);
+		_fileSecurityHardening.HardenDirectory(directory);
+		string scriptPath = Path.Combine(directory, $"terminal-{Guid.NewGuid():N}.sh");
+		try
+		{
+			string script = BuildTerminalLaunchScript(workingDirectory, envName, environmentVariables);
+			_fileSystem.WriteOwnerOnlyTextToFile(scriptPath, script);
+			_fileSecurityHardening.HardenFile(scriptPath);
+			return scriptPath;
+		}
+		catch
+		{
+			_fileSystem.DeleteFileIfExists(scriptPath);
+			throw;
+		}
+	}
+
+	internal static string BuildTerminalLaunchScript(
+		string workingDirectory,
+		string envName,
+		IReadOnlyDictionary<string, string> environmentVariables)
+	{
+		List<string> lines = [
+			"#!/bin/sh",
+			"set -eu",
+			"cleanup() { rm -f -- \"$0\"; }",
+			"trap cleanup EXIT HUP INT TERM"
+		];
+		foreach ((string key, string value) in environmentVariables ?? new Dictionary<string, string>())
+		{
+			if (!IsValidShellEnvironmentVariableName(key))
+			{
+				throw new InvalidOperationException(
+					$"The host environment variable '{key}' cannot be passed to a POSIX terminal launcher.");
+			}
+
+			lines.Add($"export {key}={EscapeShellSingleQuoted(value)}");
+		}
+
+		string displayName = string.IsNullOrWhiteSpace(envName) ? "environment" : envName;
+		lines.Add($"cd -- {EscapeShellSingleQuoted(workingDirectory)}");
+		lines.Add($"echo {EscapeShellSingleQuoted($"Starting Creatio [{displayName}]...")}");
+		lines.Add("dotnet Terrasoft.WebHost.dll");
+		return string.Join(Environment.NewLine, lines) + Environment.NewLine;
+	}
+
+	private static bool IsValidShellEnvironmentVariableName(string value)
+	{
+		if (string.IsNullOrEmpty(value)
+			|| !(value[0] == '_' || value[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'))
+		{
+			return false;
+		}
+
+		for (int index = 1; index < value.Length; index++)
+		{
+			char character = value[index];
+			if (!(character == '_' || character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private ProcessLaunchResult StartTerminalProcess(
 		string program,
 		string arguments,
 		string workingDirectory,
@@ -150,7 +256,7 @@ public class CreatioHostService : ICreatioHostService
 			ClearInheritedEnvironment = true,
 			InheritedEnvironmentVariableAllowlist = HostEnvironmentAllowlist
 		};
-		_processExecutor.FireAndForgetAsync(options).GetAwaiter().GetResult();
+		return _processExecutor.FireAndForgetAsync(options).GetAwaiter().GetResult();
 	}
 
 	private string GetLinuxTerminal()

@@ -94,7 +94,7 @@ public sealed class CreatioHostEnvironmentStore : ICreatioHostEnvironmentStore
 
 			return new Dictionary<string, string>(environmentVariables, StringComparer.OrdinalIgnoreCase);
 		}
-		catch (Exception exception) when (exception is JsonException or IOException)
+		catch (Exception exception) when (exception is ArgumentException or JsonException or IOException)
 		{
 			throw new InvalidOperationException(
 				$"The saved Creatio host environment is invalid or cannot be read: {path}.", exception);

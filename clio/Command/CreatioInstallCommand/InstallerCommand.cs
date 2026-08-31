@@ -205,7 +205,7 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// <summary>
 	/// Gets or sets the path to the SSL certificate file used by dotnet hosting.
 	/// </summary>
-	[Option("cert-path", Required = false, HelpText = "Path to SSL certificate file (.pfx, .pem, or .crt) for dotnet hosting")]
+	[Option("cert-path", Required = false, HelpText = "Path to SSL certificate file (.pfx, PEM .pem/.crt, or DER .crt) for dotnet hosting")]
 	public string CertificatePath { get; set; }
 
 	/// <summary>
@@ -217,9 +217,9 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	public string CertificatePassword { get; set; }
 
 	/// <summary>
-	/// Gets or sets the path to the private key file used with a PEM or CRT certificate.
+	/// Gets or sets the path to the private key file used with a PEM or DER certificate.
 	/// </summary>
-	[Option("cert-key-path", Required = false, HelpText = "Path to the private key file for a PEM or CRT certificate")]
+	[Option("cert-key-path", Required = false, HelpText = "Path to the private key file for a PEM or DER certificate")]
 	public string CertificateKeyPath { get; set; }
 
 	/// <summary>

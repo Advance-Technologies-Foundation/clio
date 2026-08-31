@@ -99,10 +99,10 @@ public class PfInstallerOptions : EnvironmentNameOptions
     public bool UseHttps { get; set; }
     
     /// <summary>
-    /// Path to SSL certificate (.pfx, .pem, or .crt)
+    /// Path to SSL certificate (.pfx, PEM .pem/.crt, or DER .crt)
     /// </summary>
     [Option("cert-path", Required = false,
-        HelpText = "Path to SSL certificate file (.pfx, .pem, or .crt)")]
+        HelpText = "Path to SSL certificate file (.pfx, PEM .pem/.crt, or DER .crt)")]
     public string CertificatePath { get; set; }
     
     /// <summary>
@@ -501,7 +501,7 @@ REDIS_PORT=6379
 | No IIS | `--no-iis` | bool | No | false | Don't use IIS on Windows |
 | App path | `--app-path` | string | No | ~/creatio/{SiteName} | Application installation directory |
 | Use HTTPS | `--use-https` | bool | No | false | Use HTTPS instead of HTTP |
-| Certificate path | `--cert-path` | string | No | - | Path to SSL certificate (.pem or .pfx) |
+| Certificate path | `--cert-path` | string | No | - | Path to SSL certificate (.pfx, PEM .pem/.crt, or DER .crt) |
 | Certificate password variable | `--cert-password` | string | No | - | Name of environment variable containing the PFX password |
 | Certificate password file | `--cert-password-file` | string | No | - | Path to a file containing the PFX password |
 | Auto-run | `--auto-run` | bool | No | true | Run application after deployment |

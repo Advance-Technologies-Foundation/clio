@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -95,5 +96,54 @@ public sealed class CreatioHostServiceTests : BaseClioModuleTests {
 
 		// Assert
 		_environmentStore.Received(1).Save("/tmp/creatio", environmentVariables);
+	}
+
+	[Test]
+	[Description("Quotes macOS terminal launcher paths, labels, and environment values so hostile registered values remain data rather than shell syntax.")]
+	public void BuildTerminalLaunchScript_ShouldQuoteDynamicValues() {
+		// Arrange
+		const string workingDirectory = "/tmp/creatio; touch /tmp/pwned/'quoted";
+		const string environmentName = "dev; touch /tmp/name-pwned";
+		IReadOnlyDictionary<string, string> environmentVariables = new Dictionary<string, string> {
+			["Kestrel__Endpoints__Https__Certificate__Password"] = "secret'with;metachar"
+		};
+
+		// Act
+		string script = CreatioHostService.BuildTerminalLaunchScript(
+			workingDirectory,
+			environmentName,
+			environmentVariables);
+
+		// Assert
+		script.Should().Contain(
+			"export Kestrel__Endpoints__Https__Certificate__Password='secret'\\''with;metachar'",
+			because: "certificate values must be represented as literal shell data in the protected launcher");
+		script.Should().Contain(
+			"cd -- '/tmp/creatio; touch /tmp/pwned/'\\''quoted'",
+			because: "the terminal must enter the registered application directory without executing path metacharacters");
+		script.Should().Contain(
+			"echo 'Starting Creatio [dev; touch /tmp/name-pwned]...'",
+			because: "the environment label must remain a literal display value in the terminal script");
+		script.Should().EndWith("dotnet Terrasoft.WebHost.dll" + Environment.NewLine,
+			because: "the launcher must run only the fixed Creatio host command after setting its safe inputs");
+	}
+
+	[Test]
+	[Description("Rejects invalid environment variable names before a POSIX terminal launcher can interpret them as shell syntax.")]
+	public void BuildTerminalLaunchScript_ShouldRejectInvalidEnvironmentVariableNames() {
+		// Arrange
+		IReadOnlyDictionary<string, string> environmentVariables = new Dictionary<string, string> {
+			["Kestrel-Https-Password"] = "secret"
+		};
+
+		// Act
+		Action act = () => CreatioHostService.BuildTerminalLaunchScript(
+			"/tmp/creatio",
+			"dev",
+			environmentVariables);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "a terminal launcher must not turn an invalid environment key into executable shell syntax");
 	}
 }

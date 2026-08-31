@@ -2265,6 +2265,14 @@ public sealed class ToolContractGetToolTests {
 		deploy.InputSchema.Properties.Single(property => property.Name == "certificatePassword").Description.Should()
 			.Contain("sensitive",
 				because: "the contract must signal that certificate passwords require secret handling");
+		deploy.InputSchema.Validators.Should().Contain(validator =>
+				validator.Fields != null
+					&& validator.Fields.Contains("certificatePassword")
+					&& validator.Fields.Contains("certificatePasswordFile"),
+			because: "the deploy contract must make the mutually exclusive certificate password sources machine-readable");
+		deploy.InputSchema.Properties.Single(property => property.Name == "certificatePasswordFile").Description.Should()
+			.Contain("mutually exclusive",
+				because: "the password-file field must tell callers not to send both secret sources");
 		deploy.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "deploy-creatio returns the standard command execution result payload");
 		deploy.PreferredFlow.Tools.Should().Equal(

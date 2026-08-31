@@ -7,6 +7,7 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -26,6 +27,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	private const string LoopbackHost = "localhost";
 	private const string AllInterfacesHost = "[::]";
 	private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+	private enum CertificateFileFormat { Pkcs12, Pem, Der }
 
 	private readonly ILogger _logger;
 	private readonly ISystemServiceManager _serviceManager;
@@ -93,10 +95,23 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
             _logger.WriteInfo($"Port {options.SitePort} is available");
             
 			// Create appsettings.json configuration and keep sensitive certificate values out of the file.
-			IReadOnlyDictionary<string, string> environmentVariables =
-				CreateApplicationConfiguration(appDirectoryPath, options);
+			string configurationPath = Path.Combine(appDirectoryPath, "appsettings.json");
+			bool hadExistingConfiguration = File.Exists(configurationPath);
+			string? previousConfiguration = hadExistingConfiguration
+				? File.ReadAllText(configurationPath)
+				: null;
+			IReadOnlyDictionary<string, string> environmentVariables;
+			try
+			{
+				environmentVariables = CreateApplicationConfiguration(appDirectoryPath, options);
+				_creatioHostService.PersistEnvironmentVariables(appDirectoryPath, environmentVariables);
+			}
+			catch
+			{
+				RestoreApplicationConfiguration(configurationPath, hadExistingConfiguration, previousConfiguration);
+				throw;
+			}
 			_logger.WriteInfo("Application configuration created");
-			_creatioHostService.PersistEnvironmentVariables(appDirectoryPath, environmentVariables);
 
 			// Start the host application as a background process
 			int? processId = _creatioHostService.StartInBackground(appDirectoryPath, environmentVariables);
@@ -260,6 +275,28 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		return configuration.EnvironmentVariables;
 	}
 
+	private void RestoreApplicationConfiguration(
+		string configurationPath,
+		bool hadExistingConfiguration,
+		string? previousConfiguration)
+	{
+		try
+		{
+			if (hadExistingConfiguration)
+			{
+				File.WriteAllText(configurationPath, previousConfiguration!);
+			}
+			else if (File.Exists(configurationPath))
+			{
+				File.Delete(configurationPath);
+			}
+		}
+		catch (Exception exception)
+		{
+			_logger.WriteError($"Failed to restore application configuration after deployment failure: {exception.Message}");
+		}
+	}
+
 	/// <summary>
 	/// Builds the Kestrel portion of an application configuration while preserving unrelated settings.
 	/// </summary>
@@ -388,7 +425,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		if (!string.IsNullOrWhiteSpace(options.CertificatePath))
 		{
 			string certificatePath = ResolveExistingFilePath(options.CertificatePath, "cert-path");
-			bool requiresKeyPath = IsPemCertificatePath(certificatePath);
+			CertificateFileFormat certificateFormat = GetCertificateFileFormat(certificatePath);
+			bool requiresKeyPath = certificateFormat != CertificateFileFormat.Pkcs12;
 			bool hasKeyPath = !string.IsNullOrWhiteSpace(options.CertificateKeyPath);
 			bool hasPasswordSource = !string.IsNullOrWhiteSpace(options.CertificatePassword)
 				|| !string.IsNullOrWhiteSpace(options.CertificatePasswordFile);
@@ -397,8 +435,8 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			{
 				throw new InvalidOperationException(
 					requiresKeyPath
-						? "PEM or CRT certificates require --cert-key-path with the private key file."
-						: "--cert-key-path is only supported with PEM or CRT certificates.");
+						? "PEM or DER certificate files require --cert-key-path with the private key file."
+						: "--cert-key-path is only supported with PFX, PEM, or DER certificate files.");
 			}
 			if (hasKeyPath && hasPasswordSource)
 			{
@@ -408,7 +446,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				? ResolveExistingFilePath(options.CertificateKeyPath, "cert-key-path")
 				: null;
 			string? certificatePassword = ResolveCertificatePassword(options);
-			ValidateCertificateMaterial(certificatePath, keyPath, certificatePassword);
+			ValidateCertificateMaterial(certificatePath, keyPath, certificatePassword, certificateFormat);
 
 			JsonObject certificate = GetOrCreateObject(httpsEndpoint, "Certificate");
 			SetStringProperty(certificate, "Path", certificatePath);
@@ -476,13 +514,19 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	private static bool HasNonEmptyStringProperty(JsonObject? parent, string propertyName) =>
 		parent is not null && !string.IsNullOrWhiteSpace(GetStringProperty(parent, propertyName));
 
-	private static void ValidateCertificateMaterial(string certificatePath, string? keyPath, string? password)
+	private static void ValidateCertificateMaterial(
+		string certificatePath,
+		string? keyPath,
+		string? password,
+		CertificateFileFormat certificateFormat)
 	{
 		try
 		{
 			if (keyPath is not null)
 			{
-				using X509Certificate2 certificate = X509Certificate2.CreateFromPemFile(certificatePath, keyPath);
+				using X509Certificate2 certificate = certificateFormat == CertificateFileFormat.Pem
+					? X509Certificate2.CreateFromPemFile(certificatePath, keyPath)
+					: LoadDerCertificateWithPrivateKey(certificatePath, keyPath);
 				EnsurePrivateKey(certificate, certificatePath);
 				return;
 			}
@@ -503,16 +547,53 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		}
 	}
 
+	private static X509Certificate2 LoadDerCertificateWithPrivateKey(string certificatePath, string keyPath)
+	{
+		#if NET9_0_OR_GREATER
+		using X509Certificate2 certificate = X509CertificateLoader.LoadCertificateFromFile(certificatePath);
+		#else
+		using X509Certificate2 certificate = new(certificatePath);
+		#endif
+		string privateKey = File.ReadAllText(keyPath);
+		try
+		{
+			using RSA rsa = RSA.Create();
+			rsa.ImportFromPem(privateKey);
+			return certificate.CopyWithPrivateKey(rsa);
+		}
+		catch (CryptographicException rsaException)
+		{
+			try
+			{
+				using ECDsa ecdsa = ECDsa.Create();
+				ecdsa.ImportFromPem(privateKey);
+				return certificate.CopyWithPrivateKey(ecdsa);
+			}
+			catch (CryptographicException ecdsaException)
+			{
+				throw new CryptographicException(
+					"The DER certificate private key is not a supported RSA or ECDSA PEM key, or it does not match the certificate.",
+					new AggregateException(rsaException, ecdsaException));
+			}
+		}
+	}
+
 	private static string? ResolveCertificatePassword(PfInstallerOptions options)
 	{
 		if (!string.IsNullOrWhiteSpace(options.CertificatePassword))
 		{
 			string environmentVariableName = options.CertificatePassword;
+			if (!IsValidEnvironmentVariableName(environmentVariableName))
+			{
+				throw new InvalidOperationException(
+					"The certificate password reference is invalid or not set.");
+			}
+
 			string? password = Environment.GetEnvironmentVariable(environmentVariableName);
 			if (password is null)
 			{
 				throw new InvalidOperationException(
-					$"The certificate password environment variable '{environmentVariableName}' is not set.");
+					"The certificate password reference is invalid or not set.");
 			}
 
 			return password;
@@ -535,6 +616,26 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		return File.ReadAllText(passwordFile).TrimEnd('\r', '\n');
 	}
 
+	private static bool IsValidEnvironmentVariableName(string value)
+	{
+		if (string.IsNullOrEmpty(value)
+			|| !(value[0] == '_' || value[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'))
+		{
+			return false;
+		}
+
+		for (int index = 1; index < value.Length; index++)
+		{
+			char character = value[index];
+			if (!(character == '_' || character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	private static void EnsurePrivateKey(X509Certificate2 certificate, string certificatePath)
 	{
 		if (!certificate.HasPrivateKey)
@@ -555,11 +656,23 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		return fullPath;
 	}
 
-	private static bool IsPemCertificatePath(string path)
+	private static CertificateFileFormat GetCertificateFileFormat(string path)
 	{
 		string extension = Path.GetExtension(path);
-		return string.Equals(extension, ".pem", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(extension, ".crt", StringComparison.OrdinalIgnoreCase);
+		if (string.Equals(extension, ".pem", StringComparison.OrdinalIgnoreCase))
+		{
+			return CertificateFileFormat.Pem;
+		}
+
+		if (string.Equals(extension, ".crt", StringComparison.OrdinalIgnoreCase))
+		{
+			string content = Encoding.ASCII.GetString(File.ReadAllBytes(path));
+			return content.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal)
+				? CertificateFileFormat.Pem
+				: CertificateFileFormat.Der;
+		}
+
+		return CertificateFileFormat.Pkcs12;
 	}
 
 	private static (string Name, JsonObject Endpoint) FindOrCreateEndpoint(

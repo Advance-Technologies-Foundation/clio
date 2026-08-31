@@ -5655,10 +5655,17 @@ internal static class ToolContractCatalog {
 					Field(UseHttpsFieldName, BooleanType, "For IIS, prefer HTTPS and fall back to HTTP when no usable certificate is installed; for dotnet, require certificatePath or existing Kestrel certificate settings."),
 					Field(DeploymentFieldName, StringType, "Optional deployment method: auto, iis, or dotnet. Use dotnet to select Kestrel explicitly."),
 					Field(BindAllInterfacesFieldName, BooleanType, "Optional dotnet-only opt-in to bind Kestrel HTTPS on all network interfaces; loopback is the default."),
-					Field(CertificatePathFieldName, StringType, "Optional dotnet HTTPS certificate path (.pfx, .pem, or .crt); PEM/CRT requires certificateKeyPath."),
-					Field(CertificateKeyPathFieldName, StringType, "Optional private-key path for a dotnet PEM or CRT certificate."),
+					Field(CertificatePathFieldName, StringType, "Optional dotnet HTTPS certificate path (.pfx, PEM .pem/.crt, or DER .crt); PEM/DER requires certificateKeyPath."),
+					Field(CertificateKeyPathFieldName, StringType, "Optional private-key path for a dotnet PEM or DER certificate."),
 					Field(CertificatePasswordFieldName, StringType, "Optional sensitive input: name of an environment variable containing the dotnet PFX password; never pass the raw password."),
-					Field(CertificatePasswordFileFieldName, StringType, "Optional path to a file containing the dotnet PFX password.")
+					Field(CertificatePasswordFileFieldName, StringType, "Optional path to a file containing the dotnet PFX password; mutually exclusive with certificatePassword.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"mutually-exclusive",
+						InvalidWorkflowShapeCode,
+						Fields: [CertificatePasswordFieldName, CertificatePasswordFileFieldName],
+						Context: "certificatePassword and certificatePasswordFile are mutually exclusive; pass one password source, not both.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,

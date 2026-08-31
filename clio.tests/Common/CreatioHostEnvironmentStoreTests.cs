@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Clio.Common;
 using Clio.Tests.Command;
@@ -78,6 +79,23 @@ public sealed class CreatioHostEnvironmentStoreTests : BaseClioModuleTests
 		// Assert
 		result["kestrel__endpoints__https__certificate__password"].Should().Be("secret",
 			because: "a later host start must restore the certificate environment value independent of JSON key casing");
+	}
+
+	[Test]
+	[Description("Wraps case-variant duplicate environment keys as a safe invalid-store error instead of leaking a dictionary-construction exception.")]
+	public void Load_ShouldWrapCaseVariantDuplicateKeys()
+	{
+		// Arrange
+		_fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
+		_fileSystem.ReadAllText(Arg.Any<string>()).Returns("{\"Key\":\"first\",\"key\":\"second\"}");
+
+		// Act
+		Action action = () => _sut.Load("/tmp/creatio");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("The saved Creatio host environment is invalid or cannot be read: *.",
+				because: "case-insensitive environment lookup must reject ambiguous persisted values with the documented diagnostic");
 	}
 
 	[Test]

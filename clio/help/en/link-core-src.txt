@@ -8,8 +8,9 @@ DESCRIPTION
     Link core source code to environment for development.
 
     In NetCore mode, Kestrel endpoint hosts are constrained to localhost and the
-    HTTP port is taken from the registered environment URI. Existing HTTPS endpoint
-    settings are preserved and also constrained to localhost.
+    endpoint for the registered environment URI scheme is updated. Existing HTTP
+    and HTTPS endpoint settings are preserved and also constrained to localhost.
+    HTTPS linking does not create a plaintext endpoint.
 
 ALIASES
     lcs

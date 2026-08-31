@@ -241,6 +241,28 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Loads a DER-encoded CRT certificate with its separate PEM private key for dotnet HTTPS hosting.")]
+	public void BuildApplicationConfiguration_ShouldConfigureHttpsFromDerCertificateAndKey() {
+		// Arrange
+		(string certificatePath, string keyPath) = CreateTemporaryDerCertificate();
+		PfInstallerOptions options = new() {
+			SitePort = 40123,
+			UseHttps = true,
+			CertificatePath = certificatePath,
+			CertificateKeyPath = keyPath
+		};
+
+		// Act
+		string result = _sut.BuildApplicationConfiguration(null, options);
+
+		// Assert
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "Path").Should().Be(Path.GetFullPath(certificatePath),
+			because: "the DER certificate path must be forwarded to Kestrel");
+		GetJsonString(result, "Kestrel", "Endpoints", "Https", "Certificate", "KeyPath").Should().Be(Path.GetFullPath(keyPath),
+			because: "Kestrel needs the matching PEM private key path for a DER certificate");
+	}
+
+	[Test]
 	[Description("Preserves existing HTTPS certificate settings while constraining their bind address when HTTP remains the selected protocol.")]
 	public void BuildApplicationConfiguration_ShouldPreserveExistingHttpsConfiguration() {
 		// Arrange
@@ -484,6 +506,30 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Does not echo a raw certificate password mistakenly supplied where an environment-variable name is required.")]
+	public void BuildApplicationConfiguration_ShouldRejectAndRedactRawCertificatePasswordReference() {
+		// Arrange
+		string certificatePath = CreateTemporaryPfx("redaction.pfx");
+		const string rawPassword = "raw secret; do not echo";
+		PfInstallerOptions options = new() {
+			SitePort = 40123,
+			UseHttps = true,
+			CertificatePath = certificatePath,
+			CertificatePassword = rawPassword
+		};
+
+		// Act
+		Action action = () => _sut.BuildApplicationConfiguration(null, options);
+
+		// Assert
+		Exception exception = action.Should().Throw<InvalidOperationException>().Which;
+		exception.Message.Should().Be("The certificate password reference is invalid or not set.",
+			because: "the error must guide the caller without reflecting a value that may be the actual certificate secret");
+		exception.ToString().Should().NotContain(rawPassword,
+			because: "certificate secrets must not appear in command errors, logs, or MCP results");
+	}
+
+	[Test]
 	[Description("Rejects an existing dotnet HTTPS endpoint whose certificate object has no certificate source.")]
 	public void BuildApplicationConfiguration_ShouldFailForMalformedExistingHttpsCertificate() {
 		// Arrange
@@ -556,6 +602,36 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		}
 	}
 
+	[Test]
+	[Description("Restores the previous appsettings.json when protected certificate-environment persistence fails after configuration generation.")]
+	public async Task Deploy_ShouldRestoreConfiguration_WhenEnvironmentPersistenceFails() {
+		// Arrange
+		string appDirectory = Path.Combine(_temporaryDirectory, "rollback-app");
+		Directory.CreateDirectory(appDirectory);
+		string configurationPath = Path.Combine(appDirectory, "appsettings.json");
+		const string previousConfiguration = "{\"Existing\":true}";
+		File.WriteAllText(configurationPath, previousConfiguration);
+		string certificatePath = CreateTemporaryPfx("rollback.pfx");
+		PfInstallerOptions options = new() {
+			SiteName = "rollback-test",
+			SitePort = GetAvailablePort(),
+			UseHttps = true,
+			CertificatePath = certificatePath,
+			AutoRun = false
+		};
+		_creatioHostService.WhenForAnyArgs(service => service.PersistEnvironmentVariables(default, default))
+			.Do(_ => throw new IOException("protected environment store failed"));
+
+		// Act
+		int exitCode = await _sut.Deploy(appDirectory, options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "deployment must report failure when certificate environment persistence cannot complete");
+		File.ReadAllText(configurationPath).Should().Be(previousConfiguration,
+			because: "a failed secret-store write must not leave the application with an unrecoverable rewritten configuration");
+	}
+
 	private string CreateTemporaryPfx(string fileName, string? password = null) {
 		using RSA key = RSA.Create(2048);
 		CertificateRequest request = new("CN=clio-test", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -586,6 +662,17 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 		string certificatePath = Path.Combine(_temporaryDirectory, "server.pem");
 		string keyPath = Path.Combine(_temporaryDirectory, "server.key");
 		File.WriteAllText(certificatePath, certificate.ExportCertificatePem());
+		File.WriteAllText(keyPath, key.ExportPkcs8PrivateKeyPem());
+		return (certificatePath, keyPath);
+	}
+
+	private (string CertificatePath, string KeyPath) CreateTemporaryDerCertificate() {
+		using RSA key = RSA.Create(2048);
+		CertificateRequest request = new("CN=clio-test", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+		using X509Certificate2 certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(5));
+		string certificatePath = Path.Combine(_temporaryDirectory, "server.crt");
+		string keyPath = Path.Combine(_temporaryDirectory, "server.key");
+		File.WriteAllBytes(certificatePath, certificate.Export(X509ContentType.Cert));
 		File.WriteAllText(keyPath, key.ExportPkcs8PrivateKeyPem());
 		return (certificatePath, keyPath);
 	}

@@ -56,7 +56,7 @@ public class InstallerCommandTool(
 				 to HTTP with a warning when no usable certificate is installed.
 				 For dotnet deployment, set `deployment` to `dotnet` (or rely on automatic selection on macOS/Linux).
 				 `useHttps` then requires `certificatePath` or an existing Kestrel certificate configuration;
-				 PEM/CRT certificates also require `certificateKeyPath`. `bindAllInterfaces` is an explicit
+				 PEM/DER certificate files also require `certificateKeyPath`. `bindAllInterfaces` is an explicit
 				 network-exposure opt-in and requires HTTPS; loopback remains the default. For a PFX,
 				 `certificatePassword` is the name of an environment variable (not the password value), or
 				 use `certificatePasswordFile`. The resolved password is passed only to the deployed host
@@ -118,8 +118,8 @@ public class InstallerCommandTool(
 /// <param name="UseHttps">Whether to use HTTPS; dotnet deployment requires certificate settings.</param>
 /// <param name="DeploymentMethod">Optional deployment method: auto, iis, or dotnet.</param>
 /// <param name="BindAllInterfaces">Whether dotnet HTTPS hosting may listen on all network interfaces.</param>
-/// <param name="CertificatePath">Optional PFX, PEM, or CRT certificate path for dotnet HTTPS.</param>
-/// <param name="CertificateKeyPath">Optional private-key path for a PEM or CRT certificate.</param>
+/// <param name="CertificatePath">Optional PFX, PEM, or DER certificate path for dotnet HTTPS.</param>
+/// <param name="CertificateKeyPath">Optional private-key path for a PEM or DER certificate.</param>
 /// <param name="CertificatePassword">Optional name of an environment variable containing the PFX password; never pass the raw password.</param>
 /// <param name="CertificatePasswordFile">Optional path to a file containing the PFX password.</param>
 public sealed record DeployCreatioArgs(
@@ -159,11 +159,11 @@ public sealed record DeployCreatioArgs(
 	bool BindAllInterfaces = false,
 
 	[property: JsonPropertyName("certificatePath")]
-	[property: Description("Optional dotnet HTTPS certificate path (.pfx, .pem, or .crt); PEM/CRT requires certificateKeyPath")]
+	[property: Description("Optional dotnet HTTPS certificate path (.pfx, PEM .pem/.crt, or DER .crt); PEM/DER requires certificateKeyPath")]
 	string? CertificatePath = null,
 
 	[property: JsonPropertyName("certificateKeyPath")]
-	[property: Description("Optional private-key path for a dotnet PEM or CRT certificate")]
+	[property: Description("Optional private-key path for a dotnet PEM or DER certificate")]
 	string? CertificateKeyPath = null,
 
 	[property: JsonPropertyName("certificatePassword")]

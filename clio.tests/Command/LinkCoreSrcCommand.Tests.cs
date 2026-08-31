@@ -167,6 +167,29 @@ namespace Clio.Tests.Command {
 	}
 
 	[Test]
+	[Description("Rejects HTTPS link-core-src configuration when neither the selected endpoint nor Kestrel's default certificate is configured.")]
+	public void UpdateConfigWithPort_ShouldRejectHttpsWithoutCertificate() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Http": { "Url": "http://localhost:5000" }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		Action action = () => _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", Uri.UriSchemeHttps);
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("HTTPS link-core-src requires a certificate on the selected endpoint or in Kestrel.Certificates:Default.",
+				because: "linking an HTTPS environment must not write an endpoint that Kestrel cannot start");
+	}
+
+	[Test]
 	[Description("Rejects a link-core-src port that would make the preserved HTTP and HTTPS Kestrel endpoints collide.")]
 	public void UpdateConfigWithPort_ShouldRejectHttpHttpsPortConflict() {
 		// Arrange

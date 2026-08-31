@@ -601,10 +601,21 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				SetStringProperty(endpoint, "Url", rewrittenUrl);
 			}
 
-			if (!hasTargetEndpoint)
+			JsonObject targetEndpoint;
+			if (hasTargetEndpoint)
 			{
-				JsonObject targetEndpoint = FindOrCreateEndpoint(endpoints, targetEndpointName);
+				targetEndpoint = (JsonObject)endpoints[canonicalEndpointName!]!;
+			}
+			else
+			{
+				targetEndpoint = FindOrCreateEndpoint(endpoints, targetEndpointName);
 				SetStringProperty(targetEndpoint, "Url", $"{targetScheme}://localhost:{port}");
+			}
+
+			if (targetScheme == Uri.UriSchemeHttps && !HasUsableHttpsCertificate(targetEndpoint, kestrel))
+			{
+				throw new InvalidOperationException(
+					"HTTPS link-core-src requires a certificate on the selected endpoint or in Kestrel.Certificates:Default.");
 			}
 
 			EnsureNoHttpHttpsPortConflict(endpoints);
@@ -734,6 +745,46 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 		return result;
 	}
+
+	private static JsonObject? GetObjectProperty(JsonObject parent, string propertyName)
+	{
+		string? actualPropertyName = FindPropertyName(parent, propertyName);
+		if (actualPropertyName is null)
+		{
+			return null;
+		}
+
+		return parent[actualPropertyName] as JsonObject
+			?? throw new JsonException($"Configuration property '{actualPropertyName}' must be a JSON object.");
+	}
+
+	private static bool HasUsableHttpsCertificate(JsonObject endpoint, JsonObject kestrel)
+	{
+		JsonObject? endpointCertificate = GetObjectProperty(endpoint, "Certificate");
+		if (endpointCertificate is not null)
+		{
+			return HasUsableCertificateConfiguration(endpointCertificate);
+		}
+
+		JsonObject? certificates = GetObjectProperty(kestrel, "Certificates");
+		JsonObject? defaultCertificate = certificates is null ? null : GetObjectProperty(certificates, "Default");
+		return HasUsableCertificateConfiguration(defaultCertificate);
+	}
+
+	private static bool HasUsableCertificateConfiguration(JsonObject? certificate)
+	{
+		if (certificate is null)
+		{
+			return false;
+		}
+
+		bool hasPath = HasNonEmptyStringProperty(certificate, "Path");
+		bool hasStore = HasNonEmptyStringProperty(certificate, "Store");
+		return hasPath != hasStore && (!hasStore || HasNonEmptyStringProperty(certificate, "Subject"));
+	}
+
+	private static bool HasNonEmptyStringProperty(JsonObject parent, string propertyName) =>
+		!string.IsNullOrWhiteSpace(GetStringProperty(parent, propertyName));
 
 	private static void SetStringProperty(JsonObject parent, string propertyName, string value)
 	{

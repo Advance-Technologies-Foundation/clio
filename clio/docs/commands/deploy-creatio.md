@@ -133,8 +133,8 @@ HTTP. For dotnet deployment, this explicitly selects an HTTPS Kestrel endpoint a
 Default: false (HTTP selected; existing HTTPS configuration is preserved)
 
 --cert-path PATH
-Path to the dotnet SSL certificate file (.pfx, .pem, or .crt format).
-PEM and CRT certificates require `--cert-key-path`. IIS uses the Windows certificate store
+Path to the dotnet SSL certificate file (.pfx, PEM `.pem`/`.crt`, or DER `.crt` format).
+PEM and DER certificate files require `--cert-key-path`. IIS uses the Windows certificate store
 
 --cert-password ENVIRONMENT_VARIABLE_NAME
 Name of an environment variable containing the password for a password-protected dotnet PFX.
@@ -144,7 +144,7 @@ Pass the variable name, not the password value. IIS uses the Windows certificate
 Path to a file containing the password for a password-protected dotnet PFX.
 
 --cert-key-path PATH
-Path to the private key file for a PEM or CRT certificate used by dotnet HTTPS
+Path to the private key file for a PEM or DER certificate used by dotnet HTTPS
 
 --auto-run
 Automatically launch application in browser after deployment
@@ -361,7 +361,7 @@ macOS:
 - Creates launchd service for auto-start
 - Manages service via launchctl
 - Binds the dotnet host to loopback by default; use `--bind-all-interfaces` with HTTPS for a container or reverse proxy
-- Supports PFX certificates and PEM/CRT certificates with `--cert-key-path` when `--use-https` is selected
+- Supports PFX certificates and PEM/DER certificate files with `--cert-key-path` when `--use-https` is selected
 - Preserves existing HTTPS endpoint and certificate settings when HTTP remains selected
 - Returns the local application URL with configured port
 
@@ -370,7 +370,7 @@ Linux:
 - Creates systemd service unit file
 - Manages service via systemctl
 - Binds the dotnet host to loopback by default; use `--bind-all-interfaces` with HTTPS for a container or reverse proxy
-- Supports PFX certificates and PEM/CRT certificates with `--cert-key-path` when `--use-https` is selected
+- Supports PFX certificates and PEM/DER certificate files with `--cert-key-path` when `--use-https` is selected
 - Preserves existing HTTPS endpoint and certificate settings when HTTP remains selected
 - Returns the local application URL with configured port
 
