@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
@@ -50,7 +50,13 @@ internal static class ODataFileContract {
 				error = $"{optionName} is {length} bytes, which exceeds the {MaxPayloadBytes}-byte limit.";
 				return false;
 			}
-			json = fileSystem.File.ReadAllText(resolvedPath, StrictUtf8);
+			//Read bytes and decode explicitly rather than calling ReadAllText(path, StrictUtf8): that overload
+			//builds a StreamReader with detectEncodingFromByteOrderMarks:true, so a UTF-16 BOM SELECTS UTF-16
+			//and the payload decodes happily - the strict UTF-8 encoding is never consulted. A UTF-16 JSON file
+			//would then be POSTed despite the UTF-8-only contract. Here a UTF-16 BOM starts with 0xFF or 0xFE,
+			//neither of which is a legal UTF-8 byte, so StrictUtf8 throws and the caller gets the input error.
+			byte[] payload = fileSystem.File.ReadAllBytes(resolvedPath);
+			json = StrictUtf8.GetString(StripUtf8Bom(payload));
 			return true;
 		} catch (DecoderFallbackException) {
 			// Encoding.UTF8 replaces an invalid byte sequence with U+FFFD, so a corrupted payload still parsed
@@ -65,6 +71,17 @@ internal static class ODataFileContract {
 			return false;
 		}
 	}
+
+	/// <summary>
+	/// Drops a leading UTF-8 BOM, which is legal UTF-8 but is not legal JSON - <c>JsonDocument.Parse</c> rejects
+	/// the resulting U+FEFF. Only the UTF-8 BOM is stripped: a UTF-16 BOM must survive into the decoder so it is
+	/// reported as invalid UTF-8 rather than silently accepted.
+	/// </summary>
+	/// <param name="payload">Raw file bytes.</param>
+	private static ReadOnlySpan<byte> StripUtf8Bom(byte[] payload) =>
+		payload.Length >= 3 && payload[0] == 0xEF && payload[1] == 0xBB && payload[2] == 0xBF
+			? payload.AsSpan(3)
+			: payload.AsSpan();
 
 	/// <summary>
 	/// Confines an output path and returns the resolved absolute form, WITHOUT writing anything. Callers resolve

@@ -275,6 +275,69 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Refuses a UTF-16LE rows-file and issues no POST: the BOM must not select an encoding, or the UTF-8-only contract is decided by the file rather than by the contract.")]
+	public void Create_Should_Reject_A_Utf16_RowsFile_Without_Posting() {
+		// Arrange - a real UTF-16LE payload WITH its BOM. ReadAllText's BOM detection would decode this fine.
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-utf16-{System.Guid.NewGuid():N}.json");
+		byte[] utf16WithBom = new UnicodeEncoding(bigEndian: false, byteOrderMark: true)
+			.GetPreamble()
+			.Concat(Encoding.Unicode.GetBytes("[{\"Name\":\"A\"}]"))
+			.ToArray();
+		fileSystem.AddFile(rowsFile, new MockFileData(utf16WithBom));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, fileSystem);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Created.Should().Be(0);
+		response.Error.Should().Contain("not valid UTF-8",
+			because: "0xFF/0xFE cannot start a UTF-8 sequence, so a UTF-16 file must be reported as the input error it is rather than decoded by BOM detection");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a UTF-8 rows-file that carries a BOM: it is legal UTF-8, and the BOM must be stripped before JSON parsing rather than reaching the parser as U+FEFF.")]
+	public void Create_Should_Accept_A_Utf8_RowsFile_With_A_Bom() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string rowsFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(),
+			$"odata-create-utf8bom-{System.Guid.NewGuid():N}.json");
+		byte[] utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)
+			.GetPreamble()
+			.Concat(Encoding.UTF8.GetBytes("[{\"Name\":\"A\"}]"))
+			.ToArray();
+		fileSystem.AddFile(rowsFile, new MockFileData(utf8WithBom));
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"00000000-0000-0000-0000-000000000001\"}");
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataCreateTool tool = new(resolver, fileSystem);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", RowsFile = rowsFile
+		});
+
+		// Assert
+		response.Error.Should().BeNull(
+			because: "a UTF-8 BOM is legal UTF-8; rejecting it would make the strictness about the BOM rather than about the encoding");
+		response.Created.Should().Be(1,
+			because: "the row behind the BOM must still be posted");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Counts the same bare array identically whether it arrives inline or through rows-file, so the summary does not depend on how the payload was supplied.")]
 	public void Create_Should_Report_The_Same_Counts_For_Inline_And_File_Rows() {
 		// Arrange
