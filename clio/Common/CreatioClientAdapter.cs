@@ -218,7 +218,9 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		// authentication; it only borrows the cookies that session already holds.
 		IReadOnlyList<CreatioSessionCookie> cookies = ExportSessionCookies();
 		if (cookies.Count == 0) {
-			Login();
+			using (HttpResponseMessage login = await LoginAsync(requestTimeout, cancellationToken).ConfigureAwait(false)) {
+				login.EnsureSuccessStatusCode();
+			}
 			cookies = ExportSessionCookies();
 		}
 		CookieContainer jar = new();
@@ -260,7 +262,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 			if (total > maxBytes) {
 				throw new ResponseTooLargeException(total, maxBytes);
 			}
-			buffer.Write(chunk, 0, read);
+			await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
 		}
 		return buffer.ToArray();
 	}
