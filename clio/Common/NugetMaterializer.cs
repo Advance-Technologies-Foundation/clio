@@ -17,6 +17,12 @@ public interface INugetMaterializer
 
 	public int Materialize(string packageName);
 
+	/// <summary>
+	/// Tells whether <paramref name="packageName"/> names a package folder inside this workspace's
+	/// packages folder, so a caller can check it before it derives any path from the name.
+	/// </summary>
+	public bool IsPackageNameWithinPackagesFolder(string packageName);
+
 	#endregion
 
 }
@@ -193,44 +199,6 @@ public class NugetMaterializer : INugetMaterializer
 		foreach (string staleOutputFolder in StaleHelperOutputFolders) {
 			_fileSystem.DeleteDirectoryIfExists(Path.Combine(nugetProjectFolderPath, staleOutputFolder));
 		}
-	}
-
-	/// <summary>
-	/// Rejects a package name that would steer path derivation out of the workspace packages folder.
-	/// </summary>
-	/// <remarks>
-	/// The name arrives from the command line and reaches file reads, writes, builds and deletes -
-	/// the props files, the csproj and its .bak, and the helper project. A rooted name, or one
-	/// carrying a separator or a dot segment, resolves outside
-	/// <see cref="IWorkspacePathBuilder.PackagesFolderPath"/>, so the check runs before the first
-	/// filesystem call rather than inside each caller.
-	/// </remarks>
-	private bool IsPackageNameWithinPackagesFolder(string packageName){
-		if (string.IsNullOrWhiteSpace(packageName)) {
-			_logger.WriteError("The package name is empty");
-			return false;
-		}
-
-		bool hasSeparator = packageName.IndexOfAny(PathSeparatorChars) >= 0;
-		bool hasDotSegment = packageName is "." or ".."
-			|| packageName.Split('.').Any(string.IsNullOrEmpty);
-		if (hasSeparator || hasDotSegment || Path.IsPathRooted(packageName)
-			|| packageName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) {
-			_logger.WriteError($"The {packageName} package name is not a plain package folder name");
-			return false;
-		}
-
-		string packagesFolderPath = Path.GetFullPath(_workspacePathBuilder.PackagesFolderPath);
-		string packagePath = Path.GetFullPath(_workspacePathBuilder.BuildPackagePath(packageName));
-		string packagesFolderPrefix = packagesFolderPath
-			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-			+ Path.DirectorySeparatorChar;
-		if (!packagePath.StartsWith(packagesFolderPrefix, StringComparison.OrdinalIgnoreCase)) {
-			_logger.WriteError($"The {packageName} package resolves outside the "
-				+ $"{packagesFolderPath} packages folder");
-			return false;
-		}
-		return true;
 	}
 
 	/// <summary>
@@ -454,6 +422,44 @@ public class NugetMaterializer : INugetMaterializer
 	#endregion
 
 	#region Methods: Public
+
+	/// <summary>
+	/// Rejects a package name that would steer path derivation out of the workspace packages folder.
+	/// </summary>
+	/// <remarks>
+	/// The name arrives from the command line and reaches file reads, writes, builds and deletes -
+	/// the props files, the csproj and its .bak, and the helper project. A rooted name, or one
+	/// carrying a separator or a dot segment, resolves outside
+	/// <see cref="IWorkspacePathBuilder.PackagesFolderPath"/>, so the check runs before the first
+	/// filesystem call rather than inside each caller.
+	/// </remarks>
+	public bool IsPackageNameWithinPackagesFolder(string packageName){
+		if (string.IsNullOrWhiteSpace(packageName)) {
+			_logger.WriteError("The package name is empty");
+			return false;
+		}
+
+		bool hasSeparator = packageName.IndexOfAny(PathSeparatorChars) >= 0;
+		bool hasDotSegment = packageName is "." or ".."
+			|| packageName.Split('.').Any(string.IsNullOrEmpty);
+		if (hasSeparator || hasDotSegment || Path.IsPathRooted(packageName)
+			|| packageName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) {
+			_logger.WriteError($"The {packageName} package name is not a plain package folder name");
+			return false;
+		}
+
+		string packagesFolderPath = Path.GetFullPath(_workspacePathBuilder.PackagesFolderPath);
+		string packagePath = Path.GetFullPath(_workspacePathBuilder.BuildPackagePath(packageName));
+		string packagesFolderPrefix = packagesFolderPath
+			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+			+ Path.DirectorySeparatorChar;
+		if (!packagePath.StartsWith(packagesFolderPrefix, StringComparison.OrdinalIgnoreCase)) {
+			_logger.WriteError($"The {packageName} package resolves outside the "
+				+ $"{packagesFolderPath} packages folder");
+			return false;
+		}
+		return true;
+	}
 
 	public int Materialize(string packageName){
 		if (!IsPackageNameWithinPackagesFolder(packageName)) {
