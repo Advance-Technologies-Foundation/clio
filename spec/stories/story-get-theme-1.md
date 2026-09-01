@@ -23,8 +23,14 @@ tweaks).
       empty) or has no content (success with empty `cssContent`).
 - [x] `--output-file` writes the CSS to a confined path (workspace / OS temp, no overwrite) and omits the
       content from the envelope, feeding `update-theme --css-content-file` directly.
-- [x] The modify-existing-theme flow works end-to-end (live sandbox E2E: create → read → edit → update →
-      re-read → delete → not-found).
+- [ ] The modify-existing-theme flow works end-to-end (live sandbox E2E: create → read → edit → update →
+      re-read → delete → not-found). The mechanism this AC depends on — the catalog (and therefore
+      `cssFilePath`) is re-resolved on every `get-theme` call rather than cached, so a read right after
+      `update-theme` reflects the new cache-busting hash and content — is pinned at the unit tier
+      (`GetThemeCommandTests.TryGetTheme_ShouldReReadCatalogAndCss_WhenCalledAgainAfterCssFilePathHashChanges`).
+      `ThemingSandboxE2ETests` exercises the same round trip against a live stand but is `McpE2E.Sandbox`
+      tier (advisory, non-blocking, `Assert.Ignore`s without a configured stand) and has not been observed
+      green on this branch; leave this box open until it has.
 
 ## Definition of Done
 

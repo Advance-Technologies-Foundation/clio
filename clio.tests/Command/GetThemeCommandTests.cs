@@ -163,6 +163,42 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	}
 
 	[Test, Category("Unit")]
+	[Description("Re-resolves the theme catalog and re-fetches the CSS on every call rather than caching the cssFilePath: a second TryGetTheme call issued after the environment's cache-busting hash and CSS content change returns the NEW path and NEW content, pinning ADR Area E-D1 and docs/knowledge/Theming/the-theme-css-path-hash-is-a-cache-buster-not-a-version.md — the mechanism that makes a read after update-theme reflect the change with no cache step.")]
+	public void TryGetTheme_ShouldReReadCatalogAndCss_WhenCalledAgainAfterCssFilePathHashChanges() {
+		// Arrange
+		const string firstCssFilePath = "Terrasoft.Configuration/Pkg/Custom/Files/themes/" + ThemeId + "/theme.css?hash=a";
+		const string secondCssFilePath = "Terrasoft.Configuration/Pkg/Custom/Files/themes/" + ThemeId + "/theme.css?hash=b";
+		const string firstCssContent = ".brand-dark { --crt-test: #111111; }";
+		const string secondCssContent = ".brand-dark { --crt-test: #222222; }";
+		string firstCatalogJson = "{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand Dark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"" + firstCssFilePath + "\"}]}";
+		string secondCatalogJson = "{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand Dark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"" + secondCssFilePath + "\"}]}";
+		ArrangeCatalog(firstCatalogJson);
+		ArrangeCss(firstCssContent);
+
+		// Act
+		bool firstResult = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse firstResponse);
+		ArrangeCatalog(secondCatalogJson);
+		ArrangeCss(secondCssContent);
+		bool secondResult = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse secondResponse);
+
+		// Assert
+		firstResult.Should().BeTrue(because: "the first read must succeed against the initial catalog and CSS");
+		firstResponse.CssFilePath.Should().Be(firstCssFilePath,
+			because: "the first read must report the cache-busting path published at that time");
+		firstResponse.CssContent.Should().Be(firstCssContent,
+			because: "the first read must return the CSS served at that time");
+		secondResult.Should().BeTrue(because: "the second read must succeed against the updated catalog and CSS");
+		secondResponse.CssFilePath.Should().Be(secondCssFilePath,
+			because: "a second call must report the NEW cache-busting path rather than a cached one, proving the catalog is re-resolved on every call rather than being cached per environment");
+		secondResponse.CssContent.Should().Be(secondCssContent,
+			because: "a second call must fetch and return the NEW CSS content rather than reusing a cached body from the first call");
+		_applicationClient.Received(1).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains(secondCssFilePath)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
 	[Description("Matches the theme id case-insensitively, the same convention set-user-theme resolves ids with, so a server that normalizes GUID casing still resolves.")]
 	public void TryGetTheme_ShouldMatchIdCaseInsensitively_WhenCatalogCasingDiffers() {
 		// Arrange
@@ -177,6 +213,42 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 		result.Should().BeTrue(because: "theme ids are case-insensitive identifiers");
 		response.Id.Should().Be(ThemeId,
 			because: "the envelope must carry the catalog's canonical id, not the caller's casing");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Matches the theme id when the caller supplies it in the braced 'B' GUID format (Guid.TryParse accepts it, ThemeParameterValidator.TryValidateId therefore lets it through), even though the catalog always publishes the canonical 'D' spelling and a raw string comparison would report a false not-found.")]
+	public void TryGetTheme_ShouldMatchId_WhenSuppliedInBracedGuidFormat() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss();
+		string bracedId = "{" + ThemeId + "}";
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = bracedId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "a braced GUID is a format Guid.TryParse accepts, so it must resolve to the same theme as the canonical spelling instead of a false not-found");
+		response.Id.Should().Be(ThemeId,
+			because: "the envelope must carry the catalog's canonical id regardless of the spelling the caller used to request it");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Matches the theme id when the caller supplies it in the no-hyphen 'N' GUID format, the same false-not-found gap the braced 'B' format closes.")]
+	public void TryGetTheme_ShouldMatchId_WhenSuppliedInNoHyphenGuidFormat() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss();
+		string noHyphenId = ThemeId.Replace("-", string.Empty);
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = noHyphenId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the no-hyphen 'N' GUID format is a format Guid.TryParse accepts, so it must resolve to the same theme as the canonical spelling instead of a false not-found");
+		response.Id.Should().Be(ThemeId,
+			because: "the envelope must carry the catalog's canonical id regardless of the spelling the caller used to request it");
 	}
 
 	[Test, Category("Unit")]
@@ -386,6 +458,79 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 			because: "a raw ESC byte reaching stdout or an MCP transcript would let an untrusted theme inject a terminal escape sequence");
 		printed.Should().ContainEquivalentOf("\\u001b",
 			because: "the JSON writer must carry the control character through as an escaped literal so the content stays round-trip-exact for update-theme");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Returns the theme caption byte-for-byte when it carries a control character, pinning ADR Area E-D3: caption must round-trip unchanged into update-theme. Unlike a NotContain(ESC)/ContainEquivalentOf(escaped-ESC) pair, comparing the exact string fails if SanitizeForDisplay ever ran on this field, because that would replace the ESC byte with a space.")]
+	public void TryGetTheme_ShouldReturnCaptionVerbatim_WhenCaptionContainsControlCharacter() {
+		// Arrange
+		const string captionWithControlCharacter = "Brand\u001BDark";
+		ArrangeCatalog("{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand\\u001BDark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"" + CssFilePath + "\"}]}");
+		ArrangeCss();
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a control character in the caption must not fail the read");
+		response.Caption.Should().Be(captionWithControlCharacter,
+			because: "caption must survive verbatim for update-theme; this exact-match assertion would fail (not merely stay green) if SanitizeForDisplay replaced the ESC byte with a space");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Returns cssContent byte-for-byte past the 500-character SanitizeForDisplay truncation threshold and with embedded control characters, pinning that get-theme never truncates or scrubs the CSS body.")]
+	public void TryGetTheme_ShouldReturnCssContentVerbatim_WhenContentExceedsSanitizeLengthAndContainsControlCharacters() {
+		// Arrange
+		string longCssWithControlCharacters = ".brand-dark {\n\tcolor: #112233;\n}" + new string('a', 500);
+		ArrangeCatalog();
+		ArrangeCss(longCssWithControlCharacters);
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "css content under the 1 MiB cap must be read successfully regardless of its length past 500 characters");
+		response.CssContent.Should().Be(longCssWithControlCharacters,
+			because: "CSS content longer than 500 characters and carrying \\n/\\t must be returned exactly; SanitizeForDisplay would truncate it at 500 characters and replace the control characters with spaces, which this exact-match assertion would catch");
+		response.CssContentLength.Should().Be(longCssWithControlCharacters.Length,
+			because: "the reported length must match the exact, unsanitized content that was returned");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Returns cssClassName byte-for-byte when it carries a control character, closing the same round-trip gap as caption and cssContent.")]
+	public void TryGetTheme_ShouldReturnCssClassNameVerbatim_WhenCssClassNameContainsControlCharacter() {
+		// Arrange
+		const string cssClassNameWithControlCharacter = "brand\u001Bdark";
+		ArrangeCatalog("{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand Dark\"," +
+			"\"cssClassName\":\"brand\\u001Bdark\",\"cssFilePath\":\"" + CssFilePath + "\"}]}");
+		ArrangeCss();
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a control character in cssClassName must not fail the read");
+		response.CssClassName.Should().Be(cssClassNameWithControlCharacter,
+			because: "cssClassName must survive verbatim; this exact-match assertion would fail if SanitizeForDisplay replaced the ESC byte with a space");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Pins the deliberate asymmetry: unlike caption, cssClassName and cssContent, cssFilePath IS run through SanitizeForDisplay before being returned (GetThemeCommand.cs), so a control character in it is replaced with a space rather than round-tripped.")]
+	public void TryGetTheme_ShouldSanitizeCssFilePath_WhenFilePathContainsControlCharacter() {
+		// Arrange
+		string cssFilePathWithControlCharacter = CssFilePath + "\u0007";
+		ArrangeCatalog("{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Brand Dark\"," +
+			"\"cssClassName\":\"brand-dark\",\"cssFilePath\":\"" + CssFilePath + "\\u0007\"}]}");
+		ArrangeCss();
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a control character in cssFilePath must not fail the read");
+		response.CssFilePath.Should().Be(TextUtilities.SanitizeForDisplay(cssFilePathWithControlCharacter),
+			because: "cssFilePath is the one field get-theme deliberately sanitizes before returning, unlike caption/cssClassName/cssContent, so this is the positive control that pins the asymmetry rather than leaving it incidental");
 	}
 
 	[Test, Category("Unit")]

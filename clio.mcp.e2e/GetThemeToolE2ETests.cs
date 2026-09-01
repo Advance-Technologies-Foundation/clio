@@ -101,48 +101,109 @@ public sealed class GetThemeToolE2ETests : McpContractFixtureBase {
 
 /// <summary>
 /// Hermetic happy-path coverage for <c>get-theme</c> through the real clio MCP server. The theme catalog and
-/// the <c>theme.css</c> route are served by a local stub, so a SUCCESSFUL read is verified on every CI run
-/// without a live branded environment.
+/// the <c>theme.css</c> route are served by a local stub inside an isolated <c>CLIO_HOME</c>, so a
+/// SUCCESSFUL read is verified on every CI run without a live branded environment and without touching the
+/// shared clio settings file every other fixture's child clio reads.
 /// </summary>
 /// <remarks>
-/// A separate fixture rather than a case in <see cref="GetThemeToolE2ETests"/> because it writes an isolated
-/// clio settings file at startup and therefore cannot inherit <see cref="McpContractFixtureBase"/>, whose
-/// shared server is started once for the whole fixture — before any stub port is known.
+/// Mirrors the stub-inside-<see cref="ConfigureMcpServerSettings"/> pattern in
+/// <c>ThemingVersionFloorBrandModeE2ETests</c>: the stub starts, and its base URL is written into a
+/// per-fixture <c>CLIO_HOME</c> via <see cref="CreateIsolatedClioHome"/>, before the shared server starts —
+/// so <see cref="McpContractFixtureBase"/> is inheritable after all; a stub port unknown at startup was never
+/// actually the blocker.
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("get-theme")]
 [NonParallelizable]
-public sealed class GetThemeHappyPathE2ETests {
+public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 
 	private const string ThemeId = "3f8c6d1a-5b74-4e29-9d03-7a1c8e5f2b60";
 	private const string ThemeCaption = "Clio MCP E2E hermetic theme";
 	private const string ThemeCssClassName = "e2e-hermetic-theme";
 	private const string ThemeCssContent = ".e2e-hermetic-theme{color:#003366}";
+	private const string EnvironmentName = "get-theme-hermetic-stub";
 
 	// The catalog-published cssFilePath, including the cache-busting query the real service appends. The tool
 	// builds the CSS URL from this value, so the stub must answer the identical path AND query.
 	private const string ThemeCssFilePath =
 		"Terrasoft.Configuration/Pkg/Custom/Files/themes/" + ThemeId + "/theme.css?hash=e2ehash";
 
+	// Suppressed: the stub must start inside ConfigureMcpServerSettings (its base URL goes into the isolated
+	// CLIO_HOME appsettings.json before the shared server starts), which the analyzer cannot track; it IS
+	// disposed in the [OneTimeTearDown] StopStubAsync below.
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method")]
+	private RuntimeDetectionStubServer? _stubServer;
+
+	private static string BuildCatalogJson() =>
+		$$"""
+		{"success":true,"values":[{"id":"{{ThemeId}}","caption":"{{ThemeCaption}}","cssClassName":"{{ThemeCssClassName}}","cssFilePath":"{{ThemeCssFilePath}}"}]}
+		""";
+
+	/// <inheritdoc />
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
+		_stubServer = RuntimeDetectionStubServer.Start(
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: true,
+				NetFrameworkHealthEnabled: false,
+				NetCoreServiceEnabled: true,
+				NetFrameworkServiceEnabled: false,
+				NetCoreUiMarkerEnabled: true,
+				// Satisfies the get-theme [RequiresCreatioVersion] floor.
+				CoreVersion: "10.0.0.1",
+				ThemeCatalogJson: BuildCatalogJson(),
+				ThemeCssPath: "/" + ThemeCssFilePath,
+				ThemeCssContent: ThemeCssContent));
+		string clioHome = CreateIsolatedClioHome(
+			$$"""
+			{
+			  "ActiveEnvironmentKey": "{{EnvironmentName}}",
+			  "Environments": {
+			    "{{EnvironmentName}}": {
+			      "Uri": "{{_stubServer.BaseUrl}}",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": true
+			    }
+			  }
+			}
+			""",
+			GetType().Name);
+		// A dedicated CLIO_HOME, not a LOCALAPPDATA/HOME override: SettingsRepository.AppSettingsFolderPath
+		// returns CLIO_HOME verbatim and McpSharedHomeSetUpFixture (a root-namespace [SetUpFixture]) always
+		// sets it for the whole assembly, so overriding only LOCALAPPDATA/HOME here would be silently
+		// ignored and the child clio would keep resolving the assembly-shared settings file.
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
+	}
+
+	// Runs before the base fixture's OneTimeTearDown (NUnit tears down most-derived first), so the stub
+	// disappears only after the last test; the shared MCP server outliving it a moment is harmless.
+	[OneTimeTearDown]
+	public async Task StopStubAsync() {
+		if (_stubServer is not null) {
+			await _stubServer.DisposeAsync();
+			_stubServer = null;
+		}
+	}
+
 	[Test]
 	[AllureTag(GetThemeTool.ToolName)]
 	[AllureName("get-theme returns theme metadata and CSS content through the real MCP server")]
-	[AllureDescription("Serves the theme catalog and theme.css from a local stub, then calls get-theme through the real clio MCP server and verifies the successful envelope.")]
+	[AllureDescription("Serves the theme catalog and theme.css from a local stub inside an isolated CLIO_HOME, then calls get-theme through the real clio MCP server and verifies the successful envelope.")]
 	[Description("Verifies the get-theme happy path end to end against a stubbed Creatio: the envelope carries success, id, caption, cssClassName, cssContent and cssContentLength.")]
 	public async Task GetTheme_Should_Return_MetadataAndContent_When_CatalogAndCssAreServed() {
 		// Arrange
-		await using StubbedThemeEnvironment environment = await StubbedThemeEnvironment.StartAsync();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		CallToolResult callResult = await environment.Session.CallToolAsync(
+		CallToolResult callResult = await context.Session.CallToolAsync(
 			GetThemeTool.ToolName,
 			new Dictionary<string, object?> {
-				["environment-name"] = environment.EnvironmentName,
+				["environment-name"] = EnvironmentName,
 				["id"] = ThemeId
 			},
-			environment.CancellationTokenSource.Token);
+			context.CancellationTokenSource.Token);
 		GetThemeResponse response = EntitySchemaStructuredResultParser.Extract<GetThemeResponse>(callResult);
 
 		// Assert
@@ -160,99 +221,5 @@ public sealed class GetThemeHappyPathE2ETests {
 			because: "the CSS served at the catalog-reported cssFilePath must be returned byte-for-byte");
 		response.CssContentLength.Should().Be(ThemeCssContent.Length,
 			because: "the reported length must match the returned content");
-	}
-
-	/// <summary>
-	/// Owns the whole hermetic arrangement: the stub Creatio, an isolated clio settings file carrying a
-	/// pre-registered environment that points at the stub, and the real clio MCP server process started
-	/// against that settings file.
-	/// </summary>
-	private sealed record StubbedThemeEnvironment(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource,
-		RuntimeDetectionStubServer StubServer,
-		TemporaryClioSettingsOverride SettingsOverride,
-		string EnvironmentName,
-		string TempHome) : IAsyncDisposable {
-
-		private static string BuildCatalogJson() =>
-			$$"""
-			{"success":true,"values":[{"id":"{{ThemeId}}","caption":"{{ThemeCaption}}","cssClassName":"{{ThemeCssClassName}}","cssFilePath":"{{ThemeCssFilePath}}"}]}
-			""";
-
-		private static string BuildSettingsJson(string environmentName, string baseUrl) =>
-			$$"""
-			{
-			  "ActiveEnvironmentKey": "{{environmentName}}",
-			  "Environments": {
-			    "{{environmentName}}": {
-			      "Uri": "{{baseUrl}}",
-			      "Login": "Supervisor",
-			      "Password": "Supervisor",
-			      "IsNetCore": true
-			    }
-			  }
-			}
-			""";
-
-		public static async Task<StubbedThemeEnvironment> StartAsync() {
-			string tempHome = Path.Combine(Path.GetTempPath(), $"clio-get-theme-e2e-{Guid.NewGuid():N}");
-			Directory.CreateDirectory(tempHome);
-			McpE2ESettings settings = TestConfiguration.Load();
-			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			// The settings file the child clio resolves is derived from this variable, so the test never
-			// touches the developer's real environment catalog.
-			settings.ProcessEnvironmentVariables[OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME"] = tempHome;
-
-			RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
-				new RuntimeDetectionStubServerConfiguration(
-					NetCoreHealthEnabled: true,
-					NetFrameworkHealthEnabled: false,
-					NetCoreServiceEnabled: true,
-					NetFrameworkServiceEnabled: false,
-					NetCoreUiMarkerEnabled: true,
-					// Satisfies the get-theme [RequiresCreatioVersion] floor.
-					CoreVersion: "10.0.0.1",
-					ThemeCatalogJson: BuildCatalogJson(),
-					ThemeCssPath: "/" + ThemeCssFilePath,
-					ThemeCssContent: ThemeCssContent));
-
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-			try {
-				string environmentName = $"get-theme-stub-{Guid.NewGuid():N}";
-				TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
-					BuildSettingsJson(environmentName, stubServer.BaseUrl),
-					settings.ClioProcessPath,
-					settings.ProcessEnvironmentVariables);
-				McpServerSession session = await McpServerSession.StartAsync(
-					settings, cancellationTokenSource.Token);
-				return new StubbedThemeEnvironment(
-					session, cancellationTokenSource, stubServer, settingsOverride, environmentName, tempHome);
-			}
-			catch {
-				cancellationTokenSource.Dispose();
-				await stubServer.DisposeAsync();
-				throw;
-			}
-		}
-
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			await StubServer.DisposeAsync();
-			SettingsOverride.Dispose();
-			CancellationTokenSource.Dispose();
-			try {
-				if (Directory.Exists(TempHome)) {
-					Directory.Delete(TempHome, recursive: true);
-				}
-			}
-			catch (IOException) {
-				// Best-effort cleanup: the just-stopped child clio can still hold a handle on the isolated
-				// settings file, and a leaked temp directory must not fail an otherwise-green fixture.
-			}
-			catch (UnauthorizedAccessException) {
-				// Same best-effort rationale as the IOException case above.
-			}
-		}
 	}
 }

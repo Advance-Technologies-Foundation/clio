@@ -185,8 +185,13 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				ThemeCatalogMessages.EmptyCatalogLicenseCaveat;
 			return false;
 		}
+		// options.Id already passed ThemeParameterValidator.TryValidateId, which deliberately accepts every
+		// format Guid.TryParse does (braced, "N", "B", ...), while the catalog always publishes the canonical
+		// "D" spelling. Comparing the raw strings would therefore report "not found" for a valid GUID that is
+		// merely spelled differently than the catalog — compare parsed values instead.
+		Guid requestedId = Guid.Parse(options.Id);
 		List<ThemeDescriptor> matchingThemes = themes
-			.Where(descriptor => string.Equals(descriptor.Id, options.Id, StringComparison.OrdinalIgnoreCase))
+			.Where(descriptor => Guid.TryParse(descriptor.Id, out Guid catalogId) && catalogId == requestedId)
 			.ToList();
 		if (matchingThemes.Count > 1) {
 			error = $"Theme id '{options.Id}' matches more than one theme on the environment; " +
