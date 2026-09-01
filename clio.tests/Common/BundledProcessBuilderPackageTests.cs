@@ -129,7 +129,8 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no timestamp argument, so re-running
 	/// it stamps the present and the descriptor bytes differ every time. That pin exists for exactly this. Even
 	/// then the hash matches only on a host that renders the same line endings and the same path separator, which
-	/// is why the line-ending note above is not a footnote.</para> What the pin establishes is which SOURCES the
+	/// is why the line-ending note above is not a footnote.</para>
+	/// <para>What the pin establishes is which SOURCES the
 	/// archive was built from — which is the question that actually matters, since the descriptor is the one
 	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
 	/// restamp afterwards is still part of every rebundle, but not for the reason first written here: the pin

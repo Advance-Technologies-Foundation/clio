@@ -25,9 +25,11 @@
       * forgetting to rebuild clio means every local verification tests the PREVIOUS archive, since an
         install resolves the bundled .gz from the BUILD OUTPUT, not from the repository.
 
-    The three pins this run can derive - the archive SHA-256, the descriptor's ModifiedOnUtc, and the
-    version - are computed FROM the archive it just produced, so "those pins are stale" stops being a
-    reachable state. The SCHEMA descriptor pin is deliberately verified rather than refreshed: it guards a
+    Four pins are refreshed on every successful run: the archive SHA-256, the descriptor's ModifiedOnUtc,
+    the version, and the producing commit. Only the SHA is computed FROM the archive - the version is the
+    -Version argument, the stamp is read from the package descriptor after the restamp, and the commit is
+    that repository's HEAD before it. Refreshing all four together is what makes "those pins are stale"
+    stop being a reachable state. The SCHEMA descriptor pin is deliberately verified rather than refreshed: it guards a
     field clio's own tooling does not stamp, so a moved value stops the run instead of being accepted
     silently. Nothing is committed and nothing is pushed: the script reports what it changed and leaves
     both repositories dirty for review.

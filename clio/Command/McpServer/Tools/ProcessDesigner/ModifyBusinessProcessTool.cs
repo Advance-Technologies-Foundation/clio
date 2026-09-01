@@ -62,7 +62,7 @@ public class ModifyBusinessProcessTool(
 		 + "meta-path, [#SysVariable.Name#], [#SysSettings.Code#], [#Lookup.{schemaUId}.{recordId}#], "
 		 + "[#DateValue.dd.MM.yyyy#] / [#DateTimeValue.dd.MM.yyyy HH:mm#] / [#TimeValue.HH:mm#], "
 		 + "[#BooleanValue.True#]. From CrtProcessBuilder 1.4.0.0 an expression is VALIDATED before it is stored "
-		 + "(this clio requires 1.4.0.3: the 1.4.0.0-.2 validator disagreed with the platform's own pre-save gate) "
+		 + "(this clio requires 1.4.0.3: the 1.4.0.0-.1 validator disagreed with the platform's own pre-save gate) "
 		 + "(older packages stored it unchecked): it must parse, every parameter reference must resolve in THIS "
 		 + "process, and its result must fit the target — a refusal names the offending identifier or token. "
 		 + "The result is checked against the target parameter's DECLARED type, the same check the platform's own "

@@ -96,7 +96,7 @@ public class CreateBusinessProcessTool(
 		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output), processParameter, value, or expression. An 'expression' is a FORMULA, "
 		 + "validated server-side from CrtProcessBuilder 1.4.0.0, and this clio requires 1.4.0.3 because the "
-		 + "1.4.0.0-.2 validator disagreed with the platform's own pre-save gate: ONE line, its result must fit the target's "
+		 + "1.4.0.0-.1 validator disagreed with the platform's own pre-save gate: ONE line, its result must fit the target's "
 		 + "DECLARED type (an Integer target refuses a fractional result), every [#…#] parameter reference must "
 		 + "resolve in THIS process, names resolve through a flat case-sensitive registry (Math.Round yes, "
 		 + "System.Math.Round no), and a parameter is referenced by its UId meta-path, never by name. See "

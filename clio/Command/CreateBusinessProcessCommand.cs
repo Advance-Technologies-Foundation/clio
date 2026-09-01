@@ -22,7 +22,7 @@ namespace Clio.Command;
 // cannot express either — the email block's 1.2.0.1 floor set this precedent and is subsumed by this
 // literal. Raised to 1.4.0.3 by ENG-95891: a build's `mappings[]` may carry an `expression` source, and
 // the formula validator behind it is a TIGHTENED VALIDATOR — a server older than 1.4.0.0 stores such a
-// mapping with no check at all, and 1.4.0.0 through .2 check it against a rule that disagrees with the
+// mapping with no check at all, and 1.4.0.0 and .1 check it against a rule that disagrees with the
 // platform's own pre-save gate, which is why this literal is .3 and not .0. Either way the same
 // descriptor that is refused on a current environment silently persists a
 // broken formula on an older one, to fail at run time. The article is explicit that a tightened validator
