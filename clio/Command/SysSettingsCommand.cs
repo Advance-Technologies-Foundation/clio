@@ -575,49 +575,10 @@ namespace Clio.Command
 		// http://localhost:40124" is a network error, and reporting it as rejected credentials sends the
 		// operator off to fix a working login. The token must also stand alone, so a port or an id containing
 		// 401 does not qualify.
-		private static readonly Regex UnauthorizedStatusToken =
-			new(@"(?<![0-9])401(?![0-9])", RegexOptions.Compiled | RegexOptions.CultureInvariant,
-				TimeSpan.FromSeconds(1));
-
-		// Only 401 is a credential signal. 404 is a routing/resource error — a misconfigured environment URL
-		// or a renamed DataService endpoint would otherwise send the operator off to fix working credentials.
-		// The typed status is preferred wherever the exception carries one; the text match is the last resort
-		// for transports that only report the failure in prose.
+		// Delegates to the one shared classifier so this layer and SysSettingsManager cannot answer the
+		// same question differently. See AuthenticationFailureClassifier for why that mattered.
 		private static bool IsAuthenticationFailure(Exception exception) =>
-			IsAuthenticationFailure(exception, depth: 0);
-
-		private static bool IsAuthenticationFailure(Exception exception, int depth) {
-			if (exception is null || depth >= MaxExceptionUnwrapDepth) {
-				return false;
-			}
-			// An aggregate is a container, not a fault: its own message is a generic
-			// "One or more errors occurred", so matching prose on it proves nothing. Every fault it holds
-			// is examined instead - a single credential rejection among several failures is still one.
-			if (exception is AggregateException aggregate) {
-				return aggregate.InnerExceptions.Any(inner => IsAuthenticationFailure(inner, depth + 1));
-			}
-			// A typed status is authoritative in BOTH directions. Only 401 used to short-circuit, so a
-			// typed 404 or 500 fell through to the prose match and a routing or server failure whose text
-			// or inner exception mentioned a standalone 401 was reported as rejected credentials - sending
-			// the operator off to fix a working login.
-			// The types CategorizeError already treats as credential failures at the top level mean the
-			// same thing inside a wrapper. Without this, an aggregate carrying an AuthenticationException
-			// was judged by that exception PROSE - and "credentials were rejected" carries neither the
-			// word unauthorized nor a 401 token, so the diagnosis was lost exactly where it was wrapped.
-			if (exception is AuthenticationException or UnauthorizedAccessException) {
-				return true;
-			}
-			if (exception is HttpRequestException { StatusCode: { } httpStatus }) {
-				return httpStatus == HttpStatusCode.Unauthorized;
-			}
-			if (exception is WebException { Response: HttpWebResponse response }) {
-				return response.StatusCode == HttpStatusCode.Unauthorized;
-			}
-			string message = exception.Message ?? string.Empty;
-			return message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
-				|| UnauthorizedStatusToken.IsMatch(message)
-				|| IsAuthenticationFailure(exception.InnerException, depth + 1);
-		}
+			AuthenticationFailureClassifier.IsAuthenticationFailure(exception);
 
 		private static string DescribeUnreadableBinaryTarget(string code) {
 			return $"Sys-setting '{code}' was not found or is not readable by the current user. Uploading a " +

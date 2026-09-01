@@ -817,18 +817,14 @@ public class SysSettingsManager : ISysSettingsManager
 			: cleaned;
 	}
 
-	private static bool IsAuthenticationException(Exception exception) {
-		if (exception is AuthenticationException or UnauthorizedAccessException) {
-			return true;
-		}
-		string message = exception.Message ?? string.Empty;
-		return message.Contains("401", StringComparison.OrdinalIgnoreCase)
-			|| message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
-			|| message.Contains("password has expired", StringComparison.OrdinalIgnoreCase)
-			|| message.Contains("authentication failed", StringComparison.OrdinalIgnoreCase)
-			|| message.Contains("authentication error", StringComparison.OrdinalIgnoreCase)
-			|| (exception.InnerException is not null && IsAuthenticationException(exception.InnerException));
-	}
+	/// <summary>
+	/// Delegates to the one shared classifier. This used to be a second, prose-only implementation whose
+	/// bare Contains("401") ran BEFORE the command layer's typed-status-first version on the real preflight
+	/// path - so a refused connection to port 40124, or a correlation id containing 401, was wrapped as an
+	/// AuthenticationException and the corrected classifier never saw the original exception.
+	/// </summary>
+	private static bool IsAuthenticationException(Exception exception) =>
+		AuthenticationFailureClassifier.IsAuthenticationFailure(exception);
 
 	// Platform-fixed FileSecurityMode lookup ids (constants in Terrasoft.Web.FileSecurity.FileSecurityModeProvider).
 	private static readonly Guid FileSecurityModeDisabledId = new("9801C625-FAFB-4ED3-9383-C3C942A5C1E3");

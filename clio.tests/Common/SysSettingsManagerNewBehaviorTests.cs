@@ -414,6 +414,68 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "an HTTP 401 means the stored Creatio credentials were rejected and must not appear as an empty list");
 	}
 
+	[Test]
+	[Description("A refused connection whose message carries a port containing the digits 401 stays a network error: the manager must not wrap it as an authentication failure and send the operator off to repair working credentials.")]
+	public void GetAllSysSettingsWithValues_ShouldNotTreatAPortContaining401AsRejectedCredentials() {
+		// Arrange - the manager used to classify with a bare Contains("401"), so :40124 read as a 401.
+		const string refused = "Connection refused at http://localhost:40124";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new HttpRequestException(refused));
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new HttpRequestException(refused));
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues();
+
+		// Assert
+		act.Should().NotThrow<AuthenticationException>(
+			because: "a port is not a status code; wrapping this as an authentication failure also hid the original exception from the command-layer classifier");
+		act.Should().Throw<HttpRequestException>(
+			because: "the transport failure must reach the caller unchanged so the real cause is diagnosable");
+	}
+
+	[Test]
+	[Description("A correlation id that happens to contain 401 between letters stays a network error, for the same reason a port does.")]
+	public void GetAllSysSettingsWithValues_ShouldNotTreatACorrelationIdContaining401AsRejectedCredentials() {
+		// Arrange
+		const string correlated = "Upstream failure. Correlation id x401y";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new HttpRequestException(correlated));
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new HttpRequestException(correlated));
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues();
+
+		// Assert
+		act.Should().NotThrow<AuthenticationException>(
+			because: "401 surrounded by letters is part of an identifier, not a status code");
+	}
+
+	[Test]
+	[Description("A standalone 401 in the transport prose is still rejected credentials, so tightening the token did not simply switch the signal off.")]
+	public void GetAllSysSettingsWithValues_ShouldStillTreatAStandalone401AsRejectedCredentials() {
+		// Arrange
+		const string unauthorized = "The remote server returned an error: 401.";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new HttpRequestException(unauthorized));
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new HttpRequestException(unauthorized));
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		// Act
+		Action act = () => sut.GetAllSysSettingsWithValues();
+
+		// Assert
+		act.Should().Throw<AuthenticationException>(
+			because: "the manager path must keep reporting a genuine 401; the fix narrows the match, it does not remove it");
+	}
+
 	#endregion
 
 	#region InsertSysSetting — referenceSchemaUId + new type aliases
