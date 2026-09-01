@@ -84,3 +84,84 @@ running rather than repeating.
 ## Next
 
     /bp-test-run ENG-95891 --mode browser --env krestov-test
+
+---
+
+# Browser pass — 2026-09-01, mode `browser`
+
+Appended to this run because it verifies what this run created. Manifest checked first: the stand it
+names, `krestov-test`, is the stand addressed.
+
+Logged in through the stand's stored `Supervisor` profile button, so no credential passed through the
+agent.
+
+## Design time — verified
+
+**All six processes are present and Active** in Process library (`BPTest ENG95891 R2 A1` through `B3`,
+package Custom).
+
+**TC-A1** — the only design-time expectation the prompt declared. Diagram: start `Calculation
+requested` → end `Calculation done`, one sequence flow, both captions business-readable rather than
+`ProcessStart`/`ProcessEnd`. Parameters panel:
+
+| Parameter | Type icon | Rendered value |
+|---|---|---|
+| `Price` | Float | *Select value* (empty) |
+| `Total` | Float | **`RoundUp([#Price#])`** |
+
+The stored value is `Math.Ceiling([#[Parameter:{c6bb6092…}]#])`. The designer resolves the UId
+meta-path back to the friendly name **and** renders the .NET function under the designer's own
+spelling. That is exactly what `process-formulas` predicts, and this is the first observation of the
+conversion running in that direction. **PASS** — `Total` carries a formula, not a plain value.
+
+**TC-A3** — same shape, parameters:
+
+| Parameter | Type icon | Rendered value |
+|---|---|---|
+| `Due` | Date/Time | *Select value* (empty) |
+| `D` | Integer | `Day([#Due#])` |
+| `M` | Integer | `Month([#Due#])` |
+| `W` | Integer | `DayOfWeek([#Due#])` |
+
+Three Integer targets, three date helpers without a `Get` prefix, each over `Due`. **PASS.**
+
+## Runtime — one data point, not a verdict
+
+`BPTest ENG95891 R2 A3` was started from the designer (`Successfully started`) and appears in the
+Process log as **Completed**, start and end at 9/1/2026 10:09 PM, package Custom, owner Supervisor.
+
+So a stored formula is **evaluated by the engine**, not merely persisted — the first time anything in
+this exercise reached runtime. It is not a case verdict: the prompt declared no runtime expectations,
+and the input parameters are empty, so nothing asserts *what* the formulas computed.
+
+## Findings from this pass
+
+**1. A false blocker, avoided — and worth recording.** Navigating directly to
+`#ProcessSchemaDesigner/<uid>` fails: the console shows `Script error for "ProcessSchemaDesigner"`
+under a cluster of `Unsatisfied version 22.0.8 … required =21.2.17` shared-singleton errors from
+`process-designer-component`, `voice-to-text`, `two-factor` and `error-list-dialog`. The designer was
+about to be reported broken on this stand.
+
+It is not. Opening the same process the way a user does — Process library, click, **Open** — loads it
+fine at `?vm=SchemaDesigner#process/<uid>`, in a new tab. The Angular version errors are present and
+non-fatal. The route was wrong, not the stand. This is the rubric's own rule paying off: a probe that
+can only fail one way is not evidence.
+
+**2. The prompt cannot support a runtime pass, and that is a defect of the prompt.** It declares one
+design-time expectation and zero runtime ones, because it was written for the stored level. To make a
+browser pass meaningful the suite needs cases that carry a computed value to something a person sees —
+the pattern the task's own TC-19 uses, a computed subject reaching an Activity card. Recorded as a
+prompt defect, and it feeds `/bp-test-cases --revise`.
+
+**3. The designer does not reload on a hash change.** Replacing the process UId in the URL keeps the
+previously loaded schema, title included; only F5 loads the new one. Harmless for a human, a trap for
+automation.
+
+**4. The stand carries a `Compilation error` badge** in the shell header, pre-existing and unrelated to
+these processes. Worth knowing before drawing conclusions from anything that needs compiled
+configuration.
+
+## Verdict after both passes
+
+Stored: 6/6 PASS. Design time: 2 processes inspected, both PASS, covering the only expectation the
+prompt declared. Runtime: reached once, completed, nothing asserted about the computed values.

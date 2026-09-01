@@ -138,8 +138,11 @@ number mean "these bytes" again, and it is cheap: the script does the whole thin
 
 A corollary, learned the expensive way: **claim the number before you cut, not after.** Two archives were
 produced under `1.4.0.9` on one day by two branches that fork off each other, and the number is burned —
-a gap in the sequence is always cheaper than a number that names two different sets of bytes. `1.4.0.12`
-and `.14` are skipped for the same reason.
+a gap in the sequence is always cheaper than a number that names two different sets of bytes. Others are
+skipped for the same reason — but do NOT take the list from here. The authoritative one is the provenance
+block on `ExpectedArchiveSha256` in `clio.tests/Common/BundledProcessBuilderPackageTests.cs`, which the
+rebundle script's own commit touches; a second list in prose is exactly the thing that drifts, and this
+one already did. Read that block before choosing a number.
 
 And do not read a stand's installed version as the sequence's high-water mark. It records what someone
 last installed, which may be a branch that never merges. The sequence is owned by the branches, not by
@@ -188,7 +191,10 @@ Check the CAPABILITY, in the bytes:
 ### The currency gates prove the cut was current WHEN CUT, not that it still is
 
 `rebundle-process-builder.ps1` refuses a dirty tree, a detached HEAD, and a branch behind its upstream. All
-three are asserted at CUT time. None of them says anything about the archive falling behind the branch
+three are asserted at CUT time — and the third only when the branch HAS an upstream. With none configured
+the comparison is skipped and the run still reports success, so a green run does not by itself mean
+currency was asserted. The script says so on that line; the point here is that the runbook must not read
+as if it always is. None of them says anything about the archive falling behind the branch
 AFTERWARDS — and that is not a hole in the gates, it is their boundary, as principled as the fact that
 "behind" is measured against the upstream ref as last fetched.
 
@@ -346,12 +352,17 @@ target's configuration build. Lose it and the package installs, the gate reports
 | `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
 | `ExpectedDescriptorModifiedOnUtc` | same file |
 | `ExpectedArchiveVersion` | same file |
+| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp |
 
 **No PRODUCTION constant to update** — that is the point of the current design: clio reads the shipped
 version from the archive, so nothing in the product can fall out of step with it. `ExpectedArchiveVersion`
 is a test-side pin with no runtime consumer, and it exists for the same reason the SHA pin does — a `.gz`
 renders in a diff as a changed byte count, so without that line a reviewer cannot see whether the version
-moved. The script writes all three from the archive it produced.
+moved. The script writes all four. Three come from the archive it produced; `ExpectedProducingCommit`
+comes from the package repository's HEAD, which is why the manual path has to supply it by hand — and why
+forgetting it is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
+commit stays 40 hex characters, passes every test, and points confidently at the wrong commit, which is
+the failure the constant was added to remove.
 
 The date pin must end in `000`. `PackageDescriptor.ConvertToModifiedOnUtc` truncates to whole seconds, so
 milliseconds in it prove the descriptor was written by something other than `set-pkg-version` — a test

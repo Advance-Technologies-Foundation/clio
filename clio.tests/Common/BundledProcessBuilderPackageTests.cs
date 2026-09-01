@@ -90,8 +90,12 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>
 	/// The cut ran with the package's own gate tests (958 passing) rather than under <c>-SkipTests</c>, and the
 	/// script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
-	/// against the commit's CHECKOUT rendering was NOT re-run here; the clean-tree refusal now covers the
-	/// failure that check was added for. It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
+	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
+	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
+	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
+	/// gate, and still be packed as LF where a checkout of that same commit renders CRLF. The gate closes the
+	/// dirty-tree and uncommitted-restamp failures; this one it cannot see.
+	/// It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
 	/// where a checkout on a <c>core.autocrlf=true</c> host produces CRLF, an archive corresponding to no commit
 	/// at all — so re-run the line-ending audit whenever the archive is cut from a tree with just-written files,
 	/// and do not read its absence here as a clean result.
@@ -125,7 +129,7 @@ public class BundledProcessBuilderPackageTests {
 	/// is only verifiable if the archive is packed from a CLEAN checkout: pack from a tree carrying
 	/// just-written files and the pin records bytes nobody can reproduce, which leaves this constant detecting
 	/// change while establishing nothing about provenance. That entry-by-entry audit was run for the 1.3.1.1
-	/// cut and is what caught the line-ending case; it was NOT re-run for the 1.4.0.3 archive pinned below.
+	/// cut and is what caught the line-ending case; it was NOT re-run for the archive pinned below.
 	/// Two statements about the same bytes, one reassuring and one not, is exactly the shape this file exists
 	/// to prevent, so read the summary above as authoritative on what was and was not checked for THIS cut.
 	/// </para>
