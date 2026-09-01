@@ -88,7 +88,7 @@ public sealed class GetUserCultureToolPassthroughTests {
 
 	private static GetUserCultureTool CreateTool(
 		IToolCommandResolver commandResolver, CultureResolution resolution = null) {
-		ICurrentUserCultureResolver resolver = Substitute.For<ICurrentUserCultureResolver>();
+		IOwnedCurrentUserCultureResolver resolver = Substitute.For<IOwnedCurrentUserCultureResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(resolution ?? CultureResolution.Resolved("uk-UA")));
 		ICurrentUserCultureResolverFactory factory = Substitute.For<ICurrentUserCultureResolverFactory>();
@@ -180,7 +180,7 @@ public sealed class GetUserCultureToolPassthroughTests {
 		// Arrange
 		ICredentialContextAccessor accessor = CreateHeaderAccessor();
 		ToolCommandResolver resolver = CreateRealResolver(accessor, out _, configureActiveEnvironment: false);
-		ICurrentUserCultureResolver cultureResolver = Substitute.For<ICurrentUserCultureResolver>();
+		IOwnedCurrentUserCultureResolver cultureResolver = Substitute.For<IOwnedCurrentUserCultureResolver>();
 		cultureResolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.ThrowsAsync(new System.InvalidOperationException(
 				$"Unreachable tenant. token={HeaderTenantToken}"));

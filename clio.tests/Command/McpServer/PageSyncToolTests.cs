@@ -102,7 +102,7 @@ public sealed class PageSyncToolTests {
 		// IToolCommandResolver the tool uses for command resolution (Pattern-A) — no
 		// direct ISettingsRepository dependency anymore.
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
@@ -1257,7 +1257,7 @@ public sealed class PageSyncToolTests {
 		// resolver resolves ephemeral settings from the header's credential context.
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(new EnvironmentSettings());
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
