@@ -113,12 +113,27 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 			}
 			_logger.WriteInfo("Application configuration created");
 
-			// Start the host application as a background process
-			int? processId = _creatioHostService.StartInBackground(appDirectoryPath, environmentVariables);
-			if (processId.HasValue)
+			// Start the host application as a background process. A null process id is a failed
+			// launch, not a successful deployment with an unavailable application.
+			int? processId;
+			try
 			{
-				_logger.WriteInfo($"Application control URL: {GetApplicationUrl(options)}");
+				processId = _creatioHostService.StartInBackground(appDirectoryPath, environmentVariables);
+				if (!processId.HasValue)
+				{
+					throw new InvalidOperationException("The dotnet host process could not be started.");
+				}
 			}
+			catch
+			{
+				RestoreFailedDeployment(
+					appDirectoryPath,
+					configurationPath,
+					hadExistingConfiguration,
+					previousConfiguration);
+				throw;
+			}
+			_logger.WriteInfo($"Application control URL: {GetApplicationUrl(options)}");
 
 			// Set up service management if on Linux or macOS
 			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && (bool)options.AutoRun)
@@ -294,6 +309,25 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		catch (Exception exception)
 		{
 			_logger.WriteError($"Failed to restore application configuration after deployment failure: {exception.Message}");
+		}
+	}
+
+	private void RestoreFailedDeployment(
+		string appDirectoryPath,
+		string configurationPath,
+		bool hadExistingConfiguration,
+		string? previousConfiguration)
+	{
+		RestoreApplicationConfiguration(configurationPath, hadExistingConfiguration, previousConfiguration);
+		try
+		{
+			_creatioHostService.PersistEnvironmentVariables(
+				appDirectoryPath,
+				new Dictionary<string, string>());
+		}
+		catch (Exception exception)
+		{
+			_logger.WriteError($"Failed to remove persisted host environment after deployment failure: {exception.Message}");
 		}
 	}
 
@@ -754,7 +788,22 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 		string environmentVariableName,
 		IDictionary<string, string> environmentVariables)
 	{
-		string? passwordPropertyName = FindPropertyName(certificate, "Password");
+		string? passwordPropertyName = null;
+		foreach (KeyValuePair<string, JsonNode?> property in certificate)
+		{
+			if (!string.Equals(property.Key, "Password", StringComparison.OrdinalIgnoreCase))
+			{
+				continue;
+			}
+
+			if (passwordPropertyName is not null)
+			{
+				throw new JsonException("A certificate configuration cannot contain duplicate Password properties.");
+			}
+
+			passwordPropertyName = property.Key;
+		}
+
 		if (passwordPropertyName is null)
 		{
 			return;

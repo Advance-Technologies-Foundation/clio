@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -196,6 +197,37 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			because: "a removed HTTP endpoint must not leak its certificate password into the HTTPS host environment");
 		configuration.Json.Should().NotContain("http-secret",
 			because: "a removed endpoint's certificate password must not remain in the generated configuration");
+	}
+
+	[Test]
+	[Description("Rejects case-variant duplicate certificate password properties instead of leaving one plaintext value in appsettings.json.")]
+	public void BuildApplicationConfiguration_ShouldRejectDuplicateCertificatePasswordProperties() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Https": {
+			        "Url": "https://localhost:5001",
+			        "Certificate": {
+			          "Path": "server.pfx",
+			          "Password": "first-secret",
+			          "password": "second-secret"
+			        }
+			      }
+			    }
+			  }
+			}
+			""";
+		PfInstallerOptions options = new() { SitePort = 40123, UseHttps = true };
+
+		// Act
+		Action action = () => _sut.BuildApplicationConfiguration(existingJson, options);
+
+		// Assert
+		action.Should().Throw<JsonException>()
+			.WithMessage("A certificate configuration cannot contain duplicate Password properties.",
+			because: "ambiguous case-variant password properties must fail closed before configuration is written");
 	}
 
 	[Test]
@@ -652,6 +684,47 @@ public sealed class DotNetDeploymentStrategyTests : BaseClioModuleTests {
 			because: "deployment must report failure when certificate environment persistence cannot complete");
 		File.ReadAllText(configurationPath).Should().Be(previousConfiguration,
 			because: "a failed secret-store write must not leave the application with an unrecoverable rewritten configuration");
+	}
+
+	[Test]
+	[Description("Reports a failed dotnet deployment and restores configuration when the host process cannot be started.")]
+	public async Task Deploy_ShouldRestoreConfigurationAndClearEnvironment_WhenHostDoesNotStart() {
+		// Arrange
+		string appDirectory = Path.Combine(_temporaryDirectory, "start-failure-app");
+		Directory.CreateDirectory(appDirectory);
+		string configurationPath = Path.Combine(appDirectory, "appsettings.json");
+		const string previousConfiguration = "{\"Existing\":true}";
+		File.WriteAllText(configurationPath, previousConfiguration);
+		string certificatePath = CreateTemporaryPfx("start-failure.pfx", "start-failure-secret");
+		string passwordFile = CreateTemporaryPasswordFile("start-failure-secret");
+		PfInstallerOptions options = new() {
+			SiteName = "start-failure-test",
+			SitePort = GetAvailablePort(),
+			UseHttps = true,
+			CertificatePath = certificatePath,
+			CertificatePasswordFile = passwordFile,
+			AutoRun = false
+		};
+		_creatioHostService.StartInBackground(
+			Arg.Any<string>(),
+			Arg.Any<IReadOnlyDictionary<string, string>>()).Returns((int?)null);
+
+		// Act
+		int exitCode = await _sut.Deploy(appDirectory, options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "a deployment without a running dotnet host must not be reported as successful");
+		File.ReadAllText(configurationPath).Should().Be(previousConfiguration,
+			because: "a failed host launch must restore the configuration that existed before deployment");
+		_creatioHostService.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ICreatioHostService.PersistEnvironmentVariables)
+				&& call.GetArguments()[0] is string path
+				&& path == appDirectory
+				&& call.GetArguments()[1] is IReadOnlyDictionary<string, string> variables
+				&& variables.Count == 0)
+			.Should().ContainSingle(
+				because: "a failed host launch must clear the certificate values persisted for that deployment");
 	}
 
 	private string CreateTemporaryPfx(string fileName, string? password = null) {

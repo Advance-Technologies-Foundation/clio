@@ -178,12 +178,16 @@ public class CreatioHostService : ICreatioHostService
 		IReadOnlyDictionary<string, string> environmentVariables)
 	{
 		string directory = Path.Combine(ClioRuntimePaths.Home, "host-environments");
+		EnsureNotSymbolicLink(ClioRuntimePaths.Home, isDirectory: true);
+		EnsureNotSymbolicLink(directory, isDirectory: true);
 		_fileSystem.CreateDirectoryIfNotExists(directory);
+		EnsureNotSymbolicLink(directory, isDirectory: true);
 		_fileSecurityHardening.HardenDirectory(directory);
 		string scriptPath = Path.Combine(directory, $"terminal-{Guid.NewGuid():N}.sh");
 		try
 		{
 			string script = BuildTerminalLaunchScript(workingDirectory, envName, environmentVariables);
+			EnsureNotSymbolicLink(scriptPath, isDirectory: false);
 			_fileSystem.WriteOwnerOnlyTextToFile(scriptPath, script);
 			_fileSecurityHardening.HardenFile(scriptPath);
 			return scriptPath;
@@ -192,6 +196,19 @@ public class CreatioHostService : ICreatioHostService
 		{
 			_fileSystem.DeleteFileIfExists(scriptPath);
 			throw;
+		}
+	}
+
+	private void EnsureNotSymbolicLink(string path, bool isDirectory)
+	{
+		System.IO.Abstractions.IFileSystemInfo fileSystemInfo = isDirectory
+			? _fileSystem.GetDirectoryInfo(path)
+			: _fileSystem.GetFilesInfos(path);
+		if (fileSystemInfo is not null
+			&& (!string.IsNullOrEmpty(fileSystemInfo.LinkTarget)
+				|| fileSystemInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)))
+		{
+			throw new IOException($"The terminal launcher path must not be a symbolic link: {path}.");
 		}
 	}
 

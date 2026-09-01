@@ -11,6 +11,8 @@ DESCRIPTION
     endpoint for the registered environment URI scheme is updated. Existing HTTP
     and HTTPS endpoint settings are preserved and also constrained to localhost.
     HTTPS linking does not create a plaintext endpoint.
+    If a Kestrel certificate configuration contains a plaintext Password property, linking stops
+    before appsettings.json is written. Use a secure dotnet deployment or remove the password first.
 
 ALIASES
     lcs

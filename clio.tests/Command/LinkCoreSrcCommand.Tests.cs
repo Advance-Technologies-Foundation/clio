@@ -186,7 +186,33 @@ namespace Clio.Tests.Command {
 		// Assert
 		action.Should().Throw<InvalidOperationException>()
 			.WithMessage("HTTPS link-core-src requires a certificate on the selected endpoint or in Kestrel.Certificates:Default.",
-				because: "linking an HTTPS environment must not write an endpoint that Kestrel cannot start");
+			because: "linking an HTTPS environment must not write an endpoint that Kestrel cannot start");
+	}
+
+	[Test]
+	[Description("Rejects linking a Kestrel configuration that would preserve a plaintext certificate password.")]
+	public void UpdateConfigWithPort_ShouldRejectPlaintextCertificatePassword() {
+		// Arrange
+		const string existingJson = """
+			{
+			  "Kestrel": {
+			    "Endpoints": {
+			      "Https": {
+			        "Url": "https://localhost:5002",
+			        "Certificate": { "Path": "server.pfx", "Password": "secret" }
+			      }
+			    }
+			  }
+			}
+			""";
+
+		// Act
+		Action action = () => _command.UpdateConfigWithPort(existingJson, 40123, "/tmp/appsettings.json", "https");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("link-core-src cannot preserve plaintext Kestrel certificate passwords.*",
+			because: "link-core-src must not write an existing certificate secret back to appsettings.json");
 	}
 
 	[Test]

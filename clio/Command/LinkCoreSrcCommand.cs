@@ -565,6 +565,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			JsonObject kestrel = GetOrCreateObject(root, "Kestrel");
 			JsonObject endpoints = GetOrCreateObject(kestrel, "Endpoints");
+			RejectPlaintextCertificatePasswords(kestrel, endpoints);
 			string targetScheme = scheme.ToLowerInvariant();
 			if (targetScheme is not ("http" or "https"))
 			{
@@ -769,6 +770,38 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		JsonObject? certificates = GetObjectProperty(kestrel, "Certificates");
 		JsonObject? defaultCertificate = certificates is null ? null : GetObjectProperty(certificates, "Default");
 		return HasUsableCertificateConfiguration(defaultCertificate);
+	}
+
+	private static void RejectPlaintextCertificatePasswords(JsonObject kestrel, JsonObject endpoints)
+	{
+		foreach (KeyValuePair<string, JsonNode?> property in endpoints)
+		{
+			if (property.Value is JsonObject endpoint
+				&& GetObjectProperty(endpoint, "Certificate") is JsonObject certificate
+				&& FindPropertyName(certificate, "Password") is not null)
+			{
+				throw new InvalidOperationException(
+					"link-core-src cannot preserve plaintext Kestrel certificate passwords. "
+					+ "Run a secure dotnet deployment or remove the password before linking core source.");
+			}
+		}
+
+		JsonObject? certificates = GetObjectProperty(kestrel, "Certificates");
+		if (certificates is null)
+		{
+			return;
+		}
+
+		foreach (KeyValuePair<string, JsonNode?> property in certificates)
+		{
+			if (property.Value is JsonObject certificate
+				&& FindPropertyName(certificate, "Password") is not null)
+			{
+				throw new InvalidOperationException(
+					"link-core-src cannot preserve plaintext Kestrel certificate passwords. "
+					+ "Run a secure dotnet deployment or remove the password before linking core source.");
+			}
+		}
 	}
 
 	private static bool HasUsableCertificateConfiguration(JsonObject? certificate)

@@ -13,7 +13,9 @@ resolved Kestrel environment values to the owner-only host-environment store und
 of the normalized application directory, so the secret file is outside the deployed web root. The store
 accepts only the generated `Kestrel__Endpoints__*__Certificate__Password` and
 `Kestrel__Certificates__*__Password` names; Unix permissions and Windows ACLs are tightened on both
-the directory and file, and the store refuses symbolic-link targets.
+the directory and file, and the store refuses symbolic-link targets. The macOS terminal launcher
+uses the same protected directory and applies the same symbolic-link/reparse-point refusal before
+creating its temporary wrapper.
 
 **Why it is this way** — The first background process can receive a password through its environment,
 but a later `clio start` is a new process and cannot recover that value from memory. Persisting the
@@ -27,4 +29,6 @@ also make a deployment-specific secret reachable through static-file handling or
 If the store accepts arbitrary variables or inherits a broad ACL, an attacker who can replace it can
 change how the next host process is launched or read the certificate password. A symbolic link would
 otherwise redirect the write or read to a different file. If file hardening fails after a write, the
-store removes that file instead of leaving an unprotected secret artifact behind.
+store removes that file instead of leaving an unprotected secret artifact behind. Without the
+terminal-launcher path check, a planted directory link could redirect the temporary wrapper outside
+the protected Clio state directory.
